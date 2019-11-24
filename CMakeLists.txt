@@ -11,7 +11,7 @@ target_include_directories(cxx_settings INTERFACE
     "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_compile_options(cxx_settings INTERFACE
-    -Werror -Wall -pedantic -Wconversion
+    -Werror -Wall -pedantic -Wconversion 
     -fsanitize=address,undefined -fno-optimize-sibling-calls
     -fsanitize-address-use-after-scope
     -fno-omit-frame-pointer)
@@ -27,3 +27,19 @@ add_executable(test
 
 target_link_libraries(test
     parser)
+
+add_executable(libfuzzer_harness
+    fuzz_harness.cpp)
+
+target_link_libraries(libfuzzer_harness
+    parser)
+
+target_compile_options(libfuzzer_harness PRIVATE
+    -Werror -Wall -pedantic -Wconversion -g
+    -fsanitize=address,fuzzer,undefined -fno-optimize-sibling-calls
+    -fsanitize-address-use-after-scope
+    -fno-omit-frame-pointer)
+
+target_link_options(libfuzzer_harness PRIVATE
+    -fsanitize=address,fuzzer,undefined
+    -Wl,-undefined,dynamic_lookup)

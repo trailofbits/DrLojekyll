@@ -1,11 +1,8 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 #include "Parse.h"
-
-#if defined(__linux__)
-#include <string.h>
+#include <cstring>
 #include <cassert>
-#endif
 
 namespace hyde {
 namespace parse {

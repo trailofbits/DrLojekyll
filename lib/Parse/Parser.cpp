@@ -2,6 +2,7 @@
 
 #include <drlojekyll/Parse/Parser.h>
 
+#include <cstring>
 #include <cassert>
 #include <sstream>
 #include <unordered_map>
@@ -16,10 +17,6 @@
 #include <drlojekyll/Util/FileManager.h>
 
 #include "Parse.h"
-
-#if defined(__linux__)
-#include <string.h>
-#endif
 
 namespace hyde {
 namespace {
