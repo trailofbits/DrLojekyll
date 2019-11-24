@@ -7,7 +7,7 @@
 
 namespace hyde {
 
-// Basic string pool implementation. Used for variables, atoms, and strings.
+// Basic string pool implementation. Used for body_variables, atoms, and strings.
 class StringPool {
  public:
   ~StringPool(void);

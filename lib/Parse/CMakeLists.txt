@@ -7,7 +7,7 @@ add_library(parser STATIC
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parser.h"
     Parse.cpp Parse.h
     Error.cpp ErrorLog.cpp
-    Parser.cpp ErrorLog.cpp Error.h)
+    Parser.cpp ErrorLog.cpp Error.h ../../include/drlojekyll/Parse/Type.h)
 
 target_link_libraries(parser PUBLIC
     lexer)

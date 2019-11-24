@@ -48,7 +48,7 @@ class SharedParserContext {
   StringPool string_pool;
 
   // Keeps track of the global locals. All parsed modules shared this.
-  std::unordered_map<uint64_t, parse::DeclarationBase *> declarations;
+  std::unordered_map<uint64_t, parse::Impl<ParsedDeclaration> *> declarations;
 };
 
 }  // namespace
@@ -102,8 +102,8 @@ class ParserImpl {
 
   // Add a declaration or redeclaration to the module.
   template <typename T>
-  parse::Impl<T> *AddDeclarator(
-      parse::Impl<ParsedModule> *module, const char *kind, Token name,
+  parse::Impl<T> *AddDeclaration(
+      parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
       size_t arity);
 
   // Try to parse all of the tokens.
@@ -151,8 +151,8 @@ class ParserImpl {
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
 template <typename T>
-parse::Impl<T> *ParserImpl::AddDeclarator(
-    parse::Impl<ParsedModule> *module, const char *kind, Token name,
+parse::Impl<T> *ParserImpl::AddDeclaration(
+    parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
     size_t arity) {
 
   parse::IdInterpreter interpreter = {};
@@ -164,14 +164,15 @@ parse::Impl<T> *ParserImpl::AddDeclarator(
 
   if (first_decl_it != context->declarations.end()) {
     const auto first_decl = first_decl_it->second;
-    if (strcmp(first_decl->context->kind, kind)) {
+    auto &decl_context = first_decl->context;
+    if (decl_context->kind == kind) {
       Error err(context->display_manager, SubTokenRange(),
                 name.SpellingRange());
-      err << "Cannot re-declare " << first_decl->context->kind
-          << " as a " << kind;
+      err << "Cannot re-declare '" << first_decl->name
+          << "' as a " << first_decl->KindName();
 
       DisplayRange first_decl_range(
-          first_decl->directive_pos, first_decl->head.rparen.NextPosition());
+          first_decl->directive_pos, first_decl->rparen.NextPosition());
       auto note = err.Note(context->display_manager, first_decl_range);
       note << "Original declaration is here";
 
@@ -179,13 +180,15 @@ parse::Impl<T> *ParserImpl::AddDeclarator(
       return nullptr;
 
     } else {
-      auto decl = new parse::Impl<T>(module, first_decl->context);
-      decl->context->redeclarations.push_back(decl);
+      auto decl = new parse::Impl<T>(module, decl_context);
+      decl_context->redeclarations.back()->next_redecl = decl;
+      decl_context->redeclarations.push_back(decl);
       return decl;
     }
   } else {
     auto decl = new parse::Impl<T>(module, kind);
-    decl->context->redeclarations.push_back(decl);
+    auto &decl_context = decl->context;
+    decl_context->redeclarations.push_back(decl);
     context->declarations.emplace(id, decl);
     return decl;
   }
@@ -566,15 +569,15 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          functor.reset(AddDeclarator<ParsedFunctor>(
-              module, "functor", name, params.size()));
+          functor.reset(AddDeclaration<ParsedFunctor>(
+              module, DeclarationKind::kFunctor, name, params.size()));
           if (!functor) {
             return;
           } else {
             functor->directive_pos = sub_tokens.front().Position();
-            functor->head.name = name;
-            functor->head.rparen = tok;
-            functor->head.parameters.swap(params);
+            functor->name = name;
+            functor->rparen = tok;
+            functor->parameters.swap(params);
             state = 6;
             continue;
           }
@@ -654,8 +657,6 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
           name = tok;
-          query->directive_pos = sub_tokens.front().Position();
-          query->head.name = tok;
           state = 1;
           continue;
 
@@ -748,15 +749,15 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          query.reset(AddDeclarator<ParsedQuery>(
-              module, "query", name, params.size()));
+          query.reset(AddDeclaration<ParsedQuery>(
+              module, DeclarationKind::kQuery, name, params.size()));
           if (!query) {
             return;
 
           } else {
-            query->head.rparen = tok;
-            query->head.name = name;
-            query->head.parameters.swap(params);
+            query->rparen = tok;
+            query->name = name;
+            query->parameters.swap(params);
             query->directive_pos = sub_tokens.front().Position();
             state = 6;
             continue;
@@ -907,15 +908,15 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          message.reset(AddDeclarator<ParsedMessage>(
-              module, "message", name, params.size()));
+          message.reset(AddDeclaration<ParsedMessage>(
+              module, DeclarationKind::kMessage, name, params.size()));
           if (!message) {
             return;
 
           } else {
-            message->head.rparen = tok;
-            message->head.name = name;
-            message->head.parameters.swap(params);
+            message->rparen = tok;
+            message->name = name;
+            message->parameters.swap(params);
             message->directive_pos = sub_tokens.front().Position();
             state = 5;
             continue;
@@ -935,7 +936,7 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
             tok.Position(), sub_tokens.back().NextPosition());
         Error err(context->display_manager, SubTokenRange(), err_range);
         err << "Unexpected tokens following declaration of the '"
-            << message->head.name << "' message";
+            << message->name << "' message";
         context->error_log.Append(std::move(err));
         state = 6;  // Ignore further errors, but add the message in.
         continue;
@@ -1072,15 +1073,15 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          exp.reset(AddDeclarator<ParsedExport>(
-              module, "export", name, params.size()));
+          exp.reset(AddDeclaration<ParsedExport>(
+              module, DeclarationKind::kExport, name, params.size()));
           if (!exp) {
             return;
 
           } else {
-            exp->head.rparen = tok;
-            exp->head.name = name;
-            exp->head.parameters.swap(params);
+            exp->rparen = tok;
+            exp->name = name;
+            exp->parameters.swap(params);
             exp->directive_pos = sub_tokens.front().Position();
             state = 5;
             continue;
@@ -1100,7 +1101,7 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
             tok.Position(), sub_tokens.back().NextPosition());
         Error err(context->display_manager, SubTokenRange(), err_range);
         err << "Unexpected tokens following declaration of the '"
-            << exp->head.name << "' export";
+            << exp->name << "' export";
         context->error_log.Append(std::move(err));
         state = 6;  // Ignore further errors, but add the export in.
         continue;
@@ -1204,7 +1205,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
                     tok.SpellingRange());
           err << "Expected type name ('@'-prefixed identifier) or variable "
               << "name (capitalized identifier) for parameter in local '"
-              << local->head.name << "', but got '" << tok << "' instead";
+              << local->name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1237,15 +1238,15 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          local.reset(AddDeclarator<ParsedLocal>(
-              module, "local", name, params.size()));
+          local.reset(AddDeclaration<ParsedLocal>(
+              module, DeclarationKind::kLocal, name, params.size()));
           if (!local) {
             return;
 
           } else {
-            local->head.rparen = tok;
-            local->head.name = name;
-            local->head.parameters.swap(params);
+            local->rparen = tok;
+            local->name = name;
+            local->parameters.swap(params);
             local->directive_pos = sub_tokens.front().Position();
             state = 5;
             continue;
@@ -1265,7 +1266,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
             tok.Position(), sub_tokens.back().NextPosition());
         Error err(context->display_manager, SubTokenRange(), err_range);
         err << "Unexpected tokens following declaration of the '"
-            << local->head.name << "' local";
+            << local->name << "' local";
         context->error_log.Append(std::move(err));
         state = 6;  // Ignore further errors, but add the local in.
         continue;
@@ -1403,31 +1404,33 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
-  interpreter.info.arity = clause->parameters.size();
+  interpreter.info.arity = clause->head_variables.size();
   const auto id = interpreter.flat;
 
   // There are no forward declarations associated with this ID.
   // We'll report an error, then invent one.
   if (!context->declarations.count(id)) {
-    Error err(context->display_manager, SubTokenRange());
-    err << "Predicate '" << clause->name << "/"
-        << clause->parameters.size() << "' has no declaration";
+    Error err(context->display_manager, SubTokenRange(),
+              DisplayRange(
+                  clause->name.Position(), clause->rparen.NextPosition()));
+    err << "Missing declaration for '" << clause->name << "/"
+        << clause->head_variables.size() << "'";
     context->error_log.Append(std::move(err));
 
     // Recover by adding a local declaration; this will let us keep
     // parsing.
-    auto local = new parse::Impl<ParsedLocal>(module, "local");
+    auto local = new parse::Impl<ParsedLocal>(module, DeclarationKind::kLocal);
     local->directive_pos = clause->name.Position();
-    local->head.name = clause->name;
-    local->head.rparen = clause->rparen;
+    local->name = clause->name;
+    local->rparen = clause->rparen;
     parse::Impl<ParsedParameter> *prev_param = nullptr;
-    for (const auto param_var : clause->parameters) {
+    for (const auto &param_var : clause->head_variables) {
       auto param = new parse::Impl<ParsedParameter>;
       param->name = param_var->name;
       if (prev_param) {
         prev_param->next = param;
       }
-      local->head.parameters.emplace_back(param);
+      local->parameters.emplace_back(param);
       prev_param = param;
     }
 
@@ -1439,12 +1442,12 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
   DisplayRange directive_range(
       clause->declaration->directive_pos,
-      clause->declaration->head.rparen.NextPosition());
+      clause->declaration->rparen.NextPosition());
 
   const auto &decl_context = clause->declaration->context;
 
   // Don't allow us to define clauses for functors.
-  if (!strcmp(decl_context->kind, "functor")) {
+  if (decl_context->kind == DeclarationKind ::kFunctor) {
     Error err(context->display_manager, SubTokenRange());
     err << "Cannot define a clause for the functor '"
         << clause->name << "'; functors are defined by native "
@@ -1458,10 +1461,10 @@ bool ParserImpl::TryMatchClauseWithDecl(
     context->error_log.Append(std::move(err));
     return false;
 
-    // Don't allow us to define clauses for positive_predicates exported by
-    // other modules.
-  } else if (!strcmp(decl_context->kind, "export") &&
-      module != clause->declaration->module) {
+  // Don't allow us to define clauses for predicates exported by
+  // other modules.
+  } else if (decl_context->kind == DeclarationKind ::kExport &&
+             module != clause->declaration->module) {
     Error err(context->display_manager, SubTokenRange());
     err << "Cannot define a clause '" << clause->name
         << "' for predicate exported by another module";
@@ -1484,32 +1487,34 @@ bool ParserImpl::TryMatchPredicateWithDecl(
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
-  interpreter.info.arity = pred->arguments.size();
+  interpreter.info.arity = pred->argument_uses.size();
   const auto id = interpreter.flat;
 
   // There are no forward declarations associated with this ID.
   // We'll report an error and invent one.
   if (!context->declarations.count(id)) {
-    Error err(context->display_manager, SubTokenRange());
-    err << "Predicate '" << pred->name << "/"
-        << pred->arguments.size() << "' has no declaration";
+    Error err(context->display_manager, SubTokenRange(),
+              DisplayRange(
+                  pred->name.Position(), pred->rparen.NextPosition()));
+    err << "Missing declaration for '" << pred->name << "/"
+        << pred->argument_uses.size() << "'";
     context->error_log.Append(std::move(err));
 
     // Recover by adding a local declaration; this will let us keep
     // parsing.
-    auto local = new parse::Impl<ParsedLocal>(module, "local");
+    auto local = new parse::Impl<ParsedLocal>(module, DeclarationKind::kLocal);
     local->directive_pos = pred->name.Position();
-    local->head.name = pred->name;
-    local->head.rparen = pred->rparen;
+    local->name = pred->name;
+    local->rparen = pred->rparen;
 
     parse::Impl<ParsedParameter> *prev_param = nullptr;
-    for (const auto arg_var : pred->arguments) {
+    for (const auto &arg_use : pred->argument_uses) {
       auto param = new parse::Impl<ParsedParameter>;
-      param->name = arg_var->name;
+      param->name = arg_use->used_var->name;
       if (prev_param) {
         prev_param->next = param;
       }
-      local->head.parameters.emplace_back(param);
+      local->parameters.emplace_back(param);
       prev_param = param;
     }
 
@@ -1526,59 +1531,73 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
 
   auto clause = std::make_unique<parse::Impl<ParsedClause>>(module);
 
-  // Start by opportunistically parsing variables.
+  // Start by opportunistically parsing body_variables.
   std::unordered_map<unsigned, parse::Impl<ParsedVariable> *> prev_named_var;
-  std::vector<parse::Impl<ParsedVariable> *> vars;
-  vars.reserve(sub_tokens.size());
 
-  parse::Impl<ParsedVariable> *prev_var = nullptr;
-  auto seen_rparen = false;
-  for (const auto sub_tok : sub_tokens) {
-    parse::Impl<ParsedVariable> *var = nullptr;
-    const auto lexeme = sub_tok.Lexeme();
+  // Creates a variable on-demand.
+  auto create_var = [&] (Token name, bool is_param, bool is_arg) {
+    auto var = new parse::Impl<ParsedVariable>;
+    if (is_param) {
+      if (!clause->head_variables.empty()) {
+        clause->head_variables.back()->next = var;
+      }
+      clause->head_variables.emplace_back(var);
 
-    // Named variabes are grouped together in a usage list.
-    if (Lexeme::kIdentifierVariable == lexeme) {
-      var = new parse::Impl<ParsedVariable>;
-      var->name = sub_tok;
-      var->clause = clause.get();
-      var->is_argument = !seen_rparen;
-      auto &prev = prev_named_var[sub_tok.IdentifierId()];
+    } else {
+      if (!clause->body_variables.empty()) {
+        clause->body_variables.back()->next = var;
+      }
+      clause->body_variables.emplace_back(var);
+    }
+
+    var->name = name;
+    var->clause = clause.get();
+    var->is_parameter = is_param;
+    var->is_argument = is_arg;
+
+    if (Lexeme::kIdentifierVariable == name.Lexeme()) {
+      auto &prev = prev_named_var[name.IdentifierId()];
       if (prev) {
-        prev->next_use = var;
         var->first_use = prev->first_use;
+        prev->next_use_in_clause = var;
+
+        // All body_variables of the same name share the same set of assignment
+        // and comparisons.
+        var->assignment_uses = prev->assignment_uses;
+        var->comparison_uses = prev->comparison_uses;
+        var->parameters = prev->parameters;
+        var->argument_uses = prev->argument_uses;
+
       } else {
         var->first_use = var;
+        std::make_shared<parse::UseList<ParsedAssignment>>().swap(
+            var->assignment_uses);
+        std::make_shared<parse::UseList<ParsedComparison>>().swap(
+            var->comparison_uses);
+        std::make_shared<parse::UseList<ParsedClause>>().swap(
+            var->parameters);
+        std::make_shared<parse::UseList<ParsedPredicate>>().swap(
+            var->argument_uses);
       }
       prev = var;
 
-    } else if (Lexeme::kIdentifierUnnamedVariable == lexeme) {
-      var = new parse::Impl<ParsedVariable>;
-      var->clause = clause.get();
-      var->name = sub_tok;
-
-    // Mark us as having passed a closing parenthesis, which should be the end
-    // of the argument list.
-    } else if (Lexeme::kPuncCloseParen == lexeme) {
-      seen_rparen = true;
+    // Unnamed variable.
+    } else {
+      var->first_use = var;
+      std::make_shared<parse::UseList<ParsedAssignment>>().swap(
+          var->assignment_uses);
+      std::make_shared<parse::UseList<ParsedComparison>>().swap(
+          var->comparison_uses);
+      std::make_shared<parse::UseList<ParsedClause>>().swap(
+          var->parameters);
+      std::make_shared<parse::UseList<ParsedPredicate>>().swap(
+          var->argument_uses);
     }
 
-    // Connect together all variables into a single chain.
-    if (var) {
-      if (prev_var) {
-        prev_var->next = var;
-      }
-      prev_var = var;
-      clause->variables.emplace_back(var);
-    }
-
-    // Indexed to correspond 1:1 with the token.
-    vars.push_back(var);
-  }
+    return var;
+  };
 
   Token tok;
-  size_t i = 0;
-
   int state = 0;
 
   // Approximate state transition diagram for parsing clauses.
@@ -1606,8 +1625,6 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
-
-    const auto tok_index = i++;
 
     const auto lexeme = tok.Lexeme();
     switch (state) {
@@ -1641,7 +1658,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
 
       case 2:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          clause->parameters.push_back(vars[tok_index]);
+          (void) create_var(tok, true, false);
           state = 3;
           continue;
 
@@ -1695,7 +1712,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
 
       case 5:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          lhs = vars[tok_index];
+          lhs = create_var(tok, false, false);
           state = 6;
           continue;
 
@@ -1742,27 +1759,79 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
       case 7:
         // It's a comparison.
         if (Lexeme::kIdentifierVariable == lexeme) {
-          auto compare = new parse::Impl<ParsedComparison>;
-          compare->lhs = lhs;
-          compare->rhs = vars[tok_index];
-          compare->compare_op = compare_op;
-          if (!clause->comparisons.empty()) {
-            clause->comparisons.back()->next = compare;
+          const auto rhs = create_var(tok, false, false);
+
+          // Don't allow comparisons against the same named variable. This
+          // simplifies later checks, and makes sure that iteration over the
+          // comparisons containing a given variable are well-founded.
+          if (lhs->name.IdentifierId() == rhs->name.IdentifierId()) {
+            Error err(context->display_manager, SubTokenRange(),
+                      DisplayRange(lhs->name.Position(),
+                                   rhs->name.NextPosition()));
+            err << "Variable '" << lhs->name
+                << "' cannot appear on both sides of a comparison";
+            context->error_log.Append(std::move(err));
+            return;
           }
-          clause->comparisons.emplace_back(compare);
+
+          const auto compare = new parse::Impl<ParsedComparison>(
+              lhs, rhs, compare_op);
+
+          // Add to the LHS variable's comparison use list.
+          if (!lhs->comparison_uses->empty()) {
+            lhs->comparison_uses->back()->next = &(compare->lhs);
+          }
+          lhs->comparison_uses->push_back(&(compare->lhs));
+
+          // Add to the RHS variable's comparison use list.
+          if (!rhs->comparison_uses->empty()) {
+            rhs->comparison_uses->back()->next = &(compare->rhs);
+          }
+          rhs->comparison_uses->push_back(&(compare->rhs));
+
+          // Add to the clause's comparison list.
+          if (!clause->comparison_uses.empty()) {
+            clause->comparison_uses.back()->next = compare;
+          }
+          clause->comparison_uses.emplace_back(compare);
+
           state = 8;
           continue;
 
         // It's an assignment.
         } else if (Lexeme::kLiteralString == lexeme ||
                    Lexeme::kLiteralNumber == lexeme) {
-          auto assign = new parse::Impl<ParsedAssignment>;
-          assign->lhs = lhs;
+          auto assign = new parse::Impl<ParsedAssignment>(lhs);
+          assign->rhs.assigned_to = lhs;
           assign->rhs.literal = tok;
-          if (!clause->assignments.empty()) {
-            clause->assignments.back()->next = assign;
+
+          // Add to the clause's assignment list.
+          if (!clause->assignment_uses.empty()) {
+            clause->assignment_uses.back()->next = assign;
           }
-          clause->assignments.emplace_back(assign);
+          clause->assignment_uses.emplace_back(assign);
+
+          // Add to the variable's assignment list. We support the list, but
+          // we ensure there is at most one assignment so that it's one less
+          // thing to check later (i.e. equality of assignments).
+          if (!lhs->assignment_uses->empty()) {
+            Error err(context->display_manager, SubTokenRange(),
+                      DisplayRange(lhs->name.Position(), tok.NextPosition()));
+            err << "Variable '" << lhs->name
+                << "' already has an assigned value";
+
+            auto prev_assign = lhs->assignment_uses->back();
+            auto note = err.Note(context->display_manager,
+                                 prev_assign->user.SpellingRange());
+            note << "Previous assignment is here";
+
+            context->error_log.Append(std::move(err));
+
+            // Add to the LHS variable's assignment use list.
+            lhs->assignment_uses->back()->next = &(assign->lhs);
+          }
+          lhs->assignment_uses->push_back(&(assign->lhs));
+
           state = 8;
           continue;
 
@@ -1840,8 +1909,26 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
         }
 
       case 13:
-        if (Lexeme::kIdentifierVariable == lexeme) {
-          pred->arguments.push_back(vars[tok_index]);
+        if (Lexeme::kIdentifierVariable == lexeme ||
+            Lexeme::kIdentifierUnnamedVariable == lexeme) {
+          auto arg_var = create_var(tok, false, true);
+          auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
+              UseKind::kArgument, arg_var, pred.get());
+
+          // Add to this variable's use list.
+          if (!arg_var->argument_uses->empty()) {
+            arg_var->argument_uses->back()->next = use;
+          }
+          arg_var->argument_uses->push_back(use);
+
+          // Link the arguments together.
+          if (!pred->argument_uses.empty()) {
+            pred->argument_uses.back()->used_var->next_var_in_arg_list = \
+                arg_var;
+          }
+
+          pred->argument_uses.emplace_back(use);
+
           state = 14;
           continue;
 
@@ -1866,15 +1953,17 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
             const auto kind = pred->declaration->context->kind;
 
             // We don't allow negation of functors because a requirement that
-            // all argument variables be bound.
+            // all argument body_variables be bound.
             //
             // For messages, we don't allow negations because we think of them
             // as ephemeral, i.e. not even part of the database. They come in
             // to trigger some action, and leave.
-            if (!strcmp(kind, "functor") || !strcmp(kind, "message")) {
+            if (kind == DeclarationKind::kFunctor ||
+                kind == DeclarationKind::kMessage) {
               Error err(context->display_manager, SubTokenRange(),
                         ParsedPredicate(pred.get()).SpellingRange());
-              err << "Cannot negate " << kind << " '" << pred->name << "'";
+              err << "Cannot negate " << pred->declaration->KindName()
+                  << " '" << pred->name << "'";
               context->error_log.Append(std::move(err));
               return;
             }
@@ -1920,7 +2009,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     parse::Impl<ParsedPredicate> *prev_message = nullptr;
     for (auto &used_pred : clause->positive_predicates) {
       auto kind = used_pred->declaration->context->kind;
-      if (strcmp(kind, "message")) {
+      if (kind != DeclarationKind::kMessage) {
         continue;
       }
       if (prev_message) {
@@ -1944,7 +2033,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     for (auto &used_pred : clause->positive_predicates) {
       auto &pred_decl_context = used_pred->declaration->context;
       if (!pred_decl_context->positive_uses.empty()) {
-        pred_decl_context->positive_uses.back()->next_use = used_pred.get();
+        pred_decl_context->positive_uses.back()->next_use_in_clause = used_pred.get();
       }
       pred_decl_context->positive_uses.push_back(used_pred.get());
     }
@@ -1953,10 +2042,16 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     for (auto &used_pred : clause->positive_predicates) {
       auto &pred_decl_context = used_pred->declaration->context;
       if (!pred_decl_context->negated_uses.empty()) {
-        pred_decl_context->negated_uses.back()->next_use = used_pred.get();
+        pred_decl_context->negated_uses.back()->next_use_in_clause = used_pred.get();
       }
       pred_decl_context->positive_uses.push_back(used_pred.get());
     }
+
+    // Link the clause in to the module.
+    if (!module->clauses.empty()) {
+      module->clauses.back()->next_in_module = clause.get();
+    }
+    module->clauses.push_back(clause.get());
 
     // Link the clause in to its respective declaration.
     auto &clause_decl_context = clause->declaration->context;
@@ -2121,7 +2216,7 @@ ParsedModule ParserImpl::ParseDisplay(
     // `declarations` so that they are no longer visible.
     std::vector<uint64_t> to_erase;
     for (auto &entry : context->declarations) {
-      if (!strcmp(entry.second->context->kind, "local")) {
+      if (entry.second->context->kind == DeclarationKind::kLocal) {
         to_erase.push_back(entry.first);
       }
     }
