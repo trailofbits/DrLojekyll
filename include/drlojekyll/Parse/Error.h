@@ -4,6 +4,10 @@
 
 #include <ostream>
 
+#if defined(__linux__)
+#include <memory>
+#endif
+
 namespace hyde {
 
 class DisplayManager;

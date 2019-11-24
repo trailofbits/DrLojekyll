@@ -2,6 +2,11 @@
 
 #include "Parse.h"
 
+#if defined(__linux__)
+#include <string.h>
+#include <cassert>
+#endif
+
 namespace hyde {
 namespace parse {
 

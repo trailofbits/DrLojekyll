@@ -775,8 +775,9 @@ std::error_code FileManager::ForEachPathInDirectory(
         break;
       } else {
         file_name.resize(0);
+        const auto d_name_len = strlen(dep->d_name);
         file_name.insert(file_name.end(), dep->d_name,
-                         &(dep->d_name[dep->d_namlen]));
+                         &(dep->d_name[d_name_len]));
         (void) dir.entry->GetOrAddChild(file_name);
       }
     }

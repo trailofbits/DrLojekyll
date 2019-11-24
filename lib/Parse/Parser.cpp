@@ -17,6 +17,10 @@
 
 #include "Parse.h"
 
+#if defined(__linux__)
+#include <string.h>
+#endif
+
 namespace hyde {
 namespace {
 

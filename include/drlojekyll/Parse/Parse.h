@@ -4,6 +4,10 @@
 
 #include <utility>
 
+#if defined(__linux__)
+#include <functional>
+#endif
+
 #include <drlojekyll/Display/DisplayPosition.h>
 
 namespace hyde {
