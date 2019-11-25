@@ -18,6 +18,8 @@
 
 namespace hyde {
 
+// Wrapper around a `std::ostream` that lets us stream out `Token`s and
+// `DisplayRange`s.
 class OutputStream {
  public:
   ~OutputStream(void) {
@@ -254,7 +256,7 @@ class SIPSGenerator {
     assert(clause == ParsedClause::Containing(assumption));
 
     // The `assumption` predicate is kind of like a left corner in a parse. We
-    // are assuming we have it and that all of its variables are bound, becuase
+    // are assuming we have it and that all of its variables are bound, because
     // with the stepper, we're simulating a bottom-up execution. Thus we want
     // to exclude the assumption from the list of tested predicates that will
     // influence its SIP score and binding environment.
@@ -263,7 +265,9 @@ class SIPSGenerator {
         continue;
       }
 
-      // If any of the predicates that
+      // If any of the predicates are messages, then we will have accounted
+      // for them as initial steps in the stepper, due to us starting with
+      // messages.
       if (ParsedDeclaration::Of(pred).IsMessage()) {
         next_predicates.clear();
         return;
