@@ -56,7 +56,7 @@ const char *Impl<ParsedDeclaration>::KindName(void) const {
 }
 
 // Compute a unique identifier for this declaration.
-uint64_t Impl<ParsedDeclaration>::Id(void) const {
+uint64_t Impl<ParsedDeclaration>::Id(void) const noexcept {
   auto &id = context->id;
   if (id.flat) {
     return id.flat;
@@ -80,7 +80,8 @@ ParsedNodeRange<ParsedClause> Impl<ParsedDeclaration>::Clauses(void) const {
   if (context->clauses.empty()) {
     return parse::ParsedNodeRange<ParsedClause>();
   } else {
-    return parse::ParsedNodeRange<ParsedClause>(context->clauses.front().get());
+    return parse::ParsedNodeRange<ParsedClause>(
+        context->clauses.front().get());
   }
 }
 
@@ -363,6 +364,31 @@ DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
                   impl->rparen.NextPosition());
 }
 
+// Return the ID of this declaration.
+uint64_t ParsedDeclaration::Id(void) const {
+  return impl->Id();
+}
+
+uint64_t ParsedFunctor::Id(void) const noexcept {
+  return impl->Id();
+}
+
+uint64_t ParsedMessage::Id(void) const noexcept {
+  return impl->Id();
+}
+
+uint64_t ParsedQuery::Id(void) const noexcept {
+  return impl->Id();
+}
+
+uint64_t ParsedExport::Id(void) const noexcept {
+  return impl->Id();
+}
+
+uint64_t ParsedLocal::Id(void) const noexcept {
+  return impl->Id();
+}
+
 Token ParsedDeclaration::Name(void) const noexcept {
   return impl->name;
 }
@@ -439,6 +465,14 @@ ParsedDeclaration::PositiveUses(void) const {
 parse::ParsedNodeRange<ParsedPredicate>
 ParsedDeclaration::NegativeUses(void) const {
   return impl->NegativeUses();
+}
+
+unsigned ParsedDeclaration::NumPositiveUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
+unsigned ParsedDeclaration::NumNegatedUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->negated_uses.size());
 }
 
 // Return the declaration associated with a clause. This is the first
@@ -588,6 +622,14 @@ parse::ParsedNodeRange<ParsedPredicate> ParsedQuery::NegativeUses(void) const {
   return impl->NegativeUses();
 }
 
+unsigned ParsedQuery::NumPositiveUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
+unsigned ParsedQuery::NumNegatedUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->negated_uses.size());
+}
+
 const ParsedExport &ParsedExport::From(const ParsedDeclaration &decl) {
   assert(decl.IsExport());
   return reinterpret_cast<const ParsedExport &>(decl);
@@ -618,6 +660,14 @@ parse::ParsedNodeRange<ParsedPredicate> ParsedExport::NegativeUses(void) const {
   return impl->NegativeUses();
 }
 
+unsigned ParsedExport::NumPositiveUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
+unsigned ParsedExport::NumNegatedUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->negated_uses.size());
+}
+
 const ParsedLocal &ParsedLocal::From(const ParsedDeclaration &decl) {
   assert(decl.IsLocal());
   return reinterpret_cast<const ParsedLocal &>(decl);
@@ -643,6 +693,14 @@ parse::ParsedNodeRange<ParsedPredicate> ParsedLocal::PositiveUses(void) const {
 
 parse::ParsedNodeRange<ParsedPredicate> ParsedLocal::NegativeUses(void) const {
   return impl->NegativeUses();
+}
+
+unsigned ParsedLocal::NumPositiveUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
+unsigned ParsedLocal::NumNegatedUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->negated_uses.size());
 }
 
 parse::ParsedNodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
@@ -673,6 +731,10 @@ ParsedFunctor::PositiveUses(void) const {
   return impl->PositiveUses();
 }
 
+unsigned ParsedFunctor::NumPositiveUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
 const ParsedMessage &ParsedMessage::From(const ParsedDeclaration &decl) {
   assert(decl.IsMessage());
   return reinterpret_cast<const ParsedMessage &>(decl);
@@ -699,6 +761,10 @@ parse::ParsedNodeRange<ParsedClause> ParsedMessage::Clauses(void) const {
 parse::ParsedNodeRange<ParsedPredicate>
 ParsedMessage::PositiveUses(void) const {
   return impl->PositiveUses();
+}
+
+unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->positive_uses.size());
 }
 
 DisplayRange ParsedModule::SpellingRange(void) const noexcept {

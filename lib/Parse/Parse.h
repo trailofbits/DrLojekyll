@@ -253,7 +253,7 @@ class Impl<ParsedDeclaration> : public Node<Impl<ParsedDeclaration>> {
   const char *KindName(void) const;
 
   // Compute a unique identifier for this declaration.
-  uint64_t Id(void) const;
+  uint64_t Id(void) const noexcept;
 
   // Return a list of clauses associated with this declaration.
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
