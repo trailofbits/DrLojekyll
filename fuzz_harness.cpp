@@ -13,7 +13,7 @@
 #include <drlojekyll/Parse/Format.h>
 
 
-void ParseAndVerify(const uint8_t *Data) {
+void ParseAndVerify(std::string_view data) {
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log;
   hyde::Parser parser(display_manager, error_log);
@@ -23,25 +23,26 @@ void ParseAndVerify(const uint8_t *Data) {
           2,  //  `num_spaces_in_tab`.
           true, //  `use_tab_stops`.
   };
-  std::stringstream module_stream;
-  module_stream << static_cast<const unsigned char *>(Data);
-  auto module = parser.ParseStream(module_stream, config);
+  auto module = parser.ParseBuffer(data, config);
+
   if (error_log.IsEmpty()) {
     std::stringstream format_stream;
     std::stringstream verify_stream;
     hyde::OutputStream os(display_manager, format_stream);
     hyde::FormatModule(os, module);
-    auto module2 = parser.ParseStream(format_stream, config);
+    const auto format_stream_string = format_stream.str();
+    auto module2 = parser.ParseBuffer(format_stream_string, config);
 
     hyde::OutputStream os2(display_manager, verify_stream);
     hyde::FormatModule(os2, module2);
 
     assert(error_log.IsEmpty());
-    assert(verify_stream.str() == format_stream.str());
+    assert(verify_stream.str() == format_stream_string);
   }
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  ParseAndVerify(Data);
+  std::string_view data(reinterpret_cast<const char *>(Data), Size);
+  ParseAndVerify(data);
   return 0;
 }
