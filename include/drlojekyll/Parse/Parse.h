@@ -9,6 +9,7 @@
 #endif
 
 #include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Lex/Token.h>
 
 namespace hyde {
 
@@ -68,6 +69,12 @@ class ParsedNode {
 template <typename T>
 class ParsedNodeIterator {
  public:
+  ParsedNodeIterator(const ParsedNodeIterator<T> &) noexcept = default;
+  ParsedNodeIterator(ParsedNodeIterator<T> &&) noexcept = default;
+
+  ParsedNodeIterator<T> &operator=(const ParsedNodeIterator<T> &) noexcept = default;
+  ParsedNodeIterator<T> &operator=(ParsedNodeIterator<T> &&) noexcept = default;
+
   T operator*(void) const {
     return T(impl);
   }
@@ -76,6 +83,10 @@ class ParsedNodeIterator {
 
   bool operator==(ParsedNodeIterator<T> that) const {
     return impl == that.impl;
+  }
+
+  bool operator!=(ParsedNodeIterator<T> that) const {
+    return impl != that.impl;
   }
 
   inline ParsedNodeIterator<T> &operator++(void) {
@@ -92,6 +103,12 @@ class ParsedNodeIterator {
  private:
   friend class ParsedNodeRange<T>;
 
+  inline explicit ParsedNodeIterator(Impl<T> *impl_, intptr_t offset_)
+      : impl(impl_),
+        offset(offset_) {}
+
+  ParsedNodeIterator(void) = default;
+
   Impl<T> *impl{nullptr};
   intptr_t offset{0};
 };
@@ -105,16 +122,16 @@ class ParsedNodeRange {
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
   inline ParsedNodeRange(
       Impl<T> *impl_,
-      intptr_t offset_=__builtin_offsetof(Impl<T>, next))
+      intptr_t offset_=static_cast<intptr_t>(__builtin_offsetof(Impl<T>, next)))
       : impl(impl_),
         offset(offset_) {}
 #pragma clang diagnostic pop
 
-  ParsedNodeIterator<T> begin(void) const {
-    return {impl, offset};
+  inline ParsedNodeIterator<T> begin(void) const {
+    return ParsedNodeIterator<T>(impl, offset);
   }
 
-  ParsedNodeIterator<T> end(void) const {
+  inline ParsedNodeIterator<T> end(void) const {
     return {};
   }
 
@@ -132,11 +149,80 @@ class ParsedNodeRange {
 }  // namespace parse
 
 enum class ParameterBinding {
+  kImplicit,
   kFree,
   kBound,
 };
 
+class ParsedAssignment;
 class ParsedClause;
+class ParsedComparison;
+class ParsedPredicate;
+
+// Represents a literal.
+class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
+ public:
+  DisplayRange SpellingRange(void) const noexcept;
+
+  bool IsNumber(void) const noexcept;
+  bool IsString(void) const noexcept;
+
+ protected:
+  friend class ParsedVariable;
+
+  using parse::ParsedNode<ParsedLiteral>::ParsedNode;
+};
+
+// Type of a use.
+enum class UseKind {
+  kArgument,
+  kAssignmentLHS,
+  kComparisonLHS,
+  kComparisonRHS
+};
+
+template <typename T>
+class ParsedUse;
+
+namespace parse {
+
+// Used to access information about use nodes.
+class UseAccessor {
+ private:
+  UseAccessor(void) = delete;
+
+  template <typename>
+  friend class ::hyde::ParsedUse;
+
+  DisplayRange GetUseSpellingRange(void *);
+  UseKind GetUseKind(void *);
+  const void *GetUser(void *);
+};
+}  // namespace
+
+// A variable use.
+template <typename T>
+class ParsedUse : public parse::ParsedNode<ParsedUse<T>> {
+ public:
+  DisplayRange SpellingRange(void) const noexcept {
+    return parse::UseAccessor::GetUseSpellingRange(this->impl);
+  }
+
+  inline UseKind Kind(void) const noexcept {
+    return parse::UseAccessor::GetUseKind(this->impl);
+  }
+
+  inline const T &User(void) const noexcept {
+    return *reinterpret_cast<const T *>(parse::UseAccessor::GetUser(this->impl));
+  }
+
+ protected:
+  using parse::ParsedNode<ParsedUse<T>>::ParsedNode;
+};
+
+using ParsedAssignmentUse = ParsedUse<ParsedAssignment>;
+using ParsedComparisonUse = ParsedUse<ParsedComparison>;
+using ParsedArgumentUse = ParsedUse<ParsedPredicate>;
 
 // Represents a parsed variable.
 class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
@@ -146,17 +232,29 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   // Returns the token corresponding with the name of this variable.
   Token Name(void) const noexcept;
 
-  // Returns `true` if this variable is an argument to its clause.
+  // Returns `true` if this variable is an parameter to its clause.
+  bool IsParameter(void) const noexcept;
+
+  // Returns `true` if this variable is being used as an argument to a
+  // predicate.
   bool IsArgument(void) const noexcept;
+
+  // Returns `true` if this variable, or any other used of this variable,
+  // is assigned to any literals.
+  bool IsAssigned(void) const noexcept;
+
+  // Returns `true` if this variable, or any other use of this variable,
+  // is compared with any other body_variables.
+  bool IsCompared(void) const noexcept;
 
   // Returns `true` if this variable is an unnamed variable.
   bool IsUnnamed(void) const noexcept;
 
-  // Uses of this variable within the clause in which it appears.
-  parse::ParsedNodeRange<ParsedVariable> UsesInClause(void) const noexcept;
+  // Return the variable to which `literal` assigned.
+  static ParsedVariable AssignedTo(ParsedLiteral literal) noexcept;
 
   // Return a unique integer that identifies this variable. Within a given
-  // clause, all variables with the same name will have the same identifier.
+  // clause, all body_variables with the same name will have the same identifier.
   uint64_t Id(void) const noexcept;
 
   // Override `operator==` so that different uses of the same variable appear
@@ -172,24 +270,15 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   }
 
  protected:
+  friend class ParsedAssignment;
   friend class ParsedClause;
+  friend class ParsedComparison;
+  friend class ParsedPredicate;
+
   using parse::ParsedNode<ParsedVariable>::ParsedNode;
 };
 
-// Represents a literal.
-class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
- public:
-  DisplayRange SpellingRange(void) const;
-
-  bool IsNumber(void) const;
-  bool IsString(void) const;
-
- protected:
-  using parse::ParsedNode<ParsedLiteral>::ParsedNode;
-};
-
 enum class ComparisonOperator {
-  kInvalid,
   kEqual,
   kNotEqual,
   kLessThan,
@@ -198,13 +287,16 @@ enum class ComparisonOperator {
   kGreaterThanEqual
 };
 
-// Represents an attempt to unify two variables. E.g. `V1=V2`, `V1<V2`, etc.
+// Represents an attempt to unify two body_variables. E.g. `V1=V2`, `V1<V2`, etc.
 class ParsedComparison : public parse::ParsedNode<ParsedComparison> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
   ParsedVariable LHS(void) const noexcept;
   ParsedVariable RHS(void) const noexcept;
   ComparisonOperator Operator(void) const noexcept;
+
+  // Return the list of all comparisons with `var`.
+  static parse::ParsedNodeRange<ParsedComparisonUse> Using(ParsedVariable var);
 
  protected:
   friend class ParsedClause;
@@ -219,6 +311,9 @@ class ParsedAssignment
   ParsedVariable LHS(void) const noexcept;
   ParsedLiteral RHS(void) const noexcept;
 
+  // Return the list of all assignments to `var`.
+  static parse::ParsedNodeRange<ParsedAssignmentUse> Using(ParsedVariable var);
+
  protected:
   friend class ParsedClause;
   using parse::ParsedNode<ParsedAssignment>::ParsedNode;
@@ -232,8 +327,21 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
   // Returns `true` if this is a negated predicate.
   bool IsNegated(void) const noexcept;
 
+  // Returns the arity of this predicate.
+  unsigned Arity(void) const noexcept;
+
+  // Return the `n`th argument of this predicate.
+  ParsedVariable NthArgument(unsigned n) const noexcept;
+
+  // All variables used as arguments to this predicate.
+  parse::ParsedNodeRange<ParsedVariable> Arguments(void) const;
+
+  // Return the list of all uses of `var` as an argument to a predicate.
+  static parse::ParsedNodeRange<ParsedArgumentUse> Using(ParsedVariable var);
+
  protected:
   friend class ParsedClause;
+  friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedPredicate>::ParsedNode;
 };
 
@@ -257,41 +365,49 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
   Token Type(void) const noexcept;
   ParameterBinding Binding(void) const noexcept;
 
+  // Other declarations of this parameter. This goes and gets the list of
+  // parameters that
+  parse::ParsedNodeRange<ParsedParameter> Redeclarations(void) const;
+
  protected:
   using parse::ParsedNode<ParsedParameter>::ParsedNode;
-};
-
-// The head of a declaration. This includes the name of the clause.
-// Clause head names must be identifiers beginning with a lower case character.
-class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
- public:
-  DisplayRange SpellingRange(void) const noexcept;
-  Token Name(void) const noexcept;
-  parse::ParsedNodeRange<ParsedParameter> Parameters(void) const;
-
- protected:
-  using parse::ParsedNode<ParsedDeclaration>::ParsedNode;
 };
 
 // Represents a parsed clause, which defines either an internal or exported
 // predicate.
 class ParsedClause : public parse::ParsedNode<ParsedClause> {
  public:
+
   // Traverse upward in the AST.
   static ParsedClause Containing(ParsedVariable var) noexcept;
   static ParsedClause Containing(ParsedPredicate pred) noexcept;
   static ParsedClause Containing(ParsedAssignment var) noexcept;
   static ParsedClause Containing(ParsedComparison var) noexcept;
 
+  // Return the total number of uses of `var` in its clause body.
+  static unsigned NumUsesInBody(ParsedVariable var) noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
 
-  // All variables used in the clause. Some variables might be repeated.
+  // Returns the arity of this clause.
+  unsigned Arity(void) const noexcept;
+
+  // Return the `n`th parameter of this clause.
+  ParsedVariable NthParameter(unsigned n) const noexcept;
+
+  // All variables used as parameters to this clause.
+  parse::ParsedNodeRange<ParsedVariable> Parameters(void) const;
+
+  // All variables used in the body of the clause.
   parse::ParsedNodeRange<ParsedVariable> Variables(void) const;
 
-  // All positive positive_predicates in the clause.
+  // All instances of `var` in its clause.
+  static parse::ParsedNodeRange<ParsedVariable> Uses(ParsedVariable var);
+
+  // All positive predicates in the clause.
   parse::ParsedNodeRange<ParsedPredicate> PositivePredicates(void) const;
 
-  // All negated positive_predicates in the clause.
+  // All negated predicates in the clause.
   parse::ParsedNodeRange<ParsedPredicate> NegatedPredicates(void) const;
 
   // All assignments of variables to constant literals.
@@ -301,7 +417,74 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
   parse::ParsedNodeRange<ParsedComparison> Comparisons(void) const;
 
  protected:
+  friend class ParsedDeclaration;
+
   using parse::ParsedNode<ParsedClause>::ParsedNode;
+};
+
+enum class DeclarationKind {
+  kQuery,
+  kMessage,
+  kFunctor,
+  kExport,
+  kLocal
+};
+
+class ParsedQuery;
+class ParsedMessage;
+class ParsedFunctor;
+class ParsedExport;
+class ParsedLocal;
+
+// The head of a declaration. This includes the name of the clause.
+// Clause head names must be identifiers beginning with a lower case character.
+class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
+ public:
+  ParsedDeclaration(const ParsedQuery &query);
+  ParsedDeclaration(const ParsedMessage &message);
+  ParsedDeclaration(const ParsedFunctor &functor);
+  ParsedDeclaration(const ParsedExport &exp);
+  ParsedDeclaration(const ParsedLocal &local);
+
+  DisplayRange SpellingRange(void) const noexcept;
+
+  // Return the name of this declaration as a token.
+  Token Name(void) const noexcept;
+
+  bool IsQuery(void) const noexcept;
+  bool IsMessage(void) const noexcept;
+  bool IsFunctor(void) const noexcept;
+  bool IsExport(void) const noexcept;
+  bool IsLocal(void) const noexcept;
+
+  // The kind of this declaration.
+  DeclarationKind Kind(void) const noexcept;
+
+  // The string version of this kind name.
+  const char *KindName(void) const noexcept;
+
+  // Returns the arity of this declaration.
+  unsigned Arity(void) const noexcept;
+
+  // Return the `n`th parameter of this declaration.
+  ParsedParameter NthParameter(unsigned n) const noexcept;
+
+  parse::ParsedNodeRange<ParsedDeclaration> Redeclarations(void) const;
+  parse::ParsedNodeRange<ParsedParameter> Parameters(void) const;
+  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
+  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
+  parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+
+  // Return the declaration associated with a clause. This is the first
+  // parsed declaration, so it could be in a different module.
+  static ParsedDeclaration Of(ParsedClause clause);
+
+  // Return the declaration associated with a predicate. This is the first
+  // parsed declaration, so it could be in a different module.
+  static ParsedDeclaration Of(ParsedPredicate pred);
+
+ protected:
+  using parse::ParsedNode<ParsedDeclaration>::ParsedNode;
 };
 
 // Represents a rule that has been exported to the user for querying the
@@ -321,14 +504,16 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 // Query declarations and defined clauses can be defined in any module.
 class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
  public:
-  DisplayRange SpellingRange(void) const noexcept;
-  ParsedDeclaration Declaration(void) const noexcept;
+  static const ParsedQuery &From(const ParsedDeclaration &decl);
 
+  DisplayRange SpellingRange(void) const noexcept;
+  parse::ParsedNodeRange<ParsedQuery> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
 
  protected:
+  friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedQuery>::ParsedNode;
 };
 
@@ -342,14 +527,16 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
 // modules. If that functionality is desired, then messages should be used.
 class ParsedExport : public parse::ParsedNode<ParsedExport> {
  public:
-  DisplayRange SpellingRange(void) const noexcept;
-  ParsedDeclaration Declaration(void) const noexcept;
+  static const ParsedExport &From(const ParsedDeclaration &decl);
 
+  DisplayRange SpellingRange(void) const noexcept;
+  parse::ParsedNodeRange<ParsedExport> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
 
  protected:
+  friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedExport>::ParsedNode;
 };
 
@@ -363,15 +550,18 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
 // only the current module.
 class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
  public:
-  DisplayRange SpellingRange(void) const noexcept;
-  ParsedDeclaration Declaration(void) const noexcept;
+  static const ParsedLocal &From(const ParsedDeclaration &decl);
 
+  DisplayRange SpellingRange(void) const noexcept;
+  parse::ParsedNodeRange<ParsedLocal> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
 
  protected:
+  friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedLocal>::ParsedNode;
+  ParsedDeclaration Declaration(void) const;
 };
 
 // Represents a rule that is supplied by a plugin. These rules must have
@@ -385,15 +575,17 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 // checks that `Pred+1 == Succ`.
 class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
  public:
-  DisplayRange SpellingRange(void) const noexcept;
-  ParsedDeclaration Declaration(void) const noexcept;
+  static const ParsedFunctor &From(const ParsedDeclaration &decl);
 
+  DisplayRange SpellingRange(void) const noexcept;
+  parse::ParsedNodeRange<ParsedFunctor> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
 
   // Return the ID of this functor.
   uint64_t Id(void) const;
 
  protected:
+  friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedFunctor>::ParsedNode;
 };
 
@@ -401,19 +593,21 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 // rules as exports. The one key difference between messages and exports is
 // that all parameters are implicitly bound, and only a single message can be
 // used in the dynamic extent of a clause body. Thus binding of parameter
-// variables doesn't need to be specified.
+// body_variables doesn't need to be specified.
 //
 // The same message (albeit with different associated clause bodies) can be
 // (re)defined in any module.
 class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
  public:
-  DisplayRange SpellingRange(void) const noexcept;
-  ParsedDeclaration Declaration(void) const noexcept;
+  static const ParsedMessage &From(const ParsedDeclaration &decl);
 
+  DisplayRange SpellingRange(void) const noexcept;
+  parse::ParsedNodeRange<ParsedMessage> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
 
  protected:
+  friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedMessage>::ParsedNode;
 };
 
@@ -427,11 +621,13 @@ class ParsedModule : public parse::ParsedNode<ParsedModule> {
   // Return the ID of this module. Returns `~0u` if not valid.
   uint64_t Id(void) const noexcept;
 
+  parse::ParsedNodeRange<ParsedQuery> Queries(void) const;
   parse::ParsedNodeRange<ParsedImport> Imports(void) const;
   parse::ParsedNodeRange<ParsedLocal> Locals(void) const;
   parse::ParsedNodeRange<ParsedExport> Exports(void) const;
   parse::ParsedNodeRange<ParsedMessage> Messages(void) const;
   parse::ParsedNodeRange<ParsedFunctor> Functors(void) const;
+  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
 
  protected:
   friend class Parser;
@@ -457,6 +653,14 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
 }  // namespace hyde
 // custom specialization of std::hash can be injected in namespace std
 namespace std {
+
+template<>
+struct hash<::hyde::ParsedModule> {
+  uint64_t operator()(const ::hyde::ParsedModule &module) const noexcept {
+    return module.Id();
+  }
+};
+
 template<>
 struct hash<::hyde::ParsedVariable> {
   uint64_t operator()(const ::hyde::ParsedVariable &var) const noexcept {

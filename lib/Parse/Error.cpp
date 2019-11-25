@@ -25,12 +25,25 @@ static std::string_view TruncateToOneLine(std::string_view range) {
   size_t i = 0;
   for (auto ch : range) {
     if (ch == '\n') {
-      return range.substr(0, i);
+      if (!i) {
+        return TruncateToOneLine(range.substr(1));
+      } else {
+        return range.substr(0, i);
+      }
     } else {
       ++i;
     }
   }
   return range;
+}
+
+static bool IsEmpty(std::string_view range) {
+  for (auto ch : range) {
+    if (ch != ' ' && ch != '\n') {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Generate a carat line that highlights the error.
@@ -361,10 +374,10 @@ void Error::Render(std::ostream &os,
     }
     OutputColored(ss, category_color, category_name);
     OutputColored(ss, color_scheme.message_color, curr->message.str());
-    ss << '\n';
+
     auto highlight_range = TruncateToOneLine(curr->highlight_range);
-    if (!highlight_range.empty()) {
-      ss << "    ";
+    if (!IsEmpty(highlight_range)) {
+      ss << "\n    ";
       OutputColored(ss, color_scheme.source_line_color, highlight_range);
       if (std::string::npos != curr->carat) {
         BeginColor(ss, color_scheme.carat_line_color);
