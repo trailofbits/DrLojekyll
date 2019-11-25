@@ -8,38 +8,38 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(cxx_settings INTERFACE)
 target_include_directories(cxx_settings INTERFACE
-    "${CMAKE_CURRENT_LIST_DIR}/include")
+        "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_compile_options(cxx_settings INTERFACE
-    -Werror -Wall -pedantic -Wconversion 
-    -fsanitize=address,undefined -fno-optimize-sibling-calls
-    -fsanitize-address-use-after-scope
-    -fno-omit-frame-pointer)
+        -Werror -Wall -pedantic -Wconversion
+        -fsanitize=address,undefined -fno-optimize-sibling-calls
+        -fsanitize-address-use-after-scope
+        -fno-omit-frame-pointer)
 
 target_link_options(cxx_settings INTERFACE
-    -fsanitize=address,undefined
-    -Wl,-undefined,dynamic_lookup)
+        -fsanitize=address,undefined
+        -Wl,-undefined,dynamic_lookup)
 
 add_subdirectory(lib)
 
 add_executable(test
-    main.cpp)
+        main.cpp)
 
 target_link_libraries(test
-    parser)
+        parser)
 
 add_executable(libfuzzer_harness
-    fuzz_harness.cpp)
+        fuzz_harness.cpp)
 
 target_link_libraries(libfuzzer_harness
-    parser)
+        parser)
 
 target_compile_options(libfuzzer_harness PRIVATE
-    -Werror -Wall -pedantic -Wconversion -g
-    -fsanitize=address,fuzzer,undefined -fno-optimize-sibling-calls
-    -fsanitize-address-use-after-scope
-    -fno-omit-frame-pointer)
+        -Werror -Wall -pedantic -Wconversion -g
+        -fsanitize=address,fuzzer,undefined -fno-optimize-sibling-calls
+        -fsanitize-address-use-after-scope
+        -fno-omit-frame-pointer)
 
 target_link_options(libfuzzer_harness PRIVATE
-    -fsanitize=address,fuzzer,undefined
-    -Wl,-undefined,dynamic_lookup)
+        -fsanitize=address,fuzzer,undefined
+        -Wl,-undefined,dynamic_lookup)
