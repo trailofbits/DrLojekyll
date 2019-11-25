@@ -45,6 +45,22 @@ class ParsedNode {
     return impl == that.impl;
   }
 
+  inline bool operator!=(const ParsedNode<T> &that) const {
+    return impl != that.impl;
+  }
+
+  inline bool operator<(const ParsedNode<T> &that) const {
+    return impl < that.impl;
+  }
+
+  inline uintptr_t UniqueId(void) const {
+    return reinterpret_cast<uintptr_t>(impl);
+  }
+
+  inline uintptr_t Hash(void) const {
+    return reinterpret_cast<uintptr_t>(impl) >> 3;
+  }
+
  protected:
   friend class Parser;
   friend class ParserImpl;
@@ -444,6 +460,9 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
 
   DisplayRange SpellingRange(void) const noexcept;
 
+  // Return the ID of this declaration.
+  uint64_t Id(void) const;
+
   // Return the name of this declaration as a token.
   Token Name(void) const noexcept;
 
@@ -470,6 +489,13 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+
+  unsigned NumPositiveUses(void) const noexcept;
+  unsigned NumNegatedUses(void) const noexcept;
+
+  inline unsigned NumUses(void) const noexcept {
+    return NumPositiveUses() + NumNegatedUses();
+  }
 
   // Return the declaration associated with a clause. This is the first
   // parsed declaration, so it could be in a different module.
@@ -503,10 +529,19 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
   static const ParsedQuery &From(const ParsedDeclaration &decl);
 
   DisplayRange SpellingRange(void) const noexcept;
+  uint64_t Id(void) const noexcept;
+
   parse::ParsedNodeRange<ParsedQuery> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+
+  unsigned NumPositiveUses(void) const noexcept;
+  unsigned NumNegatedUses(void) const noexcept;
+
+  inline unsigned NumUses(void) const noexcept {
+    return NumPositiveUses() + NumNegatedUses();
+  }
 
  protected:
   friend class ParsedDeclaration;
@@ -526,10 +561,19 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
   static const ParsedExport &From(const ParsedDeclaration &decl);
 
   DisplayRange SpellingRange(void) const noexcept;
+  uint64_t Id(void) const noexcept;
+
   parse::ParsedNodeRange<ParsedExport> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+
+  unsigned NumPositiveUses(void) const noexcept;
+  unsigned NumNegatedUses(void) const noexcept;
+
+  inline unsigned NumUses(void) const noexcept {
+    return NumPositiveUses() + NumNegatedUses();
+  }
 
  protected:
   friend class ParsedDeclaration;
@@ -549,10 +593,19 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
   static const ParsedLocal &From(const ParsedDeclaration &decl);
 
   DisplayRange SpellingRange(void) const noexcept;
+  uint64_t Id(void) const noexcept;
+
   parse::ParsedNodeRange<ParsedLocal> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+
+  unsigned NumPositiveUses(void) const noexcept;
+  unsigned NumNegatedUses(void) const noexcept;
+
+  inline unsigned NumUses(void) const noexcept {
+    return NumPositiveUses() + NumNegatedUses();
+  }
 
  protected:
   friend class ParsedDeclaration;
@@ -574,11 +627,20 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   static const ParsedFunctor &From(const ParsedDeclaration &decl);
 
   DisplayRange SpellingRange(void) const noexcept;
+  uint64_t Id(void) const noexcept;
+
   parse::ParsedNodeRange<ParsedFunctor> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
 
-  // Return the ID of this functor.
-  uint64_t Id(void) const;
+  unsigned NumPositiveUses(void) const noexcept ;
+
+  inline unsigned NumNegatedUses(void) const noexcept {
+    return 0;
+  }
+
+  inline unsigned NumUses(void) const noexcept {
+    return NumPositiveUses();
+  }
 
  protected:
   friend class ParsedDeclaration;
@@ -598,9 +660,21 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   static const ParsedMessage &From(const ParsedDeclaration &decl);
 
   DisplayRange SpellingRange(void) const noexcept;
+  uint64_t Id(void) const noexcept;
+
   parse::ParsedNodeRange<ParsedMessage> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
+
+  unsigned NumPositiveUses(void) const noexcept;
+
+  inline unsigned NumNegatedUses(void) const noexcept {
+    return 0;
+  }
+
+  inline unsigned NumUses(void) const noexcept {
+    return NumPositiveUses();
+  }
 
  protected:
   friend class ParsedDeclaration;
@@ -647,20 +721,71 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
 };
 
 }  // namespace hyde
-// custom specialization of std::hash can be injected in namespace std
+
 namespace std {
 
 template<>
 struct hash<::hyde::ParsedModule> {
-  uint64_t operator()(const ::hyde::ParsedModule &module) const noexcept {
+  inline uint64_t operator()(::hyde::ParsedModule module) const noexcept {
     return module.Id();
   }
 };
 
 template<>
 struct hash<::hyde::ParsedVariable> {
-  uint64_t operator()(const ::hyde::ParsedVariable &var) const noexcept {
+  inline uint64_t operator()(::hyde::ParsedVariable var) const noexcept {
     return var.Id();
   }
 };
+
+template<>
+struct hash<::hyde::ParsedDeclaration> {
+  inline uint64_t operator()(::hyde::ParsedDeclaration decl) const noexcept {
+    return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedFunctor> {
+  inline uint64_t operator()(::hyde::ParsedFunctor decl) const noexcept {
+    return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedMessage> {
+  inline uint64_t operator()(::hyde::ParsedMessage decl) const noexcept {
+    return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedQuery> {
+  inline uint64_t operator()(::hyde::ParsedQuery decl) const noexcept {
+    return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedExport> {
+  inline uint64_t operator()(::hyde::ParsedExport decl) const noexcept {
+    return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedLocal> {
+  inline uint64_t operator()(::hyde::ParsedLocal decl) const noexcept {
+    return decl.Id();
+  }
+};
+
+template<typename T>
+struct hash<::hyde::parse::ParsedNode<T>> {
+  inline uintptr_t operator()(
+      ::hyde::parse::ParsedNode<T> node) const noexcept {
+    return node.Hash();
+  }
+};
+
 }  // namespace std
