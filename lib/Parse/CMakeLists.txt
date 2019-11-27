@@ -1,13 +1,20 @@
 # Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-add_library(parser STATIC
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Error.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/ErrorLog.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parse.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parser.h"
-    Parse.cpp Parse.h
-    Error.cpp ErrorLog.cpp
-    Parser.cpp ErrorLog.cpp Error.h ../../include/drlojekyll/Parse/Type.h)
+function(parser source_dir config)
+    add_library(parser-${config} STATIC
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Error.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/ErrorLog.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parse.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parser.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Type.h"
+        "${source_dir}/Parse.cpp"
+        "${source_dir}/Parse.h"
+        "${source_dir}/Error.cpp"
+        "${source_dir}/ErrorLog.cpp"
+        "${source_dir}/Parser.cpp"
+        "${source_dir}/ErrorLog.cpp"
+        "${source_dir}/Error.h")
 
-target_link_libraries(parser PUBLIC
-    lexer)
+    target_link_libraries(parser-${config} PUBLIC
+        lexer-${config})
+endfunction(parser)
