@@ -277,6 +277,7 @@ class Impl<ParsedDeclaration> : public Node<Impl<ParsedDeclaration>> {
 
   Token name;
   Token rparen;
+  Token complexity_attribute;
   std::vector<std::unique_ptr<Impl<ParsedParameter>>> parameters;
 
  private:

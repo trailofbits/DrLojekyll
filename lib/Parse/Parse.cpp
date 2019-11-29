@@ -333,12 +333,17 @@ Token ParsedParameter::Type(void) const noexcept {
 }
 
 ParameterBinding ParsedParameter::Binding(void) const noexcept {
-  if (impl->opt_binding.Lexeme() == Lexeme::kKeywordBound) {
-    return ParameterBinding::kBound;
-  } else if (impl->opt_binding.Lexeme() == Lexeme::kKeywordFree) {
-    return ParameterBinding::kFree;
-  } else {
-    return ParameterBinding::kImplicit;
+  switch (impl->opt_binding.Lexeme()) {
+    case Lexeme::kKeywordBound:
+      return ParameterBinding::kBound;
+    case Lexeme::kKeywordFree:
+      return ParameterBinding::kFree;
+    case Lexeme::kKeywordAggregate:
+      return ParameterBinding::kAggregate;
+    case Lexeme::kKeywordSummary:
+      return ParameterBinding::kSummary;
+    default:
+      return ParameterBinding::kImplicit;
   }
 }
 
@@ -358,8 +363,11 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->name.Position(),
-                  impl->rparen.NextPosition());
+  return DisplayRange(
+      impl->name.Position(),
+      (impl->complexity_attribute.IsValid() ?
+       impl->complexity_attribute.NextPosition() :
+       impl->rparen.NextPosition()));
 }
 
 // Return the ID of this declaration.
@@ -705,6 +713,14 @@ parse::ParsedNodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
   return impl->Clauses();
 }
 
+bool ParsedFunctor::IsComplex(void) const noexcept {
+  return impl->complexity_attribute.Lexeme() == Lexeme::kKeywordComplex;
+}
+
+bool ParsedFunctor::IsTrivial(void) const noexcept {
+  return impl->complexity_attribute.Lexeme() == Lexeme::kKeywordTrivial;
+}
+
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
   assert(decl.IsFunctor());
   return reinterpret_cast<const ParsedFunctor &>(decl);
@@ -712,7 +728,7 @@ const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
 
 DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
   return DisplayRange(
-      impl->directive_pos, impl->rparen.NextPosition());
+      impl->directive_pos, impl->complexity_attribute.NextPosition());
 }
 
 parse::ParsedNodeRange<ParsedFunctor>

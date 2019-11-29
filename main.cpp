@@ -71,12 +71,18 @@ static void FormatDecl(OutputStream &os, ParsedDeclaration decl) {
       case ParameterBinding::kBound:
         os << "bound ";
         break;
+      case ParameterBinding::kAggregate:
+        os << "aggregate ";
+        break;
+      case ParameterBinding::kSummary:
+        os << "summary ";
+        break;
     }
 
     os << param.Type() << " " << param.Name();
     comma = ", ";
   }
-  os << ")\n";
+  os << ")";
 }
 
 static void FormatPredicate(OutputStream &os, ParsedPredicate pred) {
@@ -156,26 +162,36 @@ void FormatModule(OutputStream &os, ParsedModule module) {
 
   for (auto decl : module.Queries()) {
     FormatDecl(os, decl);
+    os << "\n";
   }
 
   for (auto decl : module.Messages()) {
     FormatDecl(os, decl);
+    os << "\n";
   }
 
   for (auto decl : module.Functors()) {
     FormatDecl(os, decl);
+    if (decl.IsComplex()) {
+      os << " complex\n";
+    } else {
+      os << " trivial\n";
+    }
   }
 
   for (auto decl : module.Exports()) {
     FormatDecl(os, decl);
+    os << "\n";
   }
 
   for (auto decl : module.Locals()) {
     FormatDecl(os, decl);
+    os << "\n";
   }
 
   for (auto clause : module.Clauses()) {
     FormatClause(os, clause);
+    os << "\n";
   }
 }
 
@@ -405,13 +421,15 @@ class SIPSGenerator {
 
               // Make sure we meet the binding constraint for this functor
               // or query.
-              if (ParameterBinding::kBound == redecl_param.Binding() &&
-                  !pred_arg_is_bound) {
+              if (!pred_arg_is_bound &&
+                  (ParameterBinding::kBound == redecl_param.Binding() ||
+                   ParameterBinding::kAggregate == redecl_param.Binding())) {
                 retry = true;
                 goto do_retry;
 
-              } else if (ParameterBinding::kFree == redecl_param.Binding() &&
-                         pred_arg_is_bound) {
+              } else if (pred_arg_is_bound &&
+                         (ParameterBinding::kFree == redecl_param.Binding() ||
+                          ParameterBinding::kSummary == redecl_param.Binding())) {
                 if (decl.IsFunctor()) {
                   retry = true;
                   goto do_retry;
