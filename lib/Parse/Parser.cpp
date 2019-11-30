@@ -2002,67 +2002,89 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     Error err(context->display_manager, SubTokenRange(), next_pos);
     err << "Incomplete clause definition";
     context->error_log.Append(std::move(err));
+    return;
 
-  // Add the local to the module.
-  } else {
+  // Require that every clause has at least one positive predicate. This helps
+  // to enforce range restriction. For example:
+  //
+  //    foo(A) : A < 100.
+  //
+  // Given an unbound variable, when applied, this clause does guarantee a
+  // concrete binding to `A`. Thus, it breaks our SIPS invariant of passing an
+  // unbound variable into a predicate results in it coming out as bound.
+  } else if (clause->positive_predicates.empty()) {
+    Error err(context->display_manager, SubTokenRange());
+    err << "Clauses must contain at least one positive predicate in order to "
+        << "enforce range restriction and the invariant that the application "
+        << "a predicate generates bindings for all unbound arguments";
+    context->error_log.Append(std::move(err));
+    return;
 
-    // Go make sure we don't have two messages inside of a given clause.
-    parse::Impl<ParsedPredicate> *prev_message = nullptr;
-    for (auto &used_pred : clause->positive_predicates) {
-      auto kind = used_pred->declaration->context->kind;
-      if (kind != DeclarationKind::kMessage) {
-        continue;
-      }
-      if (prev_message) {
-        Error err(context->display_manager, SubTokenRange(),
-                  ParsedPredicate(used_pred.get()).SpellingRange());
-        err << "Cannot have direct dependency on more than one messages";
-
-        auto note = err.Note(context->display_manager, SubTokenRange(),
-                             ParsedPredicate(prev_message).SpellingRange());
-        note << "Previous message use is here";
-
-        context->error_log.Append(std::move(err));
-        return;
-
-      } else {
-        prev_message = used_pred.get();
-      }
-    }
-
-    // Link all positive predicate uses into their respective declarations.
-    for (auto &used_pred : clause->positive_predicates) {
-      auto &pred_decl_context = used_pred->declaration->context;
-      if (!pred_decl_context->positive_uses.empty()) {
-        pred_decl_context->positive_uses.back()->next_use_in_clause = used_pred.get();
-      }
-      pred_decl_context->positive_uses.push_back(used_pred.get());
-    }
-
-    // Link all negative predicate uses into their respective declarations.
-    for (auto &used_pred : clause->positive_predicates) {
-      auto &pred_decl_context = used_pred->declaration->context;
-      if (!pred_decl_context->negated_uses.empty()) {
-        pred_decl_context->negated_uses.back()->next_use_in_clause = used_pred.get();
-      }
-      pred_decl_context->positive_uses.push_back(used_pred.get());
-    }
-
-    // Link the clause in to the module.
-    if (!module->clauses.empty()) {
-      module->clauses.back()->next_in_module = clause.get();
-    }
-    module->clauses.push_back(clause.get());
-
-    // Link the clause in to its respective declaration.
-    auto &clause_decl_context = clause->declaration->context;
-    if (!clause_decl_context->clauses.empty()) {
-      clause_decl_context->clauses.back()->next = clause.get();
-    }
-
-    // Add this clause to its decl context.
-    clause_decl_context->clauses.emplace_back(std::move(clause));
   }
+
+  // Go make sure we don't have two messages inside of a given clause. In our
+  // bottom-up execution model, the "inputs" to the system are messages, which
+  // are ephemeral. If we see that as triggering a clause, then we can't
+  // easily account for two messages triggering a given clause, when the
+  // ordering in time of those messages can be unbounded.
+  parse::Impl<ParsedPredicate> *prev_message = nullptr;
+  for (auto &used_pred : clause->positive_predicates) {
+    auto kind = used_pred->declaration->context->kind;
+    if (kind != DeclarationKind::kMessage) {
+      continue;
+    }
+    if (prev_message) {
+      Error err(context->display_manager, SubTokenRange(),
+                ParsedPredicate(used_pred.get()).SpellingRange());
+      err << "Cannot have direct dependency on more than one messages";
+
+      auto note = err.Note(context->display_manager, SubTokenRange(),
+                           ParsedPredicate(prev_message).SpellingRange());
+      note << "Previous message use is here";
+
+      context->error_log.Append(std::move(err));
+      return;
+
+    } else {
+      prev_message = used_pred.get();
+    }
+  }
+
+  // Link all positive predicate uses into their respective declarations.
+  for (auto &used_pred : clause->positive_predicates) {
+    auto &pred_decl_context = used_pred->declaration->context;
+    auto &positive_uses = pred_decl_context->positive_uses;
+    if (!positive_uses.empty()) {
+      positive_uses.back()->next_use_in_clause = used_pred.get();
+    }
+    positive_uses.push_back(used_pred.get());
+  }
+
+  // Link all negative predicate uses into their respective declarations.
+  for (auto &used_pred : clause->positive_predicates) {
+    auto &pred_decl_context = used_pred->declaration->context;
+    auto &negated_uses = pred_decl_context->negated_uses;
+    if (!negated_uses.empty()) {
+      pred_decl_context->negated_uses.back()->next_use_in_clause = used_pred.get();
+    }
+    pred_decl_context->positive_uses.push_back(used_pred.get());
+  }
+
+  // Link the clause in to the module.
+  if (!module->clauses.empty()) {
+    module->clauses.back()->next_in_module = clause.get();
+  }
+  module->clauses.push_back(clause.get());
+
+  // Link the clause in to its respective declaration.
+  auto &clause_decl_context = clause->declaration->context;
+  auto &clauses = clause_decl_context->clauses;
+  if (!clauses.empty()) {
+    clauses.back()->next = clause.get();
+  }
+
+  // Add this clause to its decl context.
+  clauses.emplace_back(std::move(clause));
 }
 
 // Try to parse all of the tokens.

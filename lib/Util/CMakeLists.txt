@@ -1,8 +1,10 @@
 # Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-add_library(util STATIC
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/FileManager.h"
-    FileManager.cpp)
+function(util source_dir config)
+    add_library(util-${config} STATIC
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/FileManager.h"
+        "${source_dir}/FileManager.cpp")
 
-target_link_libraries(util PUBLIC
-    cxx_settings)
+    target_link_libraries(util-${config} PUBLIC
+        ${config})
+endfunction(util)
