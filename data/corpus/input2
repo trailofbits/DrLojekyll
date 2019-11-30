@@ -1,0 +1,12 @@
+; Functor that generates a fresh i64 that is greater than all previously
+; generated ones.
+#functor next_version(free @i64 Version) trivial; Functor that selects that `Val` associated with the maximum `Version`
+; and yields it as a summary value.
+#functor i32_select_max_version(aggregate @i32 Val, aggregate @i64 Version, summary @i32 Val) trivial; Local "storage" for the historical value of a variable.
+#local i32_var_internal(@str Name, @i32 Value, @i64 Version)
+#export get_i32_var(@str Name, @i32 Value)
+#message set_i32_var(@str Name, @i32 NewValue)i32_var_internal(Name, Value, Version)
+  : set_i32_var(Name, Value)
+  , next_version(Version).get_i32_var(Name, Value)
+  : i32_var_internal(Name, HistoricalValue, HistoricalVersion)
+  , i32_select_max_version(HistoricalValue, HistoricalVersion, Value).
