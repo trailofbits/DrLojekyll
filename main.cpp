@@ -246,13 +246,15 @@ class SIPSGenerator {
 
               // Make sure we meet the binding constraint for this functor
               // or query.
-              if (ParameterBinding::kBound == redecl_param.Binding() &&
-                  !pred_arg_is_bound) {
+              if (!pred_arg_is_bound &&
+                  (ParameterBinding::kBound == redecl_param.Binding() ||
+                   ParameterBinding::kAggregate == redecl_param.Binding())) {
                 retry = true;
                 goto do_retry;
 
-              } else if (ParameterBinding::kFree == redecl_param.Binding() &&
-                         pred_arg_is_bound) {
+              } else if (pred_arg_is_bound &&
+                         (ParameterBinding::kFree == redecl_param.Binding() ||
+                          ParameterBinding::kSummary == redecl_param.Binding())) {
                 if (decl.IsFunctor()) {
                   retry = true;
                   goto do_retry;

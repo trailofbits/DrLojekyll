@@ -46,7 +46,9 @@ decl_list:
 clause_list: clause clause_list
 clause_list
 
-// All decls must exist entirely on a single line.
+// Decls generally must fit inside a single line. They are allowed
+// to span lines, but only if the new line characters exist within
+// matched parantheses.
 decl: export_decl
 decl: local_decl
 decl: functor_decl
@@ -55,7 +57,9 @@ decl: message_decl
 export_decl: "#export" atom "(" param_list_0 ")"
 message_decl: "#message" atom "(" param_list_0 ")" "\n"
 local_decl: "#local" atom "(" param_list_1 ")" "\n"
-functor_decl: "#functor" atom "(" param_list_2 ")" "\n"
+
+functor_decl: "#functor" atom "(" param_list_2 ")" "trivial" "\n"
+functor_decl: "#functor" atom "(" param_list_2 ")" "complex" "\n"
 
 param_list_0: type named_var "," param_list_0
 param_list_0: type named_var
@@ -65,8 +69,8 @@ param_list_1: named_var "," param_list_1
 param_list_1: type named_var
 param_list_1: named_var
 
-param_list_2: binding_specifier type named_var "," param_list_2
-param_list_2: binding_specifier type named_var
+param_list_2: binding_specifier_2 type named_var "," param_list_2
+param_list_2: binding_specifier_2 type named_var
 
 type: "@i8"
 type: "@i16"
@@ -88,6 +92,10 @@ var: "_"
 
 binding_specifier: "bound"
 binding_specifier: "free"
+
+binding_specifier_2: binding_specifier
+binding_specifier_2: "aggregate"
+binding_specifier_2: "summary"
 
 clause: atom "(" named_var_list ")" ":" conjunct_list "."
 

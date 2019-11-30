@@ -103,9 +103,18 @@ class ParserImpl {
 
   // Add a declaration or redeclaration to the module.
   template <typename T>
-  parse::Impl<T> *AddDeclaration(
+  parse::Impl<T> *AddDecl(
       parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
       size_t arity);
+
+  // Remove a declaration.
+  template <typename T>
+  void RemoveDecl(std::unique_ptr<parse::Impl<T>> decl);
+
+  template <typename T>
+  void AddDeclAndCheckConsistency(
+      std::vector<std::unique_ptr<parse::Impl<T>>> &decl_list,
+      std::unique_ptr<parse::Impl<T>> decl);
 
   // Try to parse all of the tokens.
   void ParseAllTokens(parse::Impl<ParsedModule> *module);
@@ -152,7 +161,7 @@ class ParserImpl {
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
 template <typename T>
-parse::Impl<T> *ParserImpl::AddDeclaration(
+parse::Impl<T> *ParserImpl::AddDecl(
     parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
     size_t arity) {
 
@@ -367,19 +376,39 @@ bool ParserImpl::ReadNextSubToken(Token &tok_out) {
   }
 }
 
-// Read until the next new line token. This fill sup `sub_tokens` with all
+// Read until the next new line token. If a new line token appears inside of
+// a parenthesis, then it is permitted.This fill sup `sub_tokens` with all
 // read tokens, excluding any whitespace found along the way.
 void ParserImpl::ReadLine(void) {
   Token tok;
+
+  int paren_count = 0;
+  DisplayPosition unmatched_paren;
 
   while (ReadNextToken(tok)) {
     switch (tok.Lexeme()) {
       case Lexeme::kEndOfFile:
         UnreadToken();
         return;
+      case Lexeme::kPuncOpenParen:
+        sub_tokens.push_back(tok);
+        ++paren_count;
+        continue;
+      case Lexeme::kPuncCloseParen:
+        sub_tokens.push_back(tok);
+        if (!paren_count) {
+          unmatched_paren = tok.Position();
+        } else {
+          --paren_count;
+        }
+        continue;
       case Lexeme::kWhitespace:
         if (tok.Line() < tok.NextPosition().Line()) {
-          return;
+          if (paren_count) {
+            continue;
+          } else {
+            return;
+          }
         } else {
           continue;
         }
@@ -389,6 +418,13 @@ void ParserImpl::ReadLine(void) {
         sub_tokens.push_back(tok);
         continue;
     }
+  }
+
+  if (unmatched_paren.IsValid()) {
+    Error err(context->display_manager, SubTokenRange(),
+              unmatched_paren);
+    err << "Unmatched parenthesis";
+    context->error_log.Append(std::move(err));
   }
 }
 
@@ -444,6 +480,101 @@ DisplayRange ParserImpl::SubTokenRange(void) const {
                       sub_tokens.back().NextPosition());
 }
 
+// Remove a declaration.
+template <typename T>
+void ParserImpl::RemoveDecl(std::unique_ptr<parse::Impl<T>> decl) {
+  if (!decl) {
+    return;
+  }
+
+  parse::IdInterpreter interpreter = {};
+  interpreter.info.atom_name_id = decl->name.IdentifierId();
+  interpreter.info.arity = decl->parameters.size();
+  const auto id = interpreter.flat;
+
+  decl->context->redeclarations.pop_back();
+  if (!decl->context->redeclarations.empty()) {
+    decl->context->redeclarations.back()->next_redecl = nullptr;
+
+  } else {
+    context->declarations.erase(id);
+  }
+}
+
+// Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
+// with any prior declarations of the same name.
+template <typename T>
+void ParserImpl::AddDeclAndCheckConsistency(
+    std::vector<std::unique_ptr<parse::Impl<T>>> &decl_list,
+    std::unique_ptr<parse::Impl<T>> decl) {
+
+  if (1 < decl->context->redeclarations.size()) {
+    const auto prev_decl = reinterpret_cast<parse::Impl<T> *>(
+        decl->context->redeclarations.front());
+    const auto num_params = decl->parameters.size();
+    assert(prev_decl->parameters.size() == num_params);
+
+    for (size_t i = 0; i < num_params; ++i) {
+      const auto prev_param = prev_decl->parameters[i].get();
+      const auto curr_param = decl->parameters[i].get();
+      if (prev_param->opt_binding.Lexeme() != curr_param->opt_binding.Lexeme()) {
+        Error err(context->display_manager, SubTokenRange(),
+                  curr_param->opt_binding.SpellingRange());
+        err << "Parameter binding attribute differs";
+
+        auto note = err.Note(
+            context->display_manager,
+            T(prev_decl).SpellingRange(),
+            prev_param->opt_binding.SpellingRange());
+        note << "Previous parameter binding attribute is here";
+
+        context->error_log.Append(std::move(err));
+        RemoveDecl(std::move(decl));
+        return;
+      }
+
+      if (prev_param->opt_type.Lexeme() != curr_param->opt_type.Lexeme()) {
+        Error err(context->display_manager, SubTokenRange(),
+                  curr_param->opt_type.SpellingRange());
+        err << "Parameter type specification differs";
+
+        auto note = err.Note(
+            context->display_manager,
+            T(prev_decl).SpellingRange(),
+            prev_param->opt_type.SpellingRange());
+        note << "Previous type specification is here";
+
+        context->error_log.Append(std::move(err));
+        RemoveDecl(std::move(decl));
+        return;
+      }
+    }
+
+    // Make sure this functor's complexity attribute matches the prior one.
+    if (prev_decl->complexity_attribute.Lexeme() !=
+        decl->complexity_attribute.Lexeme()) {
+      Error err(context->display_manager, SubTokenRange(),
+                decl->complexity_attribute.SpellingRange());
+      err << "Complexity attribute differs";
+
+      auto note = err.Note(
+          context->display_manager,
+          T(prev_decl).SpellingRange(),
+          prev_decl->complexity_attribute.SpellingRange());
+      note << "Previous complexity attribute is here";
+      context->error_log.Append(std::move(err));
+      RemoveDecl(std::move(decl));
+      return;
+    }
+  }
+
+  // We've made it without errors; add it in.
+  if (!decl_list.empty()) {
+    decl_list.back()->next = decl.get();
+  }
+  decl_list.emplace_back(std::move(decl));
+}
+
 // Try to parse `sub_range` as a functor, adding it to `module` if successful.
 void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
   Token tok;
@@ -458,9 +589,9 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
   //               .---------------<-------<------<-------.
   //     0      1  |        2         3       4       5   |
   // -- atom -- ( -+-> bound/free -> type -> var -+-> , --'
-  //                                              |
-  //                                              '-> )
-  //                                                  6
+  //               aggregate/summary              |
+  //                                              '-> ) -> trivial/complex
+  //                                                  6           7
 
   int state = 0;
   std::unique_ptr<parse::Impl<ParsedFunctor>> functor;
@@ -516,10 +647,23 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
           state = 3;
           continue;
 
+        } else if (Lexeme::kKeywordAggregate == lexeme) {
+          param.reset(new parse::Impl<ParsedParameter>);
+          param->opt_binding = tok;
+          state = 3;
+          continue;
+
+        } else if (Lexeme::kKeywordSummary == lexeme) {
+          param.reset(new parse::Impl<ParsedParameter>);
+          param->opt_binding = tok;
+          state = 3;
+          continue;
+
         } else {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
-          err << "Expected binding specifier ('bound' or 'free') in parameter "
+          err << "Expected binding specifier ('bound', 'free', 'aggregate', "
+              << "or 'summary') in parameter "
               << "declaration of functor '" << name << "', " << "but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
@@ -570,14 +714,14 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          functor.reset(AddDeclaration<ParsedFunctor>(
+          functor.reset(AddDecl<ParsedFunctor>(
               module, DeclarationKind::kFunctor, name, params.size()));
           if (!functor) {
             return;
           } else {
+            functor->rparen = tok;
             functor->directive_pos = sub_tokens.front().Position();
             functor->name = name;
-            functor->rparen = tok;
             functor->parameters.swap(params);
             state = 6;
             continue;
@@ -592,7 +736,28 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
           return;
         }
 
-      case 6: {
+      case 6:
+        if (Lexeme::kKeywordTrivial == lexeme) {
+          functor->complexity_attribute = tok;
+          state = 7;
+          continue;
+
+        } else if (Lexeme::kKeywordComplex == lexeme) {
+          functor->complexity_attribute = tok;
+          state = 7;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected either a 'trivial' or 'complex' attribute here, "
+              << "but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          RemoveDecl<ParsedFunctor>(std::move(functor));
+          return;
+        }
+
+      case 7: {
         DisplayRange err_range(
             tok.Position(), sub_tokens.back().NextPosition());
         Error err(context->display_manager, SubTokenRange(),
@@ -600,26 +765,32 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
         err << "Unexpected tokens following declaration of the '"
             << name << "' functor";
         context->error_log.Append(std::move(err));
-        state = 7;  // Ignore further errors, but add the functor in.
+        state = 8;  // Ignore further errors, but add the functor in.
         continue;
       }
 
-      case 7:
+      case 8:
         continue;
     }
   }
 
-  if (state < 6) {
+  if (state == 6) {
+    Error err(context->display_manager, SubTokenRange(), next_pos);
+    err << "Expected either a 'trivial' or 'complex' attribute here";
+    context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+    return;
+
+  } else if (state < 7) {
     Error err(context->display_manager, SubTokenRange(), next_pos);
     err << "Incomplete functor declaration; the declaration must be "
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedFunctor>(std::move(functor));
 
   } else {
-    if (!module->functors.empty()) {
-      module->functors.back()->next = functor.get();
-    }
-    module->functors.emplace_back(std::move(functor));
+    AddDeclAndCheckConsistency<ParsedFunctor>(
+        module->functors, std::move(functor));
   }
 }
 
@@ -750,7 +921,7 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          query.reset(AddDeclaration<ParsedQuery>(
+          query.reset(AddDecl<ParsedQuery>(
               module, DeclarationKind::kQuery, name, params.size()));
           if (!query) {
             return;
@@ -795,11 +966,10 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
 
+    RemoveDecl<ParsedQuery>(std::move(query));
   } else {
-    if (!module->queries.empty()) {
-      module->queries.back()->next = query.get();
-    }
-    module->queries.emplace_back(std::move(query));
+    AddDeclAndCheckConsistency<ParsedQuery>(
+        module->queries, std::move(query));
   }
 }
 
@@ -909,7 +1079,7 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          message.reset(AddDeclaration<ParsedMessage>(
+          message.reset(AddDecl<ParsedMessage>(
               module, DeclarationKind::kMessage, name, params.size()));
           if (!message) {
             return;
@@ -954,11 +1124,11 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
 
+    RemoveDecl<ParsedMessage>(std::move(message));
+
   } else {
-    if (!module->messages.empty()) {
-      module->messages.back()->next = message.get();
-    }
-    module->messages.emplace_back(std::move(message));
+    AddDeclAndCheckConsistency<ParsedMessage>(
+        module->messages, std::move(message));
   }
 }
 
@@ -1074,7 +1244,7 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          exp.reset(AddDeclaration<ParsedExport>(
+          exp.reset(AddDecl<ParsedExport>(
               module, DeclarationKind::kExport, name, params.size()));
           if (!exp) {
             return;
@@ -1118,12 +1288,11 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
     err << "Incomplete export declaration; the declaration must be "
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedExport>(std::move(exp));
 
   } else {
-    if (!module->exports.empty()) {
-      module->exports.back()->next = exp.get();
-    }
-    module->exports.emplace_back(std::move(exp));
+    AddDeclAndCheckConsistency<ParsedExport>(
+        module->exports, std::move(exp));
   }
 }
 
@@ -1239,7 +1408,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          local.reset(AddDeclaration<ParsedLocal>(
+          local.reset(AddDecl<ParsedLocal>(
               module, DeclarationKind::kLocal, name, params.size()));
           if (!local) {
             return;
@@ -1283,13 +1452,12 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
     err << "Incomplete local declaration; the declaration must be "
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedLocal>(std::move(local));
 
   // Add the local to the module.
   } else {
-    if (!module->locals.empty()) {
-      module->locals.back()->next = local.get();
-    }
-    module->locals.emplace_back(std::move(local));
+    AddDeclAndCheckConsistency<ParsedLocal>(
+        module->locals, std::move(local));
   }
 }
 
@@ -1299,7 +1467,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
 // visible. This is partially enforced by ensuring that imports must precede
 // and declarations, and declarations must precede their uses. The result is
 // that we can built up a semantically meaningful parse tree in a single pass.
-void ParserImpl::ParseImport(hyde::parse::Impl<hyde::ParsedModule> *module) {
+void ParserImpl::ParseImport(parse::Impl<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -1400,8 +1568,7 @@ void ParserImpl::ParseImport(hyde::parse::Impl<hyde::ParsedModule> *module) {
 
 // Try to match a clause with a declaration.
 bool ParserImpl::TryMatchClauseWithDecl(
-    hyde::parse::Impl<hyde::ParsedModule> *module,
-    hyde::parse::Impl<hyde::ParsedClause> *clause) {
+    parse::Impl<ParsedModule> *module, parse::Impl<ParsedClause> *clause) {
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
@@ -1483,8 +1650,7 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
 // Try to match a clause with a declaration.
 bool ParserImpl::TryMatchPredicateWithDecl(
-    hyde::parse::Impl<hyde::ParsedModule> *module,
-    hyde::parse::Impl<hyde::ParsedPredicate> *pred) {
+    parse::Impl<ParsedModule> *module, parse::Impl<ParsedPredicate> *pred) {
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();

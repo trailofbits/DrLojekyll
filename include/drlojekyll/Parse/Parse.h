@@ -168,6 +168,8 @@ enum class ParameterBinding {
   kImplicit,
   kFree,
   kBound,
+  kAggregate,
+  kSummary
 };
 
 class ParsedAssignment;
@@ -632,6 +634,8 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  bool IsComplex(void) const noexcept;
+  bool IsTrivial(void) const noexcept;
 
   parse::ParsedNodeRange<ParsedFunctor> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;

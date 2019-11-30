@@ -118,9 +118,15 @@ enum class Lexeme : uint8_t {
   // all have a unique ID.
   kTypeString,
 
-  // Keywords for specifying the
+  // Keywords for specifying the binding of parameters.
   kKeywordBound,
   kKeywordFree,
+  kKeywordAggregate,
+  kKeywordSummary,
+
+  // Specifiers for the level of complexity of a functor.
+  kKeywordTrivial,
+  kKeywordComplex,
 
   // Keyword representing failure of a rule application.
   kKeywordFail,

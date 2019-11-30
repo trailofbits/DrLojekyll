@@ -427,6 +427,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             } else if (impl->data == "#import") {
               interpreter.basic.lexeme = Lexeme::kHashImportModuleStmt;
             }
+          } else if (impl->data == "trivial") {
+            interpreter.basic.lexeme = Lexeme::kKeywordTrivial;
+          } else if (impl->data == "complex") {
+            interpreter.basic.lexeme = Lexeme::kKeywordComplex;
+          } else if (impl->data == "summary") {
+            interpreter.basic.lexeme = Lexeme::kKeywordSummary;
           }
           break;
         case 8:
@@ -436,6 +442,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             } else if (impl->data == "#functor") {
               interpreter.basic.lexeme = Lexeme::kHashFunctorDecl;
             }
+          }
+          break;
+
+        case 9:
+          if (impl->data == "aggregate") {
+            interpreter.basic.lexeme = Lexeme::kKeywordAggregate;
           }
           break;
 
