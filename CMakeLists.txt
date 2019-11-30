@@ -48,7 +48,8 @@ target_link_libraries(asan INTERFACE
 add_library(libfuzzer INTERFACE)
 
 target_compile_options(libfuzzer INTERFACE
-    -fsanitize=fuzzer,address,fuzzer,undefined
+    -Werror -Wall -pedantic -Wconversion -g
+    -fsanitize=fuzzer,address,undefined
     -fsanitize-address-use-after-scope
     -fno-omit-frame-pointer
     -fno-optimize-sibling-calls)

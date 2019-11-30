@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <sstream>
 #include <cassert>
+#include <iostream>
 
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
@@ -26,17 +27,23 @@ void ParseAndVerify(std::string_view data) {
   auto module = parser.ParseBuffer(data, config);
 
   if (error_log.IsEmpty()) {
+    config.name = "verified_harness_module";
+    hyde::DisplayManager v_display_manager;
+    hyde::ErrorLog v_error_log;
+    hyde::Parser v_parser(v_display_manager, v_error_log);
     std::stringstream format_stream;
     std::stringstream verify_stream;
-    hyde::OutputStream os(display_manager, format_stream);
+    hyde::OutputStream os(v_display_manager, format_stream);
     hyde::FormatModule(os, module);
     const auto format_stream_string = format_stream.str();
-    auto module2 = parser.ParseBuffer(format_stream_string, config);
+    std::cerr << format_stream_string;
+    auto module2 = v_parser.ParseBuffer(format_stream_string, config);
 
-    hyde::OutputStream os2(display_manager, verify_stream);
+    hyde::OutputStream os2(v_display_manager, verify_stream);
     hyde::FormatModule(os2, module2);
 
-    assert(error_log.IsEmpty());
+    v_error_log.Render(std::cerr);
+    assert(v_error_log.IsEmpty());
     assert(verify_stream.str() == format_stream_string);
   }
 }
