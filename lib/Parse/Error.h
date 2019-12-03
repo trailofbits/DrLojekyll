@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace hyde {
 
@@ -21,10 +22,10 @@ class ErrorImpl {
   std::string_view path;
   std::stringstream message;
   std::string_view highlight_range;
+  std::vector<bool> is_error;
+  uint64_t hightlight_line{0};
   uint64_t line{0};
   uint64_t column{0};
-  uint64_t underline_length{0};
-  size_t carat{std::string::npos};
 };
 
 }  // namespace hyde

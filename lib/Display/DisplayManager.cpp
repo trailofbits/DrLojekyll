@@ -342,7 +342,20 @@ bool DisplayManager::TryDisplacePosition(
   // Jump forward.
   } else if (0 < num_bytes) {
     const auto disp = static_cast<unsigned>(num_bytes);
-    return display->TryGetPosition(index + disp, &position);
+    if (display->TryGetPosition(index + disp, &position)) {
+      return true;
+    }
+
+    if (!display->TryGetPosition(index + disp - 1, &position)) {
+      return false;
+    }
+
+    // `index + disp - 1` is the last character in the display.
+    interpreter.flat = position.opaque_data;
+    position = DisplayPosition(
+        display_id, interpreter.position.index + 1,
+        interpreter.position.line, interpreter.position.column + 1);
+    return true;
 
   // Jump backward.
   } else {

@@ -296,9 +296,7 @@ enum class ComparisonOperator {
   kEqual,
   kNotEqual,
   kLessThan,
-  kLessThanEqual,
-  kGreaterThan,
-  kGreaterThanEqual
+  kGreaterThan
 };
 
 // Represents an attempt to unify two body_variables. E.g. `V1=V2`, `V1<V2`, etc.
@@ -338,6 +336,9 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
 
+  // Returns `true` if this is a positive predicate.
+  bool IsPositive(void) const noexcept;
+
   // Returns `true` if this is a negated predicate.
   bool IsNegated(void) const noexcept;
 
@@ -357,6 +358,24 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
   friend class ParsedClause;
   friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedPredicate>::ParsedNode;
+};
+
+// Represents a call to an aggregation functor over some predicate. For example:
+//
+//    #functor count_i32(aggregate @i32 Val, summary @i32 NumVals)
+//    #local node(@i32 Id)
+//    #local num_nodes(@i32 NumNodes) : count_i32(Id, NumNodes) over node(Id).
+//
+// The requirement for use is that any summary value
+class ParsedAggregate : public parse::ParsedNode<ParsedAggregate> {
+ public:
+  DisplayRange SpellingRange(void) const noexcept;
+  ParsedPredicate Functor(void) const noexcept;
+  ParsedPredicate Predicate(void) const noexcept;
+
+ protected:
+  friend class ParsedClause;
+  using parse::ParsedNode<ParsedAggregate>::ParsedNode;
 };
 
 // Represents a parsed parameter. The following are valid forms:
@@ -396,7 +415,8 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
   static ParsedClause Containing(ParsedVariable var) noexcept;
   static ParsedClause Containing(ParsedPredicate pred) noexcept;
   static ParsedClause Containing(ParsedAssignment var) noexcept;
-  static ParsedClause Containing(ParsedComparison var) noexcept;
+  static ParsedClause Containing(ParsedComparison cmp) noexcept;
+  static ParsedClause Containing(ParsedAggregate agg) noexcept;
 
   // Return the total number of uses of `var` in its clause body.
   static unsigned NumUsesInBody(ParsedVariable var) noexcept;
@@ -429,6 +449,9 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
   // All comparisons between two variables.
   parse::ParsedNodeRange<ParsedComparison> Comparisons(void) const;
+
+  // All aggregations.
+  parse::ParsedNodeRange<ParsedAggregate> Aggregates(void) const;
 
  protected:
   friend class ParsedDeclaration;
@@ -508,6 +531,7 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   static ParsedDeclaration Of(ParsedPredicate pred);
 
  protected:
+  friend class ParserImpl;
   using parse::ParsedNode<ParsedDeclaration>::ParsedNode;
 };
 
@@ -632,6 +656,7 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   uint64_t Id(void) const noexcept;
   bool IsComplex(void) const noexcept;
   bool IsTrivial(void) const noexcept;
+  bool IsAggregate(void) const noexcept;
 
   parse::ParsedNodeRange<ParsedFunctor> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;

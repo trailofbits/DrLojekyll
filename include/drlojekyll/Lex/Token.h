@@ -124,26 +124,30 @@ enum class Lexeme : uint8_t {
   kKeywordAggregate,
   kKeywordSummary,
 
+  // Keyword for aggregation over some relation.
+  kKeywordOver,
+
   // Specifiers for the level of complexity of a functor.
   kKeywordTrivial,
   kKeywordComplex,
 
-  // Keyword representing failure of a rule application.
-  kKeywordFail,
-
   kPuncOpenParen,
   kPuncCloseParen,
+
+  kPuncOpenBrace,
+  kPuncCloseBrace,
 
   kPuncPeriod,
   kPuncComma,
   kPuncColon,
 
   kPuncEqual,
+
+  // NOTE(pag): We don't supports things like `<=` or `>=` because dealing
+  //            with inequalities is much easier.
   kPuncNotEqual,
   kPuncLess,
-  kPuncLessEqual,
   kPuncGreater,
-  kPuncGreaterEqual,
 
   // Used for negation or cut. When in front of a rule, it is negation,
   // but when on its own, it is a Prolog-like cut operator.
@@ -154,6 +158,7 @@ enum class Lexeme : uint8_t {
 
   // Identifiers, e.g. for atoms, functors, messages, etc.
   kIdentifierAtom,
+  kIdentifierUnnamedAtom,
   kIdentifierVariable,
   kIdentifierUnnamedVariable  // `_`.
 };
@@ -248,6 +253,9 @@ class Token {
   // Return a type token at `position` that occupies `spelling_width`
   // columns of text in the display.
   static Token FakeType(DisplayPosition position, unsigned spelling_width);
+
+  // Return a fake colon at `position`.
+  static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
   DisplayPosition position;
   uint64_t opaque_data{0};

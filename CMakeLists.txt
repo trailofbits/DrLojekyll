@@ -68,7 +68,7 @@ function(main config)
         main.cpp)
 
     target_link_libraries(test-${config}
-        parser-${config})
+        sema-${config})
 endfunction(main)
 
 # Build everything in the `lib` dir using the `dbg`, `asan`, and `libfuzzer`
