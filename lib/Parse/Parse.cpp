@@ -1,5 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include <cstring>
+#include <cassert>
 #include "Parse.h"
 
 #pragma clang diagnostic push
