@@ -18,6 +18,7 @@
 #include <drlojekyll/Parse/Parser.h>
 
 namespace hyde {
+
 // Wrapper around a `std::ostream` that lets us stream out `Token`s and
 // `DisplayRange`s.
 class OutputStream {
@@ -215,5 +216,6 @@ void FormatModule(OutputStream &os, ParsedModule module) {
     os << "\n";
   }
 }
+
 
 }  // namespace hyde

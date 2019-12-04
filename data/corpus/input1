@@ -4,10 +4,3 @@
 transitive_closure(From, To) : directed_edge(From, To).
 transitive_closure(From, To) : transitive_closure(From, X)
                              , transitive_closure(X, To).
-
-#query (bound  , free  )
-#message ( ,  )
-(, ) : (, ).
-
-(, ) : (, ), (, ).
-
