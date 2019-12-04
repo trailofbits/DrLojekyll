@@ -21,6 +21,7 @@
 
 namespace hyde {
 
+
 struct Binding {
   size_t order{std::string::npos};
   std::variant<ParsedPredicate, ParsedParameter, ParsedAssignment, ParsedComparison> binding;
