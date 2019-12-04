@@ -2,8 +2,8 @@
 
 #include "Error.h"
 
-#include <string>
-
+#include <iomanip>
+#include <cassert>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/DisplayPosition.h>
 
@@ -11,64 +11,6 @@
 
 namespace hyde {
 namespace {
-
-static bool HasNewLines(std::string_view range) {
-  for (auto ch : range) {
-    if (ch == '\n') {
-      return true;
-    }
-  }
-  return false;
-}
-
-static std::string_view TruncateToOneLine(std::string_view range) {
-  size_t i = 0;
-  for (auto ch : range) {
-    if (ch == '\n') {
-      if (!i) {
-        return TruncateToOneLine(range.substr(1));
-      } else {
-        return range.substr(0, i);
-      }
-    } else {
-      ++i;
-    }
-  }
-  return range;
-}
-
-static bool IsEmpty(std::string_view range) {
-  for (auto ch : range) {
-    if (ch != ' ' && ch != '\n') {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Generate a carat line that highlights the error.
-static void OutputCaratLine(std::stringstream &ss, std::string_view ref_line,
-                            uint64_t start_offset, uint64_t size) {
-  if ((start_offset + size) > ref_line.size()) {
-    return;
-  }
-
-  ss << '\n';
-
-  ss << "    ";
-
-  for (size_t i = 0; i < start_offset; ++i) {
-    ss << ' ';
-  }
-
-  if (!size) {
-    ss << '^';
-  } else {
-    for (size_t i = 0; i < size; ++i) {
-      ss << '~';
-    }
-  }
-}
 
 static void BeginColor(std::ostream &os, Color color) {
   switch (color) {
@@ -164,6 +106,11 @@ static void OutputColored(std::ostream &os, Color color, uint64_t dec_num) {
   EndColor(os, color);
 }
 
+static DisplayPosition NextByte(const DisplayManager &dm, DisplayPosition pos) {
+  dm.TryDisplacePosition(pos, 1);
+  return pos;
+}
+
 }  // namespace
 
 const ErrorColorScheme Error::kDefaultColorScheme = {
@@ -175,7 +122,8 @@ const ErrorColorScheme Error::kDefaultColorScheme = {
   Color::kGreen,  // `note_category_color`.
   Color::kWhite,  // `message_color`.
   Color::kYellow,  // `source_line_color`.
-  Color::kGreen,  // `carat_line_color`.
+  Color::kBlack,  // `highlight_color`.
+  Color::kPurple,  // `highlight_background_color`.
   Color::kWhite  // `text_color`.
 };
 
@@ -193,7 +141,6 @@ const ErrorStream &ErrorStream::operator<<(const Token &token) const {
   }
   return *this;
 }
-
 
 Error::~Error(void) {}
 
@@ -214,94 +161,50 @@ Error::Error(const DisplayManager &dm, const DisplayPosition &pos)
 Error::Error(const DisplayManager &dm, const DisplayRange &range)
     : Error(dm, range.From()) {
   dm.TryReadData(range, &(impl->highlight_range));
-  impl->highlight_range = TruncateToOneLine(impl->highlight_range);
 }
 
 // An error message related to a highlighted range of tokens, with one
 // character in particular being referenced.
 Error::Error(const DisplayManager &dm, const DisplayRange &range_,
              const DisplayPosition &pos_in_range)
-   : Error(dm, pos_in_range) {
-  auto range = range_;
-
-  int line_diff = 0;
-  int col_diff = 0;
-  int num_bytes = 0;
-  auto has_dist = range.From().TryComputeDistanceTo(
-      pos_in_range, &num_bytes, &line_diff, &col_diff);
-  dm.TryReadData(range, &(impl->highlight_range));
-
-  // Try to find the line containing `sub_range`.
-  if (HasNewLines(impl->highlight_range)) {
-    for (auto i = 0; i < num_bytes; ++i) {
-      auto x = static_cast<unsigned>(num_bytes - i - 1);
-      if (x > impl->highlight_range.size()) {
-        break;
-      } else if (impl->highlight_range[x] != '\n') {
-        continue;
-      }
-
-      auto new_start = pos_in_range;
-      if (dm.TryDisplacePosition(new_start, -i)) {
-        range = DisplayRange(new_start, range.To());
-        has_dist = range.From().TryComputeDistanceTo(
-            pos_in_range, &num_bytes, &line_diff, &col_diff);
-        dm.TryReadData(range, &(impl->highlight_range));
-      }
-
-      break;
-    }
-  }
-
-  if (HasNewLines(impl->highlight_range)) {
-    if (has_dist) {
-
-      if (line_diff) {
-        DisplayRange new_range(pos_in_range, range.To());
-        dm.TryReadData(new_range, &(impl->highlight_range));
-        impl->highlight_range = TruncateToOneLine(impl->highlight_range);
-
-      } else if (0 > col_diff) {
-        DisplayRange new_range(pos_in_range, range.From());
-        dm.TryReadData(new_range, &(impl->highlight_range));
-        impl->highlight_range = TruncateToOneLine(impl->highlight_range);
-
-      } else {
-        impl->highlight_range = TruncateToOneLine(impl->highlight_range);
-        impl->carat = static_cast<size_t>(col_diff);
-      }
-
-    } else {
-      impl->highlight_range = std::string_view();
-      impl->line = range.From().Line();
-      impl->column = ~0u;
-    }
-
-  } else if (has_dist) {
-    if (0 > col_diff || line_diff) {
-      impl->highlight_range = std::string_view();
-
-    } else {
-      impl->carat = static_cast<size_t>(col_diff);
-    }
-
-  } else {
-    impl->highlight_range = std::string_view();
-  }
-}
+   : Error(dm, DisplayRange(pos_in_range, NextByte(dm, pos_in_range))) {}
 
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced.
 Error::Error(const DisplayManager &dm, const DisplayRange &range,
              const DisplayRange &sub_range)
-   : Error(dm, range, sub_range.From()) {
-  int line_diff = 0;
-  int col_diff = 0;
-  if (std::string::npos != impl->carat &&
-      sub_range.TryComputeDistance(nullptr, &line_diff, &col_diff)) {
-    if (!line_diff && 0 < col_diff) {
-      impl->underline_length = static_cast<unsigned>(col_diff);
-    }
+   : Error(dm, sub_range.From()) {
+
+  int num_bytes = 0;
+  if (!dm.TryReadData(range, &(impl->highlight_range))) {
+    return;
+  }
+
+  impl->hightlight_line = range.From().Line();
+  impl->is_error.resize(impl->highlight_range.size() + 1);
+  auto has_dist = range.From().TryComputeDistanceTo(
+      sub_range.From(), &num_bytes, nullptr, nullptr);
+
+  if (!has_dist || 0 >= num_bytes ||
+      static_cast<size_t>(num_bytes) >= impl->is_error.size()) {
+    return;
+  }
+
+  int range_num_bytes = 0;
+  if (!sub_range.TryComputeDistance(
+      &range_num_bytes, nullptr, nullptr)) {
+    return;
+  }
+
+  if (0 >= range_num_bytes) {
+    return;
+  }
+
+  for (auto i = num_bytes;
+       (i < (num_bytes + range_num_bytes) &&
+        static_cast<size_t>(i) < impl->is_error.size());
+       ++i) {
+    impl->is_error[static_cast<size_t>(i)] = true;
   }
 }
 
@@ -375,18 +278,65 @@ void Error::Render(std::ostream &os,
     OutputColored(ss, category_color, category_name);
     OutputColored(ss, color_scheme.message_color, curr->message.str());
 
-    auto highlight_range = TruncateToOneLine(curr->highlight_range);
-    if (!IsEmpty(highlight_range)) {
-      ss << "\n    ";
-      OutputColored(ss, color_scheme.source_line_color, highlight_range);
-      if (std::string::npos != curr->carat) {
-        BeginColor(ss, color_scheme.carat_line_color);
-        OutputCaratLine(ss, highlight_range,
-                        static_cast<unsigned>(curr->carat),
-                        curr->underline_length);
-        EndColor(ss, color_scheme.carat_line_color);
+    if (impl->hightlight_line) {
+      auto print_line = true;
+      auto line_num = impl->hightlight_line;
+      auto i = 0u;
+      for (; i < curr->highlight_range.size(); ++i) {
+        const auto ch = curr->highlight_range[i];
+        if (print_line) {
+          BeginColor(ss, color_scheme.line_color);
+          ss << "\n" << std::setfill(' ') << std::setw(8) << line_num << " | ";
+          print_line = false;
+          ++line_num;
+          EndColor(ss, color_scheme.line_color);
+          BeginColor(ss, color_scheme.source_line_color);
+        }
+
+        if ('\n' == ch) {
+          if (curr->is_error[i]) {
+            EndColor(ss, color_scheme.source_line_color);
+            EndBackgroundColor(ss, color_scheme.background_color);
+            BeginBackgroundColor(ss, color_scheme.highlight_background_color);
+            BeginColor(ss, color_scheme.highlight_color);
+            ss << ' ';
+            EndColor(ss, color_scheme.highlight_color);
+            EndBackgroundColor(ss, color_scheme.highlight_background_color);
+            BeginBackgroundColor(ss, color_scheme.background_color);
+            BeginColor(ss, color_scheme.source_line_color);
+          }
+          print_line = true;
+        } else {
+          if (curr->is_error[i]) {
+            EndColor(ss, color_scheme.source_line_color);
+            EndBackgroundColor(ss, color_scheme.background_color);
+            BeginBackgroundColor(ss, color_scheme.highlight_background_color);
+            BeginColor(ss, color_scheme.highlight_color);
+            ss << ch;
+            EndColor(ss, color_scheme.highlight_color);
+            EndBackgroundColor(ss, color_scheme.highlight_background_color);
+            BeginBackgroundColor(ss, color_scheme.background_color);
+            BeginColor(ss, color_scheme.source_line_color);
+          } else {
+            ss << ch;
+          }
+        }
+      }
+      EndColor(ss, color_scheme.source_line_color);
+
+      // Highlight one character following the end.
+      assert(curr->is_error.size() > curr->highlight_range.size());
+      if (i == curr->highlight_range.size() && curr->is_error[i]) {
+        EndBackgroundColor(ss, color_scheme.background_color);
+        BeginBackgroundColor(ss, color_scheme.highlight_background_color);
+        BeginColor(ss, color_scheme.highlight_color);
+        ss << ' ';
+        EndColor(ss, color_scheme.highlight_color);
+        EndBackgroundColor(ss, color_scheme.highlight_background_color);
+        BeginBackgroundColor(ss, color_scheme.background_color);
       }
     }
+
     EndBackgroundColor(ss, color_scheme.background_color);
     ss << "\n\n";
 

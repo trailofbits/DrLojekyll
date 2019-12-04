@@ -135,6 +135,18 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       ret.opaque_data = interpreter.flat;
       return true;
 
+    case '{':
+      interpreter.basic.lexeme = Lexeme::kPuncOpenBrace;
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '}':
+      interpreter.basic.lexeme = Lexeme::kPuncCloseBrace;
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
     case '.':
       interpreter.basic.lexeme = Lexeme::kPuncPeriod;
       interpreter.basic.spelling_width = 1;
@@ -171,30 +183,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     case '<':
       interpreter.basic.lexeme = Lexeme::kPuncLess;
       interpreter.basic.spelling_width = 1;
-
-      if (impl->reader.TryReadChar(&ch)) {
-        if (ch == '=') {
-          interpreter.basic.lexeme = Lexeme::kPuncLessEqual;
-          interpreter.basic.spelling_width = 2;
-        } else {
-          impl->reader.UnreadChar();
-        }
-      }
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '>':
       interpreter.basic.lexeme = Lexeme::kPuncGreater;
       interpreter.basic.spelling_width = 1;
-
-      if (impl->reader.TryReadChar(&ch)) {
-        if (ch == '=') {
-          interpreter.basic.lexeme = Lexeme::kPuncGreaterEqual;
-          interpreter.basic.spelling_width = 2;
-        } else {
-          impl->reader.UnreadChar();
-        }
-      }
       ret.opaque_data = interpreter.flat;
       return true;
 
@@ -347,6 +341,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.lexeme = Lexeme::kTypeIn;
             interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 8;
+
           } else if (impl->data == "@u8") {
             interpreter.basic.lexeme = Lexeme::kTypeUn;
             interpreter.type.spelling_width = 4;
@@ -355,57 +350,60 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           break;
 
         case 4:
-          if (impl->data == "@f32") {
-            interpreter.basic.lexeme = Lexeme::kTypeFn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 32;
+          if ('@' == impl->data[0]) {
+            if ('f' == impl->data[1]) {
+              if (impl->data == "@f32") {
+                interpreter.basic.lexeme = Lexeme::kTypeFn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 32;
 
-          } else if (impl->data == "@f64") {
-            interpreter.basic.lexeme = Lexeme::kTypeFn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 64;
+              } else if (impl->data == "@f64") {
+                interpreter.basic.lexeme = Lexeme::kTypeFn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 64;
+              }
+            } else if ('i' == impl->data[1]) {
+              if (impl->data == "@i16") {
+                interpreter.basic.lexeme = Lexeme::kTypeIn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 16;
 
-          } else if (impl->data == "@i16") {
-            interpreter.basic.lexeme = Lexeme::kTypeIn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 16;
+              } else if (impl->data == "@i32") {
+                interpreter.basic.lexeme = Lexeme::kTypeIn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 32;
 
-          } else if (impl->data == "@i32") {
-            interpreter.basic.lexeme = Lexeme::kTypeIn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 32;
+              } else if (impl->data == "@i64") {
+                interpreter.basic.lexeme = Lexeme::kTypeIn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 64;
+              }
+            } else if ('u' == impl->data[1]) {
+              if (impl->data == "@u16") {
+                interpreter.basic.lexeme = Lexeme::kTypeUn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 16;
 
-          } else if (impl->data == "@i64") {
-            interpreter.basic.lexeme = Lexeme::kTypeIn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 64;
+              } else if (impl->data == "@u32") {
+                interpreter.basic.lexeme = Lexeme::kTypeUn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 32;
 
-          } else if (impl->data == "@u16") {
-            interpreter.basic.lexeme = Lexeme::kTypeUn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 16;
-
-          } else if (impl->data == "@u32") {
-            interpreter.basic.lexeme = Lexeme::kTypeUn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 32;
-
-          } else if (impl->data == "@u64") {
-            interpreter.basic.lexeme = Lexeme::kTypeUn;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 64;
-
-          } else if (impl->data == "@str") {
-            interpreter.basic.lexeme = Lexeme::kTypeString;
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 64;  // Size of the ID of the string.
-
+              } else if (impl->data == "@u64") {
+                interpreter.basic.lexeme = Lexeme::kTypeUn;
+                interpreter.type.spelling_width = 4;
+                interpreter.type.type_width = 64;
+              }
+            } else if (impl->data == "@str") {
+              interpreter.basic.lexeme = Lexeme::kTypeString;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 64;  // Size of the ID of the string.
+            }
           } else if (impl->data == "free") {
             interpreter.basic.lexeme = Lexeme::kKeywordFree;
 
-          } else if (impl->data == "fail") {
-            interpreter.basic.lexeme = Lexeme::kKeywordFail;
-
+          } else if (impl->data == "over") {
+            interpreter.basic.lexeme = Lexeme::kKeywordOver;
           }
           break;
         case 5:

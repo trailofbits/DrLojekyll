@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cassert>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -43,7 +44,8 @@ struct BindingEnvironment {
 //            incoming phases.
 
 // Pulls together the state associated with a single proof step.
-struct Step {
+class Step : public std::enable_shared_from_this<Step> {
+ public:
   explicit Step(ParsedDeclaration initial_assumption)
       : parent(nullptr),
         env(std::make_shared<BindingEnvironment>()),
@@ -63,9 +65,12 @@ struct Step {
         root(parent->root ? parent->root : parent),
         env(parent->env),
         assumption(additional_assumption),
-        argument_ids(std::move(argument_ids_)) {}
+        argument_ids(std::move(argument_ids_)) {
+    parent->children.push_back(weak_from_this());
+  }
 
   const std::shared_ptr<Step> parent;
+  std::vector<std::weak_ptr<Step>> children;
   const std::shared_ptr<Step> root;
   const std::shared_ptr<BindingEnvironment> env;
   const ParsedDeclaration assumption;
@@ -73,6 +78,70 @@ struct Step {
 
   std::unordered_set<ParsedDeclaration> positive_depends;
   std::unordered_set<ParsedDeclaration> negative_depends;
+};
+
+class Procedure;
+class DataNode;
+class ControlNode;
+
+using ProcedurePtr = std::shared_ptr<Procedure>;
+using DataNodePtr = std::shared_ptr<DataNode>;
+using ControlNodePtr = std::shared_ptr<ControlNode>;
+
+class Procedure : public std::enable_shared_from_this<Procedure> {
+ public:
+  Procedure(std::vector<ParsedParameter> parameters_) {
+
+  }
+ private:
+  std::vector<DataNodePtr> parameters;
+  std::vector<ControlNodePtr> nodes;
+};
+
+class Generator : public Procedure {
+ public:
+
+ private:
+};
+
+class DataNode : public std::enable_shared_from_this<DataNode> {
+ public:
+};
+
+class ParameterNode : public DataNode {
+ public:
+
+ private:
+};
+
+
+// Represents a number or string literal.
+class LiteralNode : public DataNode {
+ public:
+  LiteralNode(Token token_)
+      : token(token_) {}
+
+ private:
+  Token token;
+};
+
+// A node in a control-flow graph.
+class ControlNode : public std::enable_shared_from_this<ControlNode> {
+ public:
+
+ private:
+};
+
+// Represents a call to a procedure.
+class CallNode : public ControlNode {
+ public:
+  CallNode(ProcedurePtr procedure_, std::vector<DataNodePtr> arguments_)
+      : procedure(procedure_),
+        arguments(std::move(arguments_)) {}
+
+ private:
+  const ProcedurePtr procedure;
+  const std::vector<DataNodePtr> arguments;
 };
 
 // Generates different orderings of the predicates that result in different
@@ -531,10 +600,4 @@ int main(int argc, char *argv[]) {
     auto module = parser.ParseStream(linked_module, config);
     return ProcessModule(display_manager, error_log, module);
   }
-  if (!error_log.IsEmpty()) {
-    error_log.Render(std::cerr);
-    return EXIT_FAILURE;
-  }
-
-  return EXIT_SUCCESS;
 }

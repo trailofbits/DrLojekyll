@@ -112,9 +112,7 @@ assignment: var "=" literal
 comparison: var "=" var
 comparison: var "!=" var
 comparison: var "<" var
-comparison: var "<=" var
 comparison: var ">" var
-comparison: var ">=" var
 
 predicate: atom "(" var_list ")"
 negation: "!" predicate

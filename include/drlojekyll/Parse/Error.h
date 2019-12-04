@@ -32,7 +32,8 @@ struct ErrorColorScheme {
   Color note_category_color;
   Color message_color;
   Color source_line_color;
-  Color carat_line_color;
+  Color highlight_color;
+  Color highlight_background_color;
   Color text_color;
 };
 

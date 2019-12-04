@@ -23,13 +23,20 @@ StringPool::StringPool(void)
     : impl(std::make_shared<Impl>()) {}
 
 // Intern a string into the pool, returning its offset in the pool.
-unsigned StringPool::InternString(std::string_view data) const {
-  auto pos = impl->pool.find(data, 1);
-  if (pos == std::string::npos) {
-    pos = impl->pool.size();
+unsigned StringPool::InternString(std::string_view data, bool force) const {
+  if (force) {
+    auto pos = impl->pool.size();
     impl->pool.insert(impl->pool.end(), data.begin(), data.end());
+    return static_cast<unsigned>(pos);
+
+  } else {
+    auto pos = impl->pool.find(data, 1);
+    if (pos == std::string::npos) {
+      pos = impl->pool.size();
+      impl->pool.insert(impl->pool.end(), data.begin(), data.end());
+    }
+    return static_cast<unsigned>(pos);
   }
-  return static_cast<unsigned>(pos);
 }
 
 // Read out some string.

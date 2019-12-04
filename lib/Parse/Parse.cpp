@@ -1,5 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include <cstring>
+#include <cassert>
 #include "Parse.h"
 #include <cstring>
 #include <cassert>
@@ -63,14 +65,22 @@ uint64_t Impl<ParsedDeclaration>::Id(void) const noexcept {
   }
 
   id.flat = ParsedModule(module).Id();
-  id.info.atom_name_id = name.IdentifierId();
+
+  // NOTE(pag): All anonymous declarations and by definition
+  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
+    id.info.atom_name_id = module->next_anon_decl_id++;
+    id.info.atom_name_id = ~id.info.atom_name_id;
+
+  } else {
+    id.info.atom_name_id = name.IdentifierId();
+
+    // If it's not a local thing, then use `~0` for the ID.
+    if (context->kind != DeclarationKind::kLocal) {
+      id.info.module_id = ~0u;
+    }
+  }
   id.info.arity = parameters.size();
   assert(parameters.size() == id.info.arity);
-
-  // If it's not a local thing, then use `~0` for the ID.
-  if (context->kind == DeclarationKind::kLocal) {
-    id.info.module_id = ~0u;
-  }
 
   return id.flat;
 }
@@ -227,12 +237,8 @@ ComparisonOperator ParsedComparison::Operator(void) const noexcept {
       return ComparisonOperator::kNotEqual;
     case Lexeme::kPuncLess:
       return ComparisonOperator::kLessThan;
-    case Lexeme::kPuncLessEqual:
-      return ComparisonOperator::kLessThanEqual;
     case Lexeme::kPuncGreater:
       return ComparisonOperator::kGreaterThan;
-    case Lexeme::kPuncGreaterEqual:
-      return ComparisonOperator::kGreaterThanEqual;
     default:
       assert(false);
       return ComparisonOperator::kEqual;
@@ -291,6 +297,11 @@ DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
       impl->rparen.NextPosition());
 }
 
+// Returns `true` if this is a positive predicate.
+bool ParsedPredicate::IsPositive(void) const noexcept {
+  return impl->negation_pos.IsInvalid();
+}
+
 // Returns `true` if this is a negated predicate.
 bool ParsedPredicate::IsNegated(void) const noexcept {
   return impl->negation_pos.IsValid();
@@ -314,6 +325,18 @@ parse::ParsedNodeRange<ParsedVariable> ParsedPredicate::Arguments(void) const {
       impl->argument_uses.front()->used_var,
       static_cast<intptr_t>(__builtin_offsetof(
           parse::Impl<ParsedVariable>, next_var_in_arg_list)));
+}
+
+DisplayRange ParsedAggregate::SpellingRange(void) const noexcept {
+  return impl->spelling_range;
+}
+
+ParsedPredicate ParsedAggregate::Functor(void) const noexcept {
+  return ParsedPredicate(impl->functor.get());
+}
+
+ParsedPredicate ParsedAggregate::Predicate(void) const noexcept {
+  return ParsedPredicate(impl->predicate.get());
 }
 
 DisplayRange ParsedParameter::SpellingRange(void) const noexcept {
@@ -511,6 +534,10 @@ ParsedClause ParsedClause::Containing(ParsedComparison compare) noexcept {
   return ParsedClause(compare.impl->lhs.used_var->clause);
 }
 
+ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
+  return ParsedClause(agg.impl->functor->clause);
+}
+
 // Return the total number of uses of `var` in its clause body.
 unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
   return static_cast<unsigned>(var.impl->assignment_uses->size() +
@@ -597,6 +624,16 @@ ParsedClause::Comparisons(void) const {
         impl->comparison_uses.front().get());
   } else {
     return parse::ParsedNodeRange<ParsedComparison>();
+  }
+}
+
+// All aggregations.
+parse::ParsedNodeRange<ParsedAggregate> ParsedClause::Aggregates(void) const {
+  if (!impl->aggregates.empty()) {
+    return parse::ParsedNodeRange<ParsedAggregate>(
+        impl->aggregates.front().get());
+  } else {
+    return parse::ParsedNodeRange<ParsedAggregate>();
   }
 }
 
@@ -721,6 +758,10 @@ bool ParsedFunctor::IsComplex(void) const noexcept {
 
 bool ParsedFunctor::IsTrivial(void) const noexcept {
   return impl->complexity_attribute.Lexeme() == Lexeme::kKeywordTrivial;
+}
+
+bool ParsedFunctor::IsAggregate(void) const noexcept {
+  return impl->is_aggregate;
 }
 
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
@@ -850,7 +891,9 @@ parse::ParsedNodeRange<ParsedClause> ParsedModule::Clauses(void) const {
   if (impl->clauses.empty()) {
     return parse::ParsedNodeRange<ParsedClause>();
   } else {
-    return parse::ParsedNodeRange<ParsedClause>(impl->clauses.front());
+    return parse::ParsedNodeRange<ParsedClause>(
+        impl->clauses.front(),
+        __builtin_offsetof(parse::Impl<ParsedClause>, next_in_module));
   }
 }
 

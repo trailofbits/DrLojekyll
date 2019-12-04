@@ -14,7 +14,7 @@ class StringPool {
   StringPool(void);
 
   // Intern a string into the pool, returning its offset in the pool.
-  unsigned InternString(std::string_view data) const;
+  unsigned InternString(std::string_view data, bool force=false) const;
 
   // Read out some string.
   bool TryReadString(

@@ -166,6 +166,14 @@ class Impl<ParsedPredicate> : public Node<Impl<ParsedPredicate>> {
 };
 
 template <>
+class Impl<ParsedAggregate> : public Node<Impl<ParsedAggregate>> {
+ public:
+  DisplayRange spelling_range;
+  std::unique_ptr<Impl<ParsedPredicate>> functor;
+  std::unique_ptr<Impl<ParsedPredicate>> predicate;
+};
+
+template <>
 class Impl<ParsedParameter> : public Node<Impl<ParsedParameter>> {
  public:
   Token opt_binding;
@@ -200,6 +208,7 @@ class Impl<ParsedClause> : public Node<Impl<ParsedClause>> {
 
   std::vector<std::unique_ptr<Impl<ParsedComparison>>> comparison_uses;
   std::vector<std::unique_ptr<Impl<ParsedAssignment>>> assignment_uses;
+  std::vector<std::unique_ptr<Impl<ParsedAggregate>>> aggregates;
   std::vector<std::unique_ptr<Impl<ParsedPredicate>>> positive_predicates;
   std::vector<std::unique_ptr<Impl<ParsedPredicate>>> negated_predicates;
 
@@ -278,6 +287,7 @@ class Impl<ParsedDeclaration> : public Node<Impl<ParsedDeclaration>> {
   Token name;
   Token rparen;
   Token complexity_attribute;
+  bool is_aggregate{false};
   std::vector<std::unique_ptr<Impl<ParsedParameter>>> parameters;
 
  private:
@@ -329,6 +339,9 @@ class Impl<ParsedModule> : public Node<Impl<ParsedModule>> {
       : config(config_) {}
 
   const DisplayConfiguration config;
+
+  // Used by anonymous declarations.
+  unsigned next_anon_decl_id{1};
 
   // Used for the spelling range of the module, as well as getting the
   // module ID (which corresponds with the display ID from which the module

@@ -228,4 +228,21 @@ Token Token::FakeType(DisplayPosition position, unsigned spelling_width) {
   return ret;
 }
 
+// Return a fake colon at `position`.
+Token Token::Synthetic(::hyde::Lexeme lexeme, DisplayRange range) {
+  lex::TokenInterpreter interpreter = {};
+  interpreter.basic.lexeme = lexeme;
+  int num_lines = 0;
+  int num_cols = 0;
+  if (range.TryComputeDistance(nullptr, &num_lines, &num_cols) &&
+      !num_lines && 0 < num_cols) {
+    interpreter.basic.spelling_width = static_cast<uint16_t>(num_cols);
+  }
+
+  Token ret = {};
+  ret.opaque_data = interpreter.flat;
+  ret.position = range.From();
+  return ret;
+}
+
 }  // namespace hyde

@@ -2,10 +2,15 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cassert>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <variant>
+#include <vector>
 
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
@@ -51,8 +56,14 @@ class OutputStream {
 };
 
 static void FormatDecl(OutputStream &os, ParsedDeclaration decl) {
-  os << "#" << decl.KindName() << " " << decl.Name() << "(";
-  auto comma = "";
+  os << "#" << decl.KindName() << " ";
+  auto name = decl.Name();
+  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
+    os << "pred" << decl.Id();
+  } else {
+    os << name;
+  }
+  auto comma = "(";
   for (auto param : decl.Parameters()) {
     os << comma;
 
@@ -82,8 +93,13 @@ static void FormatDecl(OutputStream &os, ParsedDeclaration decl) {
 
 static void FormatPredicate(OutputStream &os, ParsedPredicate pred) {
   auto decl = ParsedDeclaration::Of(pred);
-  os << decl.Name() << "(";
-  auto comma = "";
+  auto name = decl.Name();
+  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
+    os << "pred" << decl.Id();
+  } else {
+    os << name;
+  }
+  auto comma = "(";
   for (auto arg : pred.Arguments()) {
     os << comma;
     os << arg.Name();
@@ -92,11 +108,21 @@ static void FormatPredicate(OutputStream &os, ParsedPredicate pred) {
   os << ")";
 }
 
+static void FormatAggregate(OutputStream &os, ParsedAggregate aggregate) {
+  FormatPredicate(os, aggregate.Functor());
+  os << " over ";
+  FormatPredicate(os, aggregate.Predicate());
+}
+
 static void FormatClause(OutputStream &os, ParsedClause clause) {
   auto decl = ParsedDeclaration::Of(clause);
-
-  os << decl.Name() << "(";
-  auto comma = "";
+  auto name = decl.Name();
+  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
+    os << "pred" << decl.Id();
+  } else {
+    os << name;
+  }
+  auto comma = "(";
   for (auto param : clause.Parameters()) {
     os << comma;
     os << param.Name();
@@ -121,14 +147,8 @@ static void FormatClause(OutputStream &os, ParsedClause clause) {
       case ComparisonOperator::kLessThan:
         os << " < ";
         break;
-      case ComparisonOperator::kLessThanEqual:
-        os << " <= ";
-        break;
       case ComparisonOperator::kGreaterThan:
         os << " > ";
-        break;
-      case ComparisonOperator::kGreaterThanEqual:
-        os << " >= ";
         break;
     }
     os << compare.RHS().Name();
@@ -147,7 +167,13 @@ static void FormatClause(OutputStream &os, ParsedClause clause) {
     comma = ", ";
   }
 
-  os << ".\n";
+  for (auto agg : clause.Aggregates()) {
+    os << comma;
+    FormatAggregate(os, agg);
+    comma = ", ";
+  }
+
+  os << ".";
 }
 
 void FormatModule(OutputStream &os, ParsedModule module) {

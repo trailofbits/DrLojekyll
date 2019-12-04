@@ -73,6 +73,9 @@ class ParserImpl {
   // directives/clauses, which terminate at newlines/periods, respectively.
   std::vector<Token> sub_tokens;
 
+  // Set of previously named variables in the current clause.
+  std::unordered_map<unsigned, parse::Impl<ParsedVariable> *> prev_named_var;
+
   // The index of the next token to read from `tokens`.
   size_t next_tok_index{0};
   size_t next_sub_tok_index{0};
@@ -116,6 +119,12 @@ class ParserImpl {
       std::vector<std::unique_ptr<parse::Impl<T>>> &decl_list,
       std::unique_ptr<parse::Impl<T>> decl);
 
+  // Try to parse an inline predicate.
+  bool ParseAggregatedPredicate(
+      parse::Impl<ParsedModule> *module, parse::Impl<ParsedClause> *clause,
+      std::unique_ptr<parse::Impl<ParsedPredicate>> functor,
+      Token &tok, DisplayPosition &next_pos);
+
   // Try to parse all of the tokens.
   void ParseAllTokens(parse::Impl<ParsedModule> *module);
 
@@ -148,7 +157,17 @@ class ParserImpl {
                                  parse::Impl<ParsedPredicate> *pred);
 
   // Try to parse `sub_range` as a clause.
-  void ParseClause(parse::Impl<ParsedModule> *module);
+  void ParseClause(parse::Impl<ParsedModule> *module,
+                   parse::Impl<ParsedDeclaration> *decl=nullptr);
+
+  // Create a variable.
+  parse::Impl<ParsedVariable> *CreateVariable(
+      parse::Impl<ParsedClause> *clause,
+      Token name, bool is_param, bool is_arg);
+
+  // Create a variable to name a literal.
+  parse::Impl<ParsedVariable> *CreateLiteralVariable(
+      parse::Impl<ParsedClause> *clause, Token tok);
 
   // Parse a display, returning the parsed module.
   //
@@ -283,6 +302,8 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidUnterminatedString:
           error << "Unterminated string literal";
           ignore_line = true;
+          tok = Token::FakeEndOfFile(tok.Position());
+          tokens.push_back(tok);
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
@@ -599,6 +620,9 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
   std::vector<std::unique_ptr<parse::Impl<ParsedParameter>>> params;
 
   DisplayPosition next_pos;
+  Token last_aggregate;
+  Token last_summary;
+  Token last_free;
   Token name;
 
   for (next_pos = tok.NextPosition();
@@ -642,18 +666,21 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kKeywordFree == lexeme) {
+          last_free = tok;
           param.reset(new parse::Impl<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordAggregate == lexeme) {
+          last_aggregate = tok;
           param.reset(new parse::Impl<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordSummary == lexeme) {
+          last_summary = tok;
           param.reset(new parse::Impl<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
@@ -774,6 +801,10 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     }
   }
 
+  if (last_aggregate.IsValid() || last_summary.IsValid()) {
+    functor->is_aggregate = true;
+  }
+
   if (state == 6) {
     Error err(context->display_manager, SubTokenRange(), next_pos);
     err << "Expected either a 'trivial' or 'complex' attribute here";
@@ -788,9 +819,79 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  } else {
+  } else if (last_summary.IsValid() && !last_aggregate.IsValid()) {
+    Error err(context->display_manager, SubTokenRange(),
+              last_summary.SpellingRange());
+    err << "Functor '" << functor->name << "' produces a summary value without "
+        << "any corresponding aggregate inputs";
+    context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+
+  } else if (last_aggregate.IsValid() && !last_summary.IsValid()) {
+    Error err(context->display_manager, SubTokenRange(),
+              last_aggregate.SpellingRange());
+    err << "Functor '" << functor->name << "' aggregates values without "
+        << "producing any corresponding summary outputs";
+    context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+
+  // Don't let us have both summary and free variables.
+  //
+  // NOTE(pag): For now we permit aggregate and bound variables.
+  } else if (last_summary.IsValid() && last_free.IsValid()) {
+    Error err(context->display_manager, SubTokenRange(),
+              last_summary.SpellingRange());
+    err << "Functor cannot bind both summary and free variables";
+    auto note = err.Note(context->display_manager, SubTokenRange(),
+                         last_free.SpellingRange());
+    note << "Free variable is here";
+    context->error_log.Append(std::move(err));
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+
+  // If this is a redeclaration, check it for consistency against prior
+  // declarations. Functors require special handling for things like aggregate/
+  // summary parameters.
+  } else if (1 < functor->context->redeclarations.size()) {
+
+    const auto redecl = functor->context->redeclarations[0];
+    auto i = 0u;
+
+    for (auto &redecl_param : redecl->parameters) {
+      const auto &param = functor->parameters[i++];
+      const auto lexeme = param->opt_binding.Lexeme();
+      const auto redecl_lexeme = redecl_param->opt_binding.Lexeme();
+
+      // We can redeclare bound/free parameters with other variations of
+      // bound/free, but the aggregation binding types must be equivalent.
+      if (lexeme != redecl_lexeme &&
+          ((lexeme == Lexeme::kKeywordAggregate ||
+            lexeme == Lexeme::kKeywordSummary) ||
+           (redecl_lexeme == Lexeme::kKeywordAggregate ||
+            redecl_lexeme == Lexeme::kKeywordSummary))) {
+
+        Error err(context->display_manager, SubTokenRange(),
+                  ParsedParameter(param.get()).SpellingRange());
+        err << "Aggregation functor '" << functor->name
+            << "' cannot be re-declared with different aggregation semantics.";
+
+        auto note = err.Note(
+            context->display_manager,
+            ParsedDeclaration(redecl).SpellingRange(),
+            ParsedParameter(redecl_param.get()).SpellingRange());
+        note << "Conflicting aggregation parameter is specified here";
+
+        context->error_log.Append(std::move(err));
+        RemoveDecl<ParsedFunctor>(std::move(functor));
+        return;
+      }
+    }
+
+    // Do generic consistency checking.
     AddDeclAndCheckConsistency<ParsedFunctor>(
         module->functors, std::move(functor));
+
+  } else {
+    module->functors.emplace_back(std::move(functor));
   }
 }
 
@@ -1693,62 +1794,43 @@ bool ParserImpl::TryMatchPredicateWithDecl(
   return true;
 }
 
-// Try to parse `sub_range` as a clause.
-void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
+// Create a variable.
+parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
+    parse::Impl<ParsedClause> *clause,
+    Token name, bool is_param, bool is_arg) {
 
-  auto clause = std::make_unique<parse::Impl<ParsedClause>>(module);
-
-  // Start by opportunistically parsing body_variables.
-  std::unordered_map<unsigned, parse::Impl<ParsedVariable> *> prev_named_var;
-
-  // Creates a variable on-demand.
-  auto create_var = [&] (Token name, bool is_param, bool is_arg) {
-    auto var = new parse::Impl<ParsedVariable>;
-    if (is_param) {
-      if (!clause->head_variables.empty()) {
-        clause->head_variables.back()->next = var;
-      }
-      clause->head_variables.emplace_back(var);
-
-    } else {
-      if (!clause->body_variables.empty()) {
-        clause->body_variables.back()->next = var;
-      }
-      clause->body_variables.emplace_back(var);
+  auto var = new parse::Impl<ParsedVariable>;
+  if (is_param) {
+    if (!clause->head_variables.empty()) {
+      clause->head_variables.back()->next = var;
     }
+    clause->head_variables.emplace_back(var);
 
-    var->name = name;
-    var->clause = clause.get();
-    var->is_parameter = is_param;
-    var->is_argument = is_arg;
+  } else {
+    if (!clause->body_variables.empty()) {
+      clause->body_variables.back()->next = var;
+    }
+    clause->body_variables.emplace_back(var);
+  }
 
-    if (Lexeme::kIdentifierVariable == name.Lexeme()) {
-      auto &prev = prev_named_var[name.IdentifierId()];
-      if (prev) {
-        var->first_use = prev->first_use;
-        prev->next_use_in_clause = var;
+  var->name = name;
+  var->clause = clause;
+  var->is_parameter = is_param;
+  var->is_argument = is_arg;
 
-        // All body_variables of the same name share the same set of assignment
-        // and comparisons.
-        var->assignment_uses = prev->assignment_uses;
-        var->comparison_uses = prev->comparison_uses;
-        var->parameters = prev->parameters;
-        var->argument_uses = prev->argument_uses;
+  if (Lexeme::kIdentifierVariable == name.Lexeme()) {
+    auto &prev = prev_named_var[name.IdentifierId()];
+    if (prev) {
+      var->first_use = prev->first_use;
+      prev->next_use_in_clause = var;
 
-      } else {
-        var->first_use = var;
-        std::make_shared<parse::UseList<ParsedAssignment>>().swap(
-            var->assignment_uses);
-        std::make_shared<parse::UseList<ParsedComparison>>().swap(
-            var->comparison_uses);
-        std::make_shared<parse::UseList<ParsedClause>>().swap(
-            var->parameters);
-        std::make_shared<parse::UseList<ParsedPredicate>>().swap(
-            var->argument_uses);
-      }
-      prev = var;
+      // All body_variables of the same name share the same set of assignment
+      // and comparisons.
+      var->assignment_uses = prev->assignment_uses;
+      var->comparison_uses = prev->comparison_uses;
+      var->parameters = prev->parameters;
+      var->argument_uses = prev->argument_uses;
 
-    // Unnamed variable.
     } else {
       var->first_use = var;
       std::make_shared<parse::UseList<ParsedAssignment>>().swap(
@@ -1760,9 +1842,54 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
       std::make_shared<parse::UseList<ParsedPredicate>>().swap(
           var->argument_uses);
     }
+    prev = var;
 
-    return var;
-  };
+  // Unnamed variable.
+  } else {
+    var->first_use = var;
+    std::make_shared<parse::UseList<ParsedAssignment>>().swap(
+        var->assignment_uses);
+    std::make_shared<parse::UseList<ParsedComparison>>().swap(
+        var->comparison_uses);
+    std::make_shared<parse::UseList<ParsedClause>>().swap(
+        var->parameters);
+    std::make_shared<parse::UseList<ParsedPredicate>>().swap(
+        var->argument_uses);
+  }
+
+  return var;
+}
+
+// Create a variable to name a literal.
+parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
+    parse::Impl<ParsedClause> *clause, Token tok) {
+  auto lhs = CreateVariable(
+      clause,
+      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
+      false, false);
+
+  auto assign = new parse::Impl<ParsedAssignment>(lhs);
+  assign->rhs.literal = tok;
+  assign->rhs.assigned_to = lhs;
+
+  // Add to the clause's assignment list.
+  if (!clause->assignment_uses.empty()) {
+    clause->assignment_uses.back()->next = assign;
+  }
+  clause->assignment_uses.emplace_back(assign);
+
+  // Add to the variable's assignment list. We support the list, but for
+  // these auto-created variables, there can be only one use.
+  lhs->assignment_uses->push_back(&(assign->lhs));
+  return lhs;
+}
+
+// Try to parse `sub_range` as a clause.
+void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
+                             parse::Impl<ParsedDeclaration> *decl) {
+
+  auto clause = std::make_unique<parse::Impl<ParsedClause>>(module);
+  prev_named_var.clear();
 
   Token tok;
   int state = 0;
@@ -1776,16 +1903,18 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
   //                        '-> ) ---> : -+-+                                  |
   //                                      | |                                  |
   //                                      | +------+-> atom -> ( -+-> var -+-. |
-  //                                      | '-> ! -'              '--- , <-' | |
-  //                       .------->------'                                  | |
-  //                       |                                                 | |
-  //                       '-- , <--+-----+------------ ) <------------------' |
+  //                                      | '-> ! -'-<-------.    '--- , <-' | |
+  //                       .------->------'        .-> over -'               | |
+  //                       |                       |                         | |
+  //                       '-- , <--+-----+--------+--- ) <------------------' |
   //                                |     '------------------------------------'
   //                           . <--'
   //
   DisplayPosition next_pos;
   DisplayPosition negation_pos;
+  parse::Impl<ParsedVariable> *arg = nullptr;
   parse::Impl<ParsedVariable> *lhs = nullptr;
+  parse::Impl<ParsedVariable> *rhs = nullptr;
   Token compare_op;
   std::unique_ptr<parse::Impl<ParsedPredicate>> pred;
 
@@ -1796,7 +1925,8 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     const auto lexeme = tok.Lexeme();
     switch (state) {
       case 0:
-        if (Lexeme::kIdentifierAtom == lexeme) {
+        if (Lexeme::kIdentifierAtom == lexeme ||
+            Lexeme::kIdentifierUnnamedAtom == lexeme) {
           clause->name = tok;
           state = 1;
           continue;
@@ -1809,6 +1939,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
           context->error_log.Append(std::move(err));
           return;
         }
+
       case 1:
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
@@ -1825,7 +1956,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
 
       case 2:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          (void) create_var(tok, true, false);
+          (void) CreateVariable(clause.get(), tok, true, false);
           state = 3;
           continue;
 
@@ -1845,8 +1976,14 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          if (!TryMatchClauseWithDecl(module, clause.get())) {
+          if (decl) {
+            clause->declaration = decl;
+            state = 4;
+            continue;
+
+          } else if (!TryMatchClauseWithDecl(module, clause.get())) {
             return;
+
           } else {
             state = 4;
             continue;
@@ -1879,7 +2016,13 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
 
       case 5:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          lhs = create_var(tok, false, false);
+          lhs = CreateVariable(clause.get(), tok, false, false);
+          state = 6;
+          continue;
+
+        } else if (Lexeme::kLiteralString == lexeme ||
+                   Lexeme::kLiteralNumber == lexeme) {
+          lhs = CreateLiteralVariable(clause.get(), tok);
           state = 6;
           continue;
 
@@ -1908,9 +2051,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
         if (Lexeme::kPuncEqual == lexeme ||
             Lexeme::kPuncNotEqual == lexeme ||
             Lexeme::kPuncLess == lexeme ||
-            Lexeme::kPuncLessEqual == lexeme ||
-            Lexeme::kPuncGreater == lexeme ||
-            Lexeme::kPuncGreaterEqual == lexeme) {
+            Lexeme::kPuncGreater == lexeme) {
           state = 7;
           continue;
 
@@ -1924,10 +2065,19 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
         }
 
       case 7:
-        // It's a comparison.
-        if (Lexeme::kIdentifierVariable == lexeme) {
-          const auto rhs = create_var(tok, false, false);
+        rhs = nullptr;
 
+        // Allow comparisons with literals by converting the literals into
+        // variables and assigning values to those variables.
+        if (Lexeme::kLiteralString == lexeme ||
+            Lexeme::kLiteralNumber == lexeme) {
+          rhs = CreateLiteralVariable(clause.get(), tok);
+
+        } else if (Lexeme::kIdentifierVariable == lexeme) {
+          rhs = CreateVariable(clause.get(), tok, false, false);
+        }
+
+        if (rhs) {
           // Don't allow comparisons against the same named variable. This
           // simplifies later checks, and makes sure that iteration over the
           // comparisons containing a given variable are well-founded.
@@ -1961,43 +2111,6 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
             clause->comparison_uses.back()->next = compare;
           }
           clause->comparison_uses.emplace_back(compare);
-
-          state = 8;
-          continue;
-
-        // It's an assignment.
-        } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme) {
-          auto assign = new parse::Impl<ParsedAssignment>(lhs);
-          assign->rhs.assigned_to = lhs;
-          assign->rhs.literal = tok;
-
-          // Add to the clause's assignment list.
-          if (!clause->assignment_uses.empty()) {
-            clause->assignment_uses.back()->next = assign;
-          }
-          clause->assignment_uses.emplace_back(assign);
-
-          // Add to the variable's assignment list. We support the list, but
-          // we ensure there is at most one assignment so that it's one less
-          // thing to check later (i.e. equality of assignments).
-          if (!lhs->assignment_uses->empty()) {
-            Error err(context->display_manager, SubTokenRange(),
-                      DisplayRange(lhs->name.Position(), tok.NextPosition()));
-            err << "Variable '" << lhs->name
-                << "' already has an assigned value";
-
-            auto prev_assign = lhs->assignment_uses->back();
-            auto note = err.Note(context->display_manager,
-                                 prev_assign->user.SpellingRange());
-            note << "Previous assignment is here";
-
-            context->error_log.Append(std::move(err));
-
-            // Add to the LHS variable's assignment use list.
-            lhs->assignment_uses->back()->next = &(assign->lhs);
-          }
-          lhs->assignment_uses->push_back(&(assign->lhs));
 
           state = 8;
           continue;
@@ -2076,22 +2189,31 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
         }
 
       case 13:
-        if (Lexeme::kIdentifierVariable == lexeme ||
-            Lexeme::kIdentifierUnnamedVariable == lexeme) {
-          auto arg_var = create_var(tok, false, true);
+        arg = nullptr;
+
+        // Convert literals into variables, just-in-time.
+        if (Lexeme::kLiteralString == lexeme ||
+            Lexeme::kLiteralNumber == lexeme) {
+          arg = CreateLiteralVariable(clause.get(), tok);
+
+        } else if (Lexeme::kIdentifierVariable == lexeme ||
+                   Lexeme::kIdentifierUnnamedVariable == lexeme) {
+          arg = CreateVariable(clause.get(), tok, false, true);
+        }
+
+        if (arg) {
           auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
-              UseKind::kArgument, arg_var, pred.get());
+              UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
-          if (!arg_var->argument_uses->empty()) {
-            arg_var->argument_uses->back()->next = use;
+          if (!arg->argument_uses->empty()) {
+            arg->argument_uses->back()->next = use;
           }
-          arg_var->argument_uses->push_back(use);
+          arg->argument_uses->push_back(use);
 
           // Link the arguments together.
           if (!pred->argument_uses.empty()) {
-            pred->argument_uses.back()->used_var->next_var_in_arg_list = \
-                arg_var;
+            pred->argument_uses.back()->used_var->next_var_in_arg_list = arg;
           }
 
           pred->argument_uses.emplace_back(use);
@@ -2102,7 +2224,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
         } else {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
-          err << "Expected variable name here as argument to predicate '"
+          err << "Expected variable or literal here as argument to predicate '"
               << pred->name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -2116,7 +2238,25 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
             return;
           }
 
-          if (pred->negation_pos.IsValid()) {
+          // If it's an aggregating functor then we need to follow-up with
+          // the `over` keyword.
+          auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred.get()));
+          if (pred_decl.IsFunctor() &&
+              ParsedFunctor::From(pred_decl).IsAggregate()) {
+
+            if (pred->negation_pos.IsValid()) {
+              Error err(context->display_manager, SubTokenRange(),
+                        ParsedPredicate(pred.get()).SpellingRange());
+              err << "Cannot negate aggregating functor '" << pred->name << "'";
+              context->error_log.Append(std::move(err));
+              return;
+            }
+
+            state = 15;  // Go look for an `over`.
+            continue;
+
+          } else if (pred->negation_pos.IsValid()) {
+
             const auto kind = pred->declaration->context->kind;
 
             // We don't allow negation of functors because a requirement that
@@ -2139,16 +2279,17 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
               clause->negated_predicates.back()->next = pred.get();
             }
             clause->negated_predicates.emplace_back(std::move(pred));
+            state = 8;
+            continue;
 
           } else {
             if (!clause->positive_predicates.empty()) {
               clause->positive_predicates.back()->next = pred.get();
             }
             clause->positive_predicates.emplace_back(std::move(pred));
+            state = 8;
+            continue;
           }
-
-          state = 8;
-          continue;
 
         } else if (Lexeme::kPuncComma == lexeme) {
           state = 13;
@@ -2161,6 +2302,26 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
           context->error_log.Append(std::move(err));
           return;
         }
+
+      case 15:
+        if (Lexeme::kKeywordOver == lexeme) {
+          if (!ParseAggregatedPredicate(
+              module, clause.get(), std::move(pred), tok, next_pos)) {
+            return;
+
+          } else {
+            state = 8;
+            continue;
+          }
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected 'over' after usage of aggregate functor '"
+              << pred->name << "', but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return;
+        }
     }
   }
 
@@ -2169,23 +2330,6 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     err << "Incomplete clause definition";
     context->error_log.Append(std::move(err));
     return;
-
-  // Require that every clause has at least one positive predicate. This helps
-  // to enforce range restriction. For example:
-  //
-  //    foo(A) : A < 100.
-  //
-  // Given an unbound variable, when applied, this clause does guarantee a
-  // concrete binding to `A`. Thus, it breaks our SIPS invariant of passing an
-  // unbound variable into a predicate results in it coming out as bound.
-  } else if (clause->positive_predicates.empty()) {
-    Error err(context->display_manager, SubTokenRange());
-    err << "Clauses must contain at least one positive predicate in order to "
-        << "enforce range restriction and the invariant that the application "
-        << "a predicate generates bindings for all unbound arguments";
-    context->error_log.Append(std::move(err));
-    return;
-
   }
 
   // Go make sure we don't have two messages inside of a given clause. In our
@@ -2231,9 +2375,9 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
     auto &pred_decl_context = used_pred->declaration->context;
     auto &negated_uses = pred_decl_context->negated_uses;
     if (!negated_uses.empty()) {
-      pred_decl_context->negated_uses.back()->next_use_in_clause = used_pred.get();
+      negated_uses.back()->next_use_in_clause = used_pred.get();
     }
-    pred_decl_context->positive_uses.push_back(used_pred.get());
+    negated_uses.push_back(used_pred.get());
   }
 
   // Link the clause in to the module.
@@ -2251,6 +2395,330 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module) {
 
   // Add this clause to its decl context.
   clauses.emplace_back(std::move(clause));
+}
+
+// Try to parse the predicate application following a use of an aggregating
+// functor.
+bool ParserImpl::ParseAggregatedPredicate(
+    parse::Impl<ParsedModule> *module,
+    parse::Impl<ParsedClause> *clause,
+    std::unique_ptr<parse::Impl<ParsedPredicate>> functor,
+    Token &tok, DisplayPosition &next_pos) {
+
+  auto state = 0;
+
+  std::unique_ptr<parse::Impl<ParsedLocal>> anon_decl;
+  std::unique_ptr<parse::Impl<ParsedPredicate>> pred;
+  std::unique_ptr<parse::Impl<ParsedParameter>> anon_param;
+
+  parse::Impl<ParsedVariable> *arg = nullptr;
+
+  // Build up a token list representing a synthetic clause definition
+  // associated with `anon_decl`.
+  std::vector<Token> anon_clause_toks;
+
+  DisplayPosition last_pos;
+
+  int brace_count = 1;
+
+  for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
+    const auto lexeme = tok.Lexeme();
+    switch (state) {
+      case 0:
+        // An inline predicate; we'll need to invent a declaration and
+        // clause for it.
+        if (Lexeme::kPuncOpenParen == lexeme) {
+          anon_decl.reset(new parse::Impl<ParsedLocal>(
+              module, DeclarationKind::kLocal));
+          anon_decl->context->redeclarations.push_back(anon_decl.get());
+          anon_decl->directive_pos = tok.Position();
+          anon_decl->name = Token::Synthetic(
+              Lexeme::kIdentifierUnnamedAtom, tok.SpellingRange());
+          assert(anon_decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom);
+          anon_clause_toks.push_back(anon_decl->name);
+
+          assert(tok.Lexeme() == Lexeme::kPuncOpenParen);
+          anon_clause_toks.push_back(tok);
+          pred.reset(new parse::Impl<ParsedPredicate>(module, clause));
+          pred->declaration = anon_decl.get();
+          pred->name = anon_decl->name;
+          state = 1;
+          continue;
+
+        // Direct application.
+        } else if (Lexeme::kIdentifierAtom == lexeme) {
+          pred.reset(new parse::Impl<ParsedPredicate>(module, clause));
+          pred->name = tok;
+          state = 6;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected an opening parenthesis or atom (predicate name) "
+              << "here for inline predicate, but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      case 1:
+        if (tok.IsType()) {
+          anon_param.reset(new parse::Impl<ParsedParameter>);
+          anon_param->opt_type = tok;
+          state = 2;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected a type name for parameter to inline aggregate "
+              << "clause, but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      case 2:
+        if (Lexeme::kIdentifierVariable == lexeme) {
+          anon_param->name = tok;
+          if (!anon_decl->parameters.empty()) {
+            anon_decl->parameters.back()->next = anon_param.get();
+          }
+          anon_decl->parameters.emplace_back(std::move(anon_param));
+
+          assert(tok.Lexeme() == Lexeme::kIdentifierVariable);
+          anon_clause_toks.push_back(tok);
+
+          arg = CreateVariable(clause, tok, false, true);
+          auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
+              UseKind::kArgument, arg, pred.get());
+
+          // Add to this variable's use list.
+          if (!arg->argument_uses->empty()) {
+            arg->argument_uses->back()->next = use;
+          }
+          arg->argument_uses->push_back(use);
+
+          // Link the arguments together.
+          if (!pred->argument_uses.empty()) {
+            pred->argument_uses.back()->used_var->next_var_in_arg_list = arg;
+          }
+
+          pred->argument_uses.emplace_back(use);
+
+          state = 3;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected variable name here  for parameter to inline "
+              << "aggregate clause, but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      case 3:
+        if (Lexeme::kPuncComma == lexeme) {
+          state = 1;
+          assert(tok.Lexeme() == Lexeme::kPuncComma);
+          anon_clause_toks.push_back(tok);
+          continue;
+
+        } else if (Lexeme::kPuncCloseParen == lexeme) {
+          state = 4;
+          anon_decl->rparen = tok;
+          pred->rparen = tok;
+          assert(tok.Lexeme() == Lexeme::kPuncCloseParen);
+          anon_clause_toks.push_back(tok);
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected comma or closing parenthesis here for parameter list"
+              << " to inline aggregate clause, but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      case 4:
+        if (Lexeme::kPuncOpenBrace == lexeme) {
+          const auto colon = Token::Synthetic(
+              Lexeme::kPuncColon, tok.SpellingRange());
+          assert(colon.Lexeme() == Lexeme::kPuncColon);
+          anon_clause_toks.push_back(colon);
+          state = 5;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected opening brace here for body of inline aggregate "
+              << "clause, but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      // Collect all tokens in the anonymous block as our clause body up until
+      // the next matching closing brace, then move on.
+      case 5:
+        if (Lexeme::kPuncCloseBrace == lexeme) {
+          --brace_count;
+
+          if (!brace_count) {
+            last_pos = tok.NextPosition();
+            anon_clause_toks.push_back(
+                Token::Synthetic(Lexeme::kPuncPeriod, tok.SpellingRange()));
+
+            auto prev_next_sub_tok_index = next_sub_tok_index;
+            next_sub_tok_index = 0;
+            sub_tokens.swap(anon_clause_toks);
+            decltype(prev_named_var) prev_prev_named_var;
+            prev_prev_named_var.swap(prev_named_var);
+
+            // Go try to parse the synthetic clause body, telling about our
+            // synthetic declaration head.
+            ParseClause(module, anon_decl.get());
+
+            next_sub_tok_index = prev_next_sub_tok_index;
+            sub_tokens.swap(anon_clause_toks);
+            prev_prev_named_var.swap(prev_named_var);
+
+            // Unconditionally add the declaration.
+            if (!module->locals.empty()) {
+              module->locals.back()->next = anon_decl.get();
+            }
+            module->locals.emplace_back(std::move(anon_decl));
+
+            // It doesn't matter if we parsed it as a clause or not, we always
+            // add the declaration, so we may as well permit further parsing.
+            goto done;
+
+          } else {
+            anon_clause_toks.push_back(tok);
+            continue;
+          }
+
+        } else {
+          if (Lexeme::kPuncOpenBrace == lexeme) {
+            ++brace_count;
+          }
+          anon_clause_toks.push_back(tok);
+          continue;
+        }
+
+      case 6:
+        if (Lexeme::kPuncOpenParen == lexeme) {
+          state = 7;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected opening parenthesis here to test predicate '"
+              << pred->name << "' used in aggregation, but got '"
+              << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      case 7:
+        arg = nullptr;
+
+        // Convert literals into variables, just-in-time.
+        if (Lexeme::kLiteralString == lexeme ||
+            Lexeme::kLiteralNumber == lexeme) {
+          arg = CreateLiteralVariable(clause, tok);
+
+        } else if (Lexeme::kIdentifierVariable == lexeme ||
+                   Lexeme::kIdentifierUnnamedVariable == lexeme) {
+          arg = CreateVariable(clause, tok, false, true);
+        }
+
+        if (arg) {
+          auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
+              UseKind::kArgument, arg, pred.get());
+
+          // Add to this variable's use list.
+          if (!arg->argument_uses->empty()) {
+            arg->argument_uses->back()->next = use;
+          }
+          arg->argument_uses->push_back(use);
+
+          // Link the arguments together.
+          if (!pred->argument_uses.empty()) {
+            pred->argument_uses.back()->used_var->next_var_in_arg_list = arg;
+          }
+
+          pred->argument_uses.emplace_back(use);
+
+          state = 8;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected variable or literal here as argument to predicate '"
+              << pred->name << "' used in aggregation, but got '"
+              << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+
+      case 8:
+        if (Lexeme::kPuncCloseParen == lexeme) {
+          last_pos = tok.NextPosition();
+          pred->rparen = tok;
+
+          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+            return false;
+          }
+
+          // If it's an aggregating functor then we need to follow-up with
+          // the `over` keyword.
+          auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred.get()));
+          if (pred_decl.IsFunctor() &&
+              ParsedFunctor::From(pred_decl).IsAggregate()) {
+
+            Error err(context->display_manager, SubTokenRange(),
+                      ParsedPredicate(pred.get()).SpellingRange());
+
+            err << "Cannot aggregate an aggregating functor '" << pred->name
+                << "', try using inline clauses instead";
+            context->error_log.Append(std::move(err));
+            return false;
+          }
+
+          goto done;
+
+        } else if (Lexeme::kPuncComma == lexeme) {
+          state = 7;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected comma or period, but got '" << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return false;
+        }
+    }
+  }
+
+done:
+
+  std::unique_ptr<parse::Impl<ParsedAggregate>> agg(
+      new parse::Impl<ParsedAggregate>);
+  agg->spelling_range = DisplayRange(functor->name.Position(), last_pos);
+  agg->functor = std::move(functor);
+  agg->predicate = std::move(pred);
+
+  if (!clause->aggregates.empty()) {
+    clause->aggregates.back()->next = agg.get();
+  }
+
+  clause->aggregates.emplace_back(std::move(agg));
+  return true;
 }
 
 // Try to parse all of the tokens.
