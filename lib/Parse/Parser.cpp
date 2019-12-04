@@ -276,6 +276,8 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidDirective:
           error << "Unrecognized declaration '" << tok << "'";
           ignore_line = true;
+          tok = Token::FakeEndOfFile(tok.Position());
+          tokens.push_back(tok);
           break;
 
         case Lexeme::kInvalidNumber:
