@@ -3,7 +3,7 @@
 #include "Error.h"
 
 #include <iomanip>
-
+#include <cassert>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/DisplayPosition.h>
 

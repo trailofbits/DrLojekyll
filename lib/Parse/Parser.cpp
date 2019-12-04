@@ -2,6 +2,7 @@
 
 #include <drlojekyll/Parse/Parser.h>
 
+#include <cstring>
 #include <cassert>
 #include <sstream>
 #include <unordered_map>
@@ -301,6 +302,8 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidUnterminatedString:
           error << "Unterminated string literal";
           ignore_line = true;
+          tok = Token::FakeEndOfFile(tok.Position());
+          tokens.push_back(tok);
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
