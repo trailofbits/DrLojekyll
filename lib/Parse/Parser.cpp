@@ -276,8 +276,6 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidDirective:
           error << "Unrecognized declaration '" << tok << "'";
           ignore_line = true;
-          tok = Token::FakeEndOfFile(tok.Position());
-          tokens.push_back(tok);
           break;
 
         case Lexeme::kInvalidNumber:
@@ -304,8 +302,6 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidUnterminatedString:
           error << "Unterminated string literal";
           ignore_line = true;
-          tok = Token::FakeEndOfFile(tok.Position());
-          tokens.push_back(tok);
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
@@ -334,6 +330,10 @@ void ParserImpl::LexAllTokens(Display display) {
       if (!ignore_line) {
         tokens.push_back(tok);
       }
+
+      //  Ensures that an EOF token is always at the end of a file
+      tokens.push_back(Token::FakeEndOfFile(tok.Position()));
+
 
     } else if (Lexeme::kEndOfFile == lexeme) {
       tokens.push_back(tok);
@@ -745,6 +745,11 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           functor.reset(AddDecl<ParsedFunctor>(
               module, DeclarationKind::kFunctor, name, params.size()));
+          
+          if (last_aggregate.IsValid() || last_summary.IsValid()) {
+              functor->is_aggregate = true;
+          }
+
           if (!functor) {
             return;
           } else {
@@ -801,10 +806,6 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
       case 8:
         continue;
     }
-  }
-
-  if (last_aggregate.IsValid() || last_summary.IsValid()) {
-    functor->is_aggregate = true;
   }
 
   if (state == 6) {
