@@ -1,51 +1,31 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <sstream>
-#include <string>
-#include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
-#include <variant>
-#include <vector>
-#include <cstdlib>
-#include <cstring>
-#include <cassert>
-
-
-#include <drlojekyll/Display/DisplayConfiguration.h>
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
+
 
 namespace hyde {
 
-  OutputStream::~OutputStream(void) {
-    os.flush();
-  }
+OutputStream::~OutputStream(void) {
+  os.flush();
+}
 
-  OutputStream::OutputStream(DisplayManager &display_manager_, std::ostream &os_)
-      : display_manager(display_manager_),
-        os(os_) {}
+OutputStream::OutputStream(DisplayManager &display_manager_, std::ostream &os_)
+  : display_manager(display_manager_),
+    os(os_) {}
 
-  OutputStream &OutputStream::operator<<(Token tok) {
-    std::string_view data;
-    (void) display_manager.TryReadData(tok.SpellingRange(), &data);
-    os << data;
-    return *this;
-  }
+OutputStream &OutputStream::operator<<(Token tok) {
+  std::string_view data;
+  (void) display_manager.TryReadData(tok.SpellingRange(), &data);
+  os << data;
+  return *this;
+}
 
-  OutputStream &OutputStream::operator<<(DisplayRange range) {
-    std::string_view data;
-    (void) display_manager.TryReadData(range, &data);
-    os << data;
-    return *this;
-  }
-
-  template <typename T>
-  OutputStream &OutputStream::operator<<(T val) {
-    os << val;
-    return *this;
-  }
+OutputStream &OutputStream::operator<<(DisplayRange range) {
+  std::string_view data;
+  (void) display_manager.TryReadData(range, &data);
+  os << data;
+  return *this;
+}
 
 OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
   *this << "#" << decl.KindName() << " ";
@@ -81,6 +61,14 @@ OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
     comma = ", ";
   }
   *this << ")";
+  if (decl.IsFunctor()) {
+    auto functor = ParsedFunctor::From(decl);
+    if (functor.IsComplex()) {
+      *this << " complex\n";
+    } else {
+      *this << " trivial\n";
+    }
+  }
   return *this;
 }
 
@@ -162,14 +150,8 @@ OutputStream &OutputStream::operator<<(ParsedModule module) {
     *this << decl << "\n";
   }
 
-  for (auto decl : module.Functors()) {
-    ParsedDeclaration pdecl = decl;
-    *this << pdecl;
-    if (decl.IsComplex()) {
-      *this << " complex\n";
-    } else {
-      *this << " trivial\n";
-    }
+  for (ParsedDeclaration decl : module.Functors()) {
+    *this << decl;
   }
 
   for (ParsedDeclaration decl : module.Exports()) {

@@ -1,9 +1,9 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 
-#include <iostream>
+#include <ostream>
 #include <drlojekyll/Display/DisplayManager.h>
-
+#include <drlojekyll/Parse/Parser.h>
 
 #pragma once
 
@@ -32,7 +32,11 @@ class OutputStream {
   OutputStream &operator<<(ParsedModule module);
 
   template <typename T>
-  OutputStream &operator<<(T val);
+  OutputStream &operator<<(T val) {
+    os << val;
+    return *this;
+  }
+
 
  private:
   DisplayManager display_manager;
