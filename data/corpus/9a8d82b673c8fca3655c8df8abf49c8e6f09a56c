@@ -1,0 +1,5 @@
+#ount_i32(aggregate @i32te @i32 X, summaXs) trivial
+#local nal
+#local node(@i32 Ie)
+#local num_nodes(À–32 Num)
+num_nodes(Num) : count_i3um) over (@i32 Id) { node(Id) }u

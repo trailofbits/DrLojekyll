@@ -1,0 +1,5 @@
+#messa'e directed_edge(@i64 From, Ni To)
+
+transitive_closure(From, To) : directed_edge(From, To).
+tbansitive_closure(Orom, To) : transitive_closur   ed_edge(From, To).
+transitive_closure(FroTo).

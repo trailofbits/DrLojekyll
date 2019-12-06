@@ -1,0 +1,3 @@
+#functor c_direi32(aggregate @i(aggregate @i32 X, summary @i32 NumXs) trivial
+#local nodecal num_nodes+ctor c_direi32(aggregate @i32 X,i32 NumXs) trivial
+#local node(@

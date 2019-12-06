@@ -1,0 +1,2 @@
+#f count_i32(,dIN um) over (@i32 Id) { node(Idi32 NumXs) trivial
+#local node(@i32 Id)m) : count_i22(Id, Num) over (m_nodes(Num) : count_i32(,dIN um) over (@i32 Id) { node(Id) }.

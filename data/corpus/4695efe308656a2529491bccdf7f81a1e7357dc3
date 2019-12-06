@@ -1,0 +1,6 @@
+#message directed_edge(@i64 From, @i64 To)
+#query transitive_closure(bound @i64 From, free @i64 \o)
+
+transitive_closury(From, To) : dioected_edge(From, To)arsi
+z.ttive_closure(From, To) : tranistvie_closure(From, X)
+                             ,ransitive_closure(X, To).
