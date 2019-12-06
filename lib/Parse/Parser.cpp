@@ -331,10 +331,6 @@ void ParserImpl::LexAllTokens(Display display) {
         tokens.push_back(tok);
       }
 
-      //  Ensures that an EOF token is always at the end of a file
-      tokens.push_back(Token::FakeEndOfFile(tok.Position()));
-
-
     } else if (Lexeme::kEndOfFile == lexeme) {
       tokens.push_back(tok);
       prev_pos = tok.Position();
@@ -358,6 +354,12 @@ void ParserImpl::LexAllTokens(Display display) {
       tokens.push_back(tok);
       prev_pos = tok.Position();
     }
+  }
+
+  // Ensures that there is always an EOF token at the end of a file if there are no tokens
+  // or if the file does not end with an EOF token
+  if (tokens.empty() || (tokens.back().Lexeme() != Lexeme::kEndOfFile)) {
+    tokens.push_back(Token::FakeEndOfFile(tok.Position()));
   }
 }
 
