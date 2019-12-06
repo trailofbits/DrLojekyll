@@ -1,21 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <sstream>
-#include <string>
-#include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
-#include <variant>
-#include <vector>
-#include <cstdlib>
-#include <cstring>
-#include <cassert>
-
-
-#include <drlojekyll/Display/DisplayConfiguration.h>
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
+
 
 namespace hyde {
 
@@ -38,12 +24,6 @@ namespace hyde {
       std::string_view data;
       (void) display_manager.TryReadData(range, &data);
       os << data;
-      return *this;
-    }
-
-    template <typename T>
-    OutputStream &OutputStream::operator<<(T val) {
-      os << val;
       return *this;
     }
 
@@ -81,6 +61,14 @@ namespace hyde {
         comma = ", ";
       }
       *this << ")";
+      if (decl.IsFunctor()) {
+        auto functor = ParsedFunctor::From(decl);
+        if (functor.IsComplex()) {
+          *this << " complex\n";
+        } else {
+          *this << " trivial\n";
+        }
+      }
       return *this;
     }
 
@@ -162,14 +150,8 @@ namespace hyde {
         *this << decl << "\n";
       }
 
-      for (auto decl : module.Functors()) {
-        ParsedDeclaration pdecl = decl;
-        *this << pdecl;
-        if (decl.IsComplex()) {
-          *this << " complex\n";
-        } else {
-          *this << " trivial\n";
-        }
+      for (ParsedDeclaration decl : module.Functors()) {
+        *this << decl;
       }
 
       for (ParsedDeclaration decl : module.Exports()) {
