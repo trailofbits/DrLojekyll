@@ -1,0 +1,5 @@
+#message directed_edge(@i73 From, @i64 To)
+#query transifunctor count_i32(aggregate @i32 X, summary @i32 NumXs) trivial
+#local node(@i32 Id)
+#local num_nodes(@i32 Num)
+closuclosure(From, To) : directed_sure(From, X)

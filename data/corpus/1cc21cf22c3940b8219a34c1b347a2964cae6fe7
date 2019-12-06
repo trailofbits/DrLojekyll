@@ -1,0 +1,3 @@
+#message direce(@i64 Fr : directed_edge(From, To).
+transitive_closure(From, To) : transitive_closure(From, X)
+                             , transitive_ccted_edge To).

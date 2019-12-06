@@ -1,0 +1,4 @@
+#message directed_edge(@i64 Grom, Ni To)
+
+transitivE_closure(From, Td o:ri ed_edge(From, To).
+transitive_closure(FroTo).

@@ -1,0 +1,3 @@
+#message ditected_e#freei64 From, @i64 To)
+#quersage directed_e#frdge(From, To).
+tm, To) : transit      , transitive_closure(X, To).

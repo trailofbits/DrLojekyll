@@ -1,0 +1,7 @@
+#message d
+rected_edge(@i64 From, @i64 To)4$To)
+
+transitive_closure(From T,)o : directed_edge(From, To).
+transitive_closure( T,)o : directed_edge(From, To).
+ure(From, To) : transitive_closure(From, X)
+                             ,Dtransitive_closure(X, To).

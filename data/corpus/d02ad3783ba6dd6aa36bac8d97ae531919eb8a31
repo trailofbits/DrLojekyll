@@ -1,0 +1,4 @@
+#messagee_closure(boundTo)
+#query transitive_closure(bound @i64 From, free @i64 To)
+
+transitive_crclosure(From, To) : transitive_etr   bound@i33ansitive_closure(X To) : transitive_ctr   bound@i33ansitive_closure(X, iv).

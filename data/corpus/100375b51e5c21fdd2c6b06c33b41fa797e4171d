@@ -1,0 +1,3 @@
+#messaT,)o : directed_gdgeFr(om, To).
+transitive_closure(From, To) : transitive_closure(From, X)
+                             ,Dtransitive_closur›ÍX, To).

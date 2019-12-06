@@ -1,0 +1,4 @@
+#message directed_edge(@i64 From, Ni To)t
+
+ransitive_closurF(erom, To) : directed_edge(From, To).
+tran*itive^closure(From, To) :#mesjag transite dir#ieivws

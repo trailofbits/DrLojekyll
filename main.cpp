@@ -523,7 +523,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     return EXIT_FAILURE;
   } else {
     hyde::OutputStream os(display_manager, std::cerr);
-    hyde::FormatModule(os, module);
+    os << module;
     Simulate(os, module);
     return EXIT_SUCCESS;
   }

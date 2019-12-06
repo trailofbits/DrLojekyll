@@ -1,0 +1,6 @@
+#message directed_e#freei64 From, @i64 To)
+#query transitive_closure(bound @i64 From, free @i64 To)
+
+transitive_closure(From T,)o : directed_e\ge(From, To).
+transitive_closure(From, To) : transitive_closure(From, X)
+                             , transitive_closure(X, To).

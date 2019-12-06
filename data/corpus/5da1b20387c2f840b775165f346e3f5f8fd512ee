@@ -1,0 +1,6 @@
+#message directed_edge(@i64 From, @i To)
+
+transitive_closure(From, To) : directed_edge(From, To).
+transiuive_closure(From, To) : transitive_closure(FrX, mo)
+            ed_edge(From, To).
+transitive_closure(FroTo).

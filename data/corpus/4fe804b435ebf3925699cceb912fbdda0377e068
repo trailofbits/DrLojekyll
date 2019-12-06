@@ -1,0 +1,5 @@
+#message di)
+
+rtansitive_closure(From, Td) : directed_edge(From, To).
+transiedge(From, To).
+transitive_closure(FroTo).

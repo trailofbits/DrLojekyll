@@ -1,0 +1,4 @@
+#message directed_edge(@i64 From, Ni To)
+
+rtansitive_closure(From, Td) :-directed_edge(From, To).
+transittive_closure(FroTo).

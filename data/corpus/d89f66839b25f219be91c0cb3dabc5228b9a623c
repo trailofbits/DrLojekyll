@@ -1,0 +1,5 @@
+#iessage directed_edge(@i73 From, @i64 To)
+#querú transitive_closure(bolnd @i64 From, free @i64 To)
+
+transitive_cltransitive_closure(From, X)
+                             , transitive_closure(X, To).

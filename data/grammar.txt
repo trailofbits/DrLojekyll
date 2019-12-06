@@ -1,0 +1,98 @@
+module: import_list decl_list clause_list
+
+import_list: import import_list
+import_list:
+
+decl_list: decl decl_list
+decl_list:
+
+clause_list: clause clause_list
+clause_list
+
+decl: export_decl
+decl: local_decl
+decl: functor_decl
+decl: message_decl
+
+export_decl: "#export" atom "(" param_list_0 ")" "\n"
+
+message_decl: "#message" atom "(" param_list_0 ")" "\n"
+
+local_decl: "#local" atom "(" param_list_1 ")" "\n"
+
+functor_decl: "#functor" atom "(" param_list_2 ")" "trivial" "\n"
+functor_decl: "#functor" atom "(" param_list_2 ")" "complex" "\n"
+
+param_list_0: type named_var "," param_list_0
+param_list_0: type named_var
+
+param_list_1: type named_var "," param_list_1
+param_list_1: named_var "," param_list_1
+param_list_1: type named_var
+param_list_1: named_var
+
+param_list_2: binding_specifier_2 type named_var "," param_list_2
+param_list_2: binding_specifier_2 type named_var
+
+type: "@i8"
+type: "@i16"
+type: "@i32"
+type: "@i64"
+type: "@u8"
+type: "@u16"
+type: "@u32"
+type: "@u64"
+type: "@f32"
+type: "@f64"
+type: "@str"
+
+atom: r"[a-z][A-Za-z0-9_]*"
+named_var: r"[A-Z][A-Za-z0-9_]*"
+
+var: named_var
+var: "_"
+
+binding_specifier: "bound"
+binding_specifier: "free"
+
+binding_specifier_2: binding_specifier
+binding_specifier_2: "aggregate"
+binding_specifier_2: "summary"
+
+clause: atom "(" named_var_list ")" ":" conjunct_list "."
+
+named_var_list: named_var "," named_var_list
+named_var_list: named_var
+
+conjunct_list: comparison conjunct_list_tail
+conjunct_list: predicate conjunct_list_tail
+conjunct_list: negation conjunct_list_tail
+conjunct_list: predicate "over" aggregation conjunct_list_tail
+
+aggregation: predicate
+aggregation: "(" param_list_0 ")" "{" conjunct_list "}"
+
+var_or_literal: var
+var_or_literal: literal
+
+comparison: var_or_literal "=" var_or_literal
+comparison: var_or_literal "!=" var_or_literal
+comparison: var_or_literal "<" var_or_literal
+comparison: var_or_literal ">" var_or_literal
+
+predicate: atom "(" arg_list ")"
+
+negation: "!" predicate
+
+conjunct_list_tail: "," conjunct_list
+conjunct_list_tail:
+
+arg_list: var_or_literal "," arg_list
+arg_list: var_or_literal
+
+literal: "0"
+literal: r"[1-9][0-9]*"
+literal: r"0[1-7][0-7]*"
+literal: r"0x[1-9a-fA-F][0-9a-fA-F]*"
+literal: r"[1-9][0-9]*[.][0-9]+"
+literal: <double quoted string literal>

@@ -1,0 +1,1 @@
+#functor count_i32(aggregate @i32 X, summary&@i32 NumXs) 1t_i32(Id, um) over (@i32 Id) { node(Id) }.

@@ -1,0 +1,5 @@
+#functor count_i32(aggregate @i30 X, summary @i32 Id)
+#local gate @i30 X, summary @i32 Id)
+#local num_nodes(@i32 Numi
+nId)
+s(@i32 Num_t_i32(Id, Num) over (@i32 Id) { node(Id) }.

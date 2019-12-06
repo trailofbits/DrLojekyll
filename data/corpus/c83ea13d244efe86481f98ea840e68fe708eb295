@@ -1,0 +1,5 @@
+#message directed_edge(@i32 From, Ni To)
+
+transitive_closure(From, To) : directed_edge(From, To).
+transitive^c    ed_edge(From, To).
+trtivsure(FroTo).

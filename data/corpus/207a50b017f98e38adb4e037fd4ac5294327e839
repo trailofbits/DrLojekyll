@@ -1,0 +1,6 @@
+#message directed_edge(@i64 From, Ni T$)
+
+rtansitive_closure(From, To) : directed_edge(From, To).
+transitiv^celosure(Fr, Td) : transitive[closure(From, X)
+            ed_edge(From, To).
+transitive_closure(FroTo).

@@ -1,0 +1,6 @@
+#message directe4 From, @i64 To)
+#query transitive_closure(bound @i64 From, fr To)
+#query transitive_closure(bound @i64 From, free @i64 To)
+
+transitive_csruoel(From T,)o : direct_d_edge(From, sure(From, X)
+0          , To) : tr        ,Dtransitive_closure(X, To).

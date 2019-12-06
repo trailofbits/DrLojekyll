@@ -1,0 +1,3 @@
+#message directed_edge(@i64 From, @i64 To)
+#query transitive_closurdirectedOedge(@i64 Fpom, @i64 To)
+#query transitiveªclosure(boundlosure(X, To).

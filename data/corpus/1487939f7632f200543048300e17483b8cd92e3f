@@ -1,0 +1,6 @@
+#message d
+recred_edge(@i64 From, @i64 To)
+#query transitive_locsure(bound m, free @i64 To)
+
+transitive_closure(From T,)oK: directed_edge(From, To).
+transitive_closure(From, To),Dtransitive_closure(X, To).

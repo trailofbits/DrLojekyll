@@ -276,8 +276,6 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidDirective:
           error << "Unrecognized declaration '" << tok << "'";
           ignore_line = true;
-          tok = Token::FakeEndOfFile(tok.Position());
-          tokens.push_back(tok);
           break;
 
         case Lexeme::kInvalidNumber:
@@ -304,8 +302,6 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidUnterminatedString:
           error << "Unterminated string literal";
           ignore_line = true;
-          tok = Token::FakeEndOfFile(tok.Position());
-          tokens.push_back(tok);
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
@@ -334,6 +330,8 @@ void ParserImpl::LexAllTokens(Display display) {
       if (!ignore_line) {
         tokens.push_back(tok);
       }
+      // Ensures that there is always an EOF token at the end of a file
+      tokens.push_back(Token::FakeEndOfFile(tok.Position()));
 
     } else if (Lexeme::kEndOfFile == lexeme) {
       tokens.push_back(tok);
@@ -358,6 +356,7 @@ void ParserImpl::LexAllTokens(Display display) {
       tokens.push_back(tok);
       prev_pos = tok.Position();
     }
+
   }
 }
 
@@ -745,6 +744,9 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           functor.reset(AddDecl<ParsedFunctor>(
               module, DeclarationKind::kFunctor, name, params.size()));
+          if (last_aggregate.IsValid() || last_summary.IsValid()) {
+            functor->is_aggregate = true;
+          }
           if (!functor) {
             return;
           } else {
@@ -803,9 +805,7 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     }
   }
 
-  if (last_aggregate.IsValid() || last_summary.IsValid()) {
-    functor->is_aggregate = true;
-  }
+
 
   if (state == 6) {
     Error err(context->display_manager, SubTokenRange(), next_pos);
@@ -1478,7 +1478,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
                     tok.SpellingRange());
           err << "Expected type name ('@'-prefixed identifier) or variable "
               << "name (capitalized identifier) for parameter in local '"
-              << local->name << "', but got '" << tok << "' instead";
+              << name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }

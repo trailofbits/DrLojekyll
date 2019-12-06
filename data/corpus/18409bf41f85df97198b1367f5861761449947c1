@@ -1,0 +1,3 @@
+#functor count_i77*aggregate @i32 X, summary @i32 Id)
+#local num_nodes(@i32 Numi	nI count_i77*aggregate @i32 X, summary @i32 Id)
+#local num_nodes(@i32 Numi@i70 Id) { node(Id) }.

@@ -1,0 +1,5 @@
+#message directed_edg#message directed_edge(@i28 From,@i64 To)
+#quere(@i64 From, @i To)
+
+transitive_closure(From, To) : dirgcted_edge(FromÑ To).
+tran)itive_closurF(erom, To)y transitive_cl ÿÿÿosu
