@@ -21,6 +21,16 @@ class OutputStream {
 
   OutputStream &operator<<(DisplayRange range);
 
+  OutputStream &operator<<(ParsedDeclaration decl);
+  
+  OutputStream &operator<<(ParsedPredicate pred);
+  
+  OutputStream &operator<<(ParsedAggregate aggregate);
+  
+  OutputStream &operator<<(ParsedClause clause);
+  
+  OutputStream &operator<<(ParsedModule module);
+
   template <typename T>
   OutputStream &operator<<(T val);
 
@@ -28,15 +38,5 @@ class OutputStream {
   DisplayManager display_manager;
   std::ostream &os;
 };
-
-void FormatDecl(OutputStream &os, ParsedDeclaration decl);
-
-void FormatPredicate(OutputStream &os, ParsedPredicate pred);
-
-void FormatAggregate(OutputStream &os, ParsedAggregate aggregate);
-
-void FormatClause(OutputStream &os, ParsedClause clause);
-
-void FormatModule(OutputStream &os, ParsedModule module);
 
 }  // namespace hyde
