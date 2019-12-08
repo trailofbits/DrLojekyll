@@ -21,7 +21,7 @@ class ErrorImpl {
   const DisplayManager *display_manager{nullptr};
   std::string_view path;
   std::stringstream message;
-  std::string_view highlight_range;
+  std::string source;
   std::vector<bool> is_error;
   uint64_t hightlight_line{0};
   uint64_t line{0};

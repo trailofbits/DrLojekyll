@@ -713,7 +713,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 class ParsedImport;
 
 // Represents a module parsed from a display.
-class ParsedModule : public parse::ParsedNode<ParsedModule> {
+class ParsedModule {
  public:
   DisplayRange SpellingRange(void) const noexcept;
 
@@ -728,11 +728,33 @@ class ParsedModule : public parse::ParsedNode<ParsedModule> {
   parse::ParsedNodeRange<ParsedFunctor> Functors(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
 
+  // The root module of this parse.
+  ParsedModule RootModule(void) const;
+
+  inline ParsedModule(const std::shared_ptr<parse::Impl<ParsedModule>> &impl_)
+      : impl(impl_) {}
+
+  inline bool operator<(const ParsedModule &that) const noexcept {
+    return impl.get() < that.impl.get();
+  }
+
+  inline bool operator==(const ParsedModule &that) const noexcept {
+    return impl.get() == that.impl.get();
+  }
+
+  inline bool operator!=(const ParsedModule &that) const noexcept {
+    return impl.get() != that.impl.get();
+  }
+
  protected:
+  friend class ParsedImport;
   friend class Parser;
   friend class ParserImpl;
 
-  using parse::ParsedNode<ParsedModule>::ParsedNode;
+  std::shared_ptr<parse::Impl<ParsedModule>> impl;
+
+ private:
+  ParsedModule(void) = delete;
 };
 
 // Represents a parsed import declaration, e.g.

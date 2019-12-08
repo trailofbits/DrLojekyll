@@ -9,10 +9,6 @@ OutputStream::~OutputStream(void) {
   os.flush();
 }
 
-OutputStream::OutputStream(DisplayManager &display_manager_, std::ostream &os_)
-  : display_manager(display_manager_),
-    os(os_) {}
-
 OutputStream &OutputStream::operator<<(Token tok) {
   std::string_view data;
   (void) display_manager.TryReadData(tok.SpellingRange(), &data);
@@ -34,6 +30,9 @@ OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
     *this << "pred" << decl.Id();
   } else {
     *this << name;
+    if (rename_locals && decl.IsLocal()) {
+      os << "_" << decl.Id();
+    }
   }
   auto comma = "(";
   for (auto param : decl.Parameters()) {
@@ -64,9 +63,9 @@ OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
   if (decl.IsFunctor()) {
     auto functor = ParsedFunctor::From(decl);
     if (functor.IsComplex()) {
-      *this << " complex\n";
+      *this << " complex";
     } else {
-      *this << " trivial\n";
+      *this << " trivial";
     }
   }
   return *this;
@@ -84,6 +83,9 @@ OutputStream &OutputStream::operator<<(ParsedClause clause) {
     *this << "pred" << decl.Id();
   } else {
     *this << name;
+    if (rename_locals && decl.IsLocal()) {
+      os << "_" << decl.Id();
+    }
   }
   auto comma = "(";
   for (auto param : clause.Parameters()) {
@@ -94,7 +96,8 @@ OutputStream &OutputStream::operator<<(ParsedClause clause) {
   *this << ") : ";
   comma = "";
   for (auto assign : clause.Assignments()) {
-    *this << comma << assign.LHS().Name() << " = " << assign.RHS().SpellingRange();
+    *this << comma << assign.LHS().Name() << " = "
+          << assign.RHS().SpellingRange();
     comma = ", ";
   }
 
@@ -138,8 +141,10 @@ OutputStream &OutputStream::operator<<(ParsedClause clause) {
 }
 
 OutputStream &OutputStream::operator<<(ParsedModule module) {
-  for (auto import : module.Imports()) {
-    *this << import.SpellingRange() << "\n";
+  if (include_imports) {
+    for (auto import : module.Imports()) {
+      *this << import.SpellingRange() << "\n";
+    }
   }
 
   for (ParsedDeclaration decl : module.Queries()) {
@@ -151,7 +156,7 @@ OutputStream &OutputStream::operator<<(ParsedModule module) {
   }
 
   for (ParsedDeclaration decl : module.Functors()) {
-    *this << decl;
+    *this << decl << "\n";
   }
 
   for (ParsedDeclaration decl : module.Exports()) {
@@ -175,6 +180,9 @@ OutputStream &OutputStream::operator<<(ParsedPredicate pred) {
     *this << "pred" << decl.Id();
   } else {
     *this << name;
+    if (rename_locals && decl.IsLocal()) {
+      os << "_" << decl.Id();
+    }
   }
   auto comma = "(";
   for (auto arg : pred.Arguments()) {

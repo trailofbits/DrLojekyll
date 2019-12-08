@@ -116,7 +116,9 @@ class UserSuppliedStream final : public display::DataStream {
 
   explicit UserSuppliedStream( const std::string &name_, std::istream &is_)
       : name(name_),
-        is(is_) {}
+        is(is_) {
+    data.reserve(4096);
+  }
 
   // Read data into `data_out`.
   bool ReadData(std::string_view *data_out) override {

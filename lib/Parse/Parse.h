@@ -333,7 +333,8 @@ class Impl<ParsedImport> : public Node<Impl<ParsedImport>> {
 };
 
 template <>
-class Impl<ParsedModule> : public Node<Impl<ParsedModule>> {
+ class Impl<ParsedModule>
+     : public std::enable_shared_from_this<Impl<ParsedModule>> {
  public:
   Impl(const DisplayConfiguration &config_)
       : config(config_) {}
@@ -348,6 +349,9 @@ class Impl<ParsedModule> : public Node<Impl<ParsedModule>> {
   // is derived).
   Token first;
   Token last;
+
+  Impl<ParsedModule> *root_module{nullptr};
+  std::vector<std::shared_ptr<Impl<ParsedModule>>> non_root_modules;
 
   std::vector<std::unique_ptr<Impl<ParsedImport>>> imports;
   std::vector<std::unique_ptr<Impl<ParsedExport>>> exports;

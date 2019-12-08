@@ -1,6 +1,4 @@
-/*
- * Copyright (c) 2019 Trail of Bits, Inc.
- */
+// Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Sema/SIPSAnalysis.h>
 
@@ -9,48 +7,15 @@
 #include <unordered_map>
 #include <vector>
 
+#include <drlojekyll/Util/DisjointSet.h>
+
 namespace hyde {
 namespace {
 
-static bool OrderPredicates(ParsedPredicate a, ParsedPredicate b) noexcept {
-  return a.UniqueId() < b.UniqueId();
+static bool OrderPredicates(std::pair<unsigned, ParsedPredicate> a,
+                            std::pair<unsigned, ParsedPredicate> b) noexcept {
+  return a.first < b.first;
 }
-
-// Implements union-find for
-class DisjointSet {
- public:
-  DisjointSet(unsigned id_)
-      : parent(this),
-        id(id_) {}
-
-  DisjointSet *Find(void) {
-    if (parent == this) {
-      return this;
-    } else {
-      parent = parent->Find();
-      return parent;
-    }
-  }
-
-  static DisjointSet *Union(DisjointSet *lhs, DisjointSet *rhs) {
-    lhs = lhs->Find();
-    rhs = rhs->Find();
-    if (lhs == rhs) {
-      return lhs;
-
-    } else if (lhs->id > rhs->id) {
-      lhs->parent = rhs;
-      return rhs;
-
-    } else {
-      rhs->parent = lhs;
-      return lhs;
-    }
-  }
-
-  DisjointSet *parent;
-  const unsigned id;
-};
 
 // A simple, tentative visitor that exists to detect if visiting was cancelled.
 class TentativeSIPSVisitor final : public SIPSVisitor {
@@ -81,14 +46,25 @@ class TentativeSIPSVisitor final : public SIPSVisitor {
 
 SIPSVisitor::~SIPSVisitor(void) {}
 void SIPSVisitor::Begin(ParsedPredicate) {}
-void SIPSVisitor::DeclareParameter(ParsedParameter, ParsedVariable, unsigned) {}
+void SIPSVisitor::DeclareParameter(const Column &) {}
 void SIPSVisitor::DeclareVariable(ParsedVariable, unsigned) {}
 void SIPSVisitor::DeclareConstant(ParsedLiteral, unsigned) {}
 void SIPSVisitor::AssertEqual(unsigned, unsigned) {}
 void SIPSVisitor::AssertNotEqual(unsigned, unsigned) {}
 void SIPSVisitor::AssertLessThan(unsigned, unsigned) {}
 void SIPSVisitor::AssertGreaterThan(unsigned, unsigned) {}
-void SIPSVisitor::Assign(unsigned, unsigned) {}
+void SIPSVisitor::AssertPresent(
+    ParsedPredicate, const Column *, const Column *) {}
+void SIPSVisitor::AssertAbsent(
+    ParsedPredicate, const Column *, const Column *) {}
+void SIPSVisitor::Insert(
+    ParsedDeclaration, const Column *, const Column *) {}
+void SIPSVisitor::EnterFromWhereSelect(
+    ParsedPredicate, ParsedDeclaration, const Column *, const Column *,
+    const Column *, const Column *) {}
+void SIPSVisitor::EnterFromSelect(
+    ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
+void SIPSVisitor::ExitSelect(ParsedPredicate, ParsedDeclaration) {}
 void SIPSVisitor::Commit(void) {}
 void SIPSVisitor::CancelComparison(ParsedComparison, unsigned, unsigned) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedComparison, ParsedVariable) {}
@@ -106,11 +82,17 @@ class SIPSGenerator::Impl {
 
  private:
 
+  // Get a fresh variable.
+  unsigned GetFreshVarId(void);
+
   // Try to apply the negated predicates as eagerly as possible.
   void VisitNegatedPredicates(SIPSVisitor &visitor);
 
   // Visit the end of a clause body.
   bool VisitEndOfClause(SIPSVisitor &visitor);
+
+  // Bind the free parameters used in selection predicate.
+  void BindFreeParams(SIPSVisitor &visitor);
 
   // Visit a predicate. Returns `true` if it was processed, and `false`
   // if we cancelled things.
@@ -148,7 +130,7 @@ class SIPSGenerator::Impl {
   const ParsedPredicate assumption;
 
   // The vector of positive predicates which we will evaluate.
-  std::vector<ParsedPredicate> positive_predicates;
+  std::vector<std::pair<unsigned, ParsedPredicate>> positive_predicates;
 
   // The vector of negative predicates, which we will evaluate if their
   // parameters are all bound.
@@ -172,10 +154,8 @@ class SIPSGenerator::Impl {
 
   std::vector<SIPSVisitor::FailedBinding> failed_bindings;
 
-  std::vector<unsigned> bound_params;
-  std::vector<unsigned> free_params;
-  std::vector<unsigned> aggregate_params;
-  std::vector<unsigned> summary_params;
+  std::vector<SIPSVisitor::Column> bound_params;
+  std::vector<SIPSVisitor::Column> free_params;
 };
 
 SIPSGenerator::Impl::Impl(ParsedClause clause_, ParsedPredicate assumption_)
@@ -188,15 +168,24 @@ SIPSGenerator::Impl::Impl(ParsedClause clause_, ParsedPredicate assumption_)
   // with the stepper, we're simulating a bottom-up execution. Thus we want
   // to exclude the assumption from the list of tested predicates that will
   // influence its SIP score and binding environment.
+  //
+  // NOTE(pag): This initializes `positive_predicates` in sorted order (via `i`)
+  //            so it's already in the right place for use with permutation.
+  auto i = 0u;
   for (auto pred : clause.PositivePredicates()) {
     assert(pred.IsPositive());
     if (pred != assumption) {
-      positive_predicates.push_back(pred);
+      positive_predicates.emplace_back(i++, pred);
     }
   }
+}
 
-  std::sort(positive_predicates.begin(), positive_predicates.end(),
-            OrderPredicates);
+// Get a fresh variable.
+unsigned SIPSGenerator::Impl::GetFreshVarId(void) {
+  auto next_id = next_var_id++;
+  auto next_var = new DisjointSet(next_id);
+  vars.emplace_back(next_var);
+  return next_id;
 }
 
 // Try to apply the negated predicates as eagerly as possible.
@@ -210,15 +199,25 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
       }
     }
 
-    bound_params.clear();
-    for (auto pred_arg : predicate.Arguments()) {
-      bound_params.push_back(equalities[pred_arg]->Find()->id);
-    }
+    do {
+      bound_params.clear();
+      auto i = 0u;
+      const auto decl = ParsedDeclaration::Of(predicate);
+      for (auto pred_arg : predicate.Arguments()) {
+        bound_params.emplace_back(
+            decl.NthParameter(i),
+            pred_arg,
+            i,
+            equalities[pred_arg]->Find()->id);
+        ++i;
+      }
 
-    visitor.AssertAbsent(
-        predicate,
-        &(bound_params.front()),
-        &((&(bound_params.back()))[1]));
+      visitor.AssertAbsent(
+          predicate,
+          &(bound_params.front()),
+          &((&(bound_params.back()))[1]));
+
+    } while (false);
 
   next_negated_predicate:
     continue;
@@ -229,17 +228,24 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
 // Visit the end of a clause body.
 bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
 
-  bound_params.clear();
   failed_bindings.clear();
 
-  for (auto clause_arg : clause.Parameters()) {
-    if (!equalities.count(clause_arg)) {
-      visitor.CancelRangeRestriction(clause, clause_arg);
-      cancelled = true;
-      return false;
+  // Make sure all compared variables are range-restricted.
+  for (auto comparison : comparisons) {
+    cancelled = true;
+
+    if (!equalities.count(comparison.LHS())) {
+      visitor.CancelRangeRestriction(comparison, comparison.LHS());
+
+    } else if (!equalities.count(comparison.RHS())) {
+      visitor.CancelRangeRestriction(comparison, comparison.RHS());
 
     } else {
-      bound_params.push_back(equalities[clause_arg]->Find()->id);
+      assert(false);  // Shouldn't be possible.
+      visitor.CancelComparison(
+          comparison,
+          equalities[comparison.LHS()]->Find()->id,
+          equalities[comparison.RHS()]->Find()->id);
     }
   }
 
@@ -265,11 +271,59 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
         &((&(failed_bindings.back()))[1]));
   }
 
-  if (!cancelled) {
+  // There remain one or more aggregates that haven't successfully been
+  // applied.
+  for (auto aggregate : aggregates) {
+    cancelled = true;
 
+    (void) aggregate;
+    // TODO(pag): handle this.
   }
 
-  return !cancelled;
+  // Build up the parameter
+  bound_params.clear();
+  auto i = 0u;
+  const auto decl = ParsedDeclaration::Of(clause);
+  for (auto clause_arg : clause.Parameters()) {
+    if (!equalities.count(clause_arg)) {
+      visitor.CancelRangeRestriction(clause, clause_arg);
+      cancelled = true;
+      return false;
+
+    } else {
+      bound_params.emplace_back(
+          decl.NthParameter(i),
+          clause_arg,
+          i,
+          equalities[clause_arg]->Find()->id);
+    }
+    ++i;
+  }
+
+  if (cancelled) {
+    return false;
+
+  } else {
+    visitor.Insert(
+        decl, &(bound_params.front()), &((&(bound_params.back()))[1]));
+    return true;
+  }
+}
+
+// Bind the free parameters used in selection predicate.
+void SIPSGenerator::Impl::BindFreeParams(SIPSVisitor &visitor) {
+  for (const auto &free_param : free_params) {
+    auto &goal_set = equalities[free_param.var];
+    if (!goal_set) {
+      goal_set = vars[free_param.id].get();
+
+      // Something like `foo(A, A)`, where `A` is free. This turns into
+      // `foo(A, A1), A=A1`.
+    } else {
+      visitor.AssertEqual(goal_set->Find()->id, vars[free_param.id]->id);
+      goal_set = DisjointSet::Union(goal_set, vars[free_param.id].get());
+    }
+  }
 }
 
 // Visit a predicate. Returns `true` if it was processed, and `false`
@@ -277,12 +331,17 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
 bool SIPSGenerator::Impl::VisitPredicate(
     SIPSVisitor &visitor, unsigned p) {
 
+  // Perform as many comparisons as possible as early as possible, and prefer
+  // comparisons to negated predicates as they don't need to touch memory or
+  // the database.
   if (!VisitCompares(visitor)) {
     return false;
   }
 
+  // Try to negate things as early as possible, i.e. once everything is bound.
   VisitNegatedPredicates(visitor);
 
+  // Now if we can, collect on aggregates.
   if (!VisitAggregates(visitor)) {
     return false;
   }
@@ -292,20 +351,29 @@ bool SIPSGenerator::Impl::VisitPredicate(
     return VisitEndOfClause(visitor);
   }
 
-  const auto predicate = positive_predicates[p];
+  const auto predicate = positive_predicates[p].second;
   assert(predicate != assumption);
   assert(predicate.IsPositive());
 
   const auto arity = predicate.Arity();
   auto decl = ParsedDeclaration::Of(predicate);
-  assert(!decl.IsMessage());
+
+  // The only place where a message is an acceptable dependency is as an
+  // assumption.
+  if (decl.IsMessage()) {
+    visitor.CancelMessage(predicate);
+    cancelled = true;
+    return false;
+  }
 
   // For functors and queries, we care about the precise choice in order
   // to meet a binding constraint of one of the redeclarations. For
   // functors, we need to exactly match the usage specification. For
   // queries, we need to match the `bound` arguments, and the `free`
   // ones "cost" us in implicit later binding.
-  if (decl.IsFunctor() || decl.IsQuery()) {
+  const auto is_functor = decl.IsFunctor();
+  const auto is_query = decl.IsQuery();
+  if (is_functor || is_query) {
     failed_bindings.clear();
 
     for (auto redecl : decl.Redeclarations()) {
@@ -316,11 +384,14 @@ bool SIPSGenerator::Impl::VisitPredicate(
         const auto pred_arg_is_bound = equalities.count(pred_arg);
 
         // Make sure we meet the binding constraint for at least one of
-        // the redeclarations of this functor or query.
+        // the redeclarations of this functor or query. Functors, especially
+        // aggregate ones, that introduce things like summary values, can be
+        // used to force certain execution orders of the conjuncts of a clause
+        // because of these constraints.
         if ((!pred_arg_is_bound &&
              (ParameterBinding::kBound == redecl_param_binding ||
               ParameterBinding::kAggregate == redecl_param_binding)) ||
-            (pred_arg_is_bound &&
+            (pred_arg_is_bound && is_functor &&
              (ParameterBinding::kFree == redecl_param_binding ||
               ParameterBinding::kSummary == redecl_param_binding))) {
           failed_bindings.emplace_back(
@@ -347,48 +418,103 @@ found_acceptable_decl:
 
   bound_params.clear();
   free_params.clear();
-  aggregate_params.clear();
-  summary_params.clear();
 
+  // Go through the parameters to the predicate, and separate out the bound
+  // ones from the free ones. For free ones, we create fresh variable
+  // declarations, however, we delay adding them to `equalities` until after
+  // telling the visitor about the predicate and its arguments. This is
+  // because we may have something like `foo(A, A)` where `A` is unbound, and
+  // so we have to treat it like `foo(A1, A2), A=A1, A=A2`.
   for (auto i = 0U; i < arity; ++i) {
     const auto var = predicate.NthArgument(i);
     const auto var_is_bound = equalities.count(var);
+    const auto param = decl.NthParameter(i);
 
-    switch (decl.NthParameter(i).Binding()) {
+    auto do_free = [=] (SIPSVisitor &visitor) {
+      assert(!var_is_bound);
+      free_params.emplace_back(param, var, i, GetFreshVarId());
+      visitor.DeclareVariable(var, free_params.back().id);
+    };
+
+    auto do_bound = [=] (void) {
+      assert(var_is_bound);
+      bound_params.emplace_back(
+          param, var, i, equalities[var]->Find()->id);
+    };
+
+    switch (param.Binding()) {
       case ParameterBinding::kImplicit:
         if (var_is_bound) {
-          bound_params.push_back(i);
+          do_bound();
         } else {
-          free_params.push_back(i);
+          do_free(visitor);
         }
         break;
 
       case ParameterBinding::kFree:
-        assert(!var_is_bound);
-        free_params.push_back(i);
+        do_free(visitor);
         break;
 
       case ParameterBinding::kBound:
-        assert(var_is_bound);
-        bound_params.push_back(i);
+        do_bound();
         break;
 
       case ParameterBinding::kAggregate:
         assert(false);  // Shouldn't be possible.
-        assert(var_is_bound);
-        aggregate_params.push_back(i);
+        do_bound();
         break;
 
       case ParameterBinding::kSummary:
         assert(false);  // Shouldn't be possible.
-        assert(!var_is_bound);
-        summary_params.push_back(i);
+        do_free(visitor);
         break;
     }
   }
 
-  if (!VisitPredicate(visitor, p + 1)) {
-    return false;
+  if (bound_params.empty() && free_params.empty()) {
+    assert(false);  // Not possible.
+    return VisitPredicate(visitor, p + 1);
+
+  } else if (free_params.empty()) {
+    assert(!bound_params.empty());
+    visitor.AssertPresent(
+        predicate, &(bound_params.front()),
+        &((&(bound_params.back()))[1]));
+
+    if (!VisitPredicate(visitor, p + 1)) {
+      return false;
+    }
+
+  } else if (bound_params.empty()) {
+    assert(!free_params.empty());
+
+    visitor.EnterFromSelect(
+        predicate, decl, &(free_params.front()),
+        &((&(free_params.back()))[1]));
+
+    BindFreeParams(visitor);
+
+    if (!VisitPredicate(visitor, p + 1)) {
+      return false;
+    }
+
+    visitor.ExitSelect(predicate, decl);
+
+  } else {
+    assert(!free_params.empty());
+    assert(!bound_params.empty());
+    visitor.EnterFromWhereSelect(
+        predicate, decl,
+        &(bound_params.front()), &((&(bound_params.back()))[1]),
+        &(free_params.front()), &((&(free_params.back()))[1]));
+
+    BindFreeParams(visitor);
+
+    if (!VisitPredicate(visitor, p + 1)) {
+      return false;
+    }
+
+    visitor.ExitSelect(predicate, decl);
   }
 
   return true;
@@ -400,9 +526,7 @@ found_acceptable_decl:
 // TODO(pag): Add tracking to identify assignments to multiple constants?
 bool SIPSGenerator::Impl::VisitAssign(
     SIPSVisitor &visitor, ParsedAssignment comparison) {
-  auto const_id = next_var_id++;
-  auto const_set = new DisjointSet(const_id);
-  vars.emplace_back(const_set);
+  auto const_id = GetFreshVarId();
 
   visitor.DeclareConstant(comparison.RHS(), const_id);
 
@@ -410,9 +534,9 @@ bool SIPSGenerator::Impl::VisitAssign(
   auto &var_set = equalities[var];
   if (var_set) {
     visitor.AssertEqual(var_set->Find()->id, const_id);
-    var_set = DisjointSet::Union(var_set, const_set);
+    var_set = DisjointSet::Union(var_set, vars[const_id].get());
   } else {
-    var_set = const_set;
+    var_set = vars[const_id].get();
   }
 
   return true;
@@ -557,9 +681,10 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   // Create input variables for the initial declaration.
   const auto decl = ParsedDeclaration::Of(assumption);
   for (auto param : decl.Parameters()) {
-    auto var_id = next_var_id++;
-    visitor.DeclareParameter(param, assumption.NthArgument(var_id), var_id);
-    vars.emplace_back(new DisjointSet(var_id));
+    auto var_id = GetFreshVarId();
+    SIPSVisitor::Column col(
+        param, assumption.NthArgument(var_id), var_id, var_id);
+    visitor.DeclareParameter(col);
   }
 
   // Now bind the arguments to the initial parameters.
@@ -601,33 +726,11 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
     negative_predicates.push_back(pred);
   }
 
-  // NOTE(pag): This will visit comparisons.
-  if (VisitPredicate(visitor, 0)) {
+  // NOTE(pag): This will visit comparisons, negations, and aggregates.
+  (void) VisitPredicate(visitor, 0);
 
-    // Make sure all compared variables are range-restricted.
-    if (!comparisons.empty()) {
-      cancelled = true;
-
-      for (auto comparison : comparisons) {
-        if (!equalities.count(comparison.LHS())) {
-          visitor.CancelRangeRestriction(comparison, comparison.LHS());
-
-        } else if (!equalities.count(comparison.RHS())) {
-          visitor.CancelRangeRestriction(comparison, comparison.RHS());
-
-        } else {
-          assert(false);  // Shouldn't be possible.
-          visitor.CancelComparison(
-              comparison,
-              equalities[comparison.LHS()]->Find()->id,
-              equalities[comparison.RHS()]->Find()->id);
-        }
-      }
-    }
-
-    if (!aggregates.empty()) {
-      cancelled = true;
-    }
+  if (!cancelled) {
+    visitor.Commit();
   }
 
   try_advance = visitor.Advance();
