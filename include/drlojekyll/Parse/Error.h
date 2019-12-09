@@ -115,6 +115,12 @@ class Error {
   Error(const DisplayManager &dm, const DisplayRange &range,
         const DisplayRange &sub_range);
 
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced, where the error itself is at
+  // `pos_in_range`.
+  Error(const DisplayManager &dm, const DisplayRange &range,
+        const DisplayRange &sub_range, const DisplayPosition &pos_in_range);
+
   template <typename T>
   inline ErrorStream operator<<(T val) const {
     return Stream() << val;

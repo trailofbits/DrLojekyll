@@ -55,11 +55,7 @@ class SIPSVisitor {
   virtual void DeclareVariable(ParsedVariable var, unsigned id);
 
   // Declares a constant identified by `id`.
-  virtual void DeclareConstant(ParsedLiteral var, unsigned id);
-
-  // Notify the visitor that the clause head has been proven.
-  virtual void ProveClauseHead(ParsedDeclaration decl,
-                               unsigned *begin_id, unsigned *end_id);
+  virtual void DeclareConstant(ParsedLiteral val, unsigned id);
 
   // Asserts that the value of the variable identified by `lhs_id` must match
   // the value of the variable identified by `rhs_id`.
@@ -110,6 +106,21 @@ class SIPSVisitor {
   // Exits the a selection.
   virtual void ExitSelect(ParsedPredicate pred, ParsedDeclaration from);
 
+  // Enter into the aggregate collection phase. Pass in the bound arguments
+  // that are not themselves being summarized or aggregates.
+  virtual void EnterAggregation(
+      ParsedPredicate functor, ParsedDeclaration decl,
+      const Column *bound_begin, const Column *bound_end);
+
+  // Tell the visitor that we're going to insert into an aggregation.
+  virtual void Collect(
+      ParsedPredicate agg_pred, ParsedDeclaration agg_decl, const Column *begin,
+      const Column *end);
+
+  // Tell the visitor that is can finish summarizing, and prepare to select
+  // the summaries.
+  virtual void Summarize(ParsedPredicate functor, ParsedDeclaration decl);
+
   // Assigns the value associated with `rhs_id` to `dest_id`.
   virtual void Assign(unsigned dest_id, unsigned rhs_id);
 
@@ -154,9 +165,11 @@ class SIPSVisitor {
 // to evaluate all permutations of predicates in that clause, e.g. to detect
 // range restriction errors, to score them for their ability to take advantage
 // of sideways information passing style (SIPS), or to emit code.
-class SIPSGenerator {
+class SIPSGenerator final {
  public:
   class Impl;
+
+  ~SIPSGenerator(void);
 
   explicit SIPSGenerator(ParsedClause clause, ParsedPredicate assumption);
 

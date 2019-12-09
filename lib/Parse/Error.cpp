@@ -107,8 +107,11 @@ static void OutputColored(std::ostream &os, Color color, uint64_t dec_num) {
 }
 
 static DisplayPosition NextByte(const DisplayManager &dm, DisplayPosition pos) {
-  dm.TryDisplacePosition(pos, 1);
-  return pos;
+  if (dm.TryDisplacePosition(pos, 1)) {
+    return pos;
+  } else {
+    return DisplayPosition();
+  }
 }
 
 }  // namespace
@@ -173,6 +176,19 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range)
 Error::Error(const DisplayManager &dm, const DisplayRange &range_,
              const DisplayPosition &pos_in_range)
    : Error(dm, DisplayRange(pos_in_range, NextByte(dm, pos_in_range))) {}
+
+// An error message related to a highlighted range of tokens, with a sub-range
+// in particular being referenced, where the error itself is at
+// `pos_in_range`.
+Error::Error(const DisplayManager &dm, const DisplayRange &range,
+             const DisplayRange &sub_range, const DisplayPosition &pos_in_range)
+   : Error(dm, range, sub_range) {
+
+  if (pos_in_range.IsValid()) {
+    impl->line = pos_in_range.Line();
+    impl->column = pos_in_range.Column();
+  }
+}
 
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced.

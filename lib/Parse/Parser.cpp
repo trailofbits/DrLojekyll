@@ -232,30 +232,28 @@ void ParserImpl::LexAllTokens(Display display) {
   tokens.clear();
 
   Token tok;
-  DisplayPosition first_pos;
+  DisplayPosition line_start_pos;
   DisplayPosition prev_pos;
   auto ignore_line = false;
 
   while (lexer.TryGetNextToken(context->string_pool, &tok)) {
     const auto lexeme = tok.Lexeme();
 
-    if (first_pos.IsInvalid()) {
-      first_pos = tok.Position();
+    if (Lexeme::kWhitespace == lexeme &&
+        tok.Line() < tok.NextPosition().Line()) {
+      line_start_pos = tok.NextPosition();
+      assert(line_start_pos.IsValid());
+    }
+
+    if (line_start_pos.IsInvalid()) {
+      line_start_pos = tok.Position();
     }
 
     // Report lexing errors and fix up the tokens into non-errors.
     if (tok.IsInvalid()) {
-
-      Error error;
-      if (tok.ErrorPosition() == tok.Position()) {
-        error = Error(
-            context->display_manager, DisplayRange(first_pos, tok.NextPosition()),
-            tok.SpellingRange());
-      } else {
-        error = Error(
-            context->display_manager, DisplayRange(first_pos, tok.NextPosition()),
-            tok.ErrorPosition());
-      }
+      Error error(context->display_manager,
+                  DisplayRange(line_start_pos, tok.NextPosition()),
+                  tok.SpellingRange(), tok.ErrorPosition());
 
       switch (lexeme) {
         case Lexeme::kInvalid:
@@ -824,6 +822,8 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
+  // If we have a summary argument, then require us to have an aggregate
+  // argument.
   } else if (last_summary.IsValid() && !last_aggregate.IsValid()) {
     Error err(context->display_manager, SubTokenRange(),
               last_summary.SpellingRange());
@@ -842,7 +842,7 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
 
   // Don't let us have both summary and free variables.
   //
-  // NOTE(pag): For now we permit aggregate and bound variables.
+  // NOTE(pag): We permit `bound` arguments to be used along with aggregates.
   } else if (last_summary.IsValid() && last_free.IsValid()) {
     Error err(context->display_manager, SubTokenRange(),
               last_summary.SpellingRange());

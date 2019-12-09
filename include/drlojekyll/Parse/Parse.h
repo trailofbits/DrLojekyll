@@ -556,6 +556,9 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedQuery> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -588,6 +591,9 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedExport> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -620,6 +626,9 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedLocal> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -654,6 +663,10 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
+
   bool IsComplex(void) const noexcept;
   bool IsTrivial(void) const noexcept;
   bool IsAggregate(void) const noexcept;
@@ -690,6 +703,9 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedMessage> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -828,6 +844,13 @@ template<>
 struct hash<::hyde::ParsedLocal> {
   inline uint64_t operator()(::hyde::ParsedLocal decl) const noexcept {
     return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedPredicate> {
+  inline uint64_t operator()(::hyde::ParsedPredicate pred) const noexcept {
+    return pred.UniqueId();
   }
 };
 

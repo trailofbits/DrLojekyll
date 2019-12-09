@@ -24,7 +24,7 @@ bool Token::IsValid(void) const {
 // Return the position of an error associated with this token if it is an
 // invalid token.
 DisplayPosition Token::ErrorPosition(void) const {
-  if (IsValid() && position.IsValid()) {
+  if (IsValid() || !position.IsValid()) {
     return DisplayPosition();
   }
 
