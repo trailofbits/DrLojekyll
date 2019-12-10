@@ -2,12 +2,16 @@
 #![allow(unused)]
 use std::cell::Cell;
 use std::time::Instant;
+use std::fs;
+use std::io::{self, Write};
 
-fn main() {
+fn main() -> io::Result<()>  {
     let mut fuzzer = Fuzzer {
         seed:  Cell::new(0x34cc028e11b4f89c),
         buf:   Vec::new(),
     };
+
+    fs::create_dir("corpus")?;
     
     let mut generated = 0usize;
     let it = Instant::now();
@@ -22,9 +26,14 @@ fn main() {
             let elapsed = (Instant::now() - it).as_secs_f64();
             let bytes_per_sec = generated as f64 / elapsed;
             print!("MiB/sec: {:12.4}\n", bytes_per_sec / 1024. / 1024.);
-            println!("{}", String::from_utf8(fuzzer.buf.clone()).unwrap());
+            let input_file = format!("corpus/input{}", iters);
+            let mut file = fs::File::create(&input_file)?;
+            let input_str = String::from_utf8(fuzzer.buf.clone()).unwrap();
+            println!("{}", input_str);
+            file.write_all(input_str.as_bytes());
         }
     }
+    Ok(())
 }
 
 struct Fuzzer {
@@ -42,7 +51,7 @@ impl Fuzzer {
         seed
     }
     fn fragment_0(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_30(depth + 1),
             1 => self.fragment_43(depth + 1),
@@ -50,7 +59,7 @@ impl Fuzzer {
         }
     }
     fn fragment_1(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_50(depth + 1),
             1 => self.fragment_52(depth + 1),
@@ -58,7 +67,7 @@ impl Fuzzer {
         }
     }
     fn fragment_2(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -79,7 +88,7 @@ impl Fuzzer {
         }
     }
     fn fragment_3(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_84(depth + 1),
             1 => self.fragment_86(depth + 1),
@@ -89,7 +98,7 @@ impl Fuzzer {
         }
     }
     fn fragment_4(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_91(depth + 1);
         self.fragment_92(depth + 1);
         self.fragment_93(depth + 1);
@@ -106,7 +115,7 @@ impl Fuzzer {
         self.fragment_104(depth + 1);
     }
     fn fragment_5(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_110(depth + 1),
             1 => self.fragment_112(depth + 1),
@@ -114,7 +123,7 @@ impl Fuzzer {
         }
     }
     fn fragment_6(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_119(depth + 1),
             1 => self.fragment_126(depth + 1),
@@ -124,7 +133,7 @@ impl Fuzzer {
         }
     }
     fn fragment_7(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_145(depth + 1),
             1 => self.fragment_150(depth + 1),
@@ -134,7 +143,7 @@ impl Fuzzer {
         }
     }
     fn fragment_8(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_169(depth + 1),
             1 => self.fragment_171(depth + 1),
@@ -142,7 +151,7 @@ impl Fuzzer {
         }
     }
     fn fragment_9(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_173(depth + 1),
             1 => self.fragment_175(depth + 1),
@@ -152,7 +161,7 @@ impl Fuzzer {
         }
     }
     fn fragment_10(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_184(depth + 1),
             1 => self.fragment_186(depth + 1),
@@ -160,7 +169,7 @@ impl Fuzzer {
         }
     }
     fn fragment_11(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_187(depth + 1);
         self.fragment_188(depth + 1);
         self.fragment_189(depth + 1);
@@ -175,7 +184,7 @@ impl Fuzzer {
         self.fragment_198(depth + 1);
     }
     fn fragment_12(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_214(depth + 1),
             1 => self.fragment_229(depth + 1),
@@ -183,7 +192,7 @@ impl Fuzzer {
         }
     }
     fn fragment_13(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -198,7 +207,7 @@ impl Fuzzer {
             }
         }
     fn fragment_14(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 62 {
             0 => self.fragment_233(depth + 1),
             1 => self.fragment_235(depth + 1),
@@ -266,7 +275,7 @@ impl Fuzzer {
         }
     }
     fn fragment_15(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_356(depth + 1);
         self.fragment_357(depth + 1);
         self.fragment_358(depth + 1);
@@ -281,7 +290,7 @@ impl Fuzzer {
         self.fragment_367(depth + 1);
     }
     fn fragment_16(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_369(depth + 1);
         self.fragment_370(depth + 1);
         self.fragment_371(depth + 1);
@@ -296,7 +305,7 @@ impl Fuzzer {
         self.fragment_380(depth + 1);
     }
     fn fragment_17(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_382(depth + 1);
         self.fragment_383(depth + 1);
         self.fragment_384(depth + 1);
@@ -305,7 +314,7 @@ impl Fuzzer {
         self.fragment_387(depth + 1);
     }
     fn fragment_18(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -326,7 +335,7 @@ impl Fuzzer {
         }
     }
     fn fragment_19(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_425(depth + 1),
             1 => self.fragment_427(depth + 1),
@@ -334,14 +343,14 @@ impl Fuzzer {
         }
     }
     fn fragment_20(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_428(depth + 1);
         self.fragment_429(depth + 1);
         self.fragment_430(depth + 1);
         self.fragment_431(depth + 1);
     }
     fn fragment_21(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_441(depth + 1),
             1 => self.fragment_446(depth + 1),
@@ -349,7 +358,7 @@ impl Fuzzer {
         }
     }
     fn fragment_22(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_455(depth + 1),
             1 => self.fragment_462(depth + 1),
@@ -359,7 +368,7 @@ impl Fuzzer {
         }
     }
     fn fragment_23(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_480(depth + 1),
             1 => self.fragment_487(depth + 1),
@@ -367,7 +376,7 @@ impl Fuzzer {
         }
     }
     fn fragment_24(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -378,7 +387,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_25(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_382(depth + 1);
         self.fragment_383(depth + 1);
         self.fragment_384(depth + 1);
@@ -387,7 +396,7 @@ impl Fuzzer {
         self.fragment_387(depth + 1);
     }
     fn fragment_26(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -404,7 +413,7 @@ impl Fuzzer {
         }
     }
     fn fragment_27(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_522(depth + 1),
             1 => self.fragment_524(depth + 1),
@@ -412,7 +421,7 @@ impl Fuzzer {
         }
     }
     fn fragment_28(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -420,7 +429,7 @@ impl Fuzzer {
         }
     }
     fn fragment_29(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -431,7 +440,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_30(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -442,7 +451,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_31(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -457,7 +466,7 @@ impl Fuzzer {
             }
         }
     fn fragment_32(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -472,7 +481,7 @@ impl Fuzzer {
             }
         }
     fn fragment_33(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_441(depth + 1),
             1 => self.fragment_446(depth + 1),
@@ -480,7 +489,7 @@ impl Fuzzer {
         }
     }
     fn fragment_34(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -495,7 +504,7 @@ impl Fuzzer {
             }
         }
     fn fragment_35(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -510,7 +519,7 @@ impl Fuzzer {
             }
         }
     fn fragment_36(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -525,7 +534,7 @@ impl Fuzzer {
             }
         }
     fn fragment_37(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -540,7 +549,7 @@ impl Fuzzer {
             }
         }
     fn fragment_38(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -555,7 +564,7 @@ impl Fuzzer {
             }
         }
     fn fragment_39(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_145(depth + 1),
             1 => self.fragment_150(depth + 1),
@@ -565,7 +574,7 @@ impl Fuzzer {
         }
     }
     fn fragment_40(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -580,7 +589,7 @@ impl Fuzzer {
             }
         }
     fn fragment_41(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -595,7 +604,7 @@ impl Fuzzer {
             }
         }
     fn fragment_42(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -610,7 +619,7 @@ impl Fuzzer {
             }
         }
     fn fragment_43(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_31(depth + 1);
         self.fragment_32(depth + 1);
         self.fragment_33(depth + 1);
@@ -625,7 +634,7 @@ impl Fuzzer {
         self.fragment_42(depth + 1);
     }
     fn fragment_44(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -633,7 +642,7 @@ impl Fuzzer {
         }
     }
     fn fragment_45(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -648,7 +657,7 @@ impl Fuzzer {
             }
         }
     fn fragment_46(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -663,7 +672,7 @@ impl Fuzzer {
             }
         }
     fn fragment_47(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -678,7 +687,7 @@ impl Fuzzer {
             }
         }
     fn fragment_48(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_50(depth + 1),
             1 => self.fragment_52(depth + 1),
@@ -686,7 +695,7 @@ impl Fuzzer {
         }
     }
     fn fragment_49(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -701,7 +710,7 @@ impl Fuzzer {
             }
         }
     fn fragment_50(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_44(depth + 1);
         self.fragment_45(depth + 1);
         self.fragment_46(depth + 1);
@@ -710,7 +719,7 @@ impl Fuzzer {
         self.fragment_49(depth + 1);
     }
     fn fragment_51(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -718,7 +727,7 @@ impl Fuzzer {
         }
     }
     fn fragment_52(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -726,7 +735,7 @@ impl Fuzzer {
         }
     }
     fn fragment_53(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -741,7 +750,7 @@ impl Fuzzer {
             }
         }
     fn fragment_54(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -756,7 +765,7 @@ impl Fuzzer {
             }
         }
     fn fragment_55(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -771,7 +780,7 @@ impl Fuzzer {
             }
         }
     fn fragment_56(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -786,7 +795,7 @@ impl Fuzzer {
             }
         }
     fn fragment_57(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -801,7 +810,7 @@ impl Fuzzer {
             }
         }
     fn fragment_58(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -816,7 +825,7 @@ impl Fuzzer {
             }
         }
     fn fragment_59(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -831,7 +840,7 @@ impl Fuzzer {
             }
         }
     fn fragment_60(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -846,7 +855,7 @@ impl Fuzzer {
             }
         }
     fn fragment_61(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -861,7 +870,7 @@ impl Fuzzer {
             }
         }
     fn fragment_62(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -876,7 +885,7 @@ impl Fuzzer {
             }
         }
     fn fragment_63(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -891,7 +900,7 @@ impl Fuzzer {
             }
         }
     fn fragment_64(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -906,7 +915,7 @@ impl Fuzzer {
             }
         }
     fn fragment_65(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -921,7 +930,7 @@ impl Fuzzer {
             }
         }
     fn fragment_66(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -936,7 +945,7 @@ impl Fuzzer {
             }
         }
     fn fragment_67(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -951,7 +960,7 @@ impl Fuzzer {
             }
         }
     fn fragment_68(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -966,7 +975,7 @@ impl Fuzzer {
             }
         }
     fn fragment_69(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -981,7 +990,7 @@ impl Fuzzer {
             }
         }
     fn fragment_70(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -996,7 +1005,7 @@ impl Fuzzer {
             }
         }
     fn fragment_71(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1011,7 +1020,7 @@ impl Fuzzer {
             }
         }
     fn fragment_72(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1026,7 +1035,7 @@ impl Fuzzer {
             }
         }
     fn fragment_73(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1041,7 +1050,7 @@ impl Fuzzer {
             }
         }
     fn fragment_74(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1056,7 +1065,7 @@ impl Fuzzer {
             }
         }
     fn fragment_75(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1071,7 +1080,7 @@ impl Fuzzer {
             }
         }
     fn fragment_76(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1086,7 +1095,7 @@ impl Fuzzer {
             }
         }
     fn fragment_77(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1101,7 +1110,7 @@ impl Fuzzer {
             }
         }
     fn fragment_78(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1116,7 +1125,7 @@ impl Fuzzer {
             }
         }
     fn fragment_79(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1131,7 +1140,7 @@ impl Fuzzer {
             }
         }
     fn fragment_80(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1146,7 +1155,7 @@ impl Fuzzer {
             }
         }
     fn fragment_81(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1161,7 +1170,7 @@ impl Fuzzer {
             }
         }
     fn fragment_82(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1176,7 +1185,7 @@ impl Fuzzer {
             }
         }
     fn fragment_83(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1191,7 +1200,7 @@ impl Fuzzer {
             }
         }
     fn fragment_84(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1206,7 +1215,7 @@ impl Fuzzer {
             }
         }
     fn fragment_85(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1221,7 +1230,7 @@ impl Fuzzer {
             }
         }
     fn fragment_86(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1236,7 +1245,7 @@ impl Fuzzer {
             }
         }
     fn fragment_87(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1251,7 +1260,7 @@ impl Fuzzer {
             }
         }
     fn fragment_88(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1266,7 +1275,7 @@ impl Fuzzer {
             }
         }
     fn fragment_89(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1281,7 +1290,7 @@ impl Fuzzer {
             }
         }
     fn fragment_90(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1296,7 +1305,7 @@ impl Fuzzer {
             }
         }
     fn fragment_91(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -1317,7 +1326,7 @@ impl Fuzzer {
         }
     }
     fn fragment_92(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1332,7 +1341,7 @@ impl Fuzzer {
             }
         }
     fn fragment_93(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1347,7 +1356,7 @@ impl Fuzzer {
             }
         }
     fn fragment_94(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1362,7 +1371,7 @@ impl Fuzzer {
             }
         }
     fn fragment_95(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_425(depth + 1),
             1 => self.fragment_427(depth + 1),
@@ -1370,7 +1379,7 @@ impl Fuzzer {
         }
     }
     fn fragment_96(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1385,7 +1394,7 @@ impl Fuzzer {
             }
         }
     fn fragment_97(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1400,7 +1409,7 @@ impl Fuzzer {
             }
         }
     fn fragment_98(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1415,7 +1424,7 @@ impl Fuzzer {
             }
         }
     fn fragment_99(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1430,7 +1439,7 @@ impl Fuzzer {
             }
         }
     fn fragment_100(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1445,7 +1454,7 @@ impl Fuzzer {
             }
         }
     fn fragment_101(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_145(depth + 1),
             1 => self.fragment_150(depth + 1),
@@ -1455,7 +1464,7 @@ impl Fuzzer {
         }
     }
     fn fragment_102(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1470,7 +1479,7 @@ impl Fuzzer {
             }
         }
     fn fragment_103(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1485,7 +1494,7 @@ impl Fuzzer {
             }
         }
     fn fragment_104(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1500,7 +1509,7 @@ impl Fuzzer {
             }
         }
     fn fragment_105(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_91(depth + 1);
         self.fragment_92(depth + 1);
         self.fragment_93(depth + 1);
@@ -1517,7 +1526,7 @@ impl Fuzzer {
         self.fragment_104(depth + 1);
     }
     fn fragment_106(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_91(depth + 1);
         self.fragment_92(depth + 1);
         self.fragment_93(depth + 1);
@@ -1534,7 +1543,7 @@ impl Fuzzer {
         self.fragment_104(depth + 1);
     }
     fn fragment_107(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1549,7 +1558,7 @@ impl Fuzzer {
             }
         }
     fn fragment_108(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_110(depth + 1),
             1 => self.fragment_112(depth + 1),
@@ -1557,7 +1566,7 @@ impl Fuzzer {
         }
     }
     fn fragment_109(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1572,14 +1581,14 @@ impl Fuzzer {
             }
         }
     fn fragment_110(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_106(depth + 1);
         self.fragment_107(depth + 1);
         self.fragment_108(depth + 1);
         self.fragment_109(depth + 1);
     }
     fn fragment_111(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1594,7 +1603,7 @@ impl Fuzzer {
             }
         }
     fn fragment_112(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1609,7 +1618,7 @@ impl Fuzzer {
             }
         }
     fn fragment_113(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1617,7 +1626,7 @@ impl Fuzzer {
         }
     }
     fn fragment_114(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1632,7 +1641,7 @@ impl Fuzzer {
             }
         }
     fn fragment_115(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1647,7 +1656,7 @@ impl Fuzzer {
             }
         }
     fn fragment_116(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1662,7 +1671,7 @@ impl Fuzzer {
             }
         }
     fn fragment_117(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1670,7 +1679,7 @@ impl Fuzzer {
         }
     }
     fn fragment_118(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1685,7 +1694,7 @@ impl Fuzzer {
             }
         }
     fn fragment_119(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_113(depth + 1);
         self.fragment_114(depth + 1);
         self.fragment_115(depth + 1);
@@ -1694,7 +1703,7 @@ impl Fuzzer {
         self.fragment_118(depth + 1);
     }
     fn fragment_120(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1702,7 +1711,7 @@ impl Fuzzer {
         }
     }
     fn fragment_121(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1717,7 +1726,7 @@ impl Fuzzer {
             }
         }
     fn fragment_122(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1732,7 +1741,7 @@ impl Fuzzer {
             }
         }
     fn fragment_123(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1747,7 +1756,7 @@ impl Fuzzer {
             }
         }
     fn fragment_124(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1755,7 +1764,7 @@ impl Fuzzer {
         }
     }
     fn fragment_125(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1770,7 +1779,7 @@ impl Fuzzer {
             }
         }
     fn fragment_126(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_120(depth + 1);
         self.fragment_121(depth + 1);
         self.fragment_122(depth + 1);
@@ -1779,7 +1788,7 @@ impl Fuzzer {
         self.fragment_125(depth + 1);
     }
     fn fragment_127(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1787,7 +1796,7 @@ impl Fuzzer {
         }
     }
     fn fragment_128(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1802,7 +1811,7 @@ impl Fuzzer {
             }
         }
     fn fragment_129(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1817,7 +1826,7 @@ impl Fuzzer {
             }
         }
     fn fragment_130(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1832,7 +1841,7 @@ impl Fuzzer {
             }
         }
     fn fragment_131(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1840,7 +1849,7 @@ impl Fuzzer {
         }
     }
     fn fragment_132(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1855,7 +1864,7 @@ impl Fuzzer {
             }
         }
     fn fragment_133(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_127(depth + 1);
         self.fragment_128(depth + 1);
         self.fragment_129(depth + 1);
@@ -1864,7 +1873,7 @@ impl Fuzzer {
         self.fragment_132(depth + 1);
     }
     fn fragment_134(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1872,7 +1881,7 @@ impl Fuzzer {
         }
     }
     fn fragment_135(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1887,7 +1896,7 @@ impl Fuzzer {
             }
         }
     fn fragment_136(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1902,7 +1911,7 @@ impl Fuzzer {
             }
         }
     fn fragment_137(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1917,7 +1926,7 @@ impl Fuzzer {
             }
         }
     fn fragment_138(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_526(depth + 1),
             1 => self.fragment_528(depth + 1),
@@ -1925,7 +1934,7 @@ impl Fuzzer {
         }
     }
     fn fragment_139(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1940,7 +1949,7 @@ impl Fuzzer {
             }
         }
     fn fragment_140(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_134(depth + 1);
         self.fragment_135(depth + 1);
         self.fragment_136(depth + 1);
@@ -1949,7 +1958,7 @@ impl Fuzzer {
         self.fragment_139(depth + 1);
     }
     fn fragment_141(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_119(depth + 1),
             1 => self.fragment_126(depth + 1),
@@ -1959,7 +1968,7 @@ impl Fuzzer {
         }
     }
     fn fragment_142(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1974,7 +1983,7 @@ impl Fuzzer {
             }
         }
     fn fragment_143(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_169(depth + 1),
             1 => self.fragment_171(depth + 1),
@@ -1982,7 +1991,7 @@ impl Fuzzer {
         }
     }
     fn fragment_144(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -1997,14 +2006,14 @@ impl Fuzzer {
             }
         }
     fn fragment_145(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_141(depth + 1);
         self.fragment_142(depth + 1);
         self.fragment_143(depth + 1);
         self.fragment_144(depth + 1);
     }
     fn fragment_146(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -2015,7 +2024,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_147(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2030,7 +2039,7 @@ impl Fuzzer {
             }
         }
     fn fragment_148(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_169(depth + 1),
             1 => self.fragment_171(depth + 1),
@@ -2038,7 +2047,7 @@ impl Fuzzer {
         }
     }
     fn fragment_149(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2053,21 +2062,21 @@ impl Fuzzer {
             }
         }
     fn fragment_150(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_146(depth + 1);
         self.fragment_147(depth + 1);
         self.fragment_148(depth + 1);
         self.fragment_149(depth + 1);
     }
     fn fragment_151(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_428(depth + 1);
         self.fragment_429(depth + 1);
         self.fragment_430(depth + 1);
         self.fragment_431(depth + 1);
     }
     fn fragment_152(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2082,7 +2091,7 @@ impl Fuzzer {
             }
         }
     fn fragment_153(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_169(depth + 1),
             1 => self.fragment_171(depth + 1),
@@ -2090,7 +2099,7 @@ impl Fuzzer {
         }
     }
     fn fragment_154(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2105,14 +2114,14 @@ impl Fuzzer {
             }
         }
     fn fragment_155(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_151(depth + 1);
         self.fragment_152(depth + 1);
         self.fragment_153(depth + 1);
         self.fragment_154(depth + 1);
     }
     fn fragment_156(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -2123,7 +2132,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_157(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2138,7 +2147,7 @@ impl Fuzzer {
             }
         }
     fn fragment_158(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2153,7 +2162,7 @@ impl Fuzzer {
             }
         }
     fn fragment_159(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2168,7 +2177,7 @@ impl Fuzzer {
             }
         }
     fn fragment_160(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_30(depth + 1),
             1 => self.fragment_43(depth + 1),
@@ -2176,7 +2185,7 @@ impl Fuzzer {
         }
     }
     fn fragment_161(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2191,7 +2200,7 @@ impl Fuzzer {
             }
         }
     fn fragment_162(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_169(depth + 1),
             1 => self.fragment_171(depth + 1),
@@ -2199,7 +2208,7 @@ impl Fuzzer {
         }
     }
     fn fragment_163(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2214,7 +2223,7 @@ impl Fuzzer {
             }
         }
     fn fragment_164(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_156(depth + 1);
         self.fragment_157(depth + 1);
         self.fragment_158(depth + 1);
@@ -2225,7 +2234,7 @@ impl Fuzzer {
         self.fragment_163(depth + 1);
     }
     fn fragment_165(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2240,7 +2249,7 @@ impl Fuzzer {
             }
         }
     fn fragment_166(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2255,7 +2264,7 @@ impl Fuzzer {
             }
         }
     fn fragment_167(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_145(depth + 1),
             1 => self.fragment_150(depth + 1),
@@ -2265,7 +2274,7 @@ impl Fuzzer {
         }
     }
     fn fragment_168(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2280,14 +2289,14 @@ impl Fuzzer {
             }
         }
     fn fragment_169(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_165(depth + 1);
         self.fragment_166(depth + 1);
         self.fragment_167(depth + 1);
         self.fragment_168(depth + 1);
     }
     fn fragment_170(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2302,7 +2311,7 @@ impl Fuzzer {
             }
         }
     fn fragment_171(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2317,7 +2326,7 @@ impl Fuzzer {
             }
         }
     fn fragment_172(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_187(depth + 1);
         self.fragment_188(depth + 1);
         self.fragment_189(depth + 1);
@@ -2332,7 +2341,7 @@ impl Fuzzer {
         self.fragment_198(depth + 1);
     }
     fn fragment_173(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_187(depth + 1);
         self.fragment_188(depth + 1);
         self.fragment_189(depth + 1);
@@ -2347,7 +2356,7 @@ impl Fuzzer {
         self.fragment_198(depth + 1);
     }
     fn fragment_174(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_356(depth + 1);
         self.fragment_357(depth + 1);
         self.fragment_358(depth + 1);
@@ -2362,7 +2371,7 @@ impl Fuzzer {
         self.fragment_367(depth + 1);
     }
     fn fragment_175(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_356(depth + 1);
         self.fragment_357(depth + 1);
         self.fragment_358(depth + 1);
@@ -2377,7 +2386,7 @@ impl Fuzzer {
         self.fragment_367(depth + 1);
     }
     fn fragment_176(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_214(depth + 1),
             1 => self.fragment_229(depth + 1),
@@ -2385,7 +2394,7 @@ impl Fuzzer {
         }
     }
     fn fragment_177(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_214(depth + 1),
             1 => self.fragment_229(depth + 1),
@@ -2393,7 +2402,7 @@ impl Fuzzer {
         }
     }
     fn fragment_178(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_369(depth + 1);
         self.fragment_370(depth + 1);
         self.fragment_371(depth + 1);
@@ -2408,7 +2417,7 @@ impl Fuzzer {
         self.fragment_380(depth + 1);
     }
     fn fragment_179(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_369(depth + 1);
         self.fragment_370(depth + 1);
         self.fragment_371(depth + 1);
@@ -2423,7 +2432,7 @@ impl Fuzzer {
         self.fragment_380(depth + 1);
     }
     fn fragment_180(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_173(depth + 1),
             1 => self.fragment_175(depth + 1),
@@ -2433,7 +2442,7 @@ impl Fuzzer {
         }
     }
     fn fragment_181(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2448,7 +2457,7 @@ impl Fuzzer {
             }
         }
     fn fragment_182(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_184(depth + 1),
             1 => self.fragment_186(depth + 1),
@@ -2456,7 +2465,7 @@ impl Fuzzer {
         }
     }
     fn fragment_183(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2471,14 +2480,14 @@ impl Fuzzer {
             }
         }
     fn fragment_184(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_180(depth + 1);
         self.fragment_181(depth + 1);
         self.fragment_182(depth + 1);
         self.fragment_183(depth + 1);
     }
     fn fragment_185(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2493,7 +2502,7 @@ impl Fuzzer {
             }
         }
     fn fragment_186(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2508,7 +2517,7 @@ impl Fuzzer {
             }
         }
     fn fragment_187(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2523,7 +2532,7 @@ impl Fuzzer {
             }
         }
     fn fragment_188(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2538,7 +2547,7 @@ impl Fuzzer {
             }
         }
     fn fragment_189(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -2559,7 +2568,7 @@ impl Fuzzer {
         }
     }
     fn fragment_190(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2574,7 +2583,7 @@ impl Fuzzer {
             }
         }
     fn fragment_191(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2589,7 +2598,7 @@ impl Fuzzer {
             }
         }
     fn fragment_192(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2604,7 +2613,7 @@ impl Fuzzer {
             }
         }
     fn fragment_193(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_441(depth + 1),
             1 => self.fragment_446(depth + 1),
@@ -2612,7 +2621,7 @@ impl Fuzzer {
         }
     }
     fn fragment_194(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2627,7 +2636,7 @@ impl Fuzzer {
             }
         }
     fn fragment_195(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2642,7 +2651,7 @@ impl Fuzzer {
             }
         }
     fn fragment_196(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2657,7 +2666,7 @@ impl Fuzzer {
             }
         }
     fn fragment_197(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2672,7 +2681,7 @@ impl Fuzzer {
             }
         }
     fn fragment_198(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2687,7 +2696,7 @@ impl Fuzzer {
             }
         }
     fn fragment_199(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_187(depth + 1);
         self.fragment_188(depth + 1);
         self.fragment_189(depth + 1);
@@ -2702,7 +2711,7 @@ impl Fuzzer {
         self.fragment_198(depth + 1);
     }
     fn fragment_200(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2717,7 +2726,7 @@ impl Fuzzer {
             }
         }
     fn fragment_201(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2732,7 +2741,7 @@ impl Fuzzer {
             }
         }
     fn fragment_202(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -2753,7 +2762,7 @@ impl Fuzzer {
         }
     }
     fn fragment_203(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2768,7 +2777,7 @@ impl Fuzzer {
             }
         }
     fn fragment_204(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2783,7 +2792,7 @@ impl Fuzzer {
             }
         }
     fn fragment_205(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2798,7 +2807,7 @@ impl Fuzzer {
             }
         }
     fn fragment_206(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_480(depth + 1),
             1 => self.fragment_487(depth + 1),
@@ -2806,7 +2815,7 @@ impl Fuzzer {
         }
     }
     fn fragment_207(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2821,7 +2830,7 @@ impl Fuzzer {
             }
         }
     fn fragment_208(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2836,7 +2845,7 @@ impl Fuzzer {
             }
         }
     fn fragment_209(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2851,7 +2860,7 @@ impl Fuzzer {
             }
         }
     fn fragment_210(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2866,7 +2875,7 @@ impl Fuzzer {
             }
         }
     fn fragment_211(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2881,7 +2890,7 @@ impl Fuzzer {
             }
         }
     fn fragment_212(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2896,7 +2905,7 @@ impl Fuzzer {
             }
         }
     fn fragment_213(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2911,7 +2920,7 @@ impl Fuzzer {
             }
         }
     fn fragment_214(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_200(depth + 1);
         self.fragment_201(depth + 1);
         self.fragment_202(depth + 1);
@@ -2928,7 +2937,7 @@ impl Fuzzer {
         self.fragment_213(depth + 1);
     }
     fn fragment_215(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2943,7 +2952,7 @@ impl Fuzzer {
             }
         }
     fn fragment_216(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2958,7 +2967,7 @@ impl Fuzzer {
             }
         }
     fn fragment_217(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -2979,7 +2988,7 @@ impl Fuzzer {
         }
     }
     fn fragment_218(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -2994,7 +3003,7 @@ impl Fuzzer {
             }
         }
     fn fragment_219(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3009,7 +3018,7 @@ impl Fuzzer {
             }
         }
     fn fragment_220(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3024,7 +3033,7 @@ impl Fuzzer {
             }
         }
     fn fragment_221(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_480(depth + 1),
             1 => self.fragment_487(depth + 1),
@@ -3032,7 +3041,7 @@ impl Fuzzer {
         }
     }
     fn fragment_222(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3047,7 +3056,7 @@ impl Fuzzer {
             }
         }
     fn fragment_223(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3062,7 +3071,7 @@ impl Fuzzer {
             }
         }
     fn fragment_224(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3077,7 +3086,7 @@ impl Fuzzer {
             }
         }
     fn fragment_225(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3092,7 +3101,7 @@ impl Fuzzer {
             }
         }
     fn fragment_226(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3107,7 +3116,7 @@ impl Fuzzer {
             }
         }
     fn fragment_227(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3122,7 +3131,7 @@ impl Fuzzer {
             }
         }
     fn fragment_228(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3137,7 +3146,7 @@ impl Fuzzer {
             }
         }
     fn fragment_229(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_215(depth + 1);
         self.fragment_216(depth + 1);
         self.fragment_217(depth + 1);
@@ -3154,7 +3163,7 @@ impl Fuzzer {
         self.fragment_228(depth + 1);
     }
     fn fragment_230(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3169,7 +3178,7 @@ impl Fuzzer {
             }
         }
     fn fragment_231(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3184,7 +3193,7 @@ impl Fuzzer {
             }
         }
     fn fragment_232(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3199,7 +3208,7 @@ impl Fuzzer {
             }
         }
     fn fragment_233(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3214,7 +3223,7 @@ impl Fuzzer {
             }
         }
     fn fragment_234(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3229,7 +3238,7 @@ impl Fuzzer {
             }
         }
     fn fragment_235(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3244,7 +3253,7 @@ impl Fuzzer {
             }
         }
     fn fragment_236(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3259,7 +3268,7 @@ impl Fuzzer {
             }
         }
     fn fragment_237(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3274,7 +3283,7 @@ impl Fuzzer {
             }
         }
     fn fragment_238(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3289,7 +3298,7 @@ impl Fuzzer {
             }
         }
     fn fragment_239(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3304,7 +3313,7 @@ impl Fuzzer {
             }
         }
     fn fragment_240(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3319,7 +3328,7 @@ impl Fuzzer {
             }
         }
     fn fragment_241(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3334,7 +3343,7 @@ impl Fuzzer {
             }
         }
     fn fragment_242(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3349,7 +3358,7 @@ impl Fuzzer {
             }
         }
     fn fragment_243(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3364,7 +3373,7 @@ impl Fuzzer {
             }
         }
     fn fragment_244(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3379,7 +3388,7 @@ impl Fuzzer {
             }
         }
     fn fragment_245(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3394,7 +3403,7 @@ impl Fuzzer {
             }
         }
     fn fragment_246(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3409,7 +3418,7 @@ impl Fuzzer {
             }
         }
     fn fragment_247(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3424,7 +3433,7 @@ impl Fuzzer {
             }
         }
     fn fragment_248(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3439,7 +3448,7 @@ impl Fuzzer {
             }
         }
     fn fragment_249(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3454,7 +3463,7 @@ impl Fuzzer {
             }
         }
     fn fragment_250(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3469,7 +3478,7 @@ impl Fuzzer {
             }
         }
     fn fragment_251(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3484,7 +3493,7 @@ impl Fuzzer {
             }
         }
     fn fragment_252(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3499,7 +3508,7 @@ impl Fuzzer {
             }
         }
     fn fragment_253(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3514,7 +3523,7 @@ impl Fuzzer {
             }
         }
     fn fragment_254(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3529,7 +3538,7 @@ impl Fuzzer {
             }
         }
     fn fragment_255(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3544,7 +3553,7 @@ impl Fuzzer {
             }
         }
     fn fragment_256(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3559,7 +3568,7 @@ impl Fuzzer {
             }
         }
     fn fragment_257(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3574,7 +3583,7 @@ impl Fuzzer {
             }
         }
     fn fragment_258(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3589,7 +3598,7 @@ impl Fuzzer {
             }
         }
     fn fragment_259(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3604,7 +3613,7 @@ impl Fuzzer {
             }
         }
     fn fragment_260(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3619,7 +3628,7 @@ impl Fuzzer {
             }
         }
     fn fragment_261(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3634,7 +3643,7 @@ impl Fuzzer {
             }
         }
     fn fragment_262(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3649,7 +3658,7 @@ impl Fuzzer {
             }
         }
     fn fragment_263(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3664,7 +3673,7 @@ impl Fuzzer {
             }
         }
     fn fragment_264(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3679,7 +3688,7 @@ impl Fuzzer {
             }
         }
     fn fragment_265(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3694,7 +3703,7 @@ impl Fuzzer {
             }
         }
     fn fragment_266(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3709,7 +3718,7 @@ impl Fuzzer {
             }
         }
     fn fragment_267(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3724,7 +3733,7 @@ impl Fuzzer {
             }
         }
     fn fragment_268(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3739,7 +3748,7 @@ impl Fuzzer {
             }
         }
     fn fragment_269(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3754,7 +3763,7 @@ impl Fuzzer {
             }
         }
     fn fragment_270(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3769,7 +3778,7 @@ impl Fuzzer {
             }
         }
     fn fragment_271(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3784,7 +3793,7 @@ impl Fuzzer {
             }
         }
     fn fragment_272(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3799,7 +3808,7 @@ impl Fuzzer {
             }
         }
     fn fragment_273(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3814,7 +3823,7 @@ impl Fuzzer {
             }
         }
     fn fragment_274(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3829,7 +3838,7 @@ impl Fuzzer {
             }
         }
     fn fragment_275(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3844,7 +3853,7 @@ impl Fuzzer {
             }
         }
     fn fragment_276(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3859,7 +3868,7 @@ impl Fuzzer {
             }
         }
     fn fragment_277(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3874,7 +3883,7 @@ impl Fuzzer {
             }
         }
     fn fragment_278(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3889,7 +3898,7 @@ impl Fuzzer {
             }
         }
     fn fragment_279(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3904,7 +3913,7 @@ impl Fuzzer {
             }
         }
     fn fragment_280(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3919,7 +3928,7 @@ impl Fuzzer {
             }
         }
     fn fragment_281(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3934,7 +3943,7 @@ impl Fuzzer {
             }
         }
     fn fragment_282(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3949,7 +3958,7 @@ impl Fuzzer {
             }
         }
     fn fragment_283(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3964,7 +3973,7 @@ impl Fuzzer {
             }
         }
     fn fragment_284(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3979,7 +3988,7 @@ impl Fuzzer {
             }
         }
     fn fragment_285(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -3994,7 +4003,7 @@ impl Fuzzer {
             }
         }
     fn fragment_286(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4009,7 +4018,7 @@ impl Fuzzer {
             }
         }
     fn fragment_287(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4024,7 +4033,7 @@ impl Fuzzer {
             }
         }
     fn fragment_288(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4039,7 +4048,7 @@ impl Fuzzer {
             }
         }
     fn fragment_289(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4054,7 +4063,7 @@ impl Fuzzer {
             }
         }
     fn fragment_290(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4069,7 +4078,7 @@ impl Fuzzer {
             }
         }
     fn fragment_291(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4084,7 +4093,7 @@ impl Fuzzer {
             }
         }
     fn fragment_292(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4099,7 +4108,7 @@ impl Fuzzer {
             }
         }
     fn fragment_293(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4114,7 +4123,7 @@ impl Fuzzer {
             }
         }
     fn fragment_294(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4129,7 +4138,7 @@ impl Fuzzer {
             }
         }
     fn fragment_295(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4144,7 +4153,7 @@ impl Fuzzer {
             }
         }
     fn fragment_296(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4159,7 +4168,7 @@ impl Fuzzer {
             }
         }
     fn fragment_297(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4174,7 +4183,7 @@ impl Fuzzer {
             }
         }
     fn fragment_298(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4189,7 +4198,7 @@ impl Fuzzer {
             }
         }
     fn fragment_299(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4204,7 +4213,7 @@ impl Fuzzer {
             }
         }
     fn fragment_300(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4219,7 +4228,7 @@ impl Fuzzer {
             }
         }
     fn fragment_301(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4234,7 +4243,7 @@ impl Fuzzer {
             }
         }
     fn fragment_302(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4249,7 +4258,7 @@ impl Fuzzer {
             }
         }
     fn fragment_303(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4264,7 +4273,7 @@ impl Fuzzer {
             }
         }
     fn fragment_304(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4279,7 +4288,7 @@ impl Fuzzer {
             }
         }
     fn fragment_305(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4294,7 +4303,7 @@ impl Fuzzer {
             }
         }
     fn fragment_306(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4309,7 +4318,7 @@ impl Fuzzer {
             }
         }
     fn fragment_307(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4324,7 +4333,7 @@ impl Fuzzer {
             }
         }
     fn fragment_308(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4339,7 +4348,7 @@ impl Fuzzer {
             }
         }
     fn fragment_309(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4354,7 +4363,7 @@ impl Fuzzer {
             }
         }
     fn fragment_310(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4369,7 +4378,7 @@ impl Fuzzer {
             }
         }
     fn fragment_311(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4384,7 +4393,7 @@ impl Fuzzer {
             }
         }
     fn fragment_312(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4399,7 +4408,7 @@ impl Fuzzer {
             }
         }
     fn fragment_313(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4414,7 +4423,7 @@ impl Fuzzer {
             }
         }
     fn fragment_314(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4429,7 +4438,7 @@ impl Fuzzer {
             }
         }
     fn fragment_315(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4444,7 +4453,7 @@ impl Fuzzer {
             }
         }
     fn fragment_316(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4459,7 +4468,7 @@ impl Fuzzer {
             }
         }
     fn fragment_317(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4474,7 +4483,7 @@ impl Fuzzer {
             }
         }
     fn fragment_318(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4489,7 +4498,7 @@ impl Fuzzer {
             }
         }
     fn fragment_319(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4504,7 +4513,7 @@ impl Fuzzer {
             }
         }
     fn fragment_320(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4519,7 +4528,7 @@ impl Fuzzer {
             }
         }
     fn fragment_321(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4534,7 +4543,7 @@ impl Fuzzer {
             }
         }
     fn fragment_322(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4549,7 +4558,7 @@ impl Fuzzer {
             }
         }
     fn fragment_323(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4564,7 +4573,7 @@ impl Fuzzer {
             }
         }
     fn fragment_324(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4579,7 +4588,7 @@ impl Fuzzer {
             }
         }
     fn fragment_325(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4594,7 +4603,7 @@ impl Fuzzer {
             }
         }
     fn fragment_326(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4609,7 +4618,7 @@ impl Fuzzer {
             }
         }
     fn fragment_327(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4624,7 +4633,7 @@ impl Fuzzer {
             }
         }
     fn fragment_328(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4639,7 +4648,7 @@ impl Fuzzer {
             }
         }
     fn fragment_329(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4654,7 +4663,7 @@ impl Fuzzer {
             }
         }
     fn fragment_330(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4669,7 +4678,7 @@ impl Fuzzer {
             }
         }
     fn fragment_331(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4684,7 +4693,7 @@ impl Fuzzer {
             }
         }
     fn fragment_332(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4699,7 +4708,7 @@ impl Fuzzer {
             }
         }
     fn fragment_333(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4714,7 +4723,7 @@ impl Fuzzer {
             }
         }
     fn fragment_334(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4729,7 +4738,7 @@ impl Fuzzer {
             }
         }
     fn fragment_335(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4744,7 +4753,7 @@ impl Fuzzer {
             }
         }
     fn fragment_336(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4759,7 +4768,7 @@ impl Fuzzer {
             }
         }
     fn fragment_337(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4774,7 +4783,7 @@ impl Fuzzer {
             }
         }
     fn fragment_338(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4789,7 +4798,7 @@ impl Fuzzer {
             }
         }
     fn fragment_339(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4804,7 +4813,7 @@ impl Fuzzer {
             }
         }
     fn fragment_340(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4819,7 +4828,7 @@ impl Fuzzer {
             }
         }
     fn fragment_341(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4834,7 +4843,7 @@ impl Fuzzer {
             }
         }
     fn fragment_342(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4849,7 +4858,7 @@ impl Fuzzer {
             }
         }
     fn fragment_343(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4864,7 +4873,7 @@ impl Fuzzer {
             }
         }
     fn fragment_344(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4879,7 +4888,7 @@ impl Fuzzer {
             }
         }
     fn fragment_345(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4894,7 +4903,7 @@ impl Fuzzer {
             }
         }
     fn fragment_346(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4909,7 +4918,7 @@ impl Fuzzer {
             }
         }
     fn fragment_347(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4924,7 +4933,7 @@ impl Fuzzer {
             }
         }
     fn fragment_348(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4939,7 +4948,7 @@ impl Fuzzer {
             }
         }
     fn fragment_349(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4954,7 +4963,7 @@ impl Fuzzer {
             }
         }
     fn fragment_350(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4969,7 +4978,7 @@ impl Fuzzer {
             }
         }
     fn fragment_351(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4984,7 +4993,7 @@ impl Fuzzer {
             }
         }
     fn fragment_352(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -4999,7 +5008,7 @@ impl Fuzzer {
             }
         }
     fn fragment_353(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5014,7 +5023,7 @@ impl Fuzzer {
             }
         }
     fn fragment_354(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5029,7 +5038,7 @@ impl Fuzzer {
             }
         }
     fn fragment_355(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5044,7 +5053,7 @@ impl Fuzzer {
             }
         }
     fn fragment_356(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5059,7 +5068,7 @@ impl Fuzzer {
             }
         }
     fn fragment_357(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5074,7 +5083,7 @@ impl Fuzzer {
             }
         }
     fn fragment_358(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -5095,7 +5104,7 @@ impl Fuzzer {
         }
     }
     fn fragment_359(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5110,7 +5119,7 @@ impl Fuzzer {
             }
         }
     fn fragment_360(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5125,7 +5134,7 @@ impl Fuzzer {
             }
         }
     fn fragment_361(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5140,7 +5149,7 @@ impl Fuzzer {
             }
         }
     fn fragment_362(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_455(depth + 1),
             1 => self.fragment_462(depth + 1),
@@ -5150,7 +5159,7 @@ impl Fuzzer {
         }
     }
     fn fragment_363(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5165,7 +5174,7 @@ impl Fuzzer {
             }
         }
     fn fragment_364(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5180,7 +5189,7 @@ impl Fuzzer {
             }
         }
     fn fragment_365(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5195,7 +5204,7 @@ impl Fuzzer {
             }
         }
     fn fragment_366(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5210,7 +5219,7 @@ impl Fuzzer {
             }
         }
     fn fragment_367(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5225,7 +5234,7 @@ impl Fuzzer {
             }
         }
     fn fragment_368(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_356(depth + 1);
         self.fragment_357(depth + 1);
         self.fragment_358(depth + 1);
@@ -5240,7 +5249,7 @@ impl Fuzzer {
         self.fragment_367(depth + 1);
     }
     fn fragment_369(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5255,7 +5264,7 @@ impl Fuzzer {
             }
         }
     fn fragment_370(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5270,7 +5279,7 @@ impl Fuzzer {
             }
         }
     fn fragment_371(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -5291,7 +5300,7 @@ impl Fuzzer {
         }
     }
     fn fragment_372(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5306,7 +5315,7 @@ impl Fuzzer {
             }
         }
     fn fragment_373(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5321,7 +5330,7 @@ impl Fuzzer {
             }
         }
     fn fragment_374(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5336,7 +5345,7 @@ impl Fuzzer {
             }
         }
     fn fragment_375(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_441(depth + 1),
             1 => self.fragment_446(depth + 1),
@@ -5344,7 +5353,7 @@ impl Fuzzer {
         }
     }
     fn fragment_376(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5359,7 +5368,7 @@ impl Fuzzer {
             }
         }
     fn fragment_377(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5374,7 +5383,7 @@ impl Fuzzer {
             }
         }
     fn fragment_378(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5389,7 +5398,7 @@ impl Fuzzer {
             }
         }
     fn fragment_379(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5404,7 +5413,7 @@ impl Fuzzer {
             }
         }
     fn fragment_380(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5419,7 +5428,7 @@ impl Fuzzer {
             }
         }
     fn fragment_381(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_369(depth + 1);
         self.fragment_370(depth + 1);
         self.fragment_371(depth + 1);
@@ -5434,7 +5443,7 @@ impl Fuzzer {
         self.fragment_380(depth + 1);
     }
     fn fragment_382(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5449,7 +5458,7 @@ impl Fuzzer {
             }
         }
     fn fragment_383(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5464,7 +5473,7 @@ impl Fuzzer {
             }
         }
     fn fragment_384(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_184(depth + 1),
             1 => self.fragment_186(depth + 1),
@@ -5472,7 +5481,7 @@ impl Fuzzer {
         }
     }
     fn fragment_385(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5487,7 +5496,7 @@ impl Fuzzer {
             }
         }
     fn fragment_386(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_110(depth + 1),
             1 => self.fragment_112(depth + 1),
@@ -5495,7 +5504,7 @@ impl Fuzzer {
         }
     }
     fn fragment_387(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5510,7 +5519,7 @@ impl Fuzzer {
             }
         }
     fn fragment_388(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_382(depth + 1);
         self.fragment_383(depth + 1);
         self.fragment_384(depth + 1);
@@ -5519,7 +5528,7 @@ impl Fuzzer {
         self.fragment_387(depth + 1);
     }
     fn fragment_389(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5534,7 +5543,7 @@ impl Fuzzer {
             }
         }
     fn fragment_390(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5549,7 +5558,7 @@ impl Fuzzer {
             }
         }
     fn fragment_391(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5564,7 +5573,7 @@ impl Fuzzer {
             }
         }
     fn fragment_392(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5579,7 +5588,7 @@ impl Fuzzer {
             }
         }
     fn fragment_393(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5594,7 +5603,7 @@ impl Fuzzer {
             }
         }
     fn fragment_394(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5609,7 +5618,7 @@ impl Fuzzer {
             }
         }
     fn fragment_395(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5624,7 +5633,7 @@ impl Fuzzer {
             }
         }
     fn fragment_396(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5639,7 +5648,7 @@ impl Fuzzer {
             }
         }
     fn fragment_397(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5654,7 +5663,7 @@ impl Fuzzer {
             }
         }
     fn fragment_398(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5669,7 +5678,7 @@ impl Fuzzer {
             }
         }
     fn fragment_399(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5684,7 +5693,7 @@ impl Fuzzer {
             }
         }
     fn fragment_400(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5699,7 +5708,7 @@ impl Fuzzer {
             }
         }
     fn fragment_401(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5714,7 +5723,7 @@ impl Fuzzer {
             }
         }
     fn fragment_402(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5729,7 +5738,7 @@ impl Fuzzer {
             }
         }
     fn fragment_403(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5744,7 +5753,7 @@ impl Fuzzer {
             }
         }
     fn fragment_404(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5759,7 +5768,7 @@ impl Fuzzer {
             }
         }
     fn fragment_405(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5774,7 +5783,7 @@ impl Fuzzer {
             }
         }
     fn fragment_406(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5789,7 +5798,7 @@ impl Fuzzer {
             }
         }
     fn fragment_407(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5804,7 +5813,7 @@ impl Fuzzer {
             }
         }
     fn fragment_408(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5819,7 +5828,7 @@ impl Fuzzer {
             }
         }
     fn fragment_409(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5834,7 +5843,7 @@ impl Fuzzer {
             }
         }
     fn fragment_410(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5849,7 +5858,7 @@ impl Fuzzer {
             }
         }
     fn fragment_411(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5864,7 +5873,7 @@ impl Fuzzer {
             }
         }
     fn fragment_412(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5879,7 +5888,7 @@ impl Fuzzer {
             }
         }
     fn fragment_413(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5894,7 +5903,7 @@ impl Fuzzer {
             }
         }
     fn fragment_414(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5909,7 +5918,7 @@ impl Fuzzer {
             }
         }
     fn fragment_415(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5924,7 +5933,7 @@ impl Fuzzer {
             }
         }
     fn fragment_416(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5939,7 +5948,7 @@ impl Fuzzer {
             }
         }
     fn fragment_417(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5954,7 +5963,7 @@ impl Fuzzer {
             }
         }
     fn fragment_418(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -5969,7 +5978,7 @@ impl Fuzzer {
             }
         }
     fn fragment_419(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -5990,7 +5999,7 @@ impl Fuzzer {
         }
     }
     fn fragment_420(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6005,7 +6014,7 @@ impl Fuzzer {
             }
         }
     fn fragment_421(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6020,7 +6029,7 @@ impl Fuzzer {
             }
         }
     fn fragment_422(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6035,7 +6044,7 @@ impl Fuzzer {
             }
         }
     fn fragment_423(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_425(depth + 1),
             1 => self.fragment_427(depth + 1),
@@ -6043,7 +6052,7 @@ impl Fuzzer {
         }
     }
     fn fragment_424(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6058,7 +6067,7 @@ impl Fuzzer {
             }
         }
     fn fragment_425(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_419(depth + 1);
         self.fragment_420(depth + 1);
         self.fragment_421(depth + 1);
@@ -6067,7 +6076,7 @@ impl Fuzzer {
         self.fragment_424(depth + 1);
     }
     fn fragment_426(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6088,7 +6097,7 @@ impl Fuzzer {
         }
     }
     fn fragment_427(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6109,7 +6118,7 @@ impl Fuzzer {
         }
     }
     fn fragment_428(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6124,7 +6133,7 @@ impl Fuzzer {
             }
         }
     fn fragment_429(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6139,7 +6148,7 @@ impl Fuzzer {
             }
         }
     fn fragment_430(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -6150,7 +6159,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_431(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6165,14 +6174,14 @@ impl Fuzzer {
             }
         }
     fn fragment_432(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_428(depth + 1);
         self.fragment_429(depth + 1);
         self.fragment_430(depth + 1);
         self.fragment_431(depth + 1);
     }
     fn fragment_433(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -6189,7 +6198,7 @@ impl Fuzzer {
         }
     }
     fn fragment_434(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6204,7 +6213,7 @@ impl Fuzzer {
             }
         }
     fn fragment_435(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6225,7 +6234,7 @@ impl Fuzzer {
         }
     }
     fn fragment_436(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6240,7 +6249,7 @@ impl Fuzzer {
             }
         }
     fn fragment_437(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6255,7 +6264,7 @@ impl Fuzzer {
             }
         }
     fn fragment_438(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6270,7 +6279,7 @@ impl Fuzzer {
             }
         }
     fn fragment_439(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_441(depth + 1),
             1 => self.fragment_446(depth + 1),
@@ -6278,7 +6287,7 @@ impl Fuzzer {
         }
     }
     fn fragment_440(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6293,7 +6302,7 @@ impl Fuzzer {
             }
         }
     fn fragment_441(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_433(depth + 1);
         self.fragment_434(depth + 1);
         self.fragment_435(depth + 1);
@@ -6304,7 +6313,7 @@ impl Fuzzer {
         self.fragment_440(depth + 1);
     }
     fn fragment_442(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -6321,7 +6330,7 @@ impl Fuzzer {
         }
     }
     fn fragment_443(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6336,7 +6345,7 @@ impl Fuzzer {
             }
         }
     fn fragment_444(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6357,7 +6366,7 @@ impl Fuzzer {
         }
     }
     fn fragment_445(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6372,14 +6381,14 @@ impl Fuzzer {
             }
         }
     fn fragment_446(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_442(depth + 1);
         self.fragment_443(depth + 1);
         self.fragment_444(depth + 1);
         self.fragment_445(depth + 1);
     }
     fn fragment_447(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -6396,7 +6405,7 @@ impl Fuzzer {
         }
     }
     fn fragment_448(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6411,7 +6420,7 @@ impl Fuzzer {
             }
         }
     fn fragment_449(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6432,7 +6441,7 @@ impl Fuzzer {
         }
     }
     fn fragment_450(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6447,7 +6456,7 @@ impl Fuzzer {
             }
         }
     fn fragment_451(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6462,7 +6471,7 @@ impl Fuzzer {
             }
         }
     fn fragment_452(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6477,7 +6486,7 @@ impl Fuzzer {
             }
         }
     fn fragment_453(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_455(depth + 1),
             1 => self.fragment_462(depth + 1),
@@ -6487,7 +6496,7 @@ impl Fuzzer {
         }
     }
     fn fragment_454(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6502,7 +6511,7 @@ impl Fuzzer {
             }
         }
     fn fragment_455(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_447(depth + 1);
         self.fragment_448(depth + 1);
         self.fragment_449(depth + 1);
@@ -6513,7 +6522,7 @@ impl Fuzzer {
         self.fragment_454(depth + 1);
     }
     fn fragment_456(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6534,7 +6543,7 @@ impl Fuzzer {
         }
     }
     fn fragment_457(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6549,7 +6558,7 @@ impl Fuzzer {
             }
         }
     fn fragment_458(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6564,7 +6573,7 @@ impl Fuzzer {
             }
         }
     fn fragment_459(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6579,7 +6588,7 @@ impl Fuzzer {
             }
         }
     fn fragment_460(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_455(depth + 1),
             1 => self.fragment_462(depth + 1),
@@ -6589,7 +6598,7 @@ impl Fuzzer {
         }
     }
     fn fragment_461(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6604,7 +6613,7 @@ impl Fuzzer {
             }
         }
     fn fragment_462(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_456(depth + 1);
         self.fragment_457(depth + 1);
         self.fragment_458(depth + 1);
@@ -6613,7 +6622,7 @@ impl Fuzzer {
         self.fragment_461(depth + 1);
     }
     fn fragment_463(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -6630,7 +6639,7 @@ impl Fuzzer {
         }
     }
     fn fragment_464(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6645,7 +6654,7 @@ impl Fuzzer {
             }
         }
     fn fragment_465(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6666,7 +6675,7 @@ impl Fuzzer {
         }
     }
     fn fragment_466(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6681,14 +6690,14 @@ impl Fuzzer {
             }
         }
     fn fragment_467(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_463(depth + 1);
         self.fragment_464(depth + 1);
         self.fragment_465(depth + 1);
         self.fragment_466(depth + 1);
     }
     fn fragment_468(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6709,7 +6718,7 @@ impl Fuzzer {
         }
     }
     fn fragment_469(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6730,7 +6739,7 @@ impl Fuzzer {
         }
     }
     fn fragment_470(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_84(depth + 1),
             1 => self.fragment_86(depth + 1),
@@ -6740,7 +6749,7 @@ impl Fuzzer {
         }
     }
     fn fragment_471(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6755,7 +6764,7 @@ impl Fuzzer {
             }
         }
     fn fragment_472(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -6772,7 +6781,7 @@ impl Fuzzer {
         }
     }
     fn fragment_473(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6787,7 +6796,7 @@ impl Fuzzer {
             }
         }
     fn fragment_474(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6808,7 +6817,7 @@ impl Fuzzer {
         }
     }
     fn fragment_475(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6823,7 +6832,7 @@ impl Fuzzer {
             }
         }
     fn fragment_476(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6838,7 +6847,7 @@ impl Fuzzer {
             }
         }
     fn fragment_477(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6853,7 +6862,7 @@ impl Fuzzer {
             }
         }
     fn fragment_478(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_480(depth + 1),
             1 => self.fragment_487(depth + 1),
@@ -6861,7 +6870,7 @@ impl Fuzzer {
         }
     }
     fn fragment_479(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6876,7 +6885,7 @@ impl Fuzzer {
             }
         }
     fn fragment_480(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_470(depth + 1);
         self.fragment_471(depth + 1);
         self.fragment_472(depth + 1);
@@ -6889,7 +6898,7 @@ impl Fuzzer {
         self.fragment_479(depth + 1);
     }
     fn fragment_481(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 4 {
             0 => self.fragment_84(depth + 1),
             1 => self.fragment_86(depth + 1),
@@ -6899,7 +6908,7 @@ impl Fuzzer {
         }
     }
     fn fragment_482(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6914,7 +6923,7 @@ impl Fuzzer {
             }
         }
     fn fragment_483(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 11 {
             0 => self.fragment_500(depth + 1),
             1 => self.fragment_502(depth + 1),
@@ -6931,7 +6940,7 @@ impl Fuzzer {
         }
     }
     fn fragment_484(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6946,7 +6955,7 @@ impl Fuzzer {
             }
         }
     fn fragment_485(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -6967,7 +6976,7 @@ impl Fuzzer {
         }
     }
     fn fragment_486(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -6982,7 +6991,7 @@ impl Fuzzer {
             }
         }
     fn fragment_487(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_481(depth + 1);
         self.fragment_482(depth + 1);
         self.fragment_483(depth + 1);
@@ -6991,7 +7000,7 @@ impl Fuzzer {
         self.fragment_486(depth + 1);
     }
     fn fragment_488(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_54(depth + 1),
             1 => self.fragment_56(depth + 1),
@@ -7012,7 +7021,7 @@ impl Fuzzer {
         }
     }
     fn fragment_489(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7027,7 +7036,7 @@ impl Fuzzer {
             }
         }
     fn fragment_490(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7042,7 +7051,7 @@ impl Fuzzer {
             }
         }
     fn fragment_491(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7057,7 +7066,7 @@ impl Fuzzer {
             }
         }
     fn fragment_492(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_50(depth + 1),
             1 => self.fragment_52(depth + 1),
@@ -7065,7 +7074,7 @@ impl Fuzzer {
         }
     }
     fn fragment_493(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7080,7 +7089,7 @@ impl Fuzzer {
             }
         }
     fn fragment_494(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7095,7 +7104,7 @@ impl Fuzzer {
             }
         }
     fn fragment_495(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7110,7 +7119,7 @@ impl Fuzzer {
             }
         }
     fn fragment_496(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_488(depth + 1);
         self.fragment_489(depth + 1);
         self.fragment_490(depth + 1);
@@ -7121,7 +7130,7 @@ impl Fuzzer {
         self.fragment_495(depth + 1);
     }
     fn fragment_497(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_382(depth + 1);
         self.fragment_383(depth + 1);
         self.fragment_384(depth + 1);
@@ -7130,7 +7139,7 @@ impl Fuzzer {
         self.fragment_387(depth + 1);
     }
     fn fragment_498(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         self.fragment_382(depth + 1);
         self.fragment_383(depth + 1);
         self.fragment_384(depth + 1);
@@ -7139,7 +7148,7 @@ impl Fuzzer {
         self.fragment_387(depth + 1);
     }
     fn fragment_499(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7154,7 +7163,7 @@ impl Fuzzer {
             }
         }
     fn fragment_500(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7169,7 +7178,7 @@ impl Fuzzer {
             }
         }
     fn fragment_501(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7184,7 +7193,7 @@ impl Fuzzer {
             }
         }
     fn fragment_502(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7199,7 +7208,7 @@ impl Fuzzer {
             }
         }
     fn fragment_503(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7214,7 +7223,7 @@ impl Fuzzer {
             }
         }
     fn fragment_504(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7229,7 +7238,7 @@ impl Fuzzer {
             }
         }
     fn fragment_505(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7244,7 +7253,7 @@ impl Fuzzer {
             }
         }
     fn fragment_506(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7259,7 +7268,7 @@ impl Fuzzer {
             }
         }
     fn fragment_507(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7274,7 +7283,7 @@ impl Fuzzer {
             }
         }
     fn fragment_508(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7289,7 +7298,7 @@ impl Fuzzer {
             }
         }
     fn fragment_509(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7304,7 +7313,7 @@ impl Fuzzer {
             }
         }
     fn fragment_510(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7319,7 +7328,7 @@ impl Fuzzer {
             }
         }
     fn fragment_511(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7334,7 +7343,7 @@ impl Fuzzer {
             }
         }
     fn fragment_512(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7349,7 +7358,7 @@ impl Fuzzer {
             }
         }
     fn fragment_513(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7364,7 +7373,7 @@ impl Fuzzer {
             }
         }
     fn fragment_514(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7379,7 +7388,7 @@ impl Fuzzer {
             }
         }
     fn fragment_515(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7394,7 +7403,7 @@ impl Fuzzer {
             }
         }
     fn fragment_516(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7409,7 +7418,7 @@ impl Fuzzer {
             }
         }
     fn fragment_517(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7424,7 +7433,7 @@ impl Fuzzer {
             }
         }
     fn fragment_518(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7439,7 +7448,7 @@ impl Fuzzer {
             }
         }
     fn fragment_519(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7454,7 +7463,7 @@ impl Fuzzer {
             }
         }
     fn fragment_520(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7469,7 +7478,7 @@ impl Fuzzer {
             }
         }
     fn fragment_521(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -7490,7 +7499,7 @@ impl Fuzzer {
         }
     }
     fn fragment_522(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 15 {
             0 => self.fragment_390(depth + 1),
             1 => self.fragment_392(depth + 1),
@@ -7511,7 +7520,7 @@ impl Fuzzer {
         }
     }
     fn fragment_523(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7526,7 +7535,7 @@ impl Fuzzer {
             }
         }
     fn fragment_524(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
 
             unsafe {
                 let old_size = self.buf.len();
@@ -7541,7 +7550,7 @@ impl Fuzzer {
             }
         }
     fn fragment_525(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_522(depth + 1),
             1 => self.fragment_524(depth + 1),
@@ -7549,7 +7558,7 @@ impl Fuzzer {
         }
     }
     fn fragment_526(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 2 {
             0 => self.fragment_522(depth + 1),
             1 => self.fragment_524(depth + 1),
@@ -7557,7 +7566,7 @@ impl Fuzzer {
         }
     }
     fn fragment_527(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 62 {
             0 => self.fragment_233(depth + 1),
             1 => self.fragment_235(depth + 1),
@@ -7625,7 +7634,7 @@ impl Fuzzer {
         }
     }
     fn fragment_528(&mut self, depth: usize) {
-        if depth >= 15 { return; }
+        if depth >= 20 { return; }
         match self.rand() % 62 {
             0 => self.fragment_233(depth + 1),
             1 => self.fragment_235(depth + 1),
