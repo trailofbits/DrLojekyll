@@ -34,7 +34,17 @@ OutputStream &OutputStream::operator<<(ParsedVariable var) {
 }
 
 OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
-  *this << "#" << decl.KindName() << " " << decl.Name();
+  *this << "#" << decl.KindName() << " ";
+
+  auto name = decl.Name();
+  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
+    *this << "pred" << decl.Id();
+  } else {
+    *this << name;
+    if (rename_locals && decl.IsLocal()) {
+      os << "_" << decl.Id();
+    }
+  }
 
   auto comma = "(";
   for (auto param : decl.Parameters()) {
