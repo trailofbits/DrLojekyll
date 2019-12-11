@@ -194,7 +194,7 @@ parse::Impl<T> *ParserImpl::AddDecl(
   if (first_decl_it != context->declarations.end()) {
     const auto first_decl = first_decl_it->second;
     auto &decl_context = first_decl->context;
-    if (decl_context->kind == kind) {
+    if (decl_context->kind != kind) {
       Error err(context->display_manager, SubTokenRange(),
                 name.SpellingRange());
       err << "Cannot re-declare '" << first_decl->name
@@ -210,13 +210,18 @@ parse::Impl<T> *ParserImpl::AddDecl(
 
     } else {
       auto decl = new parse::Impl<T>(module, decl_context);
-      decl_context->redeclarations.back()->next_redecl = decl;
+      if (!decl_context->redeclarations.empty()) {
+        decl_context->redeclarations.back()->next_redecl = decl;
+      }
       decl_context->redeclarations.push_back(decl);
       return decl;
     }
   } else {
     auto decl = new parse::Impl<T>(module, kind);
     auto &decl_context = decl->context;
+    if (!decl_context->redeclarations.empty()) {
+      decl_context->redeclarations.back()->next_redecl = decl;
+    }
     decl_context->redeclarations.push_back(decl);
     context->declarations.emplace(id, decl);
     return decl;

@@ -84,9 +84,13 @@ endfunction(fuzz_harness)
 # configurations.
 lib("${CMAKE_CURRENT_LIST_DIR}/lib" dbg)
 lib("${CMAKE_CURRENT_LIST_DIR}/lib" asan)
-lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
 
 # Build the main program against the `dbg` and `asan` configurations.
 main(dbg)
 main(asan)
-fuzz_harness(libfuzzer)
+
+# Build the fuzz harness.
+if(NOT APPLE)
+    lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+    fuzz_harness(libfuzzer)
+endif()
