@@ -104,7 +104,7 @@ Impl<ParsedDeclaration>::PositiveUses(void) const {
     return parse::ParsedNodeRange<ParsedPredicate>(
         context->positive_uses.front(),
         static_cast<intptr_t>(__builtin_offsetof(
-            parse::Impl<ParsedPredicate>, next_use_in_clause)));
+            parse::Impl<ParsedPredicate>, next_use)));
   }
 }
 
@@ -117,7 +117,7 @@ Impl<ParsedDeclaration>::NegativeUses(void) const {
     return parse::ParsedNodeRange<ParsedPredicate>(
         context->negated_uses.front(),
         static_cast<intptr_t>(__builtin_offsetof(
-            parse::Impl<ParsedPredicate>, next_use_in_clause)));
+            parse::Impl<ParsedPredicate>, next_use)));
   }
 }
 
@@ -132,12 +132,15 @@ uint64_t Impl<ParsedVariable>::Id(void) noexcept {
     id.info.var_id = clause->next_var_id++;
 
   } else {
+    assert(0 < name.IdentifierId());
     auto &prev_id = clause->named_var_ids[name.IdentifierId()];
     if (!prev_id) {
       prev_id = clause->next_var_id++;
     }
     id.info.var_id = prev_id;
   }
+
+  assert(0 < id.info.var_id);
 
   return id.flat;
 }
@@ -651,7 +654,7 @@ parse::ParsedNodeRange<ParsedVariable> ParsedClause::Uses(ParsedVariable var) {
   return parse::ParsedNodeRange<ParsedVariable>(
       var.impl->first_use,
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedVariable>, next_use_in_clause)));
+          parse::Impl<ParsedVariable>, next_use)));
 }
 
 // All positive predicates in the clause.
@@ -679,9 +682,9 @@ ParsedClause::NegatedPredicates(void) const {
 // All assignments of variables to constant literals.
 parse::ParsedNodeRange<ParsedAssignment>
 ParsedClause::Assignments(void) const {
-  if (!impl->assignment_uses.empty()) {
+  if (!impl->assignments.empty()) {
     return parse::ParsedNodeRange<ParsedAssignment>(
-        impl->assignment_uses.front().get());
+        impl->assignments.front().get());
   } else {
     return parse::ParsedNodeRange<ParsedAssignment>();
   }
@@ -690,9 +693,9 @@ ParsedClause::Assignments(void) const {
 // All comparisons between two variables.
 parse::ParsedNodeRange<ParsedComparison>
 ParsedClause::Comparisons(void) const {
-  if (!impl->comparison_uses.empty()) {
+  if (!impl->comparisons.empty()) {
     return parse::ParsedNodeRange<ParsedComparison>(
-        impl->comparison_uses.front().get());
+        impl->comparisons.front().get());
   } else {
     return parse::ParsedNodeRange<ParsedComparison>();
   }

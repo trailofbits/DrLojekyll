@@ -14,11 +14,13 @@ class OutputStream {
  public:
   ~OutputStream(void);
 
-  inline OutputStream(DisplayManager &display_manager_, std::ostream &os_)
+  inline OutputStream(const DisplayManager &display_manager_, std::ostream &os_)
       : display_manager(display_manager_),
         os(os_) {}
 
   OutputStream &operator<<(Token tok);
+
+  OutputStream &operator<<(ParsedVariable var);
 
   OutputStream &operator<<(DisplayRange range);
 
@@ -47,7 +49,7 @@ class OutputStream {
   }
 
  private:
-  DisplayManager &display_manager;
+  const DisplayManager &display_manager;
   std::ostream &os;
   bool include_imports{true};
   bool rename_locals{false};

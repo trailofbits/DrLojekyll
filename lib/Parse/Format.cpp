@@ -23,17 +23,19 @@ OutputStream &OutputStream::operator<<(DisplayRange range) {
   return *this;
 }
 
-OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
-  *this << "#" << decl.KindName() << " ";
-  auto name = decl.Name();
-  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    *this << "pred" << decl.Id();
+OutputStream &OutputStream::operator<<(ParsedVariable var) {
+  auto name = var.Name();
+  if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
+    *this << "V" << var.Id();
   } else {
     *this << name;
-    if (rename_locals && decl.IsLocal()) {
-      os << "_" << decl.Id();
-    }
   }
+  return *this;
+}
+
+OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
+  *this << "#" << decl.KindName() << " " << decl.Name();
+
   auto comma = "(";
   for (auto param : decl.Parameters()) {
     *this << comma;
@@ -89,35 +91,35 @@ OutputStream &OutputStream::operator<<(ParsedClause clause) {
   }
   auto comma = "(";
   for (auto param : clause.Parameters()) {
-    *this << comma;
-    *this << param.Name();
+    *this << comma << param;
     comma = ", ";
   }
   *this << ") : ";
   comma = "";
+
   for (auto assign : clause.Assignments()) {
-    *this << comma << assign.LHS().Name() << " = "
+    *this << comma << assign.LHS() << " = "
           << assign.RHS().SpellingRange();
     comma = ", ";
   }
 
   for (auto compare : clause.Comparisons()) {
-    *this << comma << compare.LHS().Name();
+    const char *op = "";
     switch (compare.Operator()) {
       case ComparisonOperator::kEqual:
-        *this << " = ";
+        op = " = ";
         break;
       case ComparisonOperator::kNotEqual:
-        *this << " != ";
+        op = " != ";
         break;
       case ComparisonOperator::kLessThan:
-        *this << " < ";
+        op = " < ";
         break;
       case ComparisonOperator::kGreaterThan:
-        *this << " > ";
+        op = " > ";
         break;
     }
-    *this << compare.RHS().Name();
+    *this << comma << compare.LHS() << op << compare.RHS();
     comma = ", ";
   }
 
@@ -186,8 +188,7 @@ OutputStream &OutputStream::operator<<(ParsedPredicate pred) {
   }
   auto comma = "(";
   for (auto arg : pred.Arguments()) {
-    *this << comma;
-    *this << arg.Name();
+    *this << comma << arg;
     comma = ", ";
   }
   *this << ")";

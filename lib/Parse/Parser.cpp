@@ -232,6 +232,7 @@ parse::Impl<T> *ParserImpl::AddDecl(
 // There should always be at least one token in the display, e.g. for EOF or
 // error.
 void ParserImpl::LexAllTokens(Display display) {
+
   DisplayReader reader(display);
   lexer.ReadFromDisplay(reader);
   tokens.clear();
@@ -1838,7 +1839,7 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
     auto &prev = prev_named_var[name.IdentifierId()];
     if (prev) {
       var->first_use = prev->first_use;
-      prev->next_use_in_clause = var;
+      prev->next_use = var;
 
       // All body_variables of the same name share the same set of assignment
       // and comparisons.
@@ -1881,7 +1882,8 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
     parse::Impl<ParsedClause> *clause, Token tok) {
   auto lhs = CreateVariable(
       clause,
-      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
+      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable,
+                       tok.SpellingRange()),
       false, false);
 
   auto assign = new parse::Impl<ParsedAssignment>(lhs);
@@ -1889,10 +1891,10 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
   assign->rhs.assigned_to = lhs;
 
   // Add to the clause's assignment list.
-  if (!clause->assignment_uses.empty()) {
-    clause->assignment_uses.back()->next = assign;
+  if (!clause->assignments.empty()) {
+    clause->assignments.back()->next = assign;
   }
-  clause->assignment_uses.emplace_back(assign);
+  clause->assignments.emplace_back(assign);
 
   // Add to the variable's assignment list. We support the list, but for
   // these auto-created variables, there can be only one use.
@@ -2066,11 +2068,11 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
         }
 
       case 6:
-        compare_op = tok;
         if (Lexeme::kPuncEqual == lexeme ||
             Lexeme::kPuncNotEqual == lexeme ||
             Lexeme::kPuncLess == lexeme ||
             Lexeme::kPuncGreater == lexeme) {
+          compare_op = tok;
           state = 7;
           continue;
 
@@ -2090,7 +2092,29 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
         // variables and assigning values to those variables.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme) {
-          rhs = CreateLiteralVariable(clause.get(), tok);
+
+          // If we're doing `<var> = <literal>` then we don't want to explode
+          // it into `<temp> = literal, <var> = <temp>`.
+          if (Lexeme::kPuncEqual == compare_op.Lexeme()) {
+            auto assign = new parse::Impl<ParsedAssignment>(lhs);
+            assign->rhs.literal = tok;
+            assign->rhs.assigned_to = lhs;
+
+            // Add to the clause's assignment list.
+            if (!clause->assignments.empty()) {
+              clause->assignments.back()->next = assign;
+            }
+            clause->assignments.emplace_back(assign);
+
+            // Add to the variable's assignment list. We support the list, but for
+            // these auto-created variables, there can be only one use.
+            lhs->assignment_uses->push_back(&(assign->lhs));
+            state = 8;
+            continue;
+
+          } else {
+            rhs = CreateLiteralVariable(clause.get(), tok);
+          }
 
         } else if (Lexeme::kIdentifierVariable == lexeme) {
           rhs = CreateVariable(clause.get(), tok, false, false);
@@ -2100,7 +2124,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           // Don't allow comparisons against the same named variable. This
           // simplifies later checks, and makes sure that iteration over the
           // comparisons containing a given variable are well-founded.
-          if (lhs->name.IdentifierId() == rhs->name.IdentifierId()) {
+          if (ParsedVariable(lhs).Id() == ParsedVariable(rhs).Id()) {
             Error err(context->display_manager, SubTokenRange(),
                       DisplayRange(lhs->name.Position(),
                                    rhs->name.NextPosition()));
@@ -2126,10 +2150,10 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           rhs->comparison_uses->push_back(&(compare->rhs));
 
           // Add to the clause's comparison list.
-          if (!clause->comparison_uses.empty()) {
-            clause->comparison_uses.back()->next = compare;
+          if (!clause->comparisons.empty()) {
+            clause->comparisons.back()->next = compare;
           }
-          clause->comparison_uses.emplace_back(compare);
+          clause->comparisons.emplace_back(compare);
 
           state = 8;
           continue;
@@ -2385,7 +2409,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
     auto &pred_decl_context = used_pred->declaration->context;
     auto &positive_uses = pred_decl_context->positive_uses;
     if (!positive_uses.empty()) {
-      positive_uses.back()->next_use_in_clause = used_pred.get();
+      positive_uses.back()->next_use = used_pred.get();
     }
     positive_uses.push_back(used_pred.get());
   }
@@ -2395,7 +2419,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
     auto &pred_decl_context = used_pred->declaration->context;
     auto &negated_uses = pred_decl_context->negated_uses;
     if (!negated_uses.empty()) {
-      negated_uses.back()->next_use_in_clause = used_pred.get();
+      negated_uses.back()->next_use = used_pred.get();
     }
     negated_uses.push_back(used_pred.get());
   }

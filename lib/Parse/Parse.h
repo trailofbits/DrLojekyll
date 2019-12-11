@@ -82,7 +82,7 @@ class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
   Impl<ParsedVariable> *first_use{nullptr};
 
   // Next use of the same logical variable in `clause`.
-  Impl<ParsedVariable> *next_use_in_clause{nullptr};
+  Impl<ParsedVariable> *next_use{nullptr};
 
   // Next variable (not necessarily the same) to be used in an argument list,
   // if this variable is used in an argument list.
@@ -152,9 +152,8 @@ class Impl<ParsedPredicate> : public Node<Impl<ParsedPredicate>> {
   // The declaration associated with this predicate.
   Impl<ParsedDeclaration> *declaration{nullptr};
 
-  // The next use this predicate. This use may be in a different clause
-  // body.
-  Impl<ParsedPredicate> *next_use_in_clause{nullptr};
+  // The next use this predicate. This use may be in a different clause body.
+  Impl<ParsedPredicate> *next_use{nullptr};
 
   // Location information.
   DisplayPosition negation_pos;
@@ -206,8 +205,8 @@ class Impl<ParsedClause> : public Node<Impl<ParsedClause>> {
   std::vector<std::unique_ptr<Impl<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Impl<ParsedVariable>>> body_variables;
 
-  std::vector<std::unique_ptr<Impl<ParsedComparison>>> comparison_uses;
-  std::vector<std::unique_ptr<Impl<ParsedAssignment>>> assignment_uses;
+  std::vector<std::unique_ptr<Impl<ParsedComparison>>> comparisons;
+  std::vector<std::unique_ptr<Impl<ParsedAssignment>>> assignments;
   std::vector<std::unique_ptr<Impl<ParsedAggregate>>> aggregates;
   std::vector<std::unique_ptr<Impl<ParsedPredicate>>> positive_predicates;
   std::vector<std::unique_ptr<Impl<ParsedPredicate>>> negated_predicates;
