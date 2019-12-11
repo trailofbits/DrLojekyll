@@ -757,14 +757,12 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           functor.reset(AddDecl<ParsedFunctor>(
               module, DeclarationKind::kFunctor, name, params.size()));
-         
-          if (last_aggregate.IsValid() || last_summary.IsValid()) {
-              functor->is_aggregate = true;
-          }
 
           if (!functor) {
             return;
           } else {
+            functor->is_aggregate = last_aggregate.IsValid() ||
+                                    last_summary.IsValid();
             functor->rparen = tok;
             functor->directive_pos = sub_tokens.front().Position();
             functor->name = name;
