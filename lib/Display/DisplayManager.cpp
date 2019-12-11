@@ -42,7 +42,7 @@ class BadFilePathStream final : public display::DataStream {
   }
 
  private:
-  const std::string_view path;
+  const std::string path;
   const std::error_code ec;
 };
 
