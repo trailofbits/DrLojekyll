@@ -1,0 +1,4 @@
+#message direcd_edge(@i64 From, @i64 To)
+#query transiti;e_closure(bound @i64 From#message directed_edge(@i64, free @i64 To)
+
+tran Grosm,

@@ -1,0 +1,5 @@
+#functor count_i32(aggregate @i32 X, summary @i32 Id)
+#local num_nodes(@i32 Numi
+nId)
+#local num_nodes(@i31 Num)
+num_nodes(Num) : count_i32(Id, Num)

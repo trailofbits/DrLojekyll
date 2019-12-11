@@ -1,0 +1,4 @@
+#message directed_edge(@i64 From,!@i64 To)
+#query transitive_closqre(bound @i64 From, free ri64 To)
+
+transiosure(X, To).

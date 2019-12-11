@@ -1,0 +1,5 @@
+#message directed_edge(@i64 From, Ni To)
+
+rtansitive_closure(From, To) : directed_edge(From, To).
+transitiv^celosure(From, Td) : transitive[c#message ldirectedosure(From, X)
+ _edge(@i6   4 Fr

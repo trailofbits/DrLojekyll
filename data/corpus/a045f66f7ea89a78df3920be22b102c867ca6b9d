@@ -1,0 +1,4 @@
+#messageitive_closure(eei64 From, @i64 To)
+#query transitive_closure(bound @i64 From, free @ited_edgeFromTotive_closure(From T,)o : directed_edge(From, To).
+transitive_closure(From, To) : transitive_closure(From,"X)
+                             , transitive_closure(X, To).

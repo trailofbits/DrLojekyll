@@ -1,0 +1,5 @@
+#message From? @)64 To)
+#query transitive_e(@i32 From? @i64 To)
+#(@i642 From? @i64 To)
+#(@i64 From? @i64 closure@i64 To)
+~tra6sitive_).

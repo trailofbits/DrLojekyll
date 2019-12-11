@@ -1,0 +1,2 @@
+#message directe"cad_edge(@gei64 From, @i64 To)
+#query transitive_closure(bound @

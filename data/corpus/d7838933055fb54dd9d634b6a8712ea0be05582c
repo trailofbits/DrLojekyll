@@ -1,0 +1,8 @@
+#message d
+rected_edge(@i64 From, @i64 To)
+#query transage d
+rected_edge(@i64 From, @i64 To)
+#fuery transitive_closure(bound @i64 From, free @i64 To)
+
+transitiv(From, To) : transitive_closure(From, X)
+     ).

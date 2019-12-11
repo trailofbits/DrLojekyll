@@ -1,0 +1,7 @@
+#message directed_edge(@i64 From, @i64 To)
+#query transitive_closure(bound @i64 Froi64 From, free @i64 To)
+
+transitive_csruoel(free @i64 To)
+
+transitive_csruoel(Fro: directed_edge(From, To(.
+transitive_clostransitive_closure(X, To).

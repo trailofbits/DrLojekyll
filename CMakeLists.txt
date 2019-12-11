@@ -8,10 +8,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(cxx_settings INTERFACE)
 target_include_directories(cxx_settings INTERFACE
-    "${CMAKE_CURRENT_LIST_DIR}/include")
+        "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_compile_options(cxx_settings INTERFACE
-    -Werror -Wall -pedantic -Wconversion)
+   -Werror -Wall -pedantic -Wconversion)
 
 # release ------------------------------------
 add_library(rel INTERFACE)
@@ -48,14 +48,14 @@ target_link_libraries(asan INTERFACE
 add_library(libfuzzer INTERFACE)
 
 target_compile_options(libfuzzer INTERFACE
+    -Werror -Wall -pedantic -Wconversion -g
     -fsanitize=fuzzer,address,undefined
-    -fsanitize-coverage=trace-pc-guard
     -fsanitize-address-use-after-scope
     -fno-omit-frame-pointer
     -fno-optimize-sibling-calls)
 
 target_link_options(libfuzzer INTERFACE
-    -fsanitize=fuzzer,address,undefined
+    -fsanitize=address,fuzzer,undefined
     -Wl,-undefined,dynamic_lookup)
 
 target_link_libraries(libfuzzer INTERFACE
@@ -71,6 +71,15 @@ function(main config)
         transforms-${config})
 endfunction(main)
 
+function(fuzz_harness config)
+    add_executable(fuzz_harness-${config}
+        fuzz_harness.cpp
+    )
+    target_link_libraries(fuzz_harness-${config}
+		parser-${config}
+    )
+endfunction(fuzz_harness)
+
 # Build everything in the `lib` dir using the `dbg`, `asan`, and `libfuzzer`
 # configurations.
 lib("${CMAKE_CURRENT_LIST_DIR}/lib" dbg)
@@ -80,5 +89,4 @@ lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
 # Build the main program against the `dbg` and `asan` configurations.
 main(dbg)
 main(asan)
-
-#lib(libfuzzer)
+fuzz_harness(libfuzzer)

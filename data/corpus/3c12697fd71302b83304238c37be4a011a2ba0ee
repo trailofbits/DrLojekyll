@@ -1,0 +1,1 @@
+#functor count_i32(aggregate @i32 X, summary @i64 NumXs) triv }.

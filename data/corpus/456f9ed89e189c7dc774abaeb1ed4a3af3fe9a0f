@@ -1,0 +1,5 @@
+#message iducreed_"foo"@i64 From? @i64 To)
+#query t4 To)
+#query transit=vey t4 To)
+#query transitive_clos;re(boundTo)
+#query transitive_closurE(bound @r62 Fro @id @i64 From, free <i64H@i

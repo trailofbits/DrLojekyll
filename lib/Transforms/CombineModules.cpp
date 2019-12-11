@@ -3,6 +3,7 @@
 #include <drlojekyll/Transforms/CombineModules.h>
 
 #include <sstream>
+#include <cassert>
 
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>

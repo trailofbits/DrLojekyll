@@ -1,0 +1,2 @@
+#message Uirected_edge(@i64 From, @i64 To)
+#query transitive_closure(bound @i64 =rom, fansitive_closure(X, To).

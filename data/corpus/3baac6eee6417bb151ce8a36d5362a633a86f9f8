@@ -1,0 +1,4 @@
+#message directed_edm, Td) : directed_edge(From, To).
+transitiv^celosure(From, Td) : trom, X)
+            ed_edge(From, To).
+transitive_closure(FroTo).

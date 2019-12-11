@@ -329,6 +329,7 @@ void ParserImpl::LexAllTokens(Display display) {
         tokens.push_back(tok);
       }
 
+
     } else if (Lexeme::kEndOfFile == lexeme) {
       tokens.push_back(tok);
       prev_pos = tok.Position();
@@ -352,6 +353,11 @@ void ParserImpl::LexAllTokens(Display display) {
       tokens.push_back(tok);
       prev_pos = tok.Position();
     }
+
+  }
+  if (tokens.empty() || (tokens.back().Lexeme() != Lexeme::kEndOfFile)) {
+    // Ensures that there is always an EOF token at the end of a file if there are no tokens
+    tokens.push_back(Token::FakeEndOfFile(tok.Position()));
   }
 
   // Ensures that there is always an EOF token at the end of a file if there are no tokens
@@ -745,7 +751,7 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           functor.reset(AddDecl<ParsedFunctor>(
               module, DeclarationKind::kFunctor, name, params.size()));
-          
+         
           if (last_aggregate.IsValid() || last_summary.IsValid()) {
               functor->is_aggregate = true;
           }
@@ -1481,7 +1487,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
                     tok.SpellingRange());
           err << "Expected type name ('@'-prefixed identifier) or variable "
               << "name (capitalized identifier) for parameter in local '"
-              << local->name << "', but got '" << tok << "' instead";
+              << name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }

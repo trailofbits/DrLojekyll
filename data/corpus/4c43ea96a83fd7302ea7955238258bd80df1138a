@@ -1,0 +1,3 @@
+#message directed_edge(@i64 From, @i64 To)
+#query transiti64 To)
+#query transiti@e_m#message directem,

@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cassert>
 #include "Parse.h"
+#include <cstring>
+#include <cassert>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winvalid-offsetof"

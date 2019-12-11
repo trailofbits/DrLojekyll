@@ -1,0 +1,4 @@
+#message idtcreed_"foo"@i64 From? @i64 To)
+#query t4 To)
+#query transitive_closure(boundTo)
+#query tr @i64 free @i

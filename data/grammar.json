@@ -1,0 +1,714 @@
+{
+ "<module>": [
+  [
+   "<import_list>",
+   " ",
+   "<decl_list>",
+   " ",
+   "<clause_list>",
+   " "
+  ]
+ ],
+ "<import_list>": [
+  [
+   ""
+  ]
+ ],
+ "<decl_list>": [
+  [
+   "<decl>",
+   " ",
+   "<decl_list>",
+   " "
+  ],
+  [
+   ""
+  ]
+ ],
+ "<clause_list>": [
+  [
+   "<clause>",
+   " ",
+   "<clause_list>",
+   " "
+  ],
+  [
+   ""
+  ]
+ ],
+ "<decl>": [
+  [
+   "<export_decl>"
+  ],
+  [
+   "<local_decl>"
+  ],
+  [
+   "<functor_decl>"
+  ],
+  [
+   "<message_decl>"
+  ]
+ ],
+ "<export_decl>": [
+  [
+   "#export",
+   " ",
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<param_list_0>",
+   " ",
+   ")",
+   " ",
+   "\n",
+   " "
+  ]
+ ],
+ "<message_decl>": [
+  [
+   "#message",
+   " ",
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<param_list_0>",
+   " ",
+   ")",
+   " ",
+   "\n",
+   " "
+  ]
+ ],
+ "<local_decl>": [
+  [
+   "#local",
+   " ",
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<param_list_1>",
+   " ",
+   ")",
+   " ",
+   "\n",
+   " "
+  ]
+ ],
+ "<functor_decl>": [
+  [
+   "#functor",
+   " ",
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<param_list_2>",
+   " ",
+   ")",
+   " ",
+   "trivial",
+   " ",
+   "\n",
+   " "
+  ],
+  [
+   "#functor",
+   " ",
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<param_list_2>",
+   " ",
+   ")",
+   " ",
+   "complex",
+   " ",
+   "\n",
+   " "
+  ]
+ ],
+ "<param_list_0>": [
+  [
+   "<type>",
+   " ",
+   "<named_var>",
+   " ",
+   ",",
+   " ",
+   "<param_list_0>",
+   " "
+  ],
+  [
+   "<type>",
+   " ",
+   "<named_var>",
+   " "
+  ]
+ ],
+ "<param_list_1>": [
+  [
+   "<type>",
+   " ",
+   "<named_var>",
+   " ",
+   ",",
+   " ",
+   "<param_list_1>",
+   " "
+  ],
+  [
+   "<named_var>",
+   " ",
+   ",",
+   " ",
+   "<param_list_1>",
+   " "
+  ],
+  [
+   "<type>",
+   " ",
+   "<named_var>",
+   " "
+  ],
+  [
+   "<named_var>"
+  ]
+ ],
+ "<param_list_2>": [
+  [
+   "<binding_specifier_2>",
+   " ",
+   "<type>",
+   " ",
+   "<named_var>",
+   " ",
+   ",",
+   " ",
+   "<param_list_2>",
+   " "
+  ],
+  [
+   "<binding_specifier_2>",
+   " ",
+   "<type>",
+   " ",
+   "<named_var>",
+   " "
+  ]
+ ],
+ "<type>": [
+  [
+   "@i8"
+  ],
+  [
+   "@i16"
+  ],
+  [
+   "@i32"
+  ],
+  [
+   "@i64"
+  ],
+  [
+   "@u8"
+  ],
+  [
+   "@u16"
+  ],
+  [
+   "@u32"
+  ],
+  [
+   "@u64"
+  ],
+  [
+   "@f32"
+  ],
+  [
+   "@f64"
+  ],
+  [
+   "@str"
+  ]
+ ],
+ "<atom>": [
+  [
+   "eslzXJeAIm"
+  ],
+  [
+   "s64NsdVlDD4vqmOyLs6"
+  ],
+  [
+   "wYIquM4n_5WnoDiIMEK"
+  ],
+  [
+   "c2SBw4A_t"
+  ],
+  [
+   "y3ELOTg_c1wiPz"
+  ],
+  [
+   "vBxy"
+  ],
+  [
+   "uK1lGHxGCMoGvUH5Y"
+  ],
+  [
+   "sAwE9qm4_faUQBo5ORu"
+  ],
+  [
+   "uLk"
+  ],
+  [
+   "tlwuXChb2C"
+  ],
+  [
+   "fUjhUKCVuar"
+  ],
+  [
+   "zjNkr1V27YKs9"
+  ],
+  [
+   "jpCcjo76CtjagdXuLB"
+  ],
+  [
+   "spWVvEIve595ZE"
+  ],
+  [
+   "loVyDUJ6"
+  ]
+ ],
+ "<named_var>": [
+  [
+   "VC"
+  ],
+  [
+   "NIbjG4kNH"
+  ],
+  [
+   "KI4"
+  ],
+  [
+   "SvxTlCXUSMf_5wftdKM"
+  ],
+  [
+   "QZdZiB8E7FR"
+  ],
+  [
+   "WFPSgOAbuuGGrI"
+  ],
+  [
+   "TQ"
+  ],
+  [
+   "Aleiriq6QWf4CRRPG"
+  ],
+  [
+   "X4CBeuhtz"
+  ],
+  [
+   "ZB43TZa0vFdxS"
+  ],
+  [
+   "YWCX1mzwAbfV3H"
+  ],
+  [
+   "IkeIo2gMaHOG3uj2_N"
+  ],
+  [
+   "MTUX6PjNMja"
+  ],
+  [
+   "BIuGw"
+  ],
+  [
+   "OCDENAmewfPvLhR_djUj"
+  ]
+ ],
+ "<var>": [
+  [
+   "<named_var>"
+  ],
+  [
+   "_"
+  ]
+ ],
+ "<binding_specifier_2>": [
+  [
+   "bound"
+  ],
+  [
+   "free"
+  ],
+  [
+   "aggregate"
+  ],
+  [
+   "summary"
+  ]
+ ],
+ "<clause>": [
+  [
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<named_var_list>",
+   " ",
+   ")",
+   " ",
+   ":",
+   " ",
+   "<conjunct_list>",
+   " ",
+   ".",
+   " "
+  ]
+ ],
+ "<named_var_list>": [
+  [
+   "<named_var>",
+   " ",
+   ",",
+   " ",
+   "<named_var_list>",
+   " "
+  ],
+  [
+   "<named_var>"
+  ]
+ ],
+ "<conjunct_list>": [
+  [
+   "<comparison>",
+   " ",
+   "<conjunct_list_tail>",
+   " "
+  ],
+  [
+   "<predicate>",
+   " ",
+   "<conjunct_list_tail>",
+   " "
+  ],
+  [
+   "<negation>",
+   " ",
+   "<conjunct_list_tail>",
+   " "
+  ],
+  [
+   "<predicate>",
+   " ",
+   "over",
+   " ",
+   "<aggregation>",
+   " ",
+   "<conjunct_list_tail>",
+   " "
+  ]
+ ],
+ "<aggregation>": [
+  [
+   "<predicate>"
+  ],
+  [
+   "(",
+   " ",
+   "<param_list_0>",
+   " ",
+   ")",
+   " ",
+   "{",
+   " ",
+   "<conjunct_list>",
+   " ",
+   "}",
+   " "
+  ]
+ ],
+ "<var_or_literal>": [
+  [
+   "<var>"
+  ],
+  [
+   "<literal>"
+  ]
+ ],
+ "<comparison>": [
+  [
+   "<var_or_literal>",
+   " ",
+   "=",
+   " ",
+   "<var_or_literal>",
+   " "
+  ],
+  [
+   "<var_or_literal>",
+   " ",
+   "!=",
+   " ",
+   "<var_or_literal>",
+   " "
+  ],
+  [
+   "<var_or_literal>",
+   " ",
+   "<",
+   " ",
+   "<var_or_literal>",
+   " "
+  ],
+  [
+   "<var_or_literal>",
+   " ",
+   ">",
+   " ",
+   "<var_or_literal>",
+   " "
+  ]
+ ],
+ "<predicate>": [
+  [
+   "<atom>",
+   " ",
+   "(",
+   " ",
+   "<arg_list>",
+   " ",
+   ")",
+   " "
+  ]
+ ],
+ "<negation>": [
+  [
+   "!",
+   " ",
+   "<predicate>",
+   " "
+  ]
+ ],
+ "<conjunct_list_tail>": [
+  [
+   ",",
+   " ",
+   "<conjunct_list>",
+   " "
+  ],
+  [
+   ""
+  ]
+ ],
+ "<arg_list>": [
+  [
+   "<var_or_literal>",
+   " ",
+   ",",
+   " ",
+   "<arg_list>",
+   " "
+  ],
+  [
+   "<var_or_literal>"
+  ]
+ ],
+ "<literal>": [
+  [
+   "0"
+  ],
+  [
+   "39815629583994114418"
+  ],
+  [
+   "19"
+  ],
+  [
+   "828457737383456"
+  ],
+  [
+   "49092"
+  ],
+  [
+   "5209101"
+  ],
+  [
+   "18770"
+  ],
+  [
+   "742241327800"
+  ],
+  [
+   "6039427640752"
+  ],
+  [
+   "230329"
+  ],
+  [
+   "750722190217462797"
+  ],
+  [
+   "6648817438708000424"
+  ],
+  [
+   "2957030882415"
+  ],
+  [
+   "9562933689564"
+  ],
+  [
+   "87488"
+  ],
+  [
+   "6549218480"
+  ],
+  [
+   "04405773374"
+  ],
+  [
+   "07"
+  ],
+  [
+   "076733026136"
+  ],
+  [
+   "046753745055"
+  ],
+  [
+   "06124"
+  ],
+  [
+   "07"
+  ],
+  [
+   "060136514245"
+  ],
+  [
+   "03627675271432"
+  ],
+  [
+   "02104"
+  ],
+  [
+   "0375605425607654241"
+  ],
+  [
+   "06076305"
+  ],
+  [
+   "01051"
+  ],
+  [
+   "0441564653670"
+  ],
+  [
+   "060346445450116037"
+  ],
+  [
+   "07436636033545466155"
+  ],
+  [
+   "0xFF"
+  ],
+  [
+   "0x7cE521E7fec5"
+  ],
+  [
+   "0xFFcfFE4Bb2F53Da"
+  ],
+  [
+   "0xC1c8fE7fD795"
+  ],
+  [
+   "0xf325b69B15E0e63"
+  ],
+  [
+   "0xfBABca1"
+  ],
+  [
+   "0x5fcE45Cf7a94cafd"
+  ],
+  [
+   "0x884EE2D84fdC241c5EAe"
+  ],
+  [
+   "0x3f94134De410F6F3A"
+  ],
+  [
+   "0xBdF"
+  ],
+  [
+   "0xFeA44Be41d91f4"
+  ],
+  [
+   "0x26f4a80Bca3bE4F204DF"
+  ],
+  [
+   "0xeE7BF7d5D571"
+  ],
+  [
+   "0xE5Ed6ABEd5c01E"
+  ],
+  [
+   "0xCDfeC1"
+  ],
+  [
+   "48.01376307221564779442"
+  ],
+  [
+   "39557621679409.054599159260245"
+  ],
+  [
+   "2765.6312"
+  ],
+  [
+   "62834240867040602280.32039648003723521195"
+  ],
+  [
+   "60.26085866998"
+  ],
+  [
+   "496440333633738.99"
+  ],
+  [
+   "853.6365984362468612343"
+  ],
+  [
+   "78191.47974293563"
+  ],
+  [
+   "5218.52"
+  ],
+  [
+   "67381893290602594.9001806374"
+  ],
+  [
+   "655.03911433362202"
+  ],
+  [
+   "508609570710182043.43745820983403816"
+  ],
+  [
+   "4683469702439148015.85527611"
+  ],
+  [
+   "1580589635352686.0126"
+  ],
+  [
+   "86.04"
+  ],
+  [
+   "/\"foo/"
+  ]
+ ],
+ "<start>": [
+  [
+   "<module>"
+  ]
+ ]
+}

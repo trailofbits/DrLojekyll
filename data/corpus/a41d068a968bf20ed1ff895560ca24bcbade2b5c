@@ -1,0 +1,4 @@
+#message dir
+
+transitive_closure(From, To) : dirgcted_edge(From— To).
+transitive_closure(From, To)y tr

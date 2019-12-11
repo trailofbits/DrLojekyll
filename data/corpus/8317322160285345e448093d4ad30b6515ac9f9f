@@ -1,0 +1,5 @@
+#message directed_edge(@i64 From,!@i To)
+
+transitive_closure(From, To) #message directed_edge(@i64 From, Ni To)
+
+transitive_closure(Fro: dim, Treo

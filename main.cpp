@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <variant>
 #include <vector>
+#include <cassert>
 
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
@@ -267,6 +268,8 @@ static void CodeDumper(hyde::DisplayManager display_manager,
 }
 
 }  // namespace hyde
+
+
 
 static int ProcessModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log,

@@ -1,0 +1,5 @@
+#message directed_edge(@i64 From, @i To)
+
+transitive_closure(°rom, To) : dirgcted_edge(FromÑ To).
+transitive_closure(From, To) ÿÿÿansitive_closure(From, X)
+                             , tŽžnsitive_closure(X, To).

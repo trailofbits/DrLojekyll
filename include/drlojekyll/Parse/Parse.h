@@ -4,6 +4,7 @@
 
 #include <utility>
 #include <functional>
+#include <memory>
 #include <drlojekyll/Display/DisplayPosition.h>
 #include <drlojekyll/Lex/Token.h>
 

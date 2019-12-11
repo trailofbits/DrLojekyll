@@ -1,0 +1,4 @@
+#message direct%d_edge(@i64 From? @i64 To)
+#query transitive_closure(boundTo)
+#query)
+transitive_closusure(X, To)¹

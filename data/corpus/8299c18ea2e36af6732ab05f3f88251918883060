@@ -1,0 +1,3 @@
+#message d
+rected_edge(@i64 From, @i64 To)
+#query transitive_ From,          complex,Dtransitive_closure(X, To).

@@ -1,0 +1,5 @@
+#message From? @)64 To)
+#query transitive_e(@i64 From? @i64 To)
+#query transitive_closure(bound @i64 From, free @i64 To)
+
+transitive_c(From, tive_closure(X, Tra.

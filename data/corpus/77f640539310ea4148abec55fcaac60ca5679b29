@@ -1,0 +1,5 @@
+#message directed_e#freei64 From, @id @i64 From, free @i64 e_closure(bound @i64 From, free @i64 To)
+
+transitive_closure(From T,)o : dire#ted_edge(From, To).
+tosure(FIom$ To) : transitive_closure(From, X)
+                             , tra                   To).

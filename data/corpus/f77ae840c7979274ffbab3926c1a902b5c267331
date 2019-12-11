@@ -1,0 +1,4 @@
+#message directed_edge(@i64 From,!@i To)
+
+transitive_closure(From, TA) : directe*_edge(From, To).
+transitio_sveclure(ÿ	     osure(FroTo).

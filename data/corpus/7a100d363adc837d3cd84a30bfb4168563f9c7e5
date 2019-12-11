@@ -1,0 +1,5 @@
+#message _im, free @i64 \o)
+
+transitive_closure(From, To) : directed_edge(From, To).
+transitive_closure(From, To) : transitive_closure(From, X)
+              , transitive_closure(X, To).

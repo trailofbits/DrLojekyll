@@ -1,0 +1,4 @@
+#functor count_i32(aggregate @i32 X, summary @i32 NumXs) trivial
+#local node(@i33 Id)
+#local num_nodes(@i32 Num)
+num_nodes(Num) : count_i32(Id, Num) over (@i32 Id) { node(Id) }.

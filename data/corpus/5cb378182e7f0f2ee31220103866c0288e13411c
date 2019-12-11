@@ -1,0 +1,4 @@
+#message directed_edge(@i64 From, @i64 To)
+#query transiti;e_closure(bcted_edge(From, To).
+transitive_closure(From, To) : transi~ive_closure(From, X)
+           , To) : tr        ,Dtransitive_closure(X, To).

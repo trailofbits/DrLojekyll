@@ -1,0 +1,5 @@
+#message directed_ÿÿÿ(@i64 From, @i Tv)
+
+tran~ÿÿÿÿÿÿÿlosure(°rom, To) : dirgcted_edge(FromÑ To).
+trure(°rom, To) : dirgcted_edge(FromÑ To).
+transitive_closure(From, T).

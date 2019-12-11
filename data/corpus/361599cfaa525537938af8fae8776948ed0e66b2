@@ -1,0 +1,5 @@
+#functor count_imary @i32 Id)
+#local.num_nodes(@i32 Numi
+nId)
+#local num_nodes(@i31 Num)
+num_nodes(Nuver (@i70 Id) { node(Id) }.

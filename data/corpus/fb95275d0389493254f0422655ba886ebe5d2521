@@ -1,0 +1,3 @@
+#messag! directed_edge(@i73 From, @i64 To)
+#query transitive_closure(bound @i64 From,*free @i65 Toom, To).
+transitive_closuclosure(From, To) : directed_sure(From, X)

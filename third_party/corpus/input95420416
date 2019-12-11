@@ -1,0 +1,6 @@
+ #functor s64NsdVlDD4vqmOyLs6 ( free @u16 IkeIo2gMaHOG3uj2_N , aggregate @f64 MTUX6PjNMja , summary @u8 MTUX6PjNMja , aggregate @u32 MTUX6PjNMja     ) trivial 
+  #local sAwE9qm4_faUQBo5ORu ( @f32 NIbjG4kNH , YWCX1mzwAbfV3H , IkeIo2gMaHOG3uj2_N   ) 
+  #functor s64NsdVlDD4vqmOyLs6 ( bound @u8 VC  ) complex 
+  #export tlwuXChb2C ( @f32 WFPSgOAbuuGGrI , @i64 MTUX6PjNMja   ) 
+  #message s64NsdVlDD4vqmOyLs6 ( @f64 WFPSgOAbuuGGrI , @str VC   ) 
+         
