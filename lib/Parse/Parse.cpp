@@ -64,7 +64,7 @@ uint64_t Impl<ParsedDeclaration>::Id(void) const noexcept {
     return id.flat;
   }
 
-  id.flat = ParsedModule(module).Id();
+  id.flat = ParsedModule(module->shared_from_this()).Id();
 
   // NOTE(pag): All anonymous declarations and by definition
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
@@ -424,6 +424,26 @@ Token ParsedDeclaration::Name(void) const noexcept {
   return impl->name;
 }
 
+Token ParsedFunctor::Name(void) const noexcept {
+  return impl->name;
+}
+
+Token ParsedMessage::Name(void) const noexcept {
+  return impl->name;
+}
+
+Token ParsedQuery::Name(void) const noexcept {
+  return impl->name;
+}
+
+Token ParsedLocal::Name(void) const noexcept {
+  return impl->name;
+}
+
+Token ParsedExport::Name(void) const noexcept {
+  return impl->name;
+}
+
 bool ParsedDeclaration::IsQuery(void) const noexcept {
   return Kind() == DeclarationKind::kQuery;
 }
@@ -459,8 +479,59 @@ unsigned ParsedDeclaration::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->parameters.size());
 }
 
+unsigned ParsedFunctor::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->parameters.size());
+}
+
+unsigned ParsedQuery::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->parameters.size());
+}
+
+unsigned ParsedMessage::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->parameters.size());
+}
+
+unsigned ParsedLocal::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->parameters.size());
+}
+
+unsigned ParsedExport::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->parameters.size());
+}
+
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedDeclaration::NthParameter(unsigned n) const noexcept {
+  assert(n < Arity());
+  return ParsedParameter(impl->parameters[n].get());
+}
+
+// Return the `n`th parameter of this clause.
+ParsedParameter ParsedFunctor::NthParameter(unsigned n) const noexcept {
+  assert(n < Arity());
+  return ParsedParameter(impl->parameters[n].get());
+}
+
+// Return the `n`th parameter of this clause.
+ParsedParameter ParsedMessage::NthParameter(unsigned n) const noexcept {
+  assert(n < Arity());
+  return ParsedParameter(impl->parameters[n].get());
+}
+
+// Return the `n`th parameter of this clause.
+ParsedParameter ParsedQuery::NthParameter(unsigned n) const noexcept {
+  assert(n < Arity());
+  return ParsedParameter(impl->parameters[n].get());
+}
+
+// Return the `n`th parameter of this clause.
+ParsedParameter ParsedLocal::NthParameter(unsigned n) const noexcept {
+  assert(n < Arity());
+  return ParsedParameter(impl->parameters[n].get());
+}
+
+
+// Return the `n`th parameter of this clause.
+ParsedParameter ParsedExport::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
   return ParsedParameter(impl->parameters[n].get());
 }
@@ -897,12 +968,21 @@ parse::ParsedNodeRange<ParsedClause> ParsedModule::Clauses(void) const {
   }
 }
 
+// The root module of this parse.
+ParsedModule ParsedModule::RootModule(void) const {
+  if (impl->root_module == impl.get()) {
+    return *this;
+  } else {
+    return ParsedModule(impl->root_module->shared_from_this());
+  }
+}
+
 DisplayRange ParsedImport::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, impl->path.NextPosition());
 }
 
 ParsedModule ParsedImport::ImportedModule(void) const noexcept {
-  return ParsedModule(impl->imported_module);
+  return ParsedModule(impl->imported_module->shared_from_this());
 }
 
 }  // namespace hyde

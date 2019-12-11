@@ -4,6 +4,7 @@
 
 #include <utility>
 #include <functional>
+#include <memory>
 #include <drlojekyll/Display/DisplayPosition.h>
 #include <drlojekyll/Lex/Token.h>
 
@@ -556,6 +557,9 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedQuery> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -588,6 +592,9 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedExport> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -620,6 +627,9 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedLocal> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -654,6 +664,10 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
+
   bool IsComplex(void) const noexcept;
   bool IsTrivial(void) const noexcept;
   bool IsAggregate(void) const noexcept;
@@ -690,6 +704,9 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
+  Token Name(void) const noexcept;
+  unsigned Arity(void) const noexcept;
+  ParsedParameter NthParameter(unsigned n) const noexcept;
 
   parse::ParsedNodeRange<ParsedMessage> Redeclarations(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
@@ -713,7 +730,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 class ParsedImport;
 
 // Represents a module parsed from a display.
-class ParsedModule : public parse::ParsedNode<ParsedModule> {
+class ParsedModule {
  public:
   DisplayRange SpellingRange(void) const noexcept;
 
@@ -728,11 +745,33 @@ class ParsedModule : public parse::ParsedNode<ParsedModule> {
   parse::ParsedNodeRange<ParsedFunctor> Functors(void) const;
   parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
 
+  // The root module of this parse.
+  ParsedModule RootModule(void) const;
+
+  inline ParsedModule(const std::shared_ptr<parse::Impl<ParsedModule>> &impl_)
+      : impl(impl_) {}
+
+  inline bool operator<(const ParsedModule &that) const noexcept {
+    return impl.get() < that.impl.get();
+  }
+
+  inline bool operator==(const ParsedModule &that) const noexcept {
+    return impl.get() == that.impl.get();
+  }
+
+  inline bool operator!=(const ParsedModule &that) const noexcept {
+    return impl.get() != that.impl.get();
+  }
+
  protected:
+  friend class ParsedImport;
   friend class Parser;
   friend class ParserImpl;
 
-  using parse::ParsedNode<ParsedModule>::ParsedNode;
+  std::shared_ptr<parse::Impl<ParsedModule>> impl;
+
+ private:
+  ParsedModule(void) = delete;
 };
 
 // Represents a parsed import declaration, e.g.
@@ -806,6 +845,13 @@ template<>
 struct hash<::hyde::ParsedLocal> {
   inline uint64_t operator()(::hyde::ParsedLocal decl) const noexcept {
     return decl.Id();
+  }
+};
+
+template<>
+struct hash<::hyde::ParsedPredicate> {
+  inline uint64_t operator()(::hyde::ParsedPredicate pred) const noexcept {
+    return pred.UniqueId();
   }
 };
 

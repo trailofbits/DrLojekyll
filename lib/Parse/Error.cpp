@@ -107,8 +107,11 @@ static void OutputColored(std::ostream &os, Color color, uint64_t dec_num) {
 }
 
 static DisplayPosition NextByte(const DisplayManager &dm, DisplayPosition pos) {
-  dm.TryDisplacePosition(pos, 1);
-  return pos;
+  if (dm.TryDisplacePosition(pos, 1)) {
+    return pos;
+  } else {
+    return DisplayPosition();
+  }
 }
 
 }  // namespace
@@ -122,8 +125,8 @@ const ErrorColorScheme Error::kDefaultColorScheme = {
   Color::kGreen,  // `note_category_color`.
   Color::kWhite,  // `message_color`.
   Color::kYellow,  // `source_line_color`.
-  Color::kBlack,  // `highlight_color`.
-  Color::kPurple,  // `highlight_background_color`.
+  Color::kWhite,  // `highlight_color`.
+  Color::kRed,  // `highlight_background_color`.
   Color::kWhite  // `text_color`.
 };
 
@@ -160,7 +163,12 @@ Error::Error(const DisplayManager &dm, const DisplayPosition &pos)
 // An error message related to a highlighted range of tokens.
 Error::Error(const DisplayManager &dm, const DisplayRange &range)
     : Error(dm, range.From()) {
-  dm.TryReadData(range, &(impl->highlight_range));
+  std::string_view char_range;
+  if (dm.TryReadData(range, &char_range)) {
+    impl->source = char_range;
+    impl->source.push_back(' ');
+    impl->source.push_back(' ');
+  }
 }
 
 // An error message related to a highlighted range of tokens, with one
@@ -170,22 +178,41 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range_,
    : Error(dm, DisplayRange(pos_in_range, NextByte(dm, pos_in_range))) {}
 
 // An error message related to a highlighted range of tokens, with a sub-range
+// in particular being referenced, where the error itself is at
+// `pos_in_range`.
+Error::Error(const DisplayManager &dm, const DisplayRange &range,
+             const DisplayRange &sub_range, const DisplayPosition &pos_in_range)
+   : Error(dm, range, sub_range) {
+
+  if (pos_in_range.IsValid()) {
+    impl->line = pos_in_range.Line();
+    impl->column = pos_in_range.Column();
+  }
+}
+
+// An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced.
 Error::Error(const DisplayManager &dm, const DisplayRange &range,
              const DisplayRange &sub_range)
    : Error(dm, sub_range.From()) {
 
   int num_bytes = 0;
-  if (!dm.TryReadData(range, &(impl->highlight_range))) {
+  std::string_view char_range;
+  if (dm.TryReadData(range, &char_range)) {
+    impl->source = char_range;
+    impl->source.push_back(' ');
+    impl->source.push_back(' ');
+  } else {
     return;
   }
 
   impl->hightlight_line = range.From().Line();
-  impl->is_error.resize(impl->highlight_range.size() + 1);
+  impl->is_error.clear();
+  impl->is_error.resize(impl->source.size(), false);
   auto has_dist = range.From().TryComputeDistanceTo(
       sub_range.From(), &num_bytes, nullptr, nullptr);
 
-  if (!has_dist || 0 >= num_bytes ||
+  if (!has_dist || 0 > num_bytes ||
       static_cast<size_t>(num_bytes) >= impl->is_error.size()) {
     return;
   }
@@ -282,11 +309,14 @@ void Error::Render(std::ostream &os,
       auto print_line = true;
       auto line_num = impl->hightlight_line;
       auto i = 0u;
-      for (; i < curr->highlight_range.size(); ++i) {
-        const auto ch = curr->highlight_range[i];
+
+      for (; i < curr->source.size(); ++i) {
+        const auto ch = curr->source[i];
         if (print_line) {
+          ss << '\n';
           BeginColor(ss, color_scheme.line_color);
-          ss << "\n" << std::setfill(' ') << std::setw(8) << line_num << " | ";
+          ss << std::setfill(' ') << std::setw(8)
+             << line_num << " | ";
           print_line = false;
           ++line_num;
           EndColor(ss, color_scheme.line_color);
@@ -294,7 +324,7 @@ void Error::Render(std::ostream &os,
         }
 
         if ('\n' == ch) {
-          if (curr->is_error[i]) {
+          if (i < curr->is_error.size() && curr->is_error[i]) {
             EndColor(ss, color_scheme.source_line_color);
             EndBackgroundColor(ss, color_scheme.background_color);
             BeginBackgroundColor(ss, color_scheme.highlight_background_color);
@@ -305,9 +335,12 @@ void Error::Render(std::ostream &os,
             BeginBackgroundColor(ss, color_scheme.background_color);
             BeginColor(ss, color_scheme.source_line_color);
           }
+
           print_line = true;
+          EndColor(ss, color_scheme.source_line_color);
+
         } else {
-          if (curr->is_error[i]) {
+          if (i < curr->is_error.size() && curr->is_error[i]) {
             EndColor(ss, color_scheme.source_line_color);
             EndBackgroundColor(ss, color_scheme.background_color);
             BeginBackgroundColor(ss, color_scheme.highlight_background_color);
@@ -322,18 +355,9 @@ void Error::Render(std::ostream &os,
           }
         }
       }
-      EndColor(ss, color_scheme.source_line_color);
 
-      // Highlight one character following the end.
-      assert(curr->is_error.size() > curr->highlight_range.size());
-      if (i == curr->highlight_range.size() && curr->is_error[i]) {
-        EndBackgroundColor(ss, color_scheme.background_color);
-        BeginBackgroundColor(ss, color_scheme.highlight_background_color);
-        BeginColor(ss, color_scheme.highlight_color);
-        ss << ' ';
-        EndColor(ss, color_scheme.highlight_color);
-        EndBackgroundColor(ss, color_scheme.highlight_background_color);
-        BeginBackgroundColor(ss, color_scheme.background_color);
+      if (!print_line) {
+        EndColor(ss, color_scheme.source_line_color);
       }
     }
 

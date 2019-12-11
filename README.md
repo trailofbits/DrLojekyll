@@ -2,7 +2,7 @@
 
 Dr. Lojekyll, pronounced Dr. Logical, is a Datalog compiler and execution
 engine. It is designed around a publish/subscribe model, as well as Dr. Stefan
-Brass's work on pipelined bottom-up Datalog execution.
+Brass's "push method" of pipelined bottom-up Datalog execution.
 
 ## Syntax Examples
 
@@ -47,14 +47,14 @@ clause_list: clause clause_list
 clause_list
 
 // Decls generally must fit inside a single line. They are allowed
-// to span lines, but only if the new line characters exist within
-// matched parantheses.
+// to span multiple lines, but only if the new line characters exist
+// within the matched parantheses of their parameter lists.
 decl: export_decl
 decl: local_decl
 decl: functor_decl
 decl: message_decl
 
-export_decl: "#export" atom "(" param_list_0 ")"
+export_decl: "#export" atom "(" param_list_0 ")" "\n"
 message_decl: "#message" atom "(" param_list_0 ")" "\n"
 local_decl: "#local" atom "(" param_list_1 ")" "\n"
 
@@ -102,26 +102,30 @@ clause: atom "(" named_var_list ")" ":" conjunct_list "."
 named_var_list: named_var "," named_var_list
 named_var_list: named_var
 
-conjunct_list: assignment conjunct_list_tail
 conjunct_list: comparison conjunct_list_tail
 conjunct_list: predicate conjunct_list_tail
 conjunct_list: negation conjunct_list_tail
+conjunct_list: predicate "over" aggregation conjunct_list_tail
 
-assignment: var "=" literal
+aggregation: predicate
+aggregation: "(" param_list_0 ")" "{" conjunct_list "}"
 
-comparison: var "=" var
-comparison: var "!=" var
-comparison: var "<" var
-comparison: var ">" var
+var_or_literal: var
+var_or_literal: literal
 
-predicate: atom "(" var_list ")"
+comparison: var_or_literal "=" var_or_literal
+comparison: var_or_literal "!=" var_or_literal
+comparison: var_or_literal "<" var_or_literal
+comparison: var_or_literal ">" var_or_literal
+
+predicate: atom "(" arg_list ")"
 negation: "!" predicate
 
 conjunct_list_tail: "," conjunct_list
 conjunct_list_tail:
 
-var_list: var "," var_list
-var_list: var
+arg_list: var_or_literal "," arg_list
+arg_list: var_or_literal
 
 literal: "0"
 literal: r"[1-9][0-9]*"

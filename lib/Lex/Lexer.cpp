@@ -638,6 +638,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               break;
           }
         }
+
         if (all_decimal) {
           interpreter.number.lexeme = Lexeme::kLiteralNumber;
           interpreter.number.spelling_kind =

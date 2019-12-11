@@ -116,7 +116,9 @@ class UserSuppliedStream final : public display::DataStream {
 
   explicit UserSuppliedStream( const std::string &name_, std::istream &is_)
       : name(name_),
-        is(is_) {}
+        is(is_) {
+    data.reserve(4096);
+  }
 
   // Read data into `data_out`.
   bool ReadData(std::string_view *data_out) override {
@@ -221,7 +223,8 @@ DisplayManager::DisplayManager(void)
 std::string_view DisplayManager::DisplayName(DisplayPosition position) const {
   if (position.IsValid()) {
     display::PositionInterpreter interpreter = {position.opaque_data};
-    if (interpreter.position.display_id < impl->displays.size()) {
+    const auto display_id = interpreter.position.display_id;
+    if (display_id && display_id < impl->displays.size()) {
       return impl->displays[interpreter.position.display_id]->Name();
     }
   }
@@ -297,8 +300,8 @@ bool DisplayManager::TryReadChar(DisplayPosition position, char *ch_out) const {
 
   display::PositionInterpreter interpreter = {};
   interpreter.flat = position.opaque_data;
-  auto display_id = interpreter.position.display_id;
-  if (display_id >= impl->displays.size()) {
+  const auto display_id = interpreter.position.display_id;
+  if (!display_id || display_id >= impl->displays.size()) {
     return false;
   }
 
@@ -314,8 +317,8 @@ bool DisplayManager::TryReadData(DisplayRange range,
                                  std::string_view *data_out) const {
   display::PositionInterpreter interpreter = {};
   interpreter.flat = range.from.opaque_data;
-  auto display_id = interpreter.position.display_id;
-  if (display_id >= impl->displays.size()) {
+  const auto display_id = interpreter.position.display_id;
+  if (!display_id || display_id >= impl->displays.size()) {
     return false;
   }
 
@@ -327,9 +330,13 @@ bool DisplayManager::TryReadData(DisplayRange range,
 // `position` in place, and returns `true`, otherwise returns `false`.
 bool DisplayManager::TryDisplacePosition(
     DisplayPosition &position, int num_bytes) const {
+  if (!position.IsValid()) {
+    return false;
+  }
+
   display::PositionInterpreter interpreter = {position.opaque_data};
-  auto display_id = interpreter.position.display_id;
-  if (display_id >= impl->displays.size()) {
+  const auto display_id = interpreter.position.display_id;
+  if (!display_id || display_id >= impl->displays.size()) {
     return false;
   }
 
@@ -346,16 +353,16 @@ bool DisplayManager::TryDisplacePosition(
       return true;
     }
 
-    if (!display->TryGetPosition(index + disp - 1, &position)) {
-      return false;
+    // `index + disp - 1` is the last character in the display.
+    if (display->TryGetPosition(index + disp - 1, &position)) {
+      interpreter.flat = position.opaque_data;
+      position = DisplayPosition(
+          display_id, interpreter.position.index + 1,
+          interpreter.position.line, interpreter.position.column + 1);
+      return true;
     }
 
-    // `index + disp - 1` is the last character in the display.
-    interpreter.flat = position.opaque_data;
-    position = DisplayPosition(
-        display_id, interpreter.position.index + 1,
-        interpreter.position.line, interpreter.position.column + 1);
-    return true;
+    return false;
 
   // Jump backward.
   } else {

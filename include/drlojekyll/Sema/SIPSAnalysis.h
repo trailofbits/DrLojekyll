@@ -29,24 +29,33 @@ class SIPSVisitor {
     const ParsedParameter bound_parameter;
   };
 
+  struct Column {
+    inline Column(ParsedParameter param_, ParsedVariable var_,
+                  unsigned n_, unsigned id_)
+        : param(param_),
+          var(var_),
+          n(n_),
+          id(id_) {}
+
+    const ParsedParameter param;
+    const ParsedVariable var;
+    const unsigned n;  // This is the `n`th parameter.
+    const unsigned id;
+  };
+
   virtual ~SIPSVisitor(void);
 
   // Notify the visitor that we're about to begin visiting a clause body.
   virtual void Begin(ParsedPredicate assumption);
 
   // Declares a concrete parameter identified by `id`.
-  virtual void DeclareParameter(ParsedParameter param, ParsedVariable var,
-                                unsigned id);
+  virtual void DeclareParameter(const Column &col);
 
   // Declares a variable identified by `id`.
   virtual void DeclareVariable(ParsedVariable var, unsigned id);
 
   // Declares a constant identified by `id`.
-  virtual void DeclareConstant(ParsedLiteral var, unsigned id);
-
-  // Notify the visitor that the clause head has been proven.
-  virtual void ProveClauseHead(ParsedDeclaration decl,
-                               unsigned *begin_id, unsigned *end_id);
+  virtual void DeclareConstant(ParsedLiteral val, unsigned id);
 
   // Asserts that the value of the variable identified by `lhs_id` must match
   // the value of the variable identified by `rhs_id`.
@@ -64,11 +73,53 @@ class SIPSVisitor {
   // greater than the value of the variable identified by `rhs_id`.
   virtual void AssertGreaterThan(unsigned lhs_id, unsigned rhs_id);
 
+  // Asserts the presence of some tuple. This is for negative predicates. Uses
+  // the variable ids in the range `[begin_id, end_id)`.
+  virtual void AssertPresent(
+      ParsedPredicate pred, const Column *begin,
+      const Column *end);
+
   // Asserts the absence of some tuple. This is for negative predicates. Uses
   // the variable ids in the range `[begin_id, end_id)`.
   virtual void AssertAbsent(
-      ParsedPredicate pred, const unsigned *begin_id,
-      const unsigned *end_id);
+      ParsedPredicate pred, const Column *begin,
+      const Column *end);
+
+  // Tell the visitor that we're going to insert into a table.
+  virtual void Insert(
+      ParsedDeclaration decl, const Column *begin,
+      const Column *end);
+
+  // Selects some columns from a predicate where some of the column values are
+  // fixed.
+  virtual void EnterFromWhereSelect(
+      ParsedPredicate pred, ParsedDeclaration from,
+      const Column *where_begin, const Column *where_end,
+      const Column *select_begin, const Column *select_end);
+
+  // Selects some columns from a predicate where some of the column values are
+  // fixed.
+  virtual void EnterFromSelect(
+      ParsedPredicate pred, ParsedDeclaration from,
+      const Column *select_begin, const Column *select_end);
+
+  // Exits the a selection.
+  virtual void ExitSelect(ParsedPredicate pred, ParsedDeclaration from);
+
+  // Enter into the aggregate collection phase. Pass in the bound arguments
+  // that are not themselves being summarized or aggregates.
+  virtual void EnterAggregation(
+      ParsedPredicate functor, ParsedDeclaration decl,
+      const Column *bound_begin, const Column *bound_end);
+
+  // Tell the visitor that we're going to insert into an aggregation.
+  virtual void Collect(
+      ParsedPredicate agg_pred, ParsedDeclaration agg_decl, const Column *begin,
+      const Column *end);
+
+  // Tell the visitor that is can finish summarizing, and prepare to select
+  // the summaries.
+  virtual void Summarize(ParsedPredicate functor, ParsedDeclaration decl);
 
   // Assigns the value associated with `rhs_id` to `dest_id`.
   virtual void Assign(unsigned dest_id, unsigned rhs_id);
@@ -98,6 +149,9 @@ class SIPSVisitor {
   // failed bindings is provided.
   virtual void CancelPredicate(const FailedBinding *begin, FailedBinding *end);
 
+  // Cancel due to their being a message on which we must depend.
+  virtual void CancelMessage(const ParsedPredicate predicate);
+
   // The SIPS generator will ask the visitor if it wants to advance
   // before trying to advance.
   virtual bool Advance(void);
@@ -111,9 +165,11 @@ class SIPSVisitor {
 // to evaluate all permutations of predicates in that clause, e.g. to detect
 // range restriction errors, to score them for their ability to take advantage
 // of sideways information passing style (SIPS), or to emit code.
-class SIPSGenerator {
+class SIPSGenerator final {
  public:
   class Impl;
+
+  ~SIPSGenerator(void);
 
   explicit SIPSGenerator(ParsedClause clause, ParsedPredicate assumption);
 

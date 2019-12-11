@@ -68,9 +68,7 @@ function(main config)
         main.cpp)
 
     target_link_libraries(test-${config}
-        parser-${config}
-        sema-${config})
-
+        transforms-${config})
 endfunction(main)
 
 function(fuzz_harness config)

@@ -35,13 +35,13 @@ class SharedParserContext {
   std::vector<Path> search_paths;
 
   // All parsed modules.
-  std::vector<std::unique_ptr<parse::Impl<ParsedModule>>> modules;
+  parse::Impl<ParsedModule> *root_module{nullptr};
 
   // Mapping of display IDs to parsed modules. This exists to prevent the same
   // module from being parsed multiple times.
   //
   // NOTE(pag): Cyclic module imports are valid.
-  std::unordered_map<unsigned, parse::Impl<ParsedModule> *> parsed_modules;
+  std::unordered_map<unsigned, std::weak_ptr<parse::Impl<ParsedModule>>> parsed_modules;
 
   FileManager file_manager;
   const DisplayManager display_manager;
@@ -232,30 +232,28 @@ void ParserImpl::LexAllTokens(Display display) {
   tokens.clear();
 
   Token tok;
-  DisplayPosition first_pos;
+  DisplayPosition line_start_pos;
   DisplayPosition prev_pos;
   auto ignore_line = false;
 
   while (lexer.TryGetNextToken(context->string_pool, &tok)) {
     const auto lexeme = tok.Lexeme();
 
-    if (first_pos.IsInvalid()) {
-      first_pos = tok.Position();
+    if (Lexeme::kWhitespace == lexeme &&
+        tok.Line() < tok.NextPosition().Line()) {
+      line_start_pos = tok.NextPosition();
+      assert(line_start_pos.IsValid());
+    }
+
+    if (line_start_pos.IsInvalid()) {
+      line_start_pos = tok.Position();
     }
 
     // Report lexing errors and fix up the tokens into non-errors.
     if (tok.IsInvalid()) {
-
-      Error error;
-      if (tok.ErrorPosition() == tok.Position()) {
-        error = Error(
-            context->display_manager, DisplayRange(first_pos, tok.NextPosition()),
-            tok.SpellingRange());
-      } else {
-        error = Error(
-            context->display_manager, DisplayRange(first_pos, tok.NextPosition()),
-            tok.ErrorPosition());
-      }
+      Error error(context->display_manager,
+                  DisplayRange(line_start_pos, tok.NextPosition()),
+                  tok.SpellingRange(), tok.ErrorPosition());
 
       switch (lexeme) {
         case Lexeme::kInvalid:
@@ -359,6 +357,12 @@ void ParserImpl::LexAllTokens(Display display) {
   }
   if (tokens.empty() || (tokens.back().Lexeme() != Lexeme::kEndOfFile)) {
     // Ensures that there is always an EOF token at the end of a file if there are no tokens
+    tokens.push_back(Token::FakeEndOfFile(tok.Position()));
+  }
+
+  // Ensures that there is always an EOF token at the end of a file if there are no tokens
+  // or if the file does not end with an EOF token
+  if (tokens.empty() || (tokens.back().Lexeme() != Lexeme::kEndOfFile)) {
     tokens.push_back(Token::FakeEndOfFile(tok.Position()));
   }
 }
@@ -747,9 +751,11 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           functor.reset(AddDecl<ParsedFunctor>(
               module, DeclarationKind::kFunctor, name, params.size()));
+         
           if (last_aggregate.IsValid() || last_summary.IsValid()) {
-            functor->is_aggregate = true;
+              functor->is_aggregate = true;
           }
+
           if (!functor) {
             return;
           } else {
@@ -808,8 +814,6 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     }
   }
 
-
-
   if (state == 6) {
     Error err(context->display_manager, SubTokenRange(), next_pos);
     err << "Expected either a 'trivial' or 'complex' attribute here";
@@ -824,6 +828,8 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
+  // If we have a summary argument, then require us to have an aggregate
+  // argument.
   } else if (last_summary.IsValid() && !last_aggregate.IsValid()) {
     Error err(context->display_manager, SubTokenRange(),
               last_summary.SpellingRange());
@@ -842,7 +848,7 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
 
   // Don't let us have both summary and free variables.
   //
-  // NOTE(pag): For now we permit aggregate and bound variables.
+  // NOTE(pag): We permit `bound` arguments to be used along with aggregates.
   } else if (last_summary.IsValid() && last_free.IsValid()) {
     Error err(context->display_manager, SubTokenRange(),
               last_summary.SpellingRange());
@@ -862,8 +868,8 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
     auto i = 0u;
 
     for (auto &redecl_param : redecl->parameters) {
-      const auto &param = functor->parameters[i++];
-      const auto lexeme = param->opt_binding.Lexeme();
+      const auto &orig_param = functor->parameters[i++];
+      const auto lexeme = orig_param->opt_binding.Lexeme();
       const auto redecl_lexeme = redecl_param->opt_binding.Lexeme();
 
       // We can redeclare bound/free parameters with other variations of
@@ -875,7 +881,7 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
             redecl_lexeme == Lexeme::kKeywordSummary))) {
 
         Error err(context->display_manager, SubTokenRange(),
-                  ParsedParameter(param.get()).SpellingRange());
+                  ParsedParameter(orig_param.get()).SpellingRange());
         err << "Aggregation functor '" << functor->name
             << "' cannot be re-declared with different aggregation semantics.";
 
@@ -1663,7 +1669,7 @@ void ParserImpl::ParseImport(parse::Impl<ParsedModule> *module) {
   // Restore the old first search path.
   context->search_paths[0] = prev_search0;
 
-  imp->imported_module = sub_mod.impl;
+  imp->imported_module = sub_mod.impl.get();
 
   if (!module->imports.empty()) {
     module->imports.back()->next = imp.get();
@@ -1949,6 +1955,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
           continue;
+
         } else {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
@@ -1981,6 +1988,8 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          clause->rparen = tok;
+
           if (decl) {
             clause->declaration = decl;
             state = 4;
@@ -2136,6 +2145,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           continue;
 
         } else if (Lexeme::kPuncPeriod == lexeme) {
+          clause->dot = tok;
           state = 9;
           continue;
 
@@ -2849,7 +2859,9 @@ void ParserImpl::ParseAllTokens(parse::Impl<ParsedModule> *module) {
 
       // Error, an unexpected top-level token.
       default: {
-        Error err(context->display_manager, SubTokenRange());
+        ReadLine();
+        Error err(context->display_manager, SubTokenRange(),
+                  tok.SpellingRange());
         err << "Unexpected top-level token; expected either a "
             << "clause definition or a declaration";
         context->error_log.Append(std::move(err));
@@ -2865,29 +2877,41 @@ void ParserImpl::ParseAllTokens(parse::Impl<ParsedModule> *module) {
 //            so as to avoid re-parsing a module.
 ParsedModule ParserImpl::ParseDisplay(
     Display display, const DisplayConfiguration &config) {
-  auto &module = context->parsed_modules[display.Id()];
-  if (!module) {
-    module = new parse::Impl<ParsedModule>(config);
-    context->modules.emplace_back(module);
-    LexAllTokens(display);
-    module->first = tokens.front();
-    module->last = tokens.back();
-    ParseAllTokens(module);
-
-    // Go through and remove the local declarations from the
-    // `declarations` so that they are no longer visible.
-    std::vector<uint64_t> to_erase;
-    for (auto &entry : context->declarations) {
-      if (entry.second->context->kind == DeclarationKind::kLocal) {
-        to_erase.push_back(entry.first);
-      }
-    }
-
-    for (auto local_id : to_erase) {
-      context->declarations.erase(local_id);
-    }
-
+  auto &weak_module = context->parsed_modules[display.Id()];
+  auto module = weak_module.lock();
+  if (module) {
+    return ParsedModule(module);
   }
+
+  module = std::make_shared<parse::Impl<ParsedModule>>(config);
+  weak_module = module;
+
+  if (!context->root_module) {
+    context->root_module = module.get();
+    module->root_module = module.get();
+  } else {
+    context->root_module->non_root_modules.emplace_back(module);
+    module->root_module = context->root_module;
+  }
+
+  LexAllTokens(display);
+  module->first = tokens.front();
+  module->last = tokens.back();
+  ParseAllTokens(module.get());
+
+  // Go through and remove the local declarations from the
+  // `declarations` so that they are no longer visible.
+  std::vector<uint64_t> to_erase;
+  for (auto &entry : context->declarations) {
+    if (entry.second->context->kind == DeclarationKind::kLocal) {
+      to_erase.push_back(entry.first);
+    }
+  }
+
+  for (auto local_id : to_erase) {
+    context->declarations.erase(local_id);
+  }
+
   return ParsedModule(module);
 }
 
