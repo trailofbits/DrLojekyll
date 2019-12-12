@@ -18,11 +18,13 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Sema/BottomUpAnalysis.h>
 #include <drlojekyll/Sema/SIPSAnalysis.h>
 #include <drlojekyll/Transforms/CombineModules.h>
 
 namespace hyde {
 
+#if 0
 class PseudoCodePrinter final : public SIPSVisitor {
  public:
   PseudoCodePrinter(DisplayManager display_manager_)
@@ -220,6 +222,45 @@ class PseudoCodePrinter final : public SIPSVisitor {
   std::string indent;
   bool accepted{false};
 };
+#endif
+
+class GraphPrinter : public BottomUpVisitor {
+ public:
+  GraphPrinter(DisplayManager &display_manager_)
+      : display_manager(display_manager_),
+        os(display_manager, std::cerr) {}
+
+  virtual ~GraphPrinter(void) = default;
+
+  bool VisitTransition(ParsedPredicate from_pred,
+                       ParsedPredicate to_pred,
+                       unsigned depth) {
+    if (!seen.count(from_pred)) {
+      os << "p" << from_pred.UniqueId() << " [label=\""
+         << from_pred << "\"];\n";
+    }
+
+    if (!seen.count(to_pred)) {
+      os << "p" << to_pred.UniqueId() << " [label=\""
+         << to_pred << "\"];\n";
+    }
+
+    auto &edges = seen[from_pred];
+    if (edges.count(to_pred)) {
+      return false;
+    }
+
+    os << "p" << from_pred.UniqueId() << " -> p" << to_pred.UniqueId() << ";\n";
+
+    edges.insert(to_pred);
+
+    return true;
+  }
+
+  DisplayManager display_manager;
+  OutputStream os;
+  std::unordered_map<ParsedPredicate, std::unordered_set<ParsedPredicate>> seen;
+};
 
 static void CodeDumper(hyde::DisplayManager display_manager,
                        ParsedModule module) {
@@ -229,43 +270,15 @@ static void CodeDumper(hyde::DisplayManager display_manager,
   std::vector<std::pair<ParsedPredicate, ParsedClause>> work_list;
   std::vector<std::pair<ParsedPredicate, ParsedClause>> next_work_list;
 
-  for (auto message : module.Messages()) {
-    for (auto use : message.PositiveUses()) {
-      auto clause = ParsedClause::Containing(use);
-      next_work_list.emplace_back(use, clause);
-    }
+  BottomUpAnalysis analysis;
+  GraphPrinter printer(display_manager);
+  std::cerr << "digraph {\n";
+  for (analysis.Start(module); analysis.Step(printer); ) {
+    // ...
   }
-
-  while (!next_work_list.empty()) {
-    work_list.swap(next_work_list);
-    while (!work_list.empty()) {
-      auto assumption = work_list.back().first;
-      auto clause = work_list.back().second;
-      work_list.pop_back();
-
-      if (seen_assumptions.count(assumption)) {
-        continue;
-      }
-      seen_assumptions.insert(assumption);
-
-      SIPSGenerator generator(clause, assumption);
-      do {
-        PseudoCodePrinter printer(display_manager);
-        if (generator.Visit(printer)) {
-          printer.ss.flush();
-          std::cerr << printer.ss.str() << '\n';
-
-          for (auto next_use : ParsedDeclaration::Of(clause).PositiveUses()) {
-            auto next_clause = ParsedClause::Containing(next_use);
-            next_work_list.emplace_back(next_use, next_clause);
-          }
-
-          break;
-        }
-      } while (generator.Advance());
-    }
-  }
+  std::cerr << "}\n";
 }
+
 
 }  // namespace hyde
 
@@ -280,9 +293,30 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     return EXIT_FAILURE;
   } else {
     module = CombineModules(display_manager, module);
-    hyde::OutputStream os(display_manager, std::cout);
-    os << module;
-    os << "\n\n";
+
+    std::stringstream ss;
+    do {
+      hyde::OutputStream os(display_manager, ss);
+      os << module;
+    } while (false);
+
+    hyde::Parser parser(display_manager, error_log);
+    auto module2 = parser.ParseStream(ss, hyde::DisplayConfiguration());
+    if (!error_log.IsEmpty()) {
+      error_log.Render(std::cerr);
+      assert(error_log.IsEmpty());
+      return EXIT_FAILURE;
+    }
+
+    std::stringstream ss2;
+    do {
+      hyde::OutputStream os(display_manager, ss2);
+      os << module2;
+    } while (false);
+
+    std::cerr << ss.str() << "\n\n" << ss2.str() << "\n\n";
+    assert(ss.str() == ss2.str());
+
     CodeDumper(display_manager, module);
     //Simulate(os, module);
     return EXIT_SUCCESS;

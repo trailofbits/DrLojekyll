@@ -10,7 +10,7 @@
 
 namespace hyde {
 
-// Visits the
+// Visits a clause body in left-to-right order.
 class SIPSVisitor {
  public:
   struct FailedBinding {

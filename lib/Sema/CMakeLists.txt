@@ -2,8 +2,10 @@
 
 function(sema source_dir config)
     add_library(sema-${config} STATIC
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/BottomUpAnalysis.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/SIPSAnalysis.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/ModuleIterator.h"
+        "${source_dir}/BottomUpAnalysis.cpp"
         "${source_dir}/SIPSAnalysis.cpp"
         "${source_dir}/ModuleIterator.cpp")
 

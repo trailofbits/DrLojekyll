@@ -27,14 +27,29 @@ unsigned StringPool::InternString(std::string_view data, bool force) const {
   if (force) {
     auto pos = impl->pool.size();
     impl->pool.insert(impl->pool.end(), data.begin(), data.end());
+    impl->pool.push_back('\0');
     return static_cast<unsigned>(pos);
 
   } else {
-    auto pos = impl->pool.find(data, 1);
-    if (pos == std::string::npos) {
-      pos = impl->pool.size();
-      impl->pool.insert(impl->pool.end(), data.begin(), data.end());
+    size_t pos = 1;
+    while (pos != std::string::npos) {
+      pos = impl->pool.find(data, pos);
+      if (std::string::npos == pos ||
+          (pos + data.size()) >= impl->pool.size()) {
+        break;
+
+      // Make sure we match on a trailing NUL.
+      } else if (!impl->pool[pos+data.size()]) {
+        return static_cast<unsigned>(pos);
+
+      } else {
+        pos += 1;
+      }
     }
+
+    pos = impl->pool.size();
+    impl->pool.insert(impl->pool.end(), data.begin(), data.end());
+    impl->pool.push_back('\0');
     return static_cast<unsigned>(pos);
   }
 }
