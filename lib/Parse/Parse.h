@@ -66,6 +66,35 @@ class Impl<ParsedUse<T>> : public UseBase {
 template <typename T>
 using UseList = std::vector<parse::Impl<ParsedUse<T>> *>;
 
+class VariableContext {
+ public:
+  inline explicit VariableContext(Impl<ParsedClause> *clause_,
+                                  Impl<ParsedVariable> *first_use_)
+      : clause(clause_),
+        first_use(first_use_) {}
+
+  // Clause containing this variable.
+  Impl<ParsedClause> * const clause;
+
+  // First use of this variable in `clause`.
+  Impl<ParsedVariable> * const first_use;
+
+  // List of assignments to this variable.
+  UseList<ParsedAssignment> assignment_uses;
+
+  // List of comparisons against this variable.
+  UseList<ParsedComparison> comparison_uses;
+
+  // List of uses of this variable as an argument.
+  UseList<ParsedPredicate> argument_uses;
+
+  // List of uses of this variable as a parameter.
+  UseList<ParsedClause> parameter_uses;
+
+  // Cached unique identifier.
+  IdInterpreter id;
+};
+
 template <>
 class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
  public:
@@ -75,12 +104,6 @@ class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
 
   Token name;
 
-  // Clause containing this variable.
-  Impl<ParsedClause> *clause{nullptr};
-
-  // First use of this variable in `clause`.
-  Impl<ParsedVariable> *first_use{nullptr};
-
   // Next use of the same logical variable in `clause`.
   Impl<ParsedVariable> *next_use{nullptr};
 
@@ -88,20 +111,7 @@ class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
   // if this variable is used in an argument list.
   Impl<ParsedVariable> *next_var_in_arg_list{nullptr};
 
-  // List of assignments to this variable.
-  std::shared_ptr<UseList<ParsedAssignment>> assignment_uses;
-
-  // List of comparisons against this variable.
-  std::shared_ptr<UseList<ParsedComparison>> comparison_uses;
-
-  // List of uses of this variable as an argument.
-  std::shared_ptr<UseList<ParsedPredicate>> argument_uses;
-
-  // List of uses of this variable as a parameter.
-  std::shared_ptr<UseList<ParsedClause>> parameters;
-
-  // Cached unique identifier.
-  IdInterpreter id;
+  std::shared_ptr<VariableContext> context;
 
   // Whether or not this variable is an parameter to its clause.
   bool is_parameter{false};

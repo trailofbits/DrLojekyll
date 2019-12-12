@@ -167,7 +167,8 @@ class ParserImpl {
 
   // Create a variable to name a literal.
   parse::Impl<ParsedVariable> *CreateLiteralVariable(
-      parse::Impl<ParsedClause> *clause, Token tok);
+      parse::Impl<ParsedClause> *clause, Token tok,
+      bool is_param, bool is_arg);
 
   // Parse a display, returning the parsed module.
   //
@@ -1829,47 +1830,24 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
   }
 
   var->name = name;
-  var->clause = clause;
   var->is_parameter = is_param;
   var->is_argument = is_arg;
 
   if (Lexeme::kIdentifierVariable == name.Lexeme()) {
     auto &prev = prev_named_var[name.IdentifierId()];
     if (prev) {
-      var->first_use = prev->first_use;
+      var->context = prev->context;
       prev->next_use = var;
 
-      // All body_variables of the same name share the same set of assignment
-      // and comparisons.
-      var->assignment_uses = prev->assignment_uses;
-      var->comparison_uses = prev->comparison_uses;
-      var->parameters = prev->parameters;
-      var->argument_uses = prev->argument_uses;
-
     } else {
-      var->first_use = var;
-      std::make_shared<parse::UseList<ParsedAssignment>>().swap(
-          var->assignment_uses);
-      std::make_shared<parse::UseList<ParsedComparison>>().swap(
-          var->comparison_uses);
-      std::make_shared<parse::UseList<ParsedClause>>().swap(
-          var->parameters);
-      std::make_shared<parse::UseList<ParsedPredicate>>().swap(
-          var->argument_uses);
+      var->context = std::make_shared<parse::VariableContext>(clause, var);
     }
+
     prev = var;
 
   // Unnamed variable.
   } else {
-    var->first_use = var;
-    std::make_shared<parse::UseList<ParsedAssignment>>().swap(
-        var->assignment_uses);
-    std::make_shared<parse::UseList<ParsedComparison>>().swap(
-        var->comparison_uses);
-    std::make_shared<parse::UseList<ParsedClause>>().swap(
-        var->parameters);
-    std::make_shared<parse::UseList<ParsedPredicate>>().swap(
-        var->argument_uses);
+    var->context = std::make_shared<parse::VariableContext>(clause, var);
   }
 
   return var;
@@ -1877,7 +1855,9 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
 
 // Create a variable to name a literal.
 parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
-    parse::Impl<ParsedClause> *clause, Token tok) {
+    parse::Impl<ParsedClause> *clause, Token tok,
+    bool is_param, bool is_arg) {
+
   auto lhs = CreateVariable(
       clause,
       Token::Synthetic(Lexeme::kIdentifierUnnamedVariable,
@@ -1896,8 +1876,30 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
 
   // Add to the variable's assignment list. We support the list, but for
   // these auto-created variables, there can be only one use.
-  lhs->assignment_uses->push_back(&(assign->lhs));
-  return lhs;
+  lhs->context->assignment_uses.push_back(&(assign->lhs));
+
+  // Now create the version of the variable that gets used.
+  auto var = new parse::Impl<ParsedVariable>;
+  if (is_param) {
+    if (!clause->head_variables.empty()) {
+      clause->head_variables.back()->next = var;
+    }
+    clause->head_variables.emplace_back(var);
+
+  } else {
+    if (!clause->body_variables.empty()) {
+      clause->body_variables.back()->next = var;
+    }
+    clause->body_variables.emplace_back(var);
+  }
+
+  var->name = lhs->name;
+  var->context = lhs->context;
+  var->is_parameter = is_param;
+  var->is_argument = is_arg;
+  lhs->next_use = var;  // Link it in.
+
+  return var;
 }
 
 // Try to parse `sub_range` as a clause.
@@ -1977,6 +1979,15 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           state = 3;
           continue;
 
+        // Support something like `foo(1, ...) : ...`, converting it into
+        // `foo(V, ...) : V=1, ...`.
+        } else if (Lexeme::kLiteralString == lexeme ||
+                   Lexeme::kLiteralNumber == lexeme) {
+          (void) CreateLiteralVariable(
+              clause.get(), tok, true, false);
+          state = 3;
+          continue;
+
         } else {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
@@ -2041,7 +2052,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
 
         } else if (Lexeme::kLiteralString == lexeme ||
                    Lexeme::kLiteralNumber == lexeme) {
-          lhs = CreateLiteralVariable(clause.get(), tok);
+          lhs = CreateLiteralVariable(clause.get(), tok, false, false);
           state = 6;
           continue;
 
@@ -2106,12 +2117,12 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
 
             // Add to the variable's assignment list. We support the list, but for
             // these auto-created variables, there can be only one use.
-            lhs->assignment_uses->push_back(&(assign->lhs));
+            lhs->context->assignment_uses.push_back(&(assign->lhs));
             state = 8;
             continue;
 
           } else {
-            rhs = CreateLiteralVariable(clause.get(), tok);
+            rhs = CreateLiteralVariable(clause.get(), tok, false, false);
           }
 
         } else if (Lexeme::kIdentifierVariable == lexeme) {
@@ -2136,16 +2147,18 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
               lhs, rhs, compare_op);
 
           // Add to the LHS variable's comparison use list.
-          if (!lhs->comparison_uses->empty()) {
-            lhs->comparison_uses->back()->next = &(compare->lhs);
+          auto &lhs_comparison_uses = lhs->context->comparison_uses;
+          if (!lhs_comparison_uses.empty()) {
+            lhs_comparison_uses.back()->next = &(compare->lhs);
           }
-          lhs->comparison_uses->push_back(&(compare->lhs));
+          lhs_comparison_uses.push_back(&(compare->lhs));
 
           // Add to the RHS variable's comparison use list.
-          if (!rhs->comparison_uses->empty()) {
-            rhs->comparison_uses->back()->next = &(compare->rhs);
+          auto &rhs_comparison_uses = rhs->context->comparison_uses;
+          if (!rhs_comparison_uses.empty()) {
+            rhs_comparison_uses.back()->next = &(compare->rhs);
           }
-          rhs->comparison_uses->push_back(&(compare->rhs));
+          rhs_comparison_uses.push_back(&(compare->rhs));
 
           // Add to the clause's comparison list.
           if (!clause->comparisons.empty()) {
@@ -2236,7 +2249,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
         // Convert literals into variables, just-in-time.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme) {
-          arg = CreateLiteralVariable(clause.get(), tok);
+          arg = CreateLiteralVariable(clause.get(), tok, false, true);
 
         } else if (Lexeme::kIdentifierVariable == lexeme ||
                    Lexeme::kIdentifierUnnamedVariable == lexeme) {
@@ -2248,10 +2261,11 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
               UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
-          if (!arg->argument_uses->empty()) {
-            arg->argument_uses->back()->next = use;
+          auto &argument_uses = arg->context->argument_uses;
+          if (!argument_uses.empty()) {
+            argument_uses.back()->next = use;
           }
-          arg->argument_uses->push_back(use);
+          argument_uses.push_back(use);
 
           // Link the arguments together.
           if (!pred->argument_uses.empty()) {
@@ -2535,10 +2549,11 @@ bool ParserImpl::ParseAggregatedPredicate(
               UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
-          if (!arg->argument_uses->empty()) {
-            arg->argument_uses->back()->next = use;
+          auto &argument_uses = arg->context->argument_uses;
+          if (!argument_uses.empty()) {
+            argument_uses.back()->next = use;
           }
-          arg->argument_uses->push_back(use);
+          argument_uses.push_back(use);
 
           // Link the arguments together.
           if (!pred->argument_uses.empty()) {
@@ -2670,7 +2685,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         // Convert literals into variables, just-in-time.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme) {
-          arg = CreateLiteralVariable(clause, tok);
+          arg = CreateLiteralVariable(clause, tok, false, true);
 
         } else if (Lexeme::kIdentifierVariable == lexeme ||
                    Lexeme::kIdentifierUnnamedVariable == lexeme) {
@@ -2682,10 +2697,11 @@ bool ParserImpl::ParseAggregatedPredicate(
               UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
-          if (!arg->argument_uses->empty()) {
-            arg->argument_uses->back()->next = use;
+          auto &argument_uses = arg->context->argument_uses;
+          if (!argument_uses.empty()) {
+            argument_uses.back()->next = use;
           }
-          arg->argument_uses->push_back(use);
+          argument_uses.push_back(use);
 
           // Link the arguments together.
           if (!pred->argument_uses.empty()) {

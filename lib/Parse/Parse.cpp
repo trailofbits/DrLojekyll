@@ -123,10 +123,12 @@ Impl<ParsedDeclaration>::NegativeUses(void) const {
 
 // Compute the unique identifier for this variable.
 uint64_t Impl<ParsedVariable>::Id(void) noexcept {
+  auto &id = context->id;
   if (id.flat) {
     return id.flat;
   }
 
+  const auto clause = context->clause;
   id.flat = clause->Id();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
     id.info.var_id = clause->next_var_id++;
@@ -172,7 +174,7 @@ Token ParsedVariable::Name(void) const noexcept {
 
 // Returns `true` if this variable is an parameter to its clause.
 bool ParsedVariable::IsParameter(void) const noexcept {
-  return impl->first_use->is_parameter;
+  return impl->context->first_use->is_parameter;
 }
 
 // Returns `true` if this variable is an argument to a predicate.
@@ -183,13 +185,13 @@ bool ParsedVariable::IsArgument(void) const noexcept {
 // Returns `true` if this variable, or any other used of this variable,
 // is assigned to any literals.
 bool ParsedVariable::IsAssigned(void) const noexcept {
-  return !impl->assignment_uses->empty();
+  return !impl->context->assignment_uses.empty();
 }
 
 // Returns `true` if this variable, or any other used of this variable,
 // is assigned to any literals.
 bool ParsedVariable::IsCompared() const noexcept {
-  return !impl->comparison_uses->empty();
+  return !impl->context->comparison_uses.empty();
 }
 
 // Returns `true` if this variable is an unnamed variable.
@@ -251,11 +253,11 @@ ComparisonOperator ParsedComparison::Operator(void) const noexcept {
 // Return the list of all comparisons with `var`.
 parse::ParsedNodeRange<ParsedComparisonUse>
 ParsedComparison::Using(ParsedVariable var) {
-  if (var.impl->comparison_uses->empty()) {
+  if (var.impl->context->comparison_uses.empty()) {
     return parse::ParsedNodeRange<ParsedComparisonUse>();
   } else {
     return parse::ParsedNodeRange<ParsedComparisonUse>(
-        var.impl->comparison_uses->front());
+        var.impl->context->comparison_uses.front());
   }
 }
 
@@ -275,22 +277,22 @@ ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
 // Return the list of all assignments to `var`.
 parse::ParsedNodeRange<ParsedAssignmentUse>
 ParsedAssignment::Using(ParsedVariable var) {
-  if (var.impl->assignment_uses->empty()) {
+  if (var.impl->context->assignment_uses.empty()) {
     return parse::ParsedNodeRange<ParsedAssignmentUse>();
   } else {
     return parse::ParsedNodeRange<ParsedAssignmentUse>(
-        var.impl->assignment_uses->front());
+        var.impl->context->assignment_uses.front());
   }
 }
 
 // Return the list of all uses of `var` as an argument to a predicate.
 parse::ParsedNodeRange<ParsedArgumentUse>
 ParsedPredicate::Using(ParsedVariable var) {
-  if (var.impl->argument_uses->empty()) {
+  if (var.impl->context->argument_uses.empty()) {
     return parse::ParsedNodeRange<ParsedArgumentUse>();
   } else {
     return parse::ParsedNodeRange<ParsedArgumentUse>(
-        var.impl->argument_uses->front());
+        var.impl->context->argument_uses.front());
   }
 }
 
@@ -593,7 +595,7 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 }
 
 ParsedClause ParsedClause::Containing(ParsedVariable var) noexcept {
-  return ParsedClause(var.impl->clause);
+  return ParsedClause(var.impl->context->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedPredicate pred) noexcept {
@@ -601,11 +603,11 @@ ParsedClause ParsedClause::Containing(ParsedPredicate pred) noexcept {
 }
 
 ParsedClause ParsedClause::Containing(ParsedAssignment assignment) noexcept {
-  return ParsedClause(assignment.impl->lhs.used_var->clause);
+  return ParsedClause(assignment.impl->lhs.used_var->context->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedComparison compare) noexcept {
-  return ParsedClause(compare.impl->lhs.used_var->clause);
+  return ParsedClause(compare.impl->lhs.used_var->context->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
@@ -614,9 +616,9 @@ ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
 
 // Return the total number of uses of `var` in its clause body.
 unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
-  return static_cast<unsigned>(var.impl->assignment_uses->size() +
-                               var.impl->comparison_uses->size() +
-                               var.impl->argument_uses->size());
+  return static_cast<unsigned>(var.impl->context->assignment_uses.size() +
+                               var.impl->context->comparison_uses.size() +
+                               var.impl->context->argument_uses.size());
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
@@ -652,7 +654,7 @@ parse::ParsedNodeRange<ParsedVariable> ParsedClause::Variables(void) const {
 // All instances of `var` in its clause.
 parse::ParsedNodeRange<ParsedVariable> ParsedClause::Uses(ParsedVariable var) {
   return parse::ParsedNodeRange<ParsedVariable>(
-      var.impl->first_use,
+      var.impl->context->first_use,
       static_cast<intptr_t>(__builtin_offsetof(
           parse::Impl<ParsedVariable>, next_use)));
 }
