@@ -21,6 +21,8 @@
 namespace hyde {
 namespace {
 
+static constexpr size_t kMaxArity = 16;
+
 // Information shared by multiple parsers.
 class SharedParserContext {
  public:
@@ -185,9 +187,18 @@ parse::Impl<T> *ParserImpl::AddDecl(
     parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
     size_t arity) {
 
+  if (arity > kMaxArity) {
+    Error err(context->display_manager, SubTokenRange(),
+              name.SpellingRange());
+    err << "Too many arguments to predicate '" << name
+        << "; maximum number of arguments is " << kMaxArity;
+    context->error_log.Append(std::move(err));
+    return nullptr;
+  }
+
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = name.IdentifierId();
-  interpreter.info.arity = arity;
+  interpreter.info.arity = arity - 1;
 
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
@@ -525,7 +536,7 @@ void ParserImpl::RemoveDecl(std::unique_ptr<parse::Impl<T>> decl) {
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = decl->name.IdentifierId();
-  interpreter.info.arity = decl->parameters.size();
+  interpreter.info.arity = decl->parameters.size() - 1;
   const auto id = interpreter.flat;
 
   decl->context->redeclarations.pop_back();
@@ -1687,17 +1698,28 @@ void ParserImpl::ParseImport(parse::Impl<ParsedModule> *module) {
 bool ParserImpl::TryMatchClauseWithDecl(
     parse::Impl<ParsedModule> *module, parse::Impl<ParsedClause> *clause) {
 
+  DisplayRange clause_head_range(
+      clause->name.Position(), clause->rparen.NextPosition());
+
+  if (clause->head_variables.size() > kMaxArity) {
+    Error err(context->display_manager, SubTokenRange(),
+              clause_head_range);
+    err << "Too many parameters in clause '" << clause->name
+        << "; maximum number of parameters is " << kMaxArity;
+    context->error_log.Append(std::move(err));
+    return false;
+  }
+
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
-  interpreter.info.arity = clause->head_variables.size();
+  interpreter.info.arity = clause->head_variables.size() - 1;
   const auto id = interpreter.flat;
 
   // There are no forward declarations associated with this ID.
   // We'll report an error, then invent one.
   if (!context->declarations.count(id)) {
     Error err(context->display_manager, SubTokenRange(),
-              DisplayRange(
-                  clause->name.Position(), clause->rparen.NextPosition()));
+              clause_head_range);
     err << "Missing declaration for '" << clause->name << "/"
         << clause->head_variables.size() << "'";
     context->error_log.Append(std::move(err));
@@ -1771,15 +1793,26 @@ bool ParserImpl::TryMatchPredicateWithDecl(
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
-  interpreter.info.arity = pred->argument_uses.size();
+  interpreter.info.arity = pred->argument_uses.size() - 1;
   const auto id = interpreter.flat;
+
+  DisplayRange pred_head_range(
+      pred->name.Position(), pred->rparen.NextPosition());
+
+  if (pred->argument_uses.size() > kMaxArity) {
+    Error err(context->display_manager, SubTokenRange(),
+              pred_head_range);
+    err << "Too many arguments to predicate '" << pred->name
+        << "; maximum number of arguments is " << kMaxArity;
+    context->error_log.Append(std::move(err));
+    return false;
+  }
 
   // There are no forward declarations associated with this ID.
   // We'll report an error and invent one.
   if (!context->declarations.count(id)) {
     Error err(context->display_manager, SubTokenRange(),
-              DisplayRange(
-                  pred->name.Position(), pred->rparen.NextPosition()));
+              pred_head_range);
     err << "Missing declaration for '" << pred->name << "/"
         << pred->argument_uses.size() << "'";
     context->error_log.Append(std::move(err));

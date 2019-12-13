@@ -79,9 +79,7 @@ uint64_t Impl<ParsedDeclaration>::Id(void) const noexcept {
       id.info.module_id = ~0u;
     }
   }
-  id.info.arity = parameters.size();
-  assert(parameters.size() == id.info.arity);
-
+  id.info.arity = parameters.size() - 1;
   return id.flat;
 }
 
