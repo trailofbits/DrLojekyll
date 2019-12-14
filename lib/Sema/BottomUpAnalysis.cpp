@@ -13,8 +13,7 @@ namespace hyde {
 
 BottomUpVisitor::~BottomUpVisitor(void) {}
 
-bool BottomUpVisitor::VisitTransition(
-    ParsedPredicate, ParsedPredicate, unsigned) {
+bool BottomUpVisitor::VisitState(const State * state) {
   return false;
 }
 
@@ -25,12 +24,16 @@ class BottomUpAnalysis::Impl {
 
   void Start(ParsedModule module);
 
-  std::vector<std::pair<ParsedPredicate, unsigned>> work_list;
-  std::vector<std::pair<ParsedPredicate, unsigned>> next_work_list;
+  unsigned next_state_id{0};
+  std::vector<std::unique_ptr<BottomUpVisitor::State>> states;
+  std::vector<BottomUpVisitor::State *> work_list;
+  std::vector<BottomUpVisitor::State *> next_work_list;
 };
 
 // Initialize for the first step.
 void BottomUpAnalysis::Impl::Start(ParsedModule module_) {
+  next_state_id = 0;
+  states.clear();
   next_work_list.clear();
   work_list.clear();
 
@@ -44,7 +47,10 @@ void BottomUpAnalysis::Impl::Start(ParsedModule module_) {
   }
 
   for (auto message : messages) {
-    next_work_list.emplace_back(message, 0);
+    auto state = new BottomUpVisitor::State(
+        nullptr, next_state_id++, message);
+    states.emplace_back(state);
+    next_work_list.push_back(state);
   }
 }
 
@@ -56,15 +62,19 @@ bool BottomUpAnalysis::Impl::Step(BottomUpVisitor &visitor) {
 
   work_list.swap(next_work_list);
   while (!work_list.empty()) {
-    auto assumption = work_list.back().first;
-    auto depth = work_list.back().second;
+    const auto state = work_list.back();
     work_list.pop_back();
 
-    auto clause = ParsedClause::Containing(assumption);
+    if (!visitor.VisitState(state)) {
+      continue;
+    }
+
+    auto clause = ParsedClause::Containing(state->assumption);
     for (auto next_use : ParsedDeclaration::Of(clause).PositiveUses()) {
-      if (visitor.VisitTransition(assumption, next_use, depth + 1)) {
-        next_work_list.emplace_back(next_use, depth + 1);
-      }
+      const auto next_state = new BottomUpVisitor::State(
+          state, next_state_id++, next_use);
+      next_work_list.push_back(next_state);
+      states.emplace_back(next_state);
     }
   }
 

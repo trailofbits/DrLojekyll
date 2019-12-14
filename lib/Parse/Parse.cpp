@@ -202,6 +202,11 @@ uint64_t ParsedVariable::Id(void) const noexcept {
   return impl->Id();
 }
 
+// A number corresponding to the order of appearance of this variable.
+unsigned ParsedVariable::Order(void) const noexcept {
+  return impl->appearance;
+}
+
 // Return the variable to which `literal` assigned.
 ParsedVariable ParsedVariable::AssignedTo(ParsedLiteral literal) noexcept {
   return ParsedVariable(literal.impl->assigned_to);

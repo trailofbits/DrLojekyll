@@ -1853,12 +1853,16 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
     }
+    var->appearance = static_cast<unsigned>(
+        clause->head_variables.size());
     clause->head_variables.emplace_back(var);
 
   } else {
     if (!clause->body_variables.empty()) {
       clause->body_variables.back()->next = var;
     }
+    var->appearance = static_cast<unsigned>(
+        clause->body_variables.size() + clause->declaration->parameters.size());
     clause->body_variables.emplace_back(var);
   }
 
@@ -1917,12 +1921,16 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
     }
+    var->appearance = static_cast<unsigned>(
+        clause->head_variables.size());
     clause->head_variables.emplace_back(var);
 
   } else {
     if (!clause->body_variables.empty()) {
       clause->body_variables.back()->next = var;
     }
+    var->appearance = static_cast<unsigned>(
+        clause->body_variables.size() + clause->declaration->parameters.size());
     clause->body_variables.emplace_back(var);
   }
 

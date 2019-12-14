@@ -72,18 +72,17 @@ void SIPSVisitor::EnterAggregation(
 void SIPSVisitor::Collect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::ExitSelect(ParsedPredicate, ParsedDeclaration) {}
-void SIPSVisitor::Commit(void) {}
+void SIPSVisitor::Commit(ParsedPredicate assumption) {}
 void SIPSVisitor::CancelComparison(ParsedComparison, unsigned, unsigned) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedComparison, ParsedVariable) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedClause, ParsedVariable) {}
 void SIPSVisitor::CancelPredicate(const FailedBinding *, FailedBinding *) {}
 void SIPSVisitor::CancelMessage(const ParsedPredicate) {}
-void SIPSVisitor::Assign(unsigned, unsigned) {}
 bool SIPSVisitor::Advance(void) { return true; }
 
 class SIPSGenerator::Impl {
  public:
-  Impl(ParsedClause clause_, ParsedPredicate assumption_);
+  Impl(ParsedPredicate assumption_);
 
   // Visit an ordering of the predicates.
   bool Visit(SIPSVisitor &visitor);
@@ -193,10 +192,9 @@ class SIPSGenerator::Impl {
   std::vector<SIPSVisitor::Column> summarized_free_params;
 };
 
-SIPSGenerator::Impl::Impl(ParsedClause clause_, ParsedPredicate assumption_)
-    : clause(clause_),
+SIPSGenerator::Impl::Impl(ParsedPredicate assumption_)
+    : clause(ParsedClause::Containing(assumption_)),
       assumption(assumption_) {
-  assert(clause == ParsedClause::Containing(assumption));
 
   // The `assumption` predicate is kind of like a left corner in a parse. We
   // are assuming we have it and that all of its variables are bound, because
@@ -950,8 +948,8 @@ bool SIPSGenerator::Impl::VisitAggregate(
   // Finally, undefine the free parameters that were related to what we
   // summarized as they are no longer "in scope", and should not be visible
   // to anything else.
-  for (const auto &p : summarized_free_params) {
-    equalities.erase(p.var);
+  for (const auto &free_param : summarized_free_params) {
+    equalities.erase(free_param.var);
   }
 
   visitor.Summarize(functor_predicate, functor_decl);
@@ -1068,7 +1066,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   }
 
   if (!cancelled) {
-    visitor.Commit();
+    visitor.Commit(assumption);
   }
 
   try_advance = visitor.Advance();
@@ -1090,8 +1088,8 @@ bool SIPSGenerator::Impl::Advance(void) {
 
 SIPSGenerator::~SIPSGenerator(void) {}
 
-SIPSGenerator::SIPSGenerator(ParsedClause clause_, ParsedPredicate assumption_)
-    : impl(std::make_unique<Impl>(clause_, assumption_)) {}
+SIPSGenerator::SIPSGenerator(ParsedPredicate assumption_)
+    : impl(std::make_unique<Impl>(assumption_)) {}
 
 // Visit the current ordering. Returns `true` if the `visitor.Commit`
 // was invoked, and `false` if `visitor.Cancel` was invoked.

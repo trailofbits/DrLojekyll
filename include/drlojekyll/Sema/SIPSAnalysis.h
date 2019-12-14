@@ -121,11 +121,9 @@ class SIPSVisitor {
   // the summaries.
   virtual void Summarize(ParsedPredicate functor, ParsedDeclaration decl);
 
-  // Assigns the value associated with `rhs_id` to `dest_id`.
-  virtual void Assign(unsigned dest_id, unsigned rhs_id);
-
-  // Notify the visitor that we were successful in visiting the clause body.
-  virtual void Commit(void);
+  // Notify the visitor that we were successful in visiting the clause body,
+  // starting from the assumption `assumption`.
+  virtual void Commit(ParsedPredicate assumption);
 
   // Notify the visitor that visiting cannot complete/continue due to an
   // invalid comparison `compare` that relates the variable identified by
@@ -171,7 +169,7 @@ class SIPSGenerator final {
 
   ~SIPSGenerator(void);
 
-  explicit SIPSGenerator(ParsedClause clause, ParsedPredicate assumption);
+  explicit SIPSGenerator(ParsedPredicate assumption);
 
   // Visit the current ordering. Returns `true` if the `visitor.Commit`
   // was invoked, and `false` if `visitor.Cancel` was invoked.

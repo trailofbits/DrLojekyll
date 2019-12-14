@@ -104,6 +104,9 @@ class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
 
   Token name;
 
+  // What was the order of appearance of this variable?
+  unsigned appearance{0};
+
   // Next use of the same logical variable in `clause`.
   Impl<ParsedVariable> *next_use{nullptr};
 

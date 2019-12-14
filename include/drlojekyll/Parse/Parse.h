@@ -272,6 +272,9 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   // clause, all body_variables with the same name will have the same identifier.
   uint64_t Id(void) const noexcept;
 
+  // A number corresponding to the order of appearance of this variable.
+  unsigned Order(void) const noexcept;
+
   // Override `operator==` so that different uses of the same variable appear
   // the same.
   inline bool operator==(const ParsedVariable &that) const {
@@ -791,6 +794,14 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
 }  // namespace hyde
 
 namespace std {
+
+template<>
+struct hash<::hyde::ParsedParameter> {
+  inline uint64_t operator()(::hyde::ParsedParameter param) const noexcept {
+    return param.UniqueId();
+  }
+};
+
 
 template<>
 struct hash<::hyde::ParsedModule> {
