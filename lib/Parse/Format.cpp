@@ -2,208 +2,219 @@
 
 #include <drlojekyll/Parse/Format.h>
 
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
 
 namespace hyde {
 
-OutputStream::~OutputStream(void) {
-  os.flush();
-}
-
-OutputStream &OutputStream::operator<<(Token tok) {
-  std::string_view data;
-  (void) display_manager.TryReadData(tok.SpellingRange(), &data);
-  os << data;
-  return *this;
-}
-
-OutputStream &OutputStream::operator<<(DisplayRange range) {
-  std::string_view data;
-  (void) display_manager.TryReadData(range, &data);
-  os << data;
-  return *this;
-}
-
-OutputStream &OutputStream::operator<<(ParsedVariable var) {
+OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   auto name = var.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
-    *this << "V" << var.Id();
+    os << "V" << var.Id();
   } else {
-    *this << name;
+    os << name;
   }
-  return *this;
+  return os;
 }
 
-OutputStream &OutputStream::operator<<(ParsedDeclaration decl) {
-  *this << "#" << decl.KindName() << " ";
+OutputStream &operator<<(OutputStream &os, ParsedLiteral val) {
+  os << val.SpellingRange();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedParameter param) {
+  // Binding specific; optional for some declarations.
+  switch (param.Binding()) {
+    case ParameterBinding::kImplicit:
+      break;
+    case ParameterBinding::kFree:
+      os << "free ";
+      break;
+    case ParameterBinding::kBound:
+      os << "bound ";
+      break;
+    case ParameterBinding::kAggregate:
+      os << "aggregate ";
+      break;
+    case ParameterBinding::kSummary:
+      os << "summary ";
+      break;
+  }
+
+  if (param.Type().IsValid()) {
+    os << param.Type() << " ";
+  }
+
+  os << param.Name();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
+  os << "#" << decl.KindName() << " ";
 
   auto name = decl.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    *this << "pred" << decl.Id();
+    os << "pred" << decl.Id();
   } else {
-    *this << name;
-    if (rename_locals && decl.IsLocal()) {
+    os << name;
+    if (os.RenameLocals() && decl.IsLocal()) {
       os << "_" << decl.Id();
     }
   }
 
   auto comma = "(";
   for (auto param : decl.Parameters()) {
-    *this << comma;
-
-    // Binding specific; optional for some declarations.
-    switch (param.Binding()) {
-      case ParameterBinding::kImplicit:
-        break;
-      case ParameterBinding::kFree:
-        os << "free ";
-        break;
-      case ParameterBinding::kBound:
-        os << "bound ";
-        break;
-      case ParameterBinding::kAggregate:
-        os << "aggregate ";
-        break;
-      case ParameterBinding::kSummary:
-        os << "summary ";
-        break;
-    }
-
-    *this << param.Type() << " " << param.Name();
+    os << comma << param;
     comma = ", ";
   }
-  *this << ")";
+
+  os << ")";
   if (decl.IsFunctor()) {
     auto functor = ParsedFunctor::From(decl);
     if (functor.IsComplex()) {
-      *this << " complex";
+      os << " complex";
     } else {
-      *this << " trivial";
+      os << " trivial";
     }
   }
-  return *this;
+  return os;
 }
 
-OutputStream &OutputStream::operator<<(ParsedAggregate aggregate) {
-  *this << aggregate.Functor() << " over " << aggregate.Predicate();
-  return *this;
+OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate) {
+  os << aggregate.Functor() << " over " << aggregate.Predicate();
+  return os;
 }
 
-OutputStream &OutputStream::operator<<(ParsedClause clause) {
+OutputStream &operator<<(OutputStream &os, ParsedAssignment assign) {
+  os << assign.LHS() << " = " << assign.RHS().SpellingRange();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
+  const char *op = "";
+  switch (compare.Operator()) {
+    case ComparisonOperator::kEqual:
+      op = " = ";
+      break;
+    case ComparisonOperator::kNotEqual:
+      op = " != ";
+      break;
+    case ComparisonOperator::kLessThan:
+      op = " < ";
+      break;
+    case ComparisonOperator::kGreaterThan:
+      op = " > ";
+      break;
+  }
+  os << compare.LHS() << op << compare.RHS();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   auto decl = ParsedDeclaration::Of(clause);
   auto name = decl.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    *this << "pred" << decl.Id();
+    os << "pred" << decl.Id();
   } else {
-    *this << name;
-    if (rename_locals && decl.IsLocal()) {
+    os << name;
+    if (os.RenameLocals() && decl.IsLocal()) {
       os << "_" << decl.Id();
     }
   }
   auto comma = "(";
   for (auto param : clause.Parameters()) {
-    *this << comma << param;
+    os << comma << param;
     comma = ", ";
   }
-  *this << ") : ";
+  os << ") : ";
   comma = "";
 
   for (auto assign : clause.Assignments()) {
-    *this << comma << assign.LHS() << " = "
-          << assign.RHS().SpellingRange();
+    os << comma << assign;
     comma = ", ";
   }
 
   for (auto compare : clause.Comparisons()) {
-    const char *op = "";
-    switch (compare.Operator()) {
-      case ComparisonOperator::kEqual:
-        op = " = ";
-        break;
-      case ComparisonOperator::kNotEqual:
-        op = " != ";
-        break;
-      case ComparisonOperator::kLessThan:
-        op = " < ";
-        break;
-      case ComparisonOperator::kGreaterThan:
-        op = " > ";
-        break;
-    }
-    *this << comma << compare.LHS() << op << compare.RHS();
+    os << comma << compare;
     comma = ", ";
   }
 
   for (auto pred : clause.PositivePredicates()) {
-    *this << comma << pred;
+    os << comma << pred;
     comma = ", ";
   }
 
   for (auto pred : clause.NegatedPredicates()) {
-    *this << comma << "!" << pred;
+    os << comma << pred;
     comma = ", ";
   }
 
   for (auto agg : clause.Aggregates()) {
-    *this << comma << agg;
+    os << comma << agg;
     comma = ", ";
   }
 
-  *this << ".";
-  return *this;
+  os << ".";
+  return os;
 }
 
-OutputStream &OutputStream::operator<<(ParsedModule module) {
-  if (include_imports) {
+OutputStream &operator<<(OutputStream &os, ParsedModule module) {
+  if (os.KeepImports()) {
     for (auto import : module.Imports()) {
-      *this << import.SpellingRange() << "\n";
+      os << import.SpellingRange() << "\n";
     }
   }
 
   for (ParsedDeclaration decl : module.Queries()) {
-    *this << decl << "\n";
+    os << decl << "\n";
   }
 
   for (ParsedDeclaration decl : module.Messages()) {
-    *this << decl << "\n";
+    os << decl << "\n";
   }
 
   for (ParsedDeclaration decl : module.Functors()) {
-    *this << decl << "\n";
+    os << decl << "\n";
   }
 
   for (ParsedDeclaration decl : module.Exports()) {
-    *this << decl << "\n";
+    os << decl << "\n";
   }
 
   for (ParsedDeclaration decl : module.Locals()) {
-    *this << decl << "\n";
+    os << decl << "\n";
   }
 
   for (auto clause : module.Clauses()) {
-    *this << clause << "\n";
+    os << clause << "\n";
   }
-  return *this;
+
+  return os;
 }
 
-OutputStream &OutputStream::operator<<(ParsedPredicate pred) {
+OutputStream &operator<<(OutputStream &os, ParsedPredicate pred) {
   auto decl = ParsedDeclaration::Of(pred);
   auto name = decl.Name();
+
+  if (pred.IsNegated()) {
+    os << "!";
+  }
+
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    *this << "pred" << decl.Id();
+    os << "pred" << decl.Id();
   } else {
-    *this << name;
-    if (rename_locals && decl.IsLocal()) {
+    os << name;
+    if (os.RenameLocals() && decl.IsLocal()) {
       os << "_" << decl.Id();
     }
   }
   auto comma = "(";
   for (auto arg : pred.Arguments()) {
-    *this << comma << arg;
+    os << comma << arg;
     comma = ", ";
   }
-  *this << ")";
-  return *this;
+  os << ")";
+  return os;
 }
-
 
 }  // namespace hyde

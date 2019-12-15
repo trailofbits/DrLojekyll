@@ -2,10 +2,13 @@
 
 function(util source_dir config)
     add_library(util-${config} STATIC
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/FileManager.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DisjointSet.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Compiler.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/FileManager.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Node.h"
+        "${source_dir}/DisjointSet.cpp"
         "${source_dir}/FileManager.cpp"
-        "${source_dir}/DisjointSet.cpp")
+        "${source_dir}/Node.cpp")
 
     target_link_libraries(util-${config} PUBLIC
         ${config})

@@ -6,21 +6,19 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <tuple>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
-#include <variant>
-#include <vector>
-#include <cassert>
 
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Rel/Format.h>
+#include <drlojekyll/Rel/Builder.h>
 #include <drlojekyll/Sema/BottomUpAnalysis.h>
 #include <drlojekyll/Sema/SIPSAnalysis.h>
+#include <drlojekyll/Sema/SIPSScore.h>
 #include <drlojekyll/Transforms/CombineModules.h>
 
 namespace hyde {
@@ -266,7 +264,7 @@ class GraphPrinter : public BottomUpVisitor {
   std::unordered_map<ParsedPredicate, std::unordered_set<ParsedPredicate>> seen;
 };
 #endif
-
+#if 0
 // Represents a query.
 class Query {
  public:
@@ -647,46 +645,24 @@ class QueryBuilder final : public SIPSVisitor {
   std::unordered_map<unsigned, Query::Column *> id_to_col;
 };
 
+#endif
 
-class BottomUpSIPSVisitor : public BottomUpVisitor {
- public:
-  explicit BottomUpSIPSVisitor(SIPSVisitor &sips_visitor_)
-      : sips_visitor(sips_visitor_) {}
-
-  bool VisitState(const State *state) {
-    if (seen.count(state->assumption)) {
-      return false;
-    }
-
-    seen.insert(state->assumption);
-
-    SIPSGenerator gen(state->assumption);
-    do {
-      (void) gen.Visit(sips_visitor);
-    } while (gen.Advance());
-
-    return true;
-  }
-
- private:
-  std::unordered_set<ParsedPredicate> seen;
-  SIPSVisitor &sips_visitor;
-};
 
 static void CodeDumper(DisplayManager display_manager,
                        ParsedModule module) {
 
   BottomUpAnalysis analysis;
-  QueryBuilder join_tracker(display_manager);
-  BottomUpSIPSVisitor visitor(join_tracker);
-  for (analysis.Start(module); analysis.Step(visitor); ) {}
+  QueryBuilder query_builder;
 
-//  GraphPrinter printer(display_manager);
-//  std::cerr << "digraph {\n";
-//  for (analysis.Start(module); analysis.Step(printer); ) {
-//    // ...
-//  }
-//  std::cerr << "}\n";
+  for (auto state : analysis.GenerateStates(module)) {
+    DefaultSIPSScorer scorer;
+    SIPSGenerator generator(state->assumption);
+    auto query = query_builder.BuildInsert(scorer, generator);
+    hyde::OutputStream os(display_manager, std::cerr);
+    os << "// Assume: " << state->assumption << "\n"
+       << "// Clause: " << ParsedClause::Containing(state->assumption) << "\n"
+       << query;
+  }
 }
 
 

@@ -12,11 +12,6 @@
 namespace hyde {
 namespace parse {
 
-void *NodeTraverser::Next(void *node, intptr_t offset) {
-  return *reinterpret_cast<void **>(reinterpret_cast<intptr_t>(node) + offset);
-}
-
-
 DisplayRange UseAccessor::GetUseSpellingRange(void *impl_) {
   const auto impl = reinterpret_cast<UseBase *>(impl_);
   return ParsedVariable(impl->used_var).SpellingRange();
@@ -29,25 +24,27 @@ UseKind UseAccessor::GetUseKind(void *impl_) {
 const void *UseAccessor::GetUser(void *impl_) {
   switch (reinterpret_cast<UseBase *>(impl_)->use_kind) {
     case UseKind::kArgument: {
-      auto impl = reinterpret_cast<Impl<ParsedUse<ParsedPredicate>> *>(impl_);
+      auto impl = reinterpret_cast<Node<ParsedUse<ParsedPredicate>> *>(impl_);
       return &(impl->user);
     }
     case UseKind::kAssignmentLHS: {
-      auto impl = reinterpret_cast<Impl<ParsedUse<ParsedAssignment>> *>(impl_);
+      auto impl = reinterpret_cast<Node<ParsedUse<ParsedAssignment>> *>(impl_);
       return &(impl->user);
     }
     case UseKind::kComparisonLHS: {
-      auto impl = reinterpret_cast<Impl<ParsedUse<ParsedComparison>> *>(impl_);
+      auto impl = reinterpret_cast<Node<ParsedUse<ParsedComparison>> *>(impl_);
       return &(impl->user);
     }
     case UseKind::kComparisonRHS: {
-      auto impl = reinterpret_cast<Impl<ParsedUse<ParsedComparison>> *>(impl_);
+      auto impl = reinterpret_cast<Node<ParsedUse<ParsedComparison>> *>(impl_);
       return &(impl->user);
     }
   }
 }
 
-const char *Impl<ParsedDeclaration>::KindName(void) const {
+}  // namespace parse
+
+const char *Node<ParsedDeclaration>::KindName(void) const {
   switch (context->kind) {
     case DeclarationKind::kQuery: return "query";
     case DeclarationKind::kMessage: return "message";
@@ -58,7 +55,7 @@ const char *Impl<ParsedDeclaration>::KindName(void) const {
 }
 
 // Compute a unique identifier for this declaration.
-uint64_t Impl<ParsedDeclaration>::Id(void) const noexcept {
+uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
   auto &id = context->id;
   if (id.flat) {
     return id.flat;
@@ -84,43 +81,42 @@ uint64_t Impl<ParsedDeclaration>::Id(void) const noexcept {
 }
 
 // Return a list of clauses associated with this declaration.
-ParsedNodeRange<ParsedClause> Impl<ParsedDeclaration>::Clauses(void) const {
+NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
   if (context->clauses.empty()) {
-    return parse::ParsedNodeRange<ParsedClause>();
+    return NodeRange<ParsedClause>();
   } else {
-    return parse::ParsedNodeRange<ParsedClause>(
-        context->clauses.front().get());
+    return NodeRange<ParsedClause>(context->clauses.front().get());
   }
 }
 
 // Return a list of positive uses of this definition.
-parse::ParsedNodeRange<ParsedPredicate>
-Impl<ParsedDeclaration>::PositiveUses(void) const {
+NodeRange<ParsedPredicate>
+Node<ParsedDeclaration>::PositiveUses(void) const {
   if (context->positive_uses.empty()) {
-    return parse::ParsedNodeRange<ParsedPredicate>();
+    return NodeRange<ParsedPredicate>();
   } else {
-    return parse::ParsedNodeRange<ParsedPredicate>(
+    return NodeRange<ParsedPredicate>(
         context->positive_uses.front(),
         static_cast<intptr_t>(__builtin_offsetof(
-            parse::Impl<ParsedPredicate>, next_use)));
+            Node<ParsedPredicate>, next_use)));
   }
 }
 
 // Return a list of negative uses of this definition.
-parse::ParsedNodeRange<ParsedPredicate>
-Impl<ParsedDeclaration>::NegativeUses(void) const {
+NodeRange<ParsedPredicate>
+Node<ParsedDeclaration>::NegativeUses(void) const {
   if (context->negated_uses.empty()) {
-    return parse::ParsedNodeRange<ParsedPredicate>();
+    return NodeRange<ParsedPredicate>();
   } else {
-    return parse::ParsedNodeRange<ParsedPredicate>(
+    return NodeRange<ParsedPredicate>(
         context->negated_uses.front(),
         static_cast<intptr_t>(__builtin_offsetof(
-            parse::Impl<ParsedPredicate>, next_use)));
+            Node<ParsedPredicate>, next_use)));
   }
 }
 
 // Compute the unique identifier for this variable.
-uint64_t Impl<ParsedVariable>::Id(void) noexcept {
+uint64_t Node<ParsedVariable>::Id(void) noexcept {
   auto &id = context->id;
   if (id.flat) {
     return id.flat;
@@ -146,20 +142,18 @@ uint64_t Impl<ParsedVariable>::Id(void) noexcept {
 }
 
 // Compute the identifier for this clause.
-uint64_t Impl<ParsedPredicate>::Id(void) const noexcept {
+uint64_t Node<ParsedPredicate>::Id(void) const noexcept {
   return declaration->Id();
 }
 
 // Compute the identifier for this clause.
-uint64_t Impl<ParsedClause>::Id(void) const noexcept {
+uint64_t Node<ParsedClause>::Id(void) const noexcept {
   assert(declaration != nullptr);
   if (!id.flat) {
     id.flat = declaration->Id();
   }
   return id.flat;
 }
-
-}  // namespace parse
 
 DisplayRange ParsedVariable::SpellingRange(void) const noexcept {
   return impl->name.SpellingRange();
@@ -216,6 +210,10 @@ DisplayRange ParsedLiteral::SpellingRange(void) const noexcept {
   return impl->literal.SpellingRange();
 }
 
+std::string_view ParsedLiteral::Spelling(void) const noexcept {
+  return impl->data;
+}
+
 bool ParsedLiteral::IsNumber(void) const noexcept {
   return impl->literal.Lexeme() == Lexeme::kLiteralNumber;
 }
@@ -254,12 +252,12 @@ ComparisonOperator ParsedComparison::Operator(void) const noexcept {
 }
 
 // Return the list of all comparisons with `var`.
-parse::ParsedNodeRange<ParsedComparisonUse>
+NodeRange<ParsedComparisonUse>
 ParsedComparison::Using(ParsedVariable var) {
   if (var.impl->context->comparison_uses.empty()) {
-    return parse::ParsedNodeRange<ParsedComparisonUse>();
+    return NodeRange<ParsedComparisonUse>();
   } else {
-    return parse::ParsedNodeRange<ParsedComparisonUse>(
+    return NodeRange<ParsedComparisonUse>(
         var.impl->context->comparison_uses.front());
   }
 }
@@ -278,23 +276,23 @@ ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
 }
 
 // Return the list of all assignments to `var`.
-parse::ParsedNodeRange<ParsedAssignmentUse>
+NodeRange<ParsedAssignmentUse>
 ParsedAssignment::Using(ParsedVariable var) {
   if (var.impl->context->assignment_uses.empty()) {
-    return parse::ParsedNodeRange<ParsedAssignmentUse>();
+    return NodeRange<ParsedAssignmentUse>();
   } else {
-    return parse::ParsedNodeRange<ParsedAssignmentUse>(
+    return NodeRange<ParsedAssignmentUse>(
         var.impl->context->assignment_uses.front());
   }
 }
 
 // Return the list of all uses of `var` as an argument to a predicate.
-parse::ParsedNodeRange<ParsedArgumentUse>
+NodeRange<ParsedArgumentUse>
 ParsedPredicate::Using(ParsedVariable var) {
   if (var.impl->context->argument_uses.empty()) {
-    return parse::ParsedNodeRange<ParsedArgumentUse>();
+    return NodeRange<ParsedArgumentUse>();
   } else {
-    return parse::ParsedNodeRange<ParsedArgumentUse>(
+    return NodeRange<ParsedArgumentUse>(
         var.impl->context->argument_uses.front());
   }
 }
@@ -327,12 +325,12 @@ ParsedVariable ParsedPredicate::NthArgument(unsigned n) const noexcept {
 }
 
 // All variables used as arguments to this predicate.
-parse::ParsedNodeRange<ParsedVariable> ParsedPredicate::Arguments(void) const {
+NodeRange<ParsedVariable> ParsedPredicate::Arguments(void) const {
   assert(0 < Arity());
-  return parse::ParsedNodeRange<ParsedVariable>(
+  return NodeRange<ParsedVariable>(
       impl->argument_uses.front()->used_var,
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedVariable>, next_var_in_arg_list)));
+          Node<ParsedVariable>, next_var_in_arg_list)));
 }
 
 DisplayRange ParsedAggregate::SpellingRange(void) const noexcept {
@@ -544,35 +542,35 @@ ParsedParameter ParsedExport::NthParameter(unsigned n) const noexcept {
   return ParsedParameter(impl->parameters[n].get());
 }
 
-parse::ParsedNodeRange<ParsedParameter>
+NodeRange<ParsedParameter>
 ParsedDeclaration::Parameters(void) const {
   if (impl->parameters.empty()) {
-    return parse::ParsedNodeRange<ParsedParameter>();
+    return NodeRange<ParsedParameter>();
   } else {
-    return parse::ParsedNodeRange<ParsedParameter>(
+    return NodeRange<ParsedParameter>(
         impl->parameters.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedDeclaration>
+NodeRange<ParsedDeclaration>
 ParsedDeclaration::Redeclarations(void) const {
-  return parse::ParsedNodeRange<ParsedDeclaration>(
-      reinterpret_cast<parse::Impl<ParsedDeclaration> *>(
+  return NodeRange<ParsedDeclaration>(
+      reinterpret_cast<Node<ParsedDeclaration> *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedDeclaration>, next_redecl)));
+          Node<ParsedDeclaration>, next_redecl)));
 }
 
-parse::ParsedNodeRange<ParsedClause> ParsedDeclaration::Clauses(void) const {
+NodeRange<ParsedClause> ParsedDeclaration::Clauses(void) const {
   return impl->Clauses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate>
+NodeRange<ParsedPredicate>
 ParsedDeclaration::PositiveUses(void) const {
   return impl->PositiveUses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate>
+NodeRange<ParsedPredicate>
 ParsedDeclaration::NegativeUses(void) const {
   return impl->NegativeUses();
 }
@@ -641,78 +639,78 @@ ParsedVariable ParsedClause::NthParameter(unsigned n) const noexcept {
 }
 
 // All variables used in the body of the clause.
-parse::ParsedNodeRange<ParsedVariable> ParsedClause::Parameters(void) const {
+NodeRange<ParsedVariable> ParsedClause::Parameters(void) const {
   assert(!impl->head_variables.empty());
-  return parse::ParsedNodeRange<ParsedVariable>(
+  return NodeRange<ParsedVariable>(
       impl->head_variables.front().get());
 }
 
 // All body_variables used in the clause. Some variables might be repeated.
-parse::ParsedNodeRange<ParsedVariable> ParsedClause::Variables(void) const {
+NodeRange<ParsedVariable> ParsedClause::Variables(void) const {
   assert(!impl->body_variables.empty());
-  return parse::ParsedNodeRange<ParsedVariable>(
+  return NodeRange<ParsedVariable>(
       impl->body_variables.front().get());
 }
 
 // All instances of `var` in its clause.
-parse::ParsedNodeRange<ParsedVariable> ParsedClause::Uses(ParsedVariable var) {
-  return parse::ParsedNodeRange<ParsedVariable>(
+NodeRange<ParsedVariable> ParsedClause::Uses(ParsedVariable var) {
+  return NodeRange<ParsedVariable>(
       var.impl->context->first_use,
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedVariable>, next_use)));
+          Node<ParsedVariable>, next_use)));
 }
 
 // All positive predicates in the clause.
-parse::ParsedNodeRange<ParsedPredicate>
+NodeRange<ParsedPredicate>
 ParsedClause::PositivePredicates(void) const {
   if (!impl->positive_predicates.empty()) {
-    return parse::ParsedNodeRange<ParsedPredicate>(
+    return NodeRange<ParsedPredicate>(
         impl->positive_predicates.front().get());
   } else {
-    return parse::ParsedNodeRange<ParsedPredicate>();
+    return NodeRange<ParsedPredicate>();
   }
 }
 
 // All negated predicates in the clause.
-parse::ParsedNodeRange<ParsedPredicate>
+NodeRange<ParsedPredicate>
 ParsedClause::NegatedPredicates(void) const {
   if (!impl->negated_predicates.empty()) {
-    return parse::ParsedNodeRange<ParsedPredicate>(
+    return NodeRange<ParsedPredicate>(
         impl->negated_predicates.front().get());
   } else {
-    return parse::ParsedNodeRange<ParsedPredicate>();
+    return NodeRange<ParsedPredicate>();
   }
 }
 
 // All assignments of variables to constant literals.
-parse::ParsedNodeRange<ParsedAssignment>
+NodeRange<ParsedAssignment>
 ParsedClause::Assignments(void) const {
   if (!impl->assignments.empty()) {
-    return parse::ParsedNodeRange<ParsedAssignment>(
+    return NodeRange<ParsedAssignment>(
         impl->assignments.front().get());
   } else {
-    return parse::ParsedNodeRange<ParsedAssignment>();
+    return NodeRange<ParsedAssignment>();
   }
 }
 
 // All comparisons between two variables.
-parse::ParsedNodeRange<ParsedComparison>
+NodeRange<ParsedComparison>
 ParsedClause::Comparisons(void) const {
   if (!impl->comparisons.empty()) {
-    return parse::ParsedNodeRange<ParsedComparison>(
+    return NodeRange<ParsedComparison>(
         impl->comparisons.front().get());
   } else {
-    return parse::ParsedNodeRange<ParsedComparison>();
+    return NodeRange<ParsedComparison>();
   }
 }
 
 // All aggregations.
-parse::ParsedNodeRange<ParsedAggregate> ParsedClause::Aggregates(void) const {
+NodeRange<ParsedAggregate> ParsedClause::Aggregates(void) const {
   if (!impl->aggregates.empty()) {
-    return parse::ParsedNodeRange<ParsedAggregate>(
+    return NodeRange<ParsedAggregate>(
         impl->aggregates.front().get());
   } else {
-    return parse::ParsedNodeRange<ParsedAggregate>();
+    return NodeRange<ParsedAggregate>();
   }
 }
 
@@ -726,23 +724,23 @@ DisplayRange ParsedQuery::SpellingRange(void) const noexcept {
       impl->directive_pos, impl->rparen.NextPosition());
 }
 
-parse::ParsedNodeRange<ParsedQuery> ParsedQuery::Redeclarations(void) const {
-  return parse::ParsedNodeRange<ParsedQuery>(
-      reinterpret_cast<parse::Impl<ParsedQuery> *>(
+NodeRange<ParsedQuery> ParsedQuery::Redeclarations(void) const {
+  return NodeRange<ParsedQuery>(
+      reinterpret_cast<Node<ParsedQuery> *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedQuery>, next_redecl)));
+          Node<ParsedQuery>, next_redecl)));
 }
 
-parse::ParsedNodeRange<ParsedClause> ParsedQuery::Clauses(void) const {
+NodeRange<ParsedClause> ParsedQuery::Clauses(void) const {
   return impl->Clauses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate> ParsedQuery::PositiveUses(void) const {
+NodeRange<ParsedPredicate> ParsedQuery::PositiveUses(void) const {
   return impl->PositiveUses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate> ParsedQuery::NegativeUses(void) const {
+NodeRange<ParsedPredicate> ParsedQuery::NegativeUses(void) const {
   return impl->NegativeUses();
 }
 
@@ -764,23 +762,23 @@ DisplayRange ParsedExport::SpellingRange(void) const noexcept {
       impl->directive_pos, impl->rparen.NextPosition());
 }
 
-parse::ParsedNodeRange<ParsedExport> ParsedExport::Redeclarations(void) const {
-  return parse::ParsedNodeRange<ParsedExport>(
-      reinterpret_cast<parse::Impl<ParsedExport> *>(
+NodeRange<ParsedExport> ParsedExport::Redeclarations(void) const {
+  return NodeRange<ParsedExport>(
+      reinterpret_cast<Node<ParsedExport> *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedExport>, next_redecl)));
+          Node<ParsedExport>, next_redecl)));
 }
 
-parse::ParsedNodeRange<ParsedClause> ParsedExport::Clauses(void) const {
+NodeRange<ParsedClause> ParsedExport::Clauses(void) const {
   return impl->Clauses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate> ParsedExport::PositiveUses(void) const {
+NodeRange<ParsedPredicate> ParsedExport::PositiveUses(void) const {
   return impl->PositiveUses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate> ParsedExport::NegativeUses(void) const {
+NodeRange<ParsedPredicate> ParsedExport::NegativeUses(void) const {
   return impl->NegativeUses();
 }
 
@@ -802,20 +800,20 @@ DisplayRange ParsedLocal::SpellingRange(void) const noexcept {
       impl->directive_pos, impl->rparen.NextPosition());
 }
 
-parse::ParsedNodeRange<ParsedLocal>
+NodeRange<ParsedLocal>
 ParsedLocal::Redeclarations(void) const {
-  return parse::ParsedNodeRange<ParsedLocal>(
-      reinterpret_cast<parse::Impl<ParsedLocal> *>(
+  return NodeRange<ParsedLocal>(
+      reinterpret_cast<Node<ParsedLocal> *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedLocal>, next_redecl)));
+          Node<ParsedLocal>, next_redecl)));
 }
 
-parse::ParsedNodeRange<ParsedPredicate> ParsedLocal::PositiveUses(void) const {
+NodeRange<ParsedPredicate> ParsedLocal::PositiveUses(void) const {
   return impl->PositiveUses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate> ParsedLocal::NegativeUses(void) const {
+NodeRange<ParsedPredicate> ParsedLocal::NegativeUses(void) const {
   return impl->NegativeUses();
 }
 
@@ -827,7 +825,7 @@ unsigned ParsedLocal::NumNegatedUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->negated_uses.size());
 }
 
-parse::ParsedNodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
+NodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
   return impl->Clauses();
 }
 
@@ -853,16 +851,16 @@ DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
       impl->directive_pos, impl->complexity_attribute.NextPosition());
 }
 
-parse::ParsedNodeRange<ParsedFunctor>
+NodeRange<ParsedFunctor>
 ParsedFunctor::Redeclarations(void) const {
-  return parse::ParsedNodeRange<ParsedFunctor>(
-      reinterpret_cast<parse::Impl<ParsedFunctor> *>(
+  return NodeRange<ParsedFunctor>(
+      reinterpret_cast<Node<ParsedFunctor> *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedFunctor>, next_redecl)));
+          Node<ParsedFunctor>, next_redecl)));
 }
 
-parse::ParsedNodeRange<ParsedPredicate>
+NodeRange<ParsedPredicate>
 ParsedFunctor::PositiveUses(void) const {
   return impl->PositiveUses();
 }
@@ -881,20 +879,20 @@ DisplayRange ParsedMessage::SpellingRange(void) const noexcept {
       impl->directive_pos, impl->rparen.NextPosition());
 }
 
-parse::ParsedNodeRange<ParsedMessage>
+NodeRange<ParsedMessage>
 ParsedMessage::Redeclarations(void) const {
-  return parse::ParsedNodeRange<ParsedMessage>(
-      reinterpret_cast<parse::Impl<ParsedMessage> *>(
+  return NodeRange<ParsedMessage>(
+      reinterpret_cast<Node<ParsedMessage> *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(__builtin_offsetof(
-          parse::Impl<ParsedMessage>, next_redecl)));
+          Node<ParsedMessage>, next_redecl)));
 }
 
-parse::ParsedNodeRange<ParsedClause> ParsedMessage::Clauses(void) const {
+NodeRange<ParsedClause> ParsedMessage::Clauses(void) const {
   return impl->Clauses();
 }
 
-parse::ParsedNodeRange<ParsedPredicate>
+NodeRange<ParsedPredicate>
 ParsedMessage::PositiveUses(void) const {
   return impl->PositiveUses();
 }
@@ -918,61 +916,61 @@ uint64_t ParsedModule::Id(void) const noexcept {
   return interpreter.flat;
 }
 
-parse::ParsedNodeRange<ParsedQuery> ParsedModule::Queries(void) const {
+NodeRange<ParsedQuery> ParsedModule::Queries(void) const {
   if (impl->queries.empty()) {
-    return parse::ParsedNodeRange<ParsedQuery>();
+    return NodeRange<ParsedQuery>();
   } else {
-    return parse::ParsedNodeRange<ParsedQuery>(impl->queries.front().get());
+    return NodeRange<ParsedQuery>(impl->queries.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedImport> ParsedModule::Imports(void) const {
+NodeRange<ParsedImport> ParsedModule::Imports(void) const {
   if (impl->imports.empty()) {
-    return parse::ParsedNodeRange<ParsedImport>();
+    return NodeRange<ParsedImport>();
   } else {
-    return parse::ParsedNodeRange<ParsedImport>(impl->imports.front().get());
+    return NodeRange<ParsedImport>(impl->imports.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedLocal> ParsedModule::Locals(void) const {
+NodeRange<ParsedLocal> ParsedModule::Locals(void) const {
   if (impl->locals.empty()) {
-    return parse::ParsedNodeRange<ParsedLocal>();
+    return NodeRange<ParsedLocal>();
   } else {
-    return parse::ParsedNodeRange<ParsedLocal>(impl->locals.front().get());
+    return NodeRange<ParsedLocal>(impl->locals.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedExport> ParsedModule::Exports(void) const {
+NodeRange<ParsedExport> ParsedModule::Exports(void) const {
   if (impl->exports.empty()) {
-    return parse::ParsedNodeRange<ParsedExport>();
+    return NodeRange<ParsedExport>();
   } else {
-    return parse::ParsedNodeRange<ParsedExport>(impl->exports.front().get());
+    return NodeRange<ParsedExport>(impl->exports.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedMessage> ParsedModule::Messages(void) const {
+NodeRange<ParsedMessage> ParsedModule::Messages(void) const {
   if (impl->messages.empty()) {
-    return parse::ParsedNodeRange<ParsedMessage>();
+    return NodeRange<ParsedMessage>();
   } else {
-    return parse::ParsedNodeRange<ParsedMessage>(impl->messages.front().get());
+    return NodeRange<ParsedMessage>(impl->messages.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedFunctor> ParsedModule::Functors(void) const {
+NodeRange<ParsedFunctor> ParsedModule::Functors(void) const {
   if (impl->functors.empty()) {
-    return parse::ParsedNodeRange<ParsedFunctor>();
+    return NodeRange<ParsedFunctor>();
   } else {
-    return parse::ParsedNodeRange<ParsedFunctor>(impl->functors.front().get());
+    return NodeRange<ParsedFunctor>(impl->functors.front().get());
   }
 }
 
-parse::ParsedNodeRange<ParsedClause> ParsedModule::Clauses(void) const {
+NodeRange<ParsedClause> ParsedModule::Clauses(void) const {
   if (impl->clauses.empty()) {
-    return parse::ParsedNodeRange<ParsedClause>();
+    return NodeRange<ParsedClause>();
   } else {
-    return parse::ParsedNodeRange<ParsedClause>(
+    return NodeRange<ParsedClause>(
         impl->clauses.front(),
-        __builtin_offsetof(parse::Impl<ParsedClause>, next_in_module));
+        __builtin_offsetof(Node<ParsedClause>, next_in_module));
   }
 }
 

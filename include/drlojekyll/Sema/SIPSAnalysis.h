@@ -1,6 +1,4 @@
-/*
- * Copyright (c) 2019 Trail of Bits, Inc.
- */
+// Copyright 2019, Trail of Bits. All rights reserved.
 
 #pragma once
 
@@ -13,6 +11,13 @@ namespace hyde {
 // Visits a clause body in left-to-right order.
 class SIPSVisitor {
  public:
+
+  enum AdvanceType {
+    kTryNextPermutation,
+    kRetryCurrentPermutation,
+    kStop
+  };
+
   struct FailedBinding {
     inline FailedBinding(ParsedDeclaration declaration_,
                          ParsedPredicate predicate_,
@@ -152,9 +157,7 @@ class SIPSVisitor {
 
   // The SIPS generator will ask the visitor if it wants to advance
   // before trying to advance.
-  virtual bool Advance(void);
-
- private:
+  virtual AdvanceType Advance(void);
 };
 
 // Allows a SIPVisitor to visit the different orderings of the predicates that
@@ -178,6 +181,9 @@ class SIPSGenerator final {
   // Tries to advance to the next possible ordering. Returns `false` if
   // we could not advance to the next ordering.
   bool Advance(void) const;
+
+  // Reset the generator to be beginning.
+  void Rewind(void);
 
  private:
   std::unique_ptr<Impl> impl;

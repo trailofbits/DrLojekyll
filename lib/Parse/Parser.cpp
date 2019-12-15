@@ -37,13 +37,13 @@ class SharedParserContext {
   std::vector<Path> search_paths;
 
   // All parsed modules.
-  parse::Impl<ParsedModule> *root_module{nullptr};
+  Node<ParsedModule> *root_module{nullptr};
 
   // Mapping of display IDs to parsed modules. This exists to prevent the same
   // module from being parsed multiple times.
   //
   // NOTE(pag): Cyclic module imports are valid.
-  std::unordered_map<unsigned, std::weak_ptr<parse::Impl<ParsedModule>>> parsed_modules;
+  std::unordered_map<unsigned, std::weak_ptr<Node<ParsedModule>>> parsed_modules;
 
   FileManager file_manager;
   const DisplayManager display_manager;
@@ -51,7 +51,7 @@ class SharedParserContext {
   StringPool string_pool;
 
   // Keeps track of the global locals. All parsed modules shared this.
-  std::unordered_map<uint64_t, parse::Impl<ParsedDeclaration> *> declarations;
+  std::unordered_map<uint64_t, Node<ParsedDeclaration> *> declarations;
 };
 
 }  // namespace
@@ -76,7 +76,7 @@ class ParserImpl {
   std::vector<Token> sub_tokens;
 
   // Set of previously named variables in the current clause.
-  std::unordered_map<unsigned, parse::Impl<ParsedVariable> *> prev_named_var;
+  std::unordered_map<unsigned, Node<ParsedVariable> *> prev_named_var;
 
   // The index of the next token to read from `tokens`.
   size_t next_tok_index{0};
@@ -108,68 +108,68 @@ class ParserImpl {
 
   // Add a declaration or redeclaration to the module.
   template <typename T>
-  parse::Impl<T> *AddDecl(
-      parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
+  Node<T> *AddDecl(
+      Node<ParsedModule> *module, DeclarationKind kind, Token name,
       size_t arity);
 
   // Remove a declaration.
   template <typename T>
-  void RemoveDecl(std::unique_ptr<parse::Impl<T>> decl);
+  void RemoveDecl(std::unique_ptr<Node<T>> decl);
 
   template <typename T>
   void AddDeclAndCheckConsistency(
-      std::vector<std::unique_ptr<parse::Impl<T>>> &decl_list,
-      std::unique_ptr<parse::Impl<T>> decl);
+      std::vector<std::unique_ptr<Node<T>>> &decl_list,
+      std::unique_ptr<Node<T>> decl);
 
   // Try to parse an inline predicate.
   bool ParseAggregatedPredicate(
-      parse::Impl<ParsedModule> *module, parse::Impl<ParsedClause> *clause,
-      std::unique_ptr<parse::Impl<ParsedPredicate>> functor,
+      Node<ParsedModule> *module, Node<ParsedClause> *clause,
+      std::unique_ptr<Node<ParsedPredicate>> functor,
       Token &tok, DisplayPosition &next_pos);
 
   // Try to parse all of the tokens.
-  void ParseAllTokens(parse::Impl<ParsedModule> *module);
+  void ParseAllTokens(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as a functor, adding it to `module` if successful.
-  void ParseFunctor(parse::Impl<ParsedModule> *module);
+  void ParseFunctor(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as a query, adding it to `module` if successful.
-  void ParseQuery(parse::Impl<ParsedModule> *module);
+  void ParseQuery(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as a message, adding it to `module` if successful.
-  void ParseMessage(parse::Impl<ParsedModule> *module);
+  void ParseMessage(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as an exported rule, adding it to `module`
   // if successful.
-  void ParseExport(parse::Impl<ParsedModule> *module);
+  void ParseExport(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as a local rule, adding it to `module`
   // if successful.
-  void ParseLocal(parse::Impl<ParsedModule> *module);
+  void ParseLocal(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as an import.
-  void ParseImport(parse::Impl<ParsedModule> *module);
+  void ParseImport(Node<ParsedModule> *module);
 
   // Try to match a clause with a declaration.
-  bool TryMatchClauseWithDecl(parse::Impl<ParsedModule> *module,
-                              parse::Impl<ParsedClause> *clause);
+  bool TryMatchClauseWithDecl(Node<ParsedModule> *module,
+                              Node<ParsedClause> *clause);
 
   // Try to match a predicate with a declaration.
-  bool TryMatchPredicateWithDecl(parse::Impl<ParsedModule> *module,
-                                 parse::Impl<ParsedPredicate> *pred);
+  bool TryMatchPredicateWithDecl(Node<ParsedModule> *module,
+                                 Node<ParsedPredicate> *pred);
 
   // Try to parse `sub_range` as a clause.
-  void ParseClause(parse::Impl<ParsedModule> *module,
-                   parse::Impl<ParsedDeclaration> *decl=nullptr);
+  void ParseClause(Node<ParsedModule> *module,
+                   Node<ParsedDeclaration> *decl=nullptr);
 
   // Create a variable.
-  parse::Impl<ParsedVariable> *CreateVariable(
-      parse::Impl<ParsedClause> *clause,
+  Node<ParsedVariable> *CreateVariable(
+      Node<ParsedClause> *clause,
       Token name, bool is_param, bool is_arg);
 
   // Create a variable to name a literal.
-  parse::Impl<ParsedVariable> *CreateLiteralVariable(
-      parse::Impl<ParsedClause> *clause, Token tok,
+  Node<ParsedVariable> *CreateLiteralVariable(
+      Node<ParsedClause> *clause, Token tok,
       bool is_param, bool is_arg);
 
   // Parse a display, returning the parsed module.
@@ -183,8 +183,8 @@ class ParserImpl {
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
 template <typename T>
-parse::Impl<T> *ParserImpl::AddDecl(
-    parse::Impl<ParsedModule> *module, DeclarationKind kind, Token name,
+Node<T> *ParserImpl::AddDecl(
+    Node<ParsedModule> *module, DeclarationKind kind, Token name,
     size_t arity) {
 
   if (arity > kMaxArity) {
@@ -221,7 +221,7 @@ parse::Impl<T> *ParserImpl::AddDecl(
       return nullptr;
 
     } else {
-      auto decl = new parse::Impl<T>(module, decl_context);
+      auto decl = new Node<T>(module, decl_context);
       if (!decl_context->redeclarations.empty()) {
         decl_context->redeclarations.back()->next_redecl = decl;
       }
@@ -229,7 +229,7 @@ parse::Impl<T> *ParserImpl::AddDecl(
       return decl;
     }
   } else {
-    auto decl = new parse::Impl<T>(module, kind);
+    auto decl = new Node<T>(module, kind);
     auto &decl_context = decl->context;
     if (!decl_context->redeclarations.empty()) {
       decl_context->redeclarations.back()->next_redecl = decl;
@@ -529,7 +529,7 @@ DisplayRange ParserImpl::SubTokenRange(void) const {
 
 // Remove a declaration.
 template <typename T>
-void ParserImpl::RemoveDecl(std::unique_ptr<parse::Impl<T>> decl) {
+void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
   if (!decl) {
     return;
   }
@@ -552,11 +552,11 @@ void ParserImpl::RemoveDecl(std::unique_ptr<parse::Impl<T>> decl) {
 // with any prior declarations of the same name.
 template <typename T>
 void ParserImpl::AddDeclAndCheckConsistency(
-    std::vector<std::unique_ptr<parse::Impl<T>>> &decl_list,
-    std::unique_ptr<parse::Impl<T>> decl) {
+    std::vector<std::unique_ptr<Node<T>>> &decl_list,
+    std::unique_ptr<Node<T>> decl) {
 
   if (1 < decl->context->redeclarations.size()) {
-    const auto prev_decl = reinterpret_cast<parse::Impl<T> *>(
+    const auto prev_decl = reinterpret_cast<Node<T> *>(
         decl->context->redeclarations.front());
     const auto num_params = decl->parameters.size();
     assert(prev_decl->parameters.size() == num_params);
@@ -623,7 +623,7 @@ void ParserImpl::AddDeclAndCheckConsistency(
 }
 
 // Try to parse `sub_range` as a functor, adding it to `module` if successful.
-void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -641,9 +641,9 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
   //                                                  6           7
 
   int state = 0;
-  std::unique_ptr<parse::Impl<ParsedFunctor>> functor;
-  std::unique_ptr<parse::Impl<ParsedParameter>> param;
-  std::vector<std::unique_ptr<parse::Impl<ParsedParameter>>> params;
+  std::unique_ptr<Node<ParsedFunctor>> functor;
+  std::unique_ptr<Node<ParsedParameter>> param;
+  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
   DisplayPosition next_pos;
   Token last_aggregate;
@@ -686,28 +686,28 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
 
       case 2:
         if (Lexeme::kKeywordBound == lexeme) {
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordFree == lexeme) {
           last_free = tok;
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordAggregate == lexeme) {
           last_aggregate = tok;
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordSummary == lexeme) {
           last_summary = tok;
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
@@ -923,7 +923,7 @@ void ParserImpl::ParseFunctor(parse::Impl<ParsedModule> *module) {
 }
 
 // Try to parse `sub_range` as a query, adding it to `module` if successful.
-void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -941,9 +941,9 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
   //                                                  6
 
   int state = 0;
-  std::unique_ptr<parse::Impl<ParsedQuery>> query;
-  std::unique_ptr<parse::Impl<ParsedParameter>> param;
-  std::vector<std::unique_ptr<parse::Impl<ParsedParameter>>> params;
+  std::unique_ptr<Node<ParsedQuery>> query;
+  std::unique_ptr<Node<ParsedParameter>> param;
+  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -984,13 +984,13 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
 
       case 2:
         if (Lexeme::kKeywordBound == lexeme) {
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordFree == lexeme) {
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
           state = 3;
           continue;
@@ -1102,7 +1102,7 @@ void ParserImpl::ParseQuery(parse::Impl<ParsedModule> *module) {
 }
 
 // Try to parse `sub_range` as a message, adding it to `module` if successful.
-void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -1120,9 +1120,9 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
   //                                     6
 
   int state = 0;
-  std::unique_ptr<parse::Impl<ParsedMessage>> message;
-  std::unique_ptr<parse::Impl<ParsedParameter>> param;
-  std::vector<std::unique_ptr<parse::Impl<ParsedParameter>>> params;
+  std::unique_ptr<Node<ParsedMessage>> message;
+  std::unique_ptr<Node<ParsedParameter>> param;
+  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -1164,7 +1164,7 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
 
       case 2:
         if (tok.IsType()) {
-          param.reset(new parse::Impl<ParsedParameter>);
+          param.reset(new Node<ParsedParameter>);
           param->opt_type = tok;
           state = 3;
           continue;
@@ -1262,7 +1262,7 @@ void ParserImpl::ParseMessage(parse::Impl<ParsedModule> *module) {
 
 // Try to parse `sub_range` as an exported rule, adding it to `module`
 // if successful.
-void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseExport(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -1280,9 +1280,9 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
   //                                      5
 
   int state = 0;
-  std::unique_ptr<parse::Impl<ParsedExport>> exp;
-  std::unique_ptr<parse::Impl<ParsedParameter>> param;
-  std::vector<std::unique_ptr<parse::Impl<ParsedParameter>>> params;
+  std::unique_ptr<Node<ParsedExport>> exp;
+  std::unique_ptr<Node<ParsedParameter>> param;
+  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -1323,7 +1323,7 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
         }
 
       case 2:
-        param.reset(new parse::Impl<ParsedParameter>);
+        param.reset(new Node<ParsedParameter>);
         if (tok.IsType()) {
           param->opt_type = tok;
           state = 3;
@@ -1426,7 +1426,7 @@ void ParserImpl::ParseExport(parse::Impl<ParsedModule> *module) {
 
 // Try to parse `sub_range` as an exported rule, adding it to `module`
 // if successful.
-void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -1444,9 +1444,9 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
   //                                     5
 
   int state = 0;
-  std::unique_ptr<parse::Impl<ParsedLocal>> local;
-  std::unique_ptr<parse::Impl<ParsedParameter>> param;
-  std::vector<std::unique_ptr<parse::Impl<ParsedParameter>>> params;
+  std::unique_ptr<Node<ParsedLocal>> local;
+  std::unique_ptr<Node<ParsedParameter>> param;
+  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -1487,7 +1487,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
         }
 
       case 2:
-        param.reset(new parse::Impl<ParsedParameter>);
+        param.reset(new Node<ParsedParameter>);
         if (tok.IsType()) {
           param->opt_type = tok;
           state = 3;
@@ -1595,7 +1595,7 @@ void ParserImpl::ParseLocal(parse::Impl<ParsedModule> *module) {
 // visible. This is partially enforced by ensuring that imports must precede
 // and declarations, and declarations must precede their uses. The result is
 // that we can built up a semantically meaningful parse tree in a single pass.
-void ParserImpl::ParseImport(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -1603,8 +1603,8 @@ void ParserImpl::ParseImport(parse::Impl<ParsedModule> *module) {
 
   assert(tok.Lexeme() == Lexeme::kHashImportModuleStmt);
 
-  std::unique_ptr<parse::Impl<ParsedImport>> imp(
-      new parse::Impl<ParsedImport>);
+  std::unique_ptr<Node<ParsedImport>> imp(
+      new Node<ParsedImport>);
   imp->directive_pos = tok.Position();
 
   if (!ReadNextSubToken(tok)) {
@@ -1696,7 +1696,7 @@ void ParserImpl::ParseImport(parse::Impl<ParsedModule> *module) {
 
 // Try to match a clause with a declaration.
 bool ParserImpl::TryMatchClauseWithDecl(
-    parse::Impl<ParsedModule> *module, parse::Impl<ParsedClause> *clause) {
+    Node<ParsedModule> *module, Node<ParsedClause> *clause) {
 
   DisplayRange clause_head_range(
       clause->name.Position(), clause->rparen.NextPosition());
@@ -1726,13 +1726,13 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
     // Recover by adding a local declaration; this will let us keep
     // parsing.
-    auto local = new parse::Impl<ParsedLocal>(module, DeclarationKind::kLocal);
+    auto local = new Node<ParsedLocal>(module, DeclarationKind::kLocal);
     local->directive_pos = clause->name.Position();
     local->name = clause->name;
     local->rparen = clause->rparen;
-    parse::Impl<ParsedParameter> *prev_param = nullptr;
+    Node<ParsedParameter> *prev_param = nullptr;
     for (const auto &param_var : clause->head_variables) {
-      auto param = new parse::Impl<ParsedParameter>;
+      auto param = new Node<ParsedParameter>;
       param->name = param_var->name;
       if (prev_param) {
         prev_param->next = param;
@@ -1789,7 +1789,7 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
 // Try to match a clause with a declaration.
 bool ParserImpl::TryMatchPredicateWithDecl(
-    parse::Impl<ParsedModule> *module, parse::Impl<ParsedPredicate> *pred) {
+    Node<ParsedModule> *module, Node<ParsedPredicate> *pred) {
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
@@ -1819,14 +1819,14 @@ bool ParserImpl::TryMatchPredicateWithDecl(
 
     // Recover by adding a local declaration; this will let us keep
     // parsing.
-    auto local = new parse::Impl<ParsedLocal>(module, DeclarationKind::kLocal);
+    auto local = new Node<ParsedLocal>(module, DeclarationKind::kLocal);
     local->directive_pos = pred->name.Position();
     local->name = pred->name;
     local->rparen = pred->rparen;
 
-    parse::Impl<ParsedParameter> *prev_param = nullptr;
+    Node<ParsedParameter> *prev_param = nullptr;
     for (const auto &arg_use : pred->argument_uses) {
-      auto param = new parse::Impl<ParsedParameter>;
+      auto param = new Node<ParsedParameter>;
       param->name = arg_use->used_var->name;
       if (prev_param) {
         prev_param->next = param;
@@ -1844,11 +1844,11 @@ bool ParserImpl::TryMatchPredicateWithDecl(
 }
 
 // Create a variable.
-parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
-    parse::Impl<ParsedClause> *clause,
+Node<ParsedVariable> *ParserImpl::CreateVariable(
+    Node<ParsedClause> *clause,
     Token name, bool is_param, bool is_arg) {
 
-  auto var = new parse::Impl<ParsedVariable>;
+  auto var = new Node<ParsedVariable>;
   if (is_param) {
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
@@ -1891,8 +1891,8 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateVariable(
 }
 
 // Create a variable to name a literal.
-parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
-    parse::Impl<ParsedClause> *clause, Token tok,
+Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
+    Node<ParsedClause> *clause, Token tok,
     bool is_param, bool is_arg) {
 
   auto lhs = CreateVariable(
@@ -1901,8 +1901,14 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
                        tok.SpellingRange()),
       false, false);
 
-  auto assign = new parse::Impl<ParsedAssignment>(lhs);
+  auto assign = new Node<ParsedAssignment>(lhs);
   assign->rhs.literal = tok;
+  std::string_view data;
+  if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
+    assign->rhs.data = data;
+  } else {
+    assert(false);
+  }
   assign->rhs.assigned_to = lhs;
 
   // Add to the clause's assignment list.
@@ -1916,7 +1922,7 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
   lhs->context->assignment_uses.push_back(&(assign->lhs));
 
   // Now create the version of the variable that gets used.
-  auto var = new parse::Impl<ParsedVariable>;
+  auto var = new Node<ParsedVariable>;
   if (is_param) {
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
@@ -1944,10 +1950,10 @@ parse::Impl<ParsedVariable> *ParserImpl::CreateLiteralVariable(
 }
 
 // Try to parse `sub_range` as a clause.
-void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
-                             parse::Impl<ParsedDeclaration> *decl) {
+void ParserImpl::ParseClause(Node<ParsedModule> *module,
+                             Node<ParsedDeclaration> *decl) {
 
-  auto clause = std::make_unique<parse::Impl<ParsedClause>>(module);
+  auto clause = std::make_unique<Node<ParsedClause>>(module);
   prev_named_var.clear();
 
   Token tok;
@@ -1971,11 +1977,11 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
   //
   DisplayPosition next_pos;
   DisplayPosition negation_pos;
-  parse::Impl<ParsedVariable> *arg = nullptr;
-  parse::Impl<ParsedVariable> *lhs = nullptr;
-  parse::Impl<ParsedVariable> *rhs = nullptr;
+  Node<ParsedVariable> *arg = nullptr;
+  Node<ParsedVariable> *lhs = nullptr;
+  Node<ParsedVariable> *rhs = nullptr;
   Token compare_op;
-  std::unique_ptr<parse::Impl<ParsedPredicate>> pred;
+  std::unique_ptr<Node<ParsedPredicate>> pred;
 
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
@@ -2103,7 +2109,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           continue;
 
         } else if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new parse::Impl<ParsedPredicate>(module, clause.get()));
+          pred.reset(new Node<ParsedPredicate>(module, clause.get()));
           pred->name = tok;
           state = 12;
           continue;
@@ -2146,7 +2152,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
           if (Lexeme::kPuncEqual == compare_op.Lexeme()) {
-            auto assign = new parse::Impl<ParsedAssignment>(lhs);
+            auto assign = new Node<ParsedAssignment>(lhs);
             assign->rhs.literal = tok;
             assign->rhs.assigned_to = lhs;
 
@@ -2184,7 +2190,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
             return;
           }
 
-          const auto compare = new parse::Impl<ParsedComparison>(
+          const auto compare = new Node<ParsedComparison>(
               lhs, rhs, compare_op);
 
           // Add to the LHS variable's comparison use list.
@@ -2255,7 +2261,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
       // We think we're parsing a negated predicate.
       case 11:
         if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new parse::Impl<ParsedPredicate>(module, clause.get()));
+          pred.reset(new Node<ParsedPredicate>(module, clause.get()));
           pred->name = tok;
           pred->negation_pos = negation_pos;
           state = 12;
@@ -2298,7 +2304,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
         }
 
         if (arg) {
-          auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
+          auto use = new Node<ParsedUse<ParsedPredicate>>(
               UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
@@ -2434,7 +2440,7 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
   // are ephemeral. If we see that as triggering a clause, then we can't
   // easily account for two messages triggering a given clause, when the
   // ordering in time of those messages can be unbounded.
-  parse::Impl<ParsedPredicate> *prev_message = nullptr;
+  Node<ParsedPredicate> *prev_message = nullptr;
   for (auto &used_pred : clause->positive_predicates) {
     auto kind = used_pred->declaration->context->kind;
     if (kind != DeclarationKind::kMessage) {
@@ -2497,18 +2503,18 @@ void ParserImpl::ParseClause(parse::Impl<ParsedModule> *module,
 // Try to parse the predicate application following a use of an aggregating
 // functor.
 bool ParserImpl::ParseAggregatedPredicate(
-    parse::Impl<ParsedModule> *module,
-    parse::Impl<ParsedClause> *clause,
-    std::unique_ptr<parse::Impl<ParsedPredicate>> functor,
+    Node<ParsedModule> *module,
+    Node<ParsedClause> *clause,
+    std::unique_ptr<Node<ParsedPredicate>> functor,
     Token &tok, DisplayPosition &next_pos) {
 
   auto state = 0;
 
-  std::unique_ptr<parse::Impl<ParsedLocal>> anon_decl;
-  std::unique_ptr<parse::Impl<ParsedPredicate>> pred;
-  std::unique_ptr<parse::Impl<ParsedParameter>> anon_param;
+  std::unique_ptr<Node<ParsedLocal>> anon_decl;
+  std::unique_ptr<Node<ParsedPredicate>> pred;
+  std::unique_ptr<Node<ParsedParameter>> anon_param;
 
-  parse::Impl<ParsedVariable> *arg = nullptr;
+  Node<ParsedVariable> *arg = nullptr;
 
   // Build up a token list representing a synthetic clause definition
   // associated with `anon_decl`.
@@ -2525,7 +2531,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         // An inline predicate; we'll need to invent a declaration and
         // clause for it.
         if (Lexeme::kPuncOpenParen == lexeme) {
-          anon_decl.reset(new parse::Impl<ParsedLocal>(
+          anon_decl.reset(new Node<ParsedLocal>(
               module, DeclarationKind::kLocal));
           anon_decl->context->redeclarations.push_back(anon_decl.get());
           anon_decl->directive_pos = tok.Position();
@@ -2536,7 +2542,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
           assert(tok.Lexeme() == Lexeme::kPuncOpenParen);
           anon_clause_toks.push_back(tok);
-          pred.reset(new parse::Impl<ParsedPredicate>(module, clause));
+          pred.reset(new Node<ParsedPredicate>(module, clause));
           pred->declaration = anon_decl.get();
           pred->name = anon_decl->name;
           state = 1;
@@ -2544,7 +2550,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
         // Direct application.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new parse::Impl<ParsedPredicate>(module, clause));
+          pred.reset(new Node<ParsedPredicate>(module, clause));
           pred->name = tok;
           state = 6;
           continue;
@@ -2560,7 +2566,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
       case 1:
         if (tok.IsType()) {
-          anon_param.reset(new parse::Impl<ParsedParameter>);
+          anon_param.reset(new Node<ParsedParameter>);
           anon_param->opt_type = tok;
           state = 2;
           continue;
@@ -2586,7 +2592,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_clause_toks.push_back(tok);
 
           arg = CreateVariable(clause, tok, false, true);
-          auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
+          auto use = new Node<ParsedUse<ParsedPredicate>>(
               UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
@@ -2734,7 +2740,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         }
 
         if (arg) {
-          auto use = new parse::Impl<ParsedUse<ParsedPredicate>>(
+          auto use = new Node<ParsedUse<ParsedPredicate>>(
               UseKind::kArgument, arg, pred.get());
 
           // Add to this variable's use list.
@@ -2806,8 +2812,8 @@ bool ParserImpl::ParseAggregatedPredicate(
 
 done:
 
-  std::unique_ptr<parse::Impl<ParsedAggregate>> agg(
-      new parse::Impl<ParsedAggregate>);
+  std::unique_ptr<Node<ParsedAggregate>> agg(
+      new Node<ParsedAggregate>);
   agg->spelling_range = DisplayRange(functor->name.Position(), last_pos);
   agg->functor = std::move(functor);
   agg->predicate = std::move(pred);
@@ -2821,7 +2827,7 @@ done:
 }
 
 // Try to parse all of the tokens.
-void ParserImpl::ParseAllTokens(parse::Impl<ParsedModule> *module) {
+void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
   next_tok_index = 0;
   Token tok;
 
@@ -2967,7 +2973,7 @@ ParsedModule ParserImpl::ParseDisplay(
     return ParsedModule(module);
   }
 
-  module = std::make_shared<parse::Impl<ParsedModule>>(config);
+  module = std::make_shared<Node<ParsedModule>>(config);
   weak_module = module;
 
   if (!context->root_module) {

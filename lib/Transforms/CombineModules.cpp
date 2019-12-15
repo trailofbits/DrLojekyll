@@ -5,11 +5,12 @@
 #include <sstream>
 #include <cassert>
 
+#include <drlojekyll/Display/DisplayConfiguration.h>
+#include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Sema/ModuleIterator.h>
-#include <drlojekyll/Display/DisplayConfiguration.h>
 
 namespace hyde {
 

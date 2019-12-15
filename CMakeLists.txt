@@ -68,6 +68,7 @@ function(main config)
         main.cpp)
 
     target_link_libraries(test-${config}
+        rel-${config}
         transforms-${config})
 endfunction(main)
 

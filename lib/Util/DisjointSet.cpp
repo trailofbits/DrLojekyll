@@ -33,4 +33,12 @@ DisjointSet *DisjointSet::Union(DisjointSet *lhs, DisjointSet *rhs) {
   }
 }
 
+void DisjointSet::UnionInto(DisjointSet *child, DisjointSet *parent) {
+  child = child->Find();
+  parent = parent->Find();
+  if (child != parent) {
+    child->parent = parent;
+  }
+}
+
 }  // namespace hyde

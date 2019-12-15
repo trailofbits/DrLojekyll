@@ -78,7 +78,7 @@ void SIPSVisitor::CancelRangeRestriction(ParsedComparison, ParsedVariable) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedClause, ParsedVariable) {}
 void SIPSVisitor::CancelPredicate(const FailedBinding *, FailedBinding *) {}
 void SIPSVisitor::CancelMessage(const ParsedPredicate) {}
-bool SIPSVisitor::Advance(void) { return true; }
+SIPSVisitor::AdvanceType SIPSVisitor::Advance(void) { return kTryNextPermutation; }
 
 class SIPSGenerator::Impl {
  public:
@@ -89,8 +89,6 @@ class SIPSGenerator::Impl {
 
   // Try to advance the generator.
   bool Advance(void);
-
- private:
 
   // Get a fresh variable.
   unsigned GetFreshVarId(void);
@@ -166,9 +164,10 @@ class SIPSGenerator::Impl {
   std::vector<ParsedPredicate> next_negative_predicates;
 
   // Does the visitor want to advance?
-  bool try_advance{true};
+  SIPSVisitor::AdvanceType advance_type{SIPSVisitor::kTryNextPermutation};
 
   bool cancelled{false};
+  bool started{false};
   unsigned next_var_id{0};
 
   std::vector<std::unique_ptr<DisjointSet>> vars;
@@ -1040,7 +1039,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   // Bind all assigned variables to their respective constants.
   for (auto assignment : clause.Assignments()) {
     if (!VisitAssign(visitor, assignment)) {
-      try_advance = visitor.Advance();
+      advance_type = visitor.Advance();
       return false;
     }
   }
@@ -1062,6 +1061,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
 
   // NOTE(pag): This will visit comparisons, negations, and aggregates.
   if (!VisitPredicate(visitor, 0)) {
+    advance_type = visitor.Advance();
     return false;
   }
 
@@ -1069,19 +1069,30 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
     visitor.Commit(assumption);
   }
 
-  try_advance = visitor.Advance();
+  advance_type = visitor.Advance();
   return !cancelled;
 }
 
 bool SIPSGenerator::Impl::Advance(void) {
-  if (!try_advance || positive_predicates.empty()) {
+  if (positive_predicates.empty()) {
     cancelled = true;
     return false;
   }
 
-  cancelled = !std::next_permutation(
-      positive_predicates.begin(), positive_predicates.end(),
-      OrderPredicates);
+  switch (advance_type) {
+    case SIPSVisitor::kTryNextPermutation:
+      cancelled = !std::next_permutation(
+          positive_predicates.begin(), positive_predicates.end(),
+          OrderPredicates);
+      return !cancelled;
+
+    case SIPSVisitor::kRetryCurrentPermutation:
+      return true;
+
+    case SIPSVisitor::kStop:
+      cancelled = true;
+      return false;
+  }
 
   return !cancelled;
 }
@@ -1094,13 +1105,22 @@ SIPSGenerator::SIPSGenerator(ParsedPredicate assumption_)
 // Visit the current ordering. Returns `true` if the `visitor.Commit`
 // was invoked, and `false` if `visitor.Cancel` was invoked.
 bool SIPSGenerator::Visit(SIPSVisitor &visitor) const {
+  impl->started = true;
   return impl->Visit(visitor);
 }
 
 // Tries to advance to the next possible ordering. Returns `false` if
 // we could not advance to the next ordering.
 bool SIPSGenerator::Advance(void) const {
+  impl->started = true;
   return impl->Advance();
+}
+
+// Reset the generator to be beginning.
+void SIPSGenerator::Rewind(void) {
+  if (impl->started) {
+    impl.reset(new Impl(impl->assumption));
+  }
 }
 
 }  // namespace hyde

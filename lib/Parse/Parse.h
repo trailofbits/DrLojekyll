@@ -28,56 +28,22 @@ union IdInterpreter {
 static_assert(sizeof(IdInterpreter) == 8);
 
 template <typename T>
-class Node {
- public:
-  T *next{nullptr};
-};
+using UseList = std::vector<Node<ParsedUse<T>> *>;
 
-template <>
-class Impl<ParsedLiteral> : public Node<Impl<ParsedLiteral>> {
- public:
-  Impl<ParsedVariable> *assigned_to{nullptr};
-  Token literal;
-};
-
-class UseBase : public Node<UseBase> {
- public:
-  inline UseBase(UseKind use_kind_,
-                 parse::Impl<ParsedVariable> *used_var_)
-      : use_kind(use_kind_),
-        used_var(used_var_) {}
-
-  const UseKind use_kind;
-  parse::Impl<ParsedVariable> * const used_var;
-};
-
-template<typename T>
-class Impl<ParsedUse<T>> : public UseBase {
- public:
-  inline Impl(UseKind use_kind_,
-              parse::Impl<ParsedVariable> *used_var_,
-              parse::Impl<T> *user_)
-      : UseBase(use_kind_, used_var_),
-        user(user_) {}
-
-  const T user;
-};
-
-template <typename T>
-using UseList = std::vector<parse::Impl<ParsedUse<T>> *>;
-
+// Contextual information relevant to all uses of a logical variable within
+// a clause.
 class VariableContext {
  public:
-  inline explicit VariableContext(Impl<ParsedClause> *clause_,
-                                  Impl<ParsedVariable> *first_use_)
+  inline explicit VariableContext(Node<ParsedClause> *clause_,
+                                  Node<ParsedVariable> *first_use_)
       : clause(clause_),
         first_use(first_use_) {}
 
   // Clause containing this variable.
-  Impl<ParsedClause> * const clause;
+  Node<ParsedClause> * const clause;
 
   // First use of this variable in `clause`.
-  Impl<ParsedVariable> * const first_use;
+  Node<ParsedVariable> * const first_use;
 
   // List of assignments to this variable.
   UseList<ParsedAssignment> assignment_uses;
@@ -92,11 +58,72 @@ class VariableContext {
   UseList<ParsedClause> parameter_uses;
 
   // Cached unique identifier.
-  IdInterpreter id;
+  parse::IdInterpreter id;
+};
+
+// Contextual information relevant to all redeclarations.
+class DeclarationContext {
+ public:
+  inline DeclarationContext(const DeclarationKind kind_)
+      : kind(kind_) {}
+
+  // Cached ID of this declaration.
+  parse::IdInterpreter id;
+
+  // The kind of this declaration.
+  const DeclarationKind kind;
+
+  // The list of all re-declarations. They may be spread across multiple
+  // modules. Some of the redeclarations may have different parameter bindings.
+  std::vector<Node<ParsedDeclaration> *> redeclarations;
+
+  // All clauses associated with a given `DeclarationBase` and each of its
+  // redeclarations.
+  std::vector<std::unique_ptr<Node<ParsedClause>>> clauses;
+
+  // All positive uses of this declaration.
+  std::vector<Node<ParsedPredicate> *> positive_uses;
+
+  // All negative uses of this declaration.
+  std::vector<Node<ParsedPredicate> *> negated_uses;
+};
+
+}  // namespace parse
+
+template <>
+class Node<ParsedLiteral> {
+ public:
+  Node<ParsedLiteral> *next{nullptr};
+  Node<ParsedVariable> *assigned_to{nullptr};
+  Token literal;
+  std::string data;
+};
+
+class UseBase {
+ public:
+  inline UseBase(UseKind use_kind_, Node<ParsedVariable> *used_var_)
+      : use_kind(use_kind_),
+        used_var(used_var_) {}
+
+  const UseKind use_kind;
+  Node<ParsedVariable> * const used_var;
+};
+
+template<typename T>
+class Node<ParsedUse<T>> : public UseBase {
+ public:
+  inline Node(UseKind use_kind_,
+              Node<ParsedVariable> *used_var_,
+              Node<T> *user_)
+      : UseBase(use_kind_, used_var_),
+        user(user_) {}
+
+  const T user;
+  Node<ParsedUse<T>> *next{nullptr};
 };
 
 template <>
-class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
+class Node<ParsedVariable> {
  public:
 
   // Compute the unique identifier for this variable.
@@ -107,14 +134,19 @@ class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
   // What was the order of appearance of this variable?
   unsigned appearance{0};
 
+  // Next variable used in `clause`, which may be a logically different
+  // variable. Variables that are in a clause head are not linked to
+  // variables in a clause body.
+  Node<ParsedVariable> *next{nullptr};
+
   // Next use of the same logical variable in `clause`.
-  Impl<ParsedVariable> *next_use{nullptr};
+  Node<ParsedVariable> *next_use{nullptr};
 
   // Next variable (not necessarily the same) to be used in an argument list,
   // if this variable is used in an argument list.
-  Impl<ParsedVariable> *next_var_in_arg_list{nullptr};
+  Node<ParsedVariable> *next_var_in_arg_list{nullptr};
 
-  std::shared_ptr<VariableContext> context;
+  std::shared_ptr<parse::VariableContext> context;
 
   // Whether or not this variable is an parameter to its clause.
   bool is_parameter{false};
@@ -124,32 +156,39 @@ class Impl<ParsedVariable> : public Node<Impl<ParsedVariable>> {
 };
 
 template <>
-class Impl<ParsedComparison> : public Node<Impl<ParsedComparison>> {
+class Node<ParsedComparison> {
  public:
-  inline Impl(Impl<ParsedVariable> *lhs_, Impl<ParsedVariable> *rhs_,
+  inline Node(Node<ParsedVariable> *lhs_, Node<ParsedVariable> *rhs_,
               Token compare_op_)
       : lhs(UseKind::kComparisonLHS, lhs_, this),
         rhs(UseKind::kComparisonRHS, rhs_, this),
         compare_op(compare_op_) {}
-  Impl<ParsedUse<ParsedComparison>> lhs;
-  Impl<ParsedUse<ParsedComparison>> rhs;
+
+  // Next in the clause body.
+  Node<ParsedComparison> *next{nullptr};
+
+  Node<ParsedUse<ParsedComparison>> lhs;
+  Node<ParsedUse<ParsedComparison>> rhs;
   const Token compare_op;
 };
 
 template <>
-class Impl<ParsedAssignment> : public Node<Impl<ParsedAssignment>> {
+class Node<ParsedAssignment> {
  public:
-  inline Impl(Impl<ParsedVariable> *lhs_)
+  inline Node(Node<ParsedVariable> *lhs_)
       : lhs(UseKind::kAssignmentLHS, lhs_, this) {}
 
-  Impl<ParsedUse<ParsedAssignment>> lhs;
-  Impl<ParsedLiteral> rhs;
+  // Next in the clause body.
+  Node<ParsedAssignment> *next{nullptr};
+
+  Node<ParsedUse<ParsedAssignment>> lhs;
+  Node<ParsedLiteral> rhs;
 };
 
 template <>
-class Impl<ParsedPredicate> : public Node<Impl<ParsedPredicate>> {
+class Node<ParsedPredicate> {
  public:
-  inline Impl(Impl<ParsedModule> *module_, Impl<ParsedClause> *clause_)
+  inline Node(Node<ParsedModule> *module_, Node<ParsedClause> *clause_)
       : module(module_),
         clause(clause_) {}
 
@@ -157,16 +196,20 @@ class Impl<ParsedPredicate> : public Node<Impl<ParsedPredicate>> {
   uint64_t Id(void) const noexcept;
 
   // Module in which this predicate application exists.
-  Impl<ParsedModule> * const module;
+  Node<ParsedModule> * const module;
 
   // The clause containing this predicate.
-  Impl<ParsedClause> * const clause;
+  Node<ParsedClause> * const clause;
 
   // The declaration associated with this predicate.
-  Impl<ParsedDeclaration> *declaration{nullptr};
+  Node<ParsedDeclaration> *declaration{nullptr};
+
+  // Next parsed predicate in the clause body. Positive predicates never link
+  // to negative predicates, and vice versa.
+  Node<ParsedPredicate> *next{nullptr};
 
   // The next use this predicate. This use may be in a different clause body.
-  Impl<ParsedPredicate> *next_use{nullptr};
+  Node<ParsedPredicate> *next_use{nullptr};
 
   // Location information.
   DisplayPosition negation_pos;
@@ -174,55 +217,64 @@ class Impl<ParsedPredicate> : public Node<Impl<ParsedPredicate>> {
   Token rparen;
 
   // The argument variables used in this predicate.
-  std::vector<std::unique_ptr<Impl<ParsedUse<ParsedPredicate>>>> argument_uses;
+  std::vector<std::unique_ptr<Node<ParsedUse<ParsedPredicate>>>> argument_uses;
 };
 
 template <>
-class Impl<ParsedAggregate> : public Node<Impl<ParsedAggregate>> {
+class Node<ParsedAggregate> {
  public:
+  // Next in the clause.
+  Node<ParsedAggregate> *next{nullptr};
+
   DisplayRange spelling_range;
-  std::unique_ptr<Impl<ParsedPredicate>> functor;
-  std::unique_ptr<Impl<ParsedPredicate>> predicate;
+  std::unique_ptr<Node<ParsedPredicate>> functor;
+  std::unique_ptr<Node<ParsedPredicate>> predicate;
 };
 
 template <>
-class Impl<ParsedParameter> : public Node<Impl<ParsedParameter>> {
+class Node<ParsedParameter> {
  public:
+  // Next in the declaration head.
+  Node<ParsedParameter> *next{nullptr};
+
   Token opt_binding;
   Token name;
   Token opt_type;
 };
 
 template <>
-class Impl<ParsedClause> : public Node<Impl<ParsedClause>> {
+class Node<ParsedClause> {
  public:
-  inline Impl(Impl<ParsedModule> *module_)
+  inline Node(Node<ParsedModule> *module_)
       : module(module_) {}
 
-  mutable IdInterpreter id;
+  mutable parse::IdInterpreter id;
 
   // The module containing this clause.
-  Impl<ParsedModule> * const module;
+  Node<ParsedModule> * const module;
+
+  // The next clause associated with this `declaration`.
+  Node<ParsedClause> *next{nullptr};
 
   // The next clause defined in `module`.
-  Impl<ParsedClause> *next_in_module{nullptr};
+  Node<ParsedClause> *next_in_module{nullptr};
 
   // The declaration associated with this clause (definition).
-  Impl<ParsedDeclaration> *declaration{nullptr};
+  Node<ParsedDeclaration> *declaration{nullptr};
 
   Token name;
   Token rparen;
   Token dot;
 
   // Variables used in this clause.
-  std::vector<std::unique_ptr<Impl<ParsedVariable>>> head_variables;
-  std::vector<std::unique_ptr<Impl<ParsedVariable>>> body_variables;
+  std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
+  std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;
 
-  std::vector<std::unique_ptr<Impl<ParsedComparison>>> comparisons;
-  std::vector<std::unique_ptr<Impl<ParsedAssignment>>> assignments;
-  std::vector<std::unique_ptr<Impl<ParsedAggregate>>> aggregates;
-  std::vector<std::unique_ptr<Impl<ParsedPredicate>>> positive_predicates;
-  std::vector<std::unique_ptr<Impl<ParsedPredicate>>> negated_predicates;
+  std::vector<std::unique_ptr<Node<ParsedComparison>>> comparisons;
+  std::vector<std::unique_ptr<Node<ParsedAssignment>>> assignments;
+  std::vector<std::unique_ptr<Node<ParsedAggregate>>> aggregates;
+  std::vector<std::unique_ptr<Node<ParsedPredicate>>> positive_predicates;
+  std::vector<std::unique_ptr<Node<ParsedPredicate>>> negated_predicates;
 
   std::unordered_map<unsigned, unsigned> named_var_ids;
   unsigned next_var_id{1};
@@ -231,43 +283,16 @@ class Impl<ParsedClause> : public Node<Impl<ParsedClause>> {
   uint64_t Id(void) const noexcept;
 };
 
-// Contextual information relevant to all redeclarations.
-class DeclarationContext {
- public:
-  inline DeclarationContext(const DeclarationKind kind_)
-      : kind(kind_) {}
-
-  // Cached ID of this declaration.
-  IdInterpreter id;
-
-  // The kind of this declaration.
-  const DeclarationKind kind;
-
-  // The list of all re-declarations. They may be spread across multiple
-  // modules. Some of the redeclarations may have different parameter bindings.
-  std::vector<Impl<ParsedDeclaration> *> redeclarations;
-
-  // All clauses associated with a given `DeclarationBase` and each of its
-  // redeclarations.
-  std::vector<std::unique_ptr<Impl<ParsedClause>>> clauses;
-
-  // All positive uses of this declaration.
-  std::vector<Impl<ParsedPredicate> *> positive_uses;
-
-  // All negative uses of this declaration.
-  std::vector<Impl<ParsedPredicate> *> negated_uses;
-};
-
 template <>
-class Impl<ParsedDeclaration> : public Node<Impl<ParsedDeclaration>> {
+class Node<ParsedDeclaration> {
  public:
-  inline Impl(Impl<ParsedModule> *module_,
+  inline Node(Node<ParsedModule> *module_,
               const DeclarationKind kind_)
       : module(module_),
-        context(std::make_shared<DeclarationContext>(kind_)) {}
+        context(std::make_shared<parse::DeclarationContext>(kind_)) {}
 
-  inline Impl(Impl<ParsedModule> *module_,
-              const std::shared_ptr<DeclarationContext> &context_)
+  inline Node(Node<ParsedModule> *module_,
+              const std::shared_ptr<parse::DeclarationContext> &context_)
       : module(module_),
         context(context_) {}
 
@@ -277,21 +302,25 @@ class Impl<ParsedDeclaration> : public Node<Impl<ParsedDeclaration>> {
   uint64_t Id(void) const noexcept;
 
   // Return a list of clauses associated with this declaration.
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
 
   // Return a list of positive uses of this definition.
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
 
   // Return a list of negative uses of this definition.
-  parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   // The module containing this declaration.
-  Impl<ParsedModule> * const module;
+  Node<ParsedModule> * const module;
 
-  Impl<ParsedDeclaration> *next_redecl{nullptr};
+  // The next declaration in this module, possibly unrelated to this one.
+  Node<ParsedDeclaration> *next{nullptr};
+
+  // The next redeclaration of this declaration. This could be in any module.
+  Node<ParsedDeclaration> *next_redecl{nullptr};
 
   // The context that collects all of the declarations together.
-  const std::shared_ptr<DeclarationContext> context;
+  const std::shared_ptr<parse::DeclarationContext> context;
 
   // The position of the declaration.
   DisplayPosition directive_pos;
@@ -300,55 +329,58 @@ class Impl<ParsedDeclaration> : public Node<Impl<ParsedDeclaration>> {
   Token rparen;
   Token complexity_attribute;
   bool is_aggregate{false};
-  std::vector<std::unique_ptr<Impl<ParsedParameter>>> parameters;
+  std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
 
  private:
-  Impl(void) = delete;
+  Node(void) = delete;
 };
 
 template <>
-class Impl<ParsedQuery> : public Impl<ParsedDeclaration> {
+class Node<ParsedQuery> : public Node<ParsedDeclaration> {
  public:
-  using Impl<ParsedDeclaration>::Impl;
+  using Node<ParsedDeclaration>::Node;
 };
 
 template <>
-class Impl<ParsedExport> : public Impl<ParsedDeclaration> {
+class Node<ParsedExport> : public Node<ParsedDeclaration> {
  public:
-  using Impl<ParsedDeclaration>::Impl;
+  using Node<ParsedDeclaration>::Node;
 };
 
 template <>
-class Impl<ParsedLocal> : public Impl<ParsedDeclaration> {
+class Node<ParsedLocal> : public Node<ParsedDeclaration> {
  public:
-  using Impl<ParsedDeclaration>::Impl;
+  using Node<ParsedDeclaration>::Node;
 };
 
 template <>
-class Impl<ParsedFunctor> : public Impl<ParsedDeclaration> {
+class Node<ParsedFunctor> : public Node<ParsedDeclaration> {
  public:
-  using Impl<ParsedDeclaration>::Impl;
+  using Node<ParsedDeclaration>::Node;
 };
 
 template <>
-class Impl<ParsedMessage> : public Impl<ParsedDeclaration> {
+class Node<ParsedMessage> : public Node<ParsedDeclaration> {
  public:
-  using Impl<ParsedDeclaration>::Impl;
+  using Node<ParsedDeclaration>::Node;
 };
 
 template <>
-class Impl<ParsedImport> : public Node<Impl<ParsedImport>> {
+class Node<ParsedImport> {
  public:
+  // Next import in this module.
+  Node<ParsedImport> *next{nullptr};
+
   DisplayPosition directive_pos;
   Token path;
-  Impl<ParsedModule> *imported_module{nullptr};
+  Node<ParsedModule> *imported_module{nullptr};
 };
 
 template <>
- class Impl<ParsedModule>
-     : public std::enable_shared_from_this<Impl<ParsedModule>> {
+ class Node<ParsedModule>
+     : public std::enable_shared_from_this<Node<ParsedModule>> {
  public:
-  Impl(const DisplayConfiguration &config_)
+  Node(const DisplayConfiguration &config_)
       : config(config_) {}
 
   const DisplayConfiguration config;
@@ -362,22 +394,21 @@ template <>
   Token first;
   Token last;
 
-  Impl<ParsedModule> *root_module{nullptr};
-  std::vector<std::shared_ptr<Impl<ParsedModule>>> non_root_modules;
+  Node<ParsedModule> *root_module{nullptr};
+  std::vector<std::shared_ptr<Node<ParsedModule>>> non_root_modules;
 
-  std::vector<std::unique_ptr<Impl<ParsedImport>>> imports;
-  std::vector<std::unique_ptr<Impl<ParsedExport>>> exports;
-  std::vector<std::unique_ptr<Impl<ParsedLocal>>> locals;
-  std::vector<std::unique_ptr<Impl<ParsedQuery>>> queries;
-  std::vector<std::unique_ptr<Impl<ParsedFunctor>>> functors;
-  std::vector<std::unique_ptr<Impl<ParsedMessage>>> messages;
+  std::vector<std::unique_ptr<Node<ParsedImport>>> imports;
+  std::vector<std::unique_ptr<Node<ParsedExport>>> exports;
+  std::vector<std::unique_ptr<Node<ParsedLocal>>> locals;
+  std::vector<std::unique_ptr<Node<ParsedQuery>>> queries;
+  std::vector<std::unique_ptr<Node<ParsedFunctor>>> functors;
+  std::vector<std::unique_ptr<Node<ParsedMessage>>> messages;
 
   // All clauses defined in this module.
-  std::vector<Impl<ParsedClause> *> clauses;
+  std::vector<Node<ParsedClause> *> clauses;
 
   // Local declarations, grouped by `id=(name_id, arity)`.
-  std::unordered_map<uint64_t, Impl<ParsedDeclaration> *> local_declarations;
+  std::unordered_map<uint64_t, Node<ParsedDeclaration> *> local_declarations;
 };
 
-}  // namespace parse
 }  // namespace hyde

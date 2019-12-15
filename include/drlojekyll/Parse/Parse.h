@@ -2,11 +2,14 @@
 
 #pragma once
 
-#include <utility>
 #include <functional>
 #include <memory>
+#include <string_view>
+#include <utility>
+
 #include <drlojekyll/Display/DisplayPosition.h>
 #include <drlojekyll/Lex/Token.h>
+#include <drlojekyll/Util/Node.h>
 
 namespace hyde {
 
@@ -15,31 +18,12 @@ class ParserImpl;
 
 namespace parse {
 
-template<typename T>
-class Impl;
-
-template <typename T>
-class ParsedNodeIterator;
-
-template <typename T>
-class ParsedNodeRange;
-
-// Used for traversing nodes that are arranged in a list. Class based so that
-// the use of `Next` and `Prev` are privileged.
-class NodeTraverser {
- private:
-  template <typename T>
-  friend class ParsedNodeIterator;
-
-  static void *Next(void *, intptr_t);
-};
-
 // Base class of all parsed nodes. Parsed nodes are thin wrappers around
 // an implementation class pointer, where the data is managed by the parser.
 template<typename T>
 class ParsedNode {
  public:
-  inline ParsedNode(Impl<T> *impl_)
+  inline ParsedNode(Node<T> *impl_)
       : impl(impl_) {}
 
   inline bool operator==(const ParsedNode<T> &that) const {
@@ -75,88 +59,7 @@ class ParsedNode {
   template <typename U>
   friend class ParsedNodeRange;
 
-  Impl<T> *impl{nullptr};
-};
-
-// Iterator over a parsed node.
-template <typename T>
-class ParsedNodeIterator {
- public:
-  ParsedNodeIterator(const ParsedNodeIterator<T> &) noexcept = default;
-  ParsedNodeIterator(ParsedNodeIterator<T> &&) noexcept = default;
-
-  ParsedNodeIterator<T> &operator=(const ParsedNodeIterator<T> &) noexcept = default;
-  ParsedNodeIterator<T> &operator=(ParsedNodeIterator<T> &&) noexcept = default;
-
-  T operator*(void) const {
-    return T(impl);
-  }
-
-  T operator->(void) const = delete;
-
-  bool operator==(ParsedNodeIterator<T> that) const {
-    return impl == that.impl;
-  }
-
-  bool operator!=(ParsedNodeIterator<T> that) const {
-    return impl != that.impl;
-  }
-
-  inline ParsedNodeIterator<T> &operator++(void) {
-    impl = reinterpret_cast<Impl<T> *>(NodeTraverser::Next(impl, offset));
-    return *this;
-  }
-
-  inline ParsedNodeIterator<T> operator++(int) const {
-    auto ret = *this;
-    impl = reinterpret_cast<Impl<T> *>(NodeTraverser::Next(impl, offset));
-    return ret;
-  }
-
- private:
-  friend class ParsedNodeRange<T>;
-
-  inline explicit ParsedNodeIterator(Impl<T> *impl_, intptr_t offset_)
-      : impl(impl_),
-        offset(offset_) {}
-
-  ParsedNodeIterator(void) = default;
-
-  Impl<T> *impl{nullptr};
-  intptr_t offset{0};
-};
-
-template <typename T>
-class ParsedNodeRange {
- public:
-  ParsedNodeRange(void) = default;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Winvalid-offsetof"
-  inline ParsedNodeRange(
-      Impl<T> *impl_,
-      intptr_t offset_=static_cast<intptr_t>(__builtin_offsetof(Impl<T>, next)))
-      : impl(impl_),
-        offset(offset_) {}
-#pragma clang diagnostic pop
-
-  inline ParsedNodeIterator<T> begin(void) const {
-    return ParsedNodeIterator<T>(impl, offset);
-  }
-
-  inline ParsedNodeIterator<T> end(void) const {
-    return {};
-  }
-
- private:
-  template <typename U>
-  friend class ParsedNode;
-
-  template <typename U>
-  friend class Impl;
-
-  Impl<T> *impl{nullptr};
-  intptr_t offset{0};
+  Node<T> *impl{nullptr};
 };
 
 }  // namespace parse
@@ -178,6 +81,7 @@ class ParsedPredicate;
 class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
+  std::string_view Spelling(void) const noexcept;
 
   bool IsNumber(void) const noexcept;
   bool IsString(void) const noexcept;
@@ -213,7 +117,8 @@ class UseAccessor {
   UseKind GetUseKind(void *);
   const void *GetUser(void *);
 };
-}  // namespace
+
+}  // namespace parse
 
 // A variable use.
 template <typename T>
@@ -296,7 +201,7 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   using parse::ParsedNode<ParsedVariable>::ParsedNode;
 };
 
-enum class ComparisonOperator {
+enum class ComparisonOperator : int {
   kEqual,
   kNotEqual,
   kLessThan,
@@ -312,7 +217,7 @@ class ParsedComparison : public parse::ParsedNode<ParsedComparison> {
   ComparisonOperator Operator(void) const noexcept;
 
   // Return the list of all comparisons with `var`.
-  static parse::ParsedNodeRange<ParsedComparisonUse> Using(ParsedVariable var);
+  static NodeRange<ParsedComparisonUse> Using(ParsedVariable var);
 
  protected:
   friend class ParsedClause;
@@ -328,7 +233,7 @@ class ParsedAssignment
   ParsedLiteral RHS(void) const noexcept;
 
   // Return the list of all assignments to `var`.
-  static parse::ParsedNodeRange<ParsedAssignmentUse> Using(ParsedVariable var);
+  static NodeRange<ParsedAssignmentUse> Using(ParsedVariable var);
 
  protected:
   friend class ParsedClause;
@@ -353,10 +258,10 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
   ParsedVariable NthArgument(unsigned n) const noexcept;
 
   // All variables used as arguments to this predicate.
-  parse::ParsedNodeRange<ParsedVariable> Arguments(void) const;
+  NodeRange<ParsedVariable> Arguments(void) const;
 
   // Return the list of all uses of `var` as an argument to a predicate.
-  static parse::ParsedNodeRange<ParsedArgumentUse> Using(ParsedVariable var);
+  static NodeRange<ParsedArgumentUse> Using(ParsedVariable var);
 
  protected:
   friend class ParsedClause;
@@ -404,7 +309,7 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
 
   // Other declarations of this parameter. This goes and gets the list of
   // parameters that
-  parse::ParsedNodeRange<ParsedParameter> Redeclarations(void) const;
+  NodeRange<ParsedParameter> Redeclarations(void) const;
 
  protected:
   using parse::ParsedNode<ParsedParameter>::ParsedNode;
@@ -434,28 +339,28 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
   ParsedVariable NthParameter(unsigned n) const noexcept;
 
   // All variables used as parameters to this clause.
-  parse::ParsedNodeRange<ParsedVariable> Parameters(void) const;
+  NodeRange<ParsedVariable> Parameters(void) const;
 
   // All variables used in the body of the clause.
-  parse::ParsedNodeRange<ParsedVariable> Variables(void) const;
+  NodeRange<ParsedVariable> Variables(void) const;
 
   // All instances of `var` in its clause.
-  static parse::ParsedNodeRange<ParsedVariable> Uses(ParsedVariable var);
+  static NodeRange<ParsedVariable> Uses(ParsedVariable var);
 
   // All positive predicates in the clause.
-  parse::ParsedNodeRange<ParsedPredicate> PositivePredicates(void) const;
+  NodeRange<ParsedPredicate> PositivePredicates(void) const;
 
   // All negated predicates in the clause.
-  parse::ParsedNodeRange<ParsedPredicate> NegatedPredicates(void) const;
+  NodeRange<ParsedPredicate> NegatedPredicates(void) const;
 
   // All assignments of variables to constant literals.
-  parse::ParsedNodeRange<ParsedAssignment> Assignments(void) const;
+  NodeRange<ParsedAssignment> Assignments(void) const;
 
   // All comparisons between two variables.
-  parse::ParsedNodeRange<ParsedComparison> Comparisons(void) const;
+  NodeRange<ParsedComparison> Comparisons(void) const;
 
   // All aggregations.
-  parse::ParsedNodeRange<ParsedAggregate> Aggregates(void) const;
+  NodeRange<ParsedAggregate> Aggregates(void) const;
 
  protected:
   friend class ParsedDeclaration;
@@ -513,11 +418,11 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   // Return the `n`th parameter of this declaration.
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  parse::ParsedNodeRange<ParsedDeclaration> Redeclarations(void) const;
-  parse::ParsedNodeRange<ParsedParameter> Parameters(void) const;
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+  NodeRange<ParsedDeclaration> Redeclarations(void) const;
+  NodeRange<ParsedParameter> Parameters(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -564,10 +469,10 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  parse::ParsedNodeRange<ParsedQuery> Redeclarations(void) const;
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+  NodeRange<ParsedQuery> Redeclarations(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -599,10 +504,10 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  parse::ParsedNodeRange<ParsedExport> Redeclarations(void) const;
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+  NodeRange<ParsedExport> Redeclarations(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -634,10 +539,10 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  parse::ParsedNodeRange<ParsedLocal> Redeclarations(void) const;
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> NegativeUses(void) const;
+  NodeRange<ParsedLocal> Redeclarations(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -675,8 +580,8 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   bool IsTrivial(void) const noexcept;
   bool IsAggregate(void) const noexcept;
 
-  parse::ParsedNodeRange<ParsedFunctor> Redeclarations(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedFunctor> Redeclarations(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept ;
 
@@ -711,9 +616,9 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  parse::ParsedNodeRange<ParsedMessage> Redeclarations(void) const;
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
-  parse::ParsedNodeRange<ParsedPredicate> PositiveUses(void) const;
+  NodeRange<ParsedMessage> Redeclarations(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedPredicate> PositiveUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
 
@@ -740,18 +645,18 @@ class ParsedModule {
   // Return the ID of this module. Returns `~0u` if not valid.
   uint64_t Id(void) const noexcept;
 
-  parse::ParsedNodeRange<ParsedQuery> Queries(void) const;
-  parse::ParsedNodeRange<ParsedImport> Imports(void) const;
-  parse::ParsedNodeRange<ParsedLocal> Locals(void) const;
-  parse::ParsedNodeRange<ParsedExport> Exports(void) const;
-  parse::ParsedNodeRange<ParsedMessage> Messages(void) const;
-  parse::ParsedNodeRange<ParsedFunctor> Functors(void) const;
-  parse::ParsedNodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedQuery> Queries(void) const;
+  NodeRange<ParsedImport> Imports(void) const;
+  NodeRange<ParsedLocal> Locals(void) const;
+  NodeRange<ParsedExport> Exports(void) const;
+  NodeRange<ParsedMessage> Messages(void) const;
+  NodeRange<ParsedFunctor> Functors(void) const;
+  NodeRange<ParsedClause> Clauses(void) const;
 
   // The root module of this parse.
   ParsedModule RootModule(void) const;
 
-  inline ParsedModule(const std::shared_ptr<parse::Impl<ParsedModule>> &impl_)
+  inline ParsedModule(const std::shared_ptr<Node<ParsedModule>> &impl_)
       : impl(impl_) {}
 
   inline bool operator<(const ParsedModule &that) const noexcept {
@@ -771,7 +676,7 @@ class ParsedModule {
   friend class Parser;
   friend class ParserImpl;
 
-  std::shared_ptr<parse::Impl<ParsedModule>> impl;
+  std::shared_ptr<Node<ParsedModule>> impl;
 
  private:
   ParsedModule(void) = delete;

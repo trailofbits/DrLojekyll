@@ -3,54 +3,72 @@
 #include <drlojekyll/Sema/BottomUpAnalysis.h>
 
 #include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 
 #include <drlojekyll/Sema/ModuleIterator.h>
 
 namespace hyde {
 
+BottomUpVisitor::State::State(unsigned id_, bool is_start_state_,
+                              ParsedPredicate assumption_)
+    : id(id_),
+      is_start_state(is_start_state_),
+      assumption(assumption_) {}
+
 BottomUpVisitor::~BottomUpVisitor(void) {}
 
-bool BottomUpVisitor::VisitState(const State * state) {
-  return false;
+bool BottomUpVisitor::VisitState(const State * state, const State *pred) {
+  return true;
 }
 
 class BottomUpAnalysis::Impl {
  public:
+  ~Impl(void);
+
   // Perform a single step.
   bool Step(BottomUpVisitor &visitor);
 
   void Start(ParsedModule module);
 
   unsigned next_state_id{0};
-  std::vector<std::unique_ptr<BottomUpVisitor::State>> states;
-  std::vector<BottomUpVisitor::State *> work_list;
-  std::vector<BottomUpVisitor::State *> next_work_list;
+
+  using Transition = std::pair<BottomUpVisitor::State *,
+                               BottomUpVisitor::State *>;
+
+  std::vector<BottomUpVisitor::State *> states;
+  std::unordered_map<ParsedPredicate, BottomUpVisitor::State *> pred_to_state;
+  std::vector<Transition> work_list;
+  std::vector<Transition> next_work_list;
 };
+
+BottomUpAnalysis::Impl::~Impl(void) {
+  for (auto state : states) {
+    delete state;
+  }
+}
 
 // Initialize for the first step.
 void BottomUpAnalysis::Impl::Start(ParsedModule module_) {
   next_state_id = 0;
+  for (auto state : states) {
+    delete state;
+  }
   states.clear();
   next_work_list.clear();
   work_list.clear();
+  pred_to_state.clear();
 
-  std::unordered_set<ParsedPredicate> messages;
   for (auto module : ParsedModuleIterator(module_)) {
     for (auto message : module.Messages()) {
       for (auto use : message.PositiveUses()) {
-        messages.emplace(use);
+        auto &state = pred_to_state[use];
+        if (!state) {
+          state = new BottomUpVisitor::State(
+              next_state_id++, true, use);
+          states.emplace_back(state);
+          next_work_list.emplace_back(nullptr, state);
+        }
       }
     }
-  }
-
-  for (auto message : messages) {
-    auto state = new BottomUpVisitor::State(
-        nullptr, next_state_id++, message);
-    states.emplace_back(state);
-    next_work_list.push_back(state);
   }
 }
 
@@ -62,24 +80,51 @@ bool BottomUpAnalysis::Impl::Step(BottomUpVisitor &visitor) {
 
   work_list.swap(next_work_list);
   while (!work_list.empty()) {
-    const auto state = work_list.back();
+    const auto transition = work_list.back();
+    const auto predecessor = transition.first;
+    const auto state = transition.second;
     work_list.pop_back();
 
-    if (!visitor.VisitState(state)) {
+    if (!visitor.VisitState(state, predecessor)) {
       continue;
     }
 
-    auto clause = ParsedClause::Containing(state->assumption);
+    auto &successors = state->successors;
+    const auto clause = ParsedClause::Containing(state->assumption);
     for (auto next_use : ParsedDeclaration::Of(clause).PositiveUses()) {
-      const auto next_state = new BottomUpVisitor::State(
-          state, next_state_id++, next_use);
-      next_work_list.push_back(next_state);
-      states.emplace_back(next_state);
+      auto &next_state = pred_to_state[next_use];
+      auto is_new = false;
+
+      // This is a totally new state.
+      if (!next_state) {
+        is_new = true;
+        next_state = new BottomUpVisitor::State(
+            next_state_id++, false, next_use);
+        states.emplace_back(next_state);
+
+        successors.push_back(next_state);
+        next_state->predecessors.push_back(state);
+
+      // If we haven't seen this state transition before, then link the two
+      // states together.
+      } else if (std::find(successors.begin(), successors.end(), next_state) ==
+                 successors.end()) {
+        is_new = true;
+
+        successors.push_back(next_state);
+        next_state->predecessors.push_back(state);
+      }
+
+      if (is_new) {
+        next_work_list.emplace_back(state, next_state);
+      }
     }
   }
 
   return true;
 }
+
+BottomUpVisitor BottomUpAnalysis::gDefaultVisitor;
 
 BottomUpAnalysis::~BottomUpAnalysis(void) {}
 
@@ -94,6 +139,13 @@ void BottomUpAnalysis::Start(ParsedModule module) {
 // Perform a single step.
 bool BottomUpAnalysis::Step(BottomUpVisitor &visitor) {
   return impl->Step(visitor);
+}
+
+// Returns a vector of all states. This vector can be indexed by a
+// state's id.
+const std::vector<BottomUpVisitor::State *> &
+BottomUpAnalysis::States(void) const {
+  return impl->states;
 }
 
 }  // namespace hyde

@@ -14,7 +14,16 @@ class DisjointSet {
 
   DisjointSet *Find(void);
 
+  template <typename T>
+  inline T *FindAs(void) {
+    return reinterpret_cast<T *>(Find());
+  }
+
   static DisjointSet *Union(DisjointSet *lhs, DisjointSet *rhs);
+
+  // Union `child` into `parent`, ignoring the default rule of preferring
+  // to union by
+  static void UnionInto(DisjointSet *child, DisjointSet *parent);
 
   const unsigned id;
 };
