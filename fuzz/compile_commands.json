@@ -1,0 +1,7 @@
+[
+{
+	"directory": "fuzz/",
+	"command": "clang++ -std=gnu++17 -Iinclude -Lbuild harness.cpp -ldeepstate -lparser-dbg -llexer-dbg -lutil-dbg -ldisplay-dbg -o harness",
+	"file": "fuzz/harness.cpp"
+}
+]
