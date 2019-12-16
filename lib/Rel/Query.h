@@ -154,6 +154,9 @@ class Node<QueryJoin> final : public Node<QueryView> {
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
 
+  // The column on which this join pivots.
+  Node<QueryColumn> *pivot{nullptr};
+
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
 
@@ -193,19 +196,16 @@ class Node<QueryColumn> : public DisjointSet {
   }
 
   // View to which this column belongs.
-  Node<QueryView> * const view;
+  Node<QueryView> *view;
 
   // Tells us this column can be found at `view->columns[index]`.
-  const unsigned index;
+  unsigned index;
 
   // Next column in the whole query.
   Node<QueryColumn> *next{nullptr};
 
   // Next column within the same view.
   Node<QueryColumn> *next_in_view{nullptr};
-
-  // Next column that was joined with this column.
-  Node<QueryColumn> *next_joined{nullptr};
 };
 
 template <>
@@ -229,9 +229,13 @@ class QueryImpl {
 
   const std::shared_ptr<query::QueryContext> context;
 
+  Node<QuerySelect> *next_select{nullptr};
+  Node<QueryView> *next_view{nullptr};
+  Node<QueryJoin> *next_join{nullptr};
+  Node<QueryInsert> *next_insert{nullptr};
+
   std::vector<std::unique_ptr<Node<QuerySelect>>> selects;
   std::vector<std::unique_ptr<Node<QueryJoin>>> joins;
-  std::vector<Node<QueryView> *> views;
   std::vector<std::unique_ptr<Node<QueryConstraint>>> constraints;
   std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QueryInsert>>> inserts;

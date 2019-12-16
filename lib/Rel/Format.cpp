@@ -65,10 +65,16 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto join : query.Joins()) {
-    auto out_col = join.ResultColumn();
+    auto out_col = join.PivotColumn();
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD port=\"c" << out_col.UniqueId() << "\">JOIN</TD>";
+       << "<TD port=\"c" << out_col.UniqueId() << "\" rowspan=\"2\">JOIN</TD>";
 
+    for (auto i = 0u; i < join.Arity(); ++i) {
+      auto col = join.NthOutputColumn(i);
+      os << "<TD port=\"c" << col.UniqueId() << "\"> &nbsp; </TD>";
+    }
+
+    os << "</TR><TR>";
     for (auto i = 0u; i < join.Arity(); ++i) {
       os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
     }
@@ -77,7 +83,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     // Link the joined columns to their sources.
     for (auto i = 0u; i < join.Arity(); ++i) {
-      const auto col = join.NthColumn(i);
+      auto col = join.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << join.UniqueId() << ":p" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";

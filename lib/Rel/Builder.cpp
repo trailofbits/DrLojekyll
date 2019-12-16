@@ -3,6 +3,7 @@
 #include <drlojekyll/Rel/Builder.h>
 
 #include <tuple>
+#include <unordered_set>
 
 #include <drlojekyll/Sema/SIPSScore.h>
 
@@ -41,10 +42,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     if (prev_next_table != context->next_table && !pred.IsPositive()) {
       const auto positive_table = TableFor(decl, true);
       const auto select = new Node<QuerySelect>(query.get(), positive_table);
-      if (!query->selects.empty()) {
-        query->selects.back()->next = select;
-      }
-
       query->selects.emplace_back(select);
       for (unsigned i = 0, max_i = decl.Arity(); i < max_i; ++i) {
         Column column(decl.NthParameter(i), pred.NthArgument(i), i, 0);
@@ -55,9 +52,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto insert = new Node<QueryInsert>(
           reinterpret_cast<Node<QueryRelation> *>(table), decl);
       insert->columns = select->columns;
-      if (!query->inserts.empty()) {
-        query->inserts.back()->next = insert;
-      }
       query->inserts.emplace_back(insert);
     }
 
@@ -95,27 +89,15 @@ class QueryBuilderImpl : public SIPSVisitor {
   Node<QuerySelect> *SelectFor(ParsedPredicate pred) {
     auto table = TableFor(pred);
     auto select = new Node<QuerySelect>(query.get(), table);
-    if (!query->selects.empty()) {
-      query->selects.back()->next = select;
-    }
     query->selects.emplace_back(select);
-
     return select;
   }
 
   // Add a column to a view.
   Node<QueryColumn> *AddColumn(Node<QueryView> *view, const Column &column) {
     const auto col = new Node<QueryColumn>(view, column.id, column.n);
-    if (!view->columns.empty()) {
-      view->columns.back()->next_in_view = col;
-    }
     view->columns.push_back(col);
-
-    if (!query->columns.empty()) {
-      query->columns.back()->next = col;
-    }
     query->columns.emplace_back(col);
-
     return col;
   }
 
@@ -137,20 +119,10 @@ class QueryBuilderImpl : public SIPSVisitor {
   void DeclareConstant(ParsedLiteral val, unsigned id) override {
     const auto table = TableFor(val);
     const auto select = new Node<QuerySelect>(query.get(), table);
-    if (!query->selects.empty()) {
-      query->selects.back()->next =  select;
-    }
     query->selects.emplace_back(select);
 
     const auto col = new Node<QueryColumn>(select, id, 0);
-    if (!select->columns.empty()) {
-      select->columns.back()->next_in_view = col;
-    }
     select->columns.push_back(col);
-
-    if (!query->columns.empty()) {
-      query->columns.back()->next = col;
-    }
     query->columns.emplace_back(col);
 
     auto &prev_col = id_to_col[id];
@@ -177,11 +149,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       if (lhs_col->view == rhs_col->view) {
         const auto constraint = new Node<QueryConstraint>(
             ComparisonOperator::kEqual, lhs_col, rhs_col);
-
-        if (!query->constraints.empty()) {
-          query->constraints.back()->next = constraint;
-        }
-
         query->constraints.emplace_back(constraint);
         return;
       }
@@ -197,13 +164,9 @@ class QueryBuilderImpl : public SIPSVisitor {
         assert(second_join->columns[0] == rhs_col);
 
         const auto joined_col = DisjointSet::Union(lhs_col, rhs_col);
-
         if (second_join->columns[0] == joined_col) {
           std::swap(first_join, second_join);
         }
-
-        first_join->joined_columns.back()->next_joined =
-            second_join->joined_columns.front();
 
         for (auto col : second_join->joined_columns) {
           first_join->joined_columns.push_back(col);
@@ -246,9 +209,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       const auto constraint = new Node<QueryConstraint>(
           op, lhs_col->Find(), rhs_col->Find());
-      if (!query->constraints.empty()) {
-        query->constraints.back()->next = constraint;
-      }
       query->constraints.emplace_back(constraint);
 
     } else {
@@ -272,24 +232,14 @@ class QueryBuilderImpl : public SIPSVisitor {
                              Node<QueryColumn> *where_col,
                              unsigned id) {
     const auto join = new Node<QueryJoin>(query.get());
-
-    if (!query->joins.empty()) {
-      query->joins.back()->next = join;
-    }
     query->joins.emplace_back(join);
 
     const auto joined_col = new Node<QueryColumn>(join, id, 0);
-    if (!query->columns.empty()) {
-      query->columns.back()->next = joined_col;
-    }
     query->columns.emplace_back(joined_col);
+    join->pivot = joined_col;
 
-    join->columns.push_back(joined_col);
     join->joined_columns.push_back(prev_col);
     join->joined_columns.push_back(where_col);
-
-    assert(!prev_col->next_joined);
-    prev_col->next_joined = where_col;
 
     DisjointSet::UnionInto(prev_col, joined_col);
     DisjointSet::UnionInto(where_col, joined_col);
@@ -299,11 +249,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void JoinInto(Node<QueryColumn> *child_col, Node<QueryColumn> *parent_col) {
     const auto join = reinterpret_cast<Node<QueryJoin> *>(parent_col->view);
-    assert(!join->joined_columns.empty());
-    assert(!join->joined_columns.back()->next_joined);
-    join->joined_columns.back()->next_joined = child_col;
     join->joined_columns.push_back(child_col);
-
     DisjointSet::UnionInto(child_col, parent_col);
   }
 
@@ -409,15 +355,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     return true;
   }
 
-  void Insert(
-      ParsedDeclaration decl,
-      const Column *begin,
-      const Column *end) override {
-
-    const auto processed_eqs = ProcessPendingEqualities();
-    assert(processed_eqs);
-    (void) processed_eqs;
-
+  void ProcessPendingCompares(void) {
     while (!pending_compares.empty()) {
       const auto prev_len = pending_compares.size();
       next_pending_compares.swap(pending_compares);
@@ -427,6 +365,114 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
       assert(prev_len > pending_compares.size());
     }
+  }
+
+  void MergeAndProjectJoins(void) {
+    std::sort(query->joins.begin(), query->joins.end(),
+              [] (const std::unique_ptr<Node<QueryJoin>> &a,
+                        const std::unique_ptr<Node<QueryJoin>> &b) {
+                return a->joined_columns.size() < b->joined_columns.size();
+              });
+
+    std::unordered_set<Node<QueryView> *> joined_views;
+
+    for (const auto &join : query->joins) {
+      if (join->joined_columns.empty()) {
+        continue;  // Taken over or merged.
+      }
+
+      joined_views.clear();
+
+      // Go through the original joined pivots, and merge them in.
+      for (auto joined_col : join->joined_columns) {
+        for (auto copied_col : joined_col->view->columns) {
+          assert(copied_col->view != join.get());
+          joined_views.insert(copied_col->view);
+        }
+      }
+
+      // Clear it out, we're going to replace with all the columns.
+      join->joined_columns.clear();
+
+      // Go through and have the join "steal" the original columns, and
+      // replace them with equivalents.
+      for (auto joined_view : joined_views) {
+        for (auto &steal_col : joined_view->columns) {
+          auto index = static_cast<unsigned>(join->columns.size());
+          auto replace_col = new Node<QueryColumn>(
+              steal_col->view, steal_col->id, steal_col->index);
+
+          query->columns.emplace_back(replace_col);
+          join->columns.push_back(steal_col);
+          join->joined_columns.push_back(replace_col);
+
+          steal_col->index = index;
+          steal_col->view = join.get();
+
+          steal_col = replace_col;
+        }
+      }
+    }
+  }
+
+  void LinkEverything(void) {
+    auto &next_select = query->next_select;
+    auto &next_join = query->next_join;
+    auto &next_view = query->next_view;
+    auto &next_insert = query->next_insert;
+
+    Node<QueryColumn> *dummy = nullptr;
+    Node<QueryColumn> **prev_col_ptr = &dummy;
+
+    for (const auto &view : query->selects) {
+      view->next = next_select;
+      view->next_view = next_view;
+      next_view = next_select = view.get();
+
+      prev_col_ptr = &dummy;
+      for (auto col : view->columns) {
+        *prev_col_ptr = col;
+        prev_col_ptr = &(col->next_in_view);
+      }
+    }
+
+    for (const auto &view : query->joins) {
+      prev_col_ptr = &dummy;
+      for (auto col : view->columns) {
+        *prev_col_ptr = col;
+        prev_col_ptr = &(col->next_in_view);
+      }
+
+      if (!view->joined_columns.empty()) {
+        view->next = next_join;
+        view->next_view = next_view;
+        next_view = next_join = view.get();
+      }
+    }
+
+    for (const auto &insert : query->inserts) {
+      insert->next = next_insert;
+      next_insert = insert.get();
+    }
+
+    prev_col_ptr = &dummy;
+    for (const auto &col : query->columns) {
+      *prev_col_ptr = col.get();
+      prev_col_ptr = &(col->next);
+    }
+  }
+
+  void Insert(
+      ParsedDeclaration decl,
+      const Column *begin,
+      const Column *end) override {
+
+    const auto processed_eqs = ProcessPendingEqualities();
+    assert(processed_eqs);
+    (void) processed_eqs;
+
+    ProcessPendingCompares();
+    MergeAndProjectJoins();
 
     auto table = TableFor(decl);
     assert(table->IsRelation());
@@ -439,10 +485,11 @@ class QueryBuilderImpl : public SIPSVisitor {
       insert->columns.push_back(output_col->Find());
     }
 
-    if (!query->inserts.empty()) {
-      query->inserts.back()->next = insert;
-    }
     query->inserts.emplace_back(insert);
+  }
+
+  void Commit(ParsedPredicate) override {
+    LinkEverything();
   }
 
   // Context shared by all queries created by this query builder. E.g. all
@@ -469,6 +516,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   std::vector<std::tuple<ComparisonOperator, unsigned, unsigned>>
       pending_compares;
+
   std::vector<std::tuple<ComparisonOperator, unsigned, unsigned>>
       next_pending_compares;
 };
@@ -490,7 +538,6 @@ Query QueryBuilder::BuildInsert(SIPSScorer &scorer, SIPSGenerator &generator) {
     impl->query->columns.clear();
     impl->query->joins.clear();
     impl->query->selects.clear();
-    impl->query->views.clear();
     impl->query->constraints.clear();
     impl->query->columns.clear();
 

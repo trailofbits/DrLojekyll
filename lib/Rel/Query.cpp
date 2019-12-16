@@ -103,9 +103,8 @@ NodeRange<QueryColumn> QuerySelect::Columns(void) const {
   return QueryView(impl).Columns();
 }
 
-QueryColumn QueryJoin::ResultColumn(void) const {
-  assert(impl->columns.size() == 1);
-  return QueryColumn(impl->columns[0]->Find());
+QueryColumn QueryJoin::PivotColumn(void) const {
+  return QueryColumn(impl->pivot->Find());
 }
 
 bool QueryColumn::IsSelect(void) const noexcept {
@@ -162,25 +161,15 @@ unsigned QueryJoin::Arity(void) const noexcept {
 }
 
 // Returns the `nth` joined column.
-QueryColumn QueryJoin::NthColumn(unsigned n) const noexcept {
+QueryColumn QueryJoin::NthInputColumn(unsigned n) const noexcept {
   assert(n < impl->joined_columns.size());
-  auto col = impl->joined_columns[n];
-  if (col->view->IsJoin()) {
-    col = col->Find();
-  }
-  return QueryColumn(col);
+  return QueryColumn(impl->joined_columns[n]->Find());
 }
 
-// Returns the joined columns.
-NodeRange<QueryColumn> QueryJoin::Columns(void) const {
-  if (impl->joined_columns.empty()) {
-    return NodeRange<QueryColumn>();
-  } else {
-    return NodeRange<QueryColumn>(
-        impl->joined_columns.front(),
-        static_cast<intptr_t>(
-            __builtin_offsetof(Node<QueryColumn>, next_joined)));
-  }
+// Returns the `nth` output column.
+QueryColumn QueryJoin::NthOutputColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.size());
+  return QueryColumn(impl->columns[n]->Find());
 }
 
 ComparisonOperator QueryConstraint::Operator(void) const {
@@ -209,18 +198,18 @@ QueryColumn QueryInsert::NthColumn(unsigned n) const noexcept {
 }
 
 NodeRange<QueryJoin> Query::Joins(void) const {
-  if (impl->joins.empty()) {
+  if (!impl->next_join) {
     return NodeRange<QueryJoin>();
   } else {
-    return NodeRange<QueryJoin>(impl->joins.front().get());
+    return NodeRange<QueryJoin>(impl->next_join);
   }
 }
 
 NodeRange<QuerySelect> Query::Selects(void) const {
-  if (impl->selects.empty()) {
+  if (!impl->next_select) {
     return NodeRange<QuerySelect>();
   } else {
-    return NodeRange<QuerySelect>(impl->selects.front().get());
+    return NodeRange<QuerySelect>(impl->next_select);
   }
 }
 
@@ -252,11 +241,11 @@ NodeRange<QueryRelation> Query::Relations(void) const {
 }
 
 NodeRange<QueryView> Query::Views(void) const {
-  if (impl->views.empty()) {
+  if (!impl->next_view) {
     return NodeRange<QueryView>();
   } else {
     return NodeRange<QueryView>(
-        impl->views.front(),
+        impl->next_view,
         static_cast<intptr_t>(__builtin_offsetof(Node<QueryView>, next_view)));
   }
 }

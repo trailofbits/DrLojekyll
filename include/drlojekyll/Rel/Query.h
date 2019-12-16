@@ -120,7 +120,6 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView Containing(QueryColumn col);
 
   NodeRange<QueryColumn> Columns(void) const;
-
   bool IsSelect(void) const noexcept;
   bool IsJoin(void) const noexcept;
 
@@ -132,6 +131,7 @@ class QueryView : public query::QueryNode<QueryView> {
 class QuerySelect : public query::QueryNode<QuerySelect> {
  public:
 
+  // The selected columns.
   NodeRange<QueryColumn> Columns(void) const;
 
   static QuerySelect &From(QueryView &view);
@@ -148,16 +148,16 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   static QueryJoin &From(QueryView &view);
 
   // The joined column.
-  QueryColumn ResultColumn(void) const;
+  QueryColumn PivotColumn(void) const;
 
   // Returns the number of joined columns.
   unsigned Arity(void) const noexcept;
 
   // Returns the `nth` joined column.
-  QueryColumn NthColumn(unsigned n) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
 
-  // Returns the joined columns. These columns form an equivalence class.
-  NodeRange<QueryColumn> Columns(void) const;
+  // Returns the `nth` output column.
+  QueryColumn NthOutputColumn(unsigned n) const noexcept;
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
