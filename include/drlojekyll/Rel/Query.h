@@ -147,8 +147,9 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
  public:
   static QueryJoin &From(QueryView &view);
 
-  // The joined column.
-  QueryColumn PivotColumn(void) const;
+  unsigned NumPivotColumns(void) const noexcept;
+
+  QueryColumn NthPivotColumn(unsigned n) const noexcept;
 
   // Returns the number of joined columns.
   unsigned Arity(void) const noexcept;
@@ -199,7 +200,6 @@ class Query {
   NodeRange<QueryConstant> Constants(void) const;
   NodeRange<QueryView> Views(void) const;
   NodeRange<QueryInsert> Inserts(void) const;
-  NodeRange<QueryColumn> Columns(void) const;
 
   Query(const Query &) = default;
   Query(Query &&) noexcept = default;

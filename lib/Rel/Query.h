@@ -154,11 +154,11 @@ class Node<QueryJoin> final : public Node<QueryView> {
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
 
-  // The column on which this join pivots.
-  Node<QueryColumn> *pivot{nullptr};
-
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
+
+  // The pivot columns of the join.
+  std::vector<Node<QueryColumn> *> pivot_columns;
 
   // The columns that are all joined together.
   std::vector<Node<QueryColumn> *> joined_columns;

@@ -65,9 +65,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto join : query.Joins()) {
-    auto out_col = join.PivotColumn();
-    os << "v" << join.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD port=\"c" << out_col.UniqueId() << "\" rowspan=\"2\">JOIN</TD>";
+    os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
+    for (auto i = 0u; i < join.NumPivotColumns(); ++i) {
+      auto out_col = join.NthPivotColumn(i);
+      os << "<TD port=\"c" << out_col.UniqueId() << "\" rowspan=\"2\"> &nbsp; </TD>";
+    }
+    os << "<TD rowspan=\"2\">JOIN</TD>";
 
     for (auto i = 0u; i < join.Arity(); ++i) {
       auto col = join.NthOutputColumn(i);

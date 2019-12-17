@@ -103,10 +103,6 @@ NodeRange<QueryColumn> QuerySelect::Columns(void) const {
   return QueryView(impl).Columns();
 }
 
-QueryColumn QueryJoin::PivotColumn(void) const {
-  return QueryColumn(impl->pivot->Find());
-}
-
 bool QueryColumn::IsSelect(void) const noexcept {
   return impl->view->IsSelect();
 }
@@ -158,6 +154,16 @@ QueryJoin &QueryJoin::From(QueryView &view) {
 // Returns the number of joined columns.
 unsigned QueryJoin::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->joined_columns.size());
+}
+
+unsigned QueryJoin::NumPivotColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->pivot_columns.size());
+}
+
+// Returns the `nth` pivot column.
+QueryColumn QueryJoin::NthPivotColumn(unsigned n) const noexcept {
+  assert(n < impl->pivot_columns.size());
+  return QueryColumn(impl->pivot_columns[n]->Find());
 }
 
 // Returns the `nth` joined column.
@@ -255,14 +261,6 @@ NodeRange<QueryInsert> Query::Inserts(void) const {
     return NodeRange<QueryInsert>();
   } else {
     return NodeRange<QueryInsert>(impl->inserts.front().get());
-  }
-}
-
-NodeRange<QueryColumn> Query::Columns(void) const {
-  if (impl->columns.empty()) {
-    return NodeRange<QueryColumn>();
-  } else {
-    return NodeRange<QueryColumn>(impl->columns.front().get());
   }
 }
 

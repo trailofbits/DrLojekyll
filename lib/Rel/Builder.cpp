@@ -236,8 +236,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     const auto joined_col = new Node<QueryColumn>(join, id, 0);
     query->columns.emplace_back(joined_col);
-    join->pivot = joined_col;
-
+    join->pivot_columns.push_back(joined_col);
     join->joined_columns.push_back(prev_col);
     join->joined_columns.push_back(where_col);
 
@@ -369,8 +368,8 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void MergeAndProjectJoins(void) {
     std::sort(query->joins.begin(), query->joins.end(),
-              [] (const std::unique_ptr<Node<QueryJoin>> &a,
-                        const std::unique_ptr<Node<QueryJoin>> &b) {
+              [](const std::unique_ptr<Node<QueryJoin>> &a,
+                 const std::unique_ptr<Node<QueryJoin>> &b) {
                 return a->joined_columns.size() < b->joined_columns.size();
               });
 
@@ -383,7 +382,11 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       joined_views.clear();
 
-      // Go through the original joined pivots, and merge them in.
+      // Go through the original pivot sources, which are originally stored in
+      // the `joined_columns` table, and merge them in. All original joins are
+      // based off of a single pivot model. We want to collect all unique views
+      // that this join is combining together, so we can fill up
+      // `joined_columns` with records representing the product of those tables.
       for (auto joined_col : join->joined_columns) {
         for (auto copied_col : joined_col->view->columns) {
           assert(copied_col->view != join.get());
@@ -391,7 +394,8 @@ class QueryBuilderImpl : public SIPSVisitor {
         }
       }
 
-      // Clear it out, we're going to replace with all the columns.
+      // Clear out the old pivots, we're going to replace with all the columns
+      // that are being joined together.
       join->joined_columns.clear();
 
       // Go through and have the join "steal" the original columns, and
@@ -412,6 +416,62 @@ class QueryBuilderImpl : public SIPSVisitor {
           steal_col = replace_col;
         }
       }
+    }
+
+    // Now we have a bunch of canonical joins, where the "joins" own their
+    // product columns, by virtual of stealing them from their original views.
+    // We might have a tower of joins, though, in that one join takes all
+    // of its columns from the next join down, and so we'd want to compress
+    // that down into a join on two pivots, then compress further if need be.
+    for (const auto &join : query->joins) {
+      if (join->joined_columns.empty() || join->pivot_columns.empty()) {
+        continue;  // Taken over or merged.
+      }
+
+      joined_views.clear();
+      for (auto joined_col : join->joined_columns) {
+        joined_views.insert(joined_col->view);
+      }
+
+      if (joined_views.size() != 1) {
+        continue;
+      }
+
+      const auto joined_view = *joined_views.begin();
+      if (!joined_view->IsJoin()) {
+        continue;
+      }
+
+      assert(joined_view != join.get());
+      assert(join->joined_columns.size() == join->columns.size());
+
+      const auto joined_join = reinterpret_cast<Node<QueryJoin> *>(joined_view);
+      assert(join->joined_columns.size() == joined_join->columns.size());
+      assert(joined_join->joined_columns.size() == joined_join->columns.size());
+
+      for (auto joined_pivot : joined_join->pivot_columns) {
+        joined_pivot->view = join.get();
+        joined_pivot->index = static_cast<unsigned>(join->pivot_columns.size());
+        join->pivot_columns.push_back(joined_pivot);
+      }
+
+      auto i = 0u;
+      for (auto joined_col : joined_join->joined_columns) {
+        auto &incoming = join->joined_columns[i];
+        const auto old_outgoing = joined_join->columns[i];
+
+        assert(incoming == old_outgoing);
+        assert(incoming->Find() == incoming);
+
+//        DisjointSet::UnionInto(old_outgoing, joined_col);
+
+        incoming = joined_col;
+        ++i;
+      }
+
+      joined_join->pivot_columns.clear();
+      joined_join->joined_columns.clear();
+      joined_join->columns.clear();
     }
   }
 
@@ -443,7 +503,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         prev_col_ptr = &(col->next_in_view);
       }
 
-      if (!view->joined_columns.empty()) {
+      if (!view->joined_columns.empty() && !view->pivot_columns.empty()) {
         view->next = next_join;
         view->next_view = next_view;
         next_view = next_join = view.get();
