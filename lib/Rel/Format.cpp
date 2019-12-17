@@ -93,6 +93,35 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   }
 
+  for (auto map : query.Maps()) {
+    os << "v" << map.UniqueId() << " [ label=<" << kBeginTable;
+    os << "<TD rowspan=\"2\">MAP " << map.Functor().Name() << "</TD>";
+    for (auto i = 0u; i < map.Arity(); ++i) {
+      auto out_col = map.NthOutputColumn(i);
+      os << "<TD port=\"c" << out_col.UniqueId() << "\"> &nbsp; </TD>";
+    }
+
+    os << "</TR><TR>";
+    for (auto i = 0u; i < map.NumInputColumns(); ++i) {
+      os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
+    }
+
+    // Empty space.
+    if (auto diff = (map.Arity() - map.NumInputColumns())) {
+      os << "<TD colspan=\"" << diff << "\"></TD>";
+    }
+
+    os << kEndTable << ">];\n";
+
+    // Link the input columns to their sources.
+    for (auto i = 0u; i < map.NumInputColumns(); ++i) {
+      auto col = map.NthInputColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << map.UniqueId() << ":p" << i << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+  }
+
   for (auto insert : query.Inserts()) {
     os << "i" << insert.UniqueId() << " [ label=<" << kBeginTable
        << "<TD>INSERT</TD>";

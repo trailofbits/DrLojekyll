@@ -113,6 +113,7 @@ class Node<QueryView> {
 
   virtual bool IsSelect(void) const noexcept = 0;
   virtual bool IsJoin(void) const noexcept = 0;
+  virtual bool IsMap(void) const noexcept = 0;
 
   inline Node(QueryImpl *query_)
       : query(query_) {}
@@ -137,6 +138,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
   virtual ~Node(void);
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
+  bool IsMap(void) const noexcept override;
 
   // Next select in this query.
   Node<QuerySelect> *next{nullptr};
@@ -153,6 +155,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   virtual ~Node(void);
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
+  bool IsMap(void) const noexcept override;
 
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
@@ -162,6 +165,30 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // The columns that are all joined together.
   std::vector<Node<QueryColumn> *> joined_columns;
+};
+
+template <>
+class Node<QueryMap> final : public Node<QueryView> {
+ public:
+  using Node<QueryView>::Node;
+
+  virtual ~Node(void);
+  bool IsSelect(void) const noexcept override;
+  bool IsJoin(void) const noexcept override;
+  bool IsMap(void) const noexcept override;
+
+  inline Node(QueryImpl *query_, ParsedFunctor functor_)
+      : Node<QueryView>(query_),
+        functor(functor_) {}
+
+  const ParsedFunctor functor;
+
+  // Next join in this query.
+  Node<QueryMap> *next{nullptr};
+
+  // The columns that are are the inputs to the functor. These correspond
+  // with the bound arguments to the functor.
+  std::vector<Node<QueryColumn> *> input_columns;
 };
 
 template <>
@@ -233,9 +260,11 @@ class QueryImpl {
   Node<QueryView> *next_view{nullptr};
   Node<QueryJoin> *next_join{nullptr};
   Node<QueryInsert> *next_insert{nullptr};
+  Node<QueryMap> *next_map{nullptr};
 
   std::vector<std::unique_ptr<Node<QuerySelect>>> selects;
   std::vector<std::unique_ptr<Node<QueryJoin>>> joins;
+  std::vector<std::unique_ptr<Node<QueryMap>>> maps;
   std::vector<std::unique_ptr<Node<QueryConstraint>>> constraints;
   std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QueryInsert>>> inserts;

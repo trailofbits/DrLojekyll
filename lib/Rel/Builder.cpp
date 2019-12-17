@@ -252,9 +252,66 @@ class QueryBuilderImpl : public SIPSVisitor {
     DisjointSet::UnionInto(child_col, parent_col);
   }
 
+  void AddMap(ParsedFunctor functor, const Column *select_begin,
+              const Column *select_end, const Column *where_begin,
+              const Column *where_end) {
+    if (where_begin >= where_end) {
+      // TODO(pag): Create a "value pump", e.g. primary keys.
+      assert(false);
+
+    } else {
+      auto map = new Node<QueryMap>(query.get(), functor);
+      query->maps.emplace_back(map);
+
+      auto i = 0u;
+      for (auto col = where_begin; col < where_end; ++col) {
+        auto &prev_val = id_to_col[col->id];
+        assert(prev_val != nullptr);
+        auto mapped_col = new Node<QueryColumn>(map, col->id, i);
+        query->columns.emplace_back(mapped_col);
+        map->columns.push_back(mapped_col);
+        map->input_columns.push_back(prev_val);
+        ++i;
+      }
+
+      // Separate out the overwriting of `prev_val` in the case of something
+      // like `foo(A, A)`, where we don't want a self-reference from one column
+      // into another.
+      i = 0u;
+      for (auto col = where_begin; col < where_end; ++col) {
+        auto &prev_val = id_to_col[col->id];
+        if (prev_val->view != map) {
+          prev_val = map->columns[i];
+        }
+        ++i;
+      }
+
+      // Add the additional output columns that correspond with the free
+      // parameters to the map.
+      for (auto col = select_begin; col < select_end; ++col) {
+        auto mapped_col = new Node<QueryColumn>(map, col->id, i);
+        query->columns.emplace_back(mapped_col);
+        map->columns.push_back(mapped_col);
+        auto &prev_val = id_to_col[col->id];
+        assert(!prev_val);  // TODO(pag): Is this right?
+        prev_val = mapped_col;
+      }
+    }
+  }
+
   virtual void EnterFromSelect(
-      ParsedPredicate pred, ParsedDeclaration from,
+      ParsedPredicate pred, ParsedDeclaration decl,
       const Column *select_begin, const Column *select_end) override {
+
+    if (decl.IsFunctor()) {
+      auto functor = ParsedFunctor::From(decl);
+      if (functor.IsAggregate()) {
+        assert(false);  // TODO.
+      } else {
+        AddMap(functor, select_begin, select_end, nullptr, nullptr);
+        return;
+      }
+    }
 
     auto select = SelectFor(pred);
     for (auto col = select_begin; col < select_end; ++col) {
@@ -266,9 +323,19 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void EnterFromWhereSelect(
-      ParsedPredicate pred, ParsedDeclaration,
+      ParsedPredicate pred, ParsedDeclaration decl,
       const Column *where_begin, const Column *where_end,
       const Column *select_begin, const Column *select_end) override {
+
+    if (decl.IsFunctor()) {
+      auto functor = ParsedFunctor::From(decl);
+      if (functor.IsAggregate()) {
+        assert(false);  // TODO.
+      } else {
+        AddMap(functor, select_begin, select_end, where_begin, where_end);
+        return;
+      }
+    }
 
     auto select = SelectFor(pred);
     columns.clear();
@@ -463,7 +530,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         assert(incoming == old_outgoing);
         assert(incoming->Find() == incoming);
 
-//        DisjointSet::UnionInto(old_outgoing, joined_col);
+        // TODO(pag): Union things together?
 
         incoming = joined_col;
         ++i;
@@ -480,9 +547,22 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto &next_join = query->next_join;
     auto &next_view = query->next_view;
     auto &next_insert = query->next_insert;
+    auto &next_map = query->next_map;
 
     Node<QueryColumn> *dummy = nullptr;
     Node<QueryColumn> **prev_col_ptr = &dummy;
+
+    for (const auto &view : query->maps) {
+      view->next = next_map;
+      view->next_view = next_view;
+      next_view = next_map = view.get();
+
+      prev_col_ptr = &dummy;
+      for (auto col : view->columns) {
+        *prev_col_ptr = col;
+        prev_col_ptr = &(col->next_in_view);
+      }
+    }
 
     for (const auto &view : query->selects) {
       view->next = next_select;

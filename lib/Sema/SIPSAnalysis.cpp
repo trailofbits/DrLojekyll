@@ -743,7 +743,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   // Go and bind the free parameters. This in turn will affect the selection
   // of the aggregating functor.
   //
-  // NOTE(pag): If we have `agg(A,A) over pred(A)` then we need to defer the
+  // NOTE(pag): If we have `agg(A, A) over pred(A)` then we need to defer the
   //            assertions (`visitor.AssertEq`) until we're inside of the actual
   //            collection loop. Otherwise stuff doesn't make sense. This call
   //            will clear and fill `this->deferred_asserts`.

@@ -39,6 +39,7 @@ class QueryNode {
 
 enum class ComparisonOperator : int;
 class ParsedDeclaration;
+class ParsedFunctor;
 class ParsedLiteral;
 class ParsedPredicate;
 class QueryBuilder;
@@ -103,11 +104,13 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   bool IsSelect(void) const noexcept;
   bool IsJoin(void) const noexcept;
+  bool IsMap(void) const noexcept;
 
  private:
   friend class QueryConstraint;
   friend class QueryInsert;
   friend class QueryJoin;
+  friend class QueryMap;
   friend class QueryView;
 
   using query::QueryNode<QueryColumn>::QueryNode;
@@ -120,8 +123,10 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView Containing(QueryColumn col);
 
   NodeRange<QueryColumn> Columns(void) const;
+
   bool IsSelect(void) const noexcept;
   bool IsJoin(void) const noexcept;
+  bool IsMap(void) const noexcept;
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -147,11 +152,13 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
  public:
   static QueryJoin &From(QueryView &view);
 
+  // Returns the number of pivot columns. Some of the output columns are
+  // equal to the pivot columns.
   unsigned NumPivotColumns(void) const noexcept;
 
   QueryColumn NthPivotColumn(unsigned n) const noexcept;
 
-  // Returns the number of joined columns.
+  // Returns the number of input/output columns
   unsigned Arity(void) const noexcept;
 
   // Returns the `nth` joined column.
@@ -162,6 +169,26 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
+};
+
+// Map input to some output. This corresponds to a non-aggregating functor.
+class QueryMap : public query::QueryNode<QueryMap> {
+ public:
+  static QueryMap &From(QueryView &view);
+
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+
+  // Returns the number of output columns.
+  unsigned Arity(void) const noexcept;
+
+  // Returns the `nth` output column.
+  QueryColumn NthOutputColumn(unsigned n) const noexcept;
+
+  const ParsedFunctor &Functor(void) const noexcept;
+
+ private:
+  using query::QueryNode<QueryMap>::QueryNode;
 };
 
 // A join of two or more tables on one or more columns.
@@ -200,6 +227,7 @@ class Query {
   NodeRange<QueryConstant> Constants(void) const;
   NodeRange<QueryView> Views(void) const;
   NodeRange<QueryInsert> Inserts(void) const;
+  NodeRange<QueryMap> Maps(void) const;
 
   Query(const Query &) = default;
   Query(Query &&) noexcept = default;

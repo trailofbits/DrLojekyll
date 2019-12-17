@@ -30,6 +30,8 @@ Node<QuerySelect>::~Node(void) {}
 
 Node<QueryJoin>::~Node(void) {}
 
+Node<QueryMap>::~Node(void) {}
+
 bool Node<QueryConstant>::IsConstant(void) const noexcept {
   return true;
 }
@@ -54,11 +56,31 @@ bool Node<QuerySelect>::IsJoin(void) const noexcept {
   return false;
 }
 
+bool Node<QuerySelect>::IsMap(void) const noexcept {
+  return false;
+}
+
 bool Node<QueryJoin>::IsSelect(void) const noexcept {
   return false;
 }
 
 bool Node<QueryJoin>::IsJoin(void) const noexcept {
+  return true;
+}
+
+bool Node<QueryJoin>::IsMap(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMap>::IsSelect(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMap>::IsJoin(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMap>::IsMap(void) const noexcept {
   return true;
 }
 
@@ -99,6 +121,10 @@ bool QueryView::IsJoin(void) const noexcept {
   return impl->IsJoin();
 }
 
+bool QueryView::IsMap(void) const noexcept {
+  return impl->IsMap();
+}
+
 NodeRange<QueryColumn> QuerySelect::Columns(void) const {
   return QueryView(impl).Columns();
 }
@@ -109,6 +135,10 @@ bool QueryColumn::IsSelect(void) const noexcept {
 
 bool QueryColumn::IsJoin(void) const noexcept {
   return impl->view->IsJoin();
+}
+
+bool QueryColumn::IsMap(void) const noexcept {
+  return impl->view->IsMap();
 }
 
 const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
@@ -176,6 +206,35 @@ QueryColumn QueryJoin::NthInputColumn(unsigned n) const noexcept {
 QueryColumn QueryJoin::NthOutputColumn(unsigned n) const noexcept {
   assert(n < impl->columns.size());
   return QueryColumn(impl->columns[n]->Find());
+}
+
+QueryMap &QueryMap::From(QueryView &view) {
+  assert(view.IsMap());
+  return reinterpret_cast<QueryMap &>(view);
+}
+
+unsigned QueryMap::NumInputColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->input_columns.size());
+}
+
+QueryColumn QueryMap::NthInputColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.size());
+  return QueryColumn(impl->input_columns[n]->Find());
+}
+
+// Returns the number of output columns.
+unsigned QueryMap::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->columns.size());
+}
+
+// Returns the `nth` output column.
+QueryColumn QueryMap::NthOutputColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.size());
+  return QueryColumn(impl->columns[n]->Find());
+}
+
+const ParsedFunctor &QueryMap::Functor(void) const noexcept {
+  return impl->functor;
 }
 
 ComparisonOperator QueryConstraint::Operator(void) const {
@@ -261,6 +320,14 @@ NodeRange<QueryInsert> Query::Inserts(void) const {
     return NodeRange<QueryInsert>();
   } else {
     return NodeRange<QueryInsert>(impl->inserts.front().get());
+  }
+}
+
+NodeRange<QueryMap> Query::Maps(void) const {
+  if (!impl->next_map) {
+    return NodeRange<QueryMap>();
+  } else {
+    return NodeRange<QueryMap>(impl->next_map);
   }
 }
 
