@@ -6,7 +6,7 @@
 #include <unordered_set>
 
 #include <drlojekyll/Sema/SIPSScore.h>
-
+#include <iostream>
 #include "Query.h"
 
 namespace hyde {
@@ -18,13 +18,14 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   virtual ~QueryBuilderImpl(void) = default;
 
-  Node<QueryTable> *TableFor(ParsedDeclaration decl, bool is_positive=true) {
+  Node<QueryRelation> *TableFor(ParsedDeclaration decl, bool is_positive=true) {
+    assert(decl.IsLocal() || decl.IsExport() || decl.IsQuery());
+
     auto &rels = is_positive ? context->relations : context->negative_relations;
     auto &table = rels[decl];
     if (!table) {
       table.reset(new Node<QueryRelation>(
-          decl, context->next_table, context->next_relation, is_positive));
-      context->next_table = table.get();
+          decl, context->next_relation, context->next_relation, is_positive));
       context->next_relation = table.get();
     }
 
@@ -32,23 +33,23 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   // Get the table for a given predicate.
-  Node<QueryTable> *TableFor(ParsedPredicate pred) {
-    const auto prev_next_table = context->next_table;
+  Node<QueryRelation> *TableFor(ParsedPredicate pred) {
+    const auto prev_next_table = context->next_relation;
     const auto decl = ParsedDeclaration::Of(pred);
     const auto table = TableFor(decl, pred.IsPositive());
 
     // We just added this negative table. Go and create a select for it from
     // the positive table, and create a fake insert into the negative table.
-    if (prev_next_table != context->next_table && !pred.IsPositive()) {
+    if (prev_next_table != context->next_relation && !pred.IsPositive()) {
       const auto positive_table = TableFor(decl, true);
-      const auto select = new Node<QuerySelect>(query.get(), positive_table);
+      const auto select = new Node<QuerySelect>(
+          query.get(), positive_table, nullptr);
       query->selects.emplace_back(select);
       for (unsigned i = 0, max_i = decl.Arity(); i < max_i; ++i) {
         Column column(decl.NthParameter(i), pred.NthArgument(i), i, 0);
         AddColumn(select, column);
       }
 
-      assert(table->IsRelation());
       const auto insert = new Node<QueryInsert>(
           reinterpret_cast<Node<QueryRelation> *>(table), decl);
       insert->columns = select->columns;
@@ -58,27 +59,29 @@ class QueryBuilderImpl : public SIPSVisitor {
     return table;
   }
 
-  Node<QueryTable> *TableFor(ParsedLiteral literal) {
+  Node<QueryStream> *StreamFor(ParsedLiteral literal) {
     std::string spelling(literal.Spelling());
     if (literal.IsNumber()) {
-      auto &table = context->constant_integers[spelling];
-      if (!table) {
-        table.reset(new Node<QueryConstant>(
-            literal, context->next_table, context->next_constant));
-        context->next_table = table.get();
-        context->next_constant = table.get();
+      // TODO(pag): Render the spelling into an actual integer value.
+      auto &stream = context->constant_integers[spelling];
+      if (!stream) {
+        stream.reset(new Node<QueryConstant>(
+            literal, context->next_stream, context->next_constant));
+        context->next_stream = stream.get();
+        context->next_constant = stream.get();
       }
-      return table.get();
+      return stream.get();
 
     } else if (literal.IsString()) {
-      auto &table = context->constant_strings[spelling];
-      if (!table) {
-        table.reset(new Node<QueryConstant>(
-            literal, context->next_table, context->next_constant));
-        context->next_table = table.get();
-        context->next_constant = table.get();
+      // TODO(pag): Render the spelling into an actual string value.
+      auto &stream = context->constant_strings[spelling];
+      if (!stream) {
+        stream.reset(new Node<QueryConstant>(
+            literal, context->next_stream, context->next_constant));
+        context->next_stream = stream.get();
+        context->next_constant = stream.get();
       }
-      return table.get();
+      return stream.get();
 
     } else {
       assert(false);
@@ -86,16 +89,39 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
+  Node<QueryStream> *StreamFor(ParsedMessage message) {
+    auto &stream = context->messages[message];
+    if (!stream) {
+      stream.reset(new Node<QueryMessage>(
+          message, context->next_stream, context->next_message));
+      context->next_stream = stream.get();
+      context->next_message = stream.get();
+    }
+    return stream.get();
+  }
+
   Node<QuerySelect> *SelectFor(ParsedPredicate pred) {
-    auto table = TableFor(pred);
-    auto select = new Node<QuerySelect>(query.get(), table);
-    query->selects.emplace_back(select);
-    return select;
+    auto decl = ParsedDeclaration::Of(pred);
+    if (decl.IsMessage()) {
+      auto stream = StreamFor(ParsedMessage::From(decl));
+      auto select = new Node<QuerySelect>(
+          query.get(), nullptr, stream);
+      query->selects.emplace_back(select);
+      return select;
+
+    } else {
+      auto table = TableFor(pred);
+      auto select = new Node<QuerySelect>(
+          query.get(), table, nullptr);
+      query->selects.emplace_back(select);
+      return select;
+    }
   }
 
   // Add a column to a view.
   Node<QueryColumn> *AddColumn(Node<QueryView> *view, const Column &column) {
-    const auto col = new Node<QueryColumn>(view, column.id, column.n);
+    const auto col = new Node<QueryColumn>(
+        column.var, view, column.id, column.n);
     view->columns.push_back(col);
     query->columns.emplace_back(col);
     return col;
@@ -117,11 +143,13 @@ class QueryBuilderImpl : public SIPSVisitor {
   // Constants are like infinitely sized tables with a single size. You
   // select from them.
   void DeclareConstant(ParsedLiteral val, unsigned id) override {
-    const auto table = TableFor(val);
-    const auto select = new Node<QuerySelect>(query.get(), table);
+    const auto stream = StreamFor(val);
+    const auto select = new Node<QuerySelect>(
+        query.get(), nullptr, stream);
     query->selects.emplace_back(select);
 
-    const auto col = new Node<QueryColumn>(select, id, 0);
+    const auto col = new Node<QueryColumn>(
+        ParsedVariable::AssignedTo(val), select, id, 0);
     select->columns.push_back(col);
     query->columns.emplace_back(col);
 
@@ -146,6 +174,8 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       // This is a condition between two different columns from the same view.
       // Thus, we don't want to do any kind of self joining.
+      //
+      // TODO(pag): Convert this to a filter on top of the view.
       if (lhs_col->view == rhs_col->view) {
         const auto constraint = new Node<QueryConstraint>(
             ComparisonOperator::kEqual, lhs_col, rhs_col);
@@ -158,6 +188,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       // Both are joins. This is interesting, we should merge the joins.
       if (lhs_is_join && rhs_is_join) {
+
         auto first_join = reinterpret_cast<Node<QueryJoin> *>(lhs_col->view);
         auto second_join = reinterpret_cast<Node<QueryJoin> *>(rhs_col->view);
         assert(first_join->columns[0] == lhs_col);
@@ -181,7 +212,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       } else if (rhs_is_join) {
         JoinInto(lhs_col, rhs_col);
 
-      // Both are SELECTs, create a join.
+      // Both are SELECTs or MAPs, create a join.
       } else {
         const auto joined_col = JoinFor(
             lhs_col, rhs_col, std::min(lhs_col->id, rhs_col->id));
@@ -234,11 +265,12 @@ class QueryBuilderImpl : public SIPSVisitor {
     const auto join = new Node<QueryJoin>(query.get());
     query->joins.emplace_back(join);
 
-    const auto joined_col = new Node<QueryColumn>(join, id, 0);
+    const auto joined_col = new Node<QueryColumn>(
+        where_col->var, join, id, 0);
     query->columns.emplace_back(joined_col);
-    join->pivot_columns.push_back(joined_col);
     join->joined_columns.push_back(prev_col);
     join->joined_columns.push_back(where_col);
+    join->pivot_columns.push_back(joined_col);
 
     DisjointSet::UnionInto(prev_col, joined_col);
     DisjointSet::UnionInto(where_col, joined_col);
@@ -247,8 +279,10 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void JoinInto(Node<QueryColumn> *child_col, Node<QueryColumn> *parent_col) {
-    const auto join = reinterpret_cast<Node<QueryJoin> *>(parent_col->view);
+    const auto join = reinterpret_cast<Node<QueryJoin> *>(
+        parent_col->view);
     join->joined_columns.push_back(child_col);
+    assert(parent_col->Find() == join->pivot_columns[0]->Find());
     DisjointSet::UnionInto(child_col, parent_col);
   }
 
@@ -267,7 +301,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       for (auto col = where_begin; col < where_end; ++col) {
         auto &prev_val = id_to_col[col->id];
         assert(prev_val != nullptr);
-        auto mapped_col = new Node<QueryColumn>(map, col->id, i);
+        auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
         query->columns.emplace_back(mapped_col);
         map->columns.push_back(mapped_col);
         map->input_columns.push_back(prev_val);
@@ -289,7 +323,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       // Add the additional output columns that correspond with the free
       // parameters to the map.
       for (auto col = select_begin; col < select_end; ++col) {
-        auto mapped_col = new Node<QueryColumn>(map, col->id, i);
+        auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
         query->columns.emplace_back(mapped_col);
         map->columns.push_back(mapped_col);
         auto &prev_val = id_to_col[col->id];
@@ -339,7 +373,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     auto select = SelectFor(pred);
     columns.clear();
-    output_columns.clear();
     columns.resize(pred.Arity());
 
     for (auto col = where_begin; col < where_end; ++col) {
@@ -354,13 +387,14 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     for (auto col : columns) {
       assert(col != nullptr);
-      output_columns.push_back(AddColumn(select, *col));
+      (void) AddColumn(select, *col);
     }
 
     (void) ProcessPendingEqualities();
 
     for (auto col = where_begin; col < where_end; ++col) {
-      const auto where_col = output_columns[col->n];
+      const auto where_col = select->columns[col->n];
+
       auto &prev_col = id_to_col[col->id];
       if (!prev_col) {
         assert(false);  // Shouldn't happen?
@@ -369,20 +403,32 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       const auto prev_view = prev_col->Find()->view;
-
-      // The previous view is a selection, and we're currently doing a new
-      // selection where we're matching on the column, so create a new join
-      // for this select and the previous one.
-      if (prev_view->IsSelect()) {
-        prev_col = JoinFor(prev_col->Find(), where_col, col->id);
-
-      // The previous view for this column is a join, so merge with it.
-      } else if (prev_view->IsJoin()) {
-        JoinInto(where_col, prev_col);
-
-      } else {
-        assert(false);
+      if (prev_col->view == select) {
+        continue;
       }
+
+      if (prev_view->IsJoin()) {
+        JoinInto(where_col, prev_col->Find());
+
+      // The previous view is a select or map, and we're currently doing a
+      // select, so create a join against that view.
+      } else {
+        prev_col = JoinFor(prev_col->Find(), where_col, col->id);
+      }
+
+//      // The previous view is a selection, and we're currently doing a new
+//      // selection where we're matching on the column, so create a new join
+//      // for this select and the previous one.
+//      if (prev_view->IsSelect() || prev_view->IsMap()) {
+//
+//
+//      // The previous view for this column is a join, so merge with it.
+//      } else if (prev_view->IsJoin()) {
+//        JoinInto(where_col, prev_col);
+//
+//      } else {
+//        assert(false);
+//      }
     }
 
     for (auto col = select_begin; col < select_end; ++col) {
@@ -443,7 +489,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     std::unordered_set<Node<QueryView> *> joined_views;
 
     for (const auto &join : query->joins) {
-      if (join->joined_columns.empty()) {
+      if (join->pivot_columns.empty() || join->joined_columns.empty()) {
         continue;  // Taken over or merged.
       }
 
@@ -455,31 +501,64 @@ class QueryBuilderImpl : public SIPSVisitor {
       // that this join is combining together, so we can fill up
       // `joined_columns` with records representing the product of those tables.
       for (auto joined_col : join->joined_columns) {
-        for (auto copied_col : joined_col->view->columns) {
-          assert(copied_col->view != join.get());
-          joined_views.insert(copied_col->view);
-        }
+        assert(joined_col->view != join.get());
+        joined_views.insert(joined_col->view);
       }
+
+      auto pivot_col = join->joined_columns[0]->Find();
 
       // Clear out the old pivots, we're going to replace with all the columns
       // that are being joined together.
       join->joined_columns.clear();
 
+      size_t num_cols = 0;
+      for (auto joined_view : joined_views) {
+        num_cols += joined_view->columns.size();
+      }
+
+      join->columns.reserve(num_cols);
+
       // Go through and have the join "steal" the original columns, and
       // replace them with equivalents.
       for (auto joined_view : joined_views) {
+        assert(joined_view != join.get());
+
+        Node<QueryColumn> *steal_pivot = nullptr;
+        if (joined_view->IsJoin()) {
+          auto joined_join = reinterpret_cast<Node<QueryJoin> *>(joined_view);
+          steal_pivot = joined_join->pivot_columns[0]->Find();
+          assert(steal_pivot != pivot_col);
+        }
+
+        auto i = 0u;
         for (auto &steal_col : joined_view->columns) {
+          assert(steal_col->view == joined_view);
+          assert(steal_col->index == i);
+          ++i;
+
           auto index = static_cast<unsigned>(join->columns.size());
           auto replace_col = new Node<QueryColumn>(
-              steal_col->view, steal_col->id, steal_col->index);
+              steal_col->var, steal_col->view, steal_col->id, steal_col->index);
+
+          const auto steal_col_parent = steal_col->Find();
+
+          // We are about to replace one of the columns that was a pivot of
+          // a joined join. We need to ensure that the replacement column is
+          // "marked" as a pivot by re-parenting it to the joined join's pivot
+          // column.
+          if (steal_col_parent == steal_pivot) {
+            DisjointSet::UnionInto(replace_col, steal_pivot);
+          }
 
           query->columns.emplace_back(replace_col);
           join->columns.push_back(steal_col);
           join->joined_columns.push_back(replace_col);
 
+          // Re-parent `steal_col` into `join`.
           steal_col->index = index;
           steal_col->view = join.get();
 
+          // Replace `steal_col` in the view with `replace_col`.
           steal_col = replace_col;
         }
       }
@@ -528,7 +607,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         const auto old_outgoing = joined_join->columns[i];
 
         assert(incoming == old_outgoing);
-        assert(incoming->Find() == incoming);
+        //assert(incoming->Find() == incoming);
 
         // TODO(pag): Union things together?
 
@@ -615,7 +694,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     MergeAndProjectJoins();
 
     auto table = TableFor(decl);
-    assert(table->IsRelation());
     auto insert = new Node<QueryInsert>(
         reinterpret_cast<Node<QueryRelation> *>(table), decl);
 
@@ -644,9 +722,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   // All columns in some select...where.
   std::vector<const Column *> columns;
-
-  // All columns in some select...where.
-  std::vector<Node<QueryColumn> *> output_columns;
 
   // Maps variable IDs to columns.
   std::unordered_map<unsigned, Node<QueryColumn> *> id_to_col;

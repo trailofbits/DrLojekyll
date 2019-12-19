@@ -18,11 +18,10 @@ QueryContext::~QueryContext(void) {}
 
 }  // namespace query
 
-Node<QueryTable>::~Node(void) {}
-
+Node<QueryStream>::~Node(void) {}
 Node<QueryConstant>::~Node(void) {}
-
-Node<QueryRelation>::~Node(void) {}
+Node<QueryMessage>::~Node(void) {}
+Node<QueryGenerator>::~Node(void) {}
 
 Node<QueryView>::~Node(void) {}
 
@@ -36,15 +35,35 @@ bool Node<QueryConstant>::IsConstant(void) const noexcept {
   return true;
 }
 
-bool Node<QueryConstant>::IsRelation(void) const noexcept {
+bool Node<QueryConstant>::IsGenerator(void) const noexcept {
   return false;
 }
 
-bool Node<QueryRelation>::IsConstant(void) const noexcept {
+bool Node<QueryConstant>::IsMessage(void) const noexcept {
   return false;
 }
 
-bool Node<QueryRelation>::IsRelation(void) const noexcept {
+bool Node<QueryGenerator>::IsConstant(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryGenerator>::IsGenerator(void) const noexcept {
+  return true;
+}
+
+bool Node<QueryGenerator>::IsMessage(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMessage>::IsConstant(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMessage>::IsGenerator(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMessage>::IsMessage(void) const noexcept {
   return true;
 }
 
@@ -84,12 +103,24 @@ bool Node<QueryMap>::IsMap(void) const noexcept {
   return true;
 }
 
-bool QueryTable::IsConstant(void) const noexcept {
+bool QueryStream::IsBlocking(void) const noexcept {
+  return impl->IsMessage();
+}
+
+bool QueryStream::IsNonBlocking(void) const noexcept {
+  return !impl->IsMessage();
+}
+
+bool QueryStream::IsConstant(void) const noexcept {
   return impl->IsConstant();
 }
 
-bool QueryTable::IsRelation(void) const noexcept {
-  return impl->IsRelation();
+bool QueryStream::IsGenerator(void) const noexcept {
+  return impl->IsGenerator();
+}
+
+bool QueryStream::IsMessage(void) const noexcept {
+  return impl->IsMessage();
 }
 
 QueryView QueryView::Containing(QueryColumn col) {
@@ -141,18 +172,43 @@ bool QueryColumn::IsMap(void) const noexcept {
   return impl->view->IsMap();
 }
 
+const ParsedVariable &QueryColumn::Variable(void) const noexcept {
+  return impl->var;
+}
+
+bool QueryColumn::operator==(QueryColumn that) const noexcept {
+  return impl->Find() == that.impl->Find();
+}
+
+bool QueryColumn::operator!=(QueryColumn that) const noexcept {
+  return impl->Find() != that.impl->Find();
+}
+
 const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
   return impl->literal;
 }
 
-QueryConstant &QueryConstant::From(QueryTable &table) {
-  assert(table.IsConstant());
-  return reinterpret_cast<QueryConstant &>(table);
+QueryConstant &QueryConstant::From(QueryStream &stream) {
+  assert(stream.IsConstant());
+  return reinterpret_cast<QueryConstant &>(stream);
 }
 
-QueryRelation &QueryRelation::From(QueryTable &table) {
-  assert(table.IsRelation());
-  return reinterpret_cast<QueryRelation &>(table);
+QueryMessage &QueryMessage::From(QueryStream &stream) {
+  assert(stream.IsMessage());
+  return reinterpret_cast<QueryMessage &>(stream);
+}
+
+QueryGenerator &QueryGenerator::From(QueryStream &stream) {
+  assert(stream.IsGenerator());
+  return reinterpret_cast<QueryGenerator &>(stream);
+}
+
+const ParsedMessage &QueryMessage::Declaration(void) const noexcept {
+  return impl->message;
+}
+
+const ParsedFunctor &QueryGenerator::Declaration(void) const noexcept {
+  return impl->functor;
 }
 
 const ParsedDeclaration &QueryRelation::Declaration(void) const noexcept {
@@ -172,8 +228,21 @@ QuerySelect &QuerySelect::From(QueryView &view) {
   return reinterpret_cast<QuerySelect &>(view);
 }
 
-QueryTable QuerySelect::Table(void) const noexcept {
-  return QueryTable(impl->table);
+bool QuerySelect::IsRelation(void) const noexcept {
+  return nullptr != impl->relation;
+}
+bool QuerySelect::IsStream(void) const noexcept {
+  return nullptr != impl->stream;
+}
+
+QueryRelation QuerySelect::Relation(void) const noexcept {
+  assert(nullptr != impl->relation);
+  return QueryRelation(impl->relation);
+}
+
+QueryStream QuerySelect::Stream(void) const noexcept {
+  assert(nullptr != impl->stream);
+  return QueryStream(impl->stream);
 }
 
 QueryJoin &QueryJoin::From(QueryView &view) {
@@ -278,14 +347,22 @@ NodeRange<QuerySelect> Query::Selects(void) const {
   }
 }
 
-NodeRange<QueryTable> Query::Tables(void) const {
-  if (!impl->context->next_table) {
-    return NodeRange<QueryTable>();
+NodeRange<QueryRelation> Query::Relations(void) const {
+  if (!impl->context->next_relation) {
+    return NodeRange<QueryRelation>();
   } else {
-    return NodeRange<QueryTable>(
-        impl->context->next_table,
+    return NodeRange<QueryRelation>(impl->context->next_relation);
+  }
+}
+
+NodeRange<QueryStream> Query::Streams(void) const {
+  if (!impl->context->next_stream) {
+    return NodeRange<QueryStream>();
+  } else {
+    return NodeRange<QueryStream>(
+        impl->context->next_stream,
         static_cast<intptr_t>(
-            __builtin_offsetof(Node<QueryTable>, next_table)));
+            __builtin_offsetof(Node<QueryStream>, next_stream)));
   }
 }
 
@@ -297,11 +374,19 @@ NodeRange<QueryConstant> Query::Constants(void) const {
   }
 }
 
-NodeRange<QueryRelation> Query::Relations(void) const {
-  if (!impl->context->next_relation) {
-    return NodeRange<QueryRelation>();
+NodeRange<QueryGenerator> Query::Generators(void) const {
+  if (!impl->context->next_generator) {
+    return NodeRange<QueryGenerator>();
   } else {
-    return NodeRange<QueryRelation>(impl->context->next_relation);
+    return NodeRange<QueryGenerator>(impl->context->next_generator);
+  }
+}
+
+NodeRange<QueryMessage> Query::Messages(void) const {
+  if (!impl->context->next_message) {
+    return NodeRange<QueryMessage>();
+  } else {
+    return NodeRange<QueryMessage>(impl->context->next_message);
   }
 }
 

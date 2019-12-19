@@ -24,6 +24,10 @@ class QueryContext {
   // clauses.
   std::weak_ptr<QueryImpl> empty_query;
 
+  // The streams associated with messages.
+  std::unordered_map<ParsedMessage, std::unique_ptr<Node<QueryMessage>>>
+      messages;
+
   // The tables available within any query sharing this context.
   std::unordered_map<ParsedDeclaration, std::unique_ptr<Node<QueryRelation>>>
       relations;
@@ -40,62 +44,23 @@ class QueryContext {
       constant_strings;
 
   // The next table.
-  Node<QueryTable> *next_table{nullptr};
-  Node<QueryConstant> *next_constant{nullptr};
+  Node<QueryStream> *next_stream{nullptr};
   Node<QueryRelation> *next_relation{nullptr};
+  Node<QueryConstant> *next_constant{nullptr};
+  Node<QueryMessage> *next_message{nullptr};
+  Node<QueryGenerator> *next_generator{nullptr};
 };
 
 }  // namespace query
 
 template <>
-class Node<QueryTable> {
+class Node<QueryRelation> {
  public:
-  virtual ~Node(void);
-
-  inline Node(Node<QueryTable> *next_)
-      : next_table(next_) {}
-
-  virtual bool IsConstant(void) const noexcept = 0;
-  virtual bool IsRelation(void) const noexcept = 0;
-
-  // Next table, not specific to a query.
-  Node<QueryTable> * const next_table;
-};
-
-template <>
-class Node<QueryConstant> final : public Node<QueryTable> {
- public:
-  virtual ~Node(void);
-
-  inline Node(ParsedLiteral literal_, Node<QueryTable> *next_table_,
-              Node<QueryConstant> *next_)
-      : Node<QueryTable>(next_table_),
-        literal(literal_),
-        next(next_) {}
-
-  bool IsConstant(void) const noexcept override;
-  bool IsRelation(void) const noexcept override;
-
-  const ParsedLiteral literal;
-
-  // Next constant, not specific to a query.
-  Node<QueryConstant> * const next;
-};
-
-template <>
-class Node<QueryRelation> final : public Node<QueryTable> {
- public:
-  virtual ~Node(void);
-
-  inline Node(ParsedDeclaration decl_, Node<QueryTable> *next_table_,
+  inline Node(ParsedDeclaration decl_, Node<QueryRelation> *next_table_,
               Node<QueryRelation> *next_, bool is_positive_)
-      : Node<QueryTable>(next_table_),
-        decl(decl_),
+      : decl(decl_),
         next(next_),
         is_positive(is_positive_) {}
-
-  bool IsConstant(void) const noexcept override;
-  bool IsRelation(void) const noexcept override;
 
   const ParsedDeclaration decl;
 
@@ -104,6 +69,85 @@ class Node<QueryRelation> final : public Node<QueryTable> {
 
   // Is this a positive or negative table?
   const bool is_positive;
+};
+
+template <>
+class Node<QueryStream> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(Node<QueryStream> *next_)
+      : next_stream(next_) {}
+
+  virtual bool IsConstant(void) const noexcept = 0;
+  virtual bool IsGenerator(void) const noexcept = 0;
+  virtual bool IsMessage(void) const noexcept = 0;
+
+  // Next stream, not specific to a query.
+  Node<QueryStream> * const next_stream;
+};
+
+template <>
+class Node<QueryConstant> final : public Node<QueryStream> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(ParsedLiteral literal_, Node<QueryStream> *next_stream_,
+              Node<QueryConstant> *next_)
+      : Node<QueryStream>(next_stream_),
+        literal(literal_),
+        next(next_) {}
+
+  bool IsConstant(void) const noexcept override;
+  bool IsGenerator(void) const noexcept override;
+  bool IsMessage(void) const noexcept override;
+
+  const ParsedLiteral literal;
+
+  // Next constant, not specific to a query.
+  Node<QueryConstant> * const next;
+};
+
+template <>
+class Node<QueryGenerator> final : public Node<QueryStream> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(ParsedFunctor functor_, Node<QueryStream> *next_stream_,
+              Node<QueryGenerator> *next_)
+      : Node<QueryStream>(next_stream_),
+        functor(functor_),
+        next(next_) {}
+
+  bool IsConstant(void) const noexcept override;
+  bool IsGenerator(void) const noexcept override;
+  bool IsMessage(void) const noexcept override;
+
+  const ParsedFunctor functor;
+
+  // Next generator, not specific to a query.
+  Node<QueryGenerator> * const next;
+};
+
+template <>
+class Node<QueryMessage> final : public Node<QueryStream> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(ParsedMessage message_, Node<QueryStream> *next_stream_,
+              Node<QueryMessage> *next_)
+      : Node<QueryStream>(next_stream_),
+        message(message_),
+        next(next_) {}
+
+  bool IsConstant(void) const noexcept override;
+  bool IsGenerator(void) const noexcept override;
+  bool IsMessage(void) const noexcept override;
+
+  const ParsedMessage message;
+
+  // Next message, not specific to a query.
+  Node<QueryMessage> * const next;
 };
 
 template <>
@@ -123,6 +167,7 @@ class Node<QueryView> {
 
   // The selected columns.
   std::vector<Node<QueryColumn> *> columns;
+  std::vector<Node<QueryColumn> *> pivot_columns;
 
   // Next view (select or join) in this query.
   Node<QueryView> *next_view{nullptr};
@@ -131,9 +176,11 @@ class Node<QueryView> {
 template <>
 class Node<QuerySelect> final : public Node<QueryView> {
  public:
-  inline Node(QueryImpl *query_, Node<QueryTable> *table_)
+  inline Node(QueryImpl *query_, Node<QueryRelation> *relation_,
+              Node<QueryStream> *stream_)
       : Node<QueryView>(query_),
-        table(table_) {}
+        relation(relation_),
+        stream(stream_) {}
 
   virtual ~Node(void);
   bool IsSelect(void) const noexcept override;
@@ -144,7 +191,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
   Node<QuerySelect> *next{nullptr};
 
   // The table from which this select takes its columns.
-  Node<QueryTable> * const table;
+  Node<QueryRelation> * const relation;
+  Node<QueryStream> * const stream;
 };
 
 template <>
@@ -160,11 +208,11 @@ class Node<QueryJoin> final : public Node<QueryView> {
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
 
-  // The pivot columns of the join.
-  std::vector<Node<QueryColumn> *> pivot_columns;
-
   // The columns that are all joined together.
   std::vector<Node<QueryColumn> *> joined_columns;
+
+  // Tells us which columns are pivots.
+  std::vector<Node<QueryColumn> *> pivot_columns;
 };
 
 template <>
@@ -212,15 +260,18 @@ class Node<QueryConstraint> {
 template <>
 class Node<QueryColumn> : public DisjointSet {
  public:
-  inline explicit Node(Node<QueryView> *view_, unsigned id_,
-                       unsigned index_)
+  inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
+                       unsigned id_, unsigned index_)
       : DisjointSet(id_),
+        var(var_),
         view(view_),
         index(index_) {}
 
   inline Node<QueryColumn> *Find(void) {
     return this->DisjointSet::FindAs<Node<QueryColumn>>();
   }
+
+  const ParsedVariable var;
 
   // View to which this column belongs.
   Node<QueryView> *view;

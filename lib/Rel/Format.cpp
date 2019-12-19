@@ -22,7 +22,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = relation.Declaration();
     const auto arity = decl.Arity();
     os << "t" << relation.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>";
+       << "<TD>RELATION</TD><TD>";
 
     if (relation.IsNegative()) {
       os << "!";
@@ -37,6 +37,30 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
   }
 
+  for (auto message : query.Messages()) {
+    const auto decl = message.Declaration();
+    const auto arity = decl.Arity();
+    os << "t" << message.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD>MESSAGE</TD><TD>" << decl.Name() << "</TD>";
+    for (auto i = 0u; i < arity; ++i) {
+      auto param = decl.NthParameter(i);
+      os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
+    }
+    os << kEndTable << ">];\n";
+  }
+
+  for (auto generator : query.Generators()) {
+    const auto decl = generator.Declaration();
+    const auto arity = decl.Arity();
+    os << "t" << generator.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD>GENERATOR</TD><TD>" << decl.Name() << "</TD>";
+    for (auto i = 0u; i < arity; ++i) {
+      auto param = decl.NthParameter(i);
+      os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
+    }
+    os << kEndTable << ">];\n";
+  }
+
   for (auto constant : query.Constants()) {
     os << "t" << constant.UniqueId() << " [ label=<" << kBeginTable
        << "<TD port=\"p0\">" << constant.Literal() << "</TD>" << kEndTable
@@ -44,38 +68,81 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto select : query.Selects()) {
-    os << "v" << select.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>SELECT</TD>";
+    os << "v" << select.UniqueId() << " [ label=<" << kBeginTable;
+    if (select.IsRelation()) {
+      os << "<TD>SELECT</TD>";
+    } else {
+      os << "<TD>PULL</TD>";
+    }
     auto i = 0u;
     for (auto col : select.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\"> &nbsp; </TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << col.Variable() << "</TD>";
       ++i;
     }
 
     os << kEndTable << ">];\n";
 
     // Link the joined columns to their sources.
-    const auto table = select.Table();
     i = 0u;
+    uint64_t target_id = 0;
+
+    if (select.IsRelation()) {
+      target_id = select.Relation().UniqueId();
+
+    } else if (select.IsStream()){
+      target_id = select.Stream().UniqueId();
+    } else {
+      assert(false);
+    }
+
     for (auto col : select.Columns()) {
       os << "v" << select.UniqueId() << ":c" << col.UniqueId() << " -> t"
-         << table.UniqueId() << ":p" << i << ";\n";
+         << target_id << ":p" << i << ";\n";
       ++i;
     }
   }
 
+  const char *kColors[] = {
+      "antiquewhite",
+      "aquamarine",
+      "cadetblue1",
+      "chartreuse1",
+      "chocolate1",
+      "darkslategrey",
+      "deepskyblue2",
+      "goldenrod1",
+  };
+
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
     for (auto i = 0u; i < join.NumPivotColumns(); ++i) {
-      auto out_col = join.NthPivotColumn(i);
-      os << "<TD port=\"c" << out_col.UniqueId() << "\" rowspan=\"2\"> &nbsp; </TD>";
+      auto pivot_col = join.NthPivotColumn(i);
+      auto color = kColors[i];
+      os << "<TD port=\"c" << pivot_col.UniqueId() << "\" rowspan=\"2\" bgcolor=\""
+         << color << "\">" << pivot_col.Variable() << "</TD>";
     }
     os << "<TD rowspan=\"2\">JOIN</TD>";
 
+    auto found = false;
     for (auto i = 0u; i < join.Arity(); ++i) {
       auto col = join.NthOutputColumn(i);
-      os << "<TD port=\"c" << col.UniqueId() << "\"> &nbsp; </TD>";
+      for (auto j = 0u; j < join.NumPivotColumns(); ++j) {
+        auto pivot_col = join.NthPivotColumn(j);
+        if (pivot_col == col) {
+          os << "<TD bgcolor=\"" << kColors[j] << "\">"
+             << col.Variable() << "</TD>";
+          found = true;
+          goto handle_next;
+        }
+      }
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << col.Variable() << "</TD>";
+    handle_next:
+      continue;
     }
+
+    if (false) assert(found);
 
     os << "</TR><TR>";
     for (auto i = 0u; i < join.Arity(); ++i) {
@@ -98,7 +165,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "<TD rowspan=\"2\">MAP " << map.Functor().Name() << "</TD>";
     for (auto i = 0u; i < map.Arity(); ++i) {
       auto out_col = map.NthOutputColumn(i);
-      os << "<TD port=\"c" << out_col.UniqueId() << "\"> &nbsp; </TD>";
+      os << "<TD port=\"c" << out_col.UniqueId() << "\">"
+         << out_col.Variable() << "</TD>";
     }
 
     os << "</TR><TR>";

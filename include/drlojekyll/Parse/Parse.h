@@ -235,6 +235,9 @@ class ParsedAssignment
   // Return the list of all assignments to `var`.
   static NodeRange<ParsedAssignmentUse> Using(ParsedVariable var);
 
+  // Return the assignment using the literal.
+  static ParsedAssignment Using(ParsedLiteral literal);
+
  protected:
   friend class ParsedClause;
   using parse::ParsedNode<ParsedAssignment>::ParsedNode;

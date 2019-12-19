@@ -41,62 +41,23 @@ enum class ComparisonOperator : int;
 class ParsedDeclaration;
 class ParsedFunctor;
 class ParsedLiteral;
+class ParsedMessage;
 class ParsedPredicate;
+class ParsedVariable;
 class QueryBuilder;
 class QueryBuilderImpl;
 class QueryColumn;
 class QueryConstant;
 class QueryConstraint;
+class QueryGenerator;
 class QueryImpl;
 class QueryInsert;
 class QueryJoin;
+class QueryMessage;
 class QueryRelation;
-class QueryTable;
 class QuerySelect;
+class QueryStream;
 class QueryView;
-
-// A table in a query. Corresponds with a declared predicate in a Datalog or
-// with a literal in the datalog code.
-class QueryTable : public query::QueryNode<QueryTable> {
- public:
-  bool IsConstant(void) const noexcept;
-  bool IsRelation(void) const noexcept;
-
- private:
-  using query::QueryNode<QueryTable>::QueryNode;
-
-  friend class QuerySelect;
-};
-
-// A literal in the Datalog code.
-class QueryConstant : public query::QueryNode<QueryConstant> {
- public:
-  const ParsedLiteral &Literal(void) const noexcept;
-
-  static QueryConstant &From(QueryTable &table);
-
- private:
-  using query::QueryNode<QueryConstant>::QueryNode;
-
-  friend class QuerySelect;
-};
-
-// Corresponds with a declaration in the Datalog code.
-class QueryRelation : public query::QueryNode<QueryRelation> {
- public:
-  static QueryRelation &From(QueryTable &table);
-
-  const ParsedDeclaration &Declaration(void) const noexcept;
-
-  bool IsPositive(void) const noexcept;
-  bool IsNegative(void) const noexcept;
-
- private:
-  using query::QueryNode<QueryRelation>::QueryNode;
-
-  friend class QuerySelect;
-  friend class QueryInsert;
-};
 
 // A column. Columns may be derived from selections or from joins.
 class QueryColumn : public query::QueryNode<QueryColumn> {
@@ -106,6 +67,11 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsJoin(void) const noexcept;
   bool IsMap(void) const noexcept;
 
+  const ParsedVariable &Variable(void) const noexcept;
+
+  bool operator==(QueryColumn that) const noexcept;
+  bool operator!=(QueryColumn that) const noexcept;
+
  private:
   friend class QueryConstraint;
   friend class QueryInsert;
@@ -114,6 +80,77 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   friend class QueryView;
 
   using query::QueryNode<QueryColumn>::QueryNode;
+};
+
+// A table in a query. Corresponds with a declared predicate in a Datalog.
+class QueryRelation : public query::QueryNode<QueryRelation> {
+ public:
+  const ParsedDeclaration &Declaration(void) const noexcept;
+  bool IsPositive(void) const noexcept;
+  bool IsNegative(void) const noexcept;
+
+ private:
+  using query::QueryNode<QueryRelation>::QueryNode;
+
+  friend class QuerySelect;
+};
+
+// A stream of inputs into the system. This represents messsages, functors
+// that take no inputs and produce outputs, and constants. The latter two are
+// considered non-blocking, and messages are considered to be blocking streams.
+// The blocking vs. non-blocking is in relation to pull semantics.
+class QueryStream : public query::QueryNode<QueryStream> {
+ public:
+  bool IsBlocking(void) const noexcept;
+  bool IsNonBlocking(void) const noexcept;
+
+  bool IsConstant(void) const noexcept;
+  bool IsGenerator(void) const noexcept;
+  bool IsMessage(void) const noexcept;
+
+ private:
+  using query::QueryNode<QueryStream>::QueryNode;
+};
+
+// A functor in the Datalog code, that has only free parameters. This is a form
+// of non-blocking stream. Code wanting blocking functors should use messages
+// instead.
+class QueryGenerator : public query::QueryNode<QueryGenerator> {
+ public:
+  const ParsedFunctor &Declaration(void) const noexcept;
+
+  static QueryGenerator &From(QueryStream &table);
+
+ private:
+  using query::QueryNode<QueryGenerator>::QueryNode;
+
+  friend class QuerySelect;
+};
+
+// A literal in the Datalog code. A literal is a form of non-blocking stream.
+class QueryConstant : public query::QueryNode<QueryConstant> {
+ public:
+  const ParsedLiteral &Literal(void) const noexcept;
+
+  static QueryConstant &From(QueryStream &table);
+
+ private:
+  using query::QueryNode<QueryConstant>::QueryNode;
+
+  friend class QuerySelect;
+};
+
+// A message in the Datalog code. A message is a form of blocking stream.
+class QueryMessage : public query::QueryNode<QueryMessage> {
+ public:
+  const ParsedMessage &Declaration(void) const noexcept;
+
+  static QueryMessage &From(QueryStream &table);
+
+ private:
+  using query::QueryNode<QueryMessage>::QueryNode;
+
+  friend class QuerySelect;
 };
 
 // A view into a collection of rows. The rows may be derived from a selection
@@ -141,7 +178,11 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
 
   static QuerySelect &From(QueryView &view);
 
-  QueryTable Table(void) const noexcept;
+  bool IsRelation(void) const noexcept;
+  bool IsStream(void) const noexcept;
+
+  QueryRelation Relation(void) const noexcept;
+  QueryStream Stream(void) const noexcept;
 
  private:
   using query::QueryNode<QuerySelect>::QueryNode;
@@ -171,7 +212,8 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   using query::QueryNode<QueryJoin>::QueryNode;
 };
 
-// Map input to some output. This corresponds to a non-aggregating functor.
+// Map input to zero or more outputs. Maps correspond to non-aggregating
+// functors with at least
 class QueryMap : public query::QueryNode<QueryMap> {
  public:
   static QueryMap &From(QueryView &view);
@@ -222,12 +264,14 @@ class Query {
 
   NodeRange<QueryJoin> Joins(void) const;
   NodeRange<QuerySelect> Selects(void) const;
-  NodeRange<QueryTable> Tables(void) const;
   NodeRange<QueryRelation> Relations(void) const;
-  NodeRange<QueryConstant> Constants(void) const;
   NodeRange<QueryView> Views(void) const;
   NodeRange<QueryInsert> Inserts(void) const;
   NodeRange<QueryMap> Maps(void) const;
+  NodeRange<QueryStream> Streams(void) const;
+  NodeRange<QueryMessage> Messages(void) const;
+  NodeRange<QueryGenerator> Generators(void) const;
+  NodeRange<QueryConstant> Constants(void) const;
 
   Query(const Query &) = default;
   Query(Query &&) noexcept = default;
