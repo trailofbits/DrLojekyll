@@ -116,21 +116,24 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
-    for (auto i = 0u; i < join.NumPivotColumns(); ++i) {
-      auto pivot_col = join.NthPivotColumn(i);
+
+    auto i = 0;
+    for (auto pivot_col : join.PivotColumns()) {
       auto color = kColors[i];
-      os << "<TD port=\"c" << pivot_col.UniqueId() << "\" rowspan=\"2\" bgcolor=\""
-         << color << "\">" << pivot_col.Variable() << "</TD>";
+      os << "<TD rowspan=\"3\" bgcolor=\"" << color << "\">"
+         << pivot_col.Variable() << "</TD>";
+      ++i;
     }
-    os << "<TD rowspan=\"2\">JOIN</TD>";
+
+    os << "<TD rowspan=\"3\">JOIN</TD>";
 
     auto found = false;
-    for (auto i = 0u; i < join.Arity(); ++i) {
-      auto col = join.NthOutputColumn(i);
+    for (auto col : join.Columns()) {
       for (auto j = 0u; j < join.NumPivotColumns(); ++j) {
         auto pivot_col = join.NthPivotColumn(j);
         if (pivot_col == col) {
-          os << "<TD bgcolor=\"" << kColors[j] << "\">"
+          os << "<TD bgcolor=\"" << kColors[j]
+             << "\" port=\"c" << col.UniqueId() << "\">"
              << col.Variable() << "</TD>";
           found = true;
           goto handle_next;
@@ -144,15 +147,24 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     if (false) assert(found);
 
-    os << "</TR><TR>";
-    for (auto i = 0u; i < join.Arity(); ++i) {
+    auto max_cols = std::max(join.NumInputColumns(), join.Arity());
+
+    os << "</TR><TR><TD colspan=\"" << max_cols << "\">";
+    auto sep = "";
+    for (auto cond : join.Constraints()) {
+      os << sep << cond.LHS().Variable() << " = " << cond.RHS().Variable();
+      sep = "<BR />";
+    }
+
+    os << "</TD></TR><TR>";
+    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
       os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
     }
 
     os << kEndTable << ">];\n";
 
     // Link the joined columns to their sources.
-    for (auto i = 0u; i < join.Arity(); ++i) {
+    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
       auto col = join.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << join.UniqueId() << ":p" << i << " -> v"
@@ -192,7 +204,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto insert : query.Inserts()) {
     os << "i" << insert.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>INSERT</TD>";
+       << "<TD>INSERT " << insert.Relation().Declaration().Name() << "</TD>";
 
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
       os << "<TD port=\"c" << i << "\"> &nbsp; </TD>";
@@ -200,13 +212,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << kEndTable << ">];\n";
 
-    auto table = insert.Relation();
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
       const auto col = insert.NthColumn(i);
       const auto view = QueryView::Containing(col);
-      os << "t" << table.UniqueId() << ":p" << i << " -> "
-         << "i" << insert.UniqueId() << ":c" << i << ";\n";
-
       os << "i" << insert.UniqueId() << ":c" << i << " -> "
          << "v" << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }

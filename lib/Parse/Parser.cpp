@@ -918,6 +918,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         module->functors, std::move(functor));
 
   } else {
+    if (!module->functors.empty()) {
+      module->functors.back()->next = functor.get();
+    }
     module->functors.emplace_back(std::move(functor));
   }
 }

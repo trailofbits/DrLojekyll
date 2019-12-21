@@ -6,10 +6,15 @@
 #include <unordered_set>
 
 #include <drlojekyll/Sema/SIPSScore.h>
-#include <iostream>
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
+#include <drlojekyll/Parse/Format.h>
+
 #include "Query.h"
 
 namespace hyde {
+
+OutputStream *gOut = nullptr;
 
 class QueryBuilderImpl : public SIPSVisitor {
  public:
@@ -100,10 +105,28 @@ class QueryBuilderImpl : public SIPSVisitor {
     return stream.get();
   }
 
+  Node<QueryStream> *StreamFor(ParsedFunctor functor) {
+    auto &stream = context->generators[functor];
+    if (!stream) {
+      stream.reset(new Node<QueryGenerator>(
+          functor, context->next_stream, context->next_generator));
+      context->next_stream = stream.get();
+      context->next_generator = stream.get();
+    }
+    return stream.get();
+  }
+
   Node<QuerySelect> *SelectFor(ParsedPredicate pred) {
     auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsMessage()) {
       auto stream = StreamFor(ParsedMessage::From(decl));
+      auto select = new Node<QuerySelect>(
+          query.get(), nullptr, stream);
+      query->selects.emplace_back(select);
+      return select;
+
+    } else if (decl.IsFunctor()) {
+      auto stream = StreamFor(ParsedFunctor::From(decl));
       auto select = new Node<QuerySelect>(
           query.get(), nullptr, stream);
       query->selects.emplace_back(select);
@@ -159,65 +182,30 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void AssertEqual(unsigned lhs_id, unsigned rhs_id) override {
+    if (lhs_id == rhs_id) {
+      return;
+    }
+
     auto &lhs_col = id_to_col[lhs_id];
     auto &rhs_col = id_to_col[rhs_id];
 
     if (lhs_col && rhs_col) {
-      const auto lhs_parent = lhs_col->Find();
-      const auto rhs_parent = rhs_col->Find();
-      if (lhs_parent == rhs_parent) {
+
+      assert(!lhs_col->view->IsJoin());
+      assert(!rhs_col->view->IsJoin());
+
+      if (lhs_col == rhs_col) {
         return;
       }
-
-      lhs_col = lhs_parent;
-      rhs_col = rhs_parent;
-
-      // This is a condition between two different columns from the same view.
-      // Thus, we don't want to do any kind of self joining.
-      //
-      // TODO(pag): Convert this to a filter on top of the view.
       if (lhs_col->view == rhs_col->view) {
-        const auto constraint = new Node<QueryConstraint>(
-            ComparisonOperator::kEqual, lhs_col, rhs_col);
-        query->constraints.emplace_back(constraint);
-        return;
-      }
+        assert(false && "TODO");
 
-      auto lhs_is_join = lhs_col->view->IsJoin();
-      auto rhs_is_join = rhs_col->view->IsJoin();
-
-      // Both are joins. This is interesting, we should merge the joins.
-      if (lhs_is_join && rhs_is_join) {
-
-        auto first_join = reinterpret_cast<Node<QueryJoin> *>(lhs_col->view);
-        auto second_join = reinterpret_cast<Node<QueryJoin> *>(rhs_col->view);
-        assert(first_join->columns[0] == lhs_col);
-        assert(second_join->columns[0] == rhs_col);
-
-        const auto joined_col = DisjointSet::Union(lhs_col, rhs_col);
-        if (second_join->columns[0] == joined_col) {
-          std::swap(first_join, second_join);
-        }
-
-        for (auto col : second_join->joined_columns) {
-          first_join->joined_columns.push_back(col);
-        }
-
-        // Make the old second join useless.
-        second_join->joined_columns.clear();
-
-      } else if (lhs_is_join) {
-        JoinInto(rhs_col, lhs_col);
-
-      } else if (rhs_is_join) {
-        JoinInto(lhs_col, rhs_col);
-
-      // Both are SELECTs or MAPs, create a join.
       } else {
-        const auto joined_col = JoinFor(
-            lhs_col, rhs_col, std::min(lhs_col->id, rhs_col->id));
-        id_to_col[lhs_col->id] = joined_col;
-        id_to_col[rhs_col->id] = joined_col;
+        auto join = new Node<QueryJoin>(query.get());
+
+        query->joins.emplace_back(join);
+        join->joined_columns.push_back(lhs_col);
+        join->joined_columns.push_back(rhs_col);
       }
 
     } else if (lhs_col) {
@@ -236,10 +224,10 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto lhs_col = id_to_col[lhs_id];
     auto rhs_col = id_to_col[rhs_id];
     if (lhs_col && rhs_col) {
-      assert(lhs_col->Find() != rhs_col->Find());
+      assert(lhs_col != rhs_col);
 
       const auto constraint = new Node<QueryConstraint>(
-          op, lhs_col->Find(), rhs_col->Find());
+          op, lhs_col, rhs_col);
       query->constraints.emplace_back(constraint);
 
     } else {
@@ -259,77 +247,49 @@ class QueryBuilderImpl : public SIPSVisitor {
     AssertInequality(ComparisonOperator::kGreaterThan, lhs_id, rhs_id);
   }
 
-  Node<QueryColumn> *JoinFor(Node<QueryColumn> *prev_col,
-                             Node<QueryColumn> *where_col,
-                             unsigned id) {
-    const auto join = new Node<QueryJoin>(query.get());
-    query->joins.emplace_back(join);
-
-    const auto joined_col = new Node<QueryColumn>(
-        where_col->var, join, id, 0);
-    query->columns.emplace_back(joined_col);
-    join->joined_columns.push_back(prev_col);
-    join->joined_columns.push_back(where_col);
-    join->pivot_columns.push_back(joined_col);
-
-    DisjointSet::UnionInto(prev_col, joined_col);
-    DisjointSet::UnionInto(where_col, joined_col);
-
-    return joined_col;
-  }
-
-  void JoinInto(Node<QueryColumn> *child_col, Node<QueryColumn> *parent_col) {
-    const auto join = reinterpret_cast<Node<QueryJoin> *>(
-        parent_col->view);
-    join->joined_columns.push_back(child_col);
-    assert(parent_col->Find() == join->pivot_columns[0]->Find());
-    DisjointSet::UnionInto(child_col, parent_col);
-  }
-
   void AddMap(ParsedFunctor functor, const Column *select_begin,
               const Column *select_end, const Column *where_begin,
               const Column *where_end) {
-    if (where_begin >= where_end) {
-      // TODO(pag): Create a "value pump", e.g. primary keys.
-      assert(false);
 
-    } else {
-      auto map = new Node<QueryMap>(query.get(), functor);
-      query->maps.emplace_back(map);
+    assert(where_begin < where_end);
 
-      auto i = 0u;
-      for (auto col = where_begin; col < where_end; ++col) {
-        auto &prev_val = id_to_col[col->id];
-        assert(prev_val != nullptr);
-        auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
-        query->columns.emplace_back(mapped_col);
-        map->columns.push_back(mapped_col);
-        map->input_columns.push_back(prev_val);
-        ++i;
+    (void) ProcessPendingEqualities();
+
+    auto map = new Node<QueryMap>(query.get(), functor);
+    query->maps.emplace_back(map);
+
+    auto i = 0u;
+    for (auto col = where_begin; col < where_end; ++col) {
+      auto &prev_val = id_to_col[col->id];
+      assert(prev_val != nullptr);
+      auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
+      query->columns.emplace_back(mapped_col);
+      map->columns.push_back(mapped_col);
+      map->input_columns.push_back(prev_val);
+      ++i;
+    }
+
+    // Separate out the overwriting of `prev_val` in the case of something
+    // like `foo(A, A)`, where we don't want a self-reference from one column
+    // into another.
+    i = 0u;
+    for (auto col = where_begin; col < where_end; ++col) {
+      auto &prev_val = id_to_col[col->id];
+      if (prev_val->view != map) {
+        prev_val = map->columns[i];
       }
+      ++i;
+    }
 
-      // Separate out the overwriting of `prev_val` in the case of something
-      // like `foo(A, A)`, where we don't want a self-reference from one column
-      // into another.
-      i = 0u;
-      for (auto col = where_begin; col < where_end; ++col) {
-        auto &prev_val = id_to_col[col->id];
-        if (prev_val->view != map) {
-          prev_val = map->columns[i];
-        }
-        ++i;
-      }
-
-      // Add the additional output columns that correspond with the free
-      // parameters to the map.
-      for (auto col = select_begin; col < select_end; ++col) {
-        auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
-        query->columns.emplace_back(mapped_col);
-        map->columns.push_back(mapped_col);
-        auto &prev_val = id_to_col[col->id];
-        assert(!prev_val);  // TODO(pag): Is this right?
-        prev_val = mapped_col;
-      }
+    // Add the additional output columns that correspond with the free
+    // parameters to the map.
+    for (auto col = select_begin; col < select_end; ++col) {
+      auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
+      query->columns.emplace_back(mapped_col);
+      map->columns.push_back(mapped_col);
+      auto &prev_val = id_to_col[col->id];
+      assert(!prev_val);  // TODO(pag): Is this right?
+      prev_val = mapped_col;
     }
   }
 
@@ -337,13 +297,11 @@ class QueryBuilderImpl : public SIPSVisitor {
       ParsedPredicate pred, ParsedDeclaration decl,
       const Column *select_begin, const Column *select_end) override {
 
+
     if (decl.IsFunctor()) {
       auto functor = ParsedFunctor::From(decl);
       if (functor.IsAggregate()) {
         assert(false);  // TODO.
-      } else {
-        AddMap(functor, select_begin, select_end, nullptr, nullptr);
-        return;
       }
     }
 
@@ -385,56 +343,52 @@ class QueryBuilderImpl : public SIPSVisitor {
       columns[col->n] = col;
     }
 
+    // Create columns for the select, but give each column a totally unique
+    // ID.
     for (auto col : columns) {
       assert(col != nullptr);
       (void) AddColumn(select, *col);
     }
 
-    (void) ProcessPendingEqualities();
-
     for (auto col = where_begin; col < where_end; ++col) {
       const auto where_col = select->columns[col->n];
+      const auto prev_col = id_to_col[col->id];
+      assert(prev_col != nullptr);
 
+      auto join = new Node<QueryJoin>(query.get());
+      query->joins.emplace_back(join);
+
+      join->joined_columns.push_back(prev_col);
+      join->joined_columns.push_back(where_col);
+    }
+
+    // Go through and rewrite all assignments to the newly selected column,
+    // but don't actually join the two into the same set.
+    for (auto col = where_begin; col < where_end; ++col) {
+      auto where_col = select->columns[col->n];
       auto &prev_col = id_to_col[col->id];
-      if (!prev_col) {
-        assert(false);  // Shouldn't happen?
-        prev_col = where_col;
-        continue;
-      }
-
-      const auto prev_view = prev_col->Find()->view;
-      if (prev_col->view == select) {
-        continue;
-      }
-
-      if (prev_view->IsJoin()) {
-        JoinInto(where_col, prev_col->Find());
-
-      // The previous view is a select or map, and we're currently doing a
-      // select, so create a join against that view.
-      } else {
-        prev_col = JoinFor(prev_col->Find(), where_col, col->id);
-      }
-
-//      // The previous view is a selection, and we're currently doing a new
-//      // selection where we're matching on the column, so create a new join
-//      // for this select and the previous one.
-//      if (prev_view->IsSelect() || prev_view->IsMap()) {
-//
-//
-//      // The previous view for this column is a join, so merge with it.
-//      } else if (prev_view->IsJoin()) {
-//        JoinInto(where_col, prev_col);
-//
-//      } else {
-//        assert(false);
+//      if (!prev_col) {
+//        prev_col = where_col;
 //      }
+      if (prev_col->view != select) {
+        for (auto &assign : id_to_col) {
+          if (assign.second == prev_col) {
+            assign.second = where_col;
+          }
+        }
+      }
     }
 
     for (auto col = select_begin; col < select_end; ++col) {
+      const auto select_col = select->columns[col->n];
       auto &prev_col = id_to_col[col->id];
-      assert(!prev_col);
-      prev_col = select->columns[col->n];
+      if (prev_col) {
+        assert(false);  // Hrmm, shouldn't happen.
+        pending_equalities.emplace_back(col->id, select_col->id);
+
+      } else {
+        prev_col = select_col;
+      }
     }
   }
 
@@ -473,151 +427,325 @@ class QueryBuilderImpl : public SIPSVisitor {
       next_pending_compares.swap(pending_compares);
       pending_compares.clear();
       for (auto cmp : next_pending_compares) {
-        AssertInequality(std::get<0>(cmp), std::get<1>(cmp), std::get<2>(cmp));
+        AssertInequality(
+            std::get<0>(cmp), std::get<1>(cmp), std::get<2>(cmp));
       }
       assert(prev_len > pending_compares.size());
     }
   }
 
-  void MergeAndProjectJoins(void) {
-    std::sort(query->joins.begin(), query->joins.end(),
-              [](const std::unique_ptr<Node<QueryJoin>> &a,
-                 const std::unique_ptr<Node<QueryJoin>> &b) {
-                return a->joined_columns.size() < b->joined_columns.size();
-              });
-
-    std::unordered_set<Node<QueryView> *> joined_views;
-
-    for (const auto &join : query->joins) {
-      if (join->pivot_columns.empty() || join->joined_columns.empty()) {
-        continue;  // Taken over or merged.
-      }
-
-      joined_views.clear();
-
-      // Go through the original pivot sources, which are originally stored in
-      // the `joined_columns` table, and merge them in. All original joins are
-      // based off of a single pivot model. We want to collect all unique views
-      // that this join is combining together, so we can fill up
-      // `joined_columns` with records representing the product of those tables.
-      for (auto joined_col : join->joined_columns) {
-        assert(joined_col->view != join.get());
-        joined_views.insert(joined_col->view);
-      }
-
-      auto pivot_col = join->joined_columns[0]->Find();
-
-      // Clear out the old pivots, we're going to replace with all the columns
-      // that are being joined together.
-      join->joined_columns.clear();
-
-      size_t num_cols = 0;
-      for (auto joined_view : joined_views) {
-        num_cols += joined_view->columns.size();
-      }
-
-      join->columns.reserve(num_cols);
-
-      // Go through and have the join "steal" the original columns, and
-      // replace them with equivalents.
-      for (auto joined_view : joined_views) {
-        assert(joined_view != join.get());
-
-        Node<QueryColumn> *steal_pivot = nullptr;
-        if (joined_view->IsJoin()) {
-          auto joined_join = reinterpret_cast<Node<QueryJoin> *>(joined_view);
-          steal_pivot = joined_join->pivot_columns[0]->Find();
-          assert(steal_pivot != pivot_col);
-        }
-
-        auto i = 0u;
-        for (auto &steal_col : joined_view->columns) {
-          assert(steal_col->view == joined_view);
-          assert(steal_col->index == i);
-          ++i;
-
-          auto index = static_cast<unsigned>(join->columns.size());
-          auto replace_col = new Node<QueryColumn>(
-              steal_col->var, steal_col->view, steal_col->id, steal_col->index);
-
-          const auto steal_col_parent = steal_col->Find();
-
-          // We are about to replace one of the columns that was a pivot of
-          // a joined join. We need to ensure that the replacement column is
-          // "marked" as a pivot by re-parenting it to the joined join's pivot
-          // column.
-          if (steal_col_parent == steal_pivot) {
-            DisjointSet::UnionInto(replace_col, steal_pivot);
-          }
-
-          query->columns.emplace_back(replace_col);
-          join->columns.push_back(steal_col);
-          join->joined_columns.push_back(replace_col);
-
-          // Re-parent `steal_col` into `join`.
-          steal_col->index = index;
-          steal_col->view = join.get();
-
-          // Replace `steal_col` in the view with `replace_col`.
-          steal_col = replace_col;
+  void ReplaceAllUsesWith(
+      Node<QueryColumn> *old_col, Node<QueryColumn> *new_col) {
+    for (auto &join : query->joins) {
+      for (auto &input_col : join->joined_columns) {
+        if (input_col == old_col) {
+          input_col = new_col;
         }
       }
     }
 
-    // Now we have a bunch of canonical joins, where the "joins" own their
-    // product columns, by virtual of stealing them from their original views.
-    // We might have a tower of joins, though, in that one join takes all
-    // of its columns from the next join down, and so we'd want to compress
-    // that down into a join on two pivots, then compress further if need be.
+    for (auto &map : query->maps) {
+      for (auto &input_col : map->input_columns) {
+        if (input_col == old_col) {
+          input_col = new_col;
+        }
+      }
+    }
+
+    for (auto &insert : query->inserts) {
+      for (auto &input_col : insert->columns) {
+        if (input_col == old_col) {
+          input_col = new_col;
+        }
+      }
+    }
+
+    for (auto &cmp : query->constraints) {
+      if (cmp->lhs == old_col) {
+        cmp->lhs = new_col;
+      }
+      if (cmp->rhs == old_col) {
+        cmp->rhs = new_col;
+      }
+    }
+  }
+
+  void MergeAndProjectJoins(void) {
+
+    std::unordered_map<ParsedVariable, unsigned> join_weight;
     for (const auto &join : query->joins) {
-      if (join->joined_columns.empty() || join->pivot_columns.empty()) {
+      for (auto col : join->joined_columns) {
+        join_weight[col->var] += 1;
+      }
+    }
+//
+//    for (const auto &join : query->joins) {
+//      for (auto col : join->joined_columns) {
+//        num_joins[join.get()] += num_joins[col->view];
+//      }
+//    }
+
+    std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>>
+        promoted_ids;
+
+    std::unordered_map<ParsedVariable, std::vector<Node<QueryColumn> *>>
+        promoted_vars;
+
+    std::unordered_map<Node<QueryColumn> *, DisjointSet> eqc;
+
+    std::sort(query->joins.begin(), query->joins.end(),
+              [&](const std::unique_ptr<Node<QueryJoin>> &a,
+                 const std::unique_ptr<Node<QueryJoin>> &b) {
+                auto wa = join_weight[a->joined_columns[0]->var] +
+                          join_weight[a->joined_columns[1]->var];
+                auto wb = join_weight[b->joined_columns[0]->var] +
+                          join_weight[b->joined_columns[1]->var];
+                return wa < wb;
+              });
+
+    for (const auto &join : query->joins) {
+
+      assert(join->pivot_columns.empty());
+      assert(join->pivot_conditions.empty());
+      assert(join->columns.empty());
+      assert(join->joined_columns.size() == 2);
+
+      auto col0 = join->joined_columns[0];
+      auto col1 = join->joined_columns[1];
+      if (col0->var.Order() > col1->var.Order()) {
+        std::swap(col0, col1);
+      }
+
+      join->joined_columns.clear();
+
+      // The two columns to be joined already belong to the same join. When
+      // we doing the join processing here, we make sure to go find all the
+      // join pivots, so we can safely ignore these guys.
+      if (col0->view == col1->view && col0->view->IsJoin()) {
+        continue;
+      }
+
+      promoted_vars.clear();
+      promoted_ids.clear();
+      eqc.clear();
+
+      auto min_id = ~0u;
+      auto max_id = 0u;
+
+      for (auto joined_col : col0->view->columns) {
+        eqc.emplace(joined_col, joined_col->id);
+        min_id = std::min(min_id, joined_col->id);
+        max_id = std::max(max_id, joined_col->id);
+        promoted_ids[joined_col->id].push_back(joined_col);
+        promoted_vars[joined_col->var].push_back(joined_col);
+      }
+
+      if (col1->view != col0->view) {
+        for (auto joined_col : col1->view->columns) {
+          assert(!eqc.count(joined_col));
+          eqc.emplace(joined_col, joined_col->id);
+          min_id = std::min(min_id, joined_col->id);
+          max_id = std::max(max_id, joined_col->id);
+          promoted_ids[joined_col->id].push_back(joined_col);
+          promoted_vars[joined_col->var].push_back(joined_col);
+        }
+      } else {
+        assert(false && "TODO?");
+      }
+
+      // Union together all columns that should belong to the same equivalence
+      // class. We're looking at columns that share the same variable, or id,
+      // or both.
+      for (auto &ent : eqc) {
+        auto joined_col = ent.first;
+        auto &our_eqc = ent.second;
+        for (auto rel_col : promoted_ids[joined_col->id]) {
+          auto it = eqc.find(rel_col);
+          assert(it != eqc.end());
+          DisjointSet::Union(&our_eqc, &(it->second));
+        }
+        for (auto rel_col : promoted_vars[joined_col->var]) {
+          auto it = eqc.find(rel_col);
+          assert(it != eqc.end());
+          DisjointSet::Union(&our_eqc, &(it->second));
+        }
+      }
+
+      // Remake `promoted_ids` so that it takes the equivalence classes into
+      // account.
+      promoted_ids.clear();
+      for (auto &ent : eqc) {
+        auto joined_col = ent.first;
+        auto &our_eqc = ent.second;
+        promoted_ids[our_eqc.Find()->id].push_back(joined_col);
+      }
+
+      // `promoted_ids` is now a mapping from the smallest ID to its equivalence
+      // class of columns, where every column in the equivalence class is
+      // related to at least one other column by ID or by variable name.
+      //
+      // Go and fill up the output columns of the join, which is the set of
+      // unique input columns. For each output column that we create, we replace
+      // all uses of the input column with the output column.
+      for (auto i = min_id; i <= max_id; ++i) {
+        auto &col_set = promoted_ids[i];
+        if (col_set.empty()) {
+          continue;
+        }
+
+        auto min_var = col_set[0]->var;
+        for (auto col : col_set) {
+          if (min_var.Order() > col->var.Order()) {
+            min_var = col->var;
+          }
+        }
+
+        auto output_col = new Node<QueryColumn>(
+            min_var, join.get(), i,
+            static_cast<unsigned>(join->columns.size()));
+
+        query->columns.emplace_back(output_col);
+        join->columns.push_back(output_col);
+
+        for (auto col : col_set) {
+          ReplaceAllUsesWith(col, output_col);
+        }
+
+        if (1 < col_set.size()) {
+          join->pivot_columns.push_back(output_col);
+        }
+      }
+
+      // Add in the joined columns after, so that they don't get replaced.
+      for (auto i = min_id; i <= max_id; ++i) {
+        auto &col_set = promoted_ids[i];
+        if (col_set.empty()) {
+          continue;
+        }
+
+        if (1 < col_set.size()) {
+
+          // Add in the pivot condition. Has to happen *after* the `ReplaceAllUses`
+          // that happens in `replace_col`.
+          auto first_pivot_col = col_set[0];
+          for (auto k = 1u; k < col_set.size(); ++k) {
+            auto next_pivot_col = col_set[k];
+
+            auto pivot_cond = new Node<QueryConstraint>(
+                ComparisonOperator::kEqual, first_pivot_col, next_pivot_col);
+            query->constraints.emplace_back(pivot_cond);
+            join->pivot_conditions.push_back(pivot_cond);
+          }
+        }
+
+        for (auto col : col_set) {
+          join->joined_columns.push_back(col);
+        }
+      }
+    }
+
+    std::unordered_set<Node<QueryJoin> *> joined_joins;
+
+    // Try to combine join trees that all operate on the same pivots
+    bool found = false;
+    for (const auto &join : query->joins) {
+      if (join->joined_columns.empty()) {
         continue;  // Taken over or merged.
       }
 
-      joined_views.clear();
+      joined_joins.clear();
       for (auto joined_col : join->joined_columns) {
-        joined_views.insert(joined_col->view);
+
+        // We only care about joins of joins.
+        if (!joined_col->view->IsJoin()) {
+          goto try_next_join;
+        }
+
+        auto joined_join = reinterpret_cast<Node<QueryJoin> *>(
+            joined_col->view);
+
+        // Make sure that all pivots of the lower join participate in at least
+        // one pivot condition of this join.
+        found = false;
+        for (auto joined_pivot_col : joined_join->pivot_columns) {
+          for (auto pivot_cond : join->pivot_conditions) {
+            if (joined_pivot_col == pivot_cond->lhs ||
+                joined_pivot_col == pivot_cond->rhs) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            goto try_next_join;
+          }
+        }
+
+        joined_joins.insert(joined_join);
+      }
+      goto merge_joins;
+
+    try_next_join:
+      continue;
+
+    merge_joins:
+
+      join->joined_columns.clear();
+      join->pivot_conditions.clear();
+
+      for (auto joined_join : joined_joins) {
+        join->joined_columns.insert(
+            join->joined_columns.end(),
+            joined_join->joined_columns.begin(),
+            joined_join->joined_columns.end());
+
+        join->pivot_conditions.insert(
+            join->pivot_conditions.end(),
+            joined_join->pivot_conditions.begin(),
+            joined_join->pivot_conditions.end());
+
+        joined_join->pivot_conditions.clear();
+        joined_join->joined_columns.clear();
+        joined_join->pivot_columns.clear();
       }
 
-      if (joined_views.size() != 1) {
-        continue;
-      }
-
-      const auto joined_view = *joined_views.begin();
-      if (!joined_view->IsJoin()) {
-        continue;
-      }
-
-      assert(joined_view != join.get());
-      assert(join->joined_columns.size() == join->columns.size());
-
-      const auto joined_join = reinterpret_cast<Node<QueryJoin> *>(joined_view);
-      assert(join->joined_columns.size() == joined_join->columns.size());
-      assert(joined_join->joined_columns.size() == joined_join->columns.size());
-
-      for (auto joined_pivot : joined_join->pivot_columns) {
-        joined_pivot->view = join.get();
-        joined_pivot->index = static_cast<unsigned>(join->pivot_columns.size());
-        join->pivot_columns.push_back(joined_pivot);
-      }
-
-      auto i = 0u;
-      for (auto joined_col : joined_join->joined_columns) {
-        auto &incoming = join->joined_columns[i];
-        const auto old_outgoing = joined_join->columns[i];
-
-        assert(incoming == old_outgoing);
-        //assert(incoming->Find() == incoming);
-
-        // TODO(pag): Union things together?
-
-        incoming = joined_col;
-        ++i;
-      }
-
-      joined_join->pivot_columns.clear();
-      joined_join->joined_columns.clear();
-      joined_join->columns.clear();
+//
+//      assert(1 < joined_joins.size());
+//
+//      const auto joined_view = *joined_views.begin();
+//      if (!joined_view->IsJoin()) {
+//        continue;
+//      }
+//
+//      assert(joined_view != join.get());
+//      assert(join->joined_columns.size() == join->columns.size());
+//
+//      const auto joined_join = reinterpret_cast<Node<QueryJoin> *>(joined_view);
+//      assert(join->joined_columns.size() == joined_join->columns.size());
+//      assert(joined_join->joined_columns.size() == joined_join->columns.size());
+//
+//      for (auto joined_pivot : joined_join->pivot_columns) {
+//        joined_pivot->view = join.get();
+//        joined_pivot->index = static_cast<unsigned>(join->pivot_columns.size());
+//        join->pivot_columns.push_back(joined_pivot);
+//      }
+//
+//      auto i = 0u;
+//      for (auto joined_col : joined_join->joined_columns) {
+//        auto &incoming = join->joined_columns[i];
+//        const auto old_outgoing = joined_join->columns[i];
+//
+//        assert(incoming == old_outgoing);
+//        //assert(incoming->Find() == incoming);
+//
+//        // TODO(pag): Union things together?
+//
+//        incoming = joined_col;
+//        ++i;
+//      }
+//
+//      joined_join->pivot_columns.clear();
+//      joined_join->joined_columns.clear();
+//      joined_join->columns.clear();
     }
   }
 
@@ -662,10 +790,22 @@ class QueryBuilderImpl : public SIPSVisitor {
         prev_col_ptr = &(col->next_in_view);
       }
 
-      if (!view->joined_columns.empty() && !view->pivot_columns.empty()) {
+      prev_col_ptr = &dummy;
+      for (auto col : view->pivot_columns) {
+        *prev_col_ptr = col;
+        prev_col_ptr = &(col->next_pivot_in_join);
+      }
+
+      if (!view->joined_columns.empty()) {
         view->next = next_join;
         view->next_view = next_view;
         next_view = next_join = view.get();
+      }
+
+      for (auto i = 1u; i < view->pivot_conditions.size(); ++i) {
+        auto cond = view->pivot_conditions[i];
+        auto prev_cond = view->pivot_conditions[i - 1];
+        prev_cond->next_pivot_condition = cond;
       }
     }
 
@@ -691,7 +831,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     (void) processed_eqs;
 
     ProcessPendingCompares();
-    MergeAndProjectJoins();
 
     auto table = TableFor(decl);
     auto insert = new Node<QueryInsert>(
@@ -700,13 +839,14 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col = begin; col < end; ++col) {
       const auto output_col = id_to_col[col->id];
       assert(output_col != nullptr);
-      insert->columns.push_back(output_col->Find());
+      insert->columns.push_back(output_col);
     }
 
     query->inserts.emplace_back(insert);
   }
 
   void Commit(ParsedPredicate) override {
+    MergeAndProjectJoins();
     LinkEverything();
   }
 

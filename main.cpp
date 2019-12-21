@@ -23,6 +23,8 @@
 
 namespace hyde {
 
+extern OutputStream *gOut;
+
 #if 0
 class PseudoCodePrinter final : public SIPSVisitor {
  public:
@@ -271,14 +273,17 @@ static void CodeDumper(DisplayManager display_manager,
   BottomUpAnalysis analysis;
   QueryBuilder query_builder;
 
+
+  hyde::OutputStream os(display_manager, std::cerr);
+  gOut = &os;
+
   for (auto state : analysis.GenerateStates(module)) {
     DefaultSIPSScorer scorer;
     SIPSGenerator generator(state->assumption);
-    auto query = query_builder.BuildInsert(scorer, generator);
-    hyde::OutputStream os(display_manager, std::cerr);
     os << "// Assume: " << state->assumption << "\n"
-       << "// Clause: " << ParsedClause::Containing(state->assumption) << "\n"
-       << query;
+       << "// Clause: " << ParsedClause::Containing(state->assumption) << "\n";
+    auto query = query_builder.BuildInsert(scorer, generator);
+    os << query;
   }
 }
 
@@ -299,6 +304,8 @@ static int ProcessModule(hyde::DisplayManager display_manager,
       hyde::OutputStream os(display_manager, ss);
       os << module;
     } while (false);
+
+    std::cerr << ss.str();
 
     hyde::Parser parser(display_manager, error_log);
     auto module2 = parser.ParseStream(ss, hyde::DisplayConfiguration());

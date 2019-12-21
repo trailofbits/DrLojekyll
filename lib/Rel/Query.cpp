@@ -127,7 +127,7 @@ QueryView QueryView::Containing(QueryColumn col) {
   // If the column belongs to a join, then it's possible that two separate
   // joins were merged together, so go find that merged view.
   if (col.impl->view->IsJoin()) {
-    return QueryView(col.impl->Find()->view);
+    return QueryView(col.impl->view);
   } else {
     return QueryView(col.impl->view);
   }
@@ -141,6 +141,28 @@ NodeRange<QueryColumn> QueryView::Columns(void) const {
         impl->columns.front(),
         static_cast<intptr_t>(
             __builtin_offsetof(Node<QueryColumn>, next_in_view)));
+  }
+}
+
+NodeRange<QueryColumn> QueryJoin::Columns(void) const {
+  if (impl->columns.empty()) {
+    return NodeRange<QueryColumn>();
+  } else {
+    return NodeRange<QueryColumn>(
+        impl->columns.front(),
+        static_cast<intptr_t>(
+            __builtin_offsetof(Node<QueryColumn>, next_in_view)));
+  }
+}
+
+NodeRange<QueryColumn> QueryJoin::PivotColumns(void) const {
+  if (impl->pivot_columns.empty()) {
+    return NodeRange<QueryColumn>();
+  } else {
+    return NodeRange<QueryColumn>(
+        impl->pivot_columns.front(),
+        static_cast<intptr_t>(
+            __builtin_offsetof(Node<QueryColumn>, next_pivot_in_join)));
   }
 }
 
@@ -177,11 +199,11 @@ const ParsedVariable &QueryColumn::Variable(void) const noexcept {
 }
 
 bool QueryColumn::operator==(QueryColumn that) const noexcept {
-  return impl->Find() == that.impl->Find();
+  return impl == that.impl;
 }
 
 bool QueryColumn::operator!=(QueryColumn that) const noexcept {
-  return impl->Find() != that.impl->Find();
+  return impl != that.impl;
 }
 
 const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
@@ -251,8 +273,13 @@ QueryJoin &QueryJoin::From(QueryView &view) {
 }
 
 // Returns the number of joined columns.
-unsigned QueryJoin::Arity(void) const noexcept {
+unsigned QueryJoin::NumInputColumns(void) const noexcept {
   return static_cast<unsigned>(impl->joined_columns.size());
+}
+
+// Returns the number of joined columns.
+unsigned QueryJoin::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->columns.size());
 }
 
 unsigned QueryJoin::NumPivotColumns(void) const noexcept {
@@ -262,19 +289,31 @@ unsigned QueryJoin::NumPivotColumns(void) const noexcept {
 // Returns the `nth` pivot column.
 QueryColumn QueryJoin::NthPivotColumn(unsigned n) const noexcept {
   assert(n < impl->pivot_columns.size());
-  return QueryColumn(impl->pivot_columns[n]->Find());
+  return QueryColumn(impl->pivot_columns[n]);
 }
 
 // Returns the `nth` joined column.
 QueryColumn QueryJoin::NthInputColumn(unsigned n) const noexcept {
   assert(n < impl->joined_columns.size());
-  return QueryColumn(impl->joined_columns[n]->Find());
+  return QueryColumn(impl->joined_columns[n]);
 }
 
 // Returns the `nth` output column.
-QueryColumn QueryJoin::NthOutputColumn(unsigned n) const noexcept {
+QueryColumn QueryJoin::NthColumn(unsigned n) const noexcept {
   assert(n < impl->columns.size());
-  return QueryColumn(impl->columns[n]->Find());
+  return QueryColumn(impl->columns[n]);
+}
+
+// The list of pivot constraints.
+NodeRange<QueryConstraint> QueryJoin::Constraints(void) const {
+  if (impl->pivot_conditions.empty()) {
+    return NodeRange<QueryConstraint>();
+  } else {
+    return NodeRange<QueryConstraint>(
+        impl->pivot_conditions.front(),
+        static_cast<intptr_t>(
+            __builtin_offsetof(Node<QueryConstraint>, next_pivot_condition)));
+  }
 }
 
 QueryMap &QueryMap::From(QueryView &view) {
@@ -288,7 +327,7 @@ unsigned QueryMap::NumInputColumns(void) const noexcept {
 
 QueryColumn QueryMap::NthInputColumn(unsigned n) const noexcept {
   assert(n < impl->input_columns.size());
-  return QueryColumn(impl->input_columns[n]->Find());
+  return QueryColumn(impl->input_columns[n]);
 }
 
 // Returns the number of output columns.
@@ -299,7 +338,7 @@ unsigned QueryMap::Arity(void) const noexcept {
 // Returns the `nth` output column.
 QueryColumn QueryMap::NthOutputColumn(unsigned n) const noexcept {
   assert(n < impl->columns.size());
-  return QueryColumn(impl->columns[n]->Find());
+  return QueryColumn(impl->columns[n]);
 }
 
 const ParsedFunctor &QueryMap::Functor(void) const noexcept {
@@ -311,11 +350,11 @@ ComparisonOperator QueryConstraint::Operator(void) const {
 }
 
 QueryColumn QueryConstraint::LHS(void) const {
-  return QueryColumn(impl->lhs->Find());
+  return QueryColumn(impl->lhs);
 }
 
 QueryColumn QueryConstraint::RHS(void) const {
-  return QueryColumn(impl->rhs->Find());
+  return QueryColumn(impl->rhs);
 }
 
 QueryRelation QueryInsert::Relation(void) const noexcept {
@@ -328,7 +367,7 @@ unsigned QueryInsert::Arity(void) const noexcept {
 
 QueryColumn QueryInsert::NthColumn(unsigned n) const noexcept {
   assert(n < impl->columns.size());
-  return QueryColumn(impl->columns[n]->Find());
+  return QueryColumn(impl->columns[n]);
 }
 
 NodeRange<QueryJoin> Query::Joins(void) const {

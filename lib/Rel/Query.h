@@ -24,6 +24,12 @@ class QueryContext {
   // clauses.
   std::weak_ptr<QueryImpl> empty_query;
 
+
+  // The streams associated with generators, i.e. functors that only output
+  // values.
+  std::unordered_map<ParsedFunctor, std::unique_ptr<Node<QueryGenerator>>>
+      generators;
+
   // The streams associated with messages.
   std::unordered_map<ParsedMessage, std::unique_ptr<Node<QueryMessage>>>
       messages;
@@ -42,6 +48,8 @@ class QueryContext {
 
   std::unordered_map<std::string, std::unique_ptr<Node<QueryConstant>>>
       constant_strings;
+
+  unsigned next_join_id{~0U};
 
   // The next table.
   Node<QueryStream> *next_stream{nullptr};
@@ -167,7 +175,6 @@ class Node<QueryView> {
 
   // The selected columns.
   std::vector<Node<QueryColumn> *> columns;
-  std::vector<Node<QueryColumn> *> pivot_columns;
 
   // Next view (select or join) in this query.
   Node<QueryView> *next_view{nullptr};
@@ -213,6 +220,9 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // Tells us which columns are pivots.
   std::vector<Node<QueryColumn> *> pivot_columns;
+
+  // Conditions on the input columns.
+  std::vector<Node<QueryConstraint> *> pivot_conditions;
 };
 
 template <>
@@ -248,42 +258,47 @@ class Node<QueryConstraint> {
         rhs(rhs_),
         op(op_) {}
 
-  Node<QueryColumn> * const lhs;
-  Node<QueryColumn> * const rhs;
+  Node<QueryColumn> *lhs;
+  Node<QueryColumn> *rhs;
 
   // Next such constraint in this query.
   Node<QueryConstraint> *next{nullptr};
+
+  // Next such constraint in this pivot list.
+  Node<QueryConstraint> *next_pivot_condition{nullptr};
 
   const ComparisonOperator op;
 };
 
 template <>
-class Node<QueryColumn> : public DisjointSet {
+class Node<QueryColumn> {
  public:
   inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
                        unsigned id_, unsigned index_)
-      : DisjointSet(id_),
-        var(var_),
+      : var(var_),
         view(view_),
+        id(id_),
         index(index_) {}
-
-  inline Node<QueryColumn> *Find(void) {
-    return this->DisjointSet::FindAs<Node<QueryColumn>>();
-  }
 
   const ParsedVariable var;
 
   // View to which this column belongs.
-  Node<QueryView> *view;
+  Node<QueryView> * const view;
+
+  // The ID associated with `var` from the SIPS visitor.
+  const unsigned id;
 
   // Tells us this column can be found at `view->columns[index]`.
-  unsigned index;
+  const unsigned index;
 
   // Next column in the whole query.
   Node<QueryColumn> *next{nullptr};
 
   // Next column within the same view.
   Node<QueryColumn> *next_in_view{nullptr};
+
+  // Next pivot column within the same join.
+  Node<QueryColumn> *next_pivot_in_join{nullptr};
 };
 
 template <>

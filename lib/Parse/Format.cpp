@@ -165,24 +165,24 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
     }
   }
 
-  for (ParsedDeclaration decl : module.Queries()) {
-    os << decl << "\n";
+  for (auto decl : module.Queries()) {
+    os << ParsedDeclaration(decl) << "\n";
   }
 
-  for (ParsedDeclaration decl : module.Messages()) {
-    os << decl << "\n";
+  for (auto decl : module.Messages()) {
+    os << ParsedDeclaration(decl) << "\n";
   }
 
-  for (ParsedDeclaration decl : module.Functors()) {
-    os << decl << "\n";
+  for (auto decl : module.Functors()) {
+    os << ParsedDeclaration(decl) << "\n";
   }
 
-  for (ParsedDeclaration decl : module.Exports()) {
-    os << decl << "\n";
+  for (auto decl : module.Exports()) {
+    os << ParsedDeclaration(decl) << "\n";
   }
 
-  for (ParsedDeclaration decl : module.Locals()) {
-    os << decl << "\n";
+  for (auto decl : module.Locals()) {
+    os << ParsedDeclaration(decl) << "\n";
   }
 
   for (auto clause : module.Clauses()) {

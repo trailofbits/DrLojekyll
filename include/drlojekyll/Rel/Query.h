@@ -193,20 +193,32 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
  public:
   static QueryJoin &From(QueryView &view);
 
+  // The resulting joined columns.
+  NodeRange<QueryColumn> Columns(void) const;
+
+  // Returns the number of joined output columns
+  unsigned Arity(void) const noexcept;
+
+  // Returns the `nth` joined output column.
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  // The pivot columns.
+  NodeRange<QueryColumn> PivotColumns(void) const;
+
   // Returns the number of pivot columns. Some of the output columns are
   // equal to the pivot columns.
   unsigned NumPivotColumns(void) const noexcept;
 
   QueryColumn NthPivotColumn(unsigned n) const noexcept;
 
-  // Returns the number of input/output columns
-  unsigned Arity(void) const noexcept;
+  // Returns the number of input columns
+  unsigned NumInputColumns(void) const noexcept;
 
   // Returns the `nth` joined column.
   QueryColumn NthInputColumn(unsigned n) const noexcept;
 
-  // Returns the `nth` output column.
-  QueryColumn NthOutputColumn(unsigned n) const noexcept;
+  // The list of pivot constraints.
+  NodeRange<QueryConstraint> Constraints(void) const;
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
