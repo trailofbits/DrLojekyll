@@ -271,22 +271,19 @@ class Node<QueryConstraint> {
 };
 
 template <>
-class Node<QueryColumn> {
+class Node<QueryColumn> : public DisjointSet {
  public:
   inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
                        unsigned id_, unsigned index_)
-      : var(var_),
+      : DisjointSet(id_),
+        var(var_),
         view(view_),
-        id(id_),
         index(index_) {}
 
   const ParsedVariable var;
 
   // View to which this column belongs.
   Node<QueryView> * const view;
-
-  // The ID associated with `var` from the SIPS visitor.
-  const unsigned id;
 
   // Tells us this column can be found at `view->columns[index]`.
   const unsigned index;
