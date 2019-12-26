@@ -158,6 +158,7 @@ class Node<QueryMessage> final : public Node<QueryStream> {
   Node<QueryMessage> * const next;
 };
 
+// A view "owns" its the columns pointed to by `columns`.
 template <>
 class Node<QueryView> {
  public:
@@ -167,6 +168,7 @@ class Node<QueryView> {
   virtual bool IsJoin(void) const noexcept = 0;
   virtual bool IsMap(void) const noexcept = 0;
   virtual bool IsAggregate(void) const noexcept = 0;
+  virtual bool IsMerge(void) const noexcept = 0;
 
   inline Node(QueryImpl *query_)
       : query(query_) {}
@@ -195,6 +197,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
   bool IsAggregate(void) const noexcept override;
+  bool IsMerge(void) const noexcept override;
 
   // Next select in this query.
   Node<QuerySelect> *next{nullptr};
@@ -214,6 +217,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
   bool IsAggregate(void) const noexcept override;
+  bool IsMerge(void) const noexcept override;
 
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
@@ -238,6 +242,7 @@ class Node<QueryMap> final : public Node<QueryView> {
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
   bool IsAggregate(void) const noexcept override;
+  bool IsMerge(void) const noexcept override;
 
   inline Node(QueryImpl *query_, ParsedFunctor functor_)
       : Node<QueryView>(query_),
@@ -263,6 +268,7 @@ class Node<QueryAggregate> : public Node<QueryView> {
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
   bool IsAggregate(void) const noexcept override;
+  bool IsMerge(void) const noexcept override;
 
   inline Node(QueryImpl *query_, ParsedFunctor functor_)
       : Node<QueryView>(query_),
@@ -279,6 +285,25 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   // View that is summarized by this aggregating functor.
   std::vector<Node<QueryColumn> *> summarized_columns;
+};
+
+template <>
+class Node<QueryMerge> : public Node<QueryView> {
+ public:
+  using Node<QueryView>::Node;
+
+  virtual ~Node(void);
+
+  bool IsSelect(void) const noexcept override;
+  bool IsJoin(void) const noexcept override;
+  bool IsMap(void) const noexcept override;
+  bool IsAggregate(void) const noexcept override;
+  bool IsMerge(void) const noexcept override;
+
+  inline Node(QueryImpl *query_)
+      : Node<QueryView>(query_) {}
+
+  std::vector<Node<QueryView> *> merged_views;
 };
 
 template <>
@@ -363,6 +388,7 @@ class QueryImpl {
   std::vector<std::unique_ptr<Node<QueryMap>>> maps;
   std::vector<std::unique_ptr<Node<QueryAggregate>>> aggregates;
   std::vector<std::unique_ptr<Node<QueryAggregate>>> pending_aggregates;
+  std::vector<std::unique_ptr<Node<QueryMerge>>> merges;
   std::vector<std::unique_ptr<Node<QueryConstraint>>> constraints;
   std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QueryInsert>>> inserts;

@@ -165,6 +165,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsJoin(void) const noexcept;
   bool IsMap(void) const noexcept;
   bool IsAggregate(void) const noexcept;
+  bool IsMerge(void) const noexcept;
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -282,7 +283,29 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   using query::QueryNode<QueryAggregate>::QueryNode;
 };
 
-// A join of two or more tables on one or more columns.
+// A merge between two or more views of the same arity, where the columns have
+// the same types.
+class QueryMerge : public query::QueryNode<QueryMerge> {
+ public:
+  static QueryMerge &From(QueryView &view);
+
+  // The resulting mapped columns.
+  NodeRange<QueryColumn> Columns(void) const;
+
+  // Returns the number of output columns.
+  unsigned Arity(void) const noexcept;
+
+  // Returns the `nth` output column.
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  // Number of views that are merged together at this point.
+  unsigned NumMergedViews(void) const noexcept ;
+
+  // Nth view that is merged together at this point.
+  QueryView NthMergedView(unsigned n) const noexcept;
+};
+
+// A constraint between two columns.
 class QueryConstraint : public query::QueryNode<QueryConstraint> {
  public:
 

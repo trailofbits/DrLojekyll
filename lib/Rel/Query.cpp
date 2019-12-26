@@ -27,6 +27,7 @@ Node<QuerySelect>::~Node(void) {}
 Node<QueryJoin>::~Node(void) {}
 Node<QueryMap>::~Node(void) {}
 Node<QueryAggregate>::~Node(void) {}
+Node<QueryMerge>::~Node(void) {}
 
 bool Node<QueryConstant>::IsConstant(void) const noexcept {
   return true;
@@ -80,6 +81,10 @@ bool Node<QuerySelect>::IsAggregate(void) const noexcept {
   return false;
 }
 
+bool Node<QuerySelect>::IsMerge(void) const noexcept {
+  return false;
+}
+
 bool Node<QueryJoin>::IsSelect(void) const noexcept {
   return false;
 }
@@ -93,6 +98,10 @@ bool Node<QueryJoin>::IsMap(void) const noexcept {
 }
 
 bool Node<QueryJoin>::IsAggregate(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryJoin>::IsMerge(void) const noexcept {
   return false;
 }
 
@@ -112,6 +121,10 @@ bool Node<QueryMap>::IsAggregate(void) const noexcept {
   return false;
 }
 
+bool Node<QueryMap>::IsMerge(void) const noexcept {
+  return false;
+}
+
 bool Node<QueryAggregate>::IsSelect(void) const noexcept {
   return false;
 }
@@ -125,6 +138,30 @@ bool Node<QueryAggregate>::IsMap(void) const noexcept {
 }
 
 bool Node<QueryAggregate>::IsAggregate(void) const noexcept {
+  return true;
+}
+
+bool Node<QueryAggregate>::IsMerge(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMerge>::IsSelect(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMerge>::IsJoin(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMerge>::IsMap(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMerge>::IsAggregate(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryMerge>::IsMerge(void) const noexcept {
   return true;
 }
 
@@ -205,6 +242,10 @@ bool QueryView::IsMap(void) const noexcept {
 
 bool QueryView::IsAggregate(void) const noexcept {
   return impl->IsAggregate();
+}
+
+bool QueryView::IsMerge(void) const noexcept {
+  return impl->IsMerge();
 }
 
 NodeRange<QueryColumn> QuerySelect::Columns(void) const {
@@ -439,6 +480,45 @@ QueryColumn QueryAggregate::NthSummarizedColumn(unsigned n) const noexcept {
 // The functor doing the aggregating.
 const ParsedFunctor &QueryAggregate::Functor(void) const noexcept {
   return impl->functor;
+}
+
+QueryMerge &QueryMerge::From(QueryView &view) {
+  assert(view.IsMerge());
+  return reinterpret_cast<QueryMerge &>(view);
+}
+
+// The resulting mapped columns.
+NodeRange<QueryColumn> QueryMerge::Columns(void) const {
+  if (impl->columns.empty()) {
+    return NodeRange<QueryColumn>();
+  } else {
+    return NodeRange<QueryColumn>(
+        impl->columns.front(),
+        static_cast<intptr_t>(
+            __builtin_offsetof(Node<QueryColumn>, next_in_view)));
+  }
+}
+
+// Returns the number of output columns.
+unsigned QueryMerge::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->columns.size());
+}
+
+// Returns the `nth` output column.
+QueryColumn QueryMerge::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.size());
+  return QueryColumn(impl->columns[n]);
+}
+
+// Number of views that are merged together at this point.
+unsigned QueryMerge::NumMergedViews(void) const noexcept {
+  return static_cast<unsigned>(impl->merged_views.size());
+}
+
+// Nth view that is merged together at this point.
+QueryView QueryMerge::NthMergedView(unsigned n) const noexcept {
+  assert(n < impl->merged_views.size());
+  return QueryView(impl->merged_views[n]);
 }
 
 ComparisonOperator QueryConstraint::Operator(void) const {
