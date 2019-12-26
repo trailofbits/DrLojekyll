@@ -124,7 +124,8 @@ class SIPSVisitor {
 
   // Tell the visitor that is can finish summarizing, and prepare to select
   // the summaries.
-  virtual void Summarize(ParsedPredicate functor, ParsedDeclaration decl);
+  virtual void Summarize(ParsedPredicate functor, ParsedDeclaration decl,
+                         const Column *free_begin, const Column *free_end);
 
   // Notify the visitor that we were successful in visiting the clause body,
   // starting from the assumption `assumption`.

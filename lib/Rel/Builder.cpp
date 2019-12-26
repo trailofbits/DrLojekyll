@@ -393,6 +393,80 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
+  void EnterAggregation(
+      ParsedPredicate pred, ParsedDeclaration decl,
+      const Column *group_begin, const Column *group_end) override {
+    assert(decl.IsFunctor());
+    auto functor = ParsedFunctor::From(decl);
+    auto agg = new Node<QueryAggregate>(query.get(), functor);
+    query->pending_aggregates.emplace_back(agg);
+
+    for (auto col = group_begin; col < group_end; ++col) {
+      auto prev_col = id_to_col[col->id];
+      assert(prev_col != nullptr);
+      agg->group_by_columns.push_back(prev_col);
+
+      auto out_col = new Node<QueryColumn>(
+          col->var, agg, col->id, static_cast<unsigned>(agg->columns.size()));
+      agg->columns.push_back(out_col);
+      query->columns.emplace_back(out_col);
+    }
+  }
+
+  void Collect(
+      ParsedPredicate, ParsedDeclaration, const Column *aggregate_begin,
+      const Column *aggregate_end) override {
+    assert(!query->pending_aggregates.empty());
+    auto agg = query->pending_aggregates.back().get();
+
+    for (auto col = aggregate_begin; col < aggregate_end; ++col) {
+      auto prev_col = id_to_col[col->id];
+      assert(prev_col != nullptr);
+      agg->summarized_columns.push_back(prev_col);
+    }
+  }
+
+  void Summarize(
+      ParsedPredicate, ParsedDeclaration,
+      const Column *summary_begin, const Column *summary_end) override {
+    assert(!query->pending_aggregates.empty());
+    auto agg = query->pending_aggregates.back().release();
+    query->pending_aggregates.pop_back();
+    query->aggregates.emplace_back(agg);
+
+    // Make sure the summarized columns don't leak.
+    for (auto col : agg->summarized_columns) {
+      const auto parent_id = col->Find()->id;
+      for (auto &id_col : id_to_col) {
+        if (id_col.second->Find()->id == parent_id) {
+          id_col.second = nullptr;
+        }
+      }
+    }
+
+    // The summary variables are now available.
+    for (auto col = summary_begin; col < summary_end; ++col) {
+      auto out_col = new Node<QueryColumn>(
+          col->var, agg, col->id, static_cast<unsigned>(agg->columns.size()));
+
+      agg->columns.push_back(out_col);
+      query->columns.emplace_back(out_col);
+
+      id_to_col[col->id] = out_col;
+    }
+
+    // "Publish" the aggregate's group and summary columns for use by
+    // everything else.
+    for (auto col : agg->columns) {
+      const auto parent_id = col->Find()->id;
+      for (auto &id_col : id_to_col) {
+        if (id_col.second->Find()->id == parent_id) {
+          id_col.second = col;
+        }
+      }
+    }
+  }
+
   void AssertPresent(
       ParsedPredicate pred, const Column *begin,
       const Column *end) override {
@@ -447,6 +521,19 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     for (auto &map : query->maps) {
       for (auto &input_col : map->input_columns) {
+        if (input_col == old_col) {
+          input_col = new_col;
+        }
+      }
+    }
+
+    for (auto &agg : query->aggregates) {
+      for (auto &input_col : agg->group_by_columns) {
+        if (input_col == old_col) {
+          input_col = new_col;
+        }
+      }
+      for (auto &input_col : agg->summarized_columns) {
         if (input_col == old_col) {
           input_col = new_col;
         }
@@ -682,6 +769,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto &next_view = query->next_view;
     auto &next_insert = query->next_insert;
     auto &next_map = query->next_map;
+    auto &next_aggregate = query->next_aggregate;
 
     Node<QueryColumn> *dummy = nullptr;
     Node<QueryColumn> **prev_col_ptr = &dummy;
@@ -710,29 +798,52 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
     }
 
-    for (const auto &view : query->joins) {
+    for (const auto &view : query->aggregates) {
+      view->next = next_aggregate;
+      view->next_view = next_view;
+      next_view = next_aggregate = view.get();
+
       prev_col_ptr = &dummy;
       for (auto col : view->columns) {
         *prev_col_ptr = col;
         prev_col_ptr = &(col->next_in_view);
       }
+    }
 
-      prev_col_ptr = &dummy;
-      for (auto col : view->pivot_columns) {
-        *prev_col_ptr = col;
-        prev_col_ptr = &(col->next_pivot_in_join);
-      }
+    // Link all the "full" joins together, and clear out and ignore the
+    // outdated joins.
+    for (const auto &view : query->joins) {
+      if (view->joined_columns.empty()) {
+        view->columns.clear();
+        view->pivot_columns.clear();
+        view->pivot_conditions.clear();
 
-      if (!view->joined_columns.empty()) {
+      } else {
+        assert(!view->pivot_columns.empty());
+        assert(!view->pivot_conditions.empty());
+        assert(!view->columns.empty());
+
+        prev_col_ptr = &dummy;
+        for (auto col : view->columns) {
+          *prev_col_ptr = col;
+          prev_col_ptr = &(col->next_in_view);
+        }
+
+        prev_col_ptr = &dummy;
+        for (auto col : view->pivot_columns) {
+          *prev_col_ptr = col;
+          prev_col_ptr = &(col->next_pivot_in_join);
+        }
+
         view->next = next_join;
         view->next_view = next_view;
         next_view = next_join = view.get();
-      }
 
-      for (auto i = 1u; i < view->pivot_conditions.size(); ++i) {
-        auto cond = view->pivot_conditions[i];
-        auto prev_cond = view->pivot_conditions[i - 1];
-        prev_cond->next_pivot_condition = cond;
+        for (auto i = 1u; i < view->pivot_conditions.size(); ++i) {
+          auto cond = view->pivot_conditions[i];
+          auto prev_cond = view->pivot_conditions[i - 1];
+          prev_cond->next_pivot_condition = cond;
+        }
       }
     }
 

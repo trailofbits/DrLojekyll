@@ -175,10 +175,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto map : query.Maps()) {
     os << "v" << map.UniqueId() << " [ label=<" << kBeginTable;
     os << "<TD rowspan=\"2\">MAP " << map.Functor().Name() << "</TD>";
-    for (auto i = 0u; i < map.Arity(); ++i) {
-      auto out_col = map.NthOutputColumn(i);
-      os << "<TD port=\"c" << out_col.UniqueId() << "\">"
-         << out_col.Variable() << "</TD>";
+    for (auto col : map.Columns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << col.Variable() << "</TD>";
     }
 
     os << "</TR><TR>";
@@ -198,6 +197,47 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = map.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << map.UniqueId() << ":p" << i << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+  }
+
+  for (auto agg : query.Aggregates()) {
+    os << "v" << agg.UniqueId() << " [ label=<" << kBeginTable;
+    os << "<TD rowspan=\"3\">AGGREGATE " << agg.Functor().Name() << "</TD>";
+    for (auto col : agg.Columns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << col.Variable() << "</TD>";
+    }
+    os << "</TR><TR>";
+    auto num_group = agg.NumGroupColumns();
+    if (num_group) {
+      os << "<TD colspan=\"" << num_group << "\">GROUP</TD>";
+    }
+    auto num_summ = agg.NumSummarizedColumns();
+    if (num_summ) {
+
+      os << "<TD colspan=\"" << num_summ << "\">SUMMARIZE</TD>";
+    }
+    os << "</TR><TR>";
+    for (auto i = 0u; i < num_group; ++i) {
+      auto col = agg.NthGroupColumn(i);
+      os << "<TD port=\"g" << i << "\">" << col.Variable() << "</TD>";
+    }
+    for (auto i = 0u; i < num_summ; ++i) {
+      auto col = agg.NthSummarizedColumn(i);
+      os << "<TD port=\"s" << i << "\">" << col.Variable() << "</TD>";
+    }
+    os << kEndTable << ">];\n";
+    for (auto i = 0u; i < num_group; ++i) {
+      auto col = agg.NthGroupColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << agg.UniqueId() << ":g" << i << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+    for (auto i = 0u; i < num_summ; ++i) {
+      auto col = agg.NthSummarizedColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << agg.UniqueId() << ":g" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
   }

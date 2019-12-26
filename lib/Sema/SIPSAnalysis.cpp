@@ -64,7 +64,7 @@ void SIPSVisitor::EnterFromWhereSelect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *,
     const Column *, const Column *) {}
 void SIPSVisitor::Summarize(
-    ParsedPredicate, ParsedDeclaration) {}
+    ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::EnterFromSelect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::EnterAggregation(
@@ -951,7 +951,9 @@ bool SIPSGenerator::Impl::VisitAggregate(
     equalities.erase(free_param.var);
   }
 
-  visitor.Summarize(functor_predicate, functor_decl);
+  visitor.Summarize(functor_predicate, functor_decl,
+                    &(free_params.front()),
+                    &((&(free_params.back()))[1]));
 
   visitor.EnterFromSelect(
       functor_predicate, functor_decl,

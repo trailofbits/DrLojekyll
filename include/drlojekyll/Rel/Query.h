@@ -164,6 +164,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsSelect(void) const noexcept;
   bool IsJoin(void) const noexcept;
   bool IsMap(void) const noexcept;
+  bool IsAggregate(void) const noexcept;
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -233,16 +234,52 @@ class QueryMap : public query::QueryNode<QueryMap> {
   unsigned NumInputColumns(void) const noexcept;
   QueryColumn NthInputColumn(unsigned n) const noexcept;
 
+  // The resulting mapped columns.
+  NodeRange<QueryColumn> Columns(void) const;
+
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
 
   // Returns the `nth` output column.
-  QueryColumn NthOutputColumn(unsigned n) const noexcept;
+  QueryColumn NthColumn(unsigned n) const noexcept;
 
   const ParsedFunctor &Functor(void) const noexcept;
 
  private:
   using query::QueryNode<QueryMap>::QueryNode;
+};
+
+// An aggregate operation.
+class QueryAggregate : public query::QueryNode<QueryAggregate> {
+ public:
+  static QueryAggregate &From(QueryView &view);
+
+  // The resulting mapped columns.
+  NodeRange<QueryColumn> Columns(void) const;
+
+  // Returns the number of output columns.
+  unsigned Arity(void) const noexcept;
+
+  // Returns the `nth` output column.
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  // Returns the number of columns used for grouping.
+  unsigned NumGroupColumns(void) const noexcept;
+
+  // Returns the `nth` grouping column.
+  QueryColumn NthGroupColumn(unsigned n) const noexcept;
+
+  // Returns the number of columns being summarized.
+  unsigned NumSummarizedColumns(void) const noexcept;
+
+  // Returns the `nth` summarized column.
+  QueryColumn NthSummarizedColumn(unsigned n) const noexcept;
+
+  // The functor doing the aggregating.
+  const ParsedFunctor &Functor(void) const noexcept;
+
+ private:
+  using query::QueryNode<QueryAggregate>::QueryNode;
 };
 
 // A join of two or more tables on one or more columns.
@@ -280,6 +317,7 @@ class Query {
   NodeRange<QueryView> Views(void) const;
   NodeRange<QueryInsert> Inserts(void) const;
   NodeRange<QueryMap> Maps(void) const;
+  NodeRange<QueryAggregate> Aggregates(void) const;
   NodeRange<QueryStream> Streams(void) const;
   NodeRange<QueryMessage> Messages(void) const;
   NodeRange<QueryGenerator> Generators(void) const;

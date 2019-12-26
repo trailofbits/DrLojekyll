@@ -166,6 +166,7 @@ class Node<QueryView> {
   virtual bool IsSelect(void) const noexcept = 0;
   virtual bool IsJoin(void) const noexcept = 0;
   virtual bool IsMap(void) const noexcept = 0;
+  virtual bool IsAggregate(void) const noexcept = 0;
 
   inline Node(QueryImpl *query_)
       : query(query_) {}
@@ -193,6 +194,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
+  bool IsAggregate(void) const noexcept override;
 
   // Next select in this query.
   Node<QuerySelect> *next{nullptr};
@@ -211,6 +213,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
+  bool IsAggregate(void) const noexcept override;
 
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
@@ -234,6 +237,7 @@ class Node<QueryMap> final : public Node<QueryView> {
   bool IsSelect(void) const noexcept override;
   bool IsJoin(void) const noexcept override;
   bool IsMap(void) const noexcept override;
+  bool IsAggregate(void) const noexcept override;
 
   inline Node(QueryImpl *query_, ParsedFunctor functor_)
       : Node<QueryView>(query_),
@@ -247,6 +251,34 @@ class Node<QueryMap> final : public Node<QueryView> {
   // The columns that are are the inputs to the functor. These correspond
   // with the bound arguments to the functor.
   std::vector<Node<QueryColumn> *> input_columns;
+};
+
+template <>
+class Node<QueryAggregate> : public Node<QueryView> {
+ public:
+  using Node<QueryView>::Node;
+
+  virtual ~Node(void);
+  bool IsSelect(void) const noexcept override;
+  bool IsJoin(void) const noexcept override;
+  bool IsMap(void) const noexcept override;
+  bool IsAggregate(void) const noexcept override;
+
+  inline Node(QueryImpl *query_, ParsedFunctor functor_)
+      : Node<QueryView>(query_),
+        functor(functor_) {}
+
+  // Functor that does the aggregation.
+  const ParsedFunctor functor;
+
+  // Next aggregate in this query.
+  Node<QueryAggregate> *next{nullptr};
+
+  // Columns that are `bound` for the aggregating functor.
+  std::vector<Node<QueryColumn> *> group_by_columns;
+
+  // View that is summarized by this aggregating functor.
+  std::vector<Node<QueryColumn> *> summarized_columns;
 };
 
 template <>
@@ -324,10 +356,13 @@ class QueryImpl {
   Node<QueryJoin> *next_join{nullptr};
   Node<QueryInsert> *next_insert{nullptr};
   Node<QueryMap> *next_map{nullptr};
+  Node<QueryAggregate> *next_aggregate{nullptr};
 
   std::vector<std::unique_ptr<Node<QuerySelect>>> selects;
   std::vector<std::unique_ptr<Node<QueryJoin>>> joins;
   std::vector<std::unique_ptr<Node<QueryMap>>> maps;
+  std::vector<std::unique_ptr<Node<QueryAggregate>>> aggregates;
+  std::vector<std::unique_ptr<Node<QueryAggregate>>> pending_aggregates;
   std::vector<std::unique_ptr<Node<QueryConstraint>>> constraints;
   std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QueryInsert>>> inserts;

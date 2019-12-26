@@ -22,14 +22,11 @@ Node<QueryStream>::~Node(void) {}
 Node<QueryConstant>::~Node(void) {}
 Node<QueryMessage>::~Node(void) {}
 Node<QueryGenerator>::~Node(void) {}
-
 Node<QueryView>::~Node(void) {}
-
 Node<QuerySelect>::~Node(void) {}
-
 Node<QueryJoin>::~Node(void) {}
-
 Node<QueryMap>::~Node(void) {}
+Node<QueryAggregate>::~Node(void) {}
 
 bool Node<QueryConstant>::IsConstant(void) const noexcept {
   return true;
@@ -79,6 +76,10 @@ bool Node<QuerySelect>::IsMap(void) const noexcept {
   return false;
 }
 
+bool Node<QuerySelect>::IsAggregate(void) const noexcept {
+  return false;
+}
+
 bool Node<QueryJoin>::IsSelect(void) const noexcept {
   return false;
 }
@@ -91,6 +92,10 @@ bool Node<QueryJoin>::IsMap(void) const noexcept {
   return false;
 }
 
+bool Node<QueryJoin>::IsAggregate(void) const noexcept {
+  return false;
+}
+
 bool Node<QueryMap>::IsSelect(void) const noexcept {
   return false;
 }
@@ -100,6 +105,26 @@ bool Node<QueryMap>::IsJoin(void) const noexcept {
 }
 
 bool Node<QueryMap>::IsMap(void) const noexcept {
+  return true;
+}
+
+bool Node<QueryMap>::IsAggregate(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryAggregate>::IsSelect(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryAggregate>::IsJoin(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryAggregate>::IsMap(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryAggregate>::IsAggregate(void) const noexcept {
   return true;
 }
 
@@ -176,6 +201,10 @@ bool QueryView::IsJoin(void) const noexcept {
 
 bool QueryView::IsMap(void) const noexcept {
   return impl->IsMap();
+}
+
+bool QueryView::IsAggregate(void) const noexcept {
+  return impl->IsAggregate();
 }
 
 NodeRange<QueryColumn> QuerySelect::Columns(void) const {
@@ -330,18 +359,85 @@ QueryColumn QueryMap::NthInputColumn(unsigned n) const noexcept {
   return QueryColumn(impl->input_columns[n]);
 }
 
+// The resulting mapped columns.
+NodeRange<QueryColumn> QueryMap::Columns(void) const {
+  if (impl->columns.empty()) {
+    return NodeRange<QueryColumn>();
+  } else {
+    return NodeRange<QueryColumn>(
+        impl->columns.front(),
+        static_cast<intptr_t>(
+            __builtin_offsetof(Node<QueryColumn>, next_in_view)));
+  }
+}
+
 // Returns the number of output columns.
 unsigned QueryMap::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->columns.size());
 }
 
 // Returns the `nth` output column.
-QueryColumn QueryMap::NthOutputColumn(unsigned n) const noexcept {
+QueryColumn QueryMap::NthColumn(unsigned n) const noexcept {
   assert(n < impl->columns.size());
   return QueryColumn(impl->columns[n]);
 }
 
 const ParsedFunctor &QueryMap::Functor(void) const noexcept {
+  return impl->functor;
+}
+
+QueryAggregate &QueryAggregate::From(QueryView &view) {
+  assert(view.IsAggregate());
+  return reinterpret_cast<QueryAggregate &>(view);
+}
+
+// The resulting mapped columns.
+NodeRange<QueryColumn> QueryAggregate::Columns(void) const {
+  if (impl->columns.empty()) {
+    return NodeRange<QueryColumn>();
+  } else {
+    return NodeRange<QueryColumn>(
+        impl->columns.front(),
+        static_cast<intptr_t>(
+            __builtin_offsetof(Node<QueryColumn>, next_in_view)));
+  }
+}
+
+// Returns the number of output columns.
+unsigned QueryAggregate::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->columns.size());
+}
+
+// Returns the `nth` output column.
+QueryColumn QueryAggregate::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.size());
+  return QueryColumn(impl->columns[n]);
+}
+
+// Returns the number of columns used for grouping.
+unsigned QueryAggregate::NumGroupColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->group_by_columns.size());
+}
+
+// Returns the `nth` grouping column.
+QueryColumn QueryAggregate::NthGroupColumn(unsigned n) const noexcept {
+  assert(n < impl->group_by_columns.size());
+  return QueryColumn(impl->group_by_columns[n]);
+}
+
+// Returns the number of columns being summarized.
+unsigned QueryAggregate::NumSummarizedColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->summarized_columns.size());
+}
+
+// Returns the `nth` summarized column.
+QueryColumn QueryAggregate::NthSummarizedColumn(unsigned n) const noexcept {
+  assert(n < impl->summarized_columns.size());
+  return QueryColumn(impl->summarized_columns[n]);
+}
+
+// The functor doing the aggregating.
+const ParsedFunctor &QueryAggregate::Functor(void) const noexcept {
   return impl->functor;
 }
 
@@ -452,6 +548,14 @@ NodeRange<QueryMap> Query::Maps(void) const {
     return NodeRange<QueryMap>();
   } else {
     return NodeRange<QueryMap>(impl->next_map);
+  }
+}
+
+NodeRange<QueryAggregate> Query::Aggregates(void) const {
+  if (!impl->next_aggregate) {
+    return NodeRange<QueryAggregate>();
+  } else {
+    return NodeRange<QueryAggregate>(impl->next_aggregate);
   }
 }
 
