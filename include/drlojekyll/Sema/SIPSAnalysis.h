@@ -115,6 +115,7 @@ class SIPSVisitor {
   // that are not themselves being summarized or aggregates.
   virtual void EnterAggregation(
       ParsedPredicate functor, ParsedDeclaration decl,
+      const Column *group_begin, const Column *group_end,
       const Column *bound_begin, const Column *bound_end);
 
   // Tell the visitor that we're going to insert into an aggregation.
@@ -124,8 +125,11 @@ class SIPSVisitor {
 
   // Tell the visitor that is can finish summarizing, and prepare to select
   // the summaries.
-  virtual void Summarize(ParsedPredicate functor, ParsedDeclaration decl,
-                         const Column *free_begin, const Column *free_end);
+  virtual void EnterSelectFromSummary(
+      ParsedPredicate functor, ParsedDeclaration decl,
+      const Column *group_begin, const Column *group_end,
+      const Column *bound_begin, const Column *bound_end,
+      const Column *free_begin, const Column *free_end);
 
   // Notify the visitor that we were successful in visiting the clause body,
   // starting from the assumption `assumption`.

@@ -28,142 +28,86 @@ Node<QueryJoin>::~Node(void) {}
 Node<QueryMap>::~Node(void) {}
 Node<QueryAggregate>::~Node(void) {}
 Node<QueryMerge>::~Node(void) {}
+Node<QueryConstraint>::~Node(void) {}
+
+bool Node<QueryStream>::IsConstant(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryStream>::IsGenerator(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryStream>::IsMessage(void) const noexcept {
+  return false;
+}
 
 bool Node<QueryConstant>::IsConstant(void) const noexcept {
   return true;
-}
-
-bool Node<QueryConstant>::IsGenerator(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryConstant>::IsMessage(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryGenerator>::IsConstant(void) const noexcept {
-  return false;
 }
 
 bool Node<QueryGenerator>::IsGenerator(void) const noexcept {
   return true;
 }
 
-bool Node<QueryGenerator>::IsMessage(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMessage>::IsConstant(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMessage>::IsGenerator(void) const noexcept {
-  return false;
-}
-
 bool Node<QueryMessage>::IsMessage(void) const noexcept {
   return true;
+}
+
+bool Node<QueryView>::IsSelect(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryView>::IsJoin(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryView>::IsMap(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryView>::IsAggregate(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryView>::IsMerge(void) const noexcept {
+  return false;
+}
+
+bool Node<QueryView>::IsConstraint(void) const noexcept {
+  return false;
 }
 
 bool Node<QuerySelect>::IsSelect(void) const noexcept {
   return true;
 }
 
-bool Node<QuerySelect>::IsJoin(void) const noexcept {
-  return false;
-}
-
-bool Node<QuerySelect>::IsMap(void) const noexcept {
-  return false;
-}
-
-bool Node<QuerySelect>::IsAggregate(void) const noexcept {
-  return false;
-}
-
-bool Node<QuerySelect>::IsMerge(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryJoin>::IsSelect(void) const noexcept {
-  return false;
-}
-
 bool Node<QueryJoin>::IsJoin(void) const noexcept {
   return true;
-}
-
-bool Node<QueryJoin>::IsMap(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryJoin>::IsAggregate(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryJoin>::IsMerge(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMap>::IsSelect(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMap>::IsJoin(void) const noexcept {
-  return false;
 }
 
 bool Node<QueryMap>::IsMap(void) const noexcept {
   return true;
 }
 
-bool Node<QueryMap>::IsAggregate(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMap>::IsMerge(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryAggregate>::IsSelect(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryAggregate>::IsJoin(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryAggregate>::IsMap(void) const noexcept {
-  return false;
-}
-
 bool Node<QueryAggregate>::IsAggregate(void) const noexcept {
   return true;
-}
-
-bool Node<QueryAggregate>::IsMerge(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMerge>::IsSelect(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMerge>::IsJoin(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMerge>::IsMap(void) const noexcept {
-  return false;
-}
-
-bool Node<QueryMerge>::IsAggregate(void) const noexcept {
-  return false;
 }
 
 bool Node<QueryMerge>::IsMerge(void) const noexcept {
   return true;
 }
+
+bool Node<QueryConstraint>::IsConstraint(void) const noexcept {
+  return true;
+}
+
+Node<QueryConstraint>::Node(ComparisonOperator op_, Node<QueryColumn> *lhs_,
+     Node<QueryColumn> *rhs_)
+    : Node<QueryView>(lhs_->view->query),
+      lhs(lhs_),
+      rhs(rhs_),
+      op(op_) {}
 
 bool QueryStream::IsBlocking(void) const noexcept {
   return impl->IsMessage();
@@ -248,6 +192,10 @@ bool QueryView::IsMerge(void) const noexcept {
   return impl->IsMerge();
 }
 
+bool QueryView::IsConstraint(void) const noexcept {
+  return impl->IsConstraint();
+}
+
 NodeRange<QueryColumn> QuerySelect::Columns(void) const {
   return QueryView(impl).Columns();
 }
@@ -262,6 +210,62 @@ bool QueryColumn::IsJoin(void) const noexcept {
 
 bool QueryColumn::IsMap(void) const noexcept {
   return impl->view->IsMap();
+}
+
+bool QueryColumn::IsAggregateGroup(void) const noexcept {
+  if (!impl->view->IsAggregate()) {
+    return false;
+  }
+
+  auto agg = reinterpret_cast<Node<QueryAggregate> *>(impl->view);
+  if (impl->index >= agg->group_by_columns.size()) {
+    return false;
+  }
+
+  return impl->index < (agg->group_by_columns.size() -
+                        agg->bound_columns.size());
+}
+
+bool QueryColumn::IsAggregateConfig(void) const noexcept {
+  if (!impl->view->IsAggregate()) {
+    return false;
+  }
+
+  auto agg = reinterpret_cast<Node<QueryAggregate> *>(impl->view);
+  if (impl->index >= agg->group_by_columns.size()) {
+    return false;
+  }
+
+  return impl->index >= (agg->group_by_columns.size() -
+                         agg->bound_columns.size());
+}
+
+bool QueryColumn::IsAggregateSummary(void) const noexcept {
+  if (!impl->view->IsAggregate()) {
+    return false;
+  }
+
+  auto agg = reinterpret_cast<Node<QueryAggregate> *>(impl->view);
+  return impl->index >= agg->group_by_columns.size();
+}
+
+bool QueryColumn::IsMerge(void) const noexcept {
+  return impl->view->IsMerge();
+}
+
+bool QueryColumn::IsConstraint(void) const noexcept {
+  return impl->view->IsConstraint();
+}
+
+// Returns the column that is the "leader" of this column's equivalence class.
+QueryColumn QueryColumn::EquivalenceClass(void) const noexcept {
+  return QueryColumn(reinterpret_cast<Node<QueryColumn> *>(impl->Find()));
+}
+
+QueryColumn::QueryColumn(Node<QueryColumn> *impl_)
+    : query::QueryNode<QueryColumn>(impl_) {
+  assert(impl->index < impl->view->columns.size());
+  assert(impl == impl->view->columns[impl->index]);
 }
 
 const ParsedVariable &QueryColumn::Variable(void) const noexcept {
@@ -374,18 +378,6 @@ QueryColumn QueryJoin::NthColumn(unsigned n) const noexcept {
   return QueryColumn(impl->columns[n]);
 }
 
-// The list of pivot constraints.
-NodeRange<QueryConstraint> QueryJoin::Constraints(void) const {
-  if (impl->pivot_conditions.empty()) {
-    return NodeRange<QueryConstraint>();
-  } else {
-    return NodeRange<QueryConstraint>(
-        impl->pivot_conditions.front(),
-        static_cast<intptr_t>(
-            __builtin_offsetof(Node<QueryConstraint>, next_pivot_condition)));
-  }
-}
-
 QueryMap &QueryMap::From(QueryView &view) {
   assert(view.IsMap());
   return reinterpret_cast<QueryMap &>(view);
@@ -457,12 +449,27 @@ QueryColumn QueryAggregate::NthColumn(unsigned n) const noexcept {
 
 // Returns the number of columns used for grouping.
 unsigned QueryAggregate::NumGroupColumns(void) const noexcept {
-  return static_cast<unsigned>(impl->group_by_columns.size());
+  return static_cast<unsigned>(impl->group_by_columns.size() -
+                               impl->bound_columns.size());
 }
 
 // Returns the `nth` grouping column.
 QueryColumn QueryAggregate::NthGroupColumn(unsigned n) const noexcept {
+  assert(n < (impl->group_by_columns.size() - impl->bound_columns.size()));
+  assert(QueryColumn(impl->columns[n]).IsAggregateGroup());
+  return QueryColumn(impl->group_by_columns[n]);
+}
+
+// Returns the number of columns used for configuration.
+unsigned QueryAggregate::NumConfigColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->bound_columns.size());
+}
+
+// Returns the `nth` config column.
+QueryColumn QueryAggregate::NthConfigColumn(unsigned n) const noexcept {
+  n += NumGroupColumns();
   assert(n < impl->group_by_columns.size());
+  assert(QueryColumn(impl->columns[n]).IsAggregateConfig());
   return QueryColumn(impl->group_by_columns[n]);
 }
 
@@ -525,11 +532,25 @@ ComparisonOperator QueryConstraint::Operator(void) const {
   return impl->op;
 }
 
+QueryConstraint &QueryConstraint::From(QueryView &view) {
+  assert(view.IsConstraint());
+  return reinterpret_cast<QueryConstraint &>(view);
+}
+
 QueryColumn QueryConstraint::LHS(void) const {
-  return QueryColumn(impl->lhs);
+  return QueryColumn(impl->columns[0]);
 }
 
 QueryColumn QueryConstraint::RHS(void) const {
+  return QueryColumn(impl->columns[1]);
+}
+
+
+QueryColumn QueryConstraint::InputLHS(void) const {
+  return QueryColumn(impl->lhs);
+}
+
+QueryColumn QueryConstraint::InputRHS(void) const {
   return QueryColumn(impl->rhs);
 }
 
@@ -636,6 +657,22 @@ NodeRange<QueryAggregate> Query::Aggregates(void) const {
     return NodeRange<QueryAggregate>();
   } else {
     return NodeRange<QueryAggregate>(impl->next_aggregate);
+  }
+}
+
+NodeRange<QueryMerge> Query::Merges(void) const {
+  if (!impl->next_merge) {
+    return NodeRange<QueryMerge>();
+  } else {
+    return NodeRange<QueryMerge>(impl->next_merge);
+  }
+}
+
+NodeRange<QueryConstraint> Query::Constraints(void) const {
+  if (!impl->next_constraint) {
+    return NodeRange<QueryConstraint>();
+  } else {
+    return NodeRange<QueryConstraint>(impl->next_constraint);
   }
 }
 

@@ -1,0 +1,33 @@
+
+#local watched_dir(@str Path, @str WatchedDir)
+#message add_watched_dir(@str DirName)
+
+#message sys_open(@str UserName, @str FullPath)
+
+#functor is_dir(bound @str Path) complex
+#functor dir_entry(bound @str Path, free @str Entry) complex
+#functor join_path(bound @str DirName, bound @str FileName, free @str JoinedPath) complex
+#functor parent_dir(bound @str Path, bound @str DirPath) complex
+
+#local invalid_open(@str UserName, @str AccessedPath, @str WatchedDir)
+
+#local evil_user(@str UserName)
+#message add_evil_user(@str UserName)
+
+watched_dir(Dir, Dir)
+  : add_watched_dir(Dir)
+  , is_dir(Dir).
+
+watched_dir(EntryPath, Dir)
+  : watched_dir(ParentDir, Dir)
+  , dir_entry(ParentDir, EntryName)
+  , join_path(ParentDir, EntryName, EntryPath)
+  , is_dir(EntryPath).
+
+evil_user(Name)
+  : add_evil_user(Name).
+
+invalid_open(UserName, AccessedPath, WatchedDir)
+  : sys_open(UserName, AccessedPath)
+  , parent_dir(AccessedPath, AccessedDir)
+  , watched_dir(AccessedDir, WatchedDir).

@@ -49,18 +49,21 @@ OutputStream &operator<<(OutputStream &os, ParsedParameter param) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
-  os << "#" << decl.KindName() << " ";
-
-  auto name = decl.Name();
+OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl_name) {
+  auto name = decl_name.decl.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    os << "pred" << decl.Id();
+    os << "pred" << decl_name.decl.Id();
   } else {
     os << name;
-    if (os.RenameLocals() && decl.IsLocal()) {
-      os << "_" << decl.Id();
+    if (os.RenameLocals() && decl_name.decl.IsLocal()) {
+      os << "_" << decl_name.decl.Id();
     }
   }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
+  os << "#" << decl.KindName() << " " << ParsedDeclarationName(decl);
 
   auto comma = "(";
   for (auto param : decl.Parameters()) {
@@ -111,16 +114,7 @@ OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
-  auto decl = ParsedDeclaration::Of(clause);
-  auto name = decl.Name();
-  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    os << "pred" << decl.Id();
-  } else {
-    os << name;
-    if (os.RenameLocals() && decl.IsLocal()) {
-      os << "_" << decl.Id();
-    }
-  }
+  os << ParsedDeclarationName(ParsedDeclaration::Of(clause));
   auto comma = "(";
   for (auto param : clause.Parameters()) {
     os << comma << param;
@@ -193,21 +187,12 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedPredicate pred) {
-  auto decl = ParsedDeclaration::Of(pred);
-  auto name = decl.Name();
-
   if (pred.IsNegated()) {
     os << "!";
   }
 
-  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    os << "pred" << decl.Id();
-  } else {
-    os << name;
-    if (os.RenameLocals() && decl.IsLocal()) {
-      os << "_" << decl.Id();
-    }
-  }
+  os << ParsedDeclarationName(ParsedDeclaration::Of(pred));
+
   auto comma = "(";
   for (auto arg : pred.Arguments()) {
     os << comma << arg;

@@ -10,38 +10,20 @@
 #include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Util/DisjointSet.h>
 
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
+#include <drlojekyll/Parse/Format.h>
+
 namespace hyde {
+
+extern OutputStream *gOut;
+
 namespace {
 
 static bool OrderPredicates(std::pair<unsigned, ParsedPredicate> a,
                             std::pair<unsigned, ParsedPredicate> b) noexcept {
   return a.first < b.first;
 }
-
-// A simple, tentative visitor that exists to detect if visiting was cancelled.
-class TentativeSIPSVisitor final : public SIPSVisitor {
- public:
-  virtual ~TentativeSIPSVisitor(void) {}
-
-  void CancelComparison(ParsedComparison, unsigned, unsigned) override {
-    cancelled = true;
-  }
-
-  void CancelRangeRestriction(ParsedComparison, ParsedVariable) override {
-    cancelled = true;
-  }
-
-  void CancelPredicate(const FailedBinding *, FailedBinding *) override {
-    cancelled = true;
-  }
-
-  bool WasCancelled(void) const {
-    return cancelled;
-  }
-
- private:
-  bool cancelled{false};
-};
 
 }  // namespace
 
@@ -63,12 +45,15 @@ void SIPSVisitor::Insert(
 void SIPSVisitor::EnterFromWhereSelect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *,
     const Column *, const Column *) {}
-void SIPSVisitor::Summarize(
-    ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
+void SIPSVisitor::EnterSelectFromSummary(
+    ParsedPredicate functor, ParsedDeclaration decl, const Column *,
+    const Column *, const Column *, const Column *, const Column *,
+    const Column *) {}
 void SIPSVisitor::EnterFromSelect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::EnterAggregation(
-    ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
+    ParsedPredicate, ParsedDeclaration, const Column *, const Column *,
+    const Column *, const Column *) {}
 void SIPSVisitor::Collect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::ExitSelect(ParsedPredicate, ParsedDeclaration) {}
@@ -172,6 +157,7 @@ class SIPSGenerator::Impl {
 
   std::vector<std::unique_ptr<DisjointSet>> vars;
   std::unordered_map<ParsedVariable, DisjointSet *> equalities;
+  std::unordered_map<ParsedVariable, DisjointSet *> prev_equalities;
 
   std::vector<ParsedComparison> comparisons;
   std::vector<ParsedComparison> next_comparisons;
@@ -264,6 +250,7 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
 
   // Make sure all compared variables are range-restricted.
   for (auto comparison : comparisons) {
+    // (*gOut) << "cancelled, remaining compares\n";
     cancelled = true;
 
     if (!equalities.count(comparison.LHS())) {
@@ -284,6 +271,7 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
   // There remain one or more negated predicates that have not yet
   // been invoked; report on the cancellation reason.
   for (auto predicate : negative_predicates) {
+    // (*gOut) << "cancelled, remaining negative preds\n";
     cancelled = true;
 
     const auto negated_decl = ParsedDeclaration::Of(predicate);
@@ -309,6 +297,8 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
     if (aggregates_processed[i]) {
       continue;
     }
+
+    // (*gOut) << "cancelled, remaining aggregates\n";
     cancelled = true;
     auto aggregate = aggregates[i];
     auto predicate = aggregate.Predicate();
@@ -486,10 +476,15 @@ void SIPSGenerator::Impl::CollectPredicateBoundAndFreeVars(
 bool SIPSGenerator::Impl::VisitPredicate(
     SIPSVisitor &visitor, unsigned p) {
 
+  if (p < positive_predicates.size()) {
+    // (*gOut) << "p=" << p << " entering " << positive_predicates[p].second << "\n";
+  }
+
   // Perform as many comparisons as possible as early as possible, and prefer
   // comparisons to negated predicates as they don't need to touch memory or
   // the database.
   if (!VisitCompares(visitor)) {
+    // (*gOut) << "p=" << p << " failed compares\n";
     return false;
   }
 
@@ -501,17 +496,21 @@ bool SIPSGenerator::Impl::VisitPredicate(
   // predicate.
   bool ret = false;
   if (VisitAggregates(visitor, p, ret)) {
+    // (*gOut) << "p=" << p << " succeeded in aggregate\n";
     return ret;
   }
 
   // We've bottomed out; we're done visiting this clause body.
   if (p >= positive_predicates.size()) {
+    // (*gOut) << "p=" << p << " end of clause\n";
     return VisitEndOfClause(visitor);
   }
 
   const auto predicate = positive_predicates[p].second;
   assert(predicate != assumption);
   assert(predicate.IsPositive());
+
+  // (*gOut) << "p=" << p << " " << predicate << " trying...\n";
 
   auto decl = ParsedDeclaration::Of(predicate);
 
@@ -534,6 +533,7 @@ bool SIPSGenerator::Impl::VisitPredicate(
         &(failed_bindings.front()),
         &((&(failed_bindings.back()))[1]));
     cancelled = true;
+    // (*gOut) << "p=" << p << " " << predicate << " failed binding constraints\n";
     return false;
   }
 
@@ -551,9 +551,7 @@ bool SIPSGenerator::Impl::VisitPredicate(
         predicate, &(bound_params.front()),
         &((&(bound_params.back()))[1]));
 
-    if (!VisitPredicate(visitor, p + 1)) {
-      return false;
-    }
+    return VisitPredicate(visitor, p + 1);
 
   // We only have free parameters. This is equivalent to a full table scan.
   } else if (bound_params.empty()) {
@@ -713,13 +711,13 @@ bool SIPSGenerator::Impl::VisitCompares(SIPSVisitor &visitor) {
   return true;
 }
 
-// Visit a comparison. Returns `true` if it was processed. Returns `false`
-// if this comparison was not processed. If it was not processed, then
+// Visit an aggregate. Returns `true` if it was processed. Returns `false`
+// if this aggregate was not processed. If it was not processed, then
 // it is possible that it was cancelled, in which case `cancelled` may be
 // set to `true`.
 //
 // The logic of visiting an aggregate is that we treat it kind of like
-// visiting what is aggregate first, letting that establish certain variables,
+// visiting what is aggregated first, letting that establish certain variables,
 // then going and trying to apply it to the aggregate.
 bool SIPSGenerator::Impl::VisitAggregate(
     SIPSVisitor &visitor, ParsedAggregate aggregate, unsigned p, bool &ret) {
@@ -731,6 +729,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   failed_bindings.clear();
   if (!FindRedeclMatchingBindingConstraints(
       visitor, summarized_predicate, summarized_decl)) {
+    // (*gOut) << "p=" << p << " summarized pred failed binding constraint\n";
     return false;
   }
 
@@ -747,22 +746,25 @@ bool SIPSGenerator::Impl::VisitAggregate(
   //            assertions (`visitor.AssertEq`) until we're inside of the actual
   //            collection loop. Otherwise stuff doesn't make sense. This call
   //            will clear and fill `this->deferred_asserts`.
+  prev_equalities = equalities;
   BindFreeParams(visitor, true  /* defer_asserts */);
   summarized_bound_params.swap(bound_params);
   summarized_free_params.swap(free_params);
 
   // Go and find the redecl of the aggregating functor that matches the bound
   // parameters.
-  auto functor_predicate = aggregate.Functor();
-  const auto functor_arity = functor_predicate.Arity();
-  auto functor_decl = ParsedDeclaration::Of(functor_predicate);
+  const auto aggregate_functor = aggregate.Functor();
+  const auto functor_arity = aggregate_functor.Arity();
+  auto functor_decl = ParsedDeclaration::Of(aggregate_functor);
   failed_bindings.clear();
   if (!FindRedeclMatchingBindingConstraints(
-      visitor, functor_predicate, functor_decl)) {
+      visitor, aggregate_functor, functor_decl)) {
+    // (*gOut) << "p=" << p << " aggregating functor failed binding constraint\n";
+    equalities.swap(prev_equalities);
     return false;
   }
 
-  CollectPredicateBoundAndFreeVars(visitor, functor_decl, functor_predicate);
+  CollectPredicateBoundAndFreeVars(visitor, functor_decl, aggregate_functor);
 
   // Make sure that every free parameter from the predicate being
   // summarized corresponds with an aggregate parameter to the functor, and
@@ -774,6 +776,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   uint64_t seen = 0;
   assert(functor_arity < 64);
   for (const auto &fp : summarized_free_params) {
+    // (*gOut) << "\tfree param " << fp.var << "\n";
     for (auto i = 0u; i < functor_arity; ++i) {
 
       // Don't re-visit the same argument twice.
@@ -781,7 +784,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
         continue;
       }
 
-      const auto functor_arg = functor_predicate.NthArgument(i);
+      const auto functor_arg = aggregate_functor.NthArgument(i);
       if (functor_arg == fp.var) {
         seen |= uint64_t(1) << i;
 
@@ -800,16 +803,31 @@ bool SIPSGenerator::Impl::VisitAggregate(
         //            ever a case where this condition is satisfiable in one
         //            permutation and not another?
         } else {
+          // (*gOut) << "p=" << p << " aggregation arg " << functor_arg << " ";
+          equalities.swap(prev_equalities);
           return false;
         }
       }
     }
 
     // The free parameter is not tied to anything in the functor, which means
-    // it's unbounded.
+    // it's unbounded. This corresponds with `A` in the following:
     //
-    // TODO(pag): Again, how to communicate this error, and if the issue exists
-    //            for one permutation, then must it exist for all permutations?
+    //    count_grouped_As(A, NumXs)
+    //      : count(X, NumXs) over (@i32 A, @i32 X) { blah(X). }.
+    //
+    // This pattern is feasibly like a "group by A". Another way of thinking of
+    // it is that we want to have a distinct aggregation object per unique A.
+    //
+    // Given that the semantics are more closely tied to a group by where each
+    // grouped aggregator is distinct, it doesn't make sense to have `A` free,
+    // thus requiring some unknown number of groups. Thus, we require that `A`
+    // in this case be bound, rather than free.
+    //
+    // The best we can do is return `false` and hope that applying some other
+    // predicate in the permutation will bind the needed variables.
+    // (*gOut) << "p=" << p << " group by var " << fp.var << " not bound\n";
+    equalities.swap(prev_equalities);
     return false;
 
   check_next:
@@ -824,7 +842,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   size_t num_summary_params = 0;
   seen = 0;
   for (auto i = 0u; i < functor_arity; ++i) {
-    auto functor_arg = functor_predicate.NthArgument(i);
+    auto functor_arg = aggregate_functor.NthArgument(i);
     switch (functor_decl.NthParameter(i).Binding()) {
       case ParameterBinding::kBound: {
         const SIPSVisitor::Column *col = nullptr;
@@ -862,51 +880,66 @@ bool SIPSGenerator::Impl::VisitAggregate(
   // the number of free parameters that are coming out of the summarizing
   // functor application.
   if (num_summary_params != free_params.size()) {
+    // (*gOut) << "p=" << p << "num_summary_params=" << num_summary_params
+    //         << " free_params=" << free_params.size() << "\n";
+    equalities.swap(prev_equalities);
     return false;
   }
 
-  // The number of parameters that the summary is sending to the aggregate
-  // doesn't match what the aggregate needs.
-  //
-  // TODO(pag): Error/cancellation condition?
-  if (num_aggregate_params != aggregate_collection_params.size()) {
+  // NOTE(pag): The number of parameters that the summary is sending to the
+  //            aggregate doesn't need match what the aggregate needs. This is
+  //            the case where we want more than one aggregation objects, one
+  //            instance per grouping of these bound params.
+  assert(num_aggregate_params >= aggregate_collection_params.size());
+  if (aggregate_collection_params.empty()) {
+    // (*gOut) << "p=" << p << " empty collection params\n";
+    equalities.swap(prev_equalities);
     return false;
   }
 
-  assert(!aggregate_collection_params.empty());
+  SIPSVisitor::Column *inner_group_begin = nullptr;
+  SIPSVisitor::Column *inner_group_end = nullptr;
+  SIPSVisitor::Column *outer_group_begin = nullptr;
+  SIPSVisitor::Column *outer_group_end = nullptr;
+
+  if (!aggregate_input_params.empty()) {
+    inner_group_begin = &(aggregate_input_params.front());
+    inner_group_end = &((&(aggregate_input_params.back()))[1]);
+  }
+
+  if (!summarized_bound_params.empty()) {
+    outer_group_begin = &(summarized_bound_params.front());
+    outer_group_end = &((&(summarized_bound_params.back()))[1]);
+  }
 
   // Tell the visitor that we're going to enter an aggregation, and pass it the
-  // bound (not aggregate) inputs, if any.
-  if (aggregate_input_params.empty()) {
-    visitor.EnterAggregation(
-        functor_predicate, functor_decl, nullptr, nullptr);
-  } else {
-    visitor.EnterAggregation(
-        functor_predicate, functor_decl,
-        &(aggregate_input_params.front()),
-        &((&(aggregate_input_params.back()))[1]));
-  }
+  // bound (not aggregate) inputs, if any, as well as the bound parameters that
+  // get passed along to the inner predicate.
+  visitor.EnterAggregation(
+      aggregate_functor, functor_decl,
+      outer_group_begin, outer_group_end,
+      inner_group_begin, inner_group_end);
 
   if (summarized_bound_params.empty() && summarized_free_params.empty()) {
     assert(false);  // Not possible.
+    equalities.swap(prev_equalities);
     return false;
 
   // We only have bound parameters. This is equivalent to asking if a tuple
   // is present, i.e. if a certain row exists in a table.
   } else if (summarized_free_params.empty()) {
     assert(!summarized_bound_params.empty());
-    visitor.AssertPresent(
-        summarized_predicate,
-        &(summarized_bound_params.front()),
-        &((&(summarized_bound_params.back()))[1]));
 
-    visitor.Collect(functor_predicate, functor_decl,
+    visitor.AssertPresent(
+        summarized_predicate, outer_group_begin, outer_group_end);
+
+    visitor.Collect(aggregate_functor, functor_decl,
                     &(aggregate_collection_params.front()),
                     &((&(aggregate_collection_params.back()))[1]));
 
   // We only have free parameters. This is equivalent to a full table scan.
-  } else if (bound_params.empty()) {
-    assert(!free_params.empty());
+  } else if (summarized_bound_params.empty()) {
+    assert(!summarized_free_params.empty());
 
     visitor.EnterFromSelect(
         summarized_predicate, summarized_decl,
@@ -915,7 +948,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
 
     ApplyDeferredAsserts(visitor);
 
-    visitor.Collect(functor_predicate, functor_decl,
+    visitor.Collect(aggregate_functor, functor_decl,
                     &(aggregate_collection_params.front()),
                     &((&(aggregate_collection_params.back()))[1]));
 
@@ -926,18 +959,17 @@ bool SIPSGenerator::Impl::VisitAggregate(
   // parameters, but constraining them in terms of rows containing the bound
   // parameters.
   } else {
-    assert(!free_params.empty());
-    assert(!bound_params.empty());
+    assert(!summarized_bound_params.empty());
+    assert(!summarized_free_params.empty());
     visitor.EnterFromWhereSelect(
         summarized_predicate, summarized_decl,
-        &(summarized_bound_params.front()),
-        &((&(summarized_bound_params.back()))[1]),
+        outer_group_begin, outer_group_end,
         &(summarized_free_params.front()),
         &((&(summarized_free_params.back()))[1]));
 
     ApplyDeferredAsserts(visitor);
 
-    visitor.Collect(functor_predicate, functor_decl,
+    visitor.Collect(aggregate_functor, functor_decl,
                     &(aggregate_collection_params.front()),
                     &((&(aggregate_collection_params.back()))[1]));
 
@@ -947,16 +979,14 @@ bool SIPSGenerator::Impl::VisitAggregate(
   // Finally, undefine the free parameters that were related to what we
   // summarized as they are no longer "in scope", and should not be visible
   // to anything else.
-  for (const auto &free_param : summarized_free_params) {
-    equalities.erase(free_param.var);
+  for (const auto &param : summarized_free_params) {
+    equalities.erase(param.var);
   }
 
-  visitor.Summarize(functor_predicate, functor_decl,
-                    &(free_params.front()),
-                    &((&(free_params.back()))[1]));
-
-  visitor.EnterFromSelect(
-      functor_predicate, functor_decl,
+  visitor.EnterSelectFromSummary(
+      aggregate_functor, functor_decl,
+      outer_group_begin, outer_group_end,
+      inner_group_begin, inner_group_end,
       &(free_params.front()),
       &((&(free_params.back()))[1]));
 
@@ -965,7 +995,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   BindFreeParams(visitor);
   if (VisitPredicate(visitor, p)) {
     if (!cancelled) {
-      visitor.ExitSelect(functor_predicate, functor_decl);
+      visitor.ExitSelect(aggregate_functor, functor_decl);
       ret = true;
     }
   }
@@ -989,9 +1019,11 @@ bool SIPSGenerator::Impl::VisitAggregates(SIPSVisitor &visitor,
     }
 
     aggregates_processed[i] = true;  // Assume it is.
+    // (*gOut) << "p=" << p << " trying aggregate: " << aggregates[i] << '\n';
     if (VisitAggregate(visitor, aggregates[i], p, ret)) {
       return true;
     }
+    // (*gOut) << "p=" << p << " aggregate failed: " << aggregates[i] << '\n';
     aggregates_processed[i] = false;
   }
 
@@ -1008,6 +1040,9 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   equalities.clear();
   comparisons.clear();
   aggregates.clear();
+
+  // (*gOut) << "\nbegin: " << ParsedClause::Containing(assumption) << "\n";
+  // (*gOut) << "assuming " << assumption << "\n";
 
   visitor.Begin(assumption);
 
@@ -1077,6 +1112,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
 
 bool SIPSGenerator::Impl::Advance(void) {
   if (positive_predicates.empty()) {
+    // (*gOut) << "not advancing\n";
     cancelled = true;
     return false;
   }
@@ -1093,6 +1129,7 @@ bool SIPSGenerator::Impl::Advance(void) {
 
     case SIPSVisitor::kStop:
       cancelled = true;
+      // (*gOut) << "stopped\n";
       return false;
   }
 

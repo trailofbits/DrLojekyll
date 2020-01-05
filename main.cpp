@@ -23,7 +23,7 @@
 
 namespace hyde {
 
-extern OutputStream *gOut;
+OutputStream *gOut = nullptr;
 
 #if 0
 class PseudoCodePrinter final : public SIPSVisitor {
@@ -278,6 +278,7 @@ static void CodeDumper(DisplayManager display_manager,
   gOut = &os;
 
   for (auto state : analysis.GenerateStates(module)) {
+
     DefaultSIPSScorer scorer;
     SIPSGenerator generator(state->assumption);
     os << "// Assume: " << state->assumption << "\n"

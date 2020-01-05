@@ -1,0 +1,22 @@
+
+#functor add_i32(bound @i32 L, bound @i32 R, free @i32 Sum) trivial
+#local fibonnaci_loop(@i32 I, @i32 PN, @i32 CN, @i32 N)
+#query fibonnaci(bound @i32 N, free @i32 Result)
+#message init_fibonacci(@i32 N)
+
+fibonnaci_loop(I, PN, CN, N)
+    : init_fibonacci(N)
+    , I = 1
+    , PN = 0
+    , CN = 1.
+
+fibonnaci_loop(I, PN, CN, N)
+    : fibonnaci_loop(Ic, PNc, CNc, N)
+    , add_i32(Ic, 1, I)
+    , PN = CNc
+    , add_i32(PNc, CNc, CN)
+    , I < N.
+
+fibonnaci(N, CN)
+    : fibonnaci_loop(_, _, CN, N)
+    , I = N.

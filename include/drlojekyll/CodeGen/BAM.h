@@ -1,6 +1,7 @@
-/*
- * Copyright (c) 2019 Trail of Bits, Inc.
- */
+// Copyright 2019, Trail of Bits. All rights reserved.
 
 #pragma once
 
+namespace hyde {
+
+}  // namespace hyde

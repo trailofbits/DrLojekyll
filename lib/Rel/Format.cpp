@@ -28,7 +28,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "!";
     }
 
-    os << decl.Name() << "</TD>";
+    os << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -41,7 +41,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = message.Declaration();
     const auto arity = decl.Arity();
     os << "t" << message.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>MESSAGE</TD><TD>" << decl.Name() << "</TD>";
+       << "<TD>MESSAGE</TD><TD>" << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -53,7 +53,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = generator.Declaration();
     const auto arity = decl.Arity();
     os << "t" << generator.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>GENERATOR</TD><TD>" << decl.Name() << "</TD>";
+       << "<TD>GENERATOR</TD><TD>" << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -72,7 +72,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (select.IsRelation()) {
       os << "<TD>SELECT</TD>";
     } else {
-      os << "<TD>PULL</TD>";
+      os << "<TD>PULL</TD>";  // Pull from a stream.
     }
     auto i = 0u;
     for (auto col : select.Columns()) {
@@ -103,6 +103,39 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   }
 
+  for (auto constraint : query.Constraints()) {
+    os << "v" << constraint.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD rowspan=\"2\">FILTER ";
+    switch (constraint.Operator()) {
+      case ComparisonOperator::kEqual:
+        os << "eq";
+        break;
+      case ComparisonOperator::kGreaterThan:
+        os << "gt";
+        break;
+      case ComparisonOperator::kLessThan:
+        os << "lt";
+        break;
+      case ComparisonOperator::kNotEqual:
+        os << "neq";
+        break;
+    }
+    const auto lhs = constraint.LHS();
+    const auto rhs = constraint.RHS();
+    const auto input_lhs = constraint.InputLHS();
+    const auto input_rhs = constraint.InputRHS();
+    const auto input_lhs_view = QueryView::Containing(input_lhs);
+    const auto input_rhs_view = QueryView::Containing(input_rhs);
+    os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << lhs.Variable()
+       << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << rhs.Variable()
+       << "</TD></TR><TR><TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>"
+       << kEndTable << ">];\n"
+       << "v" << constraint.UniqueId() << ":p0 -> v"
+       << input_lhs_view.UniqueId() << ":c" << input_lhs.UniqueId() << ";\n"
+       << "v" << constraint.UniqueId() << ":p1 -> v"
+       << input_rhs_view.UniqueId() << ":c" << input_rhs.UniqueId() << ";\n";
+  }
+
   const char *kColors[] = {
       "antiquewhite",
       "aquamarine",
@@ -125,13 +158,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       ++i;
     }
 
-    os << "<TD rowspan=\"3\">JOIN</TD>";
+    os << "<TD rowspan=\"2\">JOIN</TD>";
 
     auto found = false;
     for (auto col : join.Columns()) {
       for (auto j = 0u; j < join.NumPivotColumns(); ++j) {
         auto pivot_col = join.NthPivotColumn(j);
-        if (pivot_col == col) {
+        if (pivot_col.EquivalenceClass() == col.EquivalenceClass()) {
           os << "<TD bgcolor=\"" << kColors[j]
              << "\" port=\"c" << col.UniqueId() << "\">"
              << col.Variable() << "</TD>";
@@ -145,18 +178,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       continue;
     }
 
-    if (false) assert(found);
+    assert(found);
 
-    auto max_cols = std::max(join.NumInputColumns(), join.Arity());
-
-    os << "</TR><TR><TD colspan=\"" << max_cols << "\">";
-    auto sep = "";
-    for (auto cond : join.Constraints()) {
-      os << sep << cond.LHS().Variable() << " = " << cond.RHS().Variable();
-      sep = "<BR />";
-    }
-
-    os << "</TD></TR><TR>";
+    os << "</TR><TR>";
     for (auto i = 0u; i < join.NumInputColumns(); ++i) {
       os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
     }
@@ -174,7 +198,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto map : query.Maps()) {
     os << "v" << map.UniqueId() << " [ label=<" << kBeginTable;
-    os << "<TD rowspan=\"2\">MAP " << map.Functor().Name() << "</TD>";
+    os << "<TD rowspan=\"2\">MAP " << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
@@ -203,7 +227,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto agg : query.Aggregates()) {
     os << "v" << agg.UniqueId() << " [ label=<" << kBeginTable;
-    os << "<TD rowspan=\"3\">AGGREGATE " << agg.Functor().Name() << "</TD>";
+    os << "<TD rowspan=\"3\">AGGREGATE "
+       << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
@@ -213,6 +238,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (num_group) {
       os << "<TD colspan=\"" << num_group << "\">GROUP</TD>";
     }
+    auto num_config = agg.NumConfigColumns();
+    if (num_config) {
+      os << "<TD colspan=\"" << num_config << "\">CONFIG</TD>";
+    }
     auto num_summ = agg.NumSummarizedColumns();
     if (num_summ) {
 
@@ -221,7 +250,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "</TR><TR>";
     for (auto i = 0u; i < num_group; ++i) {
       auto col = agg.NthGroupColumn(i);
-      os << "<TD port=\"g" << i << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"g1_" << i << "\">" << col.Variable() << "</TD>";
+    }
+    for (auto i = 0u; i < num_config; ++i) {
+      auto col = agg.NthConfigColumn(i);
+      os << "<TD port=\"g2_" << i << "\">" << col.Variable() << "</TD>";
     }
     for (auto i = 0u; i < num_summ; ++i) {
       auto col = agg.NthSummarizedColumn(i);
@@ -231,20 +264,27 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto i = 0u; i < num_group; ++i) {
       auto col = agg.NthGroupColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << agg.UniqueId() << ":g" << i << " -> v"
+      os << "v" << agg.UniqueId() << ":g1_" << i << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+    for (auto i = 0u; i < num_config; ++i) {
+      auto col = agg.NthConfigColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << agg.UniqueId() << ":g2_" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
     for (auto i = 0u; i < num_summ; ++i) {
       auto col = agg.NthSummarizedColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << agg.UniqueId() << ":g" << i << " -> v"
+      os << "v" << agg.UniqueId() << ":s" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
   }
 
   for (auto insert : query.Inserts()) {
     os << "i" << insert.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>INSERT " << insert.Relation().Declaration().Name() << "</TD>";
+       << "<TD>INSERT "
+       << ParsedDeclarationName(insert.Relation().Declaration()) << "</TD>";
 
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
       os << "<TD port=\"c" << i << "\"> &nbsp; </TD>";

@@ -53,6 +53,7 @@ class QueryGenerator;
 class QueryImpl;
 class QueryInsert;
 class QueryJoin;
+class QueryMerge;
 class QueryMessage;
 class QueryRelation;
 class QuerySelect;
@@ -62,24 +63,51 @@ class QueryView;
 // A column. Columns may be derived from selections or from joins.
 class QueryColumn : public query::QueryNode<QueryColumn> {
  public:
+  QueryColumn(const QueryColumn &) = default;
+  QueryColumn(QueryColumn &&) noexcept = default;
+  QueryColumn &operator=(const QueryColumn &) = default;
+  QueryColumn &operator=(QueryColumn &&) noexcept = default;
 
   bool IsSelect(void) const noexcept;
   bool IsJoin(void) const noexcept;
   bool IsMap(void) const noexcept;
+  bool IsMerge(void) const noexcept;
+  bool IsConstraint(void) const noexcept;
+
+  // These are group by columns. The idea with group by columns is that they are
+  // not used in the actual aggregation functor, and thus, we would want as many
+  // functor instances as there are collections.
+  bool IsAggregateGroup(void) const noexcept;
+
+  // These are bound parameters to aggregate functors, and thus can be thought
+  // of as being configuration parameters. They are also a sort of group-by
+  // parameter.
+  bool IsAggregateConfig(void) const noexcept;
+
+  // These are the summarized values.
+  bool IsAggregateSummary(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
 
   bool operator==(QueryColumn that) const noexcept;
   bool operator!=(QueryColumn that) const noexcept;
 
+  // Returns the column that is the "leader" of this column's equivalence class.
+  QueryColumn EquivalenceClass(void) const noexcept;
+
  private:
   friend class QueryConstraint;
   friend class QueryInsert;
   friend class QueryJoin;
   friend class QueryMap;
+  friend class QueryMerge;
   friend class QueryView;
+  friend class QueryAggregate;
 
-  using query::QueryNode<QueryColumn>::QueryNode;
+  template <typename>
+  friend class NodeIterator;
+
+  explicit QueryColumn(Node<QueryColumn> *impl_);
 };
 
 // A table in a query. Corresponds with a declared predicate in a Datalog.
@@ -166,6 +194,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMap(void) const noexcept;
   bool IsAggregate(void) const noexcept;
   bool IsMerge(void) const noexcept;
+  bool IsConstraint(void) const noexcept;
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -219,9 +248,6 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // Returns the `nth` joined column.
   QueryColumn NthInputColumn(unsigned n) const noexcept;
 
-  // The list of pivot constraints.
-  NodeRange<QueryConstraint> Constraints(void) const;
-
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
 };
@@ -270,6 +296,12 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // Returns the `nth` grouping column.
   QueryColumn NthGroupColumn(unsigned n) const noexcept;
 
+  // Returns the number of columns used for configuration.
+  unsigned NumConfigColumns(void) const noexcept;
+
+  // Returns the `nth` config column.
+  QueryColumn NthConfigColumn(unsigned n) const noexcept;
+
   // Returns the number of columns being summarized.
   unsigned NumSummarizedColumns(void) const noexcept;
 
@@ -308,10 +340,14 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 // A constraint between two columns.
 class QueryConstraint : public query::QueryNode<QueryConstraint> {
  public:
+  static QueryConstraint &From(QueryView &view);
 
   ComparisonOperator Operator(void) const;
   QueryColumn LHS(void) const;
   QueryColumn RHS(void) const;
+
+  QueryColumn InputLHS(void) const;
+  QueryColumn InputRHS(void) const;
 
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;
@@ -341,6 +377,8 @@ class Query {
   NodeRange<QueryInsert> Inserts(void) const;
   NodeRange<QueryMap> Maps(void) const;
   NodeRange<QueryAggregate> Aggregates(void) const;
+  NodeRange<QueryMerge> Merges(void) const;
+  NodeRange<QueryConstraint> Constraints(void) const;
   NodeRange<QueryStream> Streams(void) const;
   NodeRange<QueryMessage> Messages(void) const;
   NodeRange<QueryGenerator> Generators(void) const;

@@ -8,9 +8,17 @@ namespace hyde {
 
 class OutputStream;
 
+class ParsedDeclarationName {
+ public:
+  inline explicit ParsedDeclarationName(ParsedDeclaration decl_)
+      : decl(decl_) {}
+  const ParsedDeclaration decl;
+};
+
 OutputStream &operator<<(OutputStream &os, ParsedLiteral val);
 OutputStream &operator<<(OutputStream &os, ParsedParameter var);
 OutputStream &operator<<(OutputStream &os, ParsedVariable var);
+OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl);
 OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl);
 OutputStream &operator<<(OutputStream &os, ParsedPredicate pred);
 OutputStream &operator<<(OutputStream &os, ParsedAssignment assign);

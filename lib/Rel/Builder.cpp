@@ -14,7 +14,7 @@
 
 namespace hyde {
 
-OutputStream *gOut = nullptr;
+extern OutputStream *gOut;
 
 class QueryBuilderImpl : public SIPSVisitor {
  public:
@@ -30,7 +30,8 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto &table = rels[decl];
     if (!table) {
       table.reset(new Node<QueryRelation>(
-          decl, context->next_relation, context->next_relation, is_positive));
+          decl, context->next_relation,
+          context->next_relation, is_positive));
       context->next_relation = table.get();
     }
 
@@ -50,6 +51,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto select = new Node<QuerySelect>(
           query.get(), positive_table, nullptr);
       query->selects.emplace_back(select);
+
       for (unsigned i = 0, max_i = decl.Arity(); i < max_i; ++i) {
         Column column(decl.NthParameter(i), pred.NthArgument(i), i, 0);
         AddColumn(select, column);
@@ -117,24 +119,24 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   Node<QuerySelect> *SelectFor(ParsedPredicate pred) {
-    auto decl = ParsedDeclaration::Of(pred);
+    const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsMessage()) {
-      auto stream = StreamFor(ParsedMessage::From(decl));
-      auto select = new Node<QuerySelect>(
+      const auto stream = StreamFor(ParsedMessage::From(decl));
+      const auto select = new Node<QuerySelect>(
           query.get(), nullptr, stream);
       query->selects.emplace_back(select);
       return select;
 
     } else if (decl.IsFunctor()) {
-      auto stream = StreamFor(ParsedFunctor::From(decl));
-      auto select = new Node<QuerySelect>(
+      const auto stream = StreamFor(ParsedFunctor::From(decl));
+      const auto select = new Node<QuerySelect>(
           query.get(), nullptr, stream);
       query->selects.emplace_back(select);
       return select;
 
     } else {
       auto table = TableFor(pred);
-      auto select = new Node<QuerySelect>(
+      const auto select = new Node<QuerySelect>(
           query.get(), table, nullptr);
       query->selects.emplace_back(select);
       return select;
@@ -181,6 +183,27 @@ class QueryBuilderImpl : public SIPSVisitor {
     prev_col = select->columns[0];
   }
 
+  void AssertEqualImpl(Node<QueryColumn> *lhs_col, Node<QueryColumn> *rhs_col) {
+    DisjointSet::Union(lhs_col, rhs_col);
+
+    assert(!lhs_col->view->IsJoin());
+    assert(!rhs_col->view->IsJoin());
+
+    if (lhs_col == rhs_col) {
+      return;
+    }
+
+    if (lhs_col->view == rhs_col->view) {
+      assert(false && "TODO");
+
+    } else {
+      auto join = new Node<QueryJoin>(query.get());
+      query->joins.emplace_back(join);
+      join->joined_columns.push_back(lhs_col);
+      join->joined_columns.push_back(rhs_col);
+    }
+  }
+
   void AssertEqual(unsigned lhs_id, unsigned rhs_id) override {
     if (lhs_id == rhs_id) {
       return;
@@ -190,25 +213,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto &rhs_col = id_to_col[rhs_id];
 
     if (lhs_col && rhs_col) {
-
-      DisjointSet::Union(lhs_col, rhs_col);
-
-      assert(!lhs_col->view->IsJoin());
-      assert(!rhs_col->view->IsJoin());
-
-      if (lhs_col == rhs_col) {
-        return;
-      }
-      if (lhs_col->view == rhs_col->view) {
-        assert(false && "TODO");
-
-      } else {
-        auto join = new Node<QueryJoin>(query.get());
-
-        query->joins.emplace_back(join);
-        join->joined_columns.push_back(lhs_col);
-        join->joined_columns.push_back(rhs_col);
-      }
+      AssertEqualImpl(lhs_col, rhs_col);
 
     } else if (lhs_col) {
       rhs_col = lhs_col;
@@ -230,7 +235,33 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       const auto constraint = new Node<QueryConstraint>(
           op, lhs_col, rhs_col);
+
+      auto new_lhs_col = new Node<QueryColumn>(
+          lhs_col->var, constraint, lhs_col->id, 0);
+
+      auto new_rhs_col = new Node<QueryColumn>(
+          rhs_col->var, constraint, rhs_col->id, 1);
+
+      DisjointSet::UnionInto(lhs_col, new_lhs_col);
+      DisjointSet::UnionInto(rhs_col, new_rhs_col);
+
+      ReplaceAllUsesWith(lhs_col, new_lhs_col);
+      ReplaceAllUsesWith(rhs_col, new_rhs_col);
+
       query->constraints.emplace_back(constraint);
+      query->columns.emplace_back(new_lhs_col);
+      query->columns.emplace_back(new_rhs_col);
+      constraint->columns.push_back(new_lhs_col);
+      constraint->columns.push_back(new_rhs_col);
+
+      // Make sure everything uses the filtered versions.
+      for (auto &id_col : id_to_col) {
+        if (id_col.second->Find() == new_lhs_col) {
+          id_col.second = new_lhs_col;
+        } else if (id_col.second->Find() == new_rhs_col) {
+          id_col.second = new_rhs_col;
+        }
+      }
 
     } else {
       pending_compares.emplace_back(op, lhs_id, rhs_id);
@@ -299,14 +330,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       ParsedPredicate pred, ParsedDeclaration decl,
       const Column *select_begin, const Column *select_end) override {
 
-
-    if (decl.IsFunctor()) {
-      auto functor = ParsedFunctor::From(decl);
-      if (functor.IsAggregate()) {
-        assert(false);  // TODO.
-      }
-    }
-
     auto select = SelectFor(pred);
     for (auto col = select_begin; col < select_end; ++col) {
       auto new_col = AddColumn(select, *col);
@@ -316,16 +339,47 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
+  // Treat from-where-selects inside of the summarization scope of an aggregate
+  // just like unconditional select alls, because the summarizing aggregate
+  // itself knows about what should be grouped. This helps us avoid joins on
+  // in-flows to aggregates, and instead join on the results of aggregates.
+  void AggEnterFromWhereSelect(
+      ParsedPredicate pred, ParsedDeclaration decl,
+      const Column *where_begin, const Column *where_end,
+      const Column *select_begin, const Column *select_end) {
+    auto select = SelectFor(pred);
+
+    struct {
+      const Column *begin, *end;
+    } ranges[2] = {
+      {where_begin, where_end},
+      {select_begin, select_end}
+    };
+
+    for (auto range : ranges) {
+      for (auto col = range.begin; col < range.end; ++col) {
+        auto new_col = AddColumn(select, *col);
+        auto &prev_col = id_to_col[col->id];
+        assert(!prev_col);
+        prev_col = new_col;
+      }
+    }
+  }
+
   void EnterFromWhereSelect(
       ParsedPredicate pred, ParsedDeclaration decl,
       const Column *where_begin, const Column *where_end,
       const Column *select_begin, const Column *select_end) override {
 
+    if (!query->pending_aggregates.empty()) {
+      AggEnterFromWhereSelect(pred, decl, where_begin, where_end,
+                              select_begin, select_end);
+      return;
+    }
+
     if (decl.IsFunctor()) {
       auto functor = ParsedFunctor::From(decl);
-      if (functor.IsAggregate()) {
-        assert(false);  // TODO.
-      } else {
+      if (!functor.IsAggregate()) {
         AddMap(functor, select_begin, select_end, where_begin, where_end);
         return;
       }
@@ -355,14 +409,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto where_col = select->columns[col->n];
       const auto prev_col = id_to_col[col->id];
       assert(prev_col != nullptr);
-
-      DisjointSet::Union(prev_col, where_col);
-
-      auto join = new Node<QueryJoin>(query.get());
-      query->joins.emplace_back(join);
-
-      join->joined_columns.push_back(prev_col);
-      join->joined_columns.push_back(where_col);
+      AssertEqualImpl(prev_col, where_col);
     }
 
     // Go through and rewrite all assignments to the newly selected column,
@@ -395,22 +442,28 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void EnterAggregation(
       ParsedPredicate pred, ParsedDeclaration decl,
-      const Column *group_begin, const Column *group_end) override {
+      const Column *, const Column *,
+      const Column *, const Column *) override {
+
     assert(decl.IsFunctor());
     auto functor = ParsedFunctor::From(decl);
     auto agg = new Node<QueryAggregate>(query.get(), functor);
     query->pending_aggregates.emplace_back(agg);
 
-    for (auto col = group_begin; col < group_end; ++col) {
-      auto prev_col = id_to_col[col->id];
-      assert(prev_col != nullptr);
-      agg->group_by_columns.push_back(prev_col);
+    // Start with a new "scope". `do_col` will fill it in with the bound
+    // columns.
+    agg->id_to_col.swap(id_to_col);
 
-      auto out_col = new Node<QueryColumn>(
-          col->var, agg, col->id, static_cast<unsigned>(agg->columns.size()));
-      agg->columns.push_back(out_col);
-      query->columns.emplace_back(out_col);
-    }
+
+
+//    // Make the aggregate's group variables available to the internal
+//    // selections that will use this group variable. Later we'll unpublish
+//    // this. The idea is that we don't want to have the aggregated predicates
+//    // join with stuff that is "outside" the scope of the variables provided
+//    // by the aggregate itself. This leads to suboptimal join patterns.
+//    for (auto col : agg->columns) {
+//      id_to_col[col->id] = col;
+//    }
   }
 
   void Collect(
@@ -426,23 +479,64 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  void Summarize(
+  void EnterSelectFromSummary(
       ParsedPredicate, ParsedDeclaration,
+      const Column *group_begin, const Column *group_end,
+      const Column *bound_begin, const Column *bound_end,
       const Column *summary_begin, const Column *summary_end) override {
     assert(!query->pending_aggregates.empty());
+
     auto agg = query->pending_aggregates.back().release();
     query->pending_aggregates.pop_back();
     query->aggregates.emplace_back(agg);
 
-    // Make sure the summarized columns don't leak.
-    for (auto col : agg->summarized_columns) {
-      const auto parent_id = col->Find()->id;
-      for (auto &id_col : id_to_col) {
-        if (id_col.second->Find()->id == parent_id) {
-          id_col.second = nullptr;
-        }
+    // Swap back to the old scope. This helps ensure that summarized columns
+    // don't leak.
+    agg->id_to_col.swap(id_to_col);
+
+    auto do_col = [&] (const Column *col, bool is_bound) {
+      auto prev_col = id_to_col[col->id];  // Outside the aggregate.
+      auto scoped_col = agg->id_to_col[col->id];  // Inside the aggregate.
+
+      assert(prev_col != nullptr);
+      assert(scoped_col != nullptr);
+      agg->group_by_columns.push_back(scoped_col);
+
+      // This is one of the bound parameters passed in to the summarizing
+      // functor.
+      if (is_bound) {
+        agg->bound_columns.push_back(scoped_col);
       }
+
+      auto out_col = new Node<QueryColumn>(
+          col->var, agg, col->id, static_cast<unsigned>(agg->columns.size()));
+      agg->columns.push_back(out_col);
+      query->columns.emplace_back(out_col);
+
+      // Join the grouped-by column with the version of the column visible
+      // before aggregation.
+      AssertEqualImpl(prev_col, out_col);
+    };
+
+    for (auto col = group_begin; col < group_end; ++col) {
+      do_col(col, false);
     }
+
+    for (auto col = bound_begin; col < bound_end; ++col) {
+      do_col(col, true);
+    }
+
+
+
+//    // Make sure the summarized columns don't leak.
+//    for (auto col : agg->summarized_columns) {
+//      const auto parent_id = col->Find()->id;
+//      for (auto &id_col : id_to_col) {
+//        if (id_col.second && id_col.second->Find()->id == parent_id) {
+//          id_col.second = nullptr;
+//        }
+//      }
+//    }
 
     // The summary variables are now available.
     for (auto col = summary_begin; col < summary_end; ++col) {
@@ -455,14 +549,34 @@ class QueryBuilderImpl : public SIPSVisitor {
       id_to_col[col->id] = out_col;
     }
 
-    // "Publish" the aggregate's group and summary columns for use by
-    // everything else.
-    for (auto col : agg->columns) {
-      const auto parent_id = col->Find()->id;
-      for (auto &id_col : id_to_col) {
-        if (id_col.second->Find()->id == parent_id) {
-          id_col.second = col;
-        }
+//    // Unpublish the original group-by columns and join them with the originals.
+//    auto i = 0u;
+//    for (; i < agg->group_by_columns.size(); ++i) {
+//      auto prev_col = agg->group_by_columns[i];
+////      auto col = agg->columns[i];
+//      id_to_col[prev_col->id] = prev_col;
+////      AssertEqualImpl(prev_col, col);
+//    }
+
+//    // Reassign all IDs to use the aggregate.
+//    for (auto j = 0u; j < agg->group_by_columns.size(); ++j) {
+//      auto col = agg->columns[j];
+//      auto parent_id = col->Find()->id;
+//      for (auto &id_col : id_to_col) {
+//        if (id_col.second && id_col.second->Find()->id == parent_id) {
+//          id_col.second = nullptr;
+//        }
+//      }
+//    }
+
+    // "Publish" the aggregate's summary columns for use by everything else.
+    for (auto i = agg->group_by_columns.size(); i < agg->columns.size(); ++i) {
+      auto col = agg->columns[i];
+      auto &prev_col = id_to_col[col->id];
+      if (prev_col) {
+        assert(prev_col->view == agg);
+      } else {
+        prev_col = col;
       }
     }
   }
@@ -533,6 +647,11 @@ class QueryBuilderImpl : public SIPSVisitor {
           input_col = new_col;
         }
       }
+      for (auto &input_col : agg->bound_columns) {
+        if (input_col == old_col) {
+          input_col = new_col;
+        }
+      }
       for (auto &input_col : agg->summarized_columns) {
         if (input_col == old_col) {
           input_col = new_col;
@@ -566,12 +685,6 @@ class QueryBuilderImpl : public SIPSVisitor {
         join_weight[col->var] += 1;
       }
     }
-//
-//    for (const auto &join : query->joins) {
-//      for (auto col : join->joined_columns) {
-//        num_joins[join.get()] += num_joins[col->view];
-//      }
-//    }
 
     std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>>
         promoted_ids;
@@ -589,7 +702,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (const auto &join : query->joins) {
 
       assert(join->pivot_columns.empty());
-      assert(join->pivot_conditions.empty());
       assert(join->columns.empty());
       assert(join->joined_columns.size() == 2);
 
@@ -610,21 +722,14 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       promoted_ids.clear();
 
-      auto min_id = ~0u;
-      auto max_id = 0u;
-
       for (auto joined_col : col0->view->columns) {
         const auto id = joined_col->Find()->id;
-        min_id = std::min(min_id, id);
-        max_id = std::max(max_id, id);
         promoted_ids[id].push_back(joined_col);
       }
 
       if (col1->view != col0->view) {
         for (auto joined_col : col1->view->columns) {
           const auto id = joined_col->Find()->id;
-          min_id = std::min(min_id, id);
-          max_id = std::max(max_id, id);
           promoted_ids[id].push_back(joined_col);
         }
       } else {
@@ -638,8 +743,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       // Go and fill up the output columns of the join, which is the set of
       // unique input columns. For each output column that we create, we replace
       // all uses of the input column with the output column.
-      for (auto i = min_id; i <= max_id; ++i) {
-        auto &col_set = promoted_ids[i];
+      for (const auto &id_col_set : promoted_ids) {
+        const auto id = id_col_set.first;
+        const auto &col_set = id_col_set.second;
         if (col_set.empty()) {
           continue;
         }
@@ -652,7 +758,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         }
 
         auto output_col = new Node<QueryColumn>(
-            min_var, join.get(), i,
+            min_var, join.get(), id,
             static_cast<unsigned>(join->columns.size()));
 
         query->columns.emplace_back(output_col);
@@ -669,26 +775,10 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       // Add in the joined columns after, so that they don't get replaced.
-      for (auto i = min_id; i <= max_id; ++i) {
-        auto &col_set = promoted_ids[i];
+      for (const auto &id_col_set : promoted_ids) {
+        const auto &col_set = id_col_set.second;
         if (col_set.empty()) {
           continue;
-        }
-
-        if (1 < col_set.size()) {
-
-          // Add in the pivot condition. Has to happen *after* the
-          // `ReplaceAllUses` that happens in `replace_col`.
-          auto first_pivot_col = col_set[0];
-          for (auto k = 1u; k < col_set.size(); ++k) {
-            auto next_pivot_col = col_set[k];
-
-            auto pivot_cond = new Node<QueryConstraint>(
-                ComparisonOperator::kEqual, first_pivot_col,
-                next_pivot_col);
-            query->constraints.emplace_back(pivot_cond);
-            join->pivot_conditions.push_back(pivot_cond);
-          }
         }
 
         for (auto col : col_set) {
@@ -698,8 +788,9 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
 
     std::unordered_set<Node<QueryJoin> *> joined_joins;
+    std::unordered_set<Node<QueryView> *> joined_views;
 
-    // Try to combine join trees that all operate on the same pivots
+    // Try to combine join trees that all operate on the same pivots.
     bool found = false;
     for (const auto &join : query->joins) {
       if (join->joined_columns.empty()) {
@@ -707,11 +798,14 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       joined_joins.clear();
+      joined_views.clear();
+
       for (auto joined_col : join->joined_columns) {
 
         // We only care about joins of joins.
         if (!joined_col->view->IsJoin()) {
-          goto try_next_join;
+          joined_views.insert(joined_col->view);
+          continue;
         }
 
         auto joined_join = reinterpret_cast<Node<QueryJoin> *>(
@@ -721,9 +815,9 @@ class QueryBuilderImpl : public SIPSVisitor {
         // one pivot condition of this join.
         found = false;
         for (auto joined_pivot_col : joined_join->pivot_columns) {
-          for (auto pivot_cond : join->pivot_conditions) {
-            if (joined_pivot_col == pivot_cond->lhs ||
-                joined_pivot_col == pivot_cond->rhs) {
+          for (auto pivot_col : join->pivot_columns) {
+            if (pivot_col->Find() == joined_pivot_col->Find() ||
+                pivot_col->var == joined_pivot_col->var) {
               found = true;
               break;
             }
@@ -735,15 +829,13 @@ class QueryBuilderImpl : public SIPSVisitor {
 
         joined_joins.insert(joined_join);
       }
-      goto merge_joins;
 
-    try_next_join:
-      continue;
-
-    merge_joins:
+      if (joined_joins.empty()) {
+      try_next_join:
+        continue;
+      }
 
       join->joined_columns.clear();
-      join->pivot_conditions.clear();
 
       for (auto joined_join : joined_joins) {
         join->joined_columns.insert(
@@ -751,14 +843,15 @@ class QueryBuilderImpl : public SIPSVisitor {
             joined_join->joined_columns.begin(),
             joined_join->joined_columns.end());
 
-        join->pivot_conditions.insert(
-            join->pivot_conditions.end(),
-            joined_join->pivot_conditions.begin(),
-            joined_join->pivot_conditions.end());
-
-        joined_join->pivot_conditions.clear();
         joined_join->joined_columns.clear();
         joined_join->pivot_columns.clear();
+      }
+
+      for (auto joined_view : joined_views) {
+        join->joined_columns.insert(
+            join->joined_columns.end(),
+            joined_view->columns.begin(),
+            joined_view->columns.end());
       }
     }
   }
@@ -770,44 +863,42 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto &next_insert = query->next_insert;
     auto &next_map = query->next_map;
     auto &next_aggregate = query->next_aggregate;
+    auto &next_merge = query->next_merge;
+    auto &next_constraint = query->next_constraint;
 
     Node<QueryColumn> *dummy = nullptr;
     Node<QueryColumn> **prev_col_ptr = &dummy;
 
-    for (const auto &view : query->maps) {
-      view->next = next_map;
+    auto do_view = [&] (auto &view, auto &next_view_spec) {
+      view->next = next_view_spec;
       view->next_view = next_view;
-      next_view = next_map = view.get();
+      next_view = next_view_spec = view.get();
 
       prev_col_ptr = &dummy;
       for (auto col : view->columns) {
         *prev_col_ptr = col;
         prev_col_ptr = &(col->next_in_view);
       }
+    };
+
+    for (const auto &view : query->maps) {
+      do_view(view, next_map);
     }
 
     for (const auto &view : query->selects) {
-      view->next = next_select;
-      view->next_view = next_view;
-      next_view = next_select = view.get();
-
-      prev_col_ptr = &dummy;
-      for (auto col : view->columns) {
-        *prev_col_ptr = col;
-        prev_col_ptr = &(col->next_in_view);
-      }
+      do_view(view, next_select);
     }
 
     for (const auto &view : query->aggregates) {
-      view->next = next_aggregate;
-      view->next_view = next_view;
-      next_view = next_aggregate = view.get();
+      do_view(view, next_aggregate);
+    }
 
-      prev_col_ptr = &dummy;
-      for (auto col : view->columns) {
-        *prev_col_ptr = col;
-        prev_col_ptr = &(col->next_in_view);
-      }
+    for (const auto &view : query->merges) {
+      do_view(view, next_merge);
+    }
+
+    for (const auto &view : query->constraints) {
+      do_view(view, next_constraint);
     }
 
     // Link all the "full" joins together, and clear out and ignore the
@@ -816,11 +907,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       if (view->joined_columns.empty()) {
         view->columns.clear();
         view->pivot_columns.clear();
-        view->pivot_conditions.clear();
 
       } else {
         assert(!view->pivot_columns.empty());
-        assert(!view->pivot_conditions.empty());
         assert(!view->columns.empty());
 
         prev_col_ptr = &dummy;
@@ -838,12 +927,6 @@ class QueryBuilderImpl : public SIPSVisitor {
         view->next = next_join;
         view->next_view = next_view;
         next_view = next_join = view.get();
-
-        for (auto i = 1u; i < view->pivot_conditions.size(); ++i) {
-          auto cond = view->pivot_conditions[i];
-          auto prev_cond = view->pivot_conditions[i - 1];
-          prev_cond->next_pivot_condition = cond;
-        }
       }
     }
 
@@ -883,7 +966,30 @@ class QueryBuilderImpl : public SIPSVisitor {
     query->inserts.emplace_back(insert);
   }
 
+  void JoinGroups(void) {
+    std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>> cols;
+    std::unordered_set<unsigned> seen;
+    for (auto &agg : query->aggregates) {
+      seen.clear();
+      for (auto i = 0u; i < agg->group_by_columns.size(); ++i) {
+        auto group_col = agg->columns[i];
+        auto id = group_col->Find()->id;
+        if (!seen.count(id)) {
+          cols[id].push_back(group_col);
+          seen.insert(id);
+        }
+      }
+    }
+
+    for (auto &id_cols : cols) {
+      for (auto i = 1u; i < id_cols.second.size(); ++i) {
+        AssertEqualImpl(id_cols.second[i - 1u], id_cols.second[i]);
+      }
+    }
+  }
+
   void Commit(ParsedPredicate) override {
+    JoinGroups();
     MergeAndProjectJoins();
     LinkEverything();
   }
