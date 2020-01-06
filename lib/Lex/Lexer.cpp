@@ -409,6 +409,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 5:
           if (impl->data == "bound") {
             interpreter.basic.lexeme = Lexeme::kKeywordBound;
+
+          } else if (impl->data == "@uuid") {
+            interpreter.basic.lexeme = Lexeme::kTypeUUID;
+            interpreter.type.spelling_width = 5;
+            interpreter.type.type_width = 128;
           }
           break;
         case 6:

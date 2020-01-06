@@ -15,6 +15,20 @@ class ParsedDeclarationName {
   const ParsedDeclaration decl;
 };
 
+class ParsedClauseHead {
+ public:
+  inline explicit ParsedClauseHead(ParsedClause clause_)
+      : clause(clause_) {}
+  const ParsedClause clause;
+};
+
+class ParsedClauseBody {
+ public:
+  inline explicit ParsedClauseBody(ParsedClause clause_)
+      : clause(clause_) {}
+  const ParsedClause clause;
+};
+
 OutputStream &operator<<(OutputStream &os, ParsedLiteral val);
 OutputStream &operator<<(OutputStream &os, ParsedParameter var);
 OutputStream &operator<<(OutputStream &os, ParsedVariable var);
@@ -24,6 +38,8 @@ OutputStream &operator<<(OutputStream &os, ParsedPredicate pred);
 OutputStream &operator<<(OutputStream &os, ParsedAssignment assign);
 OutputStream &operator<<(OutputStream &os, ParsedComparison compare);
 OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate);
+OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause);
+OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause);
 OutputStream &operator<<(OutputStream &os, ParsedClause clause);
 OutputStream &operator<<(OutputStream &os, ParsedModule module);
 

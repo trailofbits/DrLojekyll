@@ -96,6 +96,7 @@ unsigned Token::SpellingWidth(void) const {
 bool Token::IsType(void) const {
   lex::TokenInterpreter interpreter = {opaque_data};
   return interpreter.basic.lexeme == ::hyde::Lexeme::kTypeString ||
+         interpreter.basic.lexeme == ::hyde::Lexeme::kTypeUUID ||
          interpreter.basic.lexeme == ::hyde::Lexeme::kTypeUn ||
          interpreter.basic.lexeme == ::hyde::Lexeme::kTypeIn ||
          interpreter.basic.lexeme == ::hyde::Lexeme::kTypeFn;

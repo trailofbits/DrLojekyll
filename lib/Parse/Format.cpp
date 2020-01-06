@@ -113,42 +113,52 @@ OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
-  os << ParsedDeclarationName(ParsedDeclaration::Of(clause));
+
+OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause) {
+  os << ParsedDeclarationName(ParsedDeclaration::Of(clause.clause));
   auto comma = "(";
-  for (auto param : clause.Parameters()) {
+  for (auto param : clause.clause.Parameters()) {
     os << comma << param;
     comma = ", ";
   }
-  os << ") : ";
-  comma = "";
+  os << ")";
+  return os;
+}
 
-  for (auto assign : clause.Assignments()) {
+OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
+  auto comma = "";
+
+  for (auto assign : clause.clause.Assignments()) {
     os << comma << assign;
     comma = ", ";
   }
 
-  for (auto compare : clause.Comparisons()) {
+  for (auto compare : clause.clause.Comparisons()) {
     os << comma << compare;
     comma = ", ";
   }
 
-  for (auto pred : clause.PositivePredicates()) {
+  for (auto pred : clause.clause.PositivePredicates()) {
     os << comma << pred;
     comma = ", ";
   }
 
-  for (auto pred : clause.NegatedPredicates()) {
+  for (auto pred : clause.clause.NegatedPredicates()) {
     os << comma << pred;
     comma = ", ";
   }
 
-  for (auto agg : clause.Aggregates()) {
+  for (auto agg : clause.clause.Aggregates()) {
     os << comma << agg;
     comma = ", ";
   }
 
-  os << ".";
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
+  os << ParsedClauseHead(clause) << " : "
+     << ParsedClauseBody(clause) << ".";
   return os;
 }
 

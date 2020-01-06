@@ -761,6 +761,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
       visitor, aggregate_functor, functor_decl)) {
     // (*gOut) << "p=" << p << " aggregating functor failed binding constraint\n";
     equalities.swap(prev_equalities);
+    deferred_asserts.clear();
     return false;
   }
 
@@ -805,6 +806,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
         } else {
           // (*gOut) << "p=" << p << " aggregation arg " << functor_arg << " ";
           equalities.swap(prev_equalities);
+          deferred_asserts.clear();
           return false;
         }
       }
@@ -828,6 +830,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
     // predicate in the permutation will bind the needed variables.
     // (*gOut) << "p=" << p << " group by var " << fp.var << " not bound\n";
     equalities.swap(prev_equalities);
+    deferred_asserts.clear();
     return false;
 
   check_next:
@@ -865,6 +868,8 @@ bool SIPSGenerator::Impl::VisitAggregate(
       case ParameterBinding::kSummary:
         ++num_summary_params;
         if (equalities.count(functor_arg)) {
+          equalities.swap(prev_equalities);
+          deferred_asserts.clear();
           return false;  // There should not be a binding for the summary yet.
         }
         break;
@@ -872,6 +877,8 @@ bool SIPSGenerator::Impl::VisitAggregate(
       case ParameterBinding::kFree:
       case ParameterBinding::kImplicit:
         assert(false);
+        equalities.swap(prev_equalities);
+        deferred_asserts.clear();
         return false;
     }
   }
@@ -883,6 +890,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
     // (*gOut) << "p=" << p << "num_summary_params=" << num_summary_params
     //         << " free_params=" << free_params.size() << "\n";
     equalities.swap(prev_equalities);
+    deferred_asserts.clear();
     return false;
   }
 
@@ -894,6 +902,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   if (aggregate_collection_params.empty()) {
     // (*gOut) << "p=" << p << " empty collection params\n";
     equalities.swap(prev_equalities);
+    deferred_asserts.clear();
     return false;
   }
 
@@ -923,6 +932,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
   if (summarized_bound_params.empty() && summarized_free_params.empty()) {
     assert(false);  // Not possible.
     equalities.swap(prev_equalities);
+    deferred_asserts.clear();
     return false;
 
   // We only have bound parameters. This is equivalent to asking if a tuple

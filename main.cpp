@@ -20,6 +20,7 @@
 #include <drlojekyll/Sema/SIPSAnalysis.h>
 #include <drlojekyll/Sema/SIPSScore.h>
 #include <drlojekyll/Transforms/CombineModules.h>
+#include <drlojekyll/Transforms/ConvertQueriesToMessages.h>
 
 namespace hyde {
 
@@ -267,6 +268,7 @@ class GraphPrinter : public BottomUpVisitor {
 };
 #endif
 
+#if 0
 static void CodeDumper(DisplayManager display_manager,
                        ParsedModule module) {
 
@@ -287,6 +289,41 @@ static void CodeDumper(DisplayManager display_manager,
     os << query;
   }
 }
+#endif
+#if 1
+static void BottomUpDumper(DisplayManager display_manager,
+                           ParsedModule module) {
+
+  BottomUpAnalysis analysis;
+  QueryBuilder query_builder;
+
+  hyde::OutputStream os(display_manager, std::cerr);
+  gOut = &os;
+
+  os << "digraph {\n"
+     << "node [shape=record margin=0 nojustify=false labeljust=l];\n"
+     << "start [shape=none border=none];\n";
+
+  for (auto state : analysis.GenerateStates(module)) {
+
+    os << "s" << state->id
+       << " [label=\"" << ParsedClause::Containing(state->assumption)
+       << "\"];\n";
+
+    if (state->is_start_state) {
+      os << "start -> s" << state->id << " [label=\""
+         << state->assumption << "\"];\n";
+    }
+
+    for (auto pred : state->Predecessors()) {
+      os << "s" << pred->id << " -> s" << state->id << " [label=\""
+         << state->assumption << "\"];\n";
+    }
+  }
+  os << "}\n";
+}
+#endif
+
 
 }  // namespace hyde
 
@@ -325,7 +362,10 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     std::cerr << ss.str() << "\n\n" << ss2.str() << "\n\n";
     assert(ss.str() == ss2.str());
 
-    CodeDumper(display_manager, module);
+    auto transformed_module = ConvertQueriesToMessages(
+        display_manager, module);
+
+    BottomUpDumper(display_manager, transformed_module);
     //Simulate(os, module);
     return EXIT_SUCCESS;
   }

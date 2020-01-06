@@ -25,7 +25,8 @@ class Type {
     kUnsigned64,
     kFloat,
     kDouble,
-    kString
+    kString,
+    kUUID
   };
 
   inline ::hyde::Type::Kind Kind(void) const {

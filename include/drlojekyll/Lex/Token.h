@@ -118,6 +118,9 @@ enum class Lexeme : uint8_t {
   // all have a unique ID.
   kTypeString,
 
+  // A universally unique identifier.
+  kTypeUUID,
+
   // Keywords for specifying the binding of parameters.
   kKeywordBound,
   kKeywordFree,

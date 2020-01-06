@@ -2438,6 +2438,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     return;
   }
 
+  const auto is_query_clause = DeclarationKind::kQuery ==
+                               clause->declaration->context->kind;
+
   // Go make sure we don't have two messages inside of a given clause. In our
   // bottom-up execution model, the "inputs" to the system are messages, which
   // are ephemeral. If we see that as triggering a clause, then we can't
@@ -2463,6 +2466,17 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
     } else {
       prev_message = used_pred.get();
+    }
+
+    // We might rewrite queries into a kind of request/response message pattern,
+    // and so to make our lives easier later on, we restrict query clause bodies
+    // to not be allowed to contain messages.
+    if (is_query_clause) {
+      Error err(context->display_manager, SubTokenRange(),
+                ParsedPredicate(used_pred.get()).SpellingRange());
+      err << "Queries cannot depend directly on messages";
+      context->error_log.Append(std::move(err));
+      return;
     }
   }
 

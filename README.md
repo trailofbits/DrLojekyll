@@ -83,6 +83,7 @@ type: "@u64"
 type: "@f32"
 type: "@f64"
 type: "@str"
+type: "@uuid"
 
 atom: r"[a-z][A-Za-z0-9_]*"
 named_var: r"[A-Z][A-Za-z0-9_]*"
