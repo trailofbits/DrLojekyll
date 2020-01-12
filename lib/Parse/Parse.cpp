@@ -205,6 +205,14 @@ unsigned ParsedVariable::Order(void) const noexcept {
   return impl->appearance;
 }
 
+// Iterate over each use of this variable.
+NodeRange<ParsedVariable> ParsedVariable::Uses(void) const {
+  return NodeRange<ParsedVariable>(
+      impl->context->first_use,
+      static_cast<intptr_t>(__builtin_offsetof(
+          Node<ParsedVariable>, next_use)));
+}
+
 // Return the variable to which `literal` assigned.
 ParsedVariable ParsedVariable::AssignedTo(ParsedLiteral literal) noexcept {
   return ParsedVariable(literal.impl->assigned_to);

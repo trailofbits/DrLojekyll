@@ -47,7 +47,8 @@ class FunctionArgument;
 
 class Value : public bam::CodeFragment<Value> {
  public:
-
+  TypeLoc Type(void) const noexcept;
+  DisplayRange SpellingRange(void) const noexcept;
 };
 
 class FunctionParameter : public bam::CodeFragment<FunctionParameter> {

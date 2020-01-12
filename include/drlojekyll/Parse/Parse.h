@@ -54,12 +54,6 @@ class ParsedNode {
   template <typename U>
   friend class ParsedNode;
 
-  template <typename U>
-  friend class ParsedNodeIterator;
-
-  template <typename U>
-  friend class ParsedNodeRange;
-
   Node<T> *impl{nullptr};
 };
 
@@ -196,6 +190,9 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   inline bool operator!=(const ParsedVariable &that) const {
     return Id() != that.Id();
   }
+
+  // Iterate over each use of this variable.
+  NodeRange<ParsedVariable> Uses(void) const;
 
  protected:
   friend class ParsedAssignment;
