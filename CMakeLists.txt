@@ -69,7 +69,7 @@ function(main config)
 
     target_link_libraries(test-${config}
         rel-${config}
-        transforms-${config})
+        codegen-${config})
 endfunction(main)
 
 function(fuzz_harness config)

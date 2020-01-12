@@ -54,9 +54,12 @@ decl: local_decl
 decl: functor_decl
 decl: message_decl
 
-export_decl: "#export" atom "(" param_list_0 ")" "\n"
 message_decl: "#message" atom "(" param_list_0 ")" "\n"
-local_decl: "#local" atom "(" param_list_1 ")" "\n"
+export_decl: "#export" atom "(" param_list_1 ")" "\n"
+local_decl: "#local" atom "(" param_list_1 ")" maybe_inline "\n"
+
+maybe_inline: "inline"
+maybe_inline:
 
 functor_decl: "#functor" atom "(" param_list_2 ")" "trivial" "\n"
 functor_decl: "#functor" atom "(" param_list_2 ")" "complex" "\n"
@@ -67,6 +70,7 @@ param_list_0: type named_var
 param_list_1: type named_var "," param_list_1
 param_list_1: named_var "," param_list_1
 param_list_1: type named_var
+param_list_1: "mutable" "(" atom ")" named_var
 param_list_1: named_var
 
 param_list_2: binding_specifier_2 type named_var "," param_list_2

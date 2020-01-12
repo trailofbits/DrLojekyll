@@ -18,10 +18,72 @@ QueryContext::~QueryContext(void) {}
 
 }  // namespace query
 
+ColumnReference::ColumnReference(Node<QueryColumn> *column_)
+    : column(column_) {
+  if (column) {
+    column->num_uses += 1;
+  }
+}
+
+ColumnReference::ColumnReference(const ColumnReference &that)
+    : column(that.column) {
+  if (that.column) {
+    that.column->num_uses += 1;
+  }
+}
+
+ColumnReference::ColumnReference(ColumnReference &&that) noexcept
+    : column(that.column) {
+  that.column = nullptr;
+}
+
+ColumnReference::~ColumnReference(void) {
+  if (column) {
+    assert(0 < column->num_uses);
+    column->num_uses -= 1;
+  }
+}
+
+ColumnReference &ColumnReference::operator=(Node<QueryColumn> *that) noexcept {
+  if (that) {
+    that->num_uses += 1;
+  }
+  if (column) {
+    assert(0 < column->num_uses);
+    column->num_uses -= 1;
+  }
+  column = that;
+  return *this;
+}
+
+
+ColumnReference &ColumnReference::operator=(
+    const ColumnReference &that) noexcept {
+  if (that.column) {
+    that.column->num_uses += 1;
+  }
+  if (column) {
+    assert(0 < column->num_uses);
+    column->num_uses -= 1;
+  }
+  column = that.column;
+  return *this;
+}
+
+ColumnReference &ColumnReference::operator=(ColumnReference &&that) noexcept {
+  if (column != that.column && column) {
+    assert(0 < column->num_uses);
+    column->num_uses -= 1;
+  }
+  column = that.column;
+  that.column = nullptr;
+  return *this;
+}
+
 Node<QueryStream>::~Node(void) {}
 Node<QueryConstant>::~Node(void) {}
-Node<QueryMessage>::~Node(void) {}
 Node<QueryGenerator>::~Node(void) {}
+Node<QueryInput>::~Node(void) {}
 Node<QueryView>::~Node(void) {}
 Node<QuerySelect>::~Node(void) {}
 Node<QueryJoin>::~Node(void) {}
@@ -29,6 +91,7 @@ Node<QueryMap>::~Node(void) {}
 Node<QueryAggregate>::~Node(void) {}
 Node<QueryMerge>::~Node(void) {}
 Node<QueryConstraint>::~Node(void) {}
+Node<QueryInsert>::~Node(void) {}
 
 bool Node<QueryStream>::IsConstant(void) const noexcept {
   return false;
@@ -38,7 +101,7 @@ bool Node<QueryStream>::IsGenerator(void) const noexcept {
   return false;
 }
 
-bool Node<QueryStream>::IsMessage(void) const noexcept {
+bool Node<QueryStream>::IsInput(void) const noexcept {
   return false;
 }
 
@@ -50,7 +113,7 @@ bool Node<QueryGenerator>::IsGenerator(void) const noexcept {
   return true;
 }
 
-bool Node<QueryMessage>::IsMessage(void) const noexcept {
+bool Node<QueryInput>::IsInput(void) const noexcept {
   return true;
 }
 
@@ -103,18 +166,10 @@ bool Node<QueryConstraint>::IsConstraint(void) const noexcept {
 }
 
 Node<QueryConstraint>::Node(ComparisonOperator op_, Node<QueryColumn> *lhs_,
-     Node<QueryColumn> *rhs_)
-    : Node<QueryView>(lhs_->view->query),
-      lhs(lhs_),
-      rhs(rhs_),
-      op(op_) {}
-
-bool QueryStream::IsBlocking(void) const noexcept {
-  return impl->IsMessage();
-}
-
-bool QueryStream::IsNonBlocking(void) const noexcept {
-  return !impl->IsMessage();
+                            Node<QueryColumn> *rhs_)
+    : op(op_) {
+  input_columns.emplace_back(lhs_);
+  input_columns.emplace_back(rhs_);
 }
 
 bool QueryStream::IsConstant(void) const noexcept {
@@ -125,8 +180,8 @@ bool QueryStream::IsGenerator(void) const noexcept {
   return impl->IsGenerator();
 }
 
-bool QueryStream::IsMessage(void) const noexcept {
-  return impl->IsMessage();
+bool QueryStream::IsInput(void) const noexcept {
+  return impl->IsInput();
 }
 
 QueryView QueryView::Containing(QueryColumn col) {
@@ -289,9 +344,9 @@ QueryConstant &QueryConstant::From(QueryStream &stream) {
   return reinterpret_cast<QueryConstant &>(stream);
 }
 
-QueryMessage &QueryMessage::From(QueryStream &stream) {
-  assert(stream.IsMessage());
-  return reinterpret_cast<QueryMessage &>(stream);
+QueryInput &QueryInput::From(QueryStream &stream) {
+  assert(stream.IsInput());
+  return reinterpret_cast<QueryInput &>(stream);
 }
 
 QueryGenerator &QueryGenerator::From(QueryStream &stream) {
@@ -299,8 +354,8 @@ QueryGenerator &QueryGenerator::From(QueryStream &stream) {
   return reinterpret_cast<QueryGenerator &>(stream);
 }
 
-const ParsedMessage &QueryMessage::Declaration(void) const noexcept {
-  return impl->message;
+const ParsedDeclaration &QueryInput::Declaration(void) const noexcept {
+  return impl->declaration;
 }
 
 const ParsedFunctor &QueryGenerator::Declaration(void) const noexcept {
@@ -547,11 +602,11 @@ QueryColumn QueryConstraint::RHS(void) const {
 
 
 QueryColumn QueryConstraint::InputLHS(void) const {
-  return QueryColumn(impl->lhs);
+  return QueryColumn(impl->input_columns[0]);
 }
 
 QueryColumn QueryConstraint::InputRHS(void) const {
-  return QueryColumn(impl->rhs);
+  return QueryColumn(impl->input_columns[1]);
 }
 
 QueryRelation QueryInsert::Relation(void) const noexcept {
@@ -559,12 +614,12 @@ QueryRelation QueryInsert::Relation(void) const noexcept {
 }
 
 unsigned QueryInsert::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->columns.size());
+  return static_cast<unsigned>(impl->input_columns.size());
 }
 
 QueryColumn QueryInsert::NthColumn(unsigned n) const noexcept {
-  assert(n < impl->columns.size());
-  return QueryColumn(impl->columns[n]);
+  assert(n < impl->input_columns.size());
+  return QueryColumn(impl->input_columns[n]);
 }
 
 NodeRange<QueryJoin> Query::Joins(void) const {
@@ -618,11 +673,11 @@ NodeRange<QueryGenerator> Query::Generators(void) const {
   }
 }
 
-NodeRange<QueryMessage> Query::Messages(void) const {
-  if (!impl->context->next_message) {
-    return NodeRange<QueryMessage>();
+NodeRange<QueryInput> Query::Inputs(void) const {
+  if (!impl->context->next_input) {
+    return NodeRange<QueryInput>();
   } else {
-    return NodeRange<QueryMessage>(impl->context->next_message);
+    return NodeRange<QueryInput>(impl->context->next_input);
   }
 }
 
@@ -640,7 +695,7 @@ NodeRange<QueryInsert> Query::Inserts(void) const {
   if (impl->inserts.empty()) {
     return NodeRange<QueryInsert>();
   } else {
-    return NodeRange<QueryInsert>(impl->inserts.front().get());
+    return NodeRange<QueryInsert>(impl->next_insert);
   }
 }
 

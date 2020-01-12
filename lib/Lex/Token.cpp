@@ -17,7 +17,7 @@ bool Token::IsValid(void) const {
     case ::hyde::Lexeme::kInvalidUnknown:
       return false;
     default:
-      return position.IsValid();
+      return true;
   }
 }
 
@@ -144,6 +144,16 @@ unsigned Token::IdentifierLength(void) const {
   }
 }
 
+// Return the size, in bytes, of the corresponding type.
+unsigned Token::TypeSizeInBytes(void) const {
+  if (IsType()) {
+    lex::TokenInterpreter interpreter = {opaque_data};
+    return interpreter.type.type_width / 8;
+  } else {
+    return 0;
+  }
+}
+
 // Returns the invalid escape char, or `\0` if not present.
 char Token::InvalidEscapeChar(void) const {
   lex::TokenInterpreter interpreter = {opaque_data};
@@ -229,7 +239,7 @@ Token Token::FakeType(DisplayPosition position, unsigned spelling_width) {
   return ret;
 }
 
-// Return a fake colon at `position`.
+// Return a fake token at `range`.
 Token Token::Synthetic(::hyde::Lexeme lexeme, DisplayRange range) {
   lex::TokenInterpreter interpreter = {};
   interpreter.basic.lexeme = lexeme;

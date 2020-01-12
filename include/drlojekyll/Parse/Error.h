@@ -41,6 +41,7 @@ class Error;
 class ErrorImpl;
 class Note;
 class Token;
+class SpellingRange;
 
 // Used to stream in error information. This is a thing wrapper around a
 // `std::ostream`, with support to taking in tokens and getting their spellings
@@ -52,6 +53,8 @@ class ErrorStream {
 
   // Stream in a token.
   const ErrorStream &operator<<(const Token &token) const;
+
+  const ErrorStream &operator<<(const DisplayRange &range) const;
 
   template <typename T>
   inline const ErrorStream &operator<<(T data) const {

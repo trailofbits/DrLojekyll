@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
@@ -268,7 +269,7 @@ class GraphPrinter : public BottomUpVisitor {
 };
 #endif
 
-#if 0
+#if 1
 static void CodeDumper(DisplayManager display_manager,
                        ParsedModule module) {
 
@@ -279,16 +280,24 @@ static void CodeDumper(DisplayManager display_manager,
   hyde::OutputStream os(display_manager, std::cerr);
   gOut = &os;
 
-  for (auto state : analysis.GenerateStates(module)) {
+  std::unordered_map<ParsedDeclaration, std::vector<BottomUpVisitor::State *>>
+      decl_to_state;
 
-    DefaultSIPSScorer scorer;
-    SIPSGenerator generator(state->assumption);
-    os << "// Assume: " << state->assumption << "\n"
-       << "// Clause: " << ParsedClause::Containing(state->assumption) << "\n";
-    auto query = query_builder.BuildInsert(scorer, generator);
+  for (auto state : analysis.GenerateStates(module)) {
+    decl_to_state[ParsedDeclaration::Of(state->assumption)].push_back(state);
+  }
+
+  for (auto &decl_states : decl_to_state) {
+    for (auto state : decl_states.second) {
+      DefaultSIPSScorer scorer;
+      SIPSGenerator generator(state->assumption);
+      query_builder.VisitClauseWithAssumption(scorer, generator);
+    }
+    auto query = query_builder.BuildQuery();
     os << query;
   }
 }
+
 #endif
 #if 1
 static void BottomUpDumper(DisplayManager display_manager,
@@ -362,10 +371,11 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     std::cerr << ss.str() << "\n\n" << ss2.str() << "\n\n";
     assert(ss.str() == ss2.str());
 
-    auto transformed_module = ConvertQueriesToMessages(
-        display_manager, module);
+//    auto transformed_module = ConvertQueriesToMessages(
+//        display_manager, module);
 
-    BottomUpDumper(display_manager, transformed_module);
+    CodeDumper(display_manager, module);
+    BottomUpDumper(display_manager, module);
     //Simulate(os, module);
     return EXIT_SUCCESS;
   }

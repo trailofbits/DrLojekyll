@@ -2,6 +2,7 @@
 ; aggregates behave w.r.t. joins of their inner selects, and joins of their
 ; results.
 
+#functor latest_i32(bound @i32 OldVal, bound @i32 ProposedVal, free @i32 NewVal) trivial
 #functor random_i32(free @i32 RandVal) trivial
 #functor div_i32(bound @i32 LHS, bound @i32 RHS, free @i32 Res) trivial
 #functor sum_i32(aggregate @i32 Val, summary @i32 Sum) complex

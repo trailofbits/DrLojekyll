@@ -54,7 +54,6 @@ class QueryImpl;
 class QueryInsert;
 class QueryJoin;
 class QueryMerge;
-class QueryMessage;
 class QueryRelation;
 class QuerySelect;
 class QueryStream;
@@ -129,12 +128,9 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
 // The blocking vs. non-blocking is in relation to pull semantics.
 class QueryStream : public query::QueryNode<QueryStream> {
  public:
-  bool IsBlocking(void) const noexcept;
-  bool IsNonBlocking(void) const noexcept;
-
   bool IsConstant(void) const noexcept;
   bool IsGenerator(void) const noexcept;
-  bool IsMessage(void) const noexcept;
+  bool IsInput(void) const noexcept;
 
  private:
   using query::QueryNode<QueryStream>::QueryNode;
@@ -168,15 +164,20 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
   friend class QuerySelect;
 };
 
-// A message in the Datalog code. A message is a form of blocking stream.
-class QueryMessage : public query::QueryNode<QueryMessage> {
+// A set of concrete inputs to a query.
+class QueryInput : public query::QueryNode<QueryInput> {
  public:
-  const ParsedMessage &Declaration(void) const noexcept;
+  const ParsedDeclaration &Declaration(void) const noexcept;
 
-  static QueryMessage &From(QueryStream &table);
+  // The input columns.
+  NodeRange<QueryColumn> Columns(void) const;
+
+  static QueryInput &From(QueryStream &stream);
+
+  QueryRelation Relation(void) const noexcept;
 
  private:
-  using query::QueryNode<QueryMessage>::QueryNode;
+  using query::QueryNode<QueryInput>::QueryNode;
 
   friend class QuerySelect;
 };
@@ -380,7 +381,7 @@ class Query {
   NodeRange<QueryMerge> Merges(void) const;
   NodeRange<QueryConstraint> Constraints(void) const;
   NodeRange<QueryStream> Streams(void) const;
-  NodeRange<QueryMessage> Messages(void) const;
+  NodeRange<QueryInput> Inputs(void) const;
   NodeRange<QueryGenerator> Generators(void) const;
   NodeRange<QueryConstant> Constants(void) const;
 

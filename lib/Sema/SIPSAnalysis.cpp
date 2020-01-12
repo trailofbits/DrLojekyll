@@ -458,6 +458,7 @@ void SIPSGenerator::Impl::CollectPredicateBoundAndFreeVars(
         }
         break;
 
+      case ParameterBinding::kMutable:
       case ParameterBinding::kFree:
       case ParameterBinding::kSummary:
         do_free(visitor);
@@ -874,6 +875,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
         }
         break;
 
+      case ParameterBinding::kMutable:
       case ParameterBinding::kFree:
       case ParameterBinding::kImplicit:
         assert(false);

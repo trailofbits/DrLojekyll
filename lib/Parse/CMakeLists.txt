@@ -16,6 +16,7 @@ function(parser source_dir config)
         "${source_dir}/ErrorLog.cpp"
         "${source_dir}/Error.h"
         "${source_dir}/Format.cpp"
+        "${source_dir}/Type.cpp"
         )
     target_link_libraries(parser-${config} PUBLIC
         lexer-${config})

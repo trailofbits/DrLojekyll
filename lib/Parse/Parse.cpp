@@ -164,6 +164,10 @@ Token ParsedVariable::Name(void) const noexcept {
   return impl->name;
 }
 
+TypeLoc ParsedVariable::Type(void) const noexcept {
+  return impl->type;
+}
+
 // Returns `true` if this variable is an parameter to its clause.
 bool ParsedVariable::IsParameter(void) const noexcept {
   return impl->context->first_use->is_parameter;
@@ -349,7 +353,7 @@ DisplayRange ParsedParameter::SpellingRange(void) const noexcept {
   auto begin = impl->name.Position();
   if (impl->opt_binding.IsValid()) {
     begin = impl->opt_binding.Position();
-  } else if (impl->opt_type.IsValid()) {
+  } else if (impl->parsed_opt_type && impl->opt_type.IsValid()) {
     begin = impl->opt_type.Position();
   }
   return DisplayRange(begin, impl->name.NextPosition());
@@ -359,7 +363,7 @@ Token ParsedParameter::Name(void) const noexcept {
   return impl->name;
 }
 
-Token ParsedParameter::Type(void) const noexcept {
+TypeLoc ParsedParameter::Type(void) const noexcept {
   return impl->opt_type;
 }
 
@@ -373,6 +377,8 @@ ParameterBinding ParsedParameter::Binding(void) const noexcept {
       return ParameterBinding::kAggregate;
     case Lexeme::kKeywordSummary:
       return ParameterBinding::kSummary;
+    case Lexeme::kKeywordMutable:
+      return ParameterBinding::kMutable;
     default:
       return ParameterBinding::kImplicit;
   }
@@ -581,6 +587,10 @@ unsigned ParsedDeclaration::NumPositiveUses(void) const noexcept {
 
 unsigned ParsedDeclaration::NumNegatedUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->negated_uses.size());
+}
+
+bool ParsedDeclaration::IsInline(void) const noexcept {
+  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
 }
 
 // Return the declaration associated with a clause. This is the first
@@ -825,6 +835,10 @@ unsigned ParsedLocal::NumNegatedUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->negated_uses.size());
 }
 
+bool ParsedLocal::IsInline(void) const noexcept {
+  return impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
+}
+
 NodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
   return impl->Clauses();
 }
@@ -844,6 +858,11 @@ bool ParsedFunctor::IsAggregate(void) const noexcept {
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
   assert(decl.IsFunctor());
   return reinterpret_cast<const ParsedFunctor &>(decl);
+}
+
+const ParsedFunctor ParsedFunctor::MergeOperatorOf(ParsedParameter param) {
+  assert(param.impl->opt_merge != nullptr);
+  return ParsedFunctor(param.impl->opt_merge);
 }
 
 DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {

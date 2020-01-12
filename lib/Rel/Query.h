@@ -30,9 +30,9 @@ class QueryContext {
   std::unordered_map<ParsedFunctor, std::unique_ptr<Node<QueryGenerator>>>
       generators;
 
-  // The streams associated with messages.
-  std::unordered_map<ParsedMessage, std::unique_ptr<Node<QueryMessage>>>
-      messages;
+  // The streams associated with messages and other concrete inputs.
+  std::unordered_map<ParsedDeclaration, std::unique_ptr<Node<QueryInput>>>
+      inputs;
 
   // The tables available within any query sharing this context.
   std::unordered_map<ParsedDeclaration, std::unique_ptr<Node<QueryRelation>>>
@@ -55,11 +55,50 @@ class QueryContext {
   Node<QueryStream> *next_stream{nullptr};
   Node<QueryRelation> *next_relation{nullptr};
   Node<QueryConstant> *next_constant{nullptr};
-  Node<QueryMessage> *next_message{nullptr};
+  Node<QueryInput> *next_input{nullptr};
   Node<QueryGenerator> *next_generator{nullptr};
 };
 
 }  // namespace query
+
+class ColumnReference {
+ public:
+  ColumnReference(const ColumnReference &that);
+  ColumnReference(ColumnReference &&that) noexcept;
+  ColumnReference(Node<QueryColumn> *column_);
+  ~ColumnReference(void);
+
+  inline Node<QueryColumn> *operator->(void) const noexcept {
+    return column;
+  }
+
+  inline Node<QueryColumn> &operator*(void) const noexcept {
+    return *column;
+  }
+
+  inline Node<QueryColumn> *get(void) const noexcept {
+    return column;
+  }
+
+  inline operator Node<QueryColumn> *(void) const noexcept {
+    return column;
+  }
+
+  inline bool operator==(Node<QueryColumn> *that) const noexcept {
+    return column == that;
+  }
+
+  inline bool operator!=(Node<QueryColumn> *that) const noexcept {
+    return column != that;
+  }
+
+  ColumnReference &operator=(const ColumnReference &that) noexcept;
+  ColumnReference &operator=(ColumnReference &&that) noexcept;
+  ColumnReference &operator=(Node<QueryColumn> *that) noexcept;
+
+ private:
+  Node<QueryColumn> *column{nullptr};
+};
 
 template <>
 class Node<QueryRelation> {
@@ -89,7 +128,7 @@ class Node<QueryStream> {
 
   virtual bool IsConstant(void) const noexcept;
   virtual bool IsGenerator(void) const noexcept;
-  virtual bool IsMessage(void) const noexcept;
+  virtual bool IsInput(void) const noexcept;
 
   // Next stream, not specific to a query.
   Node<QueryStream> * const next_stream;
@@ -134,22 +173,22 @@ class Node<QueryGenerator> final : public Node<QueryStream> {
 };
 
 template <>
-class Node<QueryMessage> final : public Node<QueryStream> {
+class Node<QueryInput> final : public Node<QueryStream> {
  public:
   virtual ~Node(void);
 
-  inline Node(ParsedMessage message_, Node<QueryStream> *next_stream_,
-              Node<QueryMessage> *next_)
+  inline Node(ParsedDeclaration declaration_, Node<QueryStream> *next_stream_,
+              Node<QueryInput> *next_)
       : Node<QueryStream>(next_stream_),
-        message(message_),
+        declaration(declaration_),
         next(next_) {}
 
-  bool IsMessage(void) const noexcept override;
+  bool IsInput(void) const noexcept override;
 
-  const ParsedMessage message;
+  const ParsedDeclaration declaration;
 
-  // Next message, not specific to a query.
-  Node<QueryMessage> * const next;
+  // Next generator, not specific to a query.
+  Node<QueryInput> * const next;
 };
 
 // A view "owns" its the columns pointed to by `columns`.
@@ -165,12 +204,6 @@ class Node<QueryView> {
   virtual bool IsMerge(void) const noexcept;
   virtual bool IsConstraint(void) const noexcept;
 
-  inline Node(QueryImpl *query_)
-      : query(query_) {}
-
-  // Query containing this view.
-  QueryImpl * const query{nullptr};
-
   // The selected columns.
   std::vector<Node<QueryColumn> *> columns;
 
@@ -183,12 +216,10 @@ class Node<QuerySelect> final : public Node<QueryView> {
  public:
   inline Node(QueryImpl *query_, Node<QueryRelation> *relation_,
               Node<QueryStream> *stream_)
-      : Node<QueryView>(query_),
-        relation(relation_),
+      : relation(relation_),
         stream(stream_) {}
 
   virtual ~Node(void);
-
   bool IsSelect(void) const noexcept override;
 
   // Next select in this query.
@@ -202,8 +233,6 @@ class Node<QuerySelect> final : public Node<QueryView> {
 template <>
 class Node<QueryJoin> final : public Node<QueryView> {
  public:
-  using Node<QueryView>::Node;
-
   virtual ~Node(void);
 
   bool IsJoin(void) const noexcept override;
@@ -212,9 +241,10 @@ class Node<QueryJoin> final : public Node<QueryView> {
   Node<QueryJoin> *next{nullptr};
 
   // The columns that are all joined together.
-  std::vector<Node<QueryColumn> *> joined_columns;
+  std::vector<ColumnReference> joined_columns;
 
-  // Tells us which columns are pivots.
+  // Tells us which columns are pivots. These are a subset of the output
+  // columns.
   std::vector<Node<QueryColumn> *> pivot_columns;
 };
 
@@ -227,9 +257,8 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   bool IsMap(void) const noexcept override;
 
-  inline Node(QueryImpl *query_, ParsedFunctor functor_)
-      : Node<QueryView>(query_),
-        functor(functor_) {}
+  inline explicit Node(ParsedFunctor functor_)
+      : functor(functor_) {}
 
   const ParsedFunctor functor;
 
@@ -238,7 +267,7 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   // The columns that are are the inputs to the functor. These correspond
   // with the bound arguments to the functor.
-  std::vector<Node<QueryColumn> *> input_columns;
+  std::vector<ColumnReference> input_columns;
 };
 
 template <>
@@ -250,9 +279,8 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   bool IsAggregate(void) const noexcept override;
 
-  inline Node(QueryImpl *query_, ParsedFunctor functor_)
-      : Node<QueryView>(query_),
-        functor(functor_) {}
+  inline explicit Node(ParsedFunctor functor_)
+      : functor(functor_) {}
 
   // Functor that does the aggregation.
   const ParsedFunctor functor;
@@ -262,14 +290,14 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   // Columns that are `bound` before the aggregating functor, and used by
   // the functor being summarized.
-  std::vector<Node<QueryColumn> *> group_by_columns;
+  std::vector<ColumnReference> group_by_columns;
 
   // Columns that are `bound` for the aggregating functor. This is a suffix
   // of `group_by_columns`.
-  std::vector<Node<QueryColumn> *> bound_columns;
+  std::vector<ColumnReference> bound_columns;
 
-  // View that is summarized by this aggregating functor.
-  std::vector<Node<QueryColumn> *> summarized_columns;
+  // Columns that are summarized by this aggregating functor.
+  std::vector<ColumnReference> summarized_columns;
 
   // `QueryBuilder::id_to_col`, at the time of building the aggregate, and then
   // after building, representing the state of `id_to_col` for the "scope" of
@@ -285,9 +313,6 @@ class Node<QueryMerge> : public Node<QueryView> {
   virtual ~Node(void);
 
   bool IsMerge(void) const noexcept override;
-
-  inline Node(QueryImpl *query_)
-      : Node<QueryView>(query_) {}
 
   // Next merge in this query.
   Node<QueryMerge> *next{nullptr};
@@ -305,13 +330,30 @@ class Node<QueryConstraint> : public Node<QueryView> {
 
   bool IsConstraint(void) const noexcept override;
 
-  Node<QueryColumn> *lhs;
-  Node<QueryColumn> *rhs;
+  std::vector<ColumnReference> input_columns;
 
   // Next such constraint in this query.
   Node<QueryConstraint> *next{nullptr};
 
   const ComparisonOperator op;
+};
+
+// Inserts are technically views as that makes some things easier, but they
+// are not exposed as such.
+template <>
+class Node<QueryInsert> : public Node<QueryView> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
+      : relation(relation_),
+        decl(decl_) {}
+
+  Node<QueryInsert> *next{nullptr};
+
+  Node<QueryRelation> * const relation;
+  const ParsedDeclaration decl;
+  std::vector<ColumnReference> input_columns;
 };
 
 template <>
@@ -332,6 +374,9 @@ class Node<QueryColumn> : public DisjointSet {
   // Tells us this column can be found at `view->columns[index]`.
   const unsigned index;
 
+  // Number of uses of this column.
+  unsigned num_uses{0};
+
   // Next column in the whole query.
   Node<QueryColumn> *next{nullptr};
 
@@ -340,20 +385,6 @@ class Node<QueryColumn> : public DisjointSet {
 
   // Next pivot column within the same join.
   Node<QueryColumn> *next_pivot_in_join{nullptr};
-};
-
-template <>
-class Node<QueryInsert> {
- public:
-  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
-      : relation(relation_),
-        decl(decl_) {}
-
-  Node<QueryInsert> *next{nullptr};
-
-  Node<QueryRelation> * const relation;
-  const ParsedDeclaration decl;
-  std::vector<Node<QueryColumn> *> columns;
 };
 
 class QueryImpl {
@@ -372,6 +403,7 @@ class QueryImpl {
   Node<QueryMerge> *next_merge{nullptr};
   Node<QueryConstraint> *next_constraint{nullptr};
 
+  std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QuerySelect>>> selects;
   std::vector<std::unique_ptr<Node<QueryJoin>>> joins;
   std::vector<std::unique_ptr<Node<QueryMap>>> maps;
@@ -379,7 +411,6 @@ class QueryImpl {
   std::vector<std::unique_ptr<Node<QueryAggregate>>> pending_aggregates;
   std::vector<std::unique_ptr<Node<QueryMerge>>> merges;
   std::vector<std::unique_ptr<Node<QueryConstraint>>> constraints;
-  std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QueryInsert>>> inserts;
 };
 

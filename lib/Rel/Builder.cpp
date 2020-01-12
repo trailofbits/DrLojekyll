@@ -19,7 +19,12 @@ extern OutputStream *gOut;
 class QueryBuilderImpl : public SIPSVisitor {
  public:
   QueryBuilderImpl(void)
-      : context(std::make_shared<query::QueryContext>()) {}
+      : context(std::make_shared<query::QueryContext>()),
+        query(std::make_shared<QueryImpl>(context)) {}
+
+  QueryBuilderImpl(const std::shared_ptr<query::QueryContext> &context_)
+      : context(context_),
+        query(std::make_shared<QueryImpl>(context_)) {}
 
   virtual ~QueryBuilderImpl(void) = default;
 
@@ -59,7 +64,10 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       const auto insert = new Node<QueryInsert>(
           reinterpret_cast<Node<QueryRelation> *>(table), decl);
-      insert->columns = select->columns;
+
+      for (auto col : select->columns) {
+        insert->input_columns.emplace_back(col);
+      }
       query->inserts.emplace_back(insert);
     }
 
@@ -96,13 +104,13 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  Node<QueryStream> *StreamFor(ParsedMessage message) {
-    auto &stream = context->messages[message];
+  Node<QueryStream> *StreamFor(ParsedDeclaration decl) {
+    auto &stream = context->inputs[decl];
     if (!stream) {
-      stream.reset(new Node<QueryMessage>(
-          message, context->next_stream, context->next_message));
+      stream.reset(new Node<QueryInput>(
+          decl, context->next_stream, context->next_input));
       context->next_stream = stream.get();
-      context->next_message = stream.get();
+      context->next_input = stream.get();
     }
     return stream.get();
   }
@@ -158,7 +166,12 @@ class QueryBuilderImpl : public SIPSVisitor {
     pending_equalities.clear();
     pending_compares.clear();
     next_pending_compares.clear();
-    initial_view = SelectFor(pred);
+
+    auto select = new Node<QuerySelect>(
+        query.get(), nullptr,
+        StreamFor(ParsedDeclaration::Of(pred)));
+    query->selects.emplace_back(select);
+    initial_view = select;
   }
 
   void DeclareParameter(const Column &param) override {
@@ -197,10 +210,10 @@ class QueryBuilderImpl : public SIPSVisitor {
       assert(false && "TODO");
 
     } else {
-      auto join = new Node<QueryJoin>(query.get());
+      auto join = new Node<QueryJoin>;
       query->joins.emplace_back(join);
-      join->joined_columns.push_back(lhs_col);
-      join->joined_columns.push_back(rhs_col);
+      join->joined_columns.emplace_back(lhs_col);
+      join->joined_columns.emplace_back(rhs_col);
     }
   }
 
@@ -288,7 +301,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     (void) ProcessPendingEqualities();
 
-    auto map = new Node<QueryMap>(query.get(), functor);
+    auto map = new Node<QueryMap>(functor);
     query->maps.emplace_back(map);
 
     auto i = 0u;
@@ -298,7 +311,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
       query->columns.emplace_back(mapped_col);
       map->columns.push_back(mapped_col);
-      map->input_columns.push_back(prev_val);
+      map->input_columns.emplace_back(prev_val);
       ++i;
     }
 
@@ -447,7 +460,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     assert(decl.IsFunctor());
     auto functor = ParsedFunctor::From(decl);
-    auto agg = new Node<QueryAggregate>(query.get(), functor);
+    auto agg = new Node<QueryAggregate>(functor);
     query->pending_aggregates.emplace_back(agg);
 
     // Start with a new "scope". `do_col` will fill it in with the bound
@@ -475,7 +488,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col = aggregate_begin; col < aggregate_end; ++col) {
       auto prev_col = id_to_col[col->id];
       assert(prev_col != nullptr);
-      agg->summarized_columns.push_back(prev_col);
+      agg->summarized_columns.emplace_back(prev_col);
     }
   }
 
@@ -500,12 +513,12 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       assert(prev_col != nullptr);
       assert(scoped_col != nullptr);
-      agg->group_by_columns.push_back(scoped_col);
+      agg->group_by_columns.emplace_back(scoped_col);
 
       // This is one of the bound parameters passed in to the summarizing
       // functor.
       if (is_bound) {
-        agg->bound_columns.push_back(scoped_col);
+        agg->bound_columns.emplace_back(scoped_col);
       }
 
       auto out_col = new Node<QueryColumn>(
@@ -526,18 +539,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       do_col(col, true);
     }
 
-
-
-//    // Make sure the summarized columns don't leak.
-//    for (auto col : agg->summarized_columns) {
-//      const auto parent_id = col->Find()->id;
-//      for (auto &id_col : id_to_col) {
-//        if (id_col.second && id_col.second->Find()->id == parent_id) {
-//          id_col.second = nullptr;
-//        }
-//      }
-//    }
-
     // The summary variables are now available.
     for (auto col = summary_begin; col < summary_end; ++col) {
       auto out_col = new Node<QueryColumn>(
@@ -548,26 +549,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       id_to_col[col->id] = out_col;
     }
-
-//    // Unpublish the original group-by columns and join them with the originals.
-//    auto i = 0u;
-//    for (; i < agg->group_by_columns.size(); ++i) {
-//      auto prev_col = agg->group_by_columns[i];
-////      auto col = agg->columns[i];
-//      id_to_col[prev_col->id] = prev_col;
-////      AssertEqualImpl(prev_col, col);
-//    }
-
-//    // Reassign all IDs to use the aggregate.
-//    for (auto j = 0u; j < agg->group_by_columns.size(); ++j) {
-//      auto col = agg->columns[j];
-//      auto parent_id = col->Find()->id;
-//      for (auto &id_col : id_to_col) {
-//        if (id_col.second && id_col.second->Find()->id == parent_id) {
-//          id_col.second = nullptr;
-//        }
-//      }
-//    }
 
     // "Publish" the aggregate's summary columns for use by everything else.
     for (auto i = agg->group_by_columns.size(); i < agg->columns.size(); ++i) {
@@ -625,55 +606,53 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void ReplaceAllUsesWith(
       Node<QueryColumn> *old_col, Node<QueryColumn> *new_col) {
-    for (auto &join : query->joins) {
-      for (auto &input_col : join->joined_columns) {
-        if (input_col == old_col) {
-          input_col = new_col;
+    if (old_col == new_col) {
+      return;
+    }
+
+    auto do_cols = [=] (std::vector<ColumnReference> &cols) {
+      for (auto &col : cols) {
+        if (col == old_col) {
+          col = new_col;
         }
       }
+    };
+
+    for (auto &join : query->joins) {
+      if (!old_col->num_uses) {
+        return;
+      }
+      do_cols(join->joined_columns);
     }
 
     for (auto &map : query->maps) {
-      for (auto &input_col : map->input_columns) {
-        if (input_col == old_col) {
-          input_col = new_col;
-        }
+      if (!old_col->num_uses) {
+        return;
       }
+      do_cols(map->input_columns);
     }
 
     for (auto &agg : query->aggregates) {
-      for (auto &input_col : agg->group_by_columns) {
-        if (input_col == old_col) {
-          input_col = new_col;
-        }
+      if (!old_col->num_uses) {
+        return;
       }
-      for (auto &input_col : agg->bound_columns) {
-        if (input_col == old_col) {
-          input_col = new_col;
-        }
-      }
-      for (auto &input_col : agg->summarized_columns) {
-        if (input_col == old_col) {
-          input_col = new_col;
-        }
-      }
+      do_cols(agg->group_by_columns);
+      do_cols(agg->bound_columns);
+      do_cols(agg->summarized_columns);
     }
 
     for (auto &insert : query->inserts) {
-      for (auto &input_col : insert->columns) {
-        if (input_col == old_col) {
-          input_col = new_col;
-        }
+      if (!old_col->num_uses) {
+        return;
       }
+      do_cols(insert->input_columns);
     }
 
     for (auto &cmp : query->constraints) {
-      if (cmp->lhs == old_col) {
-        cmp->lhs = new_col;
+      if (!old_col->num_uses) {
+        return;
       }
-      if (cmp->rhs == old_col) {
-        cmp->rhs = new_col;
-      }
+      do_cols(cmp->input_columns);
     }
   }
 
@@ -782,7 +761,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         }
 
         for (auto col : col_set) {
-          join->joined_columns.push_back(col);
+          join->joined_columns.emplace_back(col);
         }
       }
     }
@@ -960,12 +939,18 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col = begin; col < end; ++col) {
       const auto output_col = id_to_col[col->id];
       assert(output_col != nullptr);
-      insert->columns.push_back(output_col);
+      insert->input_columns.emplace_back(output_col);
     }
 
     query->inserts.emplace_back(insert);
   }
 
+  // When we build aggregates, we create new scopes for them, and in those
+  // scopes, fresh variables. If we used the existing set of bound variables,
+  // then we would observe JOINs flowing into the aggregates, which would make
+  // any of their groupings redundant. However, we do want to ensure that the
+  // grouped columns join with anything in the outer scopes, and so we go over
+  // group by columns here, and inject join conditions.
   void JoinGroups(void) {
     std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>> cols;
     std::unordered_set<unsigned> seen;
@@ -988,11 +973,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  void Commit(ParsedPredicate) override {
-    JoinGroups();
-    MergeAndProjectJoins();
-    LinkEverything();
-  }
+  void Commit(ParsedPredicate) override {}
 
   // Context shared by all queries created by this query builder. E.g. all
   // tables are shared across queries.
@@ -1023,26 +1004,25 @@ class QueryBuilderImpl : public SIPSVisitor {
 // Build an insertion query for the best scoring, according to `scorer`,
 // permutation of some clause body, given some predicate, as generated by
 // `generator`.
-Query QueryBuilder::BuildInsert(SIPSScorer &scorer, SIPSGenerator &generator) {
-  impl->query = std::make_shared<QueryImpl>(impl->context);
+void QueryBuilder::VisitClauseWithAssumption(
+    SIPSScorer &scorer, SIPSGenerator &generator) {
 
-  if (SIPSScorer::VisitBestScoringPermuation(
-          scorer, *impl, generator)) {
-    return Query(std::move(impl->query));
-
-  } else if (auto empty_query = impl->context->empty_query.lock()) {
-    return Query(std::move(empty_query));
-
-  } else {
-    impl->query->columns.clear();
-    impl->query->joins.clear();
-    impl->query->selects.clear();
-    impl->query->constraints.clear();
-    impl->query->columns.clear();
-
-    impl->context->empty_query = impl->query;
-    return Query(std::move(impl->query));
+  if (!impl->query) {
+    impl->query = std::make_shared<QueryImpl>(impl->context);
   }
+
+  (void) SIPSScorer::VisitBestScoringPermuation(
+      scorer, *impl, generator);
+}
+
+// Return the final query, which may include several different inserts.
+Query QueryBuilder::BuildQuery(void) {
+  impl->JoinGroups();
+  impl->MergeAndProjectJoins();
+  impl->LinkEverything();
+  Query ret(std::move(impl->query));
+  impl.reset(new QueryBuilderImpl(impl->context));
+  return ret;
 }
 
 QueryBuilder::QueryBuilder(void)

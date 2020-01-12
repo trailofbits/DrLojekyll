@@ -96,6 +96,7 @@ class Node<ParsedLiteral> {
   Node<ParsedLiteral> *next{nullptr};
   Node<ParsedVariable> *assigned_to{nullptr};
   Token literal;
+  TypeLoc type;
   std::string data;
 };
 
@@ -130,6 +131,7 @@ class Node<ParsedVariable> {
   uint64_t Id(void) noexcept;
 
   Token name;
+  TypeLoc type;
 
   // What was the order of appearance of this variable?
   unsigned appearance{0};
@@ -239,7 +241,13 @@ class Node<ParsedParameter> {
 
   Token opt_binding;
   Token name;
-  Token opt_type;
+  TypeLoc opt_type;
+
+  // `true` if `opt_type` was produced from parsing, as opposed to type
+  // propagation.
+  bool parsed_opt_type{false};
+
+  Node<ParsedFunctor> *opt_merge{nullptr};
 };
 
 template <>
@@ -328,6 +336,7 @@ class Node<ParsedDeclaration> {
   Token name;
   Token rparen;
   Token complexity_attribute;
+  Token inline_attribute;
   bool is_aggregate{false};
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
 

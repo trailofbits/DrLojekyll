@@ -10,10 +10,13 @@
 
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/DisplayReader.h>
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Lex/Lexer.h>
 #include <drlojekyll/Lex/StringPool.h>
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Util/FileManager.h>
 
 #include "Parse.h"
@@ -139,13 +142,12 @@ class ParserImpl {
   // Try to parse `sub_range` as a message, adding it to `module` if successful.
   void ParseMessage(Node<ParsedModule> *module);
 
-  // Try to parse `sub_range` as an exported rule, adding it to `module`
+  // Try to parse `sub_range` as a local or export rule, adding it to `module`
   // if successful.
-  void ParseExport(Node<ParsedModule> *module);
-
-  // Try to parse `sub_range` as a local rule, adding it to `module`
-  // if successful.
-  void ParseLocal(Node<ParsedModule> *module);
+  template <typename NodeType, DeclarationKind kDeclKind,
+            Lexeme kIntroducerLexeme>
+  void ParseLocalExport(Node<ParsedModule> *module,
+                        std::vector<std::unique_ptr<Node<NodeType>>> &out_vec);
 
   // Try to parse `sub_range` as an import.
   void ParseImport(Node<ParsedModule> *module);
@@ -171,6 +173,9 @@ class ParserImpl {
   Node<ParsedVariable> *CreateLiteralVariable(
       Node<ParsedClause> *clause, Token tok,
       bool is_param, bool is_arg);
+
+  // Perform type checking/assignment. Returns `false` if there was an error.
+  bool AssignTypes(Node<ParsedModule> *module);
 
   // Parse a display, returning the parsed module.
   //
@@ -580,7 +585,23 @@ void ParserImpl::AddDeclAndCheckConsistency(
         return;
       }
 
-      if (prev_param->opt_type.Lexeme() != curr_param->opt_type.Lexeme()) {
+      if (prev_param->opt_merge != curr_param->opt_merge) {
+        Error err(context->display_manager, SubTokenRange(),
+                  curr_param->opt_binding.SpellingRange());
+        err << "Mutable parameter's merge operator differs";
+
+        auto note = err.Note(
+            context->display_manager,
+            T(prev_decl).SpellingRange(),
+            prev_param->opt_binding.SpellingRange());
+        note << "Previous mutable attribute declaration is here";
+
+        context->error_log.Append(std::move(err));
+        RemoveDecl(std::move(decl));
+        return;
+      }
+
+      if (prev_param->opt_type.Kind() != curr_param->opt_type.Kind()) {
         Error err(context->display_manager, SubTokenRange(),
                   curr_param->opt_type.SpellingRange());
         err << "Parameter type specification differs";
@@ -609,6 +630,23 @@ void ParserImpl::AddDeclAndCheckConsistency(
           T(prev_decl).SpellingRange(),
           prev_decl->complexity_attribute.SpellingRange());
       note << "Previous complexity attribute is here";
+      context->error_log.Append(std::move(err));
+      RemoveDecl(std::move(decl));
+      return;
+    }
+
+    // Make sure this inline attribute matches the prior one.
+    if (prev_decl->inline_attribute.Lexeme() !=
+        decl->inline_attribute.Lexeme()) {
+      Error err(context->display_manager, SubTokenRange(),
+                decl->inline_attribute.SpellingRange());
+      err << "Inline attribute differs";
+
+      auto note = err.Note(
+          context->display_manager,
+          T(prev_decl).SpellingRange(),
+          prev_decl->inline_attribute.SpellingRange());
+      note << "Previous inline attribute is here";
       context->error_log.Append(std::move(err));
       RemoveDecl(std::move(decl));
       return;
@@ -650,6 +688,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   Token last_summary;
   Token last_free;
   Token name;
+  const auto sub_tok_range = SubTokenRange();
 
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
@@ -664,7 +703,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected atom here (lower case identifier) for the name of "
               << "the functor being declared, got '" << tok << "' instead";
@@ -676,7 +715,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           state = 2;
           continue;
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected opening parenthesis here to begin parameter list of "
               << "functor '" << name << "', but got '" << tok << "' instead";
@@ -713,7 +752,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected binding specifier ('bound', 'free', 'aggregate', "
               << "or 'summary') in parameter "
@@ -726,11 +765,12 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
       case 3:
         if (tok.IsType()) {
           param->opt_type = tok;
+          param->parsed_opt_type = true;
           state = 4;
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected type name here ('@'-prefixed identifier) for "
               << "parameter in functor '" << name << "', but got '"
@@ -746,7 +786,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected named variable here (capitalized identifier) as a "
               << "parameter name of functor '" << name << "', but got '"
@@ -784,7 +824,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           }
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected either a comma or a closing parenthesis here, "
               << "but got '" << tok << "' instead";
@@ -804,7 +844,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
+          Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
           err << "Expected either a 'trivial' or 'complex' attribute here, "
               << "but got '" << tok << "' instead";
@@ -831,14 +871,14 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   }
 
   if (state == 6) {
-    Error err(context->display_manager, SubTokenRange(), next_pos);
+    Error err(context->display_manager, sub_tok_range, next_pos);
     err << "Expected either a 'trivial' or 'complex' attribute here";
     context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
     return;
 
   } else if (state < 7) {
-    Error err(context->display_manager, SubTokenRange(), next_pos);
+    Error err(context->display_manager, sub_tok_range, next_pos);
     err << "Incomplete functor declaration; the declaration must be "
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
@@ -847,7 +887,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   // If we have a summary argument, then require us to have an aggregate
   // argument.
   } else if (last_summary.IsValid() && !last_aggregate.IsValid()) {
-    Error err(context->display_manager, SubTokenRange(),
+    Error err(context->display_manager, sub_tok_range,
               last_summary.SpellingRange());
     err << "Functor '" << functor->name << "' produces a summary value without "
         << "any corresponding aggregate inputs";
@@ -855,7 +895,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
   } else if (last_aggregate.IsValid() && !last_summary.IsValid()) {
-    Error err(context->display_manager, SubTokenRange(),
+    Error err(context->display_manager, sub_tok_range,
               last_aggregate.SpellingRange());
     err << "Functor '" << functor->name << "' aggregates values without "
         << "producing any corresponding summary outputs";
@@ -866,10 +906,10 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   //
   // NOTE(pag): We permit `bound` arguments to be used along with aggregates.
   } else if (last_summary.IsValid() && last_free.IsValid()) {
-    Error err(context->display_manager, SubTokenRange(),
+    Error err(context->display_manager, sub_tok_range,
               last_summary.SpellingRange());
     err << "Functor cannot bind both summary and free variables";
-    auto note = err.Note(context->display_manager, SubTokenRange(),
+    auto note = err.Note(context->display_manager, sub_tok_range,
                          last_free.SpellingRange());
     note << "Free variable is here";
     context->error_log.Append(std::move(err));
@@ -896,7 +936,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
            (redecl_lexeme == Lexeme::kKeywordAggregate ||
             redecl_lexeme == Lexeme::kKeywordSummary))) {
 
-        Error err(context->display_manager, SubTokenRange(),
+        Error err(context->display_manager, sub_tok_range,
                   ParsedParameter(orig_param.get()).SpellingRange());
         err << "Aggregation functor '" << functor->name
             << "' cannot be re-declared with different aggregation semantics.";
@@ -967,7 +1007,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected atom here (lower case identifier) for the name of "
-              << "the query being declared, got '" << tok << "' instead";
+              << "the #query being declared, got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -980,7 +1020,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected opening parenthesis here to begin parameter list of "
-              << "query '" << name << "', but got '" << tok << "' instead";
+              << "#query '" << name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1002,7 +1042,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected binding specifier ('bound' or 'free') in parameter "
-              << "declaration of query '" << name << "', " << "but got '"
+              << "declaration of #query '" << name << "', " << "but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1011,6 +1051,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
       case 3:
         if (tok.IsType()) {
           param->opt_type = tok;
+          param->parsed_opt_type = true;
           state = 4;
           continue;
 
@@ -1018,7 +1059,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected type name here ('@'-prefixed identifier) for "
-              << "parameter in query '" << name << "', but got '"
+              << "parameter in #query '" << name << "', but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1034,7 +1075,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of query '" << name << "', but got '"
+              << "parameter name of #query '" << name << "', but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1080,7 +1121,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
             tok.Position(), sub_tokens.back().NextPosition());
         Error err(context->display_manager, SubTokenRange(), err_range);
         err << "Unexpected tokens following declaration of the '"
-            << name << "' query";
+            << name << "' #query";
         context->error_log.Append(std::move(err));
         state = 7;  // Ignore further errors, but add the query in.
         continue;
@@ -1146,7 +1187,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected atom here (lower case identifier) for the name of "
-              << "the message being declared, got '" << tok << "' instead";
+              << "the #message being declared, got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1160,7 +1201,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected opening parenthesis here to begin parameter list of "
-              << "message '" << name << "', but got '" << tok << "' instead";
+              << "#message '" << name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1169,6 +1210,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         if (tok.IsType()) {
           param.reset(new Node<ParsedParameter>);
           param->opt_type = tok;
+          param->parsed_opt_type = true;
           state = 3;
           continue;
 
@@ -1176,7 +1218,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected type name here ('@'-prefixed identifier) for "
-              << "parameter in message '" << name << "', but got '"
+              << "parameter in #message '" << name << "', but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1192,7 +1234,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of message '" << name << "', but got '"
+              << "parameter name of #message '" << name << "', but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1265,177 +1307,18 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
 // Try to parse `sub_range` as an exported rule, adding it to `module`
 // if successful.
-void ParserImpl::ParseExport(Node<ParsedModule> *module) {
+template <typename NodeType, DeclarationKind kDeclKind,
+          Lexeme kIntroducerLexeme>
+void ParserImpl::ParseLocalExport(
+    Node<ParsedModule> *module,
+    std::vector<std::unique_ptr<Node<NodeType>>> &out_vec) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
   }
 
-  assert(tok.Lexeme() == Lexeme::kHashExportDecl);
-
-  // State transition diagram for parsing exports.
-  //
-  //               .---------<--------<-------.
-  //     0      1  |      2       3       4   |
-  // -- atom -- ( -+--> type-+-> var -.-> , --'
-  //               '._______.'        |
-  //                                  '-> )
-  //                                      5
-
-  int state = 0;
-  std::unique_ptr<Node<ParsedExport>> exp;
-  std::unique_ptr<Node<ParsedParameter>> param;
-  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
-
-  DisplayPosition next_pos;
-  Token name;
-
-  for (next_pos = tok.NextPosition();
-       ReadNextSubToken(tok);
-       next_pos = tok.NextPosition()) {
-
-    const auto lexeme = tok.Lexeme();
-    switch (state) {
-      case 0:
-        if (Lexeme::kIdentifierAtom == lexeme) {
-          name = tok;
-          state = 1;
-          continue;
-
-        } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected atom here (lower case identifier) for the name of "
-              << "the export being declared, got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
-          return;
-        }
-
-      case 1:
-        if (Lexeme::kPuncOpenParen == lexeme) {
-          state = 2;
-          continue;
-
-        } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected opening parenthesis here to begin parameter list of "
-              << "export '" << name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
-          return;
-        }
-
-      case 2:
-        param.reset(new Node<ParsedParameter>);
-        if (tok.IsType()) {
-          param->opt_type = tok;
-          state = 3;
-          continue;
-
-        } else if (Lexeme::kIdentifierVariable == lexeme) {
-          param->name = tok;
-          state = 4;
-          continue;
-
-        } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected type name ('@'-prefixed identifier) or variable "
-              << "name (capitalized identifier) for parameter in export '"
-              << name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
-          return;
-        }
-
-      case 3:
-        if (Lexeme::kIdentifierVariable == lexeme) {
-          param->name = tok;
-          state = 4;
-          continue;
-
-        } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of export '" << name << "', but got '"
-              << tok << "' instead";
-          context->error_log.Append(std::move(err));
-          return;
-        }
-
-      case 4:
-        // Add the parameter in.
-        if (!params.empty()) {
-          params.back()->next = param.get();
-        }
-        params.push_back(std::move(param));
-
-        if (Lexeme::kPuncComma == lexeme) {
-          state = 2;
-          continue;
-
-        } else if (Lexeme::kPuncCloseParen == lexeme) {
-          exp.reset(AddDecl<ParsedExport>(
-              module, DeclarationKind::kExport, name, params.size()));
-          if (!exp) {
-            return;
-
-          } else {
-            exp->rparen = tok;
-            exp->name = name;
-            exp->parameters.swap(params);
-            exp->directive_pos = sub_tokens.front().Position();
-            state = 5;
-            continue;
-          }
-
-        } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected either a comma or a closing parenthesis here, "
-              << "but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
-          return;
-        }
-
-      case 5: {
-        DisplayRange err_range(
-            tok.Position(), sub_tokens.back().NextPosition());
-        Error err(context->display_manager, SubTokenRange(), err_range);
-        err << "Unexpected tokens following declaration of the '"
-            << exp->name << "' export";
-        context->error_log.Append(std::move(err));
-        state = 6;  // Ignore further errors, but add the export in.
-        continue;
-      }
-
-      case 6:
-        continue;
-    }
-  }
-
-  if (state < 5) {
-    Error err(context->display_manager, SubTokenRange(), next_pos);
-    err << "Incomplete export declaration; the declaration must be "
-        << "placed entirely on one line";
-    context->error_log.Append(std::move(err));
-    RemoveDecl<ParsedExport>(std::move(exp));
-
-  } else {
-    AddDeclAndCheckConsistency<ParsedExport>(
-        module->exports, std::move(exp));
-  }
-}
-
-// Try to parse `sub_range` as an exported rule, adding it to `module`
-// if successful.
-void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
-  Token tok;
-  if (!ReadNextSubToken(tok)) {
-    assert(false);
-  }
-
-  assert(tok.Lexeme() == Lexeme::kHashLocalDecl);
+  assert(tok.Lexeme() == kIntroducerLexeme);
+  auto introducer_tok = tok;
 
   // State transition diagram for parsing locals.
   //
@@ -1443,11 +1326,11 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
   //     0      1  |     2       3       4   |
   // -- atom -- ( -+-> type-+-> var -+-> , --'
   //               '.______.'        |
-  //                                 '-> )
-  //                                     5
+  //                                 '-> ) -> inline
+  //                                     5      6
 
   int state = 0;
-  std::unique_ptr<Node<ParsedLocal>> local;
+  std::unique_ptr<Node<NodeType>> local;
   std::unique_ptr<Node<ParsedParameter>> param;
   std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
@@ -1470,7 +1353,8 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected atom here (lower case identifier) for the name of "
-              << "the local being declared, got '" << tok << "' instead";
+              << "the " << introducer_tok << " being declared, got '" << tok
+              << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1483,17 +1367,25 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected opening parenthesis here to begin parameter list of "
-              << "local '" << name << "', but got '"
+              << introducer_tok << " '" << name << "', but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
 
       case 2:
-        param.reset(new Node<ParsedParameter>);
+        if (!param) {
+          param.reset(new Node<ParsedParameter>);
+        }
         if (tok.IsType()) {
           param->opt_type = tok;
+          param->parsed_opt_type = true;
           state = 3;
+          continue;
+
+        } else if (Lexeme::kKeywordMutable == lexeme) {
+          param->opt_binding = tok;
+          state = 5;
           continue;
 
         } else if (Lexeme::kIdentifierVariable == lexeme) {
@@ -1505,8 +1397,9 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected type name ('@'-prefixed identifier) or variable "
-              << "name (capitalized identifier) for parameter in local '"
-              << name << "', but got '" << tok << "' instead";
+              << "name (capitalized identifier) for parameter in "
+              << introducer_tok << " '" << name << "', but got '" << tok
+              << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1521,7 +1414,7 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of local '" << name
+              << "parameter name of " << introducer_tok << " '" << name
               << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1532,6 +1425,7 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
         if (!params.empty()) {
           params.back()->next = param.get();
         }
+
         params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
@@ -1539,8 +1433,8 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          local.reset(AddDecl<ParsedLocal>(
-              module, DeclarationKind::kLocal, name, params.size()));
+          local.reset(AddDecl<NodeType>(
+              module, kDeclKind, name, params.size()));
           if (!local) {
             return;
 
@@ -1549,7 +1443,7 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
             local->name = name;
             local->parameters.swap(params);
             local->directive_pos = sub_tokens.front().Position();
-            state = 5;
+            state = 8;
             continue;
           }
 
@@ -1562,33 +1456,199 @@ void ParserImpl::ParseLocal(Node<ParsedModule> *module) {
           return;
         }
 
-      case 5: {
-        DisplayRange err_range(
-            tok.Position(), sub_tokens.back().NextPosition());
-        Error err(context->display_manager, SubTokenRange(), err_range);
-        err << "Unexpected tokens following declaration of the '"
-            << local->name << "' local";
-        context->error_log.Append(std::move(err));
-        state = 6;  // Ignore further errors, but add the local in.
-        continue;
-      }
+      case 5:
+        if (Lexeme::kPuncOpenParen == lexeme) {
+          state = 6;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected an opening parenthesis here, but got '"
+              << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return;
+        }
 
       case 6:
+        if (Lexeme::kIdentifierAtom == lexeme) {
+          parse::IdInterpreter interpreter = {};
+          interpreter.info.atom_name_id = tok.IdentifierId();
+          interpreter.info.arity = 3;  // Old val, proposed val, new val.
+          const auto id = interpreter.flat;
+          if (!context->declarations.count(id)) {
+            Error err(context->display_manager, SubTokenRange(),
+                      tok.SpellingRange());
+            err << "Expected a functor name here, but got '"
+                << tok << "' instead; maybe it wasn't declared yet?";
+            context->error_log.Append(std::move(err));
+            return;
+          }
+
+          auto decl = context->declarations[id];
+          if (decl->context->kind != DeclarationKind::kFunctor) {
+            Error err(context->display_manager, SubTokenRange(),
+                      tok.SpellingRange());
+            err << "Expected a functor name here, but got a "
+                << decl->KindName() << " name instead";
+            context->error_log.Append(std::move(err));
+            return;
+          }
+
+          param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
+          assert(param->opt_merge->parameters.size() == 3);
+
+          param->opt_type = param->opt_merge->parameters[0]->opt_type;
+          // NOTE(pag): We don't mark `param->parsed_opt_type` as `true` because
+          //            it's coming from the functor, and thus would result in
+          //            an unusual spelling range.
+
+          // Make sure all parameters of the functor being used as a merge
+          // operator have matching types.
+          for (auto p = 1u; p <= 2u; ++p) {
+            if (param->opt_merge->parameters[p]->opt_type.Kind() !=
+                param->opt_type.Kind()) {
+
+              Error err(context->display_manager,
+                        ParsedFunctor(param->opt_merge).SpellingRange(),
+                        param->opt_merge->parameters[p]->opt_type.SpellingRange());
+              err << "Mismatch between parameter type '"
+                  << param->opt_merge->parameters[p-1]->opt_type.SpellingRange()
+                  << "' for parameter '"
+                  << param->opt_merge->parameters[p-1]->name
+                  << "and parameter type '"
+                  << param->opt_merge->parameters[p]->opt_type.SpellingRange()
+                  << "' for parameter '"
+                  << param->opt_merge->parameters[p]->name
+                  << "' of merge functor '" << decl->name << "'";
+
+              auto note = err.Note(context->display_manager, SubTokenRange(),
+                                   tok.SpellingRange());
+              note << "Functor '" << tok << "' specified as merge operator here";
+
+              context->error_log.Append(std::move(err));
+              return;
+            }
+          }
+
+          // Make sure the first to parameters of the merge functor are bound,
+          // and the last is free.
+          if (param->opt_merge->parameters[0]->opt_binding.Lexeme() !=
+              Lexeme::kKeywordBound) {
+            Error err(context->display_manager,
+                      ParsedFunctor(param->opt_merge).SpellingRange(),
+                      param->opt_merge->parameters[0]->opt_binding.SpellingRange());
+            err << "First parameter of merge functor '" << decl->name
+                << "' must be bound";
+
+            auto note = err.Note(context->display_manager, SubTokenRange(),
+                                 tok.SpellingRange());
+            note << "Functor '" << tok << "' specified as merge operator here";
+
+            context->error_log.Append(std::move(err));
+            return;
+          }
+
+          if (param->opt_merge->parameters[1]->opt_binding.Lexeme() !=
+              Lexeme::kKeywordBound) {
+            Error err(context->display_manager,
+                      ParsedFunctor(param->opt_merge).SpellingRange(),
+                      param->opt_merge->parameters[0]->opt_binding.SpellingRange());
+            err << "Second parameter of merge functor '" << decl->name
+                << "' must be bound";
+
+            auto note = err.Note(context->display_manager, SubTokenRange(),
+                                 tok.SpellingRange());
+            note << "Functor '" << tok << "' specified as merge operator here";
+
+            context->error_log.Append(std::move(err));
+            return;
+          }
+
+          if (param->opt_merge->parameters[2]->opt_binding.Lexeme() !=
+              Lexeme::kKeywordFree) {
+            Error err(context->display_manager,
+                      ParsedFunctor(param->opt_merge).SpellingRange(),
+                      param->opt_merge->parameters[0]->opt_binding.SpellingRange());
+            err << "Third parameter of merge functor '" << decl->name
+                << "' must be free";
+
+            auto note = err.Note(context->display_manager, SubTokenRange(),
+                                 tok.SpellingRange());
+            note << "Functor '" << tok << "' specified as merge operator here";
+
+            context->error_log.Append(std::move(err));
+            return;
+          }
+          state = 7;
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected a functor name here, but got '"
+              << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return;
+        }
+
+      case 7:
+        if (Lexeme::kPuncCloseParen == lexeme) {
+          state = 3;  // Go parse the variable name; we can infer the type
+                      // name from the functor.
+          continue;
+
+        } else {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.SpellingRange());
+          err << "Expected a closing parenthesis here, but got '"
+              << tok << "' instead";
+          context->error_log.Append(std::move(err));
+          return;
+        }
+      case 8:
+        if (Lexeme::kKeywordInline == lexeme) {
+          if (local->inline_attribute.IsValid()) {
+            Error err(context->display_manager, SubTokenRange(),
+                      tok.SpellingRange());
+            err << "Unexpected second 'inline' attribute on "
+                << introducer_tok << " '" << local->name << "'";
+            context->error_log.Append(std::move(err));
+            state = 9;  // Ignore further errors, but add the local in.
+            continue;
+
+          } else {
+            local->inline_attribute = tok;
+            state = 8;
+            continue;
+          }
+        } else {
+          DisplayRange err_range(
+              tok.Position(), sub_tokens.back().NextPosition());
+          Error err(context->display_manager, SubTokenRange(), err_range);
+          err << "Unexpected tokens following declaration of the '"
+              << local->name << "' local";
+          context->error_log.Append(std::move(err));
+          state = 9;  // Ignore further errors, but add the local in.
+          continue;
+        }
+
+      case 9:
         continue;
     }
   }
 
-  if (state < 5) {
+  if (state < 8) {
     Error err(context->display_manager, SubTokenRange(), next_pos);
-    err << "Incomplete local declaration; the declaration must be "
+    err << "Incomplete " << introducer_tok
+        << " declaration; the declaration must be "
         << "placed entirely on one line";
     context->error_log.Append(std::move(err));
-    RemoveDecl<ParsedLocal>(std::move(local));
+    RemoveDecl<NodeType>(std::move(local));
 
   // Add the local to the module.
   } else {
-    AddDeclAndCheckConsistency<ParsedLocal>(
-        module->locals, std::move(local));
+    AddDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
   }
 }
 
@@ -2554,6 +2614,8 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_decl->directive_pos = tok.Position();
           anon_decl->name = Token::Synthetic(
               Lexeme::kIdentifierUnnamedAtom, tok.SpellingRange());
+          anon_decl->inline_attribute = Token::Synthetic(
+              Lexeme::kKeywordInline, DisplayRange());
           assert(anon_decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom);
           anon_clause_toks.push_back(anon_decl->name);
 
@@ -2585,6 +2647,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         if (tok.IsType()) {
           anon_param.reset(new Node<ParsedParameter>);
           anon_param->opt_type = tok;
+          anon_param->parsed_opt_type = true;
           state = 2;
           continue;
 
@@ -2882,7 +2945,8 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       case Lexeme::kHashExportDecl:
         ReadLine();
-        ParseExport(module);
+        ParseLocalExport<ParsedExport, DeclarationKind::kExport,
+                         Lexeme::kHashExportDecl>(module, module->exports);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
         }
@@ -2890,7 +2954,8 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       case Lexeme::kHashLocalDecl:
         ReadLine();
-        ParseLocal(module);
+        ParseLocalExport<ParsedLocal, DeclarationKind::kLocal,
+                         Lexeme::kHashLocalDecl>(module, module->locals);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
         }
@@ -2978,6 +3043,260 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
   }
 }
 
+// Perform type checking/assignment. Returns `false` if there was an error.
+bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
+
+  auto var_var_eq_p =
+      [=] (Node<ParsedVariable> *a, Node<ParsedVariable> *b) -> bool {
+        if (a->type.Kind() == b->type.Kind()) {
+          return true;
+        }
+
+        ParsedVariable a_var(a);
+        ParsedVariable b_var(b);
+
+        Error err(context->display_manager,
+                  ParsedClause(a->context->clause).SpellingRange(),
+                  a_var.SpellingRange());
+        err << "Type mismatch between variable '" << a_var.Name()
+            << "' (type '" << a_var.Type().SpellingRange() << "') and '"
+            << b_var.Name() << "' (type '" << b_var.Type().SpellingRange()
+            << "')";
+        context->error_log.Append(std::move(err));
+
+        auto note1 = err.Note(context->display_manager,
+                             a_var.Type().SpellingRange());
+        note1 << "Variable '" << a_var.Name() << "' with type '"
+              << a_var.Type().SpellingRange() << "' is from here";
+
+        auto note2 = err.Note(context->display_manager,
+                        b_var.Type().SpellingRange());
+        note2 << "Variable '" << b_var.Name() << "' with type '"
+              << b_var.Type().SpellingRange() << "' is from here";
+
+        context->error_log.Append(std::move(err));
+
+        return false;
+      };
+
+  auto var_param_eq_p =
+      [=] (Node<ParsedVariable> *a, Node<ParsedParameter> *b) -> bool {
+        if (a->type.Kind() == b->opt_type.Kind()) {
+          return true;
+        }
+
+        ParsedVariable a_var(a);
+        ParsedParameter b_var(b);
+
+        Error err(context->display_manager,
+                  ParsedClause(a->context->clause).SpellingRange(),
+                  a_var.SpellingRange());
+        err << "Type mismatch between variable '" << a_var.Name()
+            << "' (type '" << a_var.Type().SpellingRange()
+            << "') and parameter '" << b_var.Name() << "' (type '"
+            << b_var.Type().SpellingRange() << "')";
+        context->error_log.Append(std::move(err));
+
+        auto note1 = err.Note(context->display_manager,
+                              a_var.Type().SpellingRange());
+        note1 << "Variable '" << a_var.Name() << "' with type '"
+              << a_var.Type().SpellingRange() << "' is from here";
+
+        auto note2 = err.Note(context->display_manager,
+                              b_var.Type().SpellingRange());
+        note2 << "Parameter '" << b_var.Name() << "' with type '"
+              << b_var.Type().SpellingRange() << "' is from here";
+
+        context->error_log.Append(std::move(err));
+
+        return false;
+      };
+
+  std::vector<Node<ParsedVariable> *> missing;
+  auto changed = true;
+
+  auto check_apply_var_types =
+      [&] (Node<ParsedVariable> *var) -> bool {
+        for (auto next_var = var->context->first_use; next_var != nullptr;
+             next_var = next_var->next_use) {
+          assert(next_var->name.IdentifierId() == var->name.IdentifierId());
+          if (next_var->type.IsInvalid()) {
+            next_var->type = var->type;
+            changed = true;
+
+          } else if (!var_var_eq_p(var, next_var)) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+  auto pred_valid =
+      [&] (Node<ParsedPredicate> *pred) -> bool {
+        auto j = 0u;
+        auto pred_decl = pred->declaration;
+        for (auto &arg : pred->argument_uses) {
+          auto &param = pred_decl->parameters[j++];
+          auto &lhs_type = arg->used_var->type;
+          auto &rhs_type = param->opt_type;
+          auto lhs_is_valid = lhs_type.IsValid();
+          auto rhs_is_valid = rhs_type.IsValid();
+          if (lhs_is_valid && rhs_is_valid) {
+            if (!var_param_eq_p(arg->used_var, param.get())) {
+              return false;
+            }
+          } else if (lhs_is_valid) {
+            rhs_type = lhs_type;
+            changed = true;
+
+          } else if (rhs_is_valid) {
+            lhs_type = rhs_type;
+            changed = true;
+            check_apply_var_types(arg->used_var);
+
+          } else {
+            missing.push_back(arg->used_var);
+          }
+        }
+        return true;
+      };
+
+  for (; changed; ) {
+    changed = false;
+    missing.clear();
+
+    for (auto &clause : module->clauses) {
+      auto i = 0u;
+
+      for (const auto &var : clause->head_variables) {
+        const auto &decl_param = clause->declaration->parameters[i++];
+
+        // Head variable-based top-down. The head variable has a type, so
+        // propagate that type through all uses and check that they all
+        // match.
+        if (var->type.IsValid()) {
+        var_has_type:
+
+          if (decl_param->opt_type.IsInvalid()) {
+            decl_param->opt_type = var->type;
+            changed = true;
+
+          } else if (!var_param_eq_p(var.get(), decl_param.get())) {
+            return false;
+          }
+
+          if (!check_apply_var_types(var.get())) {
+            return false;
+          }
+
+        // Declaration-based top-down: the declaration is typed, so propagate
+        // the type from the declaration down to the argument.
+        } else if (decl_param->opt_type.IsValid()) {
+          var->type = decl_param->opt_type;
+          changed = true;
+          goto var_has_type;
+
+        // Bottom-up propagation step: find the first typed use of the variable,
+        // then assign that type to the parameter variable.
+        } else {
+          for (auto next_var = var->next_use; next_var != nullptr;
+               next_var = next_var->next_use) {
+            if (next_var->type.IsValid()) {
+              var->type = next_var->type;
+              changed = true;
+              goto var_has_type;
+            }
+          }
+
+          // If we reached down here then the parameter variable's type was
+          // not inferred from any use.
+          missing.push_back(var.get());
+        }
+      }
+
+      // Go through all assignments and propagate the variable's type to the
+      // literals.
+      for (const auto &assign : clause->assignments) {
+        auto lhs_type = assign->lhs.used_var->type;
+        if (lhs_type.IsValid()) {
+          assign->rhs.type = lhs_type;
+        } else {
+          missing.push_back(assign->lhs.used_var);
+        }
+      }
+
+      // Go through all comparisons and try to match up the types of the
+      // compared variables.
+      for (const auto &cmp : clause->comparisons) {
+        auto &lhs_type = cmp->lhs.used_var->type;
+        auto &rhs_type = cmp->rhs.used_var->type;
+        auto lhs_is_valid = lhs_type.IsValid();
+        auto rhs_is_valid = rhs_type.IsValid();
+        if (lhs_is_valid && rhs_is_valid) {
+          if (!var_var_eq_p(cmp->lhs.used_var, cmp->rhs.used_var)) {
+            return false;
+          }
+        } else if (lhs_is_valid) {
+          rhs_type = lhs_type;
+          changed = true;
+          check_apply_var_types(cmp->rhs.used_var);
+
+        } else if (rhs_is_valid) {
+          lhs_type = rhs_type;
+          changed = true;
+          check_apply_var_types(cmp->lhs.used_var);
+
+        } else {
+          missing.push_back(cmp->lhs.used_var);
+          missing.push_back(cmp->rhs.used_var);
+        }
+      }
+
+      // Go through all positive predicates, and do declaration-based
+      // bottom-up type propagation.
+      for (const auto &pred : clause->positive_predicates) {
+        if (!pred_valid(pred.get())) {
+          return false;
+        }
+      }
+
+      for (const auto &pred : clause->negated_predicates) {
+        if (!pred_valid(pred.get())) {
+          return false;
+        }
+      }
+
+      // Go through all aggregates.
+      for (const auto &agg : clause->aggregates) {
+        if (!pred_valid(agg->functor.get()) ||
+            !pred_valid(agg->predicate.get())) {
+          return false;
+        }
+      }
+    }
+  }
+
+  // Failure to type a variable says that the variable itself is not range-
+  // restricted. Successfully typing a program, however, does not imply that
+  // all variables are range-restricted. This is because user-annotated types
+  // can force a variable to have a type, and thus mask the fact that the
+  // variable is not used anywhere. Range restriction issues are generally
+  // discoverable at a later stage, by the SIPSVisitor.
+  if (!missing.empty()) {
+    for (auto var : missing) {
+      Error err(context->display_manager,
+                ParsedClause(var->context->clause).SpellingRange(),
+                ParsedVariable(var).SpellingRange());
+      err << "Could not infer type of non-range-restricted variable '"
+          << var->name << "'";
+      context->error_log.Append(std::move(err));
+    }
+    return false;
+  }
+
+  return true;
+}
+
 // Parse a display, returning the parsed module.
 //
 // NOTE(pag): Due to display caching, this may return a prior parsed module,
@@ -3018,6 +3337,8 @@ ParsedModule ParserImpl::ParseDisplay(
   for (auto local_id : to_erase) {
     context->declarations.erase(local_id);
   }
+
+  AssignTypes(module.get());
 
   return ParsedModule(module);
 }

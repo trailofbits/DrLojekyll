@@ -17,6 +17,56 @@ OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, TypeKind type) {
+  const char *repr = "";
+  switch (type) {
+    case TypeKind::kInvalid: break;
+    case TypeKind::kSigned8:
+      repr = "@i8";
+      break;
+    case TypeKind::kSigned16:
+      repr = "@i16";
+      break;
+    case TypeKind::kSigned32:
+      repr = "@i32";
+      break;
+    case TypeKind::kSigned64:
+      repr = "@i64";
+      break;
+    case TypeKind::kUnsigned8:
+      repr = "@u8";
+      break;
+    case TypeKind::kUnsigned16:
+      repr = "@u16";
+      break;
+    case TypeKind::kUnsigned32:
+      repr = "@u32";
+      break;
+    case TypeKind::kUnsigned64:
+      repr = "@u64";
+      break;
+    case TypeKind::kFloat:
+      repr = "@f32";
+      break;
+    case TypeKind::kDouble:
+      repr = "@f64";
+      break;
+    case TypeKind::kString:
+      repr = "@str";
+      break;
+    case TypeKind::kUUID:
+      repr = "@uuid";
+      break;
+  }
+  os << repr;
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, TypeLoc type) {
+  os << type.Kind();
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ParsedLiteral val) {
   os << val.SpellingRange();
   return os;
@@ -27,6 +77,14 @@ OutputStream &operator<<(OutputStream &os, ParsedParameter param) {
   switch (param.Binding()) {
     case ParameterBinding::kImplicit:
       break;
+
+    case ParameterBinding::kMutable:
+      os << "mutable(" << ParsedFunctor::MergeOperatorOf(param).Name() << ") "
+         << param.Name();
+      // NOTE(pag): `param.Type()` is valid but not explicitly printed as it's
+      //            taken from the merge functor's parameter types.
+      return os;
+
     case ParameterBinding::kFree:
       os << "free ";
       break;
@@ -79,6 +137,8 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
     } else {
       os << " trivial";
     }
+  } else if (decl.IsLocal() && decl.IsInline()) {
+    os << " inline";
   }
   return os;
 }
@@ -112,7 +172,6 @@ OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
   os << compare.LHS() << op << compare.RHS();
   return os;
 }
-
 
 OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause) {
   os << ParsedDeclarationName(ParsedDeclaration::Of(clause.clause));

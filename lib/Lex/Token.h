@@ -19,7 +19,7 @@ struct BasicToken {
 struct TypeToken {
   uint64_t lexeme:8;
   uint64_t unused:24;
-  uint64_t type_width:16;
+  uint64_t type_width:16;  // In bits.
   uint64_t spelling_width:16;
 };
 

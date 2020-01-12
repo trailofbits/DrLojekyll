@@ -130,17 +130,24 @@ const ErrorColorScheme Error::kDefaultColorScheme = {
   Color::kWhite  // `text_color`.
 };
 
+
+const ErrorStream &ErrorStream::operator<<(const DisplayRange &range) const {
+  if (dm) {
+    std::string_view data;
+    if (dm->TryReadData(range, &data)) {
+      (*os) << data;
+    }
+  }
+  return *this;
+}
+
 // Stream in a token.
 const ErrorStream &ErrorStream::operator<<(const Token &token) const {
   if (dm) {
     std::string_view token_data;
     if (dm->TryReadData(token.SpellingRange(), &token_data)) {
       (*os) << token_data;
-    } else {
-      (*os) << "!!!";
     }
-  } else {
-    (*os) << "???";
   }
   return *this;
 }

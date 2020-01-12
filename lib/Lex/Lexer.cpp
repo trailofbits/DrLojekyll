@@ -421,6 +421,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.lexeme = Lexeme::kHashQueryDecl;
           } else if (impl->data == "#local") {
             interpreter.basic.lexeme = Lexeme::kHashLocalDecl;
+          } else if (impl->data == "inline") {
+            interpreter.basic.lexeme = Lexeme::kKeywordInline;
           }
           break;
         case 7:
@@ -436,8 +438,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.lexeme = Lexeme::kKeywordComplex;
           } else if (impl->data == "summary") {
             interpreter.basic.lexeme = Lexeme::kKeywordSummary;
+          } else if (impl->data == "mutable") {
+            interpreter.basic.lexeme = Lexeme::kKeywordMutable;
           }
           break;
+
         case 8:
           if (impl->data[0] == '#') {
             if (impl->data == "#message") {

@@ -127,12 +127,30 @@ enum class Lexeme : uint8_t {
   kKeywordAggregate,
   kKeywordSummary,
 
+  // Binding specifier declaring that a parameter is mutable, and wrap the
+  // merge operation of that parameter. For example:
+  //
+  //    #functor merge_i8(bound @i8 OldVal, bound @i8 ProposedVal,
+  //                      free @i8 NewVal) trivial
+  //    #local byte_val(@i64 Address, mutable(merge_i8) ByteVal)
+  //
+  // Proofs of `byte_val` implicitly end with a merge operation, where
+  // `merge_i8` in this case is invoked, and the produced value is the `NewVal`
+  // output value of `merge_i8`.
+  //
+  // Mutable-attributed parameters must be used if a parameter value can be
+  // derived from an aggregate's summary value.
+  kKeywordMutable,
+
   // Keyword for aggregation over some relation.
   kKeywordOver,
 
   // Specifiers for the level of complexity of a functor.
   kKeywordTrivial,
   kKeywordComplex,
+
+  // Whether or not a local/export can be inlined.
+  kKeywordInline,
 
   kPuncOpenParen,
   kPuncCloseParen,
@@ -230,6 +248,9 @@ class Token {
   // Return the length of the corresponding identifier, or `0` if not a string.
   unsigned IdentifierLength(void) const;
 
+  // Return the size, in bytes, of the corresponding type.
+  unsigned TypeSizeInBytes(void) const;
+
   // Returns the invalid escape char, or `\0` if not present.
   char InvalidEscapeChar(void) const;
 
@@ -257,7 +278,7 @@ class Token {
   // columns of text in the display.
   static Token FakeType(DisplayPosition position, unsigned spelling_width);
 
-  // Return a fake colon at `position`.
+  // Return a fake token at `range`.
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
   DisplayPosition position;

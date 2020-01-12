@@ -10,6 +10,7 @@
 #include <drlojekyll/Display/DisplayPosition.h>
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Util/Node.h>
+#include <drlojekyll/Parse/Type.h>
 
 namespace hyde {
 
@@ -66,6 +67,7 @@ class ParsedNode {
 
 enum class ParameterBinding {
   kImplicit,
+  kMutable,
   kFree,
   kBound,
   kAggregate,
@@ -151,6 +153,9 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
 
   // Returns the token corresponding with the name of this variable.
   Token Name(void) const noexcept;
+
+  // Returns the type of the variable.
+  TypeLoc Type(void) const noexcept;
 
   // Returns `true` if this variable is an parameter to its clause.
   bool IsParameter(void) const noexcept;
@@ -307,7 +312,7 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
   Token Name(void) const noexcept;
-  Token Type(void) const noexcept;
+  TypeLoc Type(void) const noexcept;
   ParameterBinding Binding(void) const noexcept;
 
   // Other declarations of this parameter. This goes and gets the list of
@@ -315,6 +320,8 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
   NodeRange<ParsedParameter> Redeclarations(void) const;
 
  protected:
+  friend class ParsedFunctor;
+
   using parse::ParsedNode<ParsedParameter>::ParsedNode;
 };
 
@@ -429,6 +436,8 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
+
+  bool IsInline(void) const noexcept;
 
   inline unsigned NumUses(void) const noexcept {
     return NumPositiveUses() + NumNegatedUses();
@@ -550,6 +559,8 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
 
+  bool IsInline(void) const noexcept;
+
   inline unsigned NumUses(void) const noexcept {
     return NumPositiveUses() + NumNegatedUses();
   }
@@ -572,6 +583,7 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
  public:
   static const ParsedFunctor &From(const ParsedDeclaration &decl);
+  static const ParsedFunctor MergeOperatorOf(ParsedParameter param);
 
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
@@ -709,7 +721,6 @@ struct hash<::hyde::ParsedParameter> {
     return param.UniqueId();
   }
 };
-
 
 template<>
 struct hash<::hyde::ParsedModule> {

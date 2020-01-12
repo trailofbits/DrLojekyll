@@ -37,11 +37,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
   }
 
-  for (auto message : query.Messages()) {
-    const auto decl = message.Declaration();
+  for (auto input : query.Inputs()) {
+    const auto decl = input.Declaration();
     const auto arity = decl.Arity();
-    os << "t" << message.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>MESSAGE</TD><TD>" << ParsedDeclarationName(decl) << "</TD>";
+    os << "t" << input.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD>INPUT</TD><TD>" << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -150,7 +150,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
 
-    auto i = 0;
+    auto i = 0u;
     for (auto pivot_col : join.PivotColumns()) {
       auto color = kColors[i];
       os << "<TD rowspan=\"3\" bgcolor=\"" << color << "\">"
@@ -181,14 +181,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     assert(found);
 
     os << "</TR><TR>";
-    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
+    for (i = 0u; i < join.NumInputColumns(); ++i) {
       os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
     }
 
     os << kEndTable << ">];\n";
 
     // Link the joined columns to their sources.
-    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
+    for (i = 0u; i < join.NumInputColumns(); ++i) {
       auto col = join.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << join.UniqueId() << ":p" << i << " -> v"

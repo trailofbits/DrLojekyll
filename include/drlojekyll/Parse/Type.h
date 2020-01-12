@@ -9,36 +9,59 @@ namespace hyde {
 class ParsedVariable;
 class ParsedParameter;
 class ParsedLiteral;
+class Token;
 
-// Type of a variable or literal.
-class Type {
+enum class TypeKind {
+  kInvalid,
+  kSigned8,
+  kSigned16,
+  kSigned32,
+  kSigned64,
+  kUnsigned8,
+  kUnsigned16,
+  kUnsigned32,
+  kUnsigned64,
+  kFloat,
+  kDouble,
+  kString,
+  kUUID
+};
+
+unsigned SizeInBits(TypeKind kind) noexcept;
+unsigned SizeInBytes(TypeKind kind) noexcept;
+
+// Type and location of that type.
+class TypeLoc {
  public:
-  enum Kind {
-    kInvalid,
-    kSigned8,
-    kSigned16,
-    kSigned32,
-    kSigned64,
-    kUnsigned8,
-    kUnsigned16,
-    kUnsigned32,
-    kUnsigned64,
-    kFloat,
-    kDouble,
-    kString,
-    kUUID
-  };
+  TypeLoc(const Token &tok);
+  TypeLoc &operator=(const Token &tok) noexcept;
 
-  inline ::hyde::Type::Kind Kind(void) const {
+  inline TypeLoc(void)
+      : kind(TypeKind::kInvalid) {}
+
+  inline TypeKind Kind(void) const noexcept {
     return kind;
   }
 
-  unsigned SizeInBits(void) const;
-  unsigned SizeInBytes(void) const;
+  inline DisplayPosition Position(void) const noexcept {
+    return range.From();
+  }
+
+  inline DisplayRange SpellingRange(void) const noexcept {
+    return range;
+  }
+
+  inline bool IsValid(void) const noexcept {
+    return kind != TypeKind::kInvalid;
+  }
+
+  inline bool IsInvalid(void) const noexcept {
+    return kind == TypeKind::kInvalid;
+  }
 
  private:
-  Kind kind;
-  DisplayPosition position;
+  TypeKind kind;
+  DisplayRange range;
 };
 
 }  // namespace hyde

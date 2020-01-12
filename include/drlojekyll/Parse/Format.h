@@ -29,6 +29,8 @@ class ParsedClauseBody {
   const ParsedClause clause;
 };
 
+OutputStream &operator<<(OutputStream &os, TypeKind type);
+OutputStream &operator<<(OutputStream &os, TypeLoc type);
 OutputStream &operator<<(OutputStream &os, ParsedLiteral val);
 OutputStream &operator<<(OutputStream &os, ParsedParameter var);
 OutputStream &operator<<(OutputStream &os, ParsedVariable var);
