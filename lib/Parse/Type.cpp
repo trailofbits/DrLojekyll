@@ -71,4 +71,22 @@ TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
   return *this;
 }
 
+const char *TypeLoc::Spelling(void) const noexcept {
+  switch (kind) {
+    case TypeKind::kInvalid: return "";
+    case TypeKind::kSigned8: return "@i8";
+    case TypeKind::kSigned16: return "@i16";
+    case TypeKind::kSigned32: return "@i32";
+    case TypeKind::kSigned64: return "@i64";
+    case TypeKind::kUnsigned8: return "@u8";
+    case TypeKind::kUnsigned16: return "@u16";
+    case TypeKind::kUnsigned32: return "@u32";
+    case TypeKind::kUnsigned64: return "@u64";
+    case TypeKind::kFloat: return "@f32";
+    case TypeKind::kDouble: return "@f64";
+    case TypeKind::kString: return "@str";
+    case TypeKind::kUUID: return "@uuid";
+  }
+}
+
 }  // namespace hyde

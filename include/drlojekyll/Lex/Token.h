@@ -257,6 +257,9 @@ class Token {
   // Returns the invalid char, or `\0` if not present.
   char InvalidChar(void) const;
 
+  // Return a fake token at `range`.
+  static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
+
  private:
   friend class Lexer;
   friend class ParserImpl;
@@ -277,9 +280,6 @@ class Token {
   // Return a type token at `position` that occupies `spelling_width`
   // columns of text in the display.
   static Token FakeType(DisplayPosition position, unsigned spelling_width);
-
-  // Return a fake token at `range`.
-  static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
   DisplayPosition position;
   uint64_t opaque_data{0};

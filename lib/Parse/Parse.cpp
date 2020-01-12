@@ -170,7 +170,8 @@ TypeLoc ParsedVariable::Type(void) const noexcept {
 
 // Returns `true` if this variable is an parameter to its clause.
 bool ParsedVariable::IsParameter(void) const noexcept {
-  return impl->context->first_use->is_parameter;
+  return impl->context->first_use ?
+         impl->context->first_use->is_parameter : false;
 }
 
 // Returns `true` if this variable is an argument to a predicate.
@@ -213,6 +214,57 @@ NodeRange<ParsedVariable> ParsedVariable::Uses(void) const {
           Node<ParsedVariable>, next_use)));
 }
 
+// Return the number of uses of this variable.
+unsigned ParsedVariable::NumUses(void) const {
+  auto context = impl->context.get();
+  return static_cast<unsigned>(context->parameter_uses.size() +
+                               context->argument_uses.size() +
+                               context->assignment_uses.size() +
+                               context->comparison_uses.size());
+}
+
+// Replace all uses of this variable with another variable.
+bool ParsedVariable::ReplaceAllUses(ParsedVariable that) const {
+  // TODO(pag): Test this code.
+
+  auto context = impl->context;  // Hold a ref.
+  auto that_context = that.impl->context.get();
+  if (context.get() == that_context) {
+    return true;
+  } else if (context->clause != that_context->clause) {
+    return false;
+  } else if (impl->type.Kind() != that.impl->type.Kind()) {
+    return false;
+  }
+
+  // Follow the next use chain of the other variable and find the last pointer
+  // in it, and then link that to the first use of this variable.
+  auto nupp = &(that_context->first_use);
+  for (; *nupp; nupp = &((*nupp)->next_use)) {
+    // Do nothing;
+  }
+  *nupp = context->first_use;
+
+  // Replace the variable names and contexts in the use list.
+  auto replace_uses = [=] (auto &use_list, auto &that_use_list) {
+    if (!use_list.empty() && !that_use_list.empty()) {
+      that_use_list.back()->next = use_list.front();
+    }
+    for (auto &use : use_list) {
+      use->used_var->name = that.impl->name;
+      use->used_var->context = that.impl->context;
+      that_use_list.emplace_back(std::move(use));
+    }
+  };
+
+  replace_uses(context->parameter_uses, that_context->parameter_uses);
+  replace_uses(context->argument_uses, that_context->argument_uses);
+  replace_uses(context->comparison_uses, that_context->comparison_uses);
+  replace_uses(context->assignment_uses, that_context->assignment_uses);
+
+  return true;
+}
+
 // Return the variable to which `literal` assigned.
 ParsedVariable ParsedVariable::AssignedTo(ParsedLiteral literal) noexcept {
   return ParsedVariable(literal.impl->assigned_to);
@@ -232,6 +284,10 @@ bool ParsedLiteral::IsNumber(void) const noexcept {
 
 bool ParsedLiteral::IsString(void) const noexcept {
   return impl->literal.Lexeme() == Lexeme::kLiteralString;
+}
+
+TypeLoc ParsedLiteral::Type(void) const noexcept {
+  return impl->type;
 }
 
 DisplayRange ParsedComparison::SpellingRange(void) const noexcept {
@@ -611,6 +667,17 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedClause clause) {
 // parsed declaration, so it could be in a different module.
 ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
   return ParsedDeclaration(pred.impl->declaration);
+}
+
+// Create a new variable in this context of this clause.
+ParsedVariable ParsedClause::CreateVariable(TypeLoc type) {
+  auto var = new Node<ParsedVariable>;
+  var->type = type;
+  var->name = Token::Synthetic(
+      Lexeme::kIdentifierUnnamedVariable, SpellingRange());
+  var->context = std::make_shared<parse::VariableContext>(impl, nullptr);
+  impl->body_variables.emplace_back(var);
+  return ParsedVariable(var);
 }
 
 ParsedClause ParsedClause::Containing(ParsedVariable var) noexcept {

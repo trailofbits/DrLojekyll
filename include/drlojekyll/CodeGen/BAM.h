@@ -45,10 +45,19 @@ class CodeFragment {
 class FunctionParameter;
 class FunctionArgument;
 
+// A generic value.
 class Value : public bam::CodeFragment<Value> {
  public:
   TypeLoc Type(void) const noexcept;
   DisplayRange SpellingRange(void) const noexcept;
+  NodeRange<Value> Uses(void) const;
+
+  bool IsParameter(void) const noexcept;
+  bool IsArgument(void) const noexcept;
+
+  bool ReplaceAllUses(const Value &that) const noexcept;
+  bool ReplaceAllUses(const FunctionParameter &that) const noexcept;
+  bool ReplaceAllUses(const FunctionArgument &that) const noexcept;
 };
 
 class FunctionParameter : public bam::CodeFragment<FunctionParameter> {

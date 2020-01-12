@@ -61,6 +61,8 @@ class QueryContext {
 
 }  // namespace query
 
+class EqualitySet;
+
 class ColumnReference {
  public:
   ColumnReference(const ColumnReference &that);
@@ -193,8 +195,10 @@ class Node<QueryInput> final : public Node<QueryStream> {
 
 // A view "owns" its the columns pointed to by `columns`.
 template <>
-class Node<QueryView> {
+class Node<QueryView> : public DisjointSet {
  public:
+  using DisjointSet::DisjointSet;
+
   virtual ~Node(void);
 
   virtual bool IsSelect(void) const noexcept;
@@ -204,11 +208,39 @@ class Node<QueryView> {
   virtual bool IsMerge(void) const noexcept;
   virtual bool IsConstraint(void) const noexcept;
 
+  // Clear out all columns and column uses in this view.
+  virtual void Clear(void) noexcept = 0;
+
+  // Hash this view, or return a cached hash. Useful for things like CSE.
+  virtual uint64_t Hash(void) noexcept = 0;
+
+  // Returns `true` if `this` and `that` are structurally equivalent. Works
+  // even if there are cycles in the graph.
+  virtual bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept = 0;
+
+  // Query to which this view belongs.
+  QueryImpl *query{nullptr};
+
   // The selected columns.
   std::vector<Node<QueryColumn> *> columns;
 
   // Next view (select or join) in this query.
   Node<QueryView> *next_view{nullptr};
+
+  // Hash of this node, and its dependencies. A zero value implies that the
+  // hash is invalid. Final hashes always have their low 3 bits as a non-zero
+  // identifier of the type of the node.
+  uint64_t hash{0};
+
+  // Sometimes we want to compare columns, and so comparing their indices is
+  // useful. However, in the case of `QueryConstraint`s, comparing indices is
+  // not helpful for `=` and `!=` because these are unordered.
+  //
+  // NOTE(pag): This is an additive mask, not a subtractive one. That is, we
+  //            do `(index | view->index_mask)` so that if we compare against
+  //            another column, then we won't accidentally compare valid index
+  //            zero against subtractive-masked index zero.
+  unsigned index_mask{0U};
 };
 
 template <>
@@ -220,7 +252,11 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(stream_) {}
 
   virtual ~Node(void);
+
   bool IsSelect(void) const noexcept override;
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Next select in this query.
   Node<QuerySelect> *next{nullptr};
@@ -228,6 +264,23 @@ class Node<QuerySelect> final : public Node<QueryView> {
   // The table from which this select takes its columns.
   Node<QueryRelation> * const relation;
   Node<QueryStream> * const stream;
+
+  // Selects on within the same group generally cannot be merged. For example,
+  // if you had this code:
+  //
+  //    node_pairs(A, B) : node(A), node(B).
+  //
+  // Then you don't want to merge the two selects from the `node` relation,
+  // because then you won't get the cross-product of nodes, you'll just get
+  // the pairs of all nodes.
+  //
+  // However, if within the same query you have:
+  //
+  //    node_pairs(A, B) : node(A), node(B).
+  //    node_pairs(A, A) : node(A).
+  //
+  // Then across these two clauses, some selects *can* be merged.
+  unsigned group_id{0};
 };
 
 template <>
@@ -236,6 +289,9 @@ class Node<QueryJoin> final : public Node<QueryView> {
   virtual ~Node(void);
 
   bool IsJoin(void) const noexcept override;
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Next join in this query.
   Node<QueryJoin> *next{nullptr};
@@ -256,6 +312,9 @@ class Node<QueryMap> final : public Node<QueryView> {
   virtual ~Node(void);
 
   bool IsMap(void) const noexcept override;
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   inline explicit Node(ParsedFunctor functor_)
       : functor(functor_) {}
@@ -278,6 +337,9 @@ class Node<QueryAggregate> : public Node<QueryView> {
   virtual ~Node(void);
 
   bool IsAggregate(void) const noexcept override;
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   inline explicit Node(ParsedFunctor functor_)
       : functor(functor_) {}
@@ -313,6 +375,9 @@ class Node<QueryMerge> : public Node<QueryView> {
   virtual ~Node(void);
 
   bool IsMerge(void) const noexcept override;
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Next merge in this query.
   Node<QueryMerge> *next{nullptr};
@@ -329,6 +394,9 @@ class Node<QueryConstraint> : public Node<QueryView> {
   virtual ~Node(void);
 
   bool IsConstraint(void) const noexcept override;
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   std::vector<ColumnReference> input_columns;
 
@@ -348,6 +416,10 @@ class Node<QueryInsert> : public Node<QueryView> {
   inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
       : relation(relation_),
         decl(decl_) {}
+
+  void Clear(void) noexcept override;
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   Node<QueryInsert> *next{nullptr};
 
@@ -377,14 +449,13 @@ class Node<QueryColumn> : public DisjointSet {
   // Number of uses of this column.
   unsigned num_uses{0};
 
-  // Next column in the whole query.
-  Node<QueryColumn> *next{nullptr};
-
   // Next column within the same view.
   Node<QueryColumn> *next_in_view{nullptr};
 
-  // Next pivot column within the same join.
-  Node<QueryColumn> *next_pivot_in_join{nullptr};
+  static void ReplaceAllUsesWith(
+      QueryImpl *query,
+      Node<QueryColumn> *old_col,
+      Node<QueryColumn> *new_col);
 };
 
 class QueryImpl {
@@ -402,6 +473,28 @@ class QueryImpl {
   Node<QueryAggregate> *next_aggregate{nullptr};
   Node<QueryMerge> *next_merge{nullptr};
   Node<QueryConstraint> *next_constraint{nullptr};
+
+  template <typename Callback>
+  void ForEachView(Callback cb) const {
+    for (const auto &view : maps) {
+      cb(view.get());
+    }
+    for (const auto &view : selects) {
+      cb(view.get());
+    }
+    for (const auto &view : aggregates) {
+      cb(view.get());
+    }
+    for (const auto &view : merges) {
+      cb(view.get());
+    }
+    for (const auto &view : constraints) {
+      cb(view.get());
+    }
+    for (const auto &view : inserts) {
+      cb(view.get());
+    }
+  }
 
   std::vector<std::unique_ptr<Node<QueryColumn>>> columns;
   std::vector<std::unique_ptr<Node<QuerySelect>>> selects;

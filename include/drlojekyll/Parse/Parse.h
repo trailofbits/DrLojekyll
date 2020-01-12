@@ -81,6 +81,7 @@ class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
 
   bool IsNumber(void) const noexcept;
   bool IsString(void) const noexcept;
+  TypeLoc Type(void) const noexcept;
 
  protected:
   friend class ParsedVariable;
@@ -143,6 +144,7 @@ using ParsedArgumentUse = ParsedUse<ParsedPredicate>;
 // Represents a parsed variable.
 class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
  public:
+
   DisplayRange SpellingRange(void) const noexcept;
 
   // Returns the token corresponding with the name of this variable.
@@ -193,6 +195,14 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
 
   // Iterate over each use of this variable.
   NodeRange<ParsedVariable> Uses(void) const;
+
+  // Return the number of uses of this variable.
+  unsigned NumUses(void) const;
+
+  // Replace all uses of this variable with another variable. Returns `false`
+  // if the replacement didn't happen (e.g. mismatching types, or if the two
+  // variables are from different clauses).
+  bool ReplaceAllUses(ParsedVariable that) const;
 
  protected:
   friend class ParsedAssignment;
@@ -326,6 +336,8 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
 // predicate.
 class ParsedClause : public parse::ParsedNode<ParsedClause> {
  public:
+  // Create a new variable in this context of this clause.
+  ParsedVariable CreateVariable(TypeLoc type);
 
   // Traverse upward in the AST.
   static ParsedClause Containing(ParsedVariable var) noexcept;

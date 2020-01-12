@@ -44,6 +44,7 @@ class ParsedLiteral;
 class ParsedMessage;
 class ParsedPredicate;
 class ParsedVariable;
+class TypeLoc;
 class QueryBuilder;
 class QueryBuilderImpl;
 class QueryColumn;
@@ -91,8 +92,17 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool operator==(QueryColumn that) const noexcept;
   bool operator!=(QueryColumn that) const noexcept;
 
-  // Returns the column that is the "leader" of this column's equivalence class.
-  QueryColumn EquivalenceClass(void) const noexcept;
+  // Returns a unique ID representing the equivalence class of this column.
+  // Two columns with the same equivalence class will have the same values.
+  uint64_t EquivalenceClass(void) const noexcept;
+
+  // Number of uses of this column.
+  unsigned NumUses(void) const noexcept;
+
+  // Replace all uses of one column with another column. Returns `false` if
+  // type column types don't match, or if the columns are from different
+  // queries.
+  bool ReplaceAllUsesWith(QueryColumn that) const noexcept;
 
  private:
   friend class QueryConstraint;
@@ -105,6 +115,9 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   template <typename>
   friend class NodeIterator;
+
+  template <typename>
+  friend class Node;
 
   explicit QueryColumn(Node<QueryColumn> *impl_);
 };
@@ -197,6 +210,14 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
 
+  // Replace all uses of this view with `that` view. Returns `false` if the
+  // two views have different arities, column types, or are from different
+  // queries.
+  bool ReplaceAllUsesWith(QueryView that) const noexcept;
+
+  // Get a hash of this view.
+  uint64_t Hash(void) const noexcept;
+
  private:
   using query::QueryNode<QueryView>::QueryNode;
 };
@@ -233,9 +254,6 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
 
   // Returns the `nth` joined output column.
   QueryColumn NthColumn(unsigned n) const noexcept;
-
-  // The pivot columns.
-  NodeRange<QueryColumn> PivotColumns(void) const;
 
   // Returns the number of pivot columns. Some of the output columns are
   // equal to the pivot columns.

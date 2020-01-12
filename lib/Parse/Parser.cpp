@@ -2404,6 +2404,26 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             return;
           }
 
+          // Not allowed to negate inline declarations, as they might not be
+          // backed by actual relations.
+          if (pred->negation_pos.IsValid() &&
+              pred->declaration->inline_attribute.IsValid()) {
+            Error err(context->display_manager, SubTokenRange(),
+                      ParsedPredicate(pred.get()).SpellingRange());
+            err << "Cannot negate " << pred->declaration->KindName()
+                << " '" << pred->name
+                << "' because it has been marked as inline";
+
+            auto note = err.Note(
+                context->display_manager,
+                ParsedDeclaration(pred->declaration).SpellingRange(),
+                pred->declaration->inline_attribute.SpellingRange());
+            note << "Marked as inline here";
+
+            context->error_log.Append(std::move(err));
+            return;
+          }
+
           // If it's an aggregating functor then we need to follow-up with
           // the `over` keyword.
           auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred.get()));

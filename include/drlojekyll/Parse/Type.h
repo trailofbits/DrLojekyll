@@ -36,9 +36,6 @@ class TypeLoc {
   TypeLoc(const Token &tok);
   TypeLoc &operator=(const Token &tok) noexcept;
 
-  inline TypeLoc(void)
-      : kind(TypeKind::kInvalid) {}
-
   inline TypeKind Kind(void) const noexcept {
     return kind;
   }
@@ -59,7 +56,23 @@ class TypeLoc {
     return kind == TypeKind::kInvalid;
   }
 
+  inline bool operator==(TypeLoc that) {
+    return kind == that.kind;
+  }
+
+  inline bool operator!=(TypeLoc that) {
+    return kind != that.kind;
+  }
+
+  const char *Spelling(void) const noexcept;
+
  private:
+  template <typename>
+  friend class Node;
+
+  inline TypeLoc(void)
+      : kind(TypeKind::kInvalid) {}
+
   TypeKind kind;
   DisplayRange range;
 };

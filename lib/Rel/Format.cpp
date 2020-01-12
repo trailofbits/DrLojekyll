@@ -150,12 +150,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
 
-    auto i = 0u;
-    for (auto pivot_col : join.PivotColumns()) {
+    for (auto i = 0u; i < join.NumPivotColumns(); ++i) {
       auto color = kColors[i];
       os << "<TD rowspan=\"3\" bgcolor=\"" << color << "\">"
-         << pivot_col.Variable() << "</TD>";
-      ++i;
+         << join.NthPivotColumn(i).Variable() << "</TD>";
     }
 
     os << "<TD rowspan=\"2\">JOIN</TD>";
@@ -181,14 +179,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     assert(found);
 
     os << "</TR><TR>";
-    for (i = 0u; i < join.NumInputColumns(); ++i) {
+    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
       os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
     }
 
     os << kEndTable << ">];\n";
 
     // Link the joined columns to their sources.
-    for (i = 0u; i < join.NumInputColumns(); ++i) {
+    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
       auto col = join.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << join.UniqueId() << ":p" << i << " -> v"
@@ -198,7 +196,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto map : query.Maps()) {
     os << "v" << map.UniqueId() << " [ label=<" << kBeginTable;
-    os << "<TD rowspan=\"2\">MAP " << ParsedDeclarationName(map.Functor()) << "</TD>";
+    os << "<TD rowspan=\"2\">MAP "
+       << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";

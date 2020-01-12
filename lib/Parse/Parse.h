@@ -43,7 +43,7 @@ class VariableContext {
   Node<ParsedClause> * const clause;
 
   // First use of this variable in `clause`.
-  Node<ParsedVariable> * const first_use;
+  Node<ParsedVariable> *first_use;
 
   // List of assignments to this variable.
   UseList<ParsedAssignment> assignment_uses;
@@ -107,7 +107,7 @@ class UseBase {
         used_var(used_var_) {}
 
   const UseKind use_kind;
-  Node<ParsedVariable> * const used_var;
+  Node<ParsedVariable> *used_var;
 };
 
 template<typename T>

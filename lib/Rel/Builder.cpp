@@ -9,6 +9,7 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Util/EqualitySet.h>
 
 #include "Query.h"
 
@@ -45,37 +46,13 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   // Get the table for a given predicate.
   Node<QueryRelation> *TableFor(ParsedPredicate pred) {
-    const auto prev_next_table = context->next_relation;
-    const auto decl = ParsedDeclaration::Of(pred);
-    const auto table = TableFor(decl, pred.IsPositive());
-
-    // We just added this negative table. Go and create a select for it from
-    // the positive table, and create a fake insert into the negative table.
-    if (prev_next_table != context->next_relation && !pred.IsPositive()) {
-      const auto positive_table = TableFor(decl, true);
-      const auto select = new Node<QuerySelect>(
-          query.get(), positive_table, nullptr);
-      query->selects.emplace_back(select);
-
-      for (unsigned i = 0, max_i = decl.Arity(); i < max_i; ++i) {
-        Column column(decl.NthParameter(i), pred.NthArgument(i), i, 0);
-        AddColumn(select, column);
-      }
-
-      const auto insert = new Node<QueryInsert>(
-          reinterpret_cast<Node<QueryRelation> *>(table), decl);
-
-      for (auto col : select->columns) {
-        insert->input_columns.emplace_back(col);
-      }
-      query->inserts.emplace_back(insert);
-    }
-
-    return table;
+    return TableFor(ParsedDeclaration::Of(pred), pred.IsPositive());
   }
 
   Node<QueryStream> *StreamFor(ParsedLiteral literal) {
     std::string spelling(literal.Spelling());
+    spelling += literal.Type().Spelling();  // Make them type-specific.
+
     if (literal.IsNumber()) {
       // TODO(pag): Render the spelling into an actual integer value.
       auto &stream = context->constant_integers[spelling];
@@ -132,6 +109,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto stream = StreamFor(ParsedMessage::From(decl));
       const auto select = new Node<QuerySelect>(
           query.get(), nullptr, stream);
+      select->group_id = select_group_id;
       query->selects.emplace_back(select);
       return select;
 
@@ -139,6 +117,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto stream = StreamFor(ParsedFunctor::From(decl));
       const auto select = new Node<QuerySelect>(
           query.get(), nullptr, stream);
+      // NOTE(pag): Not setting `select->group_id` because every read from the
+      //            generator should be distinct, and seen as producing
+      //            potentially new results.
       query->selects.emplace_back(select);
       return select;
 
@@ -146,6 +127,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       auto table = TableFor(pred);
       const auto select = new Node<QuerySelect>(
           query.get(), table, nullptr);
+      select->group_id = select_group_id;
       query->selects.emplace_back(select);
       return select;
     }
@@ -170,6 +152,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto select = new Node<QuerySelect>(
         query.get(), nullptr,
         StreamFor(ParsedDeclaration::Of(pred)));
+    select->group_id = select_group_id;
     query->selects.emplace_back(select);
     initial_view = select;
   }
@@ -184,6 +167,12 @@ class QueryBuilderImpl : public SIPSVisitor {
     const auto stream = StreamFor(val);
     const auto select = new Node<QuerySelect>(
         query.get(), nullptr, stream);
+
+    // NOTE(pag): This is not using the traditional select group IDs. Instead,
+    //            we want all constant selects to be marked as being from
+    //            different groups so that they can all be subject to merging.
+    select->group_id = static_cast<unsigned>(query->selects.size());
+
     query->selects.emplace_back(select);
 
     const auto col = new Node<QueryColumn>(
@@ -258,8 +247,8 @@ class QueryBuilderImpl : public SIPSVisitor {
       DisjointSet::UnionInto(lhs_col, new_lhs_col);
       DisjointSet::UnionInto(rhs_col, new_rhs_col);
 
-      ReplaceAllUsesWith(lhs_col, new_lhs_col);
-      ReplaceAllUsesWith(rhs_col, new_rhs_col);
+      Node<QueryColumn>::ReplaceAllUsesWith(query.get(), lhs_col, new_lhs_col);
+      Node<QueryColumn>::ReplaceAllUsesWith(query.get(), rhs_col, new_rhs_col);
 
       query->constraints.emplace_back(constraint);
       query->columns.emplace_back(new_lhs_col);
@@ -604,58 +593,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  void ReplaceAllUsesWith(
-      Node<QueryColumn> *old_col, Node<QueryColumn> *new_col) {
-    if (old_col == new_col) {
-      return;
-    }
-
-    auto do_cols = [=] (std::vector<ColumnReference> &cols) {
-      for (auto &col : cols) {
-        if (col == old_col) {
-          col = new_col;
-        }
-      }
-    };
-
-    for (auto &join : query->joins) {
-      if (!old_col->num_uses) {
-        return;
-      }
-      do_cols(join->joined_columns);
-    }
-
-    for (auto &map : query->maps) {
-      if (!old_col->num_uses) {
-        return;
-      }
-      do_cols(map->input_columns);
-    }
-
-    for (auto &agg : query->aggregates) {
-      if (!old_col->num_uses) {
-        return;
-      }
-      do_cols(agg->group_by_columns);
-      do_cols(agg->bound_columns);
-      do_cols(agg->summarized_columns);
-    }
-
-    for (auto &insert : query->inserts) {
-      if (!old_col->num_uses) {
-        return;
-      }
-      do_cols(insert->input_columns);
-    }
-
-    for (auto &cmp : query->constraints) {
-      if (!old_col->num_uses) {
-        return;
-      }
-      do_cols(cmp->input_columns);
-    }
-  }
-
   void MergeAndProjectJoins(void) {
 
     std::unordered_map<ParsedVariable, unsigned> join_weight;
@@ -744,7 +681,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         join->columns.push_back(output_col);
 
         for (auto col : col_set) {
-          ReplaceAllUsesWith(col, output_col);
+          Node<QueryColumn>::ReplaceAllUsesWith(query.get(), col, output_col);
           DisjointSet::UnionInto(col, output_col);
         }
 
@@ -835,6 +772,77 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
+  // Perform common subexpression elimination, which will first identify
+  // candidate subexpressions for possible elimination using hashing, and
+  // then will perform recursive equality checks.
+  bool CSE(void) {
+
+    using CandidateList = std::vector<Node<QueryView> *>;
+    using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
+
+    auto apply_list = [=] (EqualitySet &eq, CandidateList &list,
+                           CandidateList &ipr) -> bool {
+      ipr.clear();
+      for (auto i = 0u; i < list.size(); ++i) {
+        auto v1 = list[i];
+        ipr.push_back(v1);
+
+        for (auto j = i + 1; j < list.size(); ++j) {
+          auto v2 = list[j];
+          eq.Clear();
+          if (v1->Equals(eq, v2)) {
+            assert(v1 != v2);
+            if (!QueryView(v2).ReplaceAllUsesWith(QueryView(v1))) {
+              ipr.push_back(v2);
+            }
+          } else {
+            ipr.push_back(v2);
+          }
+        }
+
+        list.swap(ipr);
+        ipr.clear();
+      }
+      return false;
+    };
+
+    auto apply_candidates = [=] (EqualitySet &eq, CandidateLists &lists,
+                                 CandidateList &ipr) -> bool {
+      bool changed = false;
+      for (auto &hash_list : lists) {
+        auto &list = hash_list.second;
+        if (1 < list.size()) {
+          if (apply_list(eq, list, ipr)) {
+            changed = true;
+          }
+        }
+      }
+      return changed;
+    };
+
+    std::vector<Node<QueryView> *> in_progress;
+    EqualitySet equalities;
+    CandidateLists candidates;
+    auto made_progress = false;
+
+    for (auto changed = true; changed; ) {
+      changed = false;
+      query->ForEachView([&] (Node<QueryView> *view) {
+        if (!view->columns.empty()) {
+          candidates[view->Hash()].push_back(view);
+        }
+      });
+
+      if (apply_candidates(equalities, candidates, in_progress)) {
+        changed = true;
+        made_progress = true;
+      }
+      candidates.clear();
+    }
+
+    return made_progress;
+  }
+
   void LinkEverything(void) {
     auto &next_select = query->next_select;
     auto &next_join = query->next_join;
@@ -849,6 +857,10 @@ class QueryBuilderImpl : public SIPSVisitor {
     Node<QueryColumn> **prev_col_ptr = &dummy;
 
     auto do_view = [&] (auto &view, auto &next_view_spec) {
+      if (view->columns.empty()) {
+        return;
+      }
+
       view->next = next_view_spec;
       view->next_view = next_view;
       next_view = next_view_spec = view.get();
@@ -883,9 +895,10 @@ class QueryBuilderImpl : public SIPSVisitor {
     // Link all the "full" joins together, and clear out and ignore the
     // outdated joins.
     for (const auto &view : query->joins) {
-      if (view->joined_columns.empty()) {
+      if (view->columns.empty() || view->joined_columns.empty()) {
         view->columns.clear();
         view->pivot_columns.clear();
+        view->joined_columns.clear();
 
       } else {
         assert(!view->pivot_columns.empty());
@@ -897,12 +910,6 @@ class QueryBuilderImpl : public SIPSVisitor {
           prev_col_ptr = &(col->next_in_view);
         }
 
-        prev_col_ptr = &dummy;
-        for (auto col : view->pivot_columns) {
-          *prev_col_ptr = col;
-          prev_col_ptr = &(col->next_pivot_in_join);
-        }
-
         view->next = next_join;
         view->next_view = next_view;
         next_view = next_join = view.get();
@@ -912,12 +919,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (const auto &insert : query->inserts) {
       insert->next = next_insert;
       next_insert = insert.get();
-    }
-
-    prev_col_ptr = &dummy;
-    for (const auto &col : query->columns) {
-      *prev_col_ptr = col.get();
-      prev_col_ptr = &(col->next);
     }
   }
 
@@ -943,6 +944,23 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
 
     query->inserts.emplace_back(insert);
+
+    // Look to see if there's any negative use of `decl`, and insert into
+    // there as well. This is equivalent to removing from the negative table.
+    for (auto pred : decl.NegativeUses()) {
+      table = TableFor(pred);
+      insert = new Node<QueryInsert>(
+          reinterpret_cast<Node<QueryRelation> *>(table), decl);
+
+      for (auto col = begin; col < end; ++col) {
+        const auto output_col = id_to_col[col->id];
+        assert(output_col != nullptr);
+        insert->input_columns.emplace_back(output_col);
+      }
+
+      query->inserts.emplace_back(insert);
+      break;  // Don't need more than one.
+    }
   }
 
   // When we build aggregates, we create new scopes for them, and in those
@@ -973,8 +991,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  void Commit(ParsedPredicate) override {}
-
   // Context shared by all queries created by this query builder. E.g. all
   // tables are shared across queries.
   std::shared_ptr<query::QueryContext> context;
@@ -999,6 +1015,10 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   std::vector<std::tuple<ComparisonOperator, unsigned, unsigned>>
       next_pending_compares;
+
+  // Selects within the same group cannot be merged. A group comes from
+  // importing a clause, given an assumption.
+  unsigned select_group_id{0};
 };
 
 // Build an insertion query for the best scoring, according to `scorer`,
@@ -1011,6 +1031,8 @@ void QueryBuilder::VisitClauseWithAssumption(
     impl->query = std::make_shared<QueryImpl>(impl->context);
   }
 
+  impl->select_group_id += 1;
+
   (void) SIPSScorer::VisitBestScoringPermuation(
       scorer, *impl, generator);
 }
@@ -1019,6 +1041,10 @@ void QueryBuilder::VisitClauseWithAssumption(
 Query QueryBuilder::BuildQuery(void) {
   impl->JoinGroups();
   impl->MergeAndProjectJoins();
+  impl->query->ForEachView([&] (Node<QueryView> *view) {
+    view->query = impl->query.get();
+  });
+  impl->CSE();
   impl->LinkEverything();
   Query ret(std::move(impl->query));
   impl.reset(new QueryBuilderImpl(impl->context));

@@ -10,7 +10,7 @@ class DisjointSet {
   DisjointSet *parent;
 
  public:
-  DisjointSet(unsigned id_);
+  DisjointSet(unsigned id_=0);
 
   DisjointSet *Find(void);
 
