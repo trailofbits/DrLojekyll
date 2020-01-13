@@ -195,15 +195,29 @@ class QueryBuilderImpl : public SIPSVisitor {
       return;
     }
 
-    if (lhs_col->view == rhs_col->view) {
-      assert(false && "TODO");
+    const auto lhs_view = lhs_col->view;
+    const auto rhs_view = rhs_col->view;
 
-    } else {
-      auto join = new Node<QueryJoin>;
-      query->joins.emplace_back(join);
-      join->joined_columns.emplace_back(lhs_col);
-      join->joined_columns.emplace_back(rhs_col);
+    if (lhs_view == rhs_view) {
+      assert(false && "TODO");
+      return;
     }
+
+//    if (lhs_view->IsSelect() && rhs_view->IsSelect()) {
+//      auto lhs_stream = reinterpret_cast<Node<QuerySelect> *>(lhs_view)->stream;
+//      auto rhs_stream = reinterpret_cast<Node<QuerySelect> *>(rhs_view)->stream;
+//      if (lhs_stream && rhs_stream &&
+//          ((lhs_stream->IsInput() || lhs_stream->IsConstant()) &&
+//           (rhs_stream->IsInput() || rhs_stream->IsConstant()))) {
+//        CreateComparison(ComparisonOperator::kEqual, lhs_col, rhs_col);
+//        return;
+//      }
+//    }
+
+    auto join = new Node<QueryJoin>;
+    query->joins.emplace_back(join);
+    join->joined_columns.emplace_back(lhs_col);
+    join->joined_columns.emplace_back(rhs_col);
   }
 
   void AssertEqual(unsigned lhs_id, unsigned rhs_id) override {
@@ -228,42 +242,50 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
+  void CreateComparison(ComparisonOperator op,
+                        Node<QueryColumn> *lhs_col,
+                        Node<QueryColumn> *rhs_col) {
+    const auto constraint = new Node<QueryConstraint>(
+        op, lhs_col, rhs_col);
+
+    auto new_lhs_col = new Node<QueryColumn>(
+        lhs_col->var, constraint, lhs_col->id, 0);
+
+    auto new_rhs_col = new Node<QueryColumn>(
+        rhs_col->var, constraint, rhs_col->id, 1);
+
+    DisjointSet::UnionInto(lhs_col, new_lhs_col);
+    DisjointSet::UnionInto(rhs_col, new_rhs_col);
+
+    Node<QueryColumn>::ReplaceAllUsesWith(
+        query.get(), lhs_col, new_lhs_col);
+    Node<QueryColumn>::ReplaceAllUsesWith(
+        query.get(), rhs_col, new_rhs_col);
+
+    query->constraints.emplace_back(constraint);
+    query->columns.emplace_back(new_lhs_col);
+    query->columns.emplace_back(new_rhs_col);
+    constraint->columns.push_back(new_lhs_col);
+    constraint->columns.push_back(new_rhs_col);
+
+    // Make sure everything uses the filtered versions.
+    for (auto &id_col : id_to_col) {
+      if (id_col.second->Find() == new_lhs_col) {
+        id_col.second = new_lhs_col;
+      } else if (id_col.second->Find() == new_rhs_col) {
+        id_col.second = new_rhs_col;
+      }
+    }
+  }
+
   void AssertInequality(ComparisonOperator op,
                         unsigned lhs_id, unsigned rhs_id) {
     auto lhs_col = id_to_col[lhs_id];
     auto rhs_col = id_to_col[rhs_id];
     if (lhs_col && rhs_col) {
       assert(lhs_col != rhs_col);
-
-      const auto constraint = new Node<QueryConstraint>(
-          op, lhs_col, rhs_col);
-
-      auto new_lhs_col = new Node<QueryColumn>(
-          lhs_col->var, constraint, lhs_col->id, 0);
-
-      auto new_rhs_col = new Node<QueryColumn>(
-          rhs_col->var, constraint, rhs_col->id, 1);
-
-      DisjointSet::UnionInto(lhs_col, new_lhs_col);
-      DisjointSet::UnionInto(rhs_col, new_rhs_col);
-
-      Node<QueryColumn>::ReplaceAllUsesWith(query.get(), lhs_col, new_lhs_col);
-      Node<QueryColumn>::ReplaceAllUsesWith(query.get(), rhs_col, new_rhs_col);
-
-      query->constraints.emplace_back(constraint);
-      query->columns.emplace_back(new_lhs_col);
-      query->columns.emplace_back(new_rhs_col);
-      constraint->columns.push_back(new_lhs_col);
-      constraint->columns.push_back(new_rhs_col);
-
-      // Make sure everything uses the filtered versions.
-      for (auto &id_col : id_to_col) {
-        if (id_col.second->Find() == new_lhs_col) {
-          id_col.second = new_lhs_col;
-        } else if (id_col.second->Find() == new_rhs_col) {
-          id_col.second = new_rhs_col;
-        }
-      }
+      assert(lhs_col->Find() != rhs_col->Find());
+      CreateComparison(op, lhs_col, rhs_col);
 
     } else {
       pending_compares.emplace_back(op, lhs_id, rhs_id);
@@ -681,8 +703,8 @@ class QueryBuilderImpl : public SIPSVisitor {
         join->columns.push_back(output_col);
 
         for (auto col : col_set) {
-          Node<QueryColumn>::ReplaceAllUsesWith(query.get(), col, output_col);
-          DisjointSet::UnionInto(col, output_col);
+          Node<QueryColumn>::ReplaceAllUsesWith(
+              query.get(), col, output_col);
         }
 
         if (1 < col_set.size()) {
@@ -917,8 +939,10 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
 
     for (const auto &insert : query->inserts) {
-      insert->next = next_insert;
-      next_insert = insert.get();
+      if (!insert->columns.empty()) {
+        insert->next = next_insert;
+        next_insert = insert.get();
+      }
     }
   }
 
@@ -941,6 +965,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto output_col = id_to_col[col->id];
       assert(output_col != nullptr);
       insert->input_columns.emplace_back(output_col);
+      insert->columns.emplace_back(output_col);
     }
 
     query->inserts.emplace_back(insert);
@@ -956,6 +981,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         const auto output_col = id_to_col[col->id];
         assert(output_col != nullptr);
         insert->input_columns.emplace_back(output_col);
+        insert->columns.emplace_back(output_col);
       }
 
       query->inserts.emplace_back(insert);
@@ -1044,7 +1070,18 @@ Query QueryBuilder::BuildQuery(void) {
   impl->query->ForEachView([&] (Node<QueryView> *view) {
     view->query = impl->query.get();
   });
-  impl->CSE();
+
+  // Comparisons between `QueryConstraint` nodes are not structural but pointer-
+  // based, so we sometimes need an extra push :-/
+  for (auto i = 0; i < 2; ++i) {
+    for (auto changed = true; changed;) {
+      changed = false;
+      if (impl->CSE()) {
+        changed = true;
+        i = 0;
+      }
+    }
+  }
   impl->LinkEverything();
   Query ret(std::move(impl->query));
   impl.reset(new QueryBuilderImpl(impl->context));

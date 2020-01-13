@@ -207,6 +207,7 @@ class Node<QueryView> : public DisjointSet {
   virtual bool IsAggregate(void) const noexcept;
   virtual bool IsMerge(void) const noexcept;
   virtual bool IsConstraint(void) const noexcept;
+  virtual bool IsInsert(void) const noexcept;
 
   // Clear out all columns and column uses in this view.
   virtual void Clear(void) noexcept = 0;
@@ -417,6 +418,7 @@ class Node<QueryInsert> : public Node<QueryView> {
       : relation(relation_),
         decl(decl_) {}
 
+  bool IsInsert(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
@@ -489,6 +491,9 @@ class QueryImpl {
       cb(view.get());
     }
     for (const auto &view : constraints) {
+      cb(view.get());
+    }
+    for (const auto &view : joins) {
       cb(view.get());
     }
     for (const auto &view : inserts) {

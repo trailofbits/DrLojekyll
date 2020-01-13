@@ -3316,18 +3316,17 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
 
   // Type the redecls. This applies to locals/exports only, as type annotations
   // are required on all parameters of other kinds of declarations.
-  auto type_redecls = [&] (const auto &redecls) {
-    if (redecls.empty()) {
-      return;
-    }
-    Node<ParsedDeclaration> *first = redecls[0].get();
-    for (auto i = 1u; i < redecls.size(); ++i) {
-      Node<ParsedDeclaration> *next = redecls[i].get();
-      for (auto j = 0u; j < first->parameters.size(); ++j) {
-        auto first_param = first->parameters[j].get();
-        auto next_param = next->parameters[j].get();
-        if (!next_param->parsed_opt_type) {
-          next_param->opt_type = first_param->opt_type;
+  auto type_redecls = [&] (const auto &decl_list) {
+    for (const auto &first : decl_list) {
+      const auto &redecls = first->context->redeclarations;
+      for (auto i = 1u; i < redecls.size(); ++i) {
+        Node<ParsedDeclaration> *next = redecls[i];
+        for (auto j = 0u; j < first->parameters.size(); ++j) {
+          auto first_param = first->parameters[j].get();
+          auto next_param = next->parameters[j].get();
+          if (!next_param->parsed_opt_type) {
+            next_param->opt_type = first_param->opt_type;
+          }
         }
       }
     }

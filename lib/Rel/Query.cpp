@@ -10,6 +10,9 @@
 #include <drlojekyll/Sema/SIPSAnalysis.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include <iostream>
+#include <iomanip>
+
 namespace hyde {
 namespace query {
 
@@ -142,6 +145,10 @@ bool Node<QueryView>::IsConstraint(void) const noexcept {
   return false;
 }
 
+bool Node<QueryView>::IsInsert(void) const noexcept {
+  return false;
+}
+
 bool Node<QuerySelect>::IsSelect(void) const noexcept {
   return true;
 }
@@ -163,6 +170,10 @@ bool Node<QueryMerge>::IsMerge(void) const noexcept {
 }
 
 bool Node<QueryConstraint>::IsConstraint(void) const noexcept {
+  return true;
+}
+
+bool Node<QueryInsert>::IsInsert(void) const noexcept {
   return true;
 }
 
@@ -202,6 +213,15 @@ void Node<QueryInsert>::Clear(void) noexcept {
   columns.clear();
   input_columns.clear();
 }
+
+namespace {
+
+static uint64_t MixedIndex(Node<QueryColumn> *col) {
+  uint64_t base = (3u + col->index) | col->view->index_mask;
+  return base * 0x85ebca6bull;
+}
+
+}  // namespace
 
 uint64_t Node<QuerySelect>::Hash(void) noexcept {
   if (hash) {
@@ -268,6 +288,7 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
 
   hash <<= 3;
   hash |= 2;
+
   return hash;
 }
 
@@ -291,7 +312,7 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   for (auto view : merged_views) {
     const auto view_hash = view->Hash();
     if (std::find(seen.begin(), seen.end(), view_hash) == seen.end()) {
-      hash ^= view_hash;  // Simple XOR mix as order isn't relevant.
+      hash ^= __builtin_rotateleft64(view_hash, view_hash & 0xFu);
       seen.push_back(view_hash);
     }
   }
@@ -315,7 +336,7 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
   // Mix in the hashes of the merged views and columns;
   for (auto input_col : input_columns) {
     hash = __builtin_rotateleft64(hash, 13);
-    hash ^= input_col->view->Hash() * input_col->index;
+    hash ^= input_col->view->Hash() * MixedIndex(input_col);
   }
 
   hash <<= 3;
@@ -336,19 +357,19 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
 
   // Mix in the hashes of the group by columns; these are unordered.
   for (auto input_col : group_by_columns) {
-    hash ^= input_col->view->Hash() * input_col->index;
+    hash ^= input_col->view->Hash() * MixedIndex(input_col);
   }
 
   // Mix in the hashes of the configuration columns; these are ordered.
   for (auto input_col : bound_columns) {
     hash = __builtin_rotateleft64(hash, 13);
-    hash ^= input_col->view->Hash() * input_col->index;
+    hash ^= input_col->view->Hash() * MixedIndex(input_col);
   }
 
   // Mix in the hashes of the summarized columns; these are ordered.
   for (auto input_col : summarized_columns) {
     hash = __builtin_rotateleft64(hash, 13);
-    hash ^= input_col->view->Hash() * input_col->index;
+    hash ^= input_col->view->Hash() * MixedIndex(input_col);
   }
 
   hash <<= 3;
@@ -367,9 +388,16 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   hash <<= 3;
   hash |= 6;
 
-  // Mix in the hashes of the group by columns; these are unordered.
-  for (auto input_col : joined_columns) {
-    hash ^= input_col->view->Hash() * input_col->index;
+  std::vector<uint64_t> seen;
+
+  // Mix in the hashes of the merged views. Don't double-mix an already seen
+  // hash, otherwise it will remove its effect.
+  for (auto &col : joined_columns) {
+    const auto view_hash = col->view->Hash();
+    if (std::find(seen.begin(), seen.end(), view_hash) == seen.end()) {
+      hash ^= __builtin_rotateleft64(view_hash, view_hash & 0xFu);
+      seen.push_back(view_hash);
+    }
   }
 
   hash <<= 3;
@@ -391,7 +419,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   // Mix in the hashes of the group by columns; these are ordered.
   for (auto input_col : input_columns) {
     hash = __builtin_rotateleft64(hash, 13);
-    hash ^= input_col->view->Hash() * input_col->index;
+    hash ^= input_col->view->Hash() * MixedIndex(input_col);
   }
 
   hash <<= 3;
@@ -491,6 +519,7 @@ bool Node<QuerySelect>::Equals(
 }
 
 bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
+
   if (!that_->IsJoin() || query != that_->query ||
       columns.size() != that_->columns.size()) {
     return false;
@@ -506,7 +535,6 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
     return true;
 
   } else if (Find() == that->Find()) {
-    EquateColumns(columns, that->columns);
     eq.Insert(this, that);
     return true;
   }
@@ -552,8 +580,8 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
 
   // Now go match up columns in both.
   for (auto v1_v2 : matches) {
-    const auto v1 = v1_v2.first;
-    const auto v2 = v1_v2.second;
+    const auto v2 = v1_v2.first;
+    const auto v1 = v1_v2.second;
     const auto max_i = v1->columns.size();
     assert(v2->columns.size() == max_i);
 
@@ -622,7 +650,7 @@ bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
 
 bool Node<QueryAggregate>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
-  if (!that_->IsMap() || query != that_->query ||
+  if (!that_->IsAggregate() || query != that_->query ||
       columns.size() != that_->columns.size()) {
     return false;
   }
@@ -673,7 +701,7 @@ bool Node<QueryAggregate>::Equals(
 
 bool Node<QueryMerge>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
-  if (!that_->IsSelect() || query != that_->query ||
+  if (!that_->IsMerge() || query != that_->query ||
       columns.size() != that_->columns.size()) {
     return false;
   }
@@ -758,13 +786,14 @@ bool Node<QueryMerge>::Equals(
 
 bool Node<QueryConstraint>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
-  if (!that_->IsSelect() || query != that_->query ||
+  if (!that_->IsConstraint() || query != that_->query ||
       columns.size() != that_->columns.size()) {
     return false;
   }
 
   const auto that = reinterpret_cast<Node<QueryConstraint> *>(that_);
-  if (input_columns.size() != 2 || that->input_columns.size() != 2 ||
+  if (input_columns.size() != 2 ||
+      that->input_columns.size() != 2 ||
       op != that->op) {
     return false;
   }
@@ -773,75 +802,46 @@ bool Node<QueryConstraint>::Equals(
     return true;
   }
 
-  const auto is_unordered = op == ComparisonOperator::kEqual ||
-                            op == ComparisonOperator::kNotEqual;
+  const auto v0_c0 = input_columns[0]->Find();
+  const auto v0_c1 = input_columns[1]->Find();
+  const auto v1_c0 = that->input_columns[0]->Find();
+  const auto v1_c1 = that->input_columns[1]->Find();
 
-  auto v0_c0 = input_columns[0];
-  auto v0_c1 = input_columns[1];
-  auto v0_c0_out = columns[0];
-  auto v0_c1_out = columns[1];
-  auto v0_c0_view = v0_c0->view;
-  auto v0_c1_view = v0_c1->view;
-  auto v0_c0_hash = v0_c0_view->Hash();
-  auto v0_c1_hash = v0_c1_view->Hash();
-  if (is_unordered && v0_c1_hash < v0_c0_hash) {
-    std::swap(v0_c0, v0_c1);
-    std::swap(v0_c0_out, v0_c1_out);
-    std::swap(v0_c0_view, v0_c1_view);
-    std::swap(v0_c0_hash, v0_c1_hash);
-  }
+  const auto eq_ordered = v0_c0 == v1_c0 && v0_c1 == v1_c1;
+  const auto eq_unordered = v0_c0 == v1_c1 && v0_c1 == v1_c0;
 
-  auto v1_c0 = that->input_columns[0];
-  auto v1_c1 = that->input_columns[1];
-  auto v1_c0_out = that->columns[0];
-  auto v1_c1_out = that->columns[1];
-  auto v1_c0_view = v1_c0->view;
-  auto v1_c1_view = v1_c1->view;
-  auto v1_c0_hash = v1_c0_view->Hash();
-  auto v1_c1_hash = v1_c1_view->Hash();
-  if (is_unordered && v1_c1_hash < v1_c0_hash) {
-    std::swap(v1_c0, v1_c1);
-    std::swap(v1_c0_out, v1_c1_out);
-    std::swap(v1_c0_view, v1_c1_view);
-    std::swap(v1_c0_hash, v1_c1_hash);
-  }
+  if (op == ComparisonOperator::kEqual || op == ComparisonOperator::kNotEqual) {
+    if (eq_ordered) {
+      DisjointSet::Union(v0_c0, v1_c0);
+      DisjointSet::Union(v0_c1, v1_c1);
+    } else if (eq_unordered) {
+      DisjointSet::Union(v0_c0, v1_c1);
+      DisjointSet::Union(v0_c1, v1_c0);
+    } else {
+      return false;
+    }
 
-  DisjointSet::Union(v0_c0, v0_c0_out);
-  DisjointSet::Union(v0_c1, v0_c1_out);
-
-  DisjointSet::Union(v1_c0, v1_c0_out);
-  DisjointSet::Union(v1_c1, v1_c1_out);
-
-  if (v0_c0_hash != v1_c0_hash || v0_c1_hash != v1_c1_hash ||
-      ((v0_c0->index | v0_c0_view->index_mask) !=
-       (v1_c0->index | v1_c0_view->index_mask)) ||
-      ((v0_c1->index | v0_c1_view->index_mask) !=
-       (v1_c1->index | v1_c1_view->index_mask)) ||
-      v0_c0->var.Type().Kind() != v1_c0->var.Type().Kind() ||
-      v0_c1->var.Type().Kind() != v1_c1->var.Type().Kind()) {
+  } else if (!eq_ordered) {
     return false;
+
+  } else {
+    DisjointSet::Union(v0_c0, v1_c0);
+    DisjointSet::Union(v0_c1, v1_c1);
   }
 
-  // In case of cycles, assume that these two constraints are equivalent.
+  if (ComparisonOperator::kNotEqual == op) {
+    assert(v0_c0->Find() != v0_c1->Find());
+    assert(v1_c0->Find() != v1_c1->Find());
+  }
+
   eq.Insert(this, that);
-
-  if (!v0_c0_view->Equals(eq, v1_c0_view) ||
-      !v0_c1_view->Equals(eq, v1_c1_view)) {
-    eq.Remove(this, that);
-    return false;
-  }
-
-  DisjointSet::Union(v0_c0, v1_c0);
-  DisjointSet::Union(v0_c1, v1_c1);
-  DisjointSet::Union(v0_c0_out, v1_c0_out);
-  DisjointSet::Union(v0_c1_out, v1_c1_out);
   DisjointSet::Union(this, that);
   return true;
 }
 
 bool Node<QueryInsert>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
-  if (!that_->IsSelect() || query != that_->query ||
+  if (!that_->IsInsert() || query != that_->query ||
       columns.size() != that_->columns.size()) {
     return false;
   }
@@ -888,14 +888,17 @@ Node<QueryConstraint>::Node(ComparisonOperator op_, Node<QueryColumn> *lhs_,
 
 namespace {
 
-static void ReplaceColumnUses(Node<QueryColumn> *old_col,
+static bool ReplaceColumnUses(Node<QueryColumn> *old_col,
                               Node<QueryColumn> *new_col,
                               std::vector<ColumnReference> &cols) {
+  auto ret = false;
   for (auto &col : cols) {
     if (col == old_col) {
       col = new_col;
+      ret = true;
     }
   }
+  return true;
 }
 
 }  // namespace
@@ -928,7 +931,12 @@ void Node<QueryColumn>::ReplaceAllUsesWith(
   }
 
   for (auto &insert : query->inserts) {
-    ReplaceColumnUses(old_col, new_col, insert->input_columns);
+    if (ReplaceColumnUses(old_col, new_col, insert->input_columns)) {
+      insert->columns.clear();
+      for (auto &col : insert->input_columns) {
+        insert->columns.push_back(col.get());
+      }
+    }
     insert->hash = 0;
   }
 
@@ -937,7 +945,13 @@ void Node<QueryColumn>::ReplaceAllUsesWith(
     cmp->hash = 0;
   }
 
-  DisjointSet::UnionInto(old_col, new_col);
+  for (auto &sel : query->selects) {
+    sel->hash = 0;
+  }
+
+  for (auto &merge : query->merges) {
+    merge->hash = 0;
+  }
 }
 
 bool QueryStream::IsConstant(void) const noexcept {
@@ -1029,9 +1043,121 @@ bool QueryView::ReplaceAllUsesWith(QueryView that) const noexcept {
     return false;
   }
 
-  // If one of them isn't a join, then do a straight up replacement.
-  if (!impl->IsJoin() || !that.impl->IsJoin()) {
+  // Joins are a special case for replacements, because we need to try to
+  // match up their columns, which might be out of order / have different
+  // variable names (e.g. due to them being from different clauses). Thus,
+  // we require that the two joins be equivalent first, and if they are,
+  // then we permit replacement.
+  if (impl->IsJoin() && that.impl->IsJoin()) {
+    EqualitySet eq;
+    if (!impl->Equals(eq, that.impl)) {
+      return false;
+    }
 
+    auto this_join = reinterpret_cast<Node<QueryJoin> *>(impl);
+    auto that_join = reinterpret_cast<Node<QueryJoin> *>(that.impl);
+
+    std::unordered_map<DisjointSet *, std::pair<Node<QueryView> *, Node<QueryView> *>> joined_views;
+
+    for (auto &joined_col : this_join->joined_columns) {
+      joined_views[joined_col->view->Find()].first = joined_col->view;
+    }
+
+    for (auto &joined_col : that_join->joined_columns) {
+      joined_views[joined_col->view->Find()].second = joined_col->view;
+    }
+
+    for (auto id_v1_v2 : joined_views) {
+      const auto v1 = id_v1_v2.second.first;
+      const auto v2 = id_v1_v2.second.second;
+      if (!v1 || !v2) {
+        // TODO(pag): Wtf?
+        return false;
+      }
+    }
+
+    // Now go match up columns in both.
+    std::unordered_map<ParsedVariable, ParsedVariable> var_map;
+    for (auto id_v1_v2 : joined_views) {
+      const auto v1 = id_v1_v2.second.first;
+      const auto v2 = id_v1_v2.second.second;
+      const auto max_i = v1->columns.size();
+      assert(v2->columns.size() == max_i);
+
+      for (auto i = 0u; i < max_i; ++i) {
+        const auto v1_col = v1->columns[i];
+        const auto v2_col = v2->columns[i];
+        var_map.emplace(v1_col->var, v2_col->var);
+        assert(v1_col->var.Type().Kind() == v2_col->var.Type().Kind());
+      }
+    }
+
+    std::unordered_map<ParsedVariable, Node<QueryColumn> *> col_map;
+    for (auto v2_col : that_join->columns) {
+      col_map.emplace(v2_col->var, v2_col);
+    }
+
+    // Replace all uses of this_join`s columns with `that_join`s columns.
+    for (auto v1_col : this_join->columns) {
+      const auto v2_var_it = var_map.find(v1_col->var);
+      assert(v2_var_it != var_map.end());
+      const auto v2_var = v2_var_it->second;
+      const auto v2_col_it = col_map.find(v2_var);
+      assert(v2_col_it != col_map.end());
+      const auto v2_col = v2_col_it->second;
+      assert(v2_col != v1_col);
+      Node<QueryColumn>::ReplaceAllUsesWith(this_join->query, v1_col, v2_col);
+    }
+
+  // Constraints are interesting when they are unordered. We could have two
+  // uses of an unordered constraint (eq, neq) and while the order of the
+  // input/output columns to these constraints are not super relevant, the
+  // order in which users use them are very relevant.
+  //
+  // NOTE(pag): The constraint equality is defined in terms of pointers, not
+  //            structurally.
+  } else if (impl->IsConstraint() && that.impl->IsConstraint()) {
+    EqualitySet eq;
+    if (!impl->Equals(eq, that.impl)) {
+      return false;
+    }
+
+    const auto this_cmp = reinterpret_cast<Node<QueryConstraint> *>(impl);
+    const auto that_cmp = reinterpret_cast<Node<QueryConstraint> *>(that.impl);
+
+    if (this_cmp->input_columns[0]->Find() ==
+        that_cmp->input_columns[0]->Find()) {
+      Node<QueryColumn>::ReplaceAllUsesWith(
+          impl->query, impl->columns[0], that.impl->columns[0]);
+      Node<QueryColumn>::ReplaceAllUsesWith(
+          impl->query, impl->columns[1], that.impl->columns[1]);
+
+    } else if (this_cmp->input_columns[0]->Find() ==
+               that_cmp->input_columns[1]->Find()) {
+      Node<QueryColumn>::ReplaceAllUsesWith(
+          impl->query, impl->columns[0], that.impl->columns[1]);
+      Node<QueryColumn>::ReplaceAllUsesWith(
+          impl->query, impl->columns[1], that.impl->columns[0]);
+
+    } else {
+      assert(false);
+      return false;  // How??
+    }
+
+    impl->columns[0]->next_in_view = nullptr;
+    impl->columns[1]->next_in_view = nullptr;
+
+  // One of them is an insert; if they aren't both inserts, then fail, but if
+  // they are, then we don't need to do the column replacement, as nothing
+  // uses the columns of inserts, and they are actually copies of their input
+  // columns.
+  } else if (impl->IsInsert() || that.impl->IsInsert()) {
+    return false;
+    if (!impl->IsInsert() || !that.impl->IsInsert()) {
+      return false;
+    }
+
+  } else {
     const auto max_i = impl->columns.size();
     for (auto i = 0u; i < max_i; ++i) {
       if (impl->columns[i]->var.Type().Kind() !=
@@ -1048,26 +1174,6 @@ bool QueryView::ReplaceAllUsesWith(QueryView that) const noexcept {
       Node<QueryColumn>::ReplaceAllUsesWith(impl->query, col, that_col);
       col->next_in_view = nullptr;
     }
-
-  } else {
-
-    // Joins are a special case for replacements, because we need to try to
-    // match up their columns, which might be out of order / have different
-    // variable names (e.g. due to them being from different clauses). Thus,
-    // we require that the two joins be equivalent first, and if they are,
-    // then we permit replacement.
-    EqualitySet eq;
-    if (!impl->Equals(eq, that.impl)) {
-      return false;
-    }
-
-    auto this_join = reinterpret_cast<Node<QueryJoin> *>(impl);
-    auto that_join = reinterpret_cast<Node<QueryJoin> *>(that.impl);
-
-    // TODO(pag): Implement me.
-    (void) this_join;
-    (void) that_join;
-    return false;
   }
 
   DisjointSet::Union(impl, that.impl);

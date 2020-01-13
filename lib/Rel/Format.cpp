@@ -286,7 +286,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << ParsedDeclarationName(insert.Relation().Declaration()) << "</TD>";
 
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
-      os << "<TD port=\"c" << i << "\"> &nbsp; </TD>";
+      os << "<TD port=\"c" << i << "\">"
+         << insert.NthColumn(i).Variable() << "</TD>";
     }
 
     os << kEndTable << ">];\n";
