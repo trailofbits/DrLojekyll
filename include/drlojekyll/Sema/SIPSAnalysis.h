@@ -64,19 +64,23 @@ class SIPSVisitor {
 
   // Asserts that the value of the variable identified by `lhs_id` must match
   // the value of the variable identified by `rhs_id`.
-  virtual void AssertEqual(unsigned lhs_id, unsigned rhs_id);
+  virtual void AssertEqual(ParsedVariable lhs_var, unsigned lhs_id,
+                           ParsedVariable rhs_var, unsigned rhs_id);
 
   // Asserts that the value of the variable identified by `lhs_id` must NOT
   // match the value of the variable identified by `rhs_id`.
-  virtual void AssertNotEqual(unsigned lhs_id, unsigned rhs_id);
+  virtual void AssertNotEqual(ParsedVariable lhs_var, unsigned lhs_id,
+                              ParsedVariable rhs_var, unsigned rhs_id);
 
   // Asserts that the value of the variable identified by `lhs_id` must be less
   // than the value of the variable identified by `rhs_id`.
-  virtual void AssertLessThan(unsigned lhs_id, unsigned rhs_id);
+  virtual void AssertLessThan(ParsedVariable lhs_var, unsigned lhs_id,
+                              ParsedVariable rhs_var, unsigned rhs_id);
 
   // Asserts that the value of the variable identified by `lhs_id` must be
   // greater than the value of the variable identified by `rhs_id`.
-  virtual void AssertGreaterThan(unsigned lhs_id, unsigned rhs_id);
+  virtual void AssertGreaterThan(ParsedVariable lhs_var, unsigned lhs_id,
+                                 ParsedVariable rhs_var, unsigned rhs_id);
 
   // Asserts the presence of some tuple. This is for negative predicates. Uses
   // the variable ids in the range `[begin_id, end_id)`.

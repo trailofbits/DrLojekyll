@@ -32,10 +32,10 @@ void SIPSVisitor::Begin(ParsedPredicate) {}
 void SIPSVisitor::DeclareParameter(const Column &) {}
 void SIPSVisitor::DeclareVariable(ParsedVariable, unsigned) {}
 void SIPSVisitor::DeclareConstant(ParsedLiteral, unsigned) {}
-void SIPSVisitor::AssertEqual(unsigned, unsigned) {}
-void SIPSVisitor::AssertNotEqual(unsigned, unsigned) {}
-void SIPSVisitor::AssertLessThan(unsigned, unsigned) {}
-void SIPSVisitor::AssertGreaterThan(unsigned, unsigned) {}
+void SIPSVisitor::AssertEqual(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
+void SIPSVisitor::AssertNotEqual(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
+void SIPSVisitor::AssertLessThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
+void SIPSVisitor::AssertGreaterThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertPresent(
     ParsedPredicate, const Column *, const Column *) {}
 void SIPSVisitor::AssertAbsent(
@@ -169,7 +169,8 @@ class SIPSGenerator::Impl {
 
   std::vector<SIPSVisitor::Column> bound_params;
   std::vector<SIPSVisitor::Column> free_params;
-  std::vector<std::pair<unsigned, unsigned>> deferred_asserts;
+  std::vector<std::tuple<ParsedVariable, unsigned, ParsedVariable, unsigned>> deferred_asserts
+  ;
 
   std::vector<SIPSVisitor::Column> aggregate_input_params;
   std::vector<SIPSVisitor::Column> aggregate_collection_params;
@@ -357,9 +358,11 @@ void SIPSGenerator::Impl::BindFreeParams(SIPSVisitor &visitor,
       goal_set = goal_set->Find();
       const auto free_set = vars[free_param.id]->Find();
       if (defer_asserts) {
-        deferred_asserts.emplace_back(goal_set->id, free_set->id);
+        deferred_asserts.emplace_back(
+            free_param.var, goal_set->id, free_param.var, free_set->id);
       } else {
-        visitor.AssertEqual(goal_set->id, free_set->id);
+        visitor.AssertEqual(free_param.var, goal_set->id,
+                            free_param.var, free_set->id);
       }
       goal_set = DisjointSet::Union(goal_set, free_set);
     }
@@ -368,7 +371,9 @@ void SIPSGenerator::Impl::BindFreeParams(SIPSVisitor &visitor,
 
 void SIPSGenerator::Impl::ApplyDeferredAsserts(SIPSVisitor &visitor) {
   for (auto &deferred_assert : deferred_asserts) {
-    visitor.AssertEqual(deferred_assert.first, deferred_assert.second);
+    visitor.AssertEqual(
+        std::get<0>(deferred_assert), std::get<1>(deferred_assert),
+        std::get<2>(deferred_assert), std::get<3>(deferred_assert));
   }
   deferred_asserts.clear();
 }
@@ -607,7 +612,7 @@ bool SIPSGenerator::Impl::VisitAssign(
   const auto var = comparison.LHS();
   auto &var_set = equalities[var];
   if (var_set) {
-    visitor.AssertEqual(var_set->Find()->id, const_id);
+    visitor.AssertEqual(var, var_set->Find()->id, var, const_id);
     var_set = DisjointSet::Union(var_set, vars[const_id].get());
   } else {
     var_set = vars[const_id].get();
@@ -625,14 +630,16 @@ bool SIPSGenerator::Impl::VisitAssign(
 //            comparisons?
 bool SIPSGenerator::Impl::VisitCompare(
     SIPSVisitor &visitor, ParsedComparison comparison) {
-  auto lhs_is_bound = equalities.count(comparison.LHS());
-  auto rhs_is_bound = equalities.count(comparison.RHS());
+  const auto lhs_var = comparison.LHS();
+  const auto rhs_var = comparison.RHS();
+  const auto lhs_is_bound = equalities.count(lhs_var);
+  const auto rhs_is_bound = equalities.count(rhs_var);
   if (!lhs_is_bound && !rhs_is_bound) {
     return false;
 
   } else if (lhs_is_bound && rhs_is_bound) {
-    auto &lhs_set = equalities[comparison.LHS()];
-    auto &rhs_set = equalities[comparison.RHS()];
+    auto &lhs_set = equalities[lhs_var];
+    auto &rhs_set = equalities[rhs_var];
 
     lhs_set = lhs_set->Find();
     rhs_set = rhs_set->Find();
@@ -640,7 +647,7 @@ bool SIPSGenerator::Impl::VisitCompare(
     switch (comparison.Operator()) {
       case ComparisonOperator::kEqual:
         if (lhs_set != rhs_set) {
-          visitor.AssertEqual(lhs_set->id, rhs_set->id);
+          visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
           lhs_set = DisjointSet::Union(lhs_set, rhs_set);
           rhs_set = lhs_set;
         }
@@ -648,7 +655,7 @@ bool SIPSGenerator::Impl::VisitCompare(
 
       case ComparisonOperator::kNotEqual:
         if (lhs_set != rhs_set) {
-          visitor.AssertNotEqual(lhs_set->id, rhs_set->id);
+          visitor.AssertNotEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
           return true;
 
         } else {
@@ -659,7 +666,7 @@ bool SIPSGenerator::Impl::VisitCompare(
 
       case ComparisonOperator::kLessThan:
         if (lhs_set != rhs_set) {
-          visitor.AssertLessThan(lhs_set->id, rhs_set->id);
+          visitor.AssertLessThan(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
           return true;
 
         } else {
@@ -670,7 +677,7 @@ bool SIPSGenerator::Impl::VisitCompare(
 
       case ComparisonOperator::kGreaterThan:
         if (lhs_set != rhs_set) {
-          visitor.AssertGreaterThan(lhs_set->id, rhs_set->id);
+          visitor.AssertGreaterThan(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
           return true;
 
         } else {
@@ -682,11 +689,27 @@ bool SIPSGenerator::Impl::VisitCompare(
 
   } else if (ComparisonOperator::kEqual == comparison.Operator()) {
     if (lhs_is_bound) {
-      equalities[comparison.RHS()] = equalities[comparison.LHS()];
+//      equalities[rhs_var] = equalities[lhs_var];
+//      return true;
+      auto lhs_set = equalities[lhs_var];
+      auto var_id = GetFreshVarId();
+      auto rhs_set = vars[var_id].get();
+      visitor.DeclareVariable(rhs_var, var_id);
+      visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
+      equalities.emplace(rhs_var, rhs_set);
+      DisjointSet::UnionInto(rhs_set, lhs_set);
       return true;
 
     } else {
-      equalities[comparison.LHS()] = equalities[comparison.RHS()];
+//      equalities[lhs_var] = equalities[rhs_var];
+//      return true;
+      auto rhs_set = equalities[rhs_var];
+      auto var_id = GetFreshVarId();
+      auto lhs_set = vars[var_id].get();
+      visitor.DeclareVariable(lhs_var, var_id);
+      visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
+      equalities.emplace(lhs_var, lhs_set);
+      DisjointSet::UnionInto(lhs_set, rhs_set);
       return true;
     }
 
@@ -1080,7 +1103,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
     // `pred(P0, P1)`, and then assign `P0=A`, and now discover that `P1=A` as
     // well.
     } else {
-      visitor.AssertEqual(goal_set->Find()->id, param_set->id);
+      visitor.AssertEqual(var, goal_set->Find()->id, var, param_set->id);
       goal_set = DisjointSet::Union(goal_set, param_set);
     }
   }
@@ -1100,6 +1123,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   for (auto aggregate : clause.Aggregates()) {
     aggregates.push_back(aggregate);
   }
+
   aggregates_processed.clear();
   aggregates_processed.resize(aggregates.size(), false);
 

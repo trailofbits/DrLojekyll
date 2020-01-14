@@ -1925,7 +1925,8 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(
       clause->body_variables.back()->next = var;
     }
     var->appearance = static_cast<unsigned>(
-        clause->body_variables.size() + clause->declaration->parameters.size());
+        clause->body_variables.size() +
+        clause->head_variables.size());
     clause->body_variables.emplace_back(var);
   }
 
@@ -2142,6 +2143,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       case 4:
         if (Lexeme::kPuncColon == lexeme) {
           state = 5;
+          continue;
+
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          clause->dot = tok;
+          state = 9;
           continue;
 
         } else {

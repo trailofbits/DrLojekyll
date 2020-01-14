@@ -38,6 +38,7 @@ class QueryNode {
 }  // namespace query
 
 enum class ComparisonOperator : int;
+class EqualitySet;
 class ParsedDeclaration;
 class ParsedFunctor;
 class ParsedLiteral;
@@ -213,7 +214,7 @@ class QueryView : public query::QueryNode<QueryView> {
   // Replace all uses of this view with `that` view. Returns `false` if the
   // two views have different arities, column types, or are from different
   // queries.
-  bool ReplaceAllUsesWith(QueryView that) const noexcept;
+  bool ReplaceAllUsesWith(EqualitySet &eq, QueryView that) const noexcept;
 
   // Get a hash of this view.
   uint64_t Hash(void) const noexcept;
@@ -267,6 +268,10 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // Returns the `nth` joined column.
   QueryColumn NthInputColumn(unsigned n) const noexcept;
 
+  // Returns the `nth` joined column's original input variable. This might
+  // not correspond with the variable of the nth input column, though.
+  ParsedVariable NthInputVariable(unsigned n) const noexcept;
+
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
 };
@@ -279,6 +284,10 @@ class QueryMap : public query::QueryNode<QueryMap> {
 
   unsigned NumInputColumns(void) const noexcept;
   QueryColumn NthInputColumn(unsigned n) const noexcept;
+
+  // The variable associated with the nth input. This may be different than
+  // the nth input column's variable, due to optimizations.
+  ParsedVariable NthInputVariable(unsigned n) const noexcept;
 
   // The resulting mapped columns.
   NodeRange<QueryColumn> Columns(void) const;
@@ -367,6 +376,9 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
 
   QueryColumn InputLHS(void) const;
   QueryColumn InputRHS(void) const;
+
+  ParsedVariable InputLHSVariable(void) const;
+  ParsedVariable InputRHSVariable(void) const;
 
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;

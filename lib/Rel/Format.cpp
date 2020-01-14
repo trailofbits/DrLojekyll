@@ -128,7 +128,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto input_rhs_view = QueryView::Containing(input_rhs);
     os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << lhs.Variable()
        << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << rhs.Variable()
-       << "</TD></TR><TR><TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>"
+       << "</TD></TR><TR><TD port=\"p0\">" << constraint.InputLHSVariable()
+       << "</TD><TD port=\"p1\">" << constraint.InputRHSVariable() << "</TD>"
        << kEndTable << ">];\n"
        << "v" << constraint.UniqueId() << ":p0 -> v"
        << input_lhs_view.UniqueId() << ":c" << input_lhs.UniqueId() << ";\n"
@@ -180,7 +181,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "</TR><TR>";
     for (auto i = 0u; i < join.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
+      os << "<TD port=\"p" << i << "\">" << join.NthInputVariable(i) << "</TD>";
     }
 
     os << kEndTable << ">];\n";
@@ -205,7 +206,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "</TR><TR>";
     for (auto i = 0u; i < map.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\"> &nbsp; </TD>";
+      os << "<TD port=\"p" << i << "\">" << map.NthInputVariable(i) << "</TD>";
     }
 
     // Empty space.

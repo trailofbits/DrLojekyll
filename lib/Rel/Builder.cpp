@@ -109,7 +109,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto stream = StreamFor(ParsedMessage::From(decl));
       const auto select = new Node<QuerySelect>(
           query.get(), nullptr, stream);
-      select->group_id = select_group_id;
+      select->group_ids.push_back(select_group_id);
       query->selects.emplace_back(select);
       return select;
 
@@ -127,7 +127,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       auto table = TableFor(pred);
       const auto select = new Node<QuerySelect>(
           query.get(), table, nullptr);
-      select->group_id = select_group_id;
+      select->group_ids.push_back(select_group_id);
       query->selects.emplace_back(select);
       return select;
     }
@@ -149,10 +149,18 @@ class QueryBuilderImpl : public SIPSVisitor {
     pending_compares.clear();
     next_pending_compares.clear();
 
-    auto select = new Node<QuerySelect>(
-        query.get(), nullptr,
-        StreamFor(ParsedDeclaration::Of(pred)));
-    select->group_id = select_group_id;
+    Node<QueryRelation> *rel = nullptr;
+    Node<QueryStream> *stream = nullptr;
+
+    auto decl = ParsedDeclaration::Of(pred);
+    if (decl.IsMessage()) {
+      stream = StreamFor(decl);
+    } else {
+      rel = TableFor(decl);
+    }
+
+    auto select = new Node<QuerySelect>(query.get(), rel, stream);
+    select->group_ids.push_back(select_group_id);
     query->selects.emplace_back(select);
     initial_view = select;
   }
@@ -171,7 +179,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     // NOTE(pag): This is not using the traditional select group IDs. Instead,
     //            we want all constant selects to be marked as being from
     //            different groups so that they can all be subject to merging.
-    select->group_id = static_cast<unsigned>(query->selects.size());
+    select->group_ids.push_back(~static_cast<unsigned>(query->selects.size()));
 
     query->selects.emplace_back(select);
 
@@ -216,11 +224,12 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     auto join = new Node<QueryJoin>;
     query->joins.emplace_back(join);
-    join->joined_columns.emplace_back(lhs_col);
-    join->joined_columns.emplace_back(rhs_col);
+    join->joined_columns.emplace_back(lhs_col->var, lhs_col);
+    join->joined_columns.emplace_back(rhs_col->var, rhs_col);
   }
 
-  void AssertEqual(unsigned lhs_id, unsigned rhs_id) override {
+  void AssertEqual(ParsedVariable lhs_var, unsigned lhs_id,
+                   ParsedVariable rhs_var, unsigned rhs_id) override {
     if (lhs_id == rhs_id) {
       return;
     }
@@ -238,15 +247,15 @@ class QueryBuilderImpl : public SIPSVisitor {
       lhs_col = rhs_col;
 
     } else {
-      pending_equalities.emplace_back(lhs_id, rhs_id);
+      pending_equalities.emplace_back(lhs_var, lhs_id, rhs_var, rhs_id);
     }
   }
 
   void CreateComparison(ComparisonOperator op,
-                        Node<QueryColumn> *lhs_col,
-                        Node<QueryColumn> *rhs_col) {
+                        ParsedVariable lhs_var, Node<QueryColumn> *lhs_col,
+                        ParsedVariable rhs_var, Node<QueryColumn> *rhs_col) {
     const auto constraint = new Node<QueryConstraint>(
-        op, lhs_col, rhs_col);
+        op, lhs_var, lhs_col, rhs_var, rhs_col);
 
     auto new_lhs_col = new Node<QueryColumn>(
         lhs_col->var, constraint, lhs_col->id, 0);
@@ -279,29 +288,36 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void AssertInequality(ComparisonOperator op,
-                        unsigned lhs_id, unsigned rhs_id) {
+                        ParsedVariable lhs_var, unsigned lhs_id,
+                        ParsedVariable rhs_var, unsigned rhs_id) {
     auto lhs_col = id_to_col[lhs_id];
     auto rhs_col = id_to_col[rhs_id];
     if (lhs_col && rhs_col) {
       assert(lhs_col != rhs_col);
       assert(lhs_col->Find() != rhs_col->Find());
-      CreateComparison(op, lhs_col, rhs_col);
+      CreateComparison(op, lhs_var, lhs_col, rhs_var, rhs_col);
 
     } else {
-      pending_compares.emplace_back(op, lhs_id, rhs_id);
+      pending_compares.emplace_back(op, lhs_var, lhs_id, rhs_var, rhs_id);
     }
   }
 
-  void AssertNotEqual(unsigned lhs_id, unsigned rhs_id) override {
-    AssertInequality(ComparisonOperator::kNotEqual, lhs_id, rhs_id);
+  void AssertNotEqual(ParsedVariable lhs_var, unsigned lhs_id,
+                      ParsedVariable rhs_var, unsigned rhs_id) override {
+    AssertInequality(
+        ComparisonOperator::kNotEqual, lhs_var, lhs_id, rhs_var, rhs_id);
   }
 
-  void AssertLessThan(unsigned lhs_id, unsigned rhs_id) override {
-    AssertInequality(ComparisonOperator::kLessThan, lhs_id, rhs_id);
+  void AssertLessThan(ParsedVariable lhs_var, unsigned lhs_id,
+                      ParsedVariable rhs_var, unsigned rhs_id) override {
+    AssertInequality(
+        ComparisonOperator::kLessThan, lhs_var, lhs_id, rhs_var, rhs_id);
   }
 
-  void AssertGreaterThan(unsigned lhs_id, unsigned rhs_id) override {
-    AssertInequality(ComparisonOperator::kGreaterThan, lhs_id, rhs_id);
+  void AssertGreaterThan(ParsedVariable lhs_var, unsigned lhs_id,
+                         ParsedVariable rhs_var, unsigned rhs_id) override {
+    AssertInequality(
+        ComparisonOperator::kGreaterThan, lhs_var, lhs_id, rhs_var, rhs_id);
   }
 
   void AddMap(ParsedFunctor functor, const Column *select_begin,
@@ -322,7 +338,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
       query->columns.emplace_back(mapped_col);
       map->columns.push_back(mapped_col);
-      map->input_columns.emplace_back(prev_val);
+      map->input_columns.emplace_back(col->var, prev_val);
       ++i;
     }
 
@@ -456,7 +472,8 @@ class QueryBuilderImpl : public SIPSVisitor {
       if (prev_col) {
         assert(false);  // Hrmm, shouldn't happen.
         DisjointSet::Union(prev_col, select_col);
-        pending_equalities.emplace_back(col->id, select_col->id);
+        pending_equalities.emplace_back(
+            col->var, col->id, select_col->var, select_col->id);
 
       } else {
         prev_col = select_col;
@@ -499,7 +516,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col = aggregate_begin; col < aggregate_end; ++col) {
       auto prev_col = id_to_col[col->id];
       assert(prev_col != nullptr);
-      agg->summarized_columns.emplace_back(prev_col);
+      agg->summarized_columns.emplace_back(col->var, prev_col);
     }
   }
 
@@ -524,12 +541,12 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       assert(prev_col != nullptr);
       assert(scoped_col != nullptr);
-      agg->group_by_columns.emplace_back(scoped_col);
+      agg->group_by_columns.emplace_back(col->var, scoped_col);
 
       // This is one of the bound parameters passed in to the summarizing
       // functor.
       if (is_bound) {
-        agg->bound_columns.emplace_back(scoped_col);
+        agg->bound_columns.emplace_back(col->var, scoped_col);
       }
 
       auto out_col = new Node<QueryColumn>(
@@ -592,8 +609,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto prev_len = pending_equalities.size();
       next_pending_equalities.swap(pending_equalities);
       pending_equalities.clear();
-      for (auto eq : next_pending_equalities) {
-        AssertEqual(eq.first, eq.second);
+      for (const auto &eq : next_pending_equalities) {
+        AssertEqual(std::get<0>(eq), std::get<1>(eq),
+                    std::get<2>(eq), std::get<3>(eq));
       }
       if (prev_len == pending_equalities.size()) {
         return false;
@@ -609,7 +627,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       pending_compares.clear();
       for (auto cmp : next_pending_compares) {
         AssertInequality(
-            std::get<0>(cmp), std::get<1>(cmp), std::get<2>(cmp));
+            std::get<0>(cmp), std::get<1>(cmp),
+            std::get<2>(cmp), std::get<3>(cmp),
+            std::get<4>(cmp));
       }
       assert(prev_len > pending_compares.size());
     }
@@ -617,16 +637,23 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void MergeAndProjectJoins(void) {
 
+    // At this stage, each join is a two-table join, pointing at the two
+    // tables it thinks it's joining. So we'll associate with the variables
+    // involved in the join the expected arity of the final product table
+    // being joined.
     std::unordered_map<ParsedVariable, unsigned> join_weight;
     for (const auto &join : query->joins) {
       for (auto col : join->joined_columns) {
-        join_weight[col->var] += 1;
+        auto &weight = join_weight[col->var];
+        weight += static_cast<unsigned>(col->view->columns.size());
       }
     }
 
-    std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>>
-        promoted_ids;
-
+    // We want to process joins that bring together the most stuff first.
+    //
+    // TODO(pag): This whole thing is super sketchy. I roughly know what I
+    //            want to measure, but I'm actually depending on a related
+    //            but different metric.
     std::sort(query->joins.begin(), query->joins.end(),
               [&](const std::unique_ptr<Node<QueryJoin>> &a,
                  const std::unique_ptr<Node<QueryJoin>> &b) {
@@ -634,8 +661,11 @@ class QueryBuilderImpl : public SIPSVisitor {
                           join_weight[a->joined_columns[1]->var];
                 auto wb = join_weight[b->joined_columns[0]->var] +
                           join_weight[b->joined_columns[1]->var];
-                return wa < wb;
+                return wa > wb;
               });
+
+    std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>>
+        promoted_ids;
 
     for (const auto &join : query->joins) {
 
@@ -650,9 +680,10 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       join->joined_columns.clear();
+      join->output_columns.clear();
 
       // The two columns to be joined already belong to the same join. When
-      // we doing the join processing here, we make sure to go find all the
+      // we're doing the join processing here, we make sure to go find all the
       // join pivots, so we can safely ignore these guys.
       if (col0->view == col1->view && col0->view->IsJoin()) {
         continue;
@@ -713,32 +744,47 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       // Add in the joined columns after, so that they don't get replaced.
+      auto i = 0u;
       for (const auto &id_col_set : promoted_ids) {
         const auto &col_set = id_col_set.second;
         if (col_set.empty()) {
           continue;
         }
 
+        assert(i < join->columns.size());
+
         for (auto col : col_set) {
-          join->joined_columns.emplace_back(col);
+          join->joined_columns.emplace_back(col->var, col);
+          join->output_columns.push_back(join->columns[i]);
         }
+
+        ++i;
       }
+
+      assert(!join->joined_columns.empty());
+      assert(!join->pivot_columns.empty());
     }
 
     std::unordered_set<Node<QueryJoin> *> joined_joins;
     std::unordered_set<Node<QueryView> *> joined_views;
+    std::unordered_map<Node<QueryColumn> *, Node<QueryColumn> *> inout_map;
 
     // Try to combine join trees that all operate on the same pivots.
     bool found = false;
     for (const auto &join : query->joins) {
       if (join->joined_columns.empty()) {
+        assert(join->columns.empty());
         continue;  // Taken over or merged.
       }
 
       joined_joins.clear();
       joined_views.clear();
+      inout_map.clear();
 
+      auto i = 0u;
       for (auto joined_col : join->joined_columns) {
+        assert(i < join->output_columns.size());
+        inout_map.emplace(joined_col.get(), join->output_columns[i++]);
 
         // We only care about joins of joins.
         if (!joined_col->view->IsJoin()) {
@@ -765,6 +811,12 @@ class QueryBuilderImpl : public SIPSVisitor {
           }
         }
 
+        auto j = 0u;
+        for (const auto &jjc : joined_join->joined_columns) {
+          assert(j < joined_join->output_columns.size());
+          inout_map.emplace(jjc.get(), joined_join->output_columns[j++]);
+        }
+
         joined_joins.insert(joined_join);
       }
 
@@ -774,31 +826,59 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       join->joined_columns.clear();
+      join->output_columns.clear();
 
       for (auto joined_join : joined_joins) {
-        join->joined_columns.insert(
-            join->joined_columns.end(),
-            joined_join->joined_columns.begin(),
-            joined_join->joined_columns.end());
-
-        joined_join->joined_columns.clear();
-        joined_join->pivot_columns.clear();
+        for (auto &joined_col : joined_join->joined_columns) {
+          const auto out_v = inout_map[joined_col.get()];
+          assert(out_v != nullptr);
+          const auto out_v2 = inout_map[out_v];
+          assert(out_v2 != nullptr);
+          join->joined_columns.emplace_back(joined_col->var, joined_col.get());
+          join->output_columns.push_back(out_v2);
+        }
       }
 
       for (auto joined_view : joined_views) {
-        join->joined_columns.insert(
-            join->joined_columns.end(),
-            joined_view->columns.begin(),
-            joined_view->columns.end());
+        for (auto joined_col : joined_view->columns) {
+          const auto out_v = inout_map[joined_col];
+          assert(out_v != nullptr);
+          join->joined_columns.emplace_back(joined_col->var, joined_col);
+          join->output_columns.push_back(out_v);
+        }
       }
+
+      for (auto joined_join : joined_joins) {
+        joined_join->Clear();
+      }
+
+      assert(!join->joined_columns.empty());
+      assert(!join->pivot_columns.empty());
     }
   }
+
+//  void PropagateAncestry(std::vector<Node<QueryView> *> &views) {
+//    views.clear();
+//    query->ForEachView([] (Node<QueryView> *v) {
+//      if (!v->columns.empty()) {
+//        if (v->IsSelect()) {
+//
+//        }
+//      }
+//    });
+//
+//    // Sort the views so that we process the ones closer to the inputs
+//    // before the ones that are close to the outputs (inserts).
+//    std::sort(views.begin(), views.end(),
+//              [] (Node<QueryView> *a, Node<QueryView> *b) {
+//                return a->Depth() < b->Depth();
+//              });
+//  }
 
   // Perform common subexpression elimination, which will first identify
   // candidate subexpressions for possible elimination using hashing, and
   // then will perform recursive equality checks.
   bool CSE(void) {
-
     using CandidateList = std::vector<Node<QueryView> *>;
     using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
 
@@ -811,13 +891,8 @@ class QueryBuilderImpl : public SIPSVisitor {
 
         for (auto j = i + 1; j < list.size(); ++j) {
           auto v2 = list[j];
-          eq.Clear();
-          if (v1->Equals(eq, v2)) {
-            assert(v1 != v2);
-            if (!QueryView(v2).ReplaceAllUsesWith(QueryView(v1))) {
-              ipr.push_back(v2);
-            }
-          } else {
+//          eq.Clear();
+          if (!QueryView(v2).ReplaceAllUsesWith(eq, QueryView(v1))) {
             ipr.push_back(v2);
           }
         }
@@ -828,37 +903,47 @@ class QueryBuilderImpl : public SIPSVisitor {
       return false;
     };
 
-    auto apply_candidates = [=] (EqualitySet &eq, CandidateLists &lists,
-                                 CandidateList &ipr) -> bool {
-      bool changed = false;
-      for (auto &hash_list : lists) {
-        auto &list = hash_list.second;
-        if (1 < list.size()) {
-          if (apply_list(eq, list, ipr)) {
-            changed = true;
-          }
-        }
-      }
-      return changed;
-    };
-
     std::vector<Node<QueryView> *> in_progress;
+    std::vector<Node<QueryView> *> ordered_views;
     EqualitySet equalities;
     CandidateLists candidates;
     auto made_progress = false;
 
     for (auto changed = true; changed; ) {
       changed = false;
+      ordered_views.clear();
       query->ForEachView([&] (Node<QueryView> *view) {
         if (!view->columns.empty()) {
           candidates[view->Hash()].push_back(view);
+          ordered_views.push_back(view);
         }
       });
 
-      if (apply_candidates(equalities, candidates, in_progress)) {
-        changed = true;
-        made_progress = true;
+      // Sort the views so that we process the ones closer to the inputs
+      // before the ones that are close to the outputs (inserts).
+      std::sort(ordered_views.begin(), ordered_views.end(),
+                [] (Node<QueryView> *a, Node<QueryView> *b) {
+                  return a->Depth() < b->Depth();
+                });
+
+      // Apply CSE in reverse postorder.
+      for (auto view : ordered_views) {
+        if (view->columns.empty()) {
+          continue;  // We've replaced it.
+        }
+
+        auto &eq_views = candidates[view->Hash()];
+        if (1 >= eq_views.size()) {
+          continue;  // Doesn't look structurally equivalent to anything.
+        }
+
+        in_progress.clear();
+        if (apply_list(equalities, eq_views, in_progress)) {
+          changed = true;
+          made_progress = true;
+        }
       }
+
       candidates.clear();
     }
 
@@ -921,6 +1006,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         view->columns.clear();
         view->pivot_columns.clear();
         view->joined_columns.clear();
+        view->output_columns.clear();
 
       } else {
         assert(!view->pivot_columns.empty());
@@ -964,7 +1050,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col = begin; col < end; ++col) {
       const auto output_col = id_to_col[col->id];
       assert(output_col != nullptr);
-      insert->input_columns.emplace_back(output_col);
+      insert->input_columns.emplace_back(col->var, output_col);
       insert->columns.emplace_back(output_col);
     }
 
@@ -980,7 +1066,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       for (auto col = begin; col < end; ++col) {
         const auto output_col = id_to_col[col->id];
         assert(output_col != nullptr);
-        insert->input_columns.emplace_back(output_col);
+        insert->input_columns.emplace_back(col->var, output_col);
         insert->columns.emplace_back(output_col);
       }
 
@@ -1033,14 +1119,15 @@ class QueryBuilderImpl : public SIPSVisitor {
   // Maps variable IDs to columns.
   std::unordered_map<unsigned, Node<QueryColumn> *> id_to_col;
 
-  std::vector<std::pair<unsigned, unsigned>> pending_equalities;
-  std::vector<std::pair<unsigned, unsigned>> next_pending_equalities;
+  using Equality = std::tuple<ParsedVariable, unsigned, ParsedVariable, unsigned>;
 
-  std::vector<std::tuple<ComparisonOperator, unsigned, unsigned>>
-      pending_compares;
+  std::vector<Equality> pending_equalities;
+  std::vector<Equality> next_pending_equalities;
 
-  std::vector<std::tuple<ComparisonOperator, unsigned, unsigned>>
-      next_pending_compares;
+  using Inequality = std::tuple<ComparisonOperator, ParsedVariable, unsigned, ParsedVariable, unsigned>;
+
+  std::vector<Inequality> pending_compares;
+  std::vector<Inequality> next_pending_compares;
 
   // Selects within the same group cannot be merged. A group comes from
   // importing a clause, given an assumption.

@@ -67,7 +67,7 @@ class ColumnReference {
  public:
   ColumnReference(const ColumnReference &that);
   ColumnReference(ColumnReference &&that) noexcept;
-  ColumnReference(Node<QueryColumn> *column_);
+  ColumnReference(ParsedVariable var_, Node<QueryColumn> *column_);
   ~ColumnReference(void);
 
   inline Node<QueryColumn> *operator->(void) const noexcept {
@@ -76,6 +76,10 @@ class ColumnReference {
 
   inline Node<QueryColumn> &operator*(void) const noexcept {
     return *column;
+  }
+
+  inline ParsedVariable Variable(void) const noexcept {
+    return var;
   }
 
   inline Node<QueryColumn> *get(void) const noexcept {
@@ -99,6 +103,12 @@ class ColumnReference {
   ColumnReference &operator=(Node<QueryColumn> *that) noexcept;
 
  private:
+  // The original variable associated with the referred column. We might
+  // switch out `column` with something else whose variable name differs,
+  // e.g. during optimizations, but we want to be able to maintain the
+  // original names to help some optimizations, e.g. joins.
+  const ParsedVariable var;
+
   Node<QueryColumn> *column{nullptr};
 };
 
@@ -195,10 +205,8 @@ class Node<QueryInput> final : public Node<QueryStream> {
 
 // A view "owns" its the columns pointed to by `columns`.
 template <>
-class Node<QueryView> : public DisjointSet {
+class Node<QueryView> {
  public:
-  using DisjointSet::DisjointSet;
-
   virtual ~Node(void);
 
   virtual bool IsSelect(void) const noexcept;
@@ -212,11 +220,20 @@ class Node<QueryView> : public DisjointSet {
   // Clear out all columns and column uses in this view.
   virtual void Clear(void) noexcept = 0;
 
-  // Hash this view, or return a cached hash. Useful for things like CSE.
+  // Hash this view, or return a cached hash. Useful for things like CSE. This
+  // is a structural hash.
   virtual uint64_t Hash(void) noexcept = 0;
 
-  // Returns `true` if `this` and `that` are structurally equivalent. Works
-  // even if there are cycles in the graph.
+  // This is the depth of this node from an input node. This is useful when
+  // running optimizations, where we ideally want to apply them bottom-up, i.e.
+  // closer to the input nodes, then further away.
+  virtual unsigned Depth(void) noexcept = 0;
+
+  // Returns `true` if `this` and `that` are structurally or pointer-input
+  // equivalent. Works even if there are cycles in the graph.
+  //
+  // NOTE(pag): Some nodes use structural equivalence, and others pointer-
+  //            equivalence, just to keep things sane.
   virtual bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept = 0;
 
   // Query to which this view belongs.
@@ -242,6 +259,9 @@ class Node<QueryView> : public DisjointSet {
   //            another column, then we won't accidentally compare valid index
   //            zero against subtractive-masked index zero.
   unsigned index_mask{0U};
+
+  // Depth from the input node. A zero value is invalid.
+  unsigned depth{0U};
 };
 
 template <>
@@ -257,6 +277,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
   bool IsSelect(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Next select in this query.
@@ -280,8 +301,12 @@ class Node<QuerySelect> final : public Node<QueryView> {
   //    node_pairs(A, B) : node(A), node(B).
   //    node_pairs(A, A) : node(A).
   //
-  // Then across these two clauses, some selects *can* be merged.
-  unsigned group_id{0};
+  // Then across these two clauses, some selects *can* be merged. We still need
+  // to be careful with how we go about merging selects across groups. There is
+  // a situation where we can get unlucky and cross merge everything down to
+  // some null case that we don't really want. What we need, then, is to
+  // maintain which groups a given select is derived from.
+  std::vector<unsigned> group_ids;
 };
 
 template <>
@@ -292,6 +317,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   bool IsJoin(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Next join in this query.
@@ -299,6 +325,11 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // The columns that are all joined together.
   std::vector<ColumnReference> joined_columns;
+
+  // Output columns, such that `joined_columns.size() == output_columns.size()`
+  // and there is a one-to-one correspondence between input/output columns
+  // in this join.
+  std::vector<Node<QueryColumn> *> output_columns;
 
   // Tells us which columns are pivots. These are a subset of the output
   // columns.
@@ -315,6 +346,7 @@ class Node<QueryMap> final : public Node<QueryView> {
   bool IsMap(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   inline explicit Node(ParsedFunctor functor_)
@@ -340,6 +372,7 @@ class Node<QueryAggregate> : public Node<QueryView> {
   bool IsAggregate(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   inline explicit Node(ParsedFunctor functor_)
@@ -378,6 +411,7 @@ class Node<QueryMerge> : public Node<QueryView> {
   bool IsMerge(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Next merge in this query.
@@ -389,14 +423,15 @@ class Node<QueryMerge> : public Node<QueryView> {
 template <>
 class Node<QueryConstraint> : public Node<QueryView> {
  public:
-  Node(ComparisonOperator op_, Node<QueryColumn> *lhs_,
-       Node<QueryColumn> *rhs_);
+  Node(ComparisonOperator op_, ParsedVariable lhs_var, Node<QueryColumn> *lhs_,
+       ParsedVariable rhs_var, Node<QueryColumn> *rhs_);
 
   virtual ~Node(void);
 
   bool IsConstraint(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   std::vector<ColumnReference> input_columns;
@@ -421,6 +456,7 @@ class Node<QueryInsert> : public Node<QueryView> {
   bool IsInsert(void) const noexcept override;
   void Clear(void) noexcept override;
   uint64_t Hash(void) noexcept override;
+  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   Node<QueryInsert> *next{nullptr};
