@@ -9,7 +9,8 @@ function(rel source_dir config)
         "${source_dir}/Builder.cpp"
         "${source_dir}/Format.cpp"
         "${source_dir}/Query.h"
-        "${source_dir}/Query.cpp")
+        "${source_dir}/Query.cpp"
+        "${source_dir}/Visitor.h")
 
     target_link_libraries(rel-${config} PUBLIC
         sema-${config})

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/Node.h>
 
 #include <memory>
@@ -74,19 +75,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsMap(void) const noexcept;
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
-
-  // These are group by columns. The idea with group by columns is that they are
-  // not used in the actual aggregation functor, and thus, we would want as many
-  // functor instances as there are collections.
-  bool IsAggregateGroup(void) const noexcept;
-
-  // These are bound parameters to aggregate functors, and thus can be thought
-  // of as being configuration parameters. They are also a sort of group-by
-  // parameter.
-  bool IsAggregateConfig(void) const noexcept;
-
-  // These are the summarized values.
-  bool IsAggregateSummary(void) const noexcept;
+  bool IsAggregate(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
 
@@ -106,6 +95,8 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool ReplaceAllUsesWith(QueryColumn that) const noexcept;
 
  private:
+  using query::QueryNode<QueryColumn>::QueryNode;
+
   friend class QueryConstraint;
   friend class QueryInsert;
   friend class QueryJoin;
@@ -119,8 +110,6 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   template <typename>
   friend class Node;
-
-  explicit QueryColumn(Node<QueryColumn> *impl_);
 };
 
 // A table in a query. Corresponds with a declared predicate in a Datalog.
@@ -147,6 +136,10 @@ class QueryStream : public query::QueryNode<QueryStream> {
   bool IsInput(void) const noexcept;
 
  private:
+  friend class QueryGenerator;
+  friend class QueryConstant;
+  friend class QueryInput;
+
   using query::QueryNode<QueryStream>::QueryNode;
 };
 
@@ -184,7 +177,7 @@ class QueryInput : public query::QueryNode<QueryInput> {
   const ParsedDeclaration &Declaration(void) const noexcept;
 
   // The input columns.
-  NodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
   static QueryInput &From(QueryStream &stream);
 
@@ -202,9 +195,10 @@ class QueryView : public query::QueryNode<QueryView> {
  public:
   static QueryView Containing(QueryColumn col);
 
-  NodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
   bool IsSelect(void) const noexcept;
+  bool IsTuple(void) const noexcept;
   bool IsJoin(void) const noexcept;
   bool IsMap(void) const noexcept;
   bool IsAggregate(void) const noexcept;
@@ -228,7 +222,7 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
  public:
 
   // The selected columns.
-  NodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
   static QuerySelect &From(QueryView &view);
 
@@ -247,30 +241,30 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
  public:
   static QueryJoin &From(QueryView &view);
 
-  // The resulting joined columns.
-  NodeRange<QueryColumn> Columns(void) const;
+  // The resulting joined columns. This includes pivots and non-pivots. Pivots
+  // are ordered first.
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
-  // Returns the number of joined output columns
-  unsigned Arity(void) const noexcept;
+  // The number of output columns. This is the number of all non-pivot incoming
+  // columns.
+  unsigned NumOutputColumns(void) const noexcept;
 
-  // Returns the `nth` joined output column.
-  QueryColumn NthColumn(unsigned n) const noexcept;
+  // Returns the `nth` joined output column. This column is not a pivot.
+  QueryColumn NthOutputColumn(unsigned n) const noexcept;
 
-  // Returns the number of pivot columns. Some of the output columns are
-  // equal to the pivot columns.
-  unsigned NumPivotColumns(void) const noexcept;
-
+  // Returns the `nth` pivot output column.
   QueryColumn NthPivotColumn(unsigned n) const noexcept;
 
-  // Returns the number of input columns
-  unsigned NumInputColumns(void) const noexcept;
+  // Returns the number of pivot columns. If the number of pivots is zero, then
+  // this join is the cross-product.
+  unsigned NumPivots(void) const noexcept;
 
-  // Returns the `nth` joined column.
+  // Returns the set of pivot columns proposed by the Nth incoming view.
+  UsedNodeRange<QueryColumn> NthPivotSet(unsigned n) const noexcept;
+
+  // Returns the input column corresponding to the `n`th output column, where
+  // this input column is not itself assocated with a pivot set.
   QueryColumn NthInputColumn(unsigned n) const noexcept;
-
-  // Returns the `nth` joined column's original input variable. This might
-  // not correspond with the variable of the nth input column, though.
-  ParsedVariable NthInputVariable(unsigned n) const noexcept;
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
@@ -284,13 +278,10 @@ class QueryMap : public query::QueryNode<QueryMap> {
 
   unsigned NumInputColumns(void) const noexcept;
   QueryColumn NthInputColumn(unsigned n) const noexcept;
-
-  // The variable associated with the nth input. This may be different than
-  // the nth input column's variable, due to optimizations.
-  ParsedVariable NthInputVariable(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
   // The resulting mapped columns.
-  NodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
@@ -310,7 +301,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   static QueryAggregate &From(QueryView &view);
 
   // The resulting mapped columns.
-  NodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
@@ -350,7 +341,7 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   static QueryMerge &From(QueryView &view);
 
   // The resulting mapped columns.
-  NodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const;
 
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
@@ -365,7 +356,9 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   QueryView NthMergedView(unsigned n) const noexcept;
 };
 
-// A constraint between two columns.
+// A constraint between two columns. The constraint results in either one
+// (in the case of equality) or two (inequality) output columns. The constraint
+// also passes through the other columns from the view.
 class QueryConstraint : public query::QueryNode<QueryConstraint> {
  public:
   static QueryConstraint &From(QueryView &view);
@@ -377,8 +370,8 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
   QueryColumn InputLHS(void) const;
   QueryColumn InputRHS(void) const;
 
-  ParsedVariable InputLHSVariable(void) const;
-  ParsedVariable InputRHSVariable(void) const;
+  DefinedNodeRange<QueryColumn> AttachedOutputColumns(void) const;
+  UsedNodeRange<QueryColumn> AttachedInputColumns(void) const;
 
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;
@@ -396,24 +389,43 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
   using query::QueryNode<QueryInsert>::QueryNode;
 };
 
+// An tuple packages one or more columns into a temporary relation for
+// convenience.
+class QueryTuple : public query::QueryNode<QueryTuple> {
+ public:
+  static QueryTuple &From(QueryView &view);
+
+  // The resulting mapped columns.
+  DefinedNodeRange<QueryColumn> Columns(void) const;
+
+  unsigned Arity(void) const noexcept;
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+
+ private:
+  using query::QueryNode<QueryTuple>::QueryNode;
+};
+
 // A query.
 class Query {
  public:
   ~Query(void);
 
-  NodeRange<QueryJoin> Joins(void) const;
-  NodeRange<QuerySelect> Selects(void) const;
-  NodeRange<QueryRelation> Relations(void) const;
-  NodeRange<QueryView> Views(void) const;
-  NodeRange<QueryInsert> Inserts(void) const;
-  NodeRange<QueryMap> Maps(void) const;
-  NodeRange<QueryAggregate> Aggregates(void) const;
-  NodeRange<QueryMerge> Merges(void) const;
-  NodeRange<QueryConstraint> Constraints(void) const;
-  NodeRange<QueryStream> Streams(void) const;
-  NodeRange<QueryInput> Inputs(void) const;
-  NodeRange<QueryGenerator> Generators(void) const;
-  NodeRange<QueryConstant> Constants(void) const;
+  DefinedNodeRange<QueryJoin> Joins(void) const;
+  DefinedNodeRange<QuerySelect> Selects(void) const;
+  DefinedNodeRange<QueryTuple> Tuples(void) const;
+  DefinedNodeRange<QueryRelation> Relations(void) const;
+  DefinedNodeRange<QueryInsert> Inserts(void) const;
+  DefinedNodeRange<QueryMap> Maps(void) const;
+  DefinedNodeRange<QueryAggregate> Aggregates(void) const;
+  DefinedNodeRange<QueryMerge> Merges(void) const;
+  DefinedNodeRange<QueryConstraint> Constraints(void) const;
+  DefinedNodeRange<QueryInput> Inputs(void) const;
+  DefinedNodeRange<QueryGenerator> Generators(void) const;
+  DefinedNodeRange<QueryConstant> Constants(void) const;
 
   Query(const Query &) = default;
   Query(Query &&) noexcept = default;

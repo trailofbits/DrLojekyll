@@ -12,6 +12,10 @@ class DisjointSet {
  public:
   DisjointSet(unsigned id_=0);
 
+  static void Reparent(DisjointSet *set) {
+    set->parent = set;
+  }
+
   DisjointSet *Find(void);
 
   template <typename T>

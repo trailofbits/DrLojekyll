@@ -36,6 +36,10 @@ class DefaultSIPSScorer final : public SIPSScorer {
   void Begin(ParsedPredicate) override;
   void Commit(ParsedPredicate) override;
 
+  void AssertPresent(
+      ParsedDeclaration, ParsedPredicate,
+      const Column *where_begin, const Column *where_end) override;
+
   void EnterFromWhereSelect(
       ParsedPredicate, ParsedDeclaration,
       const Column *where_begin, const Column *where_end,

@@ -126,15 +126,40 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto input_rhs = constraint.InputRHS();
     const auto input_lhs_view = QueryView::Containing(input_lhs);
     const auto input_rhs_view = QueryView::Containing(input_rhs);
-    os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << lhs.Variable()
-       << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << rhs.Variable()
-       << "</TD></TR><TR><TD port=\"p0\">" << constraint.InputLHSVariable()
-       << "</TD><TD port=\"p1\">" << constraint.InputRHSVariable() << "</TD>"
-       << kEndTable << ">];\n"
+
+    if (lhs == rhs) {
+      os << "</TD><TD port=\"c" << lhs.UniqueId() << "\" colspan=\"2\">"
+         << lhs.Variable();
+    } else {
+      os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << lhs.Variable()
+         << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << rhs.Variable();
+    }
+
+    const auto out_cols = constraint.AttachedOutputColumns();
+    for (auto col : out_cols) {
+      os << "</TD><TD port=\"c" << col.UniqueId() << "\">" << col.Variable();
+    }
+
+    os << "</TD></TR><TR><TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>";
+
+    const auto in_cols = constraint.AttachedInputColumns();
+
+    for (auto i = 0u; i < in_cols.size(); ++i) {
+      os << "<TD port=\"p" << (i + 2) << "\"> </TD>";
+    }
+
+    os << kEndTable << ">];\n"
        << "v" << constraint.UniqueId() << ":p0 -> v"
        << input_lhs_view.UniqueId() << ":c" << input_lhs.UniqueId() << ";\n"
        << "v" << constraint.UniqueId() << ":p1 -> v"
        << input_rhs_view.UniqueId() << ":c" << input_rhs.UniqueId() << ";\n";
+
+    for (auto i = 0u; i < in_cols.size(); ++i) {
+      const auto col = in_cols[i];
+      const auto view = QueryView::Containing(col);
+      os << "v" << constraint.UniqueId() << ":p" << (i + 2) << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
   }
 
   const char *kColors[] = {
@@ -151,47 +176,80 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
 
-    for (auto i = 0u; i < join.NumPivotColumns(); ++i) {
-      auto color = kColors[i];
-      os << "<TD rowspan=\"3\" bgcolor=\"" << color << "\">"
-         << join.NthPivotColumn(i).Variable() << "</TD>";
+//    auto num_pivot_inputs = 0u;
+//    auto num_pivots = join.NumPivotSets();
+//    for (auto i = 0u; i < join.NumPivotSets(); ++i) {
+//      num_pivot_inputs += join.NthPivotSet(i).size();
+//    }
+//
+//    for (auto i = 0u; i < join.NumPivotSets(); ++i) {
+//      auto color = kColors[i];
+//      os << "<TD colspan=\"" << join.NthPivotSet(i).size() << "\" bgcolor=\""
+//         << color << "\">" << join.NthPivotColumn(i).Variable() << "</TD>";
+//    }
+
+    const auto num_pivots = join.NumPivots();
+    const auto num_outputs = join.NumOutputColumns();
+    auto i = 0u;
+    for (; i < num_pivots; ++i) {
+      const auto pivot_set_size = join.NthPivotSet(i).size();
+      const auto col = join.NthPivotColumn(i);
+      const auto color = kColors[i];
+      os << "<TD port=\"c" << col.UniqueId() << "\" colspan=\""
+         << pivot_set_size << "\" bgcolor=\""
+         << color << "\">" << col.Variable() << "</TD>";
     }
 
-    os << "<TD rowspan=\"2\">JOIN</TD>";
+    if (num_pivots) {
+      os << "<TD rowspan=\"2\">JOIN</TD>";
+    } else {
+      os << "<TD rowspan=\"2\">PRODUCT</TD>";
+    }
 
-    auto found = false;
-    for (auto col : join.Columns()) {
-      for (auto j = 0u; j < join.NumPivotColumns(); ++j) {
-        auto pivot_col = join.NthPivotColumn(j);
-        if (pivot_col.EquivalenceClass() == col.EquivalenceClass()) {
-          os << "<TD bgcolor=\"" << kColors[j]
-             << "\" port=\"c" << col.UniqueId() << "\">"
-             << col.Variable() << "</TD>";
-          found = true;
-          goto handle_next;
-        }
-      }
+    for (i = 0u; i < num_outputs; ++i) {
+      const auto col = join.NthOutputColumn(i);
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
-    handle_next:
-      continue;
     }
 
-    assert(found);
-
     os << "</TR><TR>";
-    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\">" << join.NthInputVariable(i) << "</TD>";
+
+    auto j = 0u;
+    for (i = 0u; i < num_pivots; ++i) {
+      auto color = kColors[i];
+      for (auto col : join.NthPivotSet(i)) {
+        os << "<TD bgcolor=\"" << color << "\" port=\"p" << j << "\">"
+           << col.Variable() << "</TD>";
+        j++;
+      }
+    }
+
+    for (i = 0u; i < num_outputs; ++i) {
+      const auto col = join.NthOutputColumn(i);
+      os << "<TD port=\"p" << j << "\">" << col.Variable() << "</TD>";
+      j++;
     }
 
     os << kEndTable << ">];\n";
 
     // Link the joined columns to their sources.
-    for (auto i = 0u; i < join.NumInputColumns(); ++i) {
-      auto col = join.NthInputColumn(i);
-      auto view = QueryView::Containing(col);
-      os << "v" << join.UniqueId() << ":p" << i << " -> v"
+
+    j = 0u;
+    for (i = 0u; i < num_pivots; ++i) {
+      for (auto col : join.NthPivotSet(i)) {
+        const auto view = QueryView::Containing(col);
+        os << "v" << join.UniqueId() << ":p" << j << " -> v"
+           << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+        j++;
+      }
+    }
+
+    for (i = 0u; i < num_outputs; ++i) {
+      const auto col = join.NthInputColumn(i);
+      const auto view = QueryView::Containing(col);
+      os << "v" << join.UniqueId() << ":p" << j << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+      j++;
     }
   }
 
@@ -204,15 +262,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << col.Variable() << "</TD>";
     }
 
-    os << "</TR><TR>";
-    for (auto i = 0u; i < map.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\">" << map.NthInputVariable(i) << "</TD>";
+    if (map.NumInputColumns()) {
+      os << "</TR><TR>";
+      for (auto i = 0u; i < map.NumInputColumns(); ++i) {
+        os << "<TD port=\"p" << i << "\"> </TD>";
+      }
     }
 
-    // Empty space.
-    if (auto diff = (map.Arity() - map.NumInputColumns())) {
-      os << "<TD colspan=\"" << diff << "\"></TD>";
-    }
+//    // Empty space.
+//    if (auto diff = (map.Arity() - map.NumInputColumns())) {
+//      os << "<TD colspan=\"" << diff << "\"></TD>";
+//    }
 
     os << kEndTable << ">];\n";
 
@@ -244,7 +304,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
     auto num_summ = agg.NumSummarizedColumns();
     if (num_summ) {
-
       os << "<TD colspan=\"" << num_summ << "\">SUMMARIZE</TD>";
     }
     os << "</TR><TR>";
@@ -282,7 +341,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto insert : query.Inserts()) {
-    os << "i" << insert.UniqueId() << " [ label=<" << kBeginTable
+    os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable
        << "<TD>INSERT "
        << ParsedDeclarationName(insert.Relation().Declaration()) << "</TD>";
 
@@ -296,8 +355,30 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
       const auto col = insert.NthColumn(i);
       const auto view = QueryView::Containing(col);
-      os << "i" << insert.UniqueId() << ":c" << i << " -> "
+      os << "v" << insert.UniqueId() << ":c" << i << " -> "
          << "v" << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+  }
+
+  for (auto tuple : query.Tuples()) {
+    os << "v" << tuple.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD rowspan=\"2\">TUPLE</TD>";
+    for (auto col : tuple.Columns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << col.Variable() << "</TD>";
+    }
+    os << "</TR><TR>";
+    for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
+      os << "<TD port=\"p" << i << "\"> </TD>";
+    }
+    os << kEndTable << ">];\n";
+
+    // Link the input columns to their sources.
+    for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
+      auto col = tuple.NthInputColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << tuple.UniqueId() << ":p" << i << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
   }
 

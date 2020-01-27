@@ -36,6 +36,14 @@ void DefaultSIPSScorer::Commit(ParsedPredicate) {
   }
 }
 
+void DefaultSIPSScorer::AssertPresent(
+    ParsedDeclaration, ParsedPredicate,
+    const Column *where_begin, const Column *where_end) {
+  for (auto col = where_begin; col < where_end; ++col) {
+    impl->current_score.push_back('\0');
+  }
+}
+
 void DefaultSIPSScorer::EnterFromWhereSelect(
     ParsedPredicate, ParsedDeclaration,
     const Column *where_begin, const Column *where_end,

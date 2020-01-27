@@ -3,10 +3,12 @@
 function(util source_dir config)
     add_library(util-${config} STATIC
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Compiler.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DefUse.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DisjointSet.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/EqualitySet.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/FileManager.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Node.h"
+        "${source_dir}/DefUse.cpp"
         "${source_dir}/DisjointSet.cpp"
         "${source_dir}/EqualitySet.cpp"
         "${source_dir}/FileManager.cpp"

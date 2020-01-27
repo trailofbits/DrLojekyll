@@ -82,16 +82,16 @@ class SIPSVisitor {
   virtual void AssertGreaterThan(ParsedVariable lhs_var, unsigned lhs_id,
                                  ParsedVariable rhs_var, unsigned rhs_id);
 
-  // Asserts the presence of some tuple. This is for negative predicates. Uses
+  // Asserts the presence of some tuple. This is for positive predicates. Uses
   // the variable ids in the range `[begin_id, end_id)`.
   virtual void AssertPresent(
-      ParsedPredicate pred, const Column *begin,
+      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
       const Column *end);
 
   // Asserts the absence of some tuple. This is for negative predicates. Uses
   // the variable ids in the range `[begin_id, end_id)`.
   virtual void AssertAbsent(
-      ParsedPredicate pred, const Column *begin,
+      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
       const Column *end);
 
   // Tell the visitor that we're going to insert into a table.

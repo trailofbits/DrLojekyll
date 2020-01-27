@@ -37,9 +37,9 @@ void SIPSVisitor::AssertNotEqual(ParsedVariable, unsigned, ParsedVariable, unsig
 void SIPSVisitor::AssertLessThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertGreaterThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertPresent(
-    ParsedPredicate, const Column *, const Column *) {}
+    ParsedDeclaration, ParsedPredicate, const Column *, const Column *) {}
 void SIPSVisitor::AssertAbsent(
-    ParsedPredicate, const Column *, const Column *) {}
+    ParsedDeclaration, ParsedPredicate, const Column *, const Column *) {}
 void SIPSVisitor::Insert(
     ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::EnterFromWhereSelect(
@@ -221,7 +221,17 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
     do {
       bound_params.clear();
       auto i = 0u;
-      const auto decl = ParsedDeclaration::Of(predicate);
+      auto decl = ParsedDeclaration::Of(predicate);
+
+      if (!FindRedeclMatchingBindingConstraints(visitor, predicate, decl)) {
+        assert(!failed_bindings.empty());
+        visitor.CancelPredicate(
+            &(failed_bindings.front()),
+            &((&(failed_bindings.back()))[1]));
+        cancelled = true;
+        return;
+      }
+
       for (auto pred_arg : predicate.Arguments()) {
         bound_params.emplace_back(
             decl.NthParameter(i),
@@ -232,7 +242,7 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
       }
 
       visitor.AssertAbsent(
-          predicate,
+          decl, predicate,
           &(bound_params.front()),
           &((&(bound_params.back()))[1]));
 
@@ -554,7 +564,7 @@ bool SIPSGenerator::Impl::VisitPredicate(
   } else if (free_params.empty()) {
     assert(!bound_params.empty());
     visitor.AssertPresent(
-        predicate, &(bound_params.front()),
+        decl, predicate, &(bound_params.front()),
         &((&(bound_params.back()))[1]));
 
     return VisitPredicate(visitor, p + 1);
@@ -689,28 +699,28 @@ bool SIPSGenerator::Impl::VisitCompare(
 
   } else if (ComparisonOperator::kEqual == comparison.Operator()) {
     if (lhs_is_bound) {
-//      equalities[rhs_var] = equalities[lhs_var];
-//      return true;
-      auto lhs_set = equalities[lhs_var];
-      auto var_id = GetFreshVarId();
-      auto rhs_set = vars[var_id].get();
-      visitor.DeclareVariable(rhs_var, var_id);
-      visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
-      equalities.emplace(rhs_var, rhs_set);
-      DisjointSet::UnionInto(rhs_set, lhs_set);
+      equalities[rhs_var] = equalities[lhs_var];
       return true;
+//      auto lhs_set = equalities[lhs_var];
+//      auto var_id = GetFreshVarId();
+//      auto rhs_set = vars[var_id].get();
+//      visitor.DeclareVariable(rhs_var, var_id);
+//      visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
+//      equalities.emplace(rhs_var, rhs_set);
+//      DisjointSet::UnionInto(rhs_set, lhs_set);
+//      return true;
 
     } else {
-//      equalities[lhs_var] = equalities[rhs_var];
-//      return true;
-      auto rhs_set = equalities[rhs_var];
-      auto var_id = GetFreshVarId();
-      auto lhs_set = vars[var_id].get();
-      visitor.DeclareVariable(lhs_var, var_id);
-      visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
-      equalities.emplace(lhs_var, lhs_set);
-      DisjointSet::UnionInto(lhs_set, rhs_set);
+      equalities[lhs_var] = equalities[rhs_var];
       return true;
+//      auto rhs_set = equalities[rhs_var];
+//      auto var_id = GetFreshVarId();
+//      auto lhs_set = vars[var_id].get();
+//      visitor.DeclareVariable(lhs_var, var_id);
+//      visitor.AssertEqual(lhs_var, lhs_set->id, rhs_var, rhs_set->id);
+//      equalities.emplace(lhs_var, lhs_set);
+//      DisjointSet::UnionInto(lhs_set, rhs_set);
+//      return true;
     }
 
   } else {
@@ -966,7 +976,8 @@ bool SIPSGenerator::Impl::VisitAggregate(
     assert(!summarized_bound_params.empty());
 
     visitor.AssertPresent(
-        summarized_predicate, outer_group_begin, outer_group_end);
+        summarized_decl, summarized_predicate, outer_group_begin,
+        outer_group_end);
 
     visitor.Collect(aggregate_functor, functor_decl,
                     &(aggregate_collection_params.front()),

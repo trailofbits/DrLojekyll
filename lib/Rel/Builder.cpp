@@ -2,6 +2,7 @@
 
 #include <drlojekyll/Rel/Builder.h>
 
+#include <set>
 #include <tuple>
 #include <unordered_set>
 
@@ -27,53 +28,38 @@ class QueryBuilderImpl : public SIPSVisitor {
       : context(context_),
         query(std::make_shared<QueryImpl>(context_)) {}
 
+
   virtual ~QueryBuilderImpl(void) = default;
 
-  Node<QueryRelation> *TableFor(ParsedDeclaration decl, bool is_positive=true) {
+  REL *TableFor(ParsedDeclaration decl, bool is_positive=true) {
     assert(decl.IsLocal() || decl.IsExport() || decl.IsQuery());
 
-    auto &rels = is_positive ? context->relations : context->negative_relations;
+    auto &rels = is_positive ? context->decl_to_pos_relation :
+                               context->decl_to_neg_relation;
     auto &table = rels[decl];
     if (!table) {
-      table.reset(new Node<QueryRelation>(
-          decl, context->next_relation,
-          context->next_relation, is_positive));
-      context->next_relation = table.get();
+      table = context->relations.Create(decl, is_positive);
     }
 
-    return table.get();
+    return table;
   }
 
   // Get the table for a given predicate.
-  Node<QueryRelation> *TableFor(ParsedPredicate pred) {
+  REL *TableFor(ParsedPredicate pred) {
     return TableFor(ParsedDeclaration::Of(pred), pred.IsPositive());
   }
 
-  Node<QueryStream> *StreamFor(ParsedLiteral literal) {
-    std::string spelling(literal.Spelling());
-    spelling += literal.Type().Spelling();  // Make them type-specific.
+  STREAM *StreamFor(ParsedLiteral literal) {
+    if (literal.IsNumber() || literal.IsString()) {
+      std::string spelling(literal.Spelling());
+      spelling += literal.Type().Spelling();  // Make them type-specific.
 
-    if (literal.IsNumber()) {
       // TODO(pag): Render the spelling into an actual integer value.
-      auto &stream = context->constant_integers[spelling];
+      auto &stream = context->spelling_to_constant[spelling];
       if (!stream) {
-        stream.reset(new Node<QueryConstant>(
-            literal, context->next_stream, context->next_constant));
-        context->next_stream = stream.get();
-        context->next_constant = stream.get();
+        stream = context->constants.Create(literal);
       }
-      return stream.get();
-
-    } else if (literal.IsString()) {
-      // TODO(pag): Render the spelling into an actual string value.
-      auto &stream = context->constant_strings[spelling];
-      if (!stream) {
-        stream.reset(new Node<QueryConstant>(
-            literal, context->next_stream, context->next_constant));
-        context->next_stream = stream.get();
-        context->next_constant = stream.get();
-      }
-      return stream.get();
+      return stream;
 
     } else {
       assert(false);
@@ -81,151 +67,459 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  Node<QueryStream> *StreamFor(ParsedDeclaration decl) {
-    auto &stream = context->inputs[decl];
+  STREAM *StreamFor(ParsedDeclaration decl) {
+    auto &stream = context->decl_to_input[decl];
     if (!stream) {
-      stream.reset(new Node<QueryInput>(
-          decl, context->next_stream, context->next_input));
-      context->next_stream = stream.get();
-      context->next_input = stream.get();
+      stream = context->inputs.Create(decl);
     }
-    return stream.get();
+    return stream;
   }
 
-  Node<QueryStream> *StreamFor(ParsedFunctor functor) {
-    auto &stream = context->generators[functor];
+  STREAM *StreamFor(ParsedFunctor functor) {
+    auto &stream = context->decl_to_generator[functor];
     if (!stream) {
-      stream.reset(new Node<QueryGenerator>(
-          functor, context->next_stream, context->next_generator));
-      context->next_stream = stream.get();
-      context->next_generator = stream.get();
+      stream = context->generators.Create(functor);
     }
-    return stream.get();
+    return stream;
   }
 
-  Node<QuerySelect> *SelectFor(ParsedPredicate pred) {
+  SELECT *SelectFor(ParsedPredicate pred) {
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsMessage()) {
       const auto stream = StreamFor(ParsedMessage::From(decl));
-      const auto select = new Node<QuerySelect>(
-          query.get(), nullptr, stream);
+      const auto select = query->selects.Create(stream);
       select->group_ids.push_back(select_group_id);
-      query->selects.emplace_back(select);
       return select;
 
     } else if (decl.IsFunctor()) {
       const auto stream = StreamFor(ParsedFunctor::From(decl));
-      const auto select = new Node<QuerySelect>(
-          query.get(), nullptr, stream);
-      // NOTE(pag): Not setting `select->group_id` because every read from the
-      //            generator should be distinct, and seen as producing
-      //            potentially new results.
-      query->selects.emplace_back(select);
+      const auto select = query->selects.Create(stream);
+      select->group_ids.push_back(select_group_id);
       return select;
 
     } else {
       auto table = TableFor(pred);
-      const auto select = new Node<QuerySelect>(
-          query.get(), table, nullptr);
+      const auto select = query->selects.Create(table);
       select->group_ids.push_back(select_group_id);
-      query->selects.emplace_back(select);
       return select;
     }
   }
 
   // Add a column to a view.
-  Node<QueryColumn> *AddColumn(Node<QueryView> *view, const Column &column) {
-    const auto col = new Node<QueryColumn>(
-        column.var, view, column.id, column.n);
-    view->columns.push_back(col);
-    query->columns.emplace_back(col);
-    return col;
+  COL *AddColumn(VIEW *view, const Column &column) {
+    return view->columns.Create(column.var, view, column.id, column.n);
   }
 
   void Begin(ParsedPredicate pred) override {
     id_to_col.clear();
-    next_pending_equalities.clear();
-    pending_equalities.clear();
     pending_compares.clear();
     next_pending_compares.clear();
+    unresolved_compares.clear();
+    next_unresolved_compares.clear();
+    pending_presence_checks.clear();
+    joined_cols.clear();
+    where_cols.clear();
+    sips_cols.clear();
+    select_group_id += 1;
 
-    Node<QueryRelation> *rel = nullptr;
-    Node<QueryStream> *stream = nullptr;
-
-    auto decl = ParsedDeclaration::Of(pred);
+    const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsMessage()) {
-      stream = StreamFor(decl);
+      initial_view = query->selects.Create(StreamFor(decl));
+      input_view = initial_view;
     } else {
-      rel = TableFor(decl);
+      initial_view = query->selects.Create(TableFor(decl));
+      input_view = query->selects.Create(StreamFor(decl));
     }
 
-    auto select = new Node<QuerySelect>(query.get(), rel, stream);
-    select->group_ids.push_back(select_group_id);
-    query->selects.emplace_back(select);
-    initial_view = select;
+    initial_view->group_ids.push_back(select_group_id);
   }
 
   void DeclareParameter(const Column &param) override {
-    id_to_col[param.id] = AddColumn(initial_view, param);
+    auto &prev_colset = id_to_col[param.id];
+    const auto param_col = AddColumn(initial_view, param);
+    if (input_view != initial_view) {
+      AddColumn(input_view, param);
+    }
+    if (prev_colset) {
+      const auto prev_col = prev_colset->Leader();
+      pending_compares.emplace_back(
+          ComparisonOperator::kEqual, prev_col->var, prev_col,
+          param_col->var, param_col);
+    } else {
+      prev_colset = param_col->equiv_columns;
+    }
   }
 
   // Constants are like infinitely sized tables with a single size. You
   // select from them.
   void DeclareConstant(ParsedLiteral val, unsigned id) override {
+
     const auto stream = StreamFor(val);
-    const auto select = new Node<QuerySelect>(
-        query.get(), nullptr, stream);
 
-    // NOTE(pag): This is not using the traditional select group IDs. Instead,
-    //            we want all constant selects to be marked as being from
-    //            different groups so that they can all be subject to merging.
-    select->group_ids.push_back(~static_cast<unsigned>(query->selects.size()));
+    auto &prev_colset = id_to_col[id];
+    if (prev_colset) {
+      const auto prev_col = prev_colset->Leader();
+      const auto sel = prev_col->view->AsSelect();
+      assert(sel != nullptr);
+      assert(sel->stream);
+      assert(sel->stream->AsConstant() != nullptr);
+      return;
+    }
 
-    query->selects.emplace_back(select);
+    const auto select = query->selects.Create(stream);
+    const auto col = select->columns.Create(
+        ParsedVariable::AssignedTo(val), select, id, 0u);
 
-    const auto col = new Node<QueryColumn>(
-        ParsedVariable::AssignedTo(val), select, id, 0);
-    select->columns.push_back(col);
-    query->columns.emplace_back(col);
-
-    auto &prev_col = id_to_col[id];
-    assert(!prev_col);
-    prev_col = select->columns[0];
+    prev_colset = col->equiv_columns;
   }
 
-  void AssertEqualImpl(Node<QueryColumn> *lhs_col, Node<QueryColumn> *rhs_col) {
-    DisjointSet::Union(lhs_col, rhs_col);
+  template <typename T>
+  std::vector<COL *> ViewFor(const T &cols) {
+    std::vector<COL *> ret_cols;
 
-    assert(!lhs_col->view->IsJoin());
-    assert(!rhs_col->view->IsJoin());
+    VIEW *tuple_view = cols[0]->Find()->view;
+    for (COL *col : cols) {
+      col = col->Find();
+      if (col->view != tuple_view) {
+        goto make_tuple;
+      }
+      ret_cols.push_back(col);
+    }
 
-    if (lhs_col == rhs_col) {
+    return ret_cols;
+
+  make_tuple:
+    ret_cols.clear();
+    const auto tuple = query->tuples.Create();
+    for (COL *col : cols) {
+      col = col->Find();
+      auto out_col = tuple->columns.Create(
+          col->var, tuple, col->id, tuple->columns.Size());
+      COL::Union(col, out_col);
+      col->ReplaceAllUsesWith(out_col);
+      ret_cols.push_back(out_col);
+    }
+
+    for (COL *col : cols) {
+      tuple->input_columns.AddUse(col);
+    }
+
+    return ret_cols;
+  }
+
+  // Create a join of some set of columns against all columns in a particular
+  // relation.
+  //
+  // TODO(pag): We do `Find` on all columns in `cols`, but not all columns
+  //            in `select`. Maybe do that too.
+  void CreateFullJoin(VIEW *select, std::vector<COL *> &cols) {
+    if (cols.empty()) {
       return;
     }
 
-    const auto lhs_view = lhs_col->view;
-    const auto rhs_view = rhs_col->view;
+    const auto num_cols = select->columns.Size();
+    assert(num_cols == cols.size());
 
-    if (lhs_view == rhs_view) {
-      assert(false && "TODO");
+    const auto select_cols = ViewFor(select->columns);
+    const auto tuple_cols = ViewFor(cols);
+
+    assert(select_cols.size() == num_cols);
+    assert(tuple_cols.size() == num_cols);
+
+    const auto lhs_view = select_cols[0]->view;
+    const auto rhs_view = tuple_cols[0]->view;
+
+    // This isn't actually a full join! This can happen when the most up-to-date
+    // versions of the columns from either the select or the tuple come from
+    // "larger" views, i.e. views that have more columns than `num_cols`.
+    if (lhs_view->columns.Size() != num_cols ||
+        rhs_view->columns.Size() != num_cols) {
+      for (auto i = 0u; i < num_cols; ++i) {
+        const auto lhs_col = select_cols[i];
+        const auto rhs_col = tuple_cols[i];
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, lhs_col->var, lhs_col,
+            rhs_col->var, rhs_col);
+      }
       return;
     }
 
-//    if (lhs_view->IsSelect() && rhs_view->IsSelect()) {
-//      auto lhs_stream = reinterpret_cast<Node<QuerySelect> *>(lhs_view)->stream;
-//      auto rhs_stream = reinterpret_cast<Node<QuerySelect> *>(rhs_view)->stream;
-//      if (lhs_stream && rhs_stream &&
-//          ((lhs_stream->IsInput() || lhs_stream->IsConstant()) &&
-//           (rhs_stream->IsInput() || rhs_stream->IsConstant()))) {
-//        CreateComparison(ComparisonOperator::kEqual, lhs_col, rhs_col);
-//        return;
-//      }
-//    }
+    auto join = query->joins.Create();
+    for (auto i = 0u; i < num_cols; ++i) {
+      const auto sel_col = select_cols[i];
+      const auto tuple_col = tuple_cols[i];
+      auto join_col = join->columns.Create(
+          sel_col->var, join, sel_col->id, join->columns.Size());
 
-    auto join = new Node<QueryJoin>;
-    query->joins.emplace_back(join);
-    join->joined_columns.emplace_back(lhs_col->var, lhs_col);
-    join->joined_columns.emplace_back(rhs_col->var, rhs_col);
+      COL::Union(sel_col, join_col);
+      COL::Union(tuple_col, join_col);
+
+      tuple_col->ReplaceAllUsesWith(join_col);
+      sel_col->ReplaceAllUsesWith(join_col);
+
+      join->out_to_in.emplace(join_col, join);
+      join->num_pivots++;
+    }
+
+    for (auto i = 0u; i < num_cols; ++i) {
+      const auto sel_col = select_cols[i];
+      const auto tuple_col = tuple_cols[i];
+      auto input_cols = join->out_to_in.find(join->columns[i]);
+      input_cols->second.AddUse(sel_col);
+      input_cols->second.AddUse(tuple_col);
+    }
+  }
+
+  // Create a join that is the cross-product of two relations. Return the new
+  // values of `lhs` and `rhs` in this product table.
+  std::pair<COL *, COL *> CreateProduct(COL *lhs, COL *rhs) {
+    std::vector<COL *> seen;
+    seen.reserve(2);
+
+    // Drill down and find the source of `col`. If `col` is from another
+    // cross-product, then go take its source column, rather than possibly
+    // merging in the whole product relation.
+    auto drill_down = [&seen] (COL *col) {
+      while (true) {
+        if (std::find(seen.begin(), seen.end(), col) != seen.end()) {
+          return col;
+        }
+
+        seen.push_back(col);
+
+        if (auto view_join = col->view->AsJoin()) {
+          if (view_join->num_pivots) {
+            return col;
+
+          } else {
+            auto in_set = view_join->out_to_in.find(col);
+            assert(in_set != view_join->out_to_in.end());
+            assert(in_set->second.Size() == 1);
+
+            col = in_set->second[0];
+          }
+        } else {
+          return col;
+        }
+      }
+    };
+
+    lhs = drill_down(lhs);
+    rhs = drill_down(rhs);
+
+    if (lhs->view == rhs->view) {
+      return {lhs, rhs};
+    }
+
+    std::pair<COL *, COL *> ret = {nullptr, nullptr};
+
+    auto join = query->joins.Create();
+    for (auto view : {lhs->view, rhs->view}) {
+      for (auto col : view->columns) {
+        const auto out_col = join->columns.Create(
+            col->var, join, col->id, join->columns.Size());
+
+        join->out_to_in.emplace(out_col, join);
+
+        COL::Union(out_col, col);
+        col->ReplaceAllUsesWith(out_col);
+
+        if (col == lhs) {
+          ret.first = out_col;
+        } else if (col == rhs) {
+          ret.second = out_col;
+        }
+      }
+    }
+
+    // Now add the uses.
+    auto i = 0u;
+    for (auto view : {lhs->view, rhs->view}) {
+      for (auto col : view->columns) {
+        const auto out_col = join->columns[i++];
+        join->out_to_in.find(out_col)->second.AddUse(col);
+      }
+    }
+
+    assert(ret.first != nullptr);
+    assert(ret.second != nullptr);
+
+    return ret;
+  }
+
+  // Create a join based off of an equivalence class of columns.
+  void CreateJoin(const std::unordered_set<COL *> &eq_class) {
+    if (eq_class.empty() || eq_class.size() == 1) {
+      return;
+    }
+
+    std::unordered_set<VIEW *> eq_views;
+    for (auto col : eq_class) {
+      eq_views.insert(col->view);
+    }
+
+    if (eq_views.size() == 1) {
+      return;
+    }
+
+    const auto join = query->joins.Create();
+
+    // Then, group all incoming columns by their equivalence classes. We
+    // may have more than one join pivot to deal with.
+    std::unordered_map<COL *, std::vector<COL *>> grouped_cols;
+    for (auto view : eq_views) {
+      for (auto col : view->columns) {
+        grouped_cols[col->Find()].push_back(col);
+      }
+    }
+
+    // First, handle column groups, where the number of grouped columns matches
+    // the number of columns in our pivot's equivalence class. These can be
+    // used as additional pivots.
+    for (auto &col_group : grouped_cols) {
+      if (col_group.second.size() == eq_class.size()) {
+        ++join->num_pivots;
+
+        const auto pivot_col = join->columns.Create(
+            col_group.first->var, join, col_group.first->id,
+            join->columns.Size());
+
+        join->out_to_in.emplace(pivot_col, join);
+
+        COL::Union(col_group.first, pivot_col);
+
+        for (auto prev_col : col_group.second) {
+          prev_col->ReplaceAllUsesWith(pivot_col);
+        }
+      }
+    }
+
+    // Next, handle column groups where the column group size does not match
+    // the pivot's equivalence class size. These cannot be used as pivots of
+    // the join.
+    for (auto &col_group : grouped_cols) {
+      if (col_group.second.size() != eq_class.size()) {
+        for (auto prev_col : col_group.second) {
+          const auto published_col = join->columns.Create(
+              prev_col->var, join, prev_col->id, join->columns.Size());
+
+          join->out_to_in.emplace(published_col, join);
+          COL::Union(prev_col, published_col);
+          prev_col->ReplaceAllUsesWith(published_col);
+        }
+      }
+    }
+
+    // Add the uses in. We need to make sure to do all of this in the same
+    // order in which we added the original columns in.
+
+    auto i = 0u;
+    for (auto &col_group : grouped_cols) {
+      if (col_group.second.size() == eq_class.size()) {
+        const auto pivot_col = join->columns[i++];
+        auto input_cols = join->out_to_in.find(pivot_col);
+        for (auto col : col_group.second) {
+          input_cols->second.AddUse(col);
+        }
+      }
+    }
+    for (auto &col_group : grouped_cols) {
+      if (col_group.second.size() != eq_class.size()) {
+        for (auto prev_col : col_group.second) {
+          const auto published_col = join->columns[i++];
+          auto input_cols = join->out_to_in.find(published_col);
+          input_cols->second.AddUse(prev_col);
+        }
+      }
+    }
+  }
+
+  // Create a comparison. If the two columns being compared do not belong to
+  // the same view, then a product view (a type of join) is created.
+  //
+  // Comparisons forward all of their input views columns along as additional
+  // outputs.
+  CMP *CreateComparison(ComparisonOperator op,
+                        ParsedVariable lhs_var, COL *lhs_col_,
+                        ParsedVariable rhs_var, COL *rhs_col_) {
+
+    auto lhs_col = lhs_col_->Find();
+    auto rhs_col = rhs_col_->Find();
+
+    CMP *cmp = nullptr;
+
+    // If we're not sourcing the columns from the same view, then create a
+    // product column.
+    if (lhs_col->view != rhs_col->view) {
+      const auto ret = CreateProduct(lhs_col, rhs_col);
+      lhs_col = ret.first;
+      rhs_col = ret.second;
+    }
+
+    assert(lhs_col->view == rhs_col->view);
+
+    if (ComparisonOperator::kEqual == op) {
+      if (lhs_col == rhs_col) {
+        return nullptr;
+      }
+
+      cmp = query->constraints.Create(op);
+      const auto new_eq_col = cmp->columns.Create(
+          (lhs_var.Order() < rhs_var.Order() ? lhs_var : rhs_var),
+          cmp, lhs_col->id < rhs_col->id ? lhs_col->id : rhs_col->id,
+          0u);
+
+      COL::Union(lhs_col, new_eq_col);
+      COL::Union(rhs_col, new_eq_col);
+
+      lhs_col->ReplaceAllUsesWith(new_eq_col);
+      rhs_col->ReplaceAllUsesWith(new_eq_col);
+
+    } else {
+      assert(lhs_col != rhs_col);
+
+      cmp = query->constraints.Create(op);
+      const auto new_lhs_col = cmp->columns.Create(
+          lhs_var, cmp, lhs_col->id, 0u);
+
+      const auto new_rhs_col = cmp->columns.Create(
+          rhs_var, cmp, rhs_col->id, 1u);
+
+      COL::Union(lhs_col, new_lhs_col);
+      COL::Union(rhs_col, new_rhs_col);
+
+      lhs_col->ReplaceAllUsesWith(new_lhs_col);
+      rhs_col->ReplaceAllUsesWith(new_rhs_col);
+    }
+
+    cmp->input_columns.AddUse(lhs_col);
+    cmp->input_columns.AddUse(rhs_col);
+
+    int found = 0;
+
+    // Now go add in the remainder of the product columns.
+    for (auto col : lhs_col->view->columns) {
+      if (col != lhs_col && col != rhs_col) {
+        const auto new_col = cmp->columns.Create(
+            col->var, cmp, col->id, cmp->columns.Size());
+        col->ReplaceAllUsesWith(new_col);
+        COL::Union(col, new_col);
+
+      } else {
+        ++found;
+      }
+    }
+
+    assert(found == 2);
+
+    // Now go add in the uses of the remainder of the product columns.
+    for (auto col : lhs_col->view->columns) {
+      if (col != lhs_col && col != rhs_col) {
+        cmp->input_columns.AddUse(col);
+      }
+    }
+
+    return cmp;
   }
 
   void AssertEqual(ParsedVariable lhs_var, unsigned lhs_id,
@@ -234,71 +528,40 @@ class QueryBuilderImpl : public SIPSVisitor {
       return;
     }
 
-    auto &lhs_col = id_to_col[lhs_id];
-    auto &rhs_col = id_to_col[rhs_id];
+    auto &lhs_colset = id_to_col[lhs_id];
+    auto &rhs_colset = id_to_col[rhs_id];
 
-    if (lhs_col && rhs_col) {
-      AssertEqualImpl(lhs_col, rhs_col);
+    if (lhs_colset && rhs_colset) {
+      const auto lhs_col = lhs_colset->Leader();
+      const auto rhs_col = rhs_colset->Leader();
+      pending_compares.emplace_back(
+          ComparisonOperator::kEqual, lhs_var, lhs_col, rhs_var, rhs_col);
 
-    } else if (lhs_col) {
-      rhs_col = lhs_col;
+    } else if (lhs_colset) {
+      rhs_colset = lhs_colset;
 
-    } else if (rhs_col) {
-      lhs_col = rhs_col;
+    } else if (rhs_colset) {
+      lhs_colset = rhs_colset;
 
     } else {
-      pending_equalities.emplace_back(lhs_var, lhs_id, rhs_var, rhs_id);
-    }
-  }
-
-  void CreateComparison(ComparisonOperator op,
-                        ParsedVariable lhs_var, Node<QueryColumn> *lhs_col,
-                        ParsedVariable rhs_var, Node<QueryColumn> *rhs_col) {
-    const auto constraint = new Node<QueryConstraint>(
-        op, lhs_var, lhs_col, rhs_var, rhs_col);
-
-    auto new_lhs_col = new Node<QueryColumn>(
-        lhs_col->var, constraint, lhs_col->id, 0);
-
-    auto new_rhs_col = new Node<QueryColumn>(
-        rhs_col->var, constraint, rhs_col->id, 1);
-
-    DisjointSet::UnionInto(lhs_col, new_lhs_col);
-    DisjointSet::UnionInto(rhs_col, new_rhs_col);
-
-    Node<QueryColumn>::ReplaceAllUsesWith(
-        query.get(), lhs_col, new_lhs_col);
-    Node<QueryColumn>::ReplaceAllUsesWith(
-        query.get(), rhs_col, new_rhs_col);
-
-    query->constraints.emplace_back(constraint);
-    query->columns.emplace_back(new_lhs_col);
-    query->columns.emplace_back(new_rhs_col);
-    constraint->columns.push_back(new_lhs_col);
-    constraint->columns.push_back(new_rhs_col);
-
-    // Make sure everything uses the filtered versions.
-    for (auto &id_col : id_to_col) {
-      if (id_col.second->Find() == new_lhs_col) {
-        id_col.second = new_lhs_col;
-      } else if (id_col.second->Find() == new_rhs_col) {
-        id_col.second = new_rhs_col;
-      }
+      unresolved_compares.emplace_back(
+          ComparisonOperator::kEqual, lhs_var, lhs_id, rhs_var, rhs_id);
     }
   }
 
   void AssertInequality(ComparisonOperator op,
                         ParsedVariable lhs_var, unsigned lhs_id,
                         ParsedVariable rhs_var, unsigned rhs_id) {
-    auto lhs_col = id_to_col[lhs_id];
-    auto rhs_col = id_to_col[rhs_id];
-    if (lhs_col && rhs_col) {
-      assert(lhs_col != rhs_col);
-      assert(lhs_col->Find() != rhs_col->Find());
-      CreateComparison(op, lhs_var, lhs_col, rhs_var, rhs_col);
+    auto &lhs_colset = id_to_col[lhs_id];
+    auto &rhs_colset = id_to_col[rhs_id];
+
+    if (lhs_colset && rhs_colset) {
+      const auto lhs_col = lhs_colset->Leader();
+      const auto rhs_col = rhs_colset->Leader();
+      pending_compares.emplace_back(op, lhs_var, lhs_col, rhs_var, rhs_col);
 
     } else {
-      pending_compares.emplace_back(op, lhs_var, lhs_id, rhs_var, rhs_id);
+      unresolved_compares.emplace_back(op, lhs_var, lhs_id, rhs_var, rhs_id);
     }
   }
 
@@ -320,88 +583,27 @@ class QueryBuilderImpl : public SIPSVisitor {
         ComparisonOperator::kGreaterThan, lhs_var, lhs_id, rhs_var, rhs_id);
   }
 
-  void AddMap(ParsedFunctor functor, const Column *select_begin,
-              const Column *select_end, const Column *where_begin,
-              const Column *where_end) {
-
-    assert(where_begin < where_end);
-
-    (void) ProcessPendingEqualities();
-
-    auto map = new Node<QueryMap>(functor);
-    query->maps.emplace_back(map);
-
-    auto i = 0u;
-    for (auto col = where_begin; col < where_end; ++col) {
-      auto &prev_val = id_to_col[col->id];
-      assert(prev_val != nullptr);
-      auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
-      query->columns.emplace_back(mapped_col);
-      map->columns.push_back(mapped_col);
-      map->input_columns.emplace_back(col->var, prev_val);
-      ++i;
-    }
-
-    // Separate out the overwriting of `prev_val` in the case of something
-    // like `foo(A, A)`, where we don't want a self-reference from one column
-    // into another.
-    i = 0u;
-    for (auto col = where_begin; col < where_end; ++col) {
-      auto &prev_val = id_to_col[col->id];
-      if (prev_val->view != map) {
-        prev_val = map->columns[i];
-      }
-      ++i;
-    }
-
-    // Add the additional output columns that correspond with the free
-    // parameters to the map.
-    for (auto col = select_begin; col < select_end; ++col) {
-      auto mapped_col = new Node<QueryColumn>(col->var, map, col->id, i);
-      query->columns.emplace_back(mapped_col);
-      map->columns.push_back(mapped_col);
-      auto &prev_val = id_to_col[col->id];
-      assert(!prev_val);  // TODO(pag): Is this right?
-      prev_val = mapped_col;
-    }
-  }
-
   virtual void EnterFromSelect(
       ParsedPredicate pred, ParsedDeclaration decl,
       const Column *select_begin, const Column *select_end) override {
 
+    ProcessUnresolvedCompares();
+
     auto select = SelectFor(pred);
     for (auto col = select_begin; col < select_end; ++col) {
-      auto new_col = AddColumn(select, *col);
-      auto &prev_col = id_to_col[col->id];
-      assert(!prev_col);
-      prev_col = new_col;
+      AddColumn(select, *col);
     }
-  }
 
-  // Treat from-where-selects inside of the summarization scope of an aggregate
-  // just like unconditional select alls, because the summarizing aggregate
-  // itself knows about what should be grouped. This helps us avoid joins on
-  // in-flows to aggregates, and instead join on the results of aggregates.
-  void AggEnterFromWhereSelect(
-      ParsedPredicate pred, ParsedDeclaration decl,
-      const Column *where_begin, const Column *where_end,
-      const Column *select_begin, const Column *select_end) {
-    auto select = SelectFor(pred);
-
-    struct {
-      const Column *begin, *end;
-    } ranges[2] = {
-      {where_begin, where_end},
-      {select_begin, select_end}
-    };
-
-    for (auto range : ranges) {
-      for (auto col = range.begin; col < range.end; ++col) {
-        auto new_col = AddColumn(select, *col);
-        auto &prev_col = id_to_col[col->id];
-        assert(!prev_col);
-        prev_col = new_col;
+    // We might have a `foo(A, A)` where `A` is free, so add a comparison.
+    for (auto col : select->columns) {
+      auto &prev_colset = id_to_col[col->id];
+      if (prev_colset) {
+        const auto prev_col = prev_colset->Leader();
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            col->var, col);
+      } else {
+        prev_colset = col->equiv_columns;
       }
     }
   }
@@ -411,697 +613,593 @@ class QueryBuilderImpl : public SIPSVisitor {
       const Column *where_begin, const Column *where_end,
       const Column *select_begin, const Column *select_end) override {
 
-    if (!query->pending_aggregates.empty()) {
-      AggEnterFromWhereSelect(pred, decl, where_begin, where_end,
-                              select_begin, select_end);
-      return;
+    ProcessUnresolvedCompares();
+
+    VIEW *view = nullptr;
+    const auto is_map = decl.IsFunctor() && where_begin < where_end;
+    if (is_map) {
+      view = query->maps.Create(ParsedFunctor::From(decl));
+    } else {
+      view = SelectFor(pred);
     }
 
-    if (decl.IsFunctor()) {
-      auto functor = ParsedFunctor::From(decl);
-      if (!functor.IsAggregate()) {
-        AddMap(functor, select_begin, select_end, where_begin, where_end);
-        return;
-      }
-    }
-
-    auto select = SelectFor(pred);
-    columns.clear();
-    columns.resize(pred.Arity());
+    sips_cols.clear();
+    sips_cols.resize(pred.Arity());
 
     for (auto col = where_begin; col < where_end; ++col) {
-      assert(!columns[col->n]);
-      columns[col->n] = col;
+      assert(!sips_cols[col->n]);
+      sips_cols[col->n] = col;
     }
 
     for (auto col = select_begin; col < select_end; ++col) {
-      assert(!columns[col->n]);
-      columns[col->n] = col;
+      assert(!sips_cols[col->n]);
+      sips_cols[col->n] = col;
     }
 
     // Create columns for the select, but give each column a totally unique ID.
-    for (auto col : columns) {
+    for (auto col : sips_cols) {
       assert(col != nullptr);
-      (void) AddColumn(select, *col);
+      (void) AddColumn(view, *col);
+    }
+
+    where_cols.clear();
+    where_cols.resize(sips_cols.size());
+
+    for (auto col = where_begin; col < where_end; ++col) {
+      const auto &prev_colset = id_to_col[col->id];
+      assert(prev_colset.get() != nullptr);
+      where_cols[col->n] = prev_colset->Leader();
     }
 
     for (auto col = where_begin; col < where_end; ++col) {
-      const auto where_col = select->columns[col->n];
-      const auto prev_col = id_to_col[col->id];
-      assert(prev_col != nullptr);
-      AssertEqualImpl(prev_col, where_col);
-    }
-
-    // Go through and rewrite all assignments to the newly selected column,
-    // but don't actually join the two into the same set.
-    for (auto col = where_begin; col < where_end; ++col) {
-      auto where_col = select->columns[col->n];
-      auto &prev_col = id_to_col[col->id];
-      if (prev_col->view != select) {
-        for (auto &assign : id_to_col) {
-          if (assign.second == prev_col) {
-            assign.second = where_col;
-          }
-        }
+      const auto where_col = view->columns[col->n];
+      auto &prev_colset = id_to_col[col->id];
+      const auto prev_col = prev_colset->Leader();
+      if (!is_map || prev_col->view == view) {
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            col->var, where_col);
       }
+      prev_colset = where_col->equiv_columns;
     }
 
     for (auto col = select_begin; col < select_end; ++col) {
-      const auto select_col = select->columns[col->n];
-      auto &prev_col = id_to_col[col->id];
-      if (prev_col) {
-        assert(false);  // Hrmm, shouldn't happen.
-        DisjointSet::Union(prev_col, select_col);
-        pending_equalities.emplace_back(
-            col->var, col->id, select_col->var, select_col->id);
+      const auto select_col = view->columns[col->n];
+      auto &prev_colset = id_to_col[col->id];
+      if (prev_colset) {
+        const auto prev_col = prev_colset->Leader();
+        if ((!is_map || prev_col->view == view)) {
+          pending_compares.emplace_back(
+              ComparisonOperator::kEqual, prev_col->var, prev_col,
+              col->var, select_col);
+        }
+      }
+      prev_colset = select_col->equiv_columns;
+    }
 
-      } else {
-        prev_col = select_col;
+    if (is_map) {
+      for (auto col = where_begin; col < where_end; ++col) {
+        if (const auto where_col = where_cols[col->n]) {
+          where_col->ReplaceAllUsesWith(view->columns[col->n]);
+        }
+      }
+      for (auto col = where_begin; col < where_end; ++col) {
+        if (const auto where_col = where_cols[col->n]) {
+          view->input_columns.AddUse(where_col);
+        }
       }
     }
   }
 
   void EnterAggregation(
       ParsedPredicate pred, ParsedDeclaration decl,
-      const Column *, const Column *,
-      const Column *, const Column *) override {
+      const Column *group_by_begin, const Column *group_by_end,
+      const Column *bound_begin, const Column *bound_end) override {
+
+    ProcessUnresolvedCompares();
+    assert(unresolved_compares.empty());
 
     assert(decl.IsFunctor());
+
     auto functor = ParsedFunctor::From(decl);
-    auto agg = new Node<QueryAggregate>(functor);
-    query->pending_aggregates.emplace_back(agg);
+    const auto agg = query->aggregates.Create(functor);
+    query->pending_aggregates.push_back(agg);
 
     // Start with a new "scope". `do_col` will fill it in with the bound
     // columns.
     agg->id_to_col.swap(id_to_col);
 
+    // Make the inputs visible to the aggregate.
 
+    for (auto col = group_by_begin; col < group_by_end; ++col) {
+      const auto &prev_colset = agg->id_to_col[col->id];
+      assert(prev_colset);
 
-//    // Make the aggregate's group variables available to the internal
-//    // selections that will use this group variable. Later we'll unpublish
-//    // this. The idea is that we don't want to have the aggregated predicates
-//    // join with stuff that is "outside" the scope of the variables provided
-//    // by the aggregate itself. This leads to suboptimal join patterns.
-//    for (auto col : agg->columns) {
-//      id_to_col[col->id] = col;
-//    }
+      const auto prev_col = prev_colset->Leader();
+      agg->group_by_columns.AddUse(prev_col);
+      id_to_col.emplace(col->id, prev_col->equiv_columns);
+    }
+
+    for (auto col = bound_begin; col < bound_end; ++col) {
+      const auto &prev_colset = agg->id_to_col[col->id];
+      assert(prev_colset);
+      const auto prev_col = prev_colset->Leader();
+      agg->bound_columns.AddUse(prev_col);
+      id_to_col.emplace(col->id, prev_col->equiv_columns);
+    }
   }
 
   void Collect(
-      ParsedPredicate, ParsedDeclaration, const Column *aggregate_begin,
+      ParsedPredicate, ParsedDeclaration,
+      const Column *aggregate_begin,
       const Column *aggregate_end) override {
+
+    ProcessUnresolvedCompares();
+
     assert(!query->pending_aggregates.empty());
-    auto agg = query->pending_aggregates.back().get();
+    auto agg = query->pending_aggregates.back();
 
     for (auto col = aggregate_begin; col < aggregate_end; ++col) {
-      auto prev_col = id_to_col[col->id];
-      assert(prev_col != nullptr);
-      agg->summarized_columns.emplace_back(col->var, prev_col);
+      const auto &prev_colset = id_to_col[col->id];
+      assert(prev_colset);
+      const auto prev_col = prev_colset->Leader();
+      agg->summarized_columns.AddUse(prev_col);
     }
   }
 
   void EnterSelectFromSummary(
       ParsedPredicate, ParsedDeclaration,
-      const Column *group_begin, const Column *group_end,
-      const Column *bound_begin, const Column *bound_end,
+      const Column *, const Column *,  // Group by.
+      const Column *, const Column *,  // Bound.
       const Column *summary_begin, const Column *summary_end) override {
+
+    ProcessUnresolvedCompares();
+
+    assert(unresolved_compares.empty());
     assert(!query->pending_aggregates.empty());
 
-    auto agg = query->pending_aggregates.back().release();
+    const auto agg = query->pending_aggregates.back();
     query->pending_aggregates.pop_back();
-    query->aggregates.emplace_back(agg);
 
     // Swap back to the old scope. This helps ensure that summarized columns
     // don't leak.
     agg->id_to_col.swap(id_to_col);
 
-    auto do_col = [&] (const Column *col, bool is_bound) {
-      auto prev_col = id_to_col[col->id];  // Outside the aggregate.
-      auto scoped_col = agg->id_to_col[col->id];  // Inside the aggregate.
-
-      assert(prev_col != nullptr);
-      assert(scoped_col != nullptr);
-      agg->group_by_columns.emplace_back(col->var, scoped_col);
-
-      // This is one of the bound parameters passed in to the summarizing
-      // functor.
-      if (is_bound) {
-        agg->bound_columns.emplace_back(col->var, scoped_col);
-      }
-
-      auto out_col = new Node<QueryColumn>(
-          col->var, agg, col->id, static_cast<unsigned>(agg->columns.size()));
-      agg->columns.push_back(out_col);
-      query->columns.emplace_back(out_col);
-
-      // Join the grouped-by column with the version of the column visible
-      // before aggregation.
-      AssertEqualImpl(prev_col, out_col);
-    };
-
-    for (auto col = group_begin; col < group_end; ++col) {
-      do_col(col, false);
-    }
-
-    for (auto col = bound_begin; col < bound_end; ++col) {
-      do_col(col, true);
-    }
-
     // The summary variables are now available.
     for (auto col = summary_begin; col < summary_end; ++col) {
-      auto out_col = new Node<QueryColumn>(
-          col->var, agg, col->id, static_cast<unsigned>(agg->columns.size()));
-
-      agg->columns.push_back(out_col);
-      query->columns.emplace_back(out_col);
-
-      id_to_col[col->id] = out_col;
+      (void) AddColumn(agg, *col);
     }
 
     // "Publish" the aggregate's summary columns for use by everything else.
-    for (auto i = agg->group_by_columns.size(); i < agg->columns.size(); ++i) {
-      auto col = agg->columns[i];
-      auto &prev_col = id_to_col[col->id];
-      if (prev_col) {
-        assert(prev_col->view == agg);
+    for (auto col : agg->columns) {
+      auto &prev_colset = id_to_col[col->id];
+      if (prev_colset) {
+        const auto prev_col = prev_colset->Leader();
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            col->var, col);
       } else {
-        prev_col = col;
+        prev_colset = col->equiv_columns;
       }
     }
   }
 
   void AssertPresent(
-      ParsedPredicate pred, const Column *begin,
+      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
       const Column *end) override {
-    EnterFromWhereSelect(pred, ParsedDeclaration::Of(pred),
-                         begin, end, nullptr, nullptr);
+    if (decl.IsFunctor()) {
+      EnterFromWhereSelect(
+          pred, decl, begin, end, nullptr, nullptr);
+
+    } else {
+      assert(!decl.IsMessage());
+
+      ProcessUnresolvedCompares();
+
+      std::vector<COL *> input_cols;
+      auto select = query->selects.Create(TableFor(pred));
+      select->group_ids.push_back(select_group_id);
+
+      for (auto col = begin; col < end; ++col) {
+        const auto &prev_colset = id_to_col[col->id];
+        assert(prev_colset);
+        AddColumn(select, *col);
+
+        const auto prev_col = prev_colset->Leader();
+        input_cols.push_back(prev_col);
+      }
+
+      pending_presence_checks.emplace_back(select, std::move(input_cols));
+    }
   }
 
   void AssertAbsent(
-      ParsedPredicate pred, const Column *begin,
+      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
       const Column *end) override {
-    EnterFromWhereSelect(pred, ParsedDeclaration::Of(pred),
-                         begin, end, nullptr, nullptr);
+    AssertPresent(decl, pred, begin, end);
   }
 
-  bool ProcessPendingEqualities(void) {
-    while (!pending_equalities.empty()) {
-      const auto prev_len = pending_equalities.size();
-      next_pending_equalities.swap(pending_equalities);
-      pending_equalities.clear();
-      for (const auto &eq : next_pending_equalities) {
-        AssertEqual(std::get<0>(eq), std::get<1>(eq),
-                    std::get<2>(eq), std::get<3>(eq));
-      }
-      if (prev_len == pending_equalities.size()) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  void ProcessPendingCompares(void) {
-    while (!pending_compares.empty()) {
-      const auto prev_len = pending_compares.size();
-      next_pending_compares.swap(pending_compares);
-      pending_compares.clear();
-      for (auto cmp : next_pending_compares) {
-        AssertInequality(
-            std::get<0>(cmp), std::get<1>(cmp),
-            std::get<2>(cmp), std::get<3>(cmp),
-            std::get<4>(cmp));
-      }
-      assert(prev_len > pending_compares.size());
-    }
-  }
-
-  void MergeAndProjectJoins(void) {
-
-    // At this stage, each join is a two-table join, pointing at the two
-    // tables it thinks it's joining. So we'll associate with the variables
-    // involved in the join the expected arity of the final product table
-    // being joined.
-    std::unordered_map<ParsedVariable, unsigned> join_weight;
-    for (const auto &join : query->joins) {
-      for (auto col : join->joined_columns) {
-        auto &weight = join_weight[col->var];
-        weight += static_cast<unsigned>(col->view->columns.size());
-      }
-    }
-
-    // We want to process joins that bring together the most stuff first.
-    //
-    // TODO(pag): This whole thing is super sketchy. I roughly know what I
-    //            want to measure, but I'm actually depending on a related
-    //            but different metric.
-    std::sort(query->joins.begin(), query->joins.end(),
-              [&](const std::unique_ptr<Node<QueryJoin>> &a,
-                 const std::unique_ptr<Node<QueryJoin>> &b) {
-                auto wa = join_weight[a->joined_columns[0]->var] +
-                          join_weight[a->joined_columns[1]->var];
-                auto wb = join_weight[b->joined_columns[0]->var] +
-                          join_weight[b->joined_columns[1]->var];
-                return wa > wb;
-              });
-
-    std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>>
-        promoted_ids;
-
-    for (const auto &join : query->joins) {
-
-      assert(join->pivot_columns.empty());
-      assert(join->columns.empty());
-      assert(join->joined_columns.size() == 2);
-
-      auto col0 = join->joined_columns[0];
-      auto col1 = join->joined_columns[1];
-      if (col0->var.Order() > col1->var.Order()) {
-        std::swap(col0, col1);
-      }
-
-      join->joined_columns.clear();
-      join->output_columns.clear();
-
-      // The two columns to be joined already belong to the same join. When
-      // we're doing the join processing here, we make sure to go find all the
-      // join pivots, so we can safely ignore these guys.
-      if (col0->view == col1->view && col0->view->IsJoin()) {
-        continue;
-      }
-
-      promoted_ids.clear();
-
-      for (auto joined_col : col0->view->columns) {
-        const auto id = joined_col->Find()->id;
-        promoted_ids[id].push_back(joined_col);
-      }
-
-      if (col1->view != col0->view) {
-        for (auto joined_col : col1->view->columns) {
-          const auto id = joined_col->Find()->id;
-          promoted_ids[id].push_back(joined_col);
+  bool ProcessUnresolvedCompares(void) {
+    auto made_progress = unresolved_compares.empty();
+    while (!unresolved_compares.empty()) {
+      const auto prev_len = unresolved_compares.size();
+      next_unresolved_compares.swap(unresolved_compares);
+      unresolved_compares.clear();
+      for (auto cmp : next_unresolved_compares) {
+        auto [op, lhs_var, lhs_id, rhs_var, rhs_id] = cmp;
+        if (ComparisonOperator::kEqual == op) {
+          AssertEqual(lhs_var, lhs_id, rhs_var, rhs_id);
+        } else {
+          AssertInequality(op, lhs_var, lhs_id, rhs_var, rhs_id);
         }
+      }
+      if (prev_len > unresolved_compares.size()) {
+        made_progress = true;
       } else {
-        assert(false && "TODO?");
+        break;
       }
-
-      // `promoted_ids` is now a mapping from an ID to its equivalence
-      // class of columns, where every column in the equivalence class is
-      // related to at least one other column by ID or by variable name.
-      //
-      // Go and fill up the output columns of the join, which is the set of
-      // unique input columns. For each output column that we create, we replace
-      // all uses of the input column with the output column.
-      for (const auto &id_col_set : promoted_ids) {
-        const auto id = id_col_set.first;
-        const auto &col_set = id_col_set.second;
-        if (col_set.empty()) {
-          continue;
-        }
-
-        auto min_var = col_set[0]->var;
-        for (auto col : col_set) {
-          if (min_var.Order() > col->var.Order()) {
-            min_var = col->var;
-          }
-        }
-
-        auto output_col = new Node<QueryColumn>(
-            min_var, join.get(), id,
-            static_cast<unsigned>(join->columns.size()));
-
-        query->columns.emplace_back(output_col);
-        join->columns.push_back(output_col);
-
-        for (auto col : col_set) {
-          Node<QueryColumn>::ReplaceAllUsesWith(
-              query.get(), col, output_col);
-        }
-
-        if (1 < col_set.size()) {
-          join->pivot_columns.push_back(output_col);
-        }
-      }
-
-      // Add in the joined columns after, so that they don't get replaced.
-      auto i = 0u;
-      for (const auto &id_col_set : promoted_ids) {
-        const auto &col_set = id_col_set.second;
-        if (col_set.empty()) {
-          continue;
-        }
-
-        assert(i < join->columns.size());
-
-        for (auto col : col_set) {
-          join->joined_columns.emplace_back(col->var, col);
-          join->output_columns.push_back(join->columns[i]);
-        }
-
-        ++i;
-      }
-
-      assert(!join->joined_columns.empty());
-      assert(!join->pivot_columns.empty());
     }
-
-    std::unordered_set<Node<QueryJoin> *> joined_joins;
-    std::unordered_set<Node<QueryView> *> joined_views;
-    std::unordered_map<Node<QueryColumn> *, Node<QueryColumn> *> inout_map;
-
-    // Try to combine join trees that all operate on the same pivots.
-    bool found = false;
-    for (const auto &join : query->joins) {
-      if (join->joined_columns.empty()) {
-        assert(join->columns.empty());
-        continue;  // Taken over or merged.
-      }
-
-      joined_joins.clear();
-      joined_views.clear();
-      inout_map.clear();
-
-      auto i = 0u;
-      for (auto joined_col : join->joined_columns) {
-        assert(i < join->output_columns.size());
-        inout_map.emplace(joined_col.get(), join->output_columns[i++]);
-
-        // We only care about joins of joins.
-        if (!joined_col->view->IsJoin()) {
-          joined_views.insert(joined_col->view);
-          continue;
-        }
-
-        auto joined_join = reinterpret_cast<Node<QueryJoin> *>(
-            joined_col->view);
-
-        // Make sure that all pivots of the lower join participate in at least
-        // one pivot condition of this join.
-        found = false;
-        for (auto joined_pivot_col : joined_join->pivot_columns) {
-          for (auto pivot_col : join->pivot_columns) {
-            if (pivot_col->Find() == joined_pivot_col->Find() ||
-                pivot_col->var == joined_pivot_col->var) {
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            goto try_next_join;
-          }
-        }
-
-        auto j = 0u;
-        for (const auto &jjc : joined_join->joined_columns) {
-          assert(j < joined_join->output_columns.size());
-          inout_map.emplace(jjc.get(), joined_join->output_columns[j++]);
-        }
-
-        joined_joins.insert(joined_join);
-      }
-
-      if (joined_joins.empty()) {
-      try_next_join:
-        continue;
-      }
-
-      join->joined_columns.clear();
-      join->output_columns.clear();
-
-      for (auto joined_join : joined_joins) {
-        for (auto &joined_col : joined_join->joined_columns) {
-          const auto out_v = inout_map[joined_col.get()];
-          assert(out_v != nullptr);
-          const auto out_v2 = inout_map[out_v];
-          assert(out_v2 != nullptr);
-          join->joined_columns.emplace_back(joined_col->var, joined_col.get());
-          join->output_columns.push_back(out_v2);
-        }
-      }
-
-      for (auto joined_view : joined_views) {
-        for (auto joined_col : joined_view->columns) {
-          const auto out_v = inout_map[joined_col];
-          assert(out_v != nullptr);
-          join->joined_columns.emplace_back(joined_col->var, joined_col);
-          join->output_columns.push_back(out_v);
-        }
-      }
-
-      for (auto joined_join : joined_joins) {
-        joined_join->Clear();
-      }
-
-      assert(!join->joined_columns.empty());
-      assert(!join->pivot_columns.empty());
-    }
-  }
-
-//  void PropagateAncestry(std::vector<Node<QueryView> *> &views) {
-//    views.clear();
-//    query->ForEachView([] (Node<QueryView> *v) {
-//      if (!v->columns.empty()) {
-//        if (v->IsSelect()) {
-//
-//        }
-//      }
-//    });
-//
-//    // Sort the views so that we process the ones closer to the inputs
-//    // before the ones that are close to the outputs (inserts).
-//    std::sort(views.begin(), views.end(),
-//              [] (Node<QueryView> *a, Node<QueryView> *b) {
-//                return a->Depth() < b->Depth();
-//              });
-//  }
-
-  // Perform common subexpression elimination, which will first identify
-  // candidate subexpressions for possible elimination using hashing, and
-  // then will perform recursive equality checks.
-  bool CSE(void) {
-    using CandidateList = std::vector<Node<QueryView> *>;
-    using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
-
-    auto apply_list = [=] (EqualitySet &eq, CandidateList &list,
-                           CandidateList &ipr) -> bool {
-      ipr.clear();
-      for (auto i = 0u; i < list.size(); ++i) {
-        auto v1 = list[i];
-        ipr.push_back(v1);
-
-        for (auto j = i + 1; j < list.size(); ++j) {
-          auto v2 = list[j];
-//          eq.Clear();
-          if (!QueryView(v2).ReplaceAllUsesWith(eq, QueryView(v1))) {
-            ipr.push_back(v2);
-          }
-        }
-
-        list.swap(ipr);
-        ipr.clear();
-      }
-      return false;
-    };
-
-    std::vector<Node<QueryView> *> in_progress;
-    std::vector<Node<QueryView> *> ordered_views;
-    EqualitySet equalities;
-    CandidateLists candidates;
-    auto made_progress = false;
-
-    for (auto changed = true; changed; ) {
-      changed = false;
-      ordered_views.clear();
-      query->ForEachView([&] (Node<QueryView> *view) {
-        if (!view->columns.empty()) {
-          candidates[view->Hash()].push_back(view);
-          ordered_views.push_back(view);
-        }
-      });
-
-      // Sort the views so that we process the ones closer to the inputs
-      // before the ones that are close to the outputs (inserts).
-      std::sort(ordered_views.begin(), ordered_views.end(),
-                [] (Node<QueryView> *a, Node<QueryView> *b) {
-                  return a->Depth() < b->Depth();
-                });
-
-      // Apply CSE in reverse postorder.
-      for (auto view : ordered_views) {
-        if (view->columns.empty()) {
-          continue;  // We've replaced it.
-        }
-
-        auto &eq_views = candidates[view->Hash()];
-        if (1 >= eq_views.size()) {
-          continue;  // Doesn't look structurally equivalent to anything.
-        }
-
-        in_progress.clear();
-        if (apply_list(equalities, eq_views, in_progress)) {
-          changed = true;
-          made_progress = true;
-        }
-      }
-
-      candidates.clear();
-    }
-
     return made_progress;
   }
 
-  void LinkEverything(void) {
-    auto &next_select = query->next_select;
-    auto &next_join = query->next_join;
-    auto &next_view = query->next_view;
-    auto &next_insert = query->next_insert;
-    auto &next_map = query->next_map;
-    auto &next_aggregate = query->next_aggregate;
-    auto &next_merge = query->next_merge;
-    auto &next_constraint = query->next_constraint;
-
-    Node<QueryColumn> *dummy = nullptr;
-    Node<QueryColumn> **prev_col_ptr = &dummy;
-
-    auto do_view = [&] (auto &view, auto &next_view_spec) {
-      if (view->columns.empty()) {
-        return;
-      }
-
-      view->next = next_view_spec;
-      view->next_view = next_view;
-      next_view = next_view_spec = view.get();
-
-      prev_col_ptr = &dummy;
-      for (auto col : view->columns) {
-        *prev_col_ptr = col;
-        prev_col_ptr = &(col->next_in_view);
-      }
-    };
-
-    for (const auto &view : query->maps) {
-      do_view(view, next_map);
-    }
-
-    for (const auto &view : query->selects) {
-      do_view(view, next_select);
-    }
-
-    for (const auto &view : query->aggregates) {
-      do_view(view, next_aggregate);
-    }
-
-    for (const auto &view : query->merges) {
-      do_view(view, next_merge);
-    }
-
-    for (const auto &view : query->constraints) {
-      do_view(view, next_constraint);
-    }
-
-    // Link all the "full" joins together, and clear out and ignore the
-    // outdated joins.
-    for (const auto &view : query->joins) {
-      if (view->columns.empty() || view->joined_columns.empty()) {
-        view->columns.clear();
-        view->pivot_columns.clear();
-        view->joined_columns.clear();
-        view->output_columns.clear();
-
-      } else {
-        assert(!view->pivot_columns.empty());
-        assert(!view->columns.empty());
-
-        prev_col_ptr = &dummy;
-        for (auto col : view->columns) {
-          *prev_col_ptr = col;
-          prev_col_ptr = &(col->next_in_view);
-        }
-
-        view->next = next_join;
-        view->next_view = next_view;
-        next_view = next_join = view.get();
-      }
-    }
-
-    for (const auto &insert : query->inserts) {
-      if (!insert->columns.empty()) {
-        insert->next = next_insert;
-        next_insert = insert.get();
-      }
-    }
-  }
+//  // Perform common subexpression elimination, which will first identify
+//  // candidate subexpressions for possible elimination using hashing, and
+//  // then will perform recursive equality checks.
+//  bool CSE(void) {
+//    using CandidateList = std::vector<VIEW *>;
+//    using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
+//
+//    auto apply_list = [=] (EqualitySet &eq, CandidateList &list,
+//                           CandidateList &ipr) -> bool {
+//      ipr.clear();
+//      for (auto i = 0u; i < list.size(); ++i) {
+//        auto v1 = list[i];
+//        ipr.push_back(v1);
+//
+//        for (auto j = i + 1; j < list.size(); ++j) {
+//          auto v2 = list[j];
+////          eq.Clear();
+//          if (!QueryView(v2).ReplaceAllUsesWith(eq, QueryView(v1))) {
+//            ipr.push_back(v2);
+//          }
+//        }
+//
+//        list.swap(ipr);
+//        ipr.clear();
+//      }
+//      return false;
+//    };
+//
+//    std::vector<VIEW *> in_progress;
+//    std::vector<VIEW *> ordered_views;
+//    EqualitySet equalities;
+//    CandidateLists candidates;
+//    auto made_progress = false;
+//
+//    for (auto changed = true; changed; ) {
+//      changed = false;
+//      ordered_views.clear();
+//      query->ForEachView([&] (VIEW *view) {
+//        if (!view->columns.empty()) {
+//          candidates[view->Hash()].push_back(view);
+//          ordered_views.push_back(view);
+//        }
+//      });
+//
+//      // Sort the views so that we process the ones closer to the inputs
+//      // before the ones that are close to the outputs (inserts).
+//      std::sort(ordered_views.begin(), ordered_views.end(),
+//                [] (VIEW *a, VIEW *b) {
+//                  return a->Depth() < b->Depth();
+//                });
+//
+//      // Apply CSE in reverse postorder.
+//      for (auto view : ordered_views) {
+//        if (view->columns.empty()) {
+//          continue;  // We've replaced it.
+//        }
+//
+//        auto &eq_views = candidates[view->Hash()];
+//        if (1 >= eq_views.size()) {
+//          continue;  // Doesn't look structurally equivalent to anything.
+//        }
+//
+//        in_progress.clear();
+//        if (apply_list(equalities, eq_views, in_progress)) {
+//          changed = true;
+//          made_progress = true;
+//        }
+//      }
+//
+//      candidates.clear();
+//    }
+//
+//    return made_progress;
+//  }
 
   void Insert(
       ParsedDeclaration decl,
       const Column *begin,
       const Column *end) override {
 
-    const auto processed_eqs = ProcessPendingEqualities();
-    assert(processed_eqs);
-    (void) processed_eqs;
+    // There may be unresolved comparisons, i.e. where the SIPS visitor had
+    // us compare IDs, but we didn't have columns associated with them at that
+    // time. Go resolve those now.
+    ProcessUnresolvedCompares();
+    assert(unresolved_compares.empty());
 
-    ProcessPendingCompares();
+//    // The behaviour of this is to extract out constants into their own kind
+//    // of relation, and join against that. This prevents many smaller joins
+//    // against constants.
+//    //
+//    // TODO(pag): If I move this below then things break... why?
+//    JoinConstantComparisons();
 
-    auto table = TableFor(decl);
-    auto insert = new Node<QueryInsert>(
-        reinterpret_cast<Node<QueryRelation> *>(table), decl);
+    // Convert all pending comparisons into either joins or constraints.
+    ReifyPendingComparisons();
 
-    for (auto col = begin; col < end; ++col) {
-      const auto output_col = id_to_col[col->id];
-      assert(output_col != nullptr);
-      insert->input_columns.emplace_back(col->var, output_col);
-      insert->columns.emplace_back(output_col);
+    // Presence/absence checks are deferred, and converted into "full joins"
+    // here.
+    for (auto &[select, cols] : pending_presence_checks) {
+      CreateFullJoin(select, cols);
     }
 
-    query->inserts.emplace_back(insert);
+    // If the initial view wasn't derived from a message, then we want to
+    // join against the stream associated with taking inputs. In the case of
+    // rule bodies that are multiply recursive, e.g. transitive closure, this
+    // helps to enable a certain amount of common subexpression elimination.
+    // It helps CSE because we do this "late", i.e. not far from the insert
+    // itself, which means that all sorts of joins and things have already
+    // happened. This maximizes that amount of pre-existing common structure.
+    if (initial_view != input_view) {
+      JoinAgainstInputs();
+    }
+
+    // Full joins might add more pending comparisons, to reify them.
+    ReifyPendingComparisons();
+
+    // Empty out all equivalence classes. We don't want them interfering with
+    // one-another across different clauses.
+    EmptyEquivalenceClasses();
+
+    auto table = TableFor(decl);
+    auto insert = query->inserts.Create(table, decl);
+
+    for (auto col = begin; col < end; ++col) {
+      (void) AddColumn(insert, *col);
+      const auto &prev_colset = id_to_col[col->id];
+      assert(prev_colset);
+      const auto prev_col = prev_colset->Leader();
+      insert->input_columns.AddUse(prev_col);
+    }
 
     // Look to see if there's any negative use of `decl`, and insert into
     // there as well. This is equivalent to removing from the negative table.
     for (auto pred : decl.NegativeUses()) {
       table = TableFor(pred);
-      insert = new Node<QueryInsert>(
-          reinterpret_cast<Node<QueryRelation> *>(table), decl);
+      insert = query->inserts.Create(table, decl);
 
       for (auto col = begin; col < end; ++col) {
-        const auto output_col = id_to_col[col->id];
-        assert(output_col != nullptr);
-        insert->input_columns.emplace_back(col->var, output_col);
-        insert->columns.emplace_back(output_col);
+        (void) AddColumn(insert, *col);
+        const auto &prev_colset = id_to_col[col->id];
+        assert(prev_colset);
+        const auto prev_col = prev_colset->Leader();
+        insert->input_columns.AddUse(prev_col);
       }
-
-      query->inserts.emplace_back(insert);
       break;  // Don't need more than one.
     }
   }
 
-  // When we build aggregates, we create new scopes for them, and in those
-  // scopes, fresh variables. If we used the existing set of bound variables,
-  // then we would observe JOINs flowing into the aggregates, which would make
-  // any of their groupings redundant. However, we do want to ensure that the
-  // grouped columns join with anything in the outer scopes, and so we go over
-  // group by columns here, and inject join conditions.
-  void JoinGroups(void) {
-    std::unordered_map<unsigned, std::vector<Node<QueryColumn> *>> cols;
-    std::unordered_set<unsigned> seen;
-    for (auto &agg : query->aggregates) {
-      seen.clear();
-      for (auto i = 0u; i < agg->group_by_columns.size(); ++i) {
-        auto group_col = agg->columns[i];
-        auto id = group_col->Find()->id;
-        if (!seen.count(id)) {
-          cols[id].push_back(group_col);
-          seen.insert(id);
-        }
+  // Do a full join of the initial relation select against the input stream.
+  // We only do this if the initial select was not itself from a message.
+  void JoinAgainstInputs(void) {
+    where_cols.clear();
+    for (auto col : initial_view->columns) {
+      where_cols.push_back(col);
+    }
+    CreateFullJoin(input_view, where_cols);
+  }
+
+  // Reify pending comparisons into constraint relations or into join relations.
+  void ReifyPendingComparisons(void) {
+    if (pending_compares.empty()) {
+      return;
+    }
+
+    next_pending_compares.clear();
+    next_pending_compares.swap(pending_compares);
+
+    for (auto [op, lhs_var, lhs_col, rhs_var, rhs_col] : next_pending_compares) {
+      if (ComparisonOperator::kEqual == op) {
+        COL::Union(lhs_col, rhs_col);
       }
     }
 
-    for (auto &id_cols : cols) {
-      for (auto i = 1u; i < id_cols.second.size(); ++i) {
-        AssertEqualImpl(id_cols.second[i - 1u], id_cols.second[i]);
+    std::unordered_map<COL *, std::unordered_set<COL *>> equiv_classes;
+    for (auto [op, lhs_var, lhs_col, rhs_var, rhs_col] : next_pending_compares) {
+      if (ComparisonOperator::kEqual == op) {
+        auto &eq_set = equiv_classes[lhs_col->Find()];
+        eq_set.insert(lhs_col);
+        eq_set.insert(rhs_col);
+      } else {
+        pending_compares.emplace_back(op, lhs_var, lhs_col, rhs_var, rhs_col);
       }
     }
+
+    std::vector<const std::unordered_set<COL *> *> sorted_equiv_class;
+    for (const auto &leader_set : equiv_classes) {
+      sorted_equiv_class.push_back(&(leader_set.second));
+    }
+
+    while (!sorted_equiv_class.empty()) {
+      std::sort(sorted_equiv_class.begin(), sorted_equiv_class.end(),
+                [] (const std::unordered_set<COL *> *a,
+                          const std::unordered_set<COL *> *b) {
+                  auto a_depth = 0u;
+                  for (auto col : *a) {
+                    a_depth = std::max(a_depth, col->view->Depth());
+                  }
+                  auto b_depth = 0u;
+                  for (auto col : *b) {
+                    b_depth = std::max(b_depth, col->view->Depth());
+                  }
+
+                  // Order deeper ones (further form input streams) earlier so
+                  // that we process them later.
+                  if (a_depth > b_depth) {
+                    return true;
+
+                  } else if (a_depth < b_depth) {
+                    return false;
+
+                  // Bigger ones second when there's a tie-breaker. This means
+                  // that we process the bigger ones first, because they will
+                  // be ordered later, and we do `back`.
+                  } else {
+                    return a->size() < b->size();
+                  }
+                });
+
+      auto set = sorted_equiv_class.back();
+      sorted_equiv_class.pop_back();
+      CreateJoin(*set);
+    }
+
+    next_pending_compares.clear();
+    next_pending_compares.swap(pending_compares);
+
+    while (!next_pending_compares.empty()) {
+
+      // We sort the pending comparisons by maximum depth, as we'll be placing
+      // join at that max depth + 1, and we continually process the deepest
+      // comparison (furthest from the input/streams) via `back`. The key to
+      // realize is that comparisons forward the columns of their input views
+      // along, so if we started with least deep first, we'd end up with massive
+      // propagation by the time we got to the deepest, whereas starting deepest
+      // first ends up getting us closer to only propagating what is needed.
+      std::sort(next_pending_compares.begin(),
+                next_pending_compares.end(),
+                [] (const PendingCompare &a, const PendingCompare &b) {
+                  const auto &[a0, a1, a_col1, a2, a_col2] = a;
+                  const auto &[b0, b1, b_col1, b2, b_col2] = b;
+                  const auto a_depth = std::max(a_col1->Find()->view->Depth(),
+                                                a_col2->Find()->view->Depth());
+                  const auto b_depth = std::max(b_col1->Find()->view->Depth(),
+                                                b_col2->Find()->view->Depth());
+                  return a_depth < b_depth;
+                });
+
+      auto [op, lhs_var, lhs_col, rhs_var, rhs_col] = next_pending_compares.back();
+      next_pending_compares.pop_back();
+
+      assert(ComparisonOperator::kEqual != op);
+      CreateComparison(op, lhs_var, lhs_col, rhs_var, rhs_col);;
+    }
   }
+
+  // Go through all column definitions, and reset their `DisjointSet` parents.
+  // Equivalence classes do not generalize beyond a single clause, and so we
+  // can't risk leaving them around. Consider this example:
+  //
+  //    foo(A) : b(A), A = 1.
+  //    foo(A) : b(A), A != 1.
+  //
+  // If we start with the initial assumption `b(A)`, then in one we will put `A`
+  // and `1` in the same equivalence class, and in the other, we'll assert that
+  // they cannot possibly be in the same equivalnce class. This is fine so long
+  // as the equivalence classes are all emptied / treated as independent across
+  // clause bodies.
+  void EmptyEquivalenceClasses(void) {
+    query->ForEachView([] (VIEW *view) {
+      for (auto col : view->columns) {
+        col->equiv_columns.reset();
+      }
+    });
+  }
+
+//  // Go through all the pending comparisons and pull out equality comparisons
+//  // against constants. We want to extract these into a tuple and then join
+//  // against that tuple.
+//  void JoinConstantComparisons(void) {
+//    auto is_constant = [] (COL *col) {
+//      if (auto sel = col->view->AsSelect()) {
+//        if (auto stream = sel->stream.get()) {
+//          return stream->AsConstant() != nullptr;
+//        }
+//      }
+//      return false;
+//    };
+//
+//    next_pending_compares.clear();
+//
+//    std::unordered_map<COL *, std::unordered_set<COL *>> const_equalities;
+//
+//    for (auto &cmp : pending_compares) {
+//      auto [op, lhs_var, lhs_col, rhs_var, rhs_col] = cmp;
+//
+//      if (ComparisonOperator::kEqual != op) {
+//        next_pending_compares.emplace_back(std::move(cmp));
+//        continue;
+//      }
+//
+//      auto lhs_is_const = is_constant(lhs_col);
+//      auto rhs_is_const = is_constant(rhs_col);
+//
+//      if (lhs_is_const && rhs_is_const) {
+//        next_pending_compares.emplace_back(std::move(cmp));
+//
+//      } else if (lhs_is_const) {
+//        const_equalities[lhs_col].insert(rhs_col->Find());
+//
+//      } else if (rhs_is_const) {
+//        const_equalities[rhs_col].insert(lhs_col->Find());
+//
+//      } else {
+//        next_pending_compares.emplace_back(std::move(cmp));
+//      }
+//    }
+//
+//    pending_compares.swap(next_pending_compares);
+//
+//    if (const_equalities.empty()) {
+//      return;
+//    }
+//
+//    auto tuple = query->tuples.Create();
+//    where_cols.clear();
+//
+//    for (auto &[const_col, var_cols] : const_equalities) {
+//      if (var_cols.empty()) {
+//        assert(false);
+//        continue;
+//      }
+//
+//      auto new_const_col = tuple->columns.Create(
+//          const_col->var, tuple, const_col->id, tuple->columns.Size());
+//
+//      const_col->ReplaceAllUsesWith(new_const_col);
+//      tuple->input_columns.AddUse(const_col);
+//
+//      COL::Union(const_col, new_const_col);
+//
+//      auto it = var_cols.begin();
+//      const auto end = var_cols.end();
+//      const auto first = *it++;
+//
+//      // If the constant is compared for equality against some other columns,
+//      // then re-introduce comparisons among those columns so that when we
+//      // reify the pending compares, all these columns end up in the same
+//      // equivalence class.
+//      for (; it != end; ++it) {
+//        pending_compares.emplace_back(
+//            ComparisonOperator::kEqual, first->var, first, (*it)->var, *it);
+//      }
+//
+//      where_cols.push_back(first);
+//    }
+//
+//    CreateFullJoin(tuple, where_cols);
+//  }
 
   // Context shared by all queries created by this query builder. E.g. all
   // tables are shared across queries.
@@ -1111,23 +1209,34 @@ class QueryBuilderImpl : public SIPSVisitor {
   std::shared_ptr<QueryImpl> query;
 
   // The initial view from which we're selecting.
-  Node<QueryView> *initial_view{nullptr};
+  SELECT *initial_view{nullptr};
+  SELECT *input_view{nullptr};
 
   // All columns in some select...where.
-  std::vector<const Column *> columns;
+  std::vector<const Column *> sips_cols;
+
+  // All query columns in some where.
+  std::vector<COL *> where_cols;
 
   // Maps variable IDs to columns.
-  std::unordered_map<unsigned, Node<QueryColumn> *> id_to_col;
+  std::unordered_map<unsigned, std::shared_ptr<ColumnSet>> id_to_col;
 
-  using Equality = std::tuple<ParsedVariable, unsigned, ParsedVariable, unsigned>;
+  using UnresolvedCompare = std::tuple<
+      ComparisonOperator, ParsedVariable, unsigned, ParsedVariable, unsigned>;
 
-  std::vector<Equality> pending_equalities;
-  std::vector<Equality> next_pending_equalities;
+  using PendingCompare = std::tuple<
+      ComparisonOperator, ParsedVariable, COL *, ParsedVariable, COL *>;
 
-  using Inequality = std::tuple<ComparisonOperator, ParsedVariable, unsigned, ParsedVariable, unsigned>;
 
-  std::vector<Inequality> pending_compares;
-  std::vector<Inequality> next_pending_compares;
+  std::vector<std::pair<VIEW *, std::vector<COL *>>> pending_presence_checks;
+
+  std::vector<UnresolvedCompare> unresolved_compares;
+  std::vector<UnresolvedCompare> next_unresolved_compares;
+  std::vector<PendingCompare> pending_compares;
+  std::vector<PendingCompare> next_pending_compares;
+
+  std::unordered_map<COL *, COL *> unique_cols;
+  std::vector<std::pair<COL *, COL *>> joined_cols;
 
   // Selects within the same group cannot be merged. A group comes from
   // importing a clause, given an assumption.
@@ -1144,32 +1253,29 @@ void QueryBuilder::VisitClauseWithAssumption(
     impl->query = std::make_shared<QueryImpl>(impl->context);
   }
 
-  impl->select_group_id += 1;
-
   (void) SIPSScorer::VisitBestScoringPermuation(
       scorer, *impl, generator);
 }
 
 // Return the final query, which may include several different inserts.
 Query QueryBuilder::BuildQuery(void) {
-  impl->JoinGroups();
-  impl->MergeAndProjectJoins();
-  impl->query->ForEachView([&] (Node<QueryView> *view) {
-    view->query = impl->query.get();
-  });
+//  impl->JoinGroups();
+//  impl->JoinColumns();
 
-  // Comparisons between `QueryConstraint` nodes are not structural but pointer-
-  // based, so we sometimes need an extra push :-/
-  for (auto i = 0; i < 2; ++i) {
-    for (auto changed = true; changed;) {
-      changed = false;
-      if (impl->CSE()) {
-        changed = true;
-        i = 0;
-      }
-    }
-  }
-  impl->LinkEverything();
+//  // Comparisons between `QueryConstraint` nodes are not structural but pointer-
+//  // based, so we sometimes need an extra push :-/
+//  for (auto i = 0; i < 2; ++i) {
+//    for (auto changed = true; changed;) {
+//      changed = false;
+//      if (impl->CSE()) {
+//        changed = true;
+//        i = 0;
+//      }
+//    }
+//  }
+//
+//  impl->LinkEverything();
+
   Query ret(std::move(impl->query));
   impl.reset(new QueryBuilderImpl(impl->context));
   return ret;
