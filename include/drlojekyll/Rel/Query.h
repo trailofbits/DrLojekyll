@@ -306,26 +306,32 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
 
-  // Returns the `nth` output column.
-  QueryColumn NthColumn(unsigned n) const noexcept;
-
   // Returns the number of columns used for grouping.
   unsigned NumGroupColumns(void) const noexcept;
-
-  // Returns the `nth` grouping column.
-  QueryColumn NthGroupColumn(unsigned n) const noexcept;
 
   // Returns the number of columns used for configuration.
   unsigned NumConfigColumns(void) const noexcept;
 
-  // Returns the `nth` config column.
-  QueryColumn NthConfigColumn(unsigned n) const noexcept;
-
   // Returns the number of columns being summarized.
   unsigned NumSummarizedColumns(void) const noexcept;
 
-  // Returns the `nth` summarized column.
+  // Returns the `nth` output grouping column.
+  QueryColumn NthGroupColumn(unsigned n) const noexcept;
+
+  // Returns the `nth` output config column.
+  QueryColumn NthConfigColumn(unsigned n) const noexcept;
+
+  // Returns the `nth` output summarized column.
   QueryColumn NthSummarizedColumn(unsigned n) const noexcept;
+
+  // Returns the `nth` input grouping column.
+  QueryColumn NthInputGroupColumn(unsigned n) const noexcept;
+
+  // Returns the `nth` input config column.
+  QueryColumn NthInputConfigColumn(unsigned n) const noexcept;
+
+  // Returns the `nth` input summarized column.
+  QueryColumn NthInputSummarizedColumn(unsigned n) const noexcept;
 
   // The functor doing the aggregating.
   const ParsedFunctor &Functor(void) const noexcept;

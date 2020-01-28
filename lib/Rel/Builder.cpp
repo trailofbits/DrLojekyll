@@ -168,7 +168,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     const auto select = query->selects.Create(stream);
     const auto col = select->columns.Create(
-        ParsedVariable::AssignedTo(val), select, id, 0u);
+        ParsedVariable::AssignedTo(val), select, id);
 
     prev_colset = col->equiv_columns;
   }
@@ -193,8 +193,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     const auto tuple = query->tuples.Create();
     for (COL *col : cols) {
       col = col->Find();
-      auto out_col = tuple->columns.Create(
-          col->var, tuple, col->id, tuple->columns.Size());
+      auto out_col = tuple->columns.Create(col->var, tuple, col->id);
       COL::Union(col, out_col);
       col->ReplaceAllUsesWith(out_col);
       ret_cols.push_back(out_col);
@@ -248,8 +247,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto i = 0u; i < num_cols; ++i) {
       const auto sel_col = select_cols[i];
       const auto tuple_col = tuple_cols[i];
-      auto join_col = join->columns.Create(
-          sel_col->var, join, sel_col->id, join->columns.Size());
+      auto join_col = join->columns.Create(sel_col->var, join, sel_col->id);
 
       COL::Union(sel_col, join_col);
       COL::Union(tuple_col, join_col);
@@ -316,8 +314,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     auto join = query->joins.Create();
     for (auto view : {lhs->view, rhs->view}) {
       for (auto col : view->columns) {
-        const auto out_col = join->columns.Create(
-            col->var, join, col->id, join->columns.Size());
+        const auto out_col = join->columns.Create(col->var, join, col->id);
 
         join->out_to_in.emplace(out_col, join);
 
@@ -381,8 +378,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         ++join->num_pivots;
 
         const auto pivot_col = join->columns.Create(
-            col_group.first->var, join, col_group.first->id,
-            join->columns.Size());
+            col_group.first->var, join, col_group.first->id);
 
         join->out_to_in.emplace(pivot_col, join);
 
@@ -401,7 +397,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       if (col_group.second.size() != eq_class.size()) {
         for (auto prev_col : col_group.second) {
           const auto published_col = join->columns.Create(
-              prev_col->var, join, prev_col->id, join->columns.Size());
+              prev_col->var, join, prev_col->id);
 
           join->out_to_in.emplace(published_col, join);
           COL::Union(prev_col, published_col);
@@ -466,8 +462,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       cmp = query->constraints.Create(op);
       const auto new_eq_col = cmp->columns.Create(
           (lhs_var.Order() < rhs_var.Order() ? lhs_var : rhs_var),
-          cmp, lhs_col->id < rhs_col->id ? lhs_col->id : rhs_col->id,
-          0u);
+          cmp, lhs_col->id < rhs_col->id ? lhs_col->id : rhs_col->id);
 
       COL::Union(lhs_col, new_eq_col);
       COL::Union(rhs_col, new_eq_col);
@@ -480,10 +475,10 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       cmp = query->constraints.Create(op);
       const auto new_lhs_col = cmp->columns.Create(
-          lhs_var, cmp, lhs_col->id, 0u);
+          lhs_var, cmp, lhs_col->id);
 
       const auto new_rhs_col = cmp->columns.Create(
-          rhs_var, cmp, rhs_col->id, 1u);
+          rhs_var, cmp, rhs_col->id);
 
       COL::Union(lhs_col, new_lhs_col);
       COL::Union(rhs_col, new_rhs_col);
@@ -501,7 +496,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col : lhs_col->view->columns) {
       if (col != lhs_col && col != rhs_col) {
         const auto new_col = cmp->columns.Create(
-            col->var, cmp, col->id, cmp->columns.Size());
+            col->var, cmp, col->id);
         col->ReplaceAllUsesWith(new_col);
         COL::Union(col, new_col);
 
@@ -589,6 +584,11 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     ProcessUnresolvedCompares();
 
+    // We handle aggregates in a special way.
+    if (!query->pending_aggregates.empty()) {
+      return;
+    }
+
     auto select = SelectFor(pred);
     for (auto col = select_begin; col < select_end; ++col) {
       AddColumn(select, *col);
@@ -614,6 +614,11 @@ class QueryBuilderImpl : public SIPSVisitor {
       const Column *select_begin, const Column *select_end) override {
 
     ProcessUnresolvedCompares();
+
+    // We handle aggregates in a special way.
+    if (!query->pending_aggregates.empty()) {
+      return;
+    }
 
     VIEW *view = nullptr;
     const auto is_map = decl.IsFunctor() && where_begin < where_end;
@@ -692,17 +697,22 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void EnterAggregation(
-      ParsedPredicate pred, ParsedDeclaration decl,
-      const Column *group_by_begin, const Column *group_by_end,
-      const Column *bound_begin, const Column *bound_end) override {
+      ParsedPredicate functor, ParsedDeclaration functor_decl,
+      const Column *bound_begin, const Column *bound_end,
+      const Column *aggregate_begin, const Column *aggregate_end,
+      const Column *summary_begin, const Column *summary_end,
+      ParsedPredicate predicate, ParsedDeclaration predicate_decl,
+      const Column *outer_group_begin, const Column *outer_group_end,
+      const Column *inner_group_begin, const Column *inner_group_end,
+      const Column *free_begin, const Column *free_end) override {
 
     ProcessUnresolvedCompares();
     assert(unresolved_compares.empty());
 
-    assert(decl.IsFunctor());
+    assert(functor_decl.IsFunctor());
 
-    auto functor = ParsedFunctor::From(decl);
-    const auto agg = query->aggregates.Create(functor);
+    const auto agg = query->aggregates.Create(
+        ParsedFunctor::From(functor_decl));
     query->pending_aggregates.push_back(agg);
 
     // Start with a new "scope". `do_col` will fill it in with the bound
@@ -710,47 +720,94 @@ class QueryBuilderImpl : public SIPSVisitor {
     agg->id_to_col.swap(id_to_col);
 
     // Make the inputs visible to the aggregate.
+    sips_cols.clear();
+    sips_cols.resize(predicate.Arity());
 
-    for (auto col = group_by_begin; col < group_by_end; ++col) {
-      const auto &prev_colset = agg->id_to_col[col->id];
-      assert(prev_colset);
-
-      const auto prev_col = prev_colset->Leader();
-      agg->group_by_columns.AddUse(prev_col);
-      id_to_col.emplace(col->id, prev_col->equiv_columns);
+    for (auto col = outer_group_begin; col < outer_group_end; ++col) {
+      assert(!sips_cols[col->n]);
+      sips_cols[col->n] = col;
     }
 
-    for (auto col = bound_begin; col < bound_end; ++col) {
-      const auto &prev_colset = agg->id_to_col[col->id];
-      assert(prev_colset);
-      const auto prev_col = prev_colset->Leader();
-      agg->bound_columns.AddUse(prev_col);
-      id_to_col.emplace(col->id, prev_col->equiv_columns);
+    for (auto col = inner_group_begin; col < inner_group_end; ++col) {
+      assert(!sips_cols[col->n]);
+      sips_cols[col->n] = col;
     }
+
+    for (auto col = free_begin; col < free_end; ++col) {
+      assert(!sips_cols[col->n]);
+      sips_cols[col->n] = col;
+    }
+
+    // Front-load the select from the summary here.
+    const auto select = SelectFor(predicate);
+    for (auto col : sips_cols) {
+      assert(col != nullptr);
+      const auto out_col = AddColumn(select, *col);
+
+      auto &prev_colset = id_to_col[col->id];
+      if (prev_colset) {
+        const auto prev_col = prev_colset->Leader();
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            out_col->var, out_col);
+
+//        COL::Union(prev_col, out_col);  // TODO(pag): Maybe add in?
+      } else {
+        prev_colset = out_col->equiv_columns;
+      }
+    }
+
+//    // NOTE(pag): The `outer_group_begin` and `_end` might have a different
+//    //            size than `bound_begin` and `_end`.
+//    for (auto col = outer_group_begin; col < outer_group_end; ++col) {
+//      const auto &prev_colset = agg->id_to_col[col->id];
+//      assert(prev_colset);
+//
+//      // E.g. `foo(...) over b(A, A, ...)` where `A` is bound. We don't want to
+//      // group twice on `A`, as that would be redundant.
+//      auto &group_colset = id_to_col[col->id];
+//      if (!group_colset) {
+//        const auto prev_col = prev_colset->Leader();
+//        agg->group_by_columns.AddUse(prev_col);
+//        group_colset = prev_col->equiv_columns;
+//      }
+//    }
+
+    assert((inner_group_end - inner_group_begin) == (bound_end - bound_begin));
+
+//    for (auto col = bound_begin; col < bound_end; ++col) {
+//      const auto &prev_colset = agg->id_to_col[col->id];
+//      assert(prev_colset);
+//      const auto prev_col = prev_colset->Leader();
+//      agg->bound_columns.AddUse(prev_col);
+//      id_to_col.emplace(col->id, prev_col->equiv_columns);
+//    }
   }
 
-  void Collect(
-      ParsedPredicate, ParsedDeclaration,
-      const Column *aggregate_begin,
-      const Column *aggregate_end) override {
-
-    ProcessUnresolvedCompares();
-
-    assert(!query->pending_aggregates.empty());
-    auto agg = query->pending_aggregates.back();
-
-    for (auto col = aggregate_begin; col < aggregate_end; ++col) {
-      const auto &prev_colset = id_to_col[col->id];
-      assert(prev_colset);
-      const auto prev_col = prev_colset->Leader();
-      agg->summarized_columns.AddUse(prev_col);
-    }
-  }
+//  void Collect(
+//      ParsedPredicate functor, ParsedDeclaration decl,
+//      const Column *group_begin, const Column *group_end,  // Group by.
+//      const Column *bound_begin, const Column *bound_end,  // Bound.
+//      const Column *summary_begin, const Column *summary_end) override {
+//
+//    ProcessUnresolvedCompares();
+//
+//    assert(!query->pending_aggregates.empty());
+//    auto agg = query->pending_aggregates.back();
+//
+//    for (auto col = summary_begin; col < summary_begin; ++col) {
+//      const auto &prev_colset = id_to_col[col->id];
+//      assert(prev_colset);
+//      const auto prev_col = prev_colset->Leader();
+//      agg->summarized_columns.AddUse(prev_col);
+//    }
+//  }
 
   void EnterSelectFromSummary(
-      ParsedPredicate, ParsedDeclaration,
-      const Column *, const Column *,  // Group by.
-      const Column *, const Column *,  // Bound.
+      ParsedPredicate functor, ParsedDeclaration decl,
+      const Column *group_begin, const Column *group_end,  // Unrelated to the functor.
+      const Column *bound_begin, const Column *bound_end,
+      const Column *aggregate_begin, const Column *aggregate_end,
       const Column *summary_begin, const Column *summary_end) override {
 
     ProcessUnresolvedCompares();
@@ -765,28 +822,129 @@ class QueryBuilderImpl : public SIPSVisitor {
     // don't leak.
     agg->id_to_col.swap(id_to_col);
 
-    // The summary variables are now available.
-    for (auto col = summary_begin; col < summary_end; ++col) {
-      (void) AddColumn(agg, *col);
+    // The group, bound, and summary variables are now available.
+
+    for (auto col = group_begin; col < group_end; ++col) {
+
+      // NOTE(pag): We don't use `AddColumn` because `group_begin/_end` are
+      //            not derived from the functor's application, but from the
+      //            summarized predicate's application. That is, they don't
+      //            correspond to actual parameters of the
+      const auto out_col = agg->columns.Create(col->var, agg, col->id);
+
+      // Take the group by column from inside of the aggregation.
+      auto &nested_colset = agg->id_to_col[col->id];
+      assert(nested_colset != nullptr);
+      agg->group_by_columns.AddUse(nested_colset->Leader());
+
+      // Outside (above) the aggregate, mark the incoming group by column
+      // as equivalent to the aggregate's published group-by column. This
+      // enables parallelism.
+      const auto &prev_colset = id_to_col[col->id];
+      if (prev_colset) {
+        const auto prev_col = prev_colset->Leader();
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            out_col->var, out_col);
+      }
+
+      // NOTE(pag): We *don't* overwrite `prev_colset` because we want to
+      //            join against them later, thus enabling more inherent
+      //            parallelism.
     }
 
-    // "Publish" the aggregate's summary columns for use by everything else.
-    for (auto col : agg->columns) {
+    for (auto col = bound_begin; col < bound_end; ++col) {
+      const auto out_col = AddColumn(agg, *col);
+
+      // Take the bound by column from inside of the aggregation.
+      auto &nested_colset = agg->id_to_col[col->id];
+      assert(nested_colset != nullptr);
+      agg->bound_columns.AddUse(nested_colset->Leader());
+
+      // Outside (above) the aggregate, mark the incoming bound column
+      // as equivalent to the aggregate's published bound column. This
+      // enables parallelism.
       auto &prev_colset = id_to_col[col->id];
       if (prev_colset) {
         const auto prev_col = prev_colset->Leader();
         pending_compares.emplace_back(
             ComparisonOperator::kEqual, prev_col->var, prev_col,
-            col->var, col);
+            out_col->var, out_col);
+      }
+
+      // NOTE(pag): We *don't* overwrite `prev_colset` because we want to
+      //            join against them later, thus enabling more inherent
+      //            parallelism.
+    }
+
+    // These are the free parameters from the predicate being summarized that
+    // are passed into the `aggregate`-attributed parameters of the aggregating
+    // functor.
+    for (auto col = aggregate_begin; col < aggregate_end; ++col) {
+      auto &nested_colset = agg->id_to_col[col->id];
+      assert(nested_colset != nullptr);
+      agg->summarized_columns.AddUse(nested_colset->Leader());
+    }
+
+    // "Publish" the aggregate's summary columns for use by everything else.
+    //for (auto col : agg->columns) {
+    for (auto col = summary_begin; col < summary_end; ++col) {
+      const auto out_col = AddColumn(agg, *col);
+      auto &prev_colset = id_to_col[col->id];
+      if (prev_colset) {
+        const auto prev_col = prev_colset->Leader();
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            out_col->var, out_col);
+
       } else {
-        prev_colset = col->equiv_columns;
+        prev_colset = out_col->equiv_columns;
       }
     }
+
+    assert(static_cast<unsigned>(group_end - group_begin) ==
+        agg->group_by_columns.Size());
+
+    assert(static_cast<unsigned>(bound_end - bound_begin) ==
+        agg->bound_columns.Size());
+
+    assert(static_cast<unsigned>(aggregate_end - aggregate_begin) ==
+        agg->summarized_columns.Size());
+
+//    // Make the group/bound columns of the aggregate visible to everyone else.
+//    for (auto j = 0u; j < i; ++j) {
+//      const auto col = agg->columns[j];
+//      auto &prev_colset = id_to_col[col->id];
+//      if (prev_colset) {
+//        const auto prev_col = prev_colset->Leader();
+//        COL::Union(prev_col, col);
+//      }
+//      prev_colset = col->equiv_columns;
+//    }
+
+//    for (; i < agg->columns.Size(); ++i) {
+//      const auto col = agg->columns[i];
+//      auto &prev_colset = id_to_col[col->id];
+//      if (prev_colset) {
+//        const auto prev_col = prev_colset->Leader();
+//        pending_compares.emplace_back(
+//            ComparisonOperator::kEqual, prev_col->var, prev_col,
+//            col->var, col);
+//      } else {
+//        prev_colset = col->equiv_columns;
+//      }
+//    }
   }
 
   void AssertPresent(
       ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
       const Column *end) override {
+
+    // We handle aggregates in a special way.
+    if (!query->pending_aggregates.empty()) {
+      return;
+    }
+
     if (decl.IsFunctor()) {
       EnterFromWhereSelect(
           pred, decl, begin, end, nullptr, nullptr);
@@ -944,6 +1102,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       CreateFullJoin(select, cols);
     }
 
+    // Full joins might add more pending comparisons, to reify them.
+    ReifyPendingComparisons();
+
     // If the initial view wasn't derived from a message, then we want to
     // join against the stream associated with taking inputs. In the case of
     // rule bodies that are multiply recursive, e.g. transitive closure, this
@@ -953,10 +1114,8 @@ class QueryBuilderImpl : public SIPSVisitor {
     // happened. This maximizes that amount of pre-existing common structure.
     if (initial_view != input_view) {
       JoinAgainstInputs();
+      ReifyPendingComparisons();
     }
-
-    // Full joins might add more pending comparisons, to reify them.
-    ReifyPendingComparisons();
 
     // Empty out all equivalence classes. We don't want them interfering with
     // one-another across different clauses.
@@ -992,12 +1151,23 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   // Do a full join of the initial relation select against the input stream.
   // We only do this if the initial select was not itself from a message.
+  //
+  // NOTE(pag): We lookup by `col->id` rather than using `col` so that we
+  //            get the "lastest" (i.e. deepest / closest to the eventual
+  //            INSERT) version of the column.
   void JoinAgainstInputs(void) {
     where_cols.clear();
     for (auto col : initial_view->columns) {
-      where_cols.push_back(col);
+      where_cols.push_back(id_to_col[col->id]->Find()->Leader());
     }
     CreateFullJoin(input_view, where_cols);
+
+//    for (auto col : input_view->columns) {
+//      const auto recent_col = id_to_col[col->id]->Find()->Leader();
+//      pending_compares.emplace_back(
+//          ComparisonOperator::kEqual, col->var, col,
+//          recent_col->var, recent_col);
+//    }
   }
 
   // Reify pending comparisons into constraint relations or into join relations.
@@ -1175,7 +1345,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 //      }
 //
 //      auto new_const_col = tuple->columns.Create(
-//          const_col->var, tuple, const_col->id, tuple->columns.Size());
+//          const_col->var, tuple, const_col->id, ~0u);
 //
 //      const_col->ReplaceAllUsesWith(new_const_col);
 //      tuple->input_columns.AddUse(const_col);

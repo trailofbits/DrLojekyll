@@ -118,14 +118,21 @@ class SIPSVisitor {
   // Enter into the aggregate collection phase. Pass in the bound arguments
   // that are not themselves being summarized or aggregates.
   virtual void EnterAggregation(
-      ParsedPredicate functor, ParsedDeclaration decl,
-      const Column *group_begin, const Column *group_end,
-      const Column *bound_begin, const Column *bound_end);
+      ParsedPredicate functor, ParsedDeclaration functor_decl,
+      const Column *bound_begin, const Column *bound_end,
+      const Column *aggregate_begin, const Column *aggregate_end,
+      const Column *summary_begin, const Column *summary_end,
+      ParsedPredicate predicate, ParsedDeclaration predicate_decl,
+      const Column *outer_group_begin, const Column *outer_group_end,
+      const Column *inner_group_begin, const Column *inner_group_end,
+      const Column *free_begin, const Column *free_end);
 
   // Tell the visitor that we're going to insert into an aggregation.
   virtual void Collect(
-      ParsedPredicate agg_pred, ParsedDeclaration agg_decl, const Column *begin,
-      const Column *end);
+      ParsedPredicate functor, ParsedDeclaration functor_decl,
+      const Column *bound_begin, const Column *bound_end,
+      const Column *aggregate_begin, const Column *aggregate_end,
+      const Column *summary_begin, const Column *summary_end);
 
   // Tell the visitor that is can finish summarizing, and prepare to select
   // the summaries.
@@ -133,7 +140,8 @@ class SIPSVisitor {
       ParsedPredicate functor, ParsedDeclaration decl,
       const Column *group_begin, const Column *group_end,
       const Column *bound_begin, const Column *bound_end,
-      const Column *free_begin, const Column *free_end);
+      const Column *aggregate_begin, const Column *aggregate_end,
+      const Column *summary_begin, const Column *summary_end);
 
   // Notify the visitor that we were successful in visiting the clause body,
   // starting from the assumption `assumption`.

@@ -72,6 +72,14 @@ struct ColumnSet : std::enable_shared_from_this<ColumnSet> {
   std::shared_ptr<ColumnSet> parent;
   bool is_sorted{true};
   std::vector<Node<QueryColumn> *> columns;
+
+  auto begin(void) -> decltype(columns.begin()) {
+    return columns.begin();
+  }
+
+  auto end(void) -> decltype(columns.end()) {
+    return columns.end();
+  }
 };
 
 // Represents all values that could inhabit some relation's tuple.
@@ -94,8 +102,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
  public:
   ~Node(void);
 
+  static constexpr unsigned kInvalidIndex = ~0u;
+
   inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
-                       unsigned id_, unsigned index_)
+                       unsigned id_, unsigned index_=kInvalidIndex)
       : Def<Node<QueryColumn>>(this),
         var(var_),
         view(view_),
@@ -119,6 +129,8 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   // The index of this column as it relates to `var`s use within a predicate
   // or a comparison.
+  //
+  // This will have a value of `kInvalidIndex` if we don't have the information.
   unsigned index;
 
   // Set of columns that are equivalent to this column.

@@ -308,32 +308,32 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
     os << "</TR><TR>";
     for (auto i = 0u; i < num_group; ++i) {
-      auto col = agg.NthGroupColumn(i);
+      auto col = agg.NthInputGroupColumn(i);
       os << "<TD port=\"g1_" << i << "\">" << col.Variable() << "</TD>";
     }
     for (auto i = 0u; i < num_config; ++i) {
-      auto col = agg.NthConfigColumn(i);
+      auto col = agg.NthInputConfigColumn(i);
       os << "<TD port=\"g2_" << i << "\">" << col.Variable() << "</TD>";
     }
     for (auto i = 0u; i < num_summ; ++i) {
-      auto col = agg.NthSummarizedColumn(i);
+      auto col = agg.NthInputSummarizedColumn(i);
       os << "<TD port=\"s" << i << "\">" << col.Variable() << "</TD>";
     }
     os << kEndTable << ">];\n";
     for (auto i = 0u; i < num_group; ++i) {
-      auto col = agg.NthGroupColumn(i);
+      auto col = agg.NthInputGroupColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":g1_" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
     for (auto i = 0u; i < num_config; ++i) {
-      auto col = agg.NthConfigColumn(i);
+      auto col = agg.NthInputConfigColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":g2_" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
     for (auto i = 0u; i < num_summ; ++i) {
-      auto col = agg.NthSummarizedColumn(i);
+      auto col = agg.NthInputSummarizedColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":s" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";

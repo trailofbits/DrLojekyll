@@ -26,12 +26,6 @@ QueryContext::~QueryContext(void) {}
 namespace {
 
 static bool ColumnSetCompare(COL *a, COL *b) {
-
-  // They are in the same view (covers them being the same).
-  if (a->view == b->view) {
-    return a->index < b->index;
-  }
-
   const auto a_depth = a->view->Depth();
   const auto b_depth = b->view->Depth();
 
@@ -1499,21 +1493,9 @@ unsigned QueryAggregate::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->columns.Size());
 }
 
-// Returns the `nth` output column.
-QueryColumn QueryAggregate::NthColumn(unsigned n) const noexcept {
-  assert(n < impl->columns.Size());
-  return QueryColumn(impl->columns[n]);
-}
-
 // Returns the number of columns used for grouping.
 unsigned QueryAggregate::NumGroupColumns(void) const noexcept {
   return impl->group_by_columns.Size();
-}
-
-// Returns the `nth` grouping column.
-QueryColumn QueryAggregate::NthGroupColumn(unsigned n) const noexcept {
-  assert(n < impl->group_by_columns.Size());
-  return QueryColumn(impl->group_by_columns[n]);
 }
 
 // Returns the number of columns used for configuration.
@@ -1521,19 +1503,48 @@ unsigned QueryAggregate::NumConfigColumns(void) const noexcept {
   return impl->bound_columns.Size();
 }
 
-// Returns the `nth` config column.
-QueryColumn QueryAggregate::NthConfigColumn(unsigned n) const noexcept {
-  assert(n < impl->bound_columns.Size());
-  return QueryColumn(impl->bound_columns[n]);
-}
-
 // Returns the number of columns being summarized.
 unsigned QueryAggregate::NumSummarizedColumns(void) const noexcept {
   return impl->summarized_columns.Size();
 }
 
-// Returns the `nth` summarized column.
+// Returns the `nth` output grouping column.
+QueryColumn QueryAggregate::NthGroupColumn(unsigned n) const noexcept {
+  assert(n < impl->group_by_columns.Size());
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
+// Returns the `nth` output config column.
+QueryColumn QueryAggregate::NthConfigColumn(unsigned n) const noexcept {
+  const auto num_group_cols = impl->group_by_columns.Size();
+  assert((n + num_group_cols) < impl->bound_columns.Size());
+  return QueryColumn(impl->columns[n + num_group_cols]);
+}
+
+// Returns the `nth` output summarized column.
 QueryColumn QueryAggregate::NthSummarizedColumn(unsigned n) const noexcept {
+  const auto num_group_cols = impl->group_by_columns.Size();
+  const auto num_bound_cols = impl->bound_columns.Size();
+  const auto disp = num_group_cols + num_bound_cols;
+  assert((n + disp) < impl->summarized_columns.Size());
+  return QueryColumn(impl->columns[n + disp]);
+}
+
+// Returns the `nth` input grouping column.
+QueryColumn QueryAggregate::NthInputGroupColumn(unsigned n) const noexcept {
+  assert(n < impl->group_by_columns.Size());
+  return QueryColumn(impl->group_by_columns[n]);
+}
+
+// Returns the `nth` input config column.
+QueryColumn QueryAggregate::NthInputConfigColumn(unsigned n) const noexcept {
+  assert(n < impl->bound_columns.Size());
+  return QueryColumn(impl->bound_columns[n]);
+}
+
+// Returns the `nth` input summarized column.
+QueryColumn QueryAggregate::NthInputSummarizedColumn(unsigned n) const noexcept {
   assert(n < impl->summarized_columns.Size());
   return QueryColumn(impl->summarized_columns[n]);
 }
