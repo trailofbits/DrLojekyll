@@ -216,7 +216,7 @@ bool Node<QueryColumn>::IsUsed(void) const noexcept {
 // whether or not the view is used in a merge, or whether or not any of its
 // columns are used.
 bool Node<QueryView>::IsUsed(void) const noexcept {
-  if (this->Def<Node<QueryView>>::IsUsed()) {
+  if (is_used || this->Def<Node<QueryView>>::IsUsed()) {
     return true;
   }
 
@@ -351,6 +351,7 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
       hash = 0;
     }
   }
+
   hash <<= 4;
   hash |= 1;
   return hash;
@@ -361,8 +362,13 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = __builtin_rotateright64(HashColumn(input_columns[0]), 16) ^
-         HashColumn(input_columns[1]);
+  hash = static_cast<unsigned>(op);
+  for (auto col : input_columns) {
+    hash = __builtin_rotateright64(hash, 16) ^ HashColumn(col);
+  }
+  for (auto col : attached_columns) {
+    hash = __builtin_rotateright64(hash, 16) ^ HashColumn(col);
+  }
 
   hash <<= 4;
   hash |= 2;
@@ -401,6 +407,8 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
+
+  hash = functor.Id();
 
   // Mix in the hashes of the merged views and columns;
   for (auto input_col : input_columns) {
@@ -448,16 +456,21 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
     return hash;
   }
 
+  if (out_to_in.empty()) {
+    return 0;
+  }
+
   assert(input_columns.Size() == 0);
 
-  for (auto &[out_col, in_cols] : out_to_in) {
+  for (auto col : columns) {
+    auto in_set = out_to_in.find(col);
+    assert(in_set != out_to_in.end());
     uint64_t col_set_hash = 0;
-    for (auto col : in_cols) {
+    for (auto in_col : in_set->second) {
       col_set_hash = __builtin_rotateright64(col_set_hash, 16) ^
-                     HashColumn(col);
+                     HashColumn(in_col);
     }
-
-    hash ^= col_set_hash;
+    hash = __builtin_rotateleft64(hash, 13) ^ col_set_hash;
   }
 
   hash <<= 4;
@@ -516,6 +529,14 @@ static unsigned GetDepth(const UseList<COL> &cols, unsigned depth) {
 
 }  // namespace
 
+unsigned Node<QueryView>::Depth(void) noexcept {
+  if (!depth) {
+    depth = 2u;  // Base case in case of cycles.
+    depth = GetDepth(input_columns, 1u) + 1u;
+  }
+  return depth;
+}
+
 unsigned Node<QuerySelect>::Depth(void) noexcept {
   depth = 1;
   return depth;
@@ -562,32 +583,9 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 unsigned Node<QueryConstraint>::Depth(void) noexcept {
   if (!depth) {
     depth = 2u;  // Base case in case of cycles.
-
-    depth = GetDepth(input_columns, 1u) + 1u;
-  }
-  return depth;
-}
-
-unsigned Node<QueryMap>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-    depth = GetDepth(input_columns, 1u) + 1u;
-  }
-  return depth;
-}
-
-unsigned Node<QueryInsert>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-    depth = GetDepth(input_columns, 1u) + 1u;
-  }
-  return depth;
-}
-
-unsigned Node<QueryTuple>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-    depth = GetDepth(input_columns, 1u) + 1u;
+    auto real = GetDepth(input_columns, 1u);
+    real = GetDepth(attached_columns, real);
+    depth = real + 1u;
   }
   return depth;
 }
@@ -601,9 +599,17 @@ bool Node<QueryTuple>::LooksCanonical(void) const {
   // unique. If they are, then this tuple is in a canonical form already.
   COL *prev_col = nullptr;
   for (auto col : input_columns) {
-    if (prev_col >= col) {
+
+    // Out-of-order (sorted order).
+    if (prev_col > col) {
+      return false;
+
+    // If there's a redundant column, then it's only non-canonical if this
+    // tuple isn't being used by a merge.
+    } else if (prev_col == col && !this->Def<Node<QueryView>>::IsUsed()) {
       return false;
     }
+
     prev_col = col;
   }
 
@@ -623,21 +629,17 @@ bool Node<QueryTuple>::LooksCanonical(void) const {
 // canonical form of this tuple is one where all input columns are sorted,
 // deduplicated, and where all output columns are guaranteed to be used.
 bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
-  if (is_canonical) {
-    return false;
-  }
-
   std::unordered_map<COL *, COL *> in_to_out;
   auto non_local_changes = false;
 
   // It's feasible that there's a cycle in the graph which would have triggered
   // an update to an input, thus requiring us to try again.
-  while (!LooksCanonical()) {
+  if (!LooksCanonical()) {
     non_local_changes = true;
 
     in_to_out.clear();
 
-    DefList<COL> new_output_cols;
+    DefList<COL> new_output_cols(this);
     UseList<COL> new_input_cols(this);
 
     for (auto i = 0u; i < columns.Size(); ++i) {
@@ -668,7 +670,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     for (auto in_col : new_input_cols) {
       const auto old_out_col = in_to_out[in_col];
       const auto new_out_col = new_output_cols.Create(
-          old_out_col->var, this, old_out_col->id, new_output_cols.Size());
+          old_out_col->var, this, old_out_col->id);
       old_out_col->ReplaceAllUsesWith(new_out_col);
     }
 
@@ -676,8 +678,57 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     columns.Swap(new_output_cols);
   }
 
+  if (non_local_changes) {
+    hash = 0;
+    depth = 0;
+  }
+
   is_canonical = true;
   return non_local_changes;
+}
+
+// Verify that all pivot sets cover the same views.
+void Node<QueryJoin>::VerifyPivots(void) {
+  if (!num_pivots) {
+    return;
+  }
+
+  pivot_views.clear();
+
+  auto pivot_col = columns[0];
+  auto in_col_set = out_to_in.find(pivot_col);
+  assert(in_col_set != out_to_in.end());
+  assert(1 < in_col_set->second.Size());
+  for (auto in_pivot_col : in_col_set->second) {
+    pivot_views.push_back(in_pivot_col->view);
+  }
+
+  std::sort(pivot_views.begin(), pivot_views.end());
+  auto it = std::unique(pivot_views.begin(), pivot_views.end());
+  pivot_views.erase(it, pivot_views.end());
+
+  const auto num_pivot_views = pivot_views.size();
+
+  for (auto i = 1u; i < num_pivots; ++i) {
+    next_pivot_views.clear();
+
+    pivot_col = columns[i];
+    in_col_set = out_to_in.find(pivot_col);
+    assert(in_col_set != out_to_in.end());
+    assert(1 < in_col_set->second.Size());
+    for (auto in_pivot_col : in_col_set->second) {
+      next_pivot_views.push_back(in_pivot_col->view);
+    }
+
+    std::sort(next_pivot_views.begin(), next_pivot_views.end());
+    it = std::unique(next_pivot_views.begin(), next_pivot_views.end());
+    next_pivot_views.erase(it, next_pivot_views.end());
+
+    assert(num_pivot_views == next_pivot_views.size());
+    for (auto j = 0u; j < num_pivot_views; ++j) {
+      assert(pivot_views[j] == next_pivot_views[j]);
+    }
+  }
 }
 
 // Put this join into a canonical form, which will make comparisons and
@@ -694,88 +745,258 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  is_canonical = true;
+  if (out_to_in.empty()) {
+    is_canonical = true;
+    return false;
+  }
+
+  auto non_local_changes = false;
+
+  assert(num_pivots <= columns.Size());
+  assert(out_to_in.size() == columns.Size());
+
+  VerifyPivots();
 
   for (auto &[out_col, input_cols] : out_to_in) {
-    assert(1 <= input_cols.Size());
-    assert(input_cols.Size() <= num_pivots);
+    const auto max_i = input_cols.Size();
+    assert(1u <= max_i);
+
+    // Check to see if the columns aren't sorted.
+    for (auto i = 1u; i < max_i; ++i) {
+      if (input_cols[i - 1] > input_cols[i]) {
+        non_local_changes = true;
+      }
+    }
+
     input_cols.Sort();
   }
 
-  // If this view is not used by a merge then we're allowed to re-order the
-  // columns.
-  //
+  if (non_local_changes) {
+    hash = 0;  // Sorting the columns changes the hash.
+  }
+
+  // If this view is used by a merge then we're not allowed to re-order the
+  // columns. Instead, what we can do is create a tuple that will maintain
+  // the ordering, and the canonicalize the join order below that tuple.
+  if (this->Def<Node<QueryView>>::IsUsed()) {
+    non_local_changes = true;
+
+    const auto tuple = query->tuples.Create();
+
+    // Make any merges use the tuple.
+    ReplaceAllUsesWith(tuple);
+
+    for (auto col : columns) {
+      const auto out_col = tuple->columns.Create(col->var, tuple, col->id);
+      col->ReplaceAllUsesWith(out_col);
+    }
+
+    for (auto col : columns) {
+      tuple->input_columns.AddUse(col);
+    }
+  }
+
   // We'll order them in terms of:
   //    - Largest pivot set first.
   //    - Lexicographic order of pivot sets.
   //    - Pointer ordering.
-  if (this->Def<Node<QueryView>>::IsUsed()) {
+  const auto cmp = [=] (COL *a, COL *b) {
+    if (a == b) {
+      return false;
+    }
 
-    // Change the sorting of the
-    columns.Sort([=] (COL *a, COL *b) {
-      assert(a != b);
-      const auto a_cols = out_to_in.find(a);
-      const auto b_cols = out_to_in.find(b);
+    const auto a_cols = out_to_in.find(a);
+    const auto b_cols = out_to_in.find(b);
 
-      assert(a_cols != out_to_in.end());
-      assert(b_cols != out_to_in.end());
+    assert(a_cols != out_to_in.end());
+    assert(b_cols != out_to_in.end());
 
-      const auto a_size = a_cols->second.Size();
-      const auto b_size = b_cols->second.Size();
+    const auto a_size = a_cols->second.Size();
+    const auto b_size = b_cols->second.Size();
 
-      if (a_size > b_size) {
+    if (a_size > b_size) {
+      return true;
+    } else if (a_size < b_size) {
+      return false;
+    }
+
+    // Pivot sets are same size. Lexicographically order them.
+    for (auto i = 0u; i < a_size; ++i) {
+      if (a_cols->second[i] < b_cols->second[i]) {
         return true;
-      } else if (a_size < b_size) {
+      } else if (a_cols->second[i] > b_cols->second[i]) {
         return false;
+      } else {
+        continue;
       }
+    }
 
-      // Pivot sets are same size. Lexicographically order them.
-      for (auto i = 0u; i < a_size; ++i) {
-        if (a_cols->second[i] < b_cols->second[i]) {
-          return true;
-        } else if (a_cols->second[i] > b_cols->second[i]) {
-          return false;
-        } else {
-          continue;
-        }
-      }
+    // Pivot sets are identical... this is interesting, order no longer
+    // matters.
+    //
+    // TODO(pag): Remove duplicate pivot set?
+    return a < b;
+  };
 
-      // Pivot sets are identical... this is interesting, order no longer
-      // matters.
-      //
-      // TODO(pag): Remove duplicate pivot set?
-      return a < b;
-    });
-
-    auto i = 0u;
-    for (auto col : columns) {
-      col->index = i++;
+  // Check if we need to sort the columns.
+  const auto max_i = columns.Size();
+  for (auto i = 1u; i < max_i; ++i) {
+    if (columns[i - 1] != columns[i] &&
+        !cmp(columns[i - 1], columns[i])) {
+      goto sort_columns;
     }
   }
 
-  return false;
+  is_canonical = true;  // Re-do it here, an `Update` might have changed it.
+  return non_local_changes;
+
+sort_columns:
+  columns.Sort(cmp);
+
+  auto i = 0u;
+  for (auto col : columns) {
+    col->index = i++;  // Fixup the indices.
+  }
+
+  hash = 0;
+  is_canonical = true;
+  return true;  // Sorting columns triggers non-local updates.
 }
 
 // Put this constraint into a canonical form, which will make comparisons and
 // replacements easier. If this constraint's operator is unordered, then we
-// sort the inputs to make comparisons trivial.
+// sort the inputs to make comparisons trivial. We also need to put the
+// "trailing" outputs into the proper order.
 bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
+  is_canonical = true;
+
+  // Check to see if the attached columns are ordered.
+  for (auto i = 1u; i < attached_columns.Size(); ++i) {
+    if (attached_columns[i - 1u] > attached_columns[i]) {
+      is_canonical = false;
+    }
+  }
+
+  // Check to see if the input columns are ordered correctly. We can reorder
+  // them only in the case of (in)equality comparisons.
+  const auto is_unordered = ComparisonOperator::kEqual == op ||
+                            ComparisonOperator::kNotEqual == op;
+  if (is_unordered && input_columns[0] > input_columns[1]) {
+    is_canonical = false;
+  }
+
   if (is_canonical) {
     return false;
   }
 
-  if (ComparisonOperator::kEqual == op || ComparisonOperator::kNotEqual == op) {
-    if (input_columns[0] > input_columns[1]) {
-      input_columns.Sort();
+  // If this view is used by a merge then we're not allowed to re-order the
+  // columns. Instead, what we can do is create a tuple that will maintain
+  // the ordering, and the canonicalize the join order below that tuple.
+  if (this->Def<Node<QueryView>>::IsUsed()) {
+    const auto tuple = query->tuples.Create();
+
+    // Make any merges use the tuple.
+    ReplaceAllUsesWith(tuple);
+
+    for (auto col : columns) {
+      const auto out_col = tuple->columns.Create(col->var, tuple, col->id);
+      col->ReplaceAllUsesWith(out_col);
     }
 
-    is_canonical = true;
-    return false;
-
-  } else {
-    is_canonical = true;
-    return false;
+    for (auto col : columns) {
+      tuple->input_columns.AddUse(col);
+    }
   }
+
+  // We need to re-order the input columns, and possibly also the output
+  // columns to match the input ordering.
+
+  std::unordered_map<COL *, COL *> in_to_out;
+  DefList<COL> new_output_cols(this);
+
+  auto i = 2u;
+
+  // For equality, there's only one output `Def` for the two inputs, so we
+  // can always sort the inputs.
+  if (ComparisonOperator::kEqual == op) {
+    input_columns.Sort();
+
+    auto new_out_col = new_output_cols.Create(
+        columns[0]->var, this, columns[0]->id);
+    columns[0]->ReplaceAllUsesWith(new_out_col);
+
+    i = 1u;
+
+  // For inequality, we can re-order the inputs, but must also re-order the
+  // outputs.
+  } else if (ComparisonOperator::kNotEqual == op &&
+             input_columns[0] > input_columns[1]) {
+
+    input_columns.Sort();
+
+    auto new_out_col = new_output_cols.Create(
+        columns[1]->var, this, columns[1]->id);
+    columns[1]->ReplaceAllUsesWith(new_out_col);
+
+    new_out_col = new_output_cols.Create(
+        columns[0]->var, this, columns[0]->id);
+    columns[0]->ReplaceAllUsesWith(new_out_col);
+
+  // Preserve the column ordering for the output columns of other
+  // comparisons.
+  } else {
+    auto new_out_col = new_output_cols.Create(
+        columns[0]->var, this, columns[0]->id);
+    columns[0]->ReplaceAllUsesWith(new_out_col);
+
+    new_out_col = new_output_cols.Create(
+        columns[1]->var, this, columns[1]->id);
+    columns[1]->ReplaceAllUsesWith(new_out_col);
+  }
+
+  const auto num_cols = columns.Size();
+  assert((num_cols - i) == attached_columns.Size());
+
+  UseList<COL> new_attached_cols(this);
+
+  for (auto j = 0u; i < num_cols; ++i, ++j) {
+    const auto old_out_col = columns[i];
+
+    // If the output column is never used, then get rid of it.
+    //
+    // NOTE(pag): `IsUsed` on a column checks to see if its view is used
+    //            in a merge, which would not show up in a normal def-use
+    //            list.
+    if (!old_out_col->IsUsed()) {
+      continue;
+    }
+
+    const auto in_col = attached_columns[j];
+    auto &out_col = in_to_out[in_col];
+    if (out_col) {
+      old_out_col->ReplaceAllUsesWith(out_col);
+
+    } else {
+      out_col = old_out_col;
+      new_attached_cols.AddUse(in_col);
+    }
+  }
+
+  new_attached_cols.Sort();
+
+  for (auto in_col : new_attached_cols) {
+    const auto old_out_col = in_to_out[in_col];
+    const auto new_out_col = new_output_cols.Create(
+        old_out_col->var, this, old_out_col->id);
+    old_out_col->ReplaceAllUsesWith(new_out_col);
+  }
+
+  attached_columns.Swap(new_attached_cols);
+  columns.Swap(new_output_cols);
+
+  hash = 0;
+  is_canonical = true;
+  return true;
 }
 
 // Put this merge into a canonical form, which will make comparisons and
@@ -788,7 +1009,6 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  is_canonical = true;
   bool non_local_changes = false;
 
   UseList<VIEW> next_merged_views(this);
@@ -797,6 +1017,15 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
 
   VIEW *prev_view = nullptr;
   for (auto retry = true; retry; ) {
+
+    // Check if the merged views are sorted, and if not, reset the hash.
+    const auto max_i = merged_views.Size();
+    for (auto i = 1u; i < max_i; ++i) {
+      if (merged_views[i - 1] > merged_views[i]) {
+        non_local_changes = true;
+      }
+    }
+
     merged_views.Sort();
     retry = false;
 
@@ -822,11 +1051,14 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
         seen_merges.push_back(incoming_merge);
 
         incoming_merge->merged_views.Sort();
+        incoming_merge->hash = 0;
+        incoming_merge->is_canonical = false;
+        non_local_changes = true;
+
         for (auto sub_view : incoming_merge->merged_views) {
           if (sub_view != this && sub_view != incoming_merge) {
             next_merged_views.AddUse(sub_view);
             retry = true;
-            non_local_changes = true;
           }
         }
 
@@ -856,6 +1088,8 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
     non_local_changes = true;
   }
 
+  hash = 0;
+  is_canonical = true;
   return non_local_changes;
 }
 
@@ -866,9 +1100,18 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  is_canonical = true;
+  bool non_local_changes = false;
+  const auto max_i = group_by_columns.Size();
+  for (auto i = 1u; i < max_i; ++i) {
+    if (group_by_columns[i - 1] > group_by_columns[i]) {
+      non_local_changes = true;
+      break;
+    }
+  }
 
   group_by_columns.Sort();
+  hash = 0;
+
   COL *prev_col = nullptr;
   for (auto col : group_by_columns) {
     if (prev_col == col) {
@@ -877,7 +1120,8 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     prev_col = col;
   }
 
-  return false;
+  is_canonical = true;
+  return non_local_changes;
 
 remove_duplicates:
   UseList<COL> new_group_by_columns(this);
@@ -890,7 +1134,8 @@ remove_duplicates:
   }
 
   group_by_columns.Swap(new_group_by_columns);
-  return false;
+  is_canonical = true;
+  return true;
 }
 
 // Equality over selects is a mix of structural and pointer-based.
@@ -921,7 +1166,7 @@ bool Node<QuerySelect>::Equals(
     }
 
   } else if (relation) {
-    if (!that->relation || relation->decl != that->relation->decl) {
+    if (!that->relation || relation->decl.Id() != that->relation->decl.Id()) {
       return false;
     }
 
@@ -983,8 +1228,11 @@ static bool ColumnsEq(const UseList<COL> &c1s, const UseList<COL> &c2s) {
 // Equality over joins is pointer-based.
 bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsJoin();
-  if (!that || columns.Size() != that->columns.Size() ||
-      num_pivots != that->num_pivots) {
+  if (!that ||
+      columns.Size() != that->columns.Size() ||
+      num_pivots != that->num_pivots ||
+      out_to_in.empty() ||
+      that->out_to_in.empty()) {
     return false;
   }
 
@@ -1115,7 +1363,8 @@ bool Node<QueryInsert>::Equals(
     return false;
   }
 
-  if (decl != that->decl) {
+  if (decl.Id() != that->decl.Id()) {
+
     return false;
   }
 
@@ -1237,30 +1486,35 @@ bool QueryView::ReplaceAllUsesWith(
   }
 
   for (auto i = 0u; i < num_cols; ++i) {
-    auto col = impl->columns[i];
+    const auto col = impl->columns[i];
     assert(col->view == impl);
-    assert(col->index == i);
 
-    auto that_col = that.impl->columns[i];
+    const auto that_col = that.impl->columns[i];
     assert(that_col->view == that.impl);
-    assert(that_col->index == i);
+
+    assert(col->var.Type() == that_col->var.Type());
 
     col->ReplaceAllUsesWith(that_col);
   }
 
   impl->ReplaceAllUsesWith(that.impl);
   impl->input_columns.Clear();
+  impl->is_used = false;
 
   if (const auto as_merge = impl->AsMerge()) {
     as_merge->merged_views.Clear();
 
   } else if (const auto as_join = impl->AsJoin()) {
     as_join->out_to_in.clear();
+    as_join->num_pivots = 0;
 
   } else if (const auto as_agg = impl->AsAggregate()) {
     as_agg->group_by_columns.Clear();
     as_agg->bound_columns.Clear();
     as_agg->summarized_columns.Clear();
+
+  } else if (const auto as_filter = impl->AsConstraint()) {
+    as_filter->attached_columns.Clear();
   }
 
   return true;
@@ -1629,10 +1883,7 @@ DefinedNodeRange<QueryColumn> QueryConstraint::AttachedOutputColumns(void) const
 }
 
 UsedNodeRange<QueryColumn> QueryConstraint::AttachedInputColumns(void) const {
-  auto begin = impl->input_columns.begin();
-  ++begin;
-  ++begin;
-  return {begin, impl->input_columns.end()};
+  return {impl->attached_columns.begin(), impl->attached_columns.end()};
 }
 
 QueryRelation QueryInsert::Relation(void) const noexcept {

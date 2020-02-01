@@ -47,7 +47,9 @@ class QueryContext {
   // stream.
   std::unordered_map<std::string, Node<QueryConstant> *> spelling_to_constant;
 
-  unsigned next_join_id{~0U};
+  // Selects within the same group cannot be merged. A group comes from
+  // importing a clause, given an assumption.
+  unsigned select_group_id{0};
 
   // The streams associated with messages and other concrete inputs.
   DefList<Node<QueryInput>> inputs;
@@ -131,6 +133,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // or a comparison.
   //
   // This will have a value of `kInvalidIndex` if we don't have the information.
+  //
+  // NOTE(pag): All columns published by a join must have indices reflective of
+  //            their position in the `columns` definition list. This is used
+  //            when establishing join equality.
   unsigned index;
 
   // Set of columns that are equivalent to this column.
@@ -223,7 +229,11 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   Node(void)
       : Def<Node<QueryView>>(this),
-        input_columns(this) {}
+        columns(this),
+        input_columns(this) {
+    assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
+           reinterpret_cast<uintptr_t>(this));
+  }
 
   // Returns `true` if this view is being used.
   bool IsUsed(void) const noexcept;
@@ -252,7 +262,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // This is the depth of this node from an input node. This is useful when
   // running optimizations, where we ideally want to apply them bottom-up, i.e.
   // closer to the input nodes, then further away.
-  virtual unsigned Depth(void) noexcept = 0;
+  virtual unsigned Depth(void) noexcept;
 
   // Returns `true` if `this` and `that` are structurally or pointer-input
   // equivalent. Works even if there are cycles in the graph.
@@ -278,6 +288,27 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // vector to maintain a relationship between input-to-output columns.
   UseList<COL> input_columns;
 
+  // Selects on within the same group generally cannot be merged. For example,
+  // if you had this code:
+  //
+  //    node_pairs(A, B) : node(A), node(B).
+  //
+  // Then you don't want to merge the two selects from the `node` relation,
+  // because then you won't get the cross-product of nodes, you'll just get
+  // the pairs of all nodes.
+  //
+  // However, if within the same query you have:
+  //
+  //    node_pairs(A, B) : node(A), node(B).
+  //    node_pairs(A, A) : node(A).
+  //
+  // Then across these two clauses, some selects *can* be merged. We still need
+  // to be careful with how we go about merging selects across groups. There is
+  // a situation where we can get unlucky and cross merge everything down to
+  // some null case that we don't really want. What we need, then, is to
+  // maintain which groups a given select is derived from.
+  std::vector<unsigned> group_ids;
+
   // Hash of this node, and its dependencies. A zero value implies that the
   // hash is invalid. Final hashes always have their low 3 bits as a non-zero
   // identifier of the type of the node.
@@ -289,6 +320,12 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Is this view in a canonical form? Canonical forms help with doing equality
   // checks and replacements.
   bool is_canonical{false};
+
+  // A different way of tracking usage. Initially, when creating queries,
+  // nothing atually uses inserts, and so they will look trivially dead.
+  // This exists to make them seem alive, while still allowing CSE to merge
+  // INSERTs and mark the old old one as dead.
+  bool is_used{false};
 };
 
 using VIEW = Node<QueryView>;
@@ -313,27 +350,6 @@ class Node<QuerySelect> final : public Node<QueryView> {
   // The table from which this select takes its columns.
   UseRef<REL> relation;
   UseRef<STREAM> stream;
-
-  // Selects on within the same group generally cannot be merged. For example,
-  // if you had this code:
-  //
-  //    node_pairs(A, B) : node(A), node(B).
-  //
-  // Then you don't want to merge the two selects from the `node` relation,
-  // because then you won't get the cross-product of nodes, you'll just get
-  // the pairs of all nodes.
-  //
-  // However, if within the same query you have:
-  //
-  //    node_pairs(A, B) : node(A), node(B).
-  //    node_pairs(A, A) : node(A).
-  //
-  // Then across these two clauses, some selects *can* be merged. We still need
-  // to be careful with how we go about merging selects across groups. There is
-  // a situation where we can get unlucky and cross merge everything down to
-  // some null case that we don't really want. What we need, then, is to
-  // maintain which groups a given select is derived from.
-  std::vector<unsigned> group_ids;
 };
 
 using SELECT = Node<QuerySelect>;
@@ -346,7 +362,6 @@ class Node<QueryTuple> final : public Node<QueryView> {
   Node<QueryTuple> *AsTuple(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Put this tuple into a canonical form, which will make comparisons and
@@ -376,8 +391,14 @@ class Node<QueryJoin> final : public Node<QueryView> {
   // replacements easier.
   bool Canonicalize(QueryImpl *query) override;
 
+  void VerifyPivots(void);
+
   // Maps output columns to input columns.
   std::unordered_map<COL *, UseList<COL>> out_to_in;
+
+  // Used for verification.
+  std::vector<VIEW *> pivot_views;
+  std::vector<VIEW *> next_pivot_views;
 
   // Number of pivot columns.
   unsigned num_pivots{0};
@@ -395,7 +416,6 @@ class Node<QueryMap> final : public Node<QueryView> {
   Node<QueryMap> *AsMap(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   inline explicit Node(ParsedFunctor functor_)
@@ -480,7 +500,8 @@ template <>
 class Node<QueryConstraint> : public Node<QueryView> {
  public:
   Node(ComparisonOperator op_)
-      : op(op_) {}
+      : op(op_),
+        attached_columns(this) {}
 
   virtual ~Node(void);
 
@@ -496,6 +517,9 @@ class Node<QueryConstraint> : public Node<QueryView> {
   bool Canonicalize(QueryImpl *query) override;
 
   const ComparisonOperator op;
+
+  // Attached columns to bring along.
+  UseList<COL> attached_columns;
 };
 
 using CMP = Node<QueryConstraint>;
@@ -509,12 +533,16 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
       : relation(relation_->CreateUse(this)),
-        decl(decl_) {}
+        decl(decl_) {
+
+    // Make all INSERTs initially look used. Replacing one with another will
+    // make it go unused.
+    is_used = true;
+  }
 
   Node<QueryInsert> *AsInsert(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   const UseRef<REL> relation;

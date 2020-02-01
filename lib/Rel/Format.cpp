@@ -22,7 +22,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = relation.Declaration();
     const auto arity = decl.Arity();
     os << "t" << relation.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>RELATION</TD><TD>";
+       << "<TD>RELATION ";
 
     if (relation.IsNegative()) {
       os << "!";
@@ -41,7 +41,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = input.Declaration();
     const auto arity = decl.Arity();
     os << "t" << input.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>INPUT</TD><TD>" << ParsedDeclarationName(decl) << "</TD>";
+       << "<TD>INPUT " << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -53,7 +53,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = generator.Declaration();
     const auto arity = decl.Arity();
     os << "t" << generator.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>GENERATOR</TD><TD>" << ParsedDeclarationName(decl) << "</TD>";
+       << "<TD>GENERATOR " << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";

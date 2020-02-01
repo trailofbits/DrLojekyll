@@ -151,10 +151,10 @@ class UseList {
   }
 
   void Sort(void) noexcept {
-    if (!is_sorted) {
-      std::sort(uses.begin(), uses.end());
-      is_sorted = true;
-    }
+    std::sort(uses.begin(), uses.end(),
+              [] (Use<T> *a, Use<T> *b) {
+                return a->get() < b->get();
+              });
   }
 
   void ClearWithoutErasure(void) {
@@ -164,6 +164,17 @@ class UseList {
   void Swap(UseList<T> &that) {
     assert(owner == that.owner);
     uses.swap(that.uses);
+
+    if (owner && that.owner) {
+      owner->Update(User::gNextTimestamp++);
+      if (owner != that.owner) {
+        that.owner->Update(User::gNextTimestamp++);
+      }
+    } else if (owner) {
+      owner->Update(User::gNextTimestamp++);
+    } else if (that.owner) {
+      that.owner->Update(User::gNextTimestamp++);
+    }
   }
 
   void Clear(void);
@@ -171,7 +182,6 @@ class UseList {
  private:
   User * const owner;
   std::vector<Use<T> *> uses;
-  bool is_sorted{true};
 };
 
 template <typename T>
@@ -347,7 +357,6 @@ void UseList<T>::Clear(void) {
 
   std::vector<Use<T> *> old_uses;
   uses.swap(old_uses);
-  is_sorted = true;
 
   for (auto use : old_uses) {
     if (use) {
@@ -359,9 +368,6 @@ void UseList<T>::Clear(void) {
 template <typename T>
 void UseList<T>::AddUse(Def<T> *def) {
   const auto use = def->CreateUse(owner);
-  if (is_sorted && !uses.empty()) {
-    is_sorted = uses.back() < use;
-  }
   uses.push_back(use);
 }
 
@@ -413,6 +419,10 @@ class UseRef {
 template <typename T>
 class DefList {
  public:
+  DefList(void) = default;
+
+  DefList(User *owner_)
+      : owner(owner_) {}
 
   template <typename... Args>
   T *Create(Args&&... args) {
@@ -443,6 +453,17 @@ class DefList {
 
   void Swap(DefList<T> &that) {
     defs.swap(that.defs);
+    if (owner && that.owner) {
+      owner->Update(User::gNextTimestamp++);
+      if (owner != that.owner) {
+        that.owner->Update(User::gNextTimestamp++);
+      }
+    } else if (owner) {
+      owner->Update(User::gNextTimestamp++);
+
+    } else if (that.owner) {
+      that.owner->Update(User::gNextTimestamp++);
+    }
   }
 
   template <typename C>
@@ -452,6 +473,18 @@ class DefList {
         [&cmp] (const std::unique_ptr<T> &a, const std::unique_ptr<T> &b) {
           return cmp(a.get(), b.get());
         });
+    if (owner) {
+      owner->Update(User::gNextTimestamp++);
+    }
+  }
+
+  void RemoveUnused(void) {
+    auto it = std::remove_if(
+        defs.begin(), defs.end(),
+        [] (const std::unique_ptr<T> &v) {
+          return !v->IsUsed();
+        });
+    defs.erase(it, defs.end());
   }
 
   ~DefList(void) {
@@ -465,6 +498,7 @@ class DefList {
   }
 
  private:
+  User *owner{nullptr};
   std::vector<std::unique_ptr<T>> defs;
 };
 

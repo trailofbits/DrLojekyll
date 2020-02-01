@@ -88,19 +88,19 @@ class QueryBuilderImpl : public SIPSVisitor {
     if (decl.IsMessage()) {
       const auto stream = StreamFor(ParsedMessage::From(decl));
       const auto select = query->selects.Create(stream);
-      select->group_ids.push_back(select_group_id);
+      select->group_ids.push_back(context->select_group_id);
       return select;
 
     } else if (decl.IsFunctor()) {
       const auto stream = StreamFor(ParsedFunctor::From(decl));
       const auto select = query->selects.Create(stream);
-      select->group_ids.push_back(select_group_id);
+      select->group_ids.push_back(context->select_group_id);
       return select;
 
     } else {
       auto table = TableFor(pred);
       const auto select = query->selects.Create(table);
-      select->group_ids.push_back(select_group_id);
+      select->group_ids.push_back(context->select_group_id);
       return select;
     }
   }
@@ -120,7 +120,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     joined_cols.clear();
     where_cols.clear();
     sips_cols.clear();
-    select_group_id += 1;
+    context->select_group_id += 1;
 
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsMessage()) {
@@ -131,7 +131,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       input_view = query->selects.Create(StreamFor(decl));
     }
 
-    initial_view->group_ids.push_back(select_group_id);
+    initial_view->group_ids.push_back(context->select_group_id);
   }
 
   void DeclareParameter(const Column &param) override {
@@ -247,7 +247,8 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto i = 0u; i < num_cols; ++i) {
       const auto sel_col = select_cols[i];
       const auto tuple_col = tuple_cols[i];
-      auto join_col = join->columns.Create(sel_col->var, join, sel_col->id);
+      const auto join_col = join->columns.Create(
+          sel_col->var, join, sel_col->id, join->columns.Size());
 
       COL::Union(sel_col, join_col);
       COL::Union(tuple_col, join_col);
@@ -266,6 +267,8 @@ class QueryBuilderImpl : public SIPSVisitor {
       input_cols->second.AddUse(sel_col);
       input_cols->second.AddUse(tuple_col);
     }
+
+    join->VerifyPivots();
   }
 
   // Create a join that is the cross-product of two relations. Return the new
@@ -312,9 +315,12 @@ class QueryBuilderImpl : public SIPSVisitor {
     std::pair<COL *, COL *> ret = {nullptr, nullptr};
 
     auto join = query->joins.Create();
+    join->num_pivots = 0;
+
     for (auto view : {lhs->view, rhs->view}) {
       for (auto col : view->columns) {
-        const auto out_col = join->columns.Create(col->var, join, col->id);
+        const auto out_col = join->columns.Create(
+            col->var, join, col->id, join->columns.Size());
 
         join->out_to_in.emplace(out_col, join);
 
@@ -345,64 +351,108 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   // Create a join based off of an equivalence class of columns.
-  void CreateJoin(const std::unordered_set<COL *> &eq_class) {
+  bool CreateJoin(const std::unordered_set<COL *> &eq_class) {
     if (eq_class.empty() || eq_class.size() == 1) {
-      return;
+      return false;
     }
 
-    std::unordered_set<VIEW *> eq_views;
+    // Find the unique views merged by `eq_class`, and choose an arbitrary
+    // column from the set of equivalent columns being published by that view
+    // to use as our leader for the pivot. If we find other columns then we
+    // put them back into `pending_compare`s.
+    bool added_compares = false;
+    std::unordered_map<VIEW *, COL *> eq_views;
     for (auto col : eq_class) {
-      eq_views.insert(col->view);
+      auto &prev_col = eq_views[col->view];
+      if (prev_col) {
+        added_compares = true;
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual, prev_col->var, prev_col,
+            col->var, col);
+
+      } else {
+        prev_col = col;
+      }
     }
 
     if (eq_views.size() == 1) {
-      return;
+      assert(added_compares);
+      return false;
+    }
+
+    // Fill in the main pivot first.
+    std::unordered_map<COL *, std::vector<COL *>> grouped_cols;
+    for (auto [view, col] : eq_views) {
+      grouped_cols[col->Find()].push_back(col);
+    }
+
+    std::unordered_set<COL *> pivot_cols;
+
+    // Then, group all incoming columns by their equivalence classes. We
+    // may have more than one join pivot to deal with.
+    for (auto [view, leader_col] : eq_views) {
+      for (auto col : view->columns) {
+        auto &col_group = grouped_cols[col->Find()];
+
+        // Make sure that we don't put more than one column from every source
+        // view into a pivot group.
+        for (auto equiv_col : col_group) {
+          if (equiv_col->view == view) {
+            goto skip_col;
+          }
+        }
+
+        col_group.push_back(col);
+
+      skip_col:
+        continue;
+      }
     }
 
     const auto join = query->joins.Create();
 
-    // Then, group all incoming columns by their equivalence classes. We
-    // may have more than one join pivot to deal with.
-    std::unordered_map<COL *, std::vector<COL *>> grouped_cols;
-    for (auto view : eq_views) {
-      for (auto col : view->columns) {
-        grouped_cols[col->Find()].push_back(col);
-      }
-    }
-
     // First, handle column groups, where the number of grouped columns matches
-    // the number of columns in our pivot's equivalence class. These can be
-    // used as additional pivots.
-    for (auto &col_group : grouped_cols) {
-      if (col_group.second.size() == eq_class.size()) {
-        ++join->num_pivots;
+    // the number of views being merged by this JOIN. These are the pivots of
+    // the join.
+    for (auto &[leader_col, col_group] : grouped_cols) {
+      if (col_group.size() != eq_views.size()) {
+        continue;
+      }
 
-        const auto pivot_col = join->columns.Create(
-            col_group.first->var, join, col_group.first->id);
+      ++join->num_pivots;
 
-        join->out_to_in.emplace(pivot_col, join);
+      const auto pivot_col = join->columns.Create(
+          leader_col->var, join, leader_col->id, join->columns.Size());
 
-        COL::Union(col_group.first, pivot_col);
+      join->out_to_in.emplace(pivot_col, join);
 
-        for (auto prev_col : col_group.second) {
-          prev_col->ReplaceAllUsesWith(pivot_col);
-        }
+      COL::Union(leader_col, pivot_col);
+
+      // Sort the columns in the way that they will end up sorted when
+      // canonicalizing joins.
+      std::sort(col_group.begin(), col_group.end());
+
+      for (auto prev_col : col_group) {
+        pivot_cols.emplace(prev_col);
+        prev_col->ReplaceAllUsesWith(pivot_col);
       }
     }
 
-    // Next, handle column groups where the column group size does not match
-    // the pivot's equivalence class size. These cannot be used as pivots of
-    // the join.
-    for (auto &col_group : grouped_cols) {
-      if (col_group.second.size() != eq_class.size()) {
-        for (auto prev_col : col_group.second) {
-          const auto published_col = join->columns.Create(
-              prev_col->var, join, prev_col->id);
+    assert(1 <= join->num_pivots);
 
-          join->out_to_in.emplace(published_col, join);
-          COL::Union(prev_col, published_col);
-          prev_col->ReplaceAllUsesWith(published_col);
+    // Next, go handle all other columns that aren't promoted as pivots.
+    for (auto [view, leader_col] : eq_views) {
+      for (auto col : view->columns) {
+        if (pivot_cols.count(col)) {
+          continue;
         }
+        const auto published_col = join->columns.Create(
+            col->var, join, col->id,
+            join->columns.Size());
+
+        join->out_to_in.emplace(published_col, join);
+        COL::Union(col, published_col);
+        col->ReplaceAllUsesWith(published_col);
       }
     }
 
@@ -411,7 +461,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     auto i = 0u;
     for (auto &col_group : grouped_cols) {
-      if (col_group.second.size() == eq_class.size()) {
+      if (col_group.second.size() == eq_views.size()) {
         const auto pivot_col = join->columns[i++];
         auto input_cols = join->out_to_in.find(pivot_col);
         for (auto col : col_group.second) {
@@ -419,15 +469,19 @@ class QueryBuilderImpl : public SIPSVisitor {
         }
       }
     }
-    for (auto &col_group : grouped_cols) {
-      if (col_group.second.size() != eq_class.size()) {
-        for (auto prev_col : col_group.second) {
+
+    for (auto [view, leader_col] : eq_views) {
+      for (auto col : view->columns) {
+        if (!pivot_cols.count(col)) {
           const auto published_col = join->columns[i++];
           auto input_cols = join->out_to_in.find(published_col);
-          input_cols->second.AddUse(prev_col);
+          input_cols->second.AddUse(col);
         }
       }
     }
+
+    join->VerifyPivots();
+    return true;
   }
 
   // Create a comparison. If the two columns being compared do not belong to
@@ -510,7 +564,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     // Now go add in the uses of the remainder of the product columns.
     for (auto col : lhs_col->view->columns) {
       if (col != lhs_col && col != rhs_col) {
-        cmp->input_columns.AddUse(col);
+        cmp->attached_columns.AddUse(col);
       }
     }
 
@@ -956,18 +1010,21 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       std::vector<COL *> input_cols;
       auto select = query->selects.Create(TableFor(pred));
-      select->group_ids.push_back(select_group_id);
+      select->group_ids.push_back(context->select_group_id);
 
       for (auto col = begin; col < end; ++col) {
         const auto &prev_colset = id_to_col[col->id];
         assert(prev_colset);
-        AddColumn(select, *col);
-
         const auto prev_col = prev_colset->Leader();
-        input_cols.push_back(prev_col);
+        const auto out_col = AddColumn(select, *col);
+        pending_compares.emplace_back(
+            ComparisonOperator::kEqual,
+            prev_col->var, prev_col,
+            col->var, out_col);
+//        input_cols.push_back(prev_col);
       }
 
-      pending_presence_checks.emplace_back(select, std::move(input_cols));
+//      pending_presence_checks.emplace_back(select, std::move(input_cols));
     }
   }
 
@@ -1000,80 +1057,161 @@ class QueryBuilderImpl : public SIPSVisitor {
     return made_progress;
   }
 
-//  // Perform common subexpression elimination, which will first identify
-//  // candidate subexpressions for possible elimination using hashing, and
-//  // then will perform recursive equality checks.
-//  bool CSE(void) {
-//    using CandidateList = std::vector<VIEW *>;
-//    using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
-//
-//    auto apply_list = [=] (EqualitySet &eq, CandidateList &list,
-//                           CandidateList &ipr) -> bool {
-//      ipr.clear();
-//      for (auto i = 0u; i < list.size(); ++i) {
-//        auto v1 = list[i];
-//        ipr.push_back(v1);
-//
-//        for (auto j = i + 1; j < list.size(); ++j) {
-//          auto v2 = list[j];
-////          eq.Clear();
-//          if (!QueryView(v2).ReplaceAllUsesWith(eq, QueryView(v1))) {
-//            ipr.push_back(v2);
-//          }
-//        }
-//
-//        list.swap(ipr);
-//        ipr.clear();
-//      }
-//      return false;
-//    };
-//
-//    std::vector<VIEW *> in_progress;
-//    std::vector<VIEW *> ordered_views;
-//    EqualitySet equalities;
-//    CandidateLists candidates;
-//    auto made_progress = false;
-//
-//    for (auto changed = true; changed; ) {
-//      changed = false;
-//      ordered_views.clear();
-//      query->ForEachView([&] (VIEW *view) {
-//        if (!view->columns.empty()) {
-//          candidates[view->Hash()].push_back(view);
-//          ordered_views.push_back(view);
-//        }
-//      });
-//
-//      // Sort the views so that we process the ones closer to the inputs
-//      // before the ones that are close to the outputs (inserts).
-//      std::sort(ordered_views.begin(), ordered_views.end(),
-//                [] (VIEW *a, VIEW *b) {
-//                  return a->Depth() < b->Depth();
-//                });
-//
-//      // Apply CSE in reverse postorder.
-//      for (auto view : ordered_views) {
-//        if (view->columns.empty()) {
-//          continue;  // We've replaced it.
-//        }
-//
-//        auto &eq_views = candidates[view->Hash()];
-//        if (1 >= eq_views.size()) {
-//          continue;  // Doesn't look structurally equivalent to anything.
-//        }
-//
-//        in_progress.clear();
-//        if (apply_list(equalities, eq_views, in_progress)) {
-//          changed = true;
-//          made_progress = true;
-//        }
-//      }
-//
-//      candidates.clear();
-//    }
-//
-//    return made_progress;
-//  }
+  // Remove unused views.
+  void RemoveUnusedViews(void) {
+    query->selects.RemoveUnused();
+    query->tuples.RemoveUnused();
+    query->joins.RemoveUnused();
+    query->maps.RemoveUnused();
+    query->aggregates.RemoveUnused();
+    query->merges.RemoveUnused();
+    query->constraints.RemoveUnused();
+    query->inserts.RemoveUnused();
+  }
+
+  // Relabel group IDs. This enables us to better optimize SELECTs. Our initial
+  // assignment of `group_id`s works well enough to start with, but isn't good
+  // enough to help us merge some SELECTs. The key idea is that if a given
+  // INSERT reaches two SELECTs, then those SELECTs cannot be merged.
+  void RelabelGroupIDs(void) {
+
+    // Clear out all `group_id` sets, and reset the depth counters.
+    std::vector<VIEW *> sorted_views;
+    query->ForEachView([&] (VIEW *view) {
+      view->depth = 0;
+      view->group_ids.clear();
+      if (!view->AsInsert()) {
+        sorted_views.push_back(view);
+      }
+    });
+
+    // Sort it so that we process deeper views (closer to INSERTs) first.
+    std::sort(
+        sorted_views.begin(), sorted_views.end(),
+        [] (VIEW *a, VIEW *b) {
+          return a->Depth() > b->Depth();
+        });
+
+    unsigned i = 0u;
+    for (auto insert : query->inserts) {
+      insert->group_ids.push_back(i++);
+    }
+
+    // Propagate the group IDs down through the graph.
+    for (i = 0; i < 2; ++i) {
+      for (auto view : sorted_views) {
+        for (auto col : view->columns) {
+          col->ForEachUse([=] (User *user_, COL *col) {
+            const auto user = reinterpret_cast<VIEW *>(user_);
+            view->group_ids.insert(
+                view->group_ids.end(),
+                user->group_ids.begin(),
+                user->group_ids.end());
+            std::sort(view->group_ids.begin(), view->group_ids.end());
+            auto it = std::unique(
+                view->group_ids.begin(), view->group_ids.end());
+            view->group_ids.erase(it, view->group_ids.end());
+          });
+        }
+      }
+    }
+
+    for (auto sel : query->selects) {
+      if (auto rel = sel->relation.get()) {
+        *gOut << "SELECT " << rel->decl.Name() << ' ' << sel->Hash() << '\n';
+        for (auto col : sel->columns) {
+          *gOut << "  var: " << col->var << '\n';
+        }
+        for (auto j : sel->group_ids) {
+          *gOut << "  group: " << j << '\n';
+        }
+      }
+    }
+  }
+
+  // Canonicalize all views. This improves DSE's chance of succeeding.
+  void Canonicalize(void) {
+    query->ForEachView([&] (VIEW *view) {
+      view->hash = 0;
+      view->depth = 0;
+      view->is_canonical = false;
+    });
+    query->ForEachView([&](VIEW *view) {
+      (void) view->Canonicalize(query.get());
+    });
+  }
+
+  // Perform common subexpression elimination, which will first identify
+  // candidate subexpressions for possible elimination using hashing, and
+  // then will perform recursive equality checks.
+  bool CSE(void) {
+    using CandidateList = std::vector<VIEW *>;
+    using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
+
+    auto apply_list = [=] (EqualitySet &eq, CandidateList &list,
+                           CandidateList &ipr) -> bool {
+      ipr.clear();
+
+      while (!list.empty()) {
+        auto v1 = list.front();
+        for (auto j = 1u; j < list.size(); ++j) {
+          auto v2 = list[j];
+          eq.Clear();
+          if (QueryView(v1).ReplaceAllUsesWith(eq, QueryView(v2))) {
+            v1 = v2;
+          } else {
+            ipr.push_back(v2);
+          }
+        }
+        list.swap(ipr);
+        ipr.clear();
+      }
+      return false;
+    };
+
+    auto changed = false;
+
+    std::vector<VIEW *> in_progress;
+    std::vector<VIEW *> ordered_views;
+    EqualitySet equalities;
+    CandidateLists candidates;
+
+    Canonicalize();
+
+    ordered_views.clear();
+    query->ForEachView([&] (VIEW *view) {
+      if (view->IsUsed()) {
+        candidates[view->Hash()].push_back(view);
+        ordered_views.push_back(view);
+      }
+    });
+
+    // Sort the views so that we process the ones closer to the inputs
+    // before the ones that are close to the outputs (inserts).
+    std::sort(ordered_views.begin(), ordered_views.end(),
+              [] (VIEW *a, VIEW *b) {
+                return a->Depth() < b->Depth();
+              });
+
+    // Apply CSE in reverse postorder.
+    for (auto view : ordered_views) {
+      if (!view->IsUsed()) {
+        continue;  // We've replaced it.
+      }
+
+      auto &eq_views = candidates[view->Hash()];
+      if (1 >= eq_views.size()) {
+        continue;  // Doesn't look structurally equivalent to anything.
+      }
+
+      in_progress.clear();
+      if (apply_list(equalities, eq_views, in_progress)) {
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
 
   void Insert(
       ParsedDeclaration decl,
@@ -1170,6 +1308,44 @@ class QueryBuilderImpl : public SIPSVisitor {
 //    }
   }
 
+  static bool CompareEquivalenceClasses(const std::unordered_set<COL *> *a,
+                                        const std::unordered_set<COL *> *b) {
+    if (a == b) {
+      return false;
+    }
+
+    // Bigger ones later so that we process the bigger ones first, because
+    // they will be ordered later, and we do `back`.
+    if (a->size() < b->size()) {
+      return true;
+
+    } else if (a->size() > b->size()) {
+      return false;
+    }
+
+    auto a_depth = 0u;
+    for (auto col : *a) {
+      a_depth = std::max(a_depth, col->view->Depth());
+    }
+
+    auto b_depth = 0u;
+    for (auto col : *b) {
+      b_depth = std::max(b_depth, col->view->Depth());
+    }
+
+    // Order deeper ones (further form input streams) earlier so
+    // that we process them later.
+    if (a_depth > b_depth) {
+      return true;
+
+    } else if (a_depth < b_depth) {
+      return false;
+
+    } else {
+      return a < b;
+    }
+  }
+
   // Reify pending comparisons into constraint relations or into join relations.
   void ReifyPendingComparisons(void) {
     if (pending_compares.empty()) {
@@ -1188,7 +1364,9 @@ class QueryBuilderImpl : public SIPSVisitor {
     std::unordered_map<COL *, std::unordered_set<COL *>> equiv_classes;
     for (auto [op, lhs_var, lhs_col, rhs_var, rhs_col] : next_pending_compares) {
       if (ComparisonOperator::kEqual == op) {
-        auto &eq_set = equiv_classes[lhs_col->Find()];
+        const auto lhs_rep_col = lhs_col->Find();
+        assert(lhs_rep_col == rhs_col->Find());
+        auto &eq_set = equiv_classes[lhs_rep_col];
         eq_set.insert(lhs_col);
         eq_set.insert(rhs_col);
       } else {
@@ -1201,38 +1379,18 @@ class QueryBuilderImpl : public SIPSVisitor {
       sorted_equiv_class.push_back(&(leader_set.second));
     }
 
+    std::sort(sorted_equiv_class.begin(), sorted_equiv_class.end(),
+              CompareEquivalenceClasses);
+
     while (!sorted_equiv_class.empty()) {
-      std::sort(sorted_equiv_class.begin(), sorted_equiv_class.end(),
-                [] (const std::unordered_set<COL *> *a,
-                          const std::unordered_set<COL *> *b) {
-                  auto a_depth = 0u;
-                  for (auto col : *a) {
-                    a_depth = std::max(a_depth, col->view->Depth());
-                  }
-                  auto b_depth = 0u;
-                  for (auto col : *b) {
-                    b_depth = std::max(b_depth, col->view->Depth());
-                  }
-
-                  // Order deeper ones (further form input streams) earlier so
-                  // that we process them later.
-                  if (a_depth > b_depth) {
-                    return true;
-
-                  } else if (a_depth < b_depth) {
-                    return false;
-
-                  // Bigger ones second when there's a tie-breaker. This means
-                  // that we process the bigger ones first, because they will
-                  // be ordered later, and we do `back`.
-                  } else {
-                    return a->size() < b->size();
-                  }
-                });
-
-      auto set = sorted_equiv_class.back();
+      const auto set = sorted_equiv_class.back();
       sorted_equiv_class.pop_back();
-      CreateJoin(*set);
+
+      // NOTE(pag): `CreateJoin` might add to `pending_compares`.
+      if (CreateJoin(*set)) {
+        std::sort(sorted_equiv_class.begin(), sorted_equiv_class.end(),
+                  CompareEquivalenceClasses);
+      }
     }
 
     next_pending_compares.clear();
@@ -1262,7 +1420,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       auto [op, lhs_var, lhs_col, rhs_var, rhs_col] = next_pending_compares.back();
       next_pending_compares.pop_back();
 
-      assert(ComparisonOperator::kEqual != op);
       CreateComparison(op, lhs_var, lhs_col, rhs_var, rhs_col);;
     }
   }
@@ -1407,10 +1564,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   std::unordered_map<COL *, COL *> unique_cols;
   std::vector<std::pair<COL *, COL *>> joined_cols;
-
-  // Selects within the same group cannot be merged. A group comes from
-  // importing a clause, given an assumption.
-  unsigned select_group_id{0};
 };
 
 // Build an insertion query for the best scoring, according to `scorer`,
@@ -1429,22 +1582,36 @@ void QueryBuilder::VisitClauseWithAssumption(
 
 // Return the final query, which may include several different inserts.
 Query QueryBuilder::BuildQuery(void) {
-//  impl->JoinGroups();
-//  impl->JoinColumns();
 
-//  // Comparisons between `QueryConstraint` nodes are not structural but pointer-
-//  // based, so we sometimes need an extra push :-/
-//  for (auto i = 0; i < 2; ++i) {
-//    for (auto changed = true; changed;) {
-//      changed = false;
-//      if (impl->CSE()) {
-//        changed = true;
-//        i = 0;
-//      }
-//    }
-//  }
-//
-//  impl->LinkEverything();
+  impl->query->ForEachView([&] (VIEW *view) {
+    view->is_canonical = false;
+    view->hash = 0;
+    view->depth = 0;
+  });
+
+  auto max_depth = 2u;
+  for (auto insert : impl->query->inserts) {
+    max_depth = std::max(max_depth, insert->Depth());
+  }
+
+  for (auto i = 0; i < max_depth; ++i) {
+    impl->RelabelGroupIDs();
+    if (impl->CSE()) {
+      i = 0;
+    }
+    impl->RemoveUnusedViews();
+  }
+
+  *gOut << "\n\n\n";
+  impl->RelabelGroupIDs();
+
+  for (auto join : impl->query->joins) {
+    *gOut << "JOIN " << join->Hash() << '\n';
+  }
+  for (auto cmp : impl->query->constraints) {
+    cmp->Canonicalize(impl->query.get());
+    *gOut << "CMP " << cmp->Hash() << '\n';
+  }
 
   Query ret(std::move(impl->query));
   impl.reset(new QueryBuilderImpl(impl->context));
