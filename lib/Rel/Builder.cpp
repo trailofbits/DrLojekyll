@@ -271,83 +271,121 @@ class QueryBuilderImpl : public SIPSVisitor {
     join->VerifyPivots();
   }
 
-  // Create a join that is the cross-product of two relations. Return the new
-  // values of `lhs` and `rhs` in this product table.
-  std::pair<COL *, COL *> CreateProduct(COL *lhs, COL *rhs) {
-    std::vector<COL *> seen;
-    seen.reserve(2);
+  static bool IsConstant(COL *col) {
+    if (auto sel = col->view->AsSelect()) {
+      if (sel->stream && sel->stream->AsConstant()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Create a join that is the cross-product of two or more relations, where
+  // the relations are the views of the columns in `inout`. Modifies the columns
+  // in `inout` in place.
+  VIEW *CreateProduct(std::vector<COL *> &inout, bool merge_sets=false) {
+    assert(1 <= inout.size());
+
+    std::unordered_map<COL *, COL *> seen;
+    seen.reserve(inout.size());
 
     // Drill down and find the source of `col`. If `col` is from another
     // cross-product, then go take its source column, rather than possibly
     // merging in the whole product relation.
     auto drill_down = [&seen] (COL *col) {
+      auto &found_col = seen[col];
+      if (found_col) {
+        return found_col;
+      }
       while (true) {
-        if (std::find(seen.begin(), seen.end(), col) != seen.end()) {
-          return col;
-        }
-
-        seen.push_back(col);
-
         if (auto view_join = col->view->AsJoin()) {
           if (view_join->num_pivots) {
+            found_col = col;
             return col;
 
           } else {
             auto in_set = view_join->out_to_in.find(col);
             assert(in_set != view_join->out_to_in.end());
             assert(in_set->second.Size() == 1);
-
             col = in_set->second[0];
           }
         } else {
+          found_col = col;
           return col;
         }
       }
     };
 
-    lhs = drill_down(lhs);
-    rhs = drill_down(rhs);
+    VIEW *last_view = nullptr;
+    bool coming_from_different_views = false;
+    for (auto &col : inout) {
+      if (col && !IsConstant(col)) {
+        col = drill_down(col);
+        if (!last_view) {
+          last_view = col->view;
 
-    if (lhs->view == rhs->view) {
-      return {lhs, rhs};
+        } else if (last_view != col->view) {
+          coming_from_different_views = true;
+        }
+      }
     }
 
-    std::pair<COL *, COL *> ret = {nullptr, nullptr};
+    // All columns in `inout` are constants and/or all non-constant columns
+    // are derived from the same view.
+    if (!coming_from_different_views) {
+      return last_view;
+    }
 
-    auto join = query->joins.Create();
+    std::vector<VIEW *> unique_views;
+    auto num_present = 0u;
+    for (auto col : inout) {
+      if (col && !IsConstant(col)) {
+        ++num_present;
+        unique_views.push_back(col->view);
+      }
+    }
+
+    std::sort(unique_views.begin(), unique_views.end());
+    const auto it = std::unique(unique_views.begin(), unique_views.end());
+    unique_views.erase(it, unique_views.end());
+
+    assert(1 < unique_views.size());
+
+    const auto join = query->joins.Create();
     join->num_pivots = 0;
 
-    for (auto view : {lhs->view, rhs->view}) {
+    for (auto view : unique_views) {
       for (auto col : view->columns) {
         const auto out_col = join->columns.Create(
             col->var, join, col->id, join->columns.Size());
 
         join->out_to_in.emplace(out_col, join);
-
-        COL::Union(out_col, col);
-        col->ReplaceAllUsesWith(out_col);
-
-        if (col == lhs) {
-          ret.first = out_col;
-        } else if (col == rhs) {
-          ret.second = out_col;
+        if (merge_sets) {
+          COL::Union(out_col, col);
         }
+
+        col->ReplaceAllUsesWith(out_col);
       }
     }
 
     // Now add the uses.
     auto i = 0u;
-    for (auto view : {lhs->view, rhs->view}) {
+    auto num_replaced = 0u;
+    for (auto view : unique_views) {
       for (auto col : view->columns) {
         const auto out_col = join->columns[i++];
         join->out_to_in.find(out_col)->second.AddUse(col);
+
+        auto col_it = std::find(inout.begin(), inout.end(), col);
+        if (col_it != inout.end()) {
+          *col_it = out_col;
+          ++num_replaced;
+        }
       }
     }
 
-    assert(ret.first != nullptr);
-    assert(ret.second != nullptr);
-
-    return ret;
+    assert(num_replaced == num_present);
+    return join;
   }
 
   // Create a join based off of an equivalence class of columns.
@@ -501,9 +539,13 @@ class QueryBuilderImpl : public SIPSVisitor {
     // If we're not sourcing the columns from the same view, then create a
     // product column.
     if (lhs_col->view != rhs_col->view) {
-      const auto ret = CreateProduct(lhs_col, rhs_col);
-      lhs_col = ret.first;
-      rhs_col = ret.second;
+      where_cols.clear();
+      where_cols.resize(2);
+      where_cols[0] = lhs_col;
+      where_cols[1] = rhs_col;
+      CreateProduct(where_cols, true  /* merge_sets */);
+      lhs_col = where_cols[0];
+      rhs_col = where_cols[1];
     }
 
     assert(lhs_col->view == rhs_col->view);
@@ -567,6 +609,8 @@ class QueryBuilderImpl : public SIPSVisitor {
         cmp->attached_columns.AddUse(col);
       }
     }
+
+    cmp->attached_cols_are_outputted = true;
 
     return cmp;
   }
@@ -678,6 +722,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     const auto is_map = decl.IsFunctor() && where_begin < where_end;
     if (is_map) {
       view = query->maps.Create(ParsedFunctor::From(decl));
+
     } else {
       view = SelectFor(pred);
     }
@@ -710,42 +755,149 @@ class QueryBuilderImpl : public SIPSVisitor {
       where_cols[col->n] = prev_colset->Leader();
     }
 
-    for (auto col = where_begin; col < where_end; ++col) {
-      const auto where_col = view->columns[col->n];
-      auto &prev_colset = id_to_col[col->id];
-      const auto prev_col = prev_colset->Leader();
-      if (!is_map || prev_col->view == view) {
-        pending_compares.emplace_back(
-            ComparisonOperator::kEqual, prev_col->var, prev_col,
-            col->var, where_col);
-      }
-      prev_colset = where_col->equiv_columns;
-    }
-
     for (auto col = select_begin; col < select_end; ++col) {
-      const auto select_col = view->columns[col->n];
-      auto &prev_colset = id_to_col[col->id];
+      const auto &prev_colset = id_to_col[col->id];
       if (prev_colset) {
-        const auto prev_col = prev_colset->Leader();
-        if ((!is_map || prev_col->view == view)) {
-          pending_compares.emplace_back(
-              ComparisonOperator::kEqual, prev_col->var, prev_col,
-              col->var, select_col);
-        }
+        where_cols[col->n] = prev_colset->Leader();
       }
-      prev_colset = select_col->equiv_columns;
     }
 
+    // Create the inputs of a map.
     if (is_map) {
+      std::vector<VIEW *> input_views;
+      std::unordered_set<COL *> input_cols;
+
       for (auto col = where_begin; col < where_end; ++col) {
+        assert(ParameterBinding::kBound == col->param.Binding());
         if (const auto where_col = where_cols[col->n]) {
-          where_col->ReplaceAllUsesWith(view->columns[col->n]);
+          input_cols.insert(where_col);
+          if (!IsConstant(where_col)) {
+            input_views.push_back(where_col->view);
+            where_col->ReplaceAllUsesWith(view->columns[col->n]);
+          }
         }
       }
+
+      // Go find the views providing input sources to this map, and go collect
+      // their columns into this MAP's `attached_columns`.
+      std::sort(input_views.begin(), input_views.end());
+      auto it = std::unique(input_views.begin(), input_views.end());
+      input_views.erase(it, input_views.end());
+      for (auto incoming_view : input_views) {
+        for (auto col : incoming_view->columns) {
+          if (!input_cols.count(col)) {
+            view->columns.Create(col->var, view, col->id);
+            view->attached_columns.AddUse(col);
+          }
+        }
+      }
+
       for (auto col = where_begin; col < where_end; ++col) {
         if (const auto where_col = where_cols[col->n]) {
           view->input_columns.AddUse(where_col);
         }
+      }
+
+      for (auto col = where_begin; col < where_end; ++col) {
+        const auto where_col = view->columns[col->n];
+        auto &prev_colset = id_to_col[col->id];
+        const auto prev_col = prev_colset->Leader();
+
+        // Comparison on the inputs.
+        if (prev_col->view == view) {
+          pending_compares.emplace_back(
+              ComparisonOperator::kEqual,
+              where_cols[prev_col->index]->var,
+              where_cols[prev_col->index],
+              where_cols[col->n]->var,
+              where_cols[col->n]);
+
+        } else {
+          assert(where_col->Find() == where_col);
+          prev_colset = where_col->equiv_columns;
+        }
+      }
+
+      const auto map_arity = sips_cols.size();
+      const auto num_attached_cols = view->attached_columns.Size();
+      for (auto i = 0u; i < num_attached_cols; ++i) {
+        auto input_attached_col = view->attached_columns[i];
+        auto output_attached_col = view->columns[map_arity + i];
+
+        // Emulate something like a `COL::Union` without actually doing so.
+        // This goes through everything in `id_to_col` and makes sure than
+        // anything that could point to an attached column now points to the
+        // output of an attached column.
+        //
+        // TODO(pag): Understand and explain why *not* `COL::Union`, other than
+        //            "because it breaks things" / causes cycles.
+        const auto prev_colset = id_to_col[input_attached_col->id].get();
+        if (prev_colset) {
+          const auto leader = prev_colset->Leader();
+          for (auto &[id, related_colset] : id_to_col) {
+            if (related_colset && related_colset->Leader() == leader) {
+              related_colset = output_attached_col->equiv_columns;
+            }
+          }
+        }
+      }
+
+      for (auto col = select_begin; col < select_end; ++col) {
+        assert(ParameterBinding::kFree == col->param.Binding());
+        const auto select_col = view->columns[col->n];
+        auto &prev_colset = id_to_col[col->id];
+        if (!prev_colset) {
+          prev_colset = select_col->equiv_columns;
+          continue;
+        }
+
+        const auto prev_col = prev_colset->Leader();
+
+        // Comparison on the outputs.
+        if (prev_col->view == view) {
+          pending_compares.emplace_back(
+              ComparisonOperator::kEqual, prev_col->var, prev_col,
+              select_col->var, select_col);
+
+        } else {
+          assert(select_col->Find() == select_col);
+          prev_colset = select_col->equiv_columns;
+        }
+      }
+//
+//      for (auto col : view->columns) {
+//        if (col) {
+//          id_to_col[col->id] = col->Find()->equiv_columns;
+//        }
+//      }
+
+
+    } else {
+
+      for (auto col = where_begin; col < where_end; ++col) {
+        const auto where_col = view->columns[col->n];
+        auto &prev_colset = id_to_col[col->id];
+        const auto prev_col = prev_colset->Leader();
+        if (!is_map || prev_col->view == view) {
+          pending_compares.emplace_back(
+              ComparisonOperator::kEqual, prev_col->var, prev_col,
+              col->var, where_col);
+        }
+        prev_colset = where_col->equiv_columns;
+      }
+
+      for (auto col = select_begin; col < select_end; ++col) {
+        const auto select_col = view->columns[col->n];
+        auto &prev_colset = id_to_col[col->id];
+        if (prev_colset) {
+          const auto prev_col = prev_colset->Leader();
+          if ((!is_map || prev_col->view == view)) {
+            pending_compares.emplace_back(
+                ComparisonOperator::kEqual, prev_col->var, prev_col,
+                col->var, select_col);
+          }
+        }
+        prev_colset = select_col->equiv_columns;
       }
     }
   }
@@ -883,7 +1035,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       // NOTE(pag): We don't use `AddColumn` because `group_begin/_end` are
       //            not derived from the functor's application, but from the
       //            summarized predicate's application. That is, they don't
-      //            correspond to actual parameters of the
+      //            correspond to actual parameters of the aggregating functor.
       const auto out_col = agg->columns.Create(col->var, agg, col->id);
 
       // Take the group by column from inside of the aggregation.
@@ -1129,18 +1281,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
   }
 
-  // Canonicalize all views. This improves DSE's chance of succeeding.
-  void Canonicalize(void) {
-    query->ForEachView([&] (VIEW *view) {
-      view->hash = 0;
-      view->depth = 0;
-      view->is_canonical = false;
-    });
-    query->ForEachView([&](VIEW *view) {
-      (void) view->Canonicalize(query.get());
-    });
-  }
-
   // Perform common subexpression elimination, which will first identify
   // candidate subexpressions for possible elimination using hashing, and
   // then will perform recursive equality checks.
@@ -1176,22 +1316,33 @@ class QueryBuilderImpl : public SIPSVisitor {
     EqualitySet equalities;
     CandidateLists candidates;
 
-    Canonicalize();
+    // Repeatedly canonicalize until no more changes to the number of views
+    // or number of columns.
+    for (auto canonicalize = true; canonicalize; ) {
+      canonicalize = false;
 
-    ordered_views.clear();
-    query->ForEachView([&] (VIEW *view) {
-      if (view->IsUsed()) {
-        candidates[view->Hash()].push_back(view);
-        ordered_views.push_back(view);
+      ordered_views.clear();
+      query->ForEachView([&](VIEW *view) {
+        if (view->IsUsed()) {
+          candidates[view->Hash()].push_back(view);
+          ordered_views.push_back(view);
+        }
+      });
+
+      // Sort the views so that we process the ones closer to the inputs
+      // before the ones that are close to the outputs (inserts).
+      std::sort(ordered_views.begin(), ordered_views.end(),
+                [](VIEW *a, VIEW *b) {
+                  return a->Depth() < b->Depth();
+                });
+
+      for (auto view : ordered_views) {
+        if (view->Canonicalize(query.get())) {
+          canonicalize = true;
+          changed = true;
+        }
       }
-    });
-
-    // Sort the views so that we process the ones closer to the inputs
-    // before the ones that are close to the outputs (inserts).
-    std::sort(ordered_views.begin(), ordered_views.end(),
-              [] (VIEW *a, VIEW *b) {
-                return a->Depth() < b->Depth();
-              });
+    }
 
     // Apply CSE in reverse postorder.
     for (auto view : ordered_views) {
@@ -1254,6 +1405,9 @@ class QueryBuilderImpl : public SIPSVisitor {
       JoinAgainstInputs();
       ReifyPendingComparisons();
     }
+
+    // Propagate the attached columns of MAPs forward through the dataflow.
+    ScopeMapVariables();
 
     // Empty out all equivalence classes. We don't want them interfering with
     // one-another across different clauses.
@@ -1422,6 +1576,19 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       CreateComparison(op, lhs_var, lhs_col, rhs_var, rhs_col);;
     }
+  }
+
+  // Propagate the attached columns of MAPs forward through the dataflow.
+  void ScopeMapVariables(void) {
+    query->maps.Sort([] (MAP *a, MAP *b) {
+      if (a->attached_cols_are_outputted == b->attached_cols_are_outputted) {
+        return a->Depth() < b->Depth();
+      } else if (a->attached_cols_are_outputted) {
+        return false;
+      } else {
+        return true;
+      }
+    });
   }
 
   // Go through all column definitions, and reset their `DisjointSet` parents.
@@ -1609,7 +1776,6 @@ Query QueryBuilder::BuildQuery(void) {
     *gOut << "JOIN " << join->Hash() << '\n';
   }
   for (auto cmp : impl->query->constraints) {
-    cmp->Canonicalize(impl->query.get());
     *gOut << "CMP " << cmp->Hash() << '\n';
   }
 

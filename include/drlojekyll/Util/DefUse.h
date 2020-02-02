@@ -228,6 +228,14 @@ class DefListIterator {
     return static_cast<unsigned>(it - that.it);
   }
 
+  inline DefListIterator<T> operator-(unsigned sub) const noexcept {
+    return DefListIterator<T>(&(it[-static_cast<int>(sub)]));
+  }
+
+  inline DefListIterator<T> operator+(unsigned add) const noexcept {
+    return DefListIterator<T>(&(it[add]));
+  }
+
  private:
   const std::unique_ptr<T> *it;
 };

@@ -111,9 +111,11 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
       : Def<Node<QueryColumn>>(this),
         var(var_),
         view(view_),
+        equiv_columns(std::make_shared<ColumnSet>(this)),
         id(id_),
-        index(index_),
-        equiv_columns(std::make_shared<ColumnSet>(this)) {}
+        index(index_) {}
+
+  void ReplaceAllUsesWith(Node<QueryColumn> *that);
 
   Node<QueryColumn> *Find(void);
   static void Union(Node<QueryColumn> *a, Node<QueryColumn> *b);
@@ -121,10 +123,14 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // Returns `true` if this column is being used.
   bool IsUsed(void) const noexcept;
 
+  // Parsed variable associated with this column.
   const ParsedVariable var;
 
   // View to which this column belongs.
   Node<QueryView> * const view;
+
+  // Set of columns that are equivalent to this column.
+  std::shared_ptr<ColumnSet> equiv_columns;
 
   // The ID of the column from the SIPS visitor.
   const unsigned id;
@@ -138,9 +144,6 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   //            their position in the `columns` definition list. This is used
   //            when establishing join equality.
   unsigned index;
-
-  // Set of columns that are equivalent to this column.
-  std::shared_ptr<ColumnSet> equiv_columns;
 };
 
 using COL = Node<QueryColumn>;
@@ -230,10 +233,15 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   Node(void)
       : Def<Node<QueryView>>(this),
         columns(this),
-        input_columns(this) {
+        input_columns(this),
+        attached_columns(this) {
     assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
            reinterpret_cast<uintptr_t>(this));
   }
+
+  // Returns `true` if we had to "guard" this view with a tuple so that we
+  // can put it into canonical form.
+  bool GuardWithTuple(QueryImpl *query);
 
   // Returns `true` if this view is being used.
   bool IsUsed(void) const noexcept;
@@ -241,6 +249,8 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Invoked any time time that any of the columns used by this view are
   // modified.
   void Update(uint64_t) override;
+
+  bool AttachedColumnsAreCanonical(void) const noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
@@ -288,6 +298,11 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // vector to maintain a relationship between input-to-output columns.
   UseList<COL> input_columns;
 
+  // Attached columns to bring along "lexical context" from their inputs.
+  // These are used by MAPs and FILTERs, which need to pull along state from
+  // their sources.
+  UseList<COL> attached_columns;
+
   // Selects on within the same group generally cannot be merged. For example,
   // if you had this code:
   //
@@ -326,6 +341,11 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // This exists to make them seem alive, while still allowing CSE to merge
   // INSERTs and mark the old old one as dead.
   bool is_used{false};
+
+  // Are the attached columns in proper form? This tells us whether or not
+  // any `attached` columns are being outputted via `columns`. This is
+  // relevant to MAPs.
+  bool attached_cols_are_outputted{false};
 };
 
 using VIEW = Node<QueryView>;
@@ -418,6 +438,10 @@ class Node<QueryMap> final : public Node<QueryView> {
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
+  // Put this map into a canonical form, which will make comparisons and
+  // replacements easier.
+  bool Canonicalize(QueryImpl *query) override;
+
   inline explicit Node(ParsedFunctor functor_)
       : functor(functor_) {}
 
@@ -500,15 +524,13 @@ template <>
 class Node<QueryConstraint> : public Node<QueryView> {
  public:
   Node(ComparisonOperator op_)
-      : op(op_),
-        attached_columns(this) {}
+      : op(op_) {}
 
   virtual ~Node(void);
 
   Node<QueryConstraint> *AsConstraint(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
   // Put this constraint into a canonical form, which will make comparisons and
@@ -517,9 +539,6 @@ class Node<QueryConstraint> : public Node<QueryView> {
   bool Canonicalize(QueryImpl *query) override;
 
   const ComparisonOperator op;
-
-  // Attached columns to bring along.
-  UseList<COL> attached_columns;
 };
 
 using CMP = Node<QueryConstraint>;

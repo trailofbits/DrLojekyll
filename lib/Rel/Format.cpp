@@ -255,6 +255,16 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto map : query.Maps()) {
     os << "v" << map.UniqueId() << " [ label=<" << kBeginTable;
+
+    auto num_group = map.NumCopiedColumns();
+    if (num_group) {
+      os << "<TD rowspan=\"2\">COPY</TD>";
+      for (auto col : map.CopiedColumns()) {
+        os << "<TD port=\"c" << col.UniqueId() << "\">"
+           << col.Variable() << "</TD>";
+      }
+    }
+
     os << "<TD rowspan=\"2\">MAP "
        << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.Columns()) {
@@ -262,9 +272,15 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << col.Variable() << "</TD>";
     }
 
-    if (map.NumInputColumns()) {
+    const auto num_inputs = map.NumInputColumns();
+    if (num_group + num_inputs) {
       os << "</TR><TR>";
-      for (auto i = 0u; i < map.NumInputColumns(); ++i) {
+
+      for (auto i = 0u; i < num_group; ++i) {
+        os << "<TD port=\"g" << i << "\"> </TD>";
+      }
+
+      for (auto i = 0u; i < num_inputs; ++i) {
         os << "<TD port=\"p" << i << "\"> </TD>";
       }
     }
@@ -276,8 +292,15 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << kEndTable << ">];\n";
 
+    for (auto i = 0u; i < num_group; ++i) {
+      auto col = map.NthInputCopiedColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << map.UniqueId() << ":g" << i << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+
     // Link the input columns to their sources.
-    for (auto i = 0u; i < map.NumInputColumns(); ++i) {
+    for (auto i = 0u; i < num_inputs; ++i) {
       auto col = map.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << map.UniqueId() << ":p" << i << " -> v"

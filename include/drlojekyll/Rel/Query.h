@@ -280,8 +280,11 @@ class QueryMap : public query::QueryNode<QueryMap> {
   QueryColumn NthInputColumn(unsigned n) const noexcept;
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
-  // The resulting mapped columns.
+  // The resulting mapped columns. This does not include group by columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
+
+  // The resulting grouped columns.
+  DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
 
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
@@ -290,6 +293,18 @@ class QueryMap : public query::QueryNode<QueryMap> {
   QueryColumn NthColumn(unsigned n) const noexcept;
 
   const ParsedFunctor &Functor(void) const noexcept;
+
+  // Returns the number of columns copied along from source views.
+  unsigned NumCopiedColumns(void) const noexcept;
+
+  // Returns the `nth` output copied column.
+  QueryColumn NthCopiedColumn(unsigned n) const noexcept;
+
+  // Returns the `nth` input copied column.
+  QueryColumn NthInputCopiedColumn(unsigned n) const noexcept;
+
+  // The range of input group columns.
+  UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 
  private:
   using query::QueryNode<QueryMap>::QueryNode;

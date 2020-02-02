@@ -72,6 +72,10 @@ Node<QueryColumn> *ColumnSet::Leader(void) {
   return col_set->columns[0];
 }
 
+void Node<QueryColumn>::ReplaceAllUsesWith(Node<QueryColumn> *that) {
+  this->Def<Node<QueryColumn>>::ReplaceAllUsesWith(that);
+}
+
 Node<QueryColumn> *Node<QueryColumn>::Find(void) {
   return equiv_columns->Leader();
 }
@@ -123,6 +127,7 @@ void Node<QueryColumn>::Union(Node<QueryColumn> *a, Node<QueryColumn> *b) {
 QueryImpl::~QueryImpl(void) {
   ForEachView([] (VIEW *view) {
     view->input_columns.ClearWithoutErasure();
+    view->attached_columns.ClearWithoutErasure();
   });
 
   for (auto select : selects) {
@@ -249,6 +254,17 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
   ForEachUse([=] (User *user, Node<QueryView> *) {
     user->Update(next_timestamp);
   });
+}
+
+// Check to see if the attached columns are ordered and unique. If they're
+// not unique then we can deduplicate them.
+bool Node<QueryView>::AttachedColumnsAreCanonical(void) const noexcept {
+  for (auto i = 1u; i < attached_columns.Size(); ++i) {
+    if (attached_columns[i - 1u] >= attached_columns[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Put this view into a canonical form.
@@ -415,6 +431,10 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
     hash = __builtin_rotateright64(hash, 16) ^ HashColumn(input_col);
   }
 
+  for (auto input_col : attached_columns) {
+    hash = __builtin_rotateright64(hash, 16) ^ HashColumn(input_col);
+  }
+
   hash <<= 4;
   hash |= 4;
 
@@ -532,7 +552,9 @@ static unsigned GetDepth(const UseList<COL> &cols, unsigned depth) {
 unsigned Node<QueryView>::Depth(void) noexcept {
   if (!depth) {
     depth = 2u;  // Base case in case of cycles.
-    depth = GetDepth(input_columns, 1u) + 1u;
+    auto real = GetDepth(input_columns, 1u);
+    real = GetDepth(attached_columns, real);
+    depth = real + 1u;
   }
   return depth;
 }
@@ -580,16 +602,6 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
   return depth;
 }
 
-unsigned Node<QueryConstraint>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-    auto real = GetDepth(input_columns, 1u);
-    real = GetDepth(attached_columns, real);
-    depth = real + 1u;
-  }
-  return depth;
-}
-
 // Used to tell if a tuple looks canonical. While canonicalizing a tuple, we
 // may affect the query graph and accidentally convert it back into a non-
 // canonical form.
@@ -621,6 +633,33 @@ bool Node<QueryTuple>::LooksCanonical(void) const {
     }
   }
 
+  return true;
+}
+
+// Returns `true` if we had to "guard" this view with a tuple so that we
+// can put it into canonical form.
+//
+// If this view is used by a merge then we're not allowed to re-order the
+// columns. Instead, what we can do is create a tuple that will maintain
+// the ordering, and the canonicalize the join order below that tuple.
+bool Node<QueryView>::GuardWithTuple(QueryImpl *query) {
+  if (!this->Def<Node<QueryView>>::IsUsed()) {
+    return false;
+  }
+
+  const auto tuple = query->tuples.Create();
+
+  // Make any merges use the tuple.
+  ReplaceAllUsesWith(tuple);
+
+  for (auto col : columns) {
+    const auto out_col = tuple->columns.Create(col->var, tuple, col->id);
+    col->ReplaceAllUsesWith(out_col);
+  }
+
+  for (auto col : columns) {
+    tuple->input_columns.AddUse(col);
+  }
   return true;
 }
 
@@ -657,8 +696,14 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
       const auto in_col = input_columns[i];
       auto &out_col = in_to_out[in_col];
       if (out_col) {
-        columns[i]->ReplaceAllUsesWith(out_col);
+        non_local_changes = true;  // Shrinking the number of columns.
 
+        if (out_col->NumUses() > old_out_col->NumUses()) {
+          old_out_col->ReplaceAllUsesWith(out_col);
+        } else {
+          out_col->ReplaceAllUsesWith(old_out_col);
+          out_col = old_out_col;
+        }
       } else {
         out_col = old_out_col;
         new_input_cols.AddUse(in_col);
@@ -750,51 +795,74 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  auto non_local_changes = false;
-
   assert(num_pivots <= columns.Size());
   assert(out_to_in.size() == columns.Size());
 
   VerifyPivots();
 
-  for (auto &[out_col, input_cols] : out_to_in) {
-    const auto max_i = input_cols.Size();
-    assert(1u <= max_i);
-
-    // Check to see if the columns aren't sorted.
-    for (auto i = 1u; i < max_i; ++i) {
-      if (input_cols[i - 1] > input_cols[i]) {
-        non_local_changes = true;
-      }
-    }
-
-    input_cols.Sort();
-  }
-
-  if (non_local_changes) {
-    hash = 0;  // Sorting the columns changes the hash.
-  }
-
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-  if (this->Def<Node<QueryView>>::IsUsed()) {
-    non_local_changes = true;
+  bool non_local_changes = GuardWithTuple(query);
 
-    const auto tuple = query->tuples.Create();
+  std::unordered_map<COL *, COL *> in_to_out;
 
-    // Make any merges use the tuple.
-    ReplaceAllUsesWith(tuple);
+  for (auto &[out_col, input_cols] : out_to_in) {
+    const auto max_i = input_cols.Size();
+    assert(1u <= max_i);
+    input_cols.Sort();
 
-    for (auto col : columns) {
-      const auto out_col = tuple->columns.Create(col->var, tuple, col->id);
-      col->ReplaceAllUsesWith(out_col);
-    }
+    // Deduplicate non-pivot columns.
+    if (1 == max_i) {
+      auto &prev_out = in_to_out[input_cols[0]];
+      if (prev_out) {
+        non_local_changes = true;  // Changing number of columns.
 
-    for (auto col : columns) {
-      tuple->input_columns.AddUse(col);
+        if (prev_out->NumUses() > out_col->NumUses()) {
+          out_col->ReplaceAllUsesWith(prev_out);
+        } else {
+          prev_out->ReplaceAllUsesWith(out_col);
+          prev_out = out_col;
+        }
+      } else {
+        prev_out = out_col;
+      }
     }
   }
+
+  // Find unused output columns that aren't themselves pivots.
+  std::vector<COL *> keep_cols;
+  for (auto &[out_col, input_cols] : out_to_in) {
+    if (1 == input_cols.Size() && !out_col->NumUses()) {
+      non_local_changes = true;
+    } else {
+      keep_cols.push_back(out_col);
+    }
+  }
+
+  // Keep only the output columns that are needed, and that correspond with
+  // unique (non-pivot) incoming columns.
+  if (keep_cols.size() < columns.Size()) {
+    DefList<COL> new_output_columns(this);
+    std::unordered_map<COL *, UseList<COL>> new_out_to_in;
+
+    for (auto old_out_col : keep_cols) {
+      const auto new_out_col = new_output_columns.Create(
+          old_out_col->var, this, old_out_col->id, new_output_columns.Size());
+      old_out_col->ReplaceAllUsesWith(new_out_col);
+
+      new_out_to_in.emplace(new_out_col, this);
+      auto new_input_cols = new_out_to_in.find(new_out_col);
+      auto old_input_cols = out_to_in.find(old_out_col);
+      new_input_cols->second.Swap(old_input_cols->second);
+    }
+
+    non_local_changes = true;
+    out_to_in.swap(new_out_to_in);
+    columns.Swap(new_output_columns);
+  }
+
+  hash = 0;  // Sorting the columns changes the hash.
 
   // We'll order them in terms of:
   //    - Largest pivot set first.
@@ -860,7 +928,101 @@ sort_columns:
 
   hash = 0;
   is_canonical = true;
-  return true;  // Sorting columns triggers non-local updates.
+  return non_local_changes;
+}
+
+// Put this map into a canonical form, which will make comparisons and
+// replacements easier. We also need to put the "attached" outputs into the
+// proper order.
+bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
+  is_canonical = AttachedColumnsAreCanonical();
+
+  if (is_canonical) {
+    return false;
+  }
+
+  // If this view is used by a merge then we're not allowed to re-order the
+  // columns. Instead, what we can do is create a tuple that will maintain
+  // the ordering, and the canonicalize the join order below that tuple.
+  bool non_local_changes = GuardWithTuple(query);
+
+  // We need to re-order the input columns, and possibly also the output
+  // columns to match the input ordering.
+
+  std::unordered_map<COL *, COL *> in_to_out;
+  DefList<COL> new_output_cols(this);
+
+  auto i = columns.Size() - attached_columns.Size();
+  assert(i == functor.Arity());
+
+  // The first few columns, which are the official outputs of the MAP, must
+  // remain the same and in their original order.
+  for (auto j = 0u; j < i; ++j) {
+    auto new_out_col = new_output_cols.Create(
+        columns[j]->var, this, columns[j]->id);
+    columns[j]->ReplaceAllUsesWith(new_out_col);
+  }
+
+  // Map the `bound`-attributed input columns to the output columns of the
+  // map, just in case any of the attached columns end up being redundant
+  // w.r.t. these bound columns.
+  for (auto j = 0u, k = 0u; j < i; ++j) {
+    const auto param = functor.NthParameter(j);
+    if (ParameterBinding::kBound == param.Binding()) {
+      auto input_col = input_columns[k++];
+      auto output_col = columns[j];
+      in_to_out.emplace(input_col, output_col);
+    }
+  }
+
+  const auto num_cols = columns.Size();
+
+  UseList<COL> new_attached_cols(this);
+
+  for (auto j = 0u; i < num_cols; ++i, ++j) {
+    const auto old_out_col = columns[i];
+
+    // If the output column is never used, then get rid of it.
+    //
+    // NOTE(pag): `IsUsed` on a column checks to see if its view is used
+    //            in a merge, which would not show up in a normal def-use
+    //            list.
+    if (!old_out_col->IsUsed()) {
+      continue;
+    }
+
+    const auto in_col = attached_columns[j];
+    auto &out_col = in_to_out[in_col];
+    if (out_col) {
+      non_local_changes = true;  // Shrinking the number of columns.
+
+      if (out_col->NumUses() > old_out_col->NumUses()) {
+        old_out_col->ReplaceAllUsesWith(out_col);
+      } else {
+        out_col->ReplaceAllUsesWith(old_out_col);
+        out_col = old_out_col;
+      }
+    } else {
+      out_col = old_out_col;
+      new_attached_cols.AddUse(in_col);
+    }
+  }
+
+  new_attached_cols.Sort();
+
+  for (auto in_col : new_attached_cols) {
+    const auto old_out_col = in_to_out[in_col];
+    const auto new_out_col = new_output_cols.Create(
+        old_out_col->var, this, old_out_col->id);
+    old_out_col->ReplaceAllUsesWith(new_out_col);
+  }
+
+  attached_columns.Swap(new_attached_cols);
+  columns.Swap(new_output_cols);
+
+  hash = 0;
+  is_canonical = true;
+  return non_local_changes;
 }
 
 // Put this constraint into a canonical form, which will make comparisons and
@@ -868,14 +1030,7 @@ sort_columns:
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
 bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
-  is_canonical = true;
-
-  // Check to see if the attached columns are ordered.
-  for (auto i = 1u; i < attached_columns.Size(); ++i) {
-    if (attached_columns[i - 1u] > attached_columns[i]) {
-      is_canonical = false;
-    }
-  }
+  is_canonical = AttachedColumnsAreCanonical();
 
   // Check to see if the input columns are ordered correctly. We can reorder
   // them only in the case of (in)equality comparisons.
@@ -892,21 +1047,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-  if (this->Def<Node<QueryView>>::IsUsed()) {
-    const auto tuple = query->tuples.Create();
-
-    // Make any merges use the tuple.
-    ReplaceAllUsesWith(tuple);
-
-    for (auto col : columns) {
-      const auto out_col = tuple->columns.Create(col->var, tuple, col->id);
-      col->ReplaceAllUsesWith(out_col);
-    }
-
-    for (auto col : columns) {
-      tuple->input_columns.AddUse(col);
-    }
-  }
+  bool non_local_changes = GuardWithTuple(query);
 
   // We need to re-order the input columns, and possibly also the output
   // columns to match the input ordering.
@@ -925,6 +1066,9 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
         columns[0]->var, this, columns[0]->id);
     columns[0]->ReplaceAllUsesWith(new_out_col);
 
+    in_to_out.emplace(input_columns[0], new_output_cols[0]);
+    in_to_out.emplace(input_columns[1], new_output_cols[0]);
+
     i = 1u;
 
   // For inequality, we can re-order the inputs, but must also re-order the
@@ -942,6 +1086,9 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
         columns[0]->var, this, columns[0]->id);
     columns[0]->ReplaceAllUsesWith(new_out_col);
 
+    in_to_out.emplace(input_columns[0], new_output_cols[0]);
+    in_to_out.emplace(input_columns[1], new_output_cols[1]);
+
   // Preserve the column ordering for the output columns of other
   // comparisons.
   } else {
@@ -952,6 +1099,9 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
     new_out_col = new_output_cols.Create(
         columns[1]->var, this, columns[1]->id);
     columns[1]->ReplaceAllUsesWith(new_out_col);
+
+    in_to_out.emplace(input_columns[0], new_output_cols[0]);
+    in_to_out.emplace(input_columns[1], new_output_cols[1]);
   }
 
   const auto num_cols = columns.Size();
@@ -974,8 +1124,14 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
     const auto in_col = attached_columns[j];
     auto &out_col = in_to_out[in_col];
     if (out_col) {
-      old_out_col->ReplaceAllUsesWith(out_col);
+      non_local_changes = true;  // Shrinking the number of columns.
 
+      if (out_col->NumUses() > old_out_col->NumUses()) {
+        old_out_col->ReplaceAllUsesWith(out_col);
+      } else {
+        out_col->ReplaceAllUsesWith(old_out_col);
+        out_col = old_out_col;
+      }
     } else {
       out_col = old_out_col;
       new_attached_cols.AddUse(in_col);
@@ -996,7 +1152,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
 
   hash = 0;
   is_canonical = true;
-  return true;
+  return non_local_changes;
 }
 
 // Put this merge into a canonical form, which will make comparisons and
@@ -1100,40 +1256,94 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  bool non_local_changes = false;
-  const auto max_i = group_by_columns.Size();
-  for (auto i = 1u; i < max_i; ++i) {
-    if (group_by_columns[i - 1] > group_by_columns[i]) {
-      non_local_changes = true;
-      break;
+  bool non_local_changes = GuardWithTuple(query);
+  is_canonical = true;
+
+  std::unordered_map<COL *, COL *> in_to_out;
+  auto i = 0u;
+  COL *prev_col = nullptr;
+  for (auto col : group_by_columns) {
+    if (col <= prev_col) {
+      is_canonical = false;  // Out of order, or there's a duplicate.
     }
+    const auto out_col = columns[i++];
+
+    // TODO(pag): Think about this, i.e. what it means to remove a group by
+    //            column from an aggregate.
+    if (!out_col->IsUsed()) {
+      is_canonical = false;
+    } else {
+      in_to_out.emplace(col, out_col);
+      prev_col = col;
+    }
+  }
+
+  // There's a duplicate.
+  if (in_to_out.size() != group_by_columns.Size()) {
+    is_canonical = false;
+  }
+
+  // The group by columns are in order and unique.
+  if (is_canonical) {
+    return non_local_changes;
   }
 
   group_by_columns.Sort();
-  hash = 0;
 
-  COL *prev_col = nullptr;
-  for (auto col : group_by_columns) {
-    if (prev_col == col) {
-      goto remove_duplicates;
-    }
-    prev_col = col;
-  }
-
-  is_canonical = true;
-  return non_local_changes;
-
-remove_duplicates:
+  DefList<COL> new_output_cols(this);
   UseList<COL> new_group_by_columns(this);
-  prev_col = nullptr;
-  for (auto col : group_by_columns) {
-    if (prev_col != col) {
-      new_group_by_columns.AddUse(col);
+
+  for (auto j = 0u; j < i; ++j) {
+    const auto old_out_col = columns[j];
+
+    // If the output column is never used, then get rid of it.
+    //
+    // NOTE(pag): `IsUsed` on a column checks to see if its view is used
+    //            in a merge, which would not show up in a normal def-use
+    //            list.
+    if (!old_out_col->IsUsed()) {
+      continue;
     }
-    prev_col = col;
+
+    const auto in_col = group_by_columns[j];
+    auto &out_col = in_to_out[in_col];
+    if (out_col) {
+      non_local_changes = true;  // Shrinking the number of columns.
+
+      if (out_col->NumUses() > old_out_col->NumUses()) {
+        old_out_col->ReplaceAllUsesWith(out_col);
+      } else {
+        out_col->ReplaceAllUsesWith(old_out_col);
+        out_col = old_out_col;
+      }
+    } else {
+      out_col = old_out_col;
+      new_group_by_columns.AddUse(in_col);
+    }
   }
 
-  group_by_columns.Swap(new_group_by_columns);
+  new_group_by_columns.Sort();
+
+  // Add in the new grouped columns, which are in order, deduped, and used
+  // by later flows.
+  for (auto in_col : new_group_by_columns) {
+    const auto old_out_col = in_to_out[in_col];
+    const auto new_out_col = new_output_cols.Create(
+        old_out_col->var, this, old_out_col->id);
+    old_out_col->ReplaceAllUsesWith(new_out_col);
+  }
+
+  // Add back in the bound and summarized columns.
+  const auto num_cols = columns.Size();
+  for (auto j = i; j < num_cols; ++j) {
+    const auto old_out_col = columns[j];
+    const auto new_out_col = new_output_cols.Create(
+        old_out_col->var, this, old_out_col->id);
+    old_out_col->ReplaceAllUsesWith(new_out_col);
+  }
+
+  columns.Swap(new_output_cols);
+
   is_canonical = true;
   return true;
 }
@@ -1142,7 +1352,8 @@ remove_duplicates:
 bool Node<QuerySelect>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsSelect();
-  if (!that || columns.Size() != that->columns.Size()) {
+  if (!that || columns.Size() != that->columns.Size() ||
+      input_columns.Size() != that->input_columns.Size()) {
     return false;
   }
 
@@ -1232,7 +1443,8 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
       columns.Size() != that->columns.Size() ||
       num_pivots != that->num_pivots ||
       out_to_in.empty() ||
-      that->out_to_in.empty()) {
+      that->out_to_in.empty() ||
+      out_to_in.size() != that->out_to_in.size()) {
     return false;
   }
 
@@ -1264,7 +1476,8 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
 // Equality over maps is pointer-based.
 bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsMap();
-  if (!that || columns.Size() != that->columns.Size()) {
+  if (!that || columns.Size() != that->columns.Size() ||
+      attached_columns.Size() != that->attached_columns.Size()) {
     return false;
   }
 
@@ -1276,7 +1489,8 @@ bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
     return true;
   }
 
-  if (!ColumnsEq(input_columns, that->input_columns)) {
+  if (!ColumnsEq(input_columns, that->input_columns) ||
+      !ColumnsEq(attached_columns, that->attached_columns)) {
     return false;
   }
 
@@ -1352,34 +1566,18 @@ bool Node<QueryConstraint>::Equals(
   return that &&
          op == that->op &&
          columns.Size() == that_->columns.Size() &&
-         ColumnsEq(input_columns, that->input_columns);
+         ColumnsEq(input_columns, that->input_columns) &&
+         ColumnsEq(attached_columns, that->attached_columns);
 }
 
 // Equality over inserts is structural.
 bool Node<QueryInsert>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsInsert();
-  if (!that || columns.Size() != that->columns.Size()) {
-    return false;
-  }
-
-  if (decl.Id() != that->decl.Id()) {
-
-    return false;
-  }
-
-  if (!eq.Contains(this, that)) {
-    const auto max_i = columns.Size();
-    for (auto i = 0u; i < max_i; ++i) {
-      if (input_columns[i] != that->input_columns[i]) {
-        return false;
-      }
-    }
-
-    eq.Insert(this, that);
-  }
-
-  return true;
+  return !that ||
+         decl.Id() != that->decl.Id() ||
+         columns.Size() != that->columns.Size() ||
+         !ColumnsEq(input_columns, that->input_columns);
 }
 
 // Equality over inserts is structural.
@@ -1499,6 +1697,7 @@ bool QueryView::ReplaceAllUsesWith(
 
   impl->ReplaceAllUsesWith(that.impl);
   impl->input_columns.Clear();
+  impl->attached_columns.Clear();
   impl->is_used = false;
 
   if (const auto as_merge = impl->AsMerge()) {
@@ -1512,9 +1711,6 @@ bool QueryView::ReplaceAllUsesWith(
     as_agg->group_by_columns.Clear();
     as_agg->bound_columns.Clear();
     as_agg->summarized_columns.Clear();
-
-  } else if (const auto as_filter = impl->AsConstraint()) {
-    as_filter->attached_columns.Clear();
   }
 
   return true;
@@ -1710,9 +1906,27 @@ UsedNodeRange<QueryColumn> QueryMap::InputColumns(void) const noexcept {
   return {impl->input_columns.begin(), impl->input_columns.end()};
 }
 
+// The range of input group columns.
+UsedNodeRange<QueryColumn> QueryMap::InputCopiedColumns(void) const {
+  return {impl->attached_columns.begin(),
+          impl->attached_columns.end()};
+}
+
 // The resulting mapped columns.
 DefinedNodeRange<QueryColumn> QueryMap::Columns(void) const {
+  const auto num_group_cols = impl->attached_columns.Size();
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(
+              impl->columns.end() - num_group_cols)};
+}
+
+// The resulting grouped columns.
+DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
+  const auto num_cols = impl->columns.Size();
+  const auto num_group_cols = impl->attached_columns.Size();
+  const auto first_group_col_index = num_cols - num_group_cols;
+  return {DefinedNodeIterator<QueryColumn>(
+      impl->columns.begin() + first_group_col_index),
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
@@ -1723,12 +1937,32 @@ unsigned QueryMap::Arity(void) const noexcept {
 
 // Returns the `nth` output column.
 QueryColumn QueryMap::NthColumn(unsigned n) const noexcept {
-  assert(n < impl->columns.Size());
+  assert(n < (impl->columns.Size() - impl->attached_columns.Size()));
   return QueryColumn(impl->columns[n]);
 }
 
 const ParsedFunctor &QueryMap::Functor(void) const noexcept {
   return impl->functor;
+}
+
+// Returns the number of columns used for grouping.
+unsigned QueryMap::NumCopiedColumns(void) const noexcept {
+  return impl->attached_columns.Size();
+}
+
+// Returns the `nth` output grouping column.
+QueryColumn QueryMap::NthCopiedColumn(unsigned n) const noexcept {
+  const auto num_cols = impl->columns.Size();
+  const auto num_group_cols = impl->attached_columns.Size();
+  assert(n < num_group_cols);
+  assert(num_group_cols < num_cols);
+  return QueryColumn(impl->columns[n + (num_cols - num_group_cols)]);
+}
+
+// Returns the `nth` input grouping column.
+QueryColumn QueryMap::NthInputCopiedColumn(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return QueryColumn(impl->attached_columns[n]);
 }
 
 QueryAggregate &QueryAggregate::From(QueryView &view) {
