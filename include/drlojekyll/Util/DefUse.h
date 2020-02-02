@@ -486,13 +486,15 @@ class DefList {
     }
   }
 
-  void RemoveUnused(void) {
+  size_t RemoveUnused(void) {
+    const auto old_size = defs.size();
     auto it = std::remove_if(
         defs.begin(), defs.end(),
         [] (const std::unique_ptr<T> &v) {
           return !v->IsUsed();
         });
     defs.erase(it, defs.end());
+    return defs.size() - old_size;
   }
 
   ~DefList(void) {

@@ -104,8 +104,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto constraint : query.Constraints()) {
-    os << "v" << constraint.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD rowspan=\"2\">FILTER ";
+    os << "v" << constraint.UniqueId() << " [ label=<" << kBeginTable;
+    const auto out_copied_cols = constraint.CopiedColumns();
+    const auto in_copied_cols = constraint.InputCopiedColumns();
+    if (!out_copied_cols.empty()) {
+      os << "<TD rowspan=\"2\">COPY</TD>";
+      for (auto col : out_copied_cols) {
+        os << "<TD port=\"c" << col.UniqueId() << "\">" << col.Variable()
+           << "</TD>";
+      }
+    }
+    os << "<TD rowspan=\"2\">FILTER ";
     switch (constraint.Operator()) {
       case ComparisonOperator::kEqual:
         os << "eq";
@@ -135,18 +144,18 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << rhs.Variable();
     }
 
-    const auto out_cols = constraint.AttachedOutputColumns();
-    for (auto col : out_cols) {
-      os << "</TD><TD port=\"c" << col.UniqueId() << "\">" << col.Variable();
+    os << "</TD></TR><TR>";
+
+    if (!in_copied_cols.empty()) {
+      auto i = 0u;
+      for (auto col : in_copied_cols) {
+        os << "<TD port=\"g" << i << "\">" << col.Variable() << "</TD>";
+        ++i;
+      }
     }
 
-    os << "</TD></TR><TR><TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>";
+    os << "<TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>";
 
-    const auto in_cols = constraint.AttachedInputColumns();
-
-    for (auto i = 0u; i < in_cols.size(); ++i) {
-      os << "<TD port=\"p" << (i + 2) << "\"> </TD>";
-    }
 
     os << kEndTable << ">];\n"
        << "v" << constraint.UniqueId() << ":p0 -> v"
@@ -154,10 +163,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << "v" << constraint.UniqueId() << ":p1 -> v"
        << input_rhs_view.UniqueId() << ":c" << input_rhs.UniqueId() << ";\n";
 
-    for (auto i = 0u; i < in_cols.size(); ++i) {
-      const auto col = in_cols[i];
+    for (auto i = 0u; i < in_copied_cols.size(); ++i) {
+      const auto col = in_copied_cols[i];
       const auto view = QueryView::Containing(col);
-      os << "v" << constraint.UniqueId() << ":p" << (i + 2) << " -> v"
+      os << "v" << constraint.UniqueId() << ":g" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
   }
@@ -225,7 +234,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (i = 0u; i < num_outputs; ++i) {
-      const auto col = join.NthOutputColumn(i);
+      const auto col = join.NthInputColumn(i);
       os << "<TD port=\"p" << j << "\">" << col.Variable() << "</TD>";
       j++;
     }
@@ -277,11 +286,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "</TR><TR>";
 
       for (auto i = 0u; i < num_group; ++i) {
-        os << "<TD port=\"g" << i << "\"> </TD>";
+        const auto col = map.NthInputCopiedColumn(i);
+        os << "<TD port=\"g" << i << "\">" << col.Variable() << "</TD>";
       }
 
       for (auto i = 0u; i < num_inputs; ++i) {
-        os << "<TD port=\"p" << i << "\"> </TD>";
+        const auto col = map.NthInputColumn(i);
+        os << "<TD port=\"p" << i << "\">" << col.Variable() << "</TD>";
       }
     }
 

@@ -391,8 +391,8 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
   QueryColumn InputLHS(void) const;
   QueryColumn InputRHS(void) const;
 
-  DefinedNodeRange<QueryColumn> AttachedOutputColumns(void) const;
-  UsedNodeRange<QueryColumn> AttachedInputColumns(void) const;
+  DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
+  UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;

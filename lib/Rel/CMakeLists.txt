@@ -6,11 +6,24 @@ function(rel source_dir config)
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Composer.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Format.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Query.h"
+        "${source_dir}/Aggregate.cpp"
         "${source_dir}/Builder.cpp"
+        "${source_dir}/Column.cpp"
+        "${source_dir}/Constant.cpp"
+        "${source_dir}/Constraint.cpp"
         "${source_dir}/Format.cpp"
+        "${source_dir}/Generator.cpp"
+        "${source_dir}/Input.cpp"
+        "${source_dir}/Insert.cpp"
+        "${source_dir}/Join.cpp"
+        "${source_dir}/Map.cpp"
+        "${source_dir}/Merge.cpp"
         "${source_dir}/Query.h"
         "${source_dir}/Query.cpp"
-        "${source_dir}/Visitor.h")
+        "${source_dir}/Select.cpp"
+        "${source_dir}/Stream.cpp"
+        "${source_dir}/Tuple.cpp"
+        "${source_dir}/View.cpp")
 
     target_link_libraries(rel-${config} PUBLIC
         sema-${config})

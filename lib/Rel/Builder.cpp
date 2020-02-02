@@ -271,15 +271,6 @@ class QueryBuilderImpl : public SIPSVisitor {
     join->VerifyPivots();
   }
 
-  static bool IsConstant(COL *col) {
-    if (auto sel = col->view->AsSelect()) {
-      if (sel->stream && sel->stream->AsConstant()) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   // Create a join that is the cross-product of two or more relations, where
   // the relations are the views of the columns in `inout`. Modifies the columns
   // in `inout` in place.
@@ -319,7 +310,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     VIEW *last_view = nullptr;
     bool coming_from_different_views = false;
     for (auto &col : inout) {
-      if (col && !IsConstant(col)) {
+      if (col && !col->IsConstant()) {
         col = drill_down(col);
         if (!last_view) {
           last_view = col->view;
@@ -339,7 +330,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     std::vector<VIEW *> unique_views;
     auto num_present = 0u;
     for (auto col : inout) {
-      if (col && !IsConstant(col)) {
+      if (col && !col->IsConstant()) {
         ++num_present;
         unique_views.push_back(col->view);
       }
@@ -610,8 +601,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
     }
 
-    cmp->attached_cols_are_outputted = true;
-
     return cmp;
   }
 
@@ -771,7 +760,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         assert(ParameterBinding::kBound == col->param.Binding());
         if (const auto where_col = where_cols[col->n]) {
           input_cols.insert(where_col);
-          if (!IsConstant(where_col)) {
+          if (!where_col->IsConstant()) {
             input_views.push_back(where_col->view);
             where_col->ReplaceAllUsesWith(view->columns[col->n]);
           }
@@ -883,7 +872,7 @@ class QueryBuilderImpl : public SIPSVisitor {
               ComparisonOperator::kEqual, prev_col->var, prev_col,
               col->var, where_col);
         }
-        prev_colset = where_col->equiv_columns;
+//        prev_colset = where_col->equiv_columns;
       }
 
       for (auto col = select_begin; col < select_end; ++col) {
@@ -1151,33 +1140,37 @@ class QueryBuilderImpl : public SIPSVisitor {
       return;
     }
 
-    if (decl.IsFunctor()) {
-      EnterFromWhereSelect(
-          pred, decl, begin, end, nullptr, nullptr);
-
-    } else {
-      assert(!decl.IsMessage());
-
-      ProcessUnresolvedCompares();
-
-      std::vector<COL *> input_cols;
-      auto select = query->selects.Create(TableFor(pred));
-      select->group_ids.push_back(context->select_group_id);
-
-      for (auto col = begin; col < end; ++col) {
-        const auto &prev_colset = id_to_col[col->id];
-        assert(prev_colset);
-        const auto prev_col = prev_colset->Leader();
-        const auto out_col = AddColumn(select, *col);
-        pending_compares.emplace_back(
-            ComparisonOperator::kEqual,
-            prev_col->var, prev_col,
-            col->var, out_col);
-//        input_cols.push_back(prev_col);
-      }
-
-//      pending_presence_checks.emplace_back(select, std::move(input_cols));
-    }
+    EnterFromWhereSelect(
+        pred, decl, begin, end, nullptr, nullptr);
+    return;
+//
+//    if (decl.IsFunctor()) {
+//      EnterFromWhereSelect(
+//          pred, decl, begin, end, nullptr, nullptr);
+//
+//    } else {
+//      assert(!decl.IsMessage());
+//
+//      ProcessUnresolvedCompares();
+//
+//      std::vector<COL *> input_cols;
+//      auto select = query->selects.Create(TableFor(pred));
+//      select->group_ids.push_back(context->select_group_id);
+//
+//      for (auto col = begin; col < end; ++col) {
+//        const auto &prev_colset = id_to_col[col->id];
+//        assert(prev_colset);
+//        const auto prev_col = prev_colset->Leader();
+//        const auto out_col = AddColumn(select, *col);
+//        pending_compares.emplace_back(
+//            ComparisonOperator::kEqual,
+//            prev_col->var, prev_col,
+//            col->var, out_col);
+////        input_cols.push_back(prev_col);
+//      }
+//
+////      pending_presence_checks.emplace_back(select, std::move(input_cols));
+//    }
   }
 
   void AssertAbsent(
@@ -1210,15 +1203,16 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   // Remove unused views.
-  void RemoveUnusedViews(void) {
-    query->selects.RemoveUnused();
-    query->tuples.RemoveUnused();
-    query->joins.RemoveUnused();
-    query->maps.RemoveUnused();
-    query->aggregates.RemoveUnused();
-    query->merges.RemoveUnused();
-    query->constraints.RemoveUnused();
-    query->inserts.RemoveUnused();
+  bool RemoveUnusedViews(void) {
+    auto ret = query->selects.RemoveUnused() |
+               query->tuples.RemoveUnused() |
+               query->joins.RemoveUnused() |
+               query->maps.RemoveUnused() |
+               query->aggregates.RemoveUnused() |
+               query->merges.RemoveUnused() |
+               query->constraints.RemoveUnused() |
+               query->inserts.RemoveUnused();
+    return 0 != ret;
   }
 
   // Relabel group IDs. This enables us to better optimize SELECTs. Our initial
@@ -1322,10 +1316,11 @@ class QueryBuilderImpl : public SIPSVisitor {
       canonicalize = false;
 
       ordered_views.clear();
+
       query->ForEachView([&](VIEW *view) {
         if (view->IsUsed()) {
-          candidates[view->Hash()].push_back(view);
           ordered_views.push_back(view);
+          view->is_canonical = false;
         }
       });
 
@@ -1342,6 +1337,10 @@ class QueryBuilderImpl : public SIPSVisitor {
           changed = true;
         }
       }
+    }
+
+    for (auto view : ordered_views) {
+      candidates[view->Hash()].push_back(view);
     }
 
     // Apply CSE in reverse postorder.
@@ -1401,13 +1400,10 @@ class QueryBuilderImpl : public SIPSVisitor {
     // It helps CSE because we do this "late", i.e. not far from the insert
     // itself, which means that all sorts of joins and things have already
     // happened. This maximizes that amount of pre-existing common structure.
-    if (initial_view != input_view) {
-      JoinAgainstInputs();
-      ReifyPendingComparisons();
-    }
-
-    // Propagate the attached columns of MAPs forward through the dataflow.
-    ScopeMapVariables();
+//    if (initial_view != input_view) {
+//      JoinAgainstInputs();
+//      ReifyPendingComparisons();
+//    }
 
     // Empty out all equivalence classes. We don't want them interfering with
     // one-another across different clauses.
@@ -1576,19 +1572,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
       CreateComparison(op, lhs_var, lhs_col, rhs_var, rhs_col);;
     }
-  }
-
-  // Propagate the attached columns of MAPs forward through the dataflow.
-  void ScopeMapVariables(void) {
-    query->maps.Sort([] (MAP *a, MAP *b) {
-      if (a->attached_cols_are_outputted == b->attached_cols_are_outputted) {
-        return a->Depth() < b->Depth();
-      } else if (a->attached_cols_are_outputted) {
-        return false;
-      } else {
-        return true;
-      }
-    });
   }
 
   // Go through all column definitions, and reset their `DisjointSet` parents.
@@ -1761,22 +1744,27 @@ Query QueryBuilder::BuildQuery(void) {
     max_depth = std::max(max_depth, insert->Depth());
   }
 
+  impl->RelabelGroupIDs();
   for (auto i = 0; i < max_depth; ++i) {
-    impl->RelabelGroupIDs();
     if (impl->CSE()) {
       i = 0;
     }
-    impl->RemoveUnusedViews();
+    if (impl->RemoveUnusedViews()) {
+      impl->RelabelGroupIDs();
+      i = 0;
+    }
   }
 
   *gOut << "\n\n\n";
-  impl->RelabelGroupIDs();
 
-  for (auto join : impl->query->joins) {
-    *gOut << "JOIN " << join->Hash() << '\n';
+  for (auto view : impl->query->joins) {
+    *gOut << "JOIN " << view->Hash() << '\n';
   }
-  for (auto cmp : impl->query->constraints) {
-    *gOut << "CMP " << cmp->Hash() << '\n';
+  for (auto view : impl->query->constraints) {
+    *gOut << "CMP " << view->Hash() << '\n';
+  }
+  for (auto view : impl->query->inserts) {
+    *gOut << "INSERT " << view->Hash() << '\n';
   }
 
   Query ret(std::move(impl->query));
