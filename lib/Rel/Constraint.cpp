@@ -226,6 +226,8 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   attached_columns.Swap(new_attached_cols);
   columns.Swap(new_output_cols);
 
+  assert(CheckAllViewsMatch(input_columns, attached_columns));
+
   hash = 0;
   is_canonical = true;
   return non_local_changes;

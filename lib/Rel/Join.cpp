@@ -177,6 +177,13 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
       } else {
         prev_out = out_col;
       }
+
+    // `input_cols` is a pivot set, one of the pivots is a constant, but not
+    // all of the pivots are constant. What we'll do is introduce a filter
+    // before the incoming views to constrain them to have the particular
+    // column as a pivot.
+    } else if (constant_col && !all_are_constant) {
+      // TODO(pag): Implement this.
     }
 
     // There's a constant in the pivot set. Perform constant propagation.
@@ -225,7 +232,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
     out_to_in.clear();
     return true;
   }
-  skip_remove:
+skip_remove:
 
   // Find unused output columns that aren't themselves pivots.
   std::vector<COL *> keep_cols;

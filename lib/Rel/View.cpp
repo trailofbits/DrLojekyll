@@ -163,4 +163,30 @@ bool Node<QueryView>::ColumnsEq(
   return true;
 }
 
+// Check that all non-constant views in `cols1` and `cols2` match.
+//
+// NOTE(pag): This isn't a pairwise matching; instead it checks that all
+//            columns in both of the lists independently reference the same
+//            view.
+bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
+                                         const UseList<COL> &cols2) {
+  VIEW *prev_view = nullptr;
+
+  auto do_cols = [&prev_view] (const auto &cols) -> bool {
+    for (auto col : cols) {
+      if (!col->IsConstant()) {
+        if (prev_view) {
+          if (prev_view != col->view) {
+            return false;
+          }
+        } else {
+          prev_view = col->view;
+        }
+      }
+    }
+    return true;
+  };
+  return do_cols(cols1) && do_cols(cols2);
+}
+
 }  // namespace hyde

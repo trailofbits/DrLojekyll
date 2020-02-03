@@ -359,6 +359,14 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   // Utility for comparing use lists.
   static bool ColumnsEq(const UseList<COL> &c1s, const UseList<COL> &c2s);
+
+  // Check that all non-constant views in `cols1` and `cols2` match.
+  //
+  // NOTE(pag): This isn't a pairwise matching; instead it checks that all
+  //            columns in both of the lists independently reference the same
+  //            view.
+  static bool CheckAllViewsMatch(const UseList<COL> &cols1,
+                                 const UseList<COL> &cols2);
 };
 
 using VIEW = Node<QueryView>;

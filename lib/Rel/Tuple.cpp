@@ -132,6 +132,8 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     depth = 0;
   }
 
+  assert(CheckAllViewsMatch(input_columns, attached_columns));
+
   is_canonical = true;
   return non_local_changes;
 }
