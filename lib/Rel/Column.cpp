@@ -50,6 +50,7 @@ Node<QueryColumn> *ColumnSet::Leader(void) {
               ColumnSetCompare);
     col_set->is_sorted = true;
   }
+
   return col_set->columns[0];
 }
 
@@ -72,6 +73,16 @@ Node<QueryColumn>::~Node(void) {
 bool Node<QueryColumn>::IsConstant(void) const noexcept {
   if (auto sel = view->AsSelect()) {
     if (sel->stream && sel->stream->AsConstant()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Returns `true` if this column is the output from a generator.
+bool Node<QueryColumn>::IsGenerator(void) const noexcept {
+  if (auto sel = view->AsSelect()) {
+    if (sel->stream && sel->stream->AsGenerator()) {
       return true;
     }
   }

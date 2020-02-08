@@ -12,7 +12,14 @@ BottomUpVisitor::State::State(unsigned id_, bool is_start_state_,
                               ParsedPredicate assumption_)
     : id(id_),
       is_start_state(is_start_state_),
-      assumption(assumption_) {}
+      assumption(assumption_),
+      clause(ParsedClause::Containing(assumption_)) {}
+
+BottomUpVisitor::State::State(unsigned id_, bool is_start_state_,
+                              ParsedClause clause_)
+    : id(id_),
+      is_start_state(is_start_state_),
+      clause(clause_) {}
 
 BottomUpVisitor::~BottomUpVisitor(void) {}
 
@@ -58,6 +65,31 @@ void BottomUpAnalysis::Impl::Start(ParsedModule module_) {
   pred_to_state.clear();
 
   for (auto module : ParsedModuleIterator(module_)) {
+
+    // A clause without positive predicates.
+    //
+    // For example:
+    //
+    //      fib(0, 0).
+    //      fib(1, 1).
+    //      fib(N, Res)
+    //          : sub_i32(N, 1, NMinus1)
+    //          , sub_i32(N, 2, NMinus2)
+    //          , fib(NMinus1, NMinus1_Res)
+    //          , fib(NMinus2, NMinus2_Res)
+    //          , add_i32(NMinus1_Res, NMinus2_Res, Res).
+
+    for (auto clause : module.Clauses()) {
+      auto pred_range = clause.PositivePredicates();
+      if (pred_range.begin() == pred_range.end()) {
+        const auto state = new BottomUpVisitor::State(
+            next_state_id++, true, clause);
+        states.emplace_back(state);
+        next_work_list.emplace_back(nullptr, state);
+      }
+    }
+
+    // A clause containing a message, i.e. an input.
     for (auto message : module.Messages()) {
       for (auto use : message.PositiveUses()) {
         auto &state = pred_to_state[use];
@@ -90,7 +122,7 @@ bool BottomUpAnalysis::Impl::Step(BottomUpVisitor &visitor) {
     }
 
     auto &successors = state->successors;
-    const auto clause = ParsedClause::Containing(state->assumption);
+    const auto clause = state->clause;
     for (auto next_use : ParsedDeclaration::Of(clause).PositiveUses()) {
       auto &next_state = pred_to_state[next_use];
       auto is_new = false;

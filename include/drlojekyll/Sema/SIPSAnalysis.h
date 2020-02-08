@@ -50,8 +50,13 @@ class SIPSVisitor {
 
   virtual ~SIPSVisitor(void);
 
-  // Notify the visitor that we're about to begin visiting a clause body.
+  // Notify the visitor that we're about to begin visiting a clause body, with
+  // `assumption` being taken as present/true.
   virtual void Begin(ParsedPredicate assumption);
+
+  // Notify the visitor that we're abbout to begin visiting a clause body, with
+  // no assumptions holding.
+  virtual void Begin(ParsedClause clause);
 
   // Declares a concrete parameter identified by `id`.
   virtual void DeclareParameter(const Column &col);
@@ -147,6 +152,10 @@ class SIPSVisitor {
   // starting from the assumption `assumption`.
   virtual void Commit(ParsedPredicate assumption);
 
+  // Notify the visitor that we were successful in visiting the clause body,
+  // starting from no assumptions.
+  virtual void Commit(ParsedClause clause);
+
   // Notify the visitor that visiting cannot complete/continue due to an
   // invalid comparison `compare` that relates the variable identified by
   // `lhs_id` to the variable identified by `rhs_id`.
@@ -189,7 +198,11 @@ class SIPSGenerator final {
 
   ~SIPSGenerator(void);
 
+  // Visit the clause containing `assumption`.
   explicit SIPSGenerator(ParsedPredicate assumption);
+
+  // Visit a clause without any assumptions.
+  explicit SIPSGenerator(ParsedClause clause);
 
   // Visit the current ordering. Returns `true` if the `visitor.Commit`
   // was invoked, and `false` if `visitor.Cancel` was invoked.

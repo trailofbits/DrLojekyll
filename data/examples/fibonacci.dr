@@ -1,0 +1,12 @@
+#functor sub_i32(bound @i32 L, bound @i32 R, free @i32 Sum)
+#functor add_i32(bound @i32 L, bound @i32 R, free @i32 Sum) unordered(L, R)
+#query fib(bound @i32 N, free @i32 Res)
+
+fib(0, 0).
+fib(1, 1).
+fib(N, Res)
+    : sub_i32(N, 1, NMinus1)
+    , add_i32(N, 2, NMinus12)
+    , fib(NMinus1, NMinus1_Res)
+    , fib(NMinus2, NMinus2_Res)
+    , add_i32(NMinus1_Res, NMinus2_Res, Res).

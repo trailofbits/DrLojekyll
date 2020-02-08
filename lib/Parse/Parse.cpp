@@ -448,6 +448,15 @@ ParameterBinding ParsedParameter::Binding(void) const noexcept {
   }
 }
 
+unsigned ParsedParameter::Index(void) const noexcept {
+  return impl->index;
+}
+
+// Applies only to `bound` parameters of functors.
+bool ParsedParameter::CanBeReordered(void) const noexcept {
+  return impl->opt_unordered_name.IsValid();
+}
+
 ParsedDeclaration::ParsedDeclaration(const ParsedQuery &query)
     : parse::ParsedNode<ParsedDeclaration>(query.impl) {}
 
@@ -464,11 +473,7 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
-  return DisplayRange(
-      impl->name.Position(),
-      (impl->complexity_attribute.IsValid() ?
-       impl->complexity_attribute.NextPosition() :
-       impl->rparen.NextPosition()));
+  return DisplayRange(impl->name.Position(), impl->rparen.NextPosition());
 }
 
 // Return the ID of this declaration.
@@ -538,6 +543,69 @@ bool ParsedDeclaration::IsExport(void) const noexcept {
 
 bool ParsedDeclaration::IsLocal(void) const noexcept {
   return Kind() == DeclarationKind::kLocal;
+}
+
+// Does this declaration have a `mutable`-attributed parameter? If so, then
+// this relation must be materialized.
+bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
+  for (const auto &param : impl->parameters) {
+    if (param->opt_merge) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Does this declaration have a clause that directly depends on a `#message`?
+bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
+  auto context = impl->context.get();
+  if (context->checked_takes_input) {
+    return context->takes_input;
+  }
+
+  context->checked_takes_input = true;
+  for (const auto &clause : context->clauses) {
+    for (const auto &pred : clause->positive_predicates) {
+      if (ParsedDeclaration(pred->declaration).IsMessage()) {
+        context->takes_input = true;
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// Does this declaration have a clause that directly depends on a `#message`?
+bool ParsedDeclaration::HasDirectGeneratorDependency(void) const noexcept {
+  auto context = impl->context.get();
+  if (context->checked_generates_value) {
+    return context->generates_value;
+  }
+
+  context->checked_generates_value = true;
+  for (const auto &clause : context->clauses) {
+    for (const auto &pred : clause->positive_predicates) {
+      const auto decl = ParsedDeclaration(pred->declaration);
+      if (!decl.IsFunctor()) {
+        continue;
+      }
+      const auto functor = ParsedFunctor::From(decl);
+      auto all_free = true;
+      for (auto param : functor.Parameters()) {
+        if (param.Binding() != ParameterBinding::kFree) {
+          all_free = false;
+          break;
+        }
+      }
+      if (all_free) {
+        context->generates_value = true;
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // The kind of this declaration.
@@ -918,14 +986,6 @@ NodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
   return impl->Clauses();
 }
 
-bool ParsedFunctor::IsComplex(void) const noexcept {
-  return impl->complexity_attribute.Lexeme() == Lexeme::kKeywordComplex;
-}
-
-bool ParsedFunctor::IsTrivial(void) const noexcept {
-  return impl->complexity_attribute.Lexeme() == Lexeme::kKeywordTrivial;
-}
-
 bool ParsedFunctor::IsAggregate(void) const noexcept {
   return impl->is_aggregate;
 }
@@ -941,8 +1001,7 @@ const ParsedFunctor ParsedFunctor::MergeOperatorOf(ParsedParameter param) {
 }
 
 DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
-  return DisplayRange(
-      impl->directive_pos, impl->complexity_attribute.NextPosition());
+  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
 }
 
 NodeRange<ParsedFunctor>
@@ -954,6 +1013,16 @@ ParsedFunctor::Redeclarations(void) const {
           Node<ParsedFunctor>, next_redecl)));
 }
 
+NodeRange<ParsedParameter>
+ParsedFunctor::Parameters(void) const {
+  if (impl->parameters.empty()) {
+    return NodeRange<ParsedParameter>();
+  } else {
+    return NodeRange<ParsedParameter>(
+        impl->parameters.front().get());
+  }
+}
+
 NodeRange<ParsedPredicate>
 ParsedFunctor::PositiveUses(void) const {
   return impl->PositiveUses();
@@ -961,6 +1030,19 @@ ParsedFunctor::PositiveUses(void) const {
 
 unsigned ParsedFunctor::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
+unsigned ParsedFunctor::NumUnorderedParameterSets(void) const noexcept {
+  return static_cast<unsigned>(impl->unordered_sets.size());
+}
+
+NodeRange<ParsedParameter> ParsedFunctor::NthUnorderedSet(unsigned n) const {
+  assert(n < impl->unordered_sets.size());
+  const auto &uset = impl->unordered_sets[n];
+  return NodeRange<ParsedParameter>(
+      uset.params.front(),
+      static_cast<intptr_t>(__builtin_offsetof(
+          Node<ParsedParameter>, next_unordered)));
 }
 
 const ParsedMessage &ParsedMessage::From(const ParsedDeclaration &decl) {

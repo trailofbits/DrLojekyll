@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -29,6 +30,7 @@ static bool OrderPredicates(std::pair<unsigned, ParsedPredicate> a,
 
 SIPSVisitor::~SIPSVisitor(void) {}
 void SIPSVisitor::Begin(ParsedPredicate) {}
+void SIPSVisitor::Begin(ParsedClause) {}
 void SIPSVisitor::DeclareParameter(const Column &) {}
 void SIPSVisitor::DeclareVariable(ParsedVariable, unsigned) {}
 void SIPSVisitor::DeclareConstant(ParsedLiteral, unsigned) {}
@@ -68,7 +70,8 @@ void SIPSVisitor::Collect(
     const Column *, const Column *,
     const Column *, const Column *) {}
 void SIPSVisitor::ExitSelect(ParsedPredicate, ParsedDeclaration) {}
-void SIPSVisitor::Commit(ParsedPredicate assumption) {}
+void SIPSVisitor::Commit(ParsedPredicate) {}
+void SIPSVisitor::Commit(ParsedClause) {}
 void SIPSVisitor::CancelComparison(ParsedComparison, unsigned, unsigned) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedComparison, ParsedVariable) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedClause, ParsedVariable) {}
@@ -79,6 +82,7 @@ SIPSVisitor::AdvanceType SIPSVisitor::Advance(void) { return kTryNextPermutation
 class SIPSGenerator::Impl {
  public:
   Impl(ParsedPredicate assumption_);
+  Impl(ParsedClause clause_);
 
   // Visit an ordering of the predicates.
   bool Visit(SIPSVisitor &visitor);
@@ -149,7 +153,7 @@ class SIPSGenerator::Impl {
 
   // The predicate which we are assuming has been provided and comes with
   // concrete data.
-  const ParsedPredicate assumption;
+  const std::optional<ParsedPredicate> assumption;
 
   // The vector of positive predicates which we will evaluate.
   std::vector<std::pair<unsigned, ParsedPredicate>> positive_predicates;
@@ -207,6 +211,15 @@ class SIPSGenerator::Impl {
   std::vector<SIPSVisitor::Column> summarized_free_params;
 };
 
+SIPSGenerator::Impl::Impl(ParsedClause clause_)
+    : clause(clause_) {
+  auto i = 0u;
+  for (auto pred : clause.PositivePredicates()) {
+    assert(pred.IsPositive());
+    positive_predicates.emplace_back(i++, pred);
+  }
+}
+
 SIPSGenerator::Impl::Impl(ParsedPredicate assumption_)
     : clause(ParsedClause::Containing(assumption_)),
       assumption(assumption_) {
@@ -222,7 +235,7 @@ SIPSGenerator::Impl::Impl(ParsedPredicate assumption_)
   auto i = 0u;
   for (auto pred : clause.PositivePredicates()) {
     assert(pred.IsPositive());
-    if (pred != assumption) {
+    if (pred != assumption_) {
       positive_predicates.emplace_back(i++, pred);
     }
   }
@@ -285,7 +298,6 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
 
 // Visit the end of a clause body.
 bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
-
   failed_bindings.clear();
 
   // Make sure all compared variables are range-restricted.
@@ -521,15 +533,10 @@ void SIPSGenerator::Impl::CollectPredicateBoundAndFreeVars(
 bool SIPSGenerator::Impl::VisitPredicate(
     SIPSVisitor &visitor, unsigned p) {
 
-  if (p < positive_predicates.size()) {
-    // (*gOut) << "p=" << p << " entering " << positive_predicates[p].second << "\n";
-  }
-
   // Perform as many comparisons as possible as early as possible, and prefer
   // comparisons to negated predicates as they don't need to touch memory or
   // the database.
   if (!VisitCompares(visitor)) {
-    // (*gOut) << "p=" << p << " failed compares\n";
     return false;
   }
 
@@ -541,30 +548,27 @@ bool SIPSGenerator::Impl::VisitPredicate(
   // predicate.
   bool ret = false;
   if (VisitAggregates(visitor, p, ret)) {
-    // (*gOut) << "p=" << p << " succeeded in aggregate\n";
     return ret;
   }
 
   // We've bottomed out; we're done visiting this clause body.
   if (p >= positive_predicates.size()) {
-    // (*gOut) << "p=" << p << " end of clause\n";
     return VisitEndOfClause(visitor);
   }
 
   const auto predicate = positive_predicates[p].second;
-  assert(predicate != assumption);
   assert(predicate.IsPositive());
-
-  // (*gOut) << "p=" << p << " " << predicate << " trying...\n";
 
   auto decl = ParsedDeclaration::Of(predicate);
 
   // The only place where a message is an acceptable dependency is as an
   // assumption.
   if (decl.IsMessage()) {
-    visitor.CancelMessage(predicate);
-    cancelled = true;
-    return false;
+    if (assumption || 0 != p) {
+      visitor.CancelMessage(predicate);
+      cancelled = true;
+      return false;
+    }
   }
 
   // For functors and queries, we care about the precise choice in order
@@ -578,7 +582,6 @@ bool SIPSGenerator::Impl::VisitPredicate(
         &(failed_bindings.front()),
         &((&(failed_bindings.back()))[1]));
     cancelled = true;
-    // (*gOut) << "p=" << p << " " << predicate << " failed binding constraints\n";
     return false;
   }
 
@@ -1225,36 +1228,38 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   comparisons.clear();
   aggregates.clear();
 
-  // (*gOut) << "\nbegin: " << ParsedClause::Containing(assumption) << "\n";
-  // (*gOut) << "assuming " << assumption << "\n";
+  if (assumption) {
+    const auto initial_pred = *assumption;
+    visitor.Begin(initial_pred);
 
-  visitor.Begin(assumption);
-
-  // Create input variables for the initial declaration.
-  const auto decl = ParsedDeclaration::Of(assumption);
-  for (auto param : decl.Parameters()) {
-    auto var_id = GetFreshVarId();
-    SIPSVisitor::Column col(
-        param, assumption.NthArgument(var_id), var_id, var_id);
-    visitor.DeclareParameter(col);
-  }
-
-  // Now bind the arguments to the initial parameters.
-  for (auto i = 0u; i < assumption.Arity(); ++i) {
-    const auto var = assumption.NthArgument(i);
-    const auto param_set = vars[i]->Find();
-    auto &goal_set = equalities[var];
-
-    if (!goal_set) {
-      goal_set = param_set;
-
-    // We are assuming something like `pred(A, A)`. We create parameters like
-    // `pred(P0, P1)`, and then assign `P0=A`, and now discover that `P1=A` as
-    // well.
-    } else {
-      visitor.AssertEqual(var, goal_set->Find()->id, var, param_set->id);
-      goal_set = DisjointSet::Union(goal_set, param_set);
+    // Create input variables for the initial declaration.
+    const auto decl = ParsedDeclaration::Of(initial_pred);
+    for (auto param : decl.Parameters()) {
+      const auto var_id = GetFreshVarId();
+      SIPSVisitor::Column col(
+          param, initial_pred.NthArgument(var_id), var_id, var_id);
+      visitor.DeclareParameter(col);
     }
+
+    // Now bind the arguments to the initial parameters.
+    for (auto i = 0u; i < initial_pred.Arity(); ++i) {
+      const auto var = initial_pred.NthArgument(i);
+      const auto param_set = vars[i]->Find();
+      auto &goal_set = equalities[var];
+
+      if (!goal_set) {
+        goal_set = param_set;
+
+      // We are assuming something like `pred(A, A)`. We create parameters like
+      // `pred(P0, P1)`, and then assign `P0=A`, and now discover that `P1=A` as
+      // well.
+      } else {
+        visitor.AssertEqual(var, goal_set->Find()->id, var, param_set->id);
+        goal_set = DisjointSet::Union(goal_set, param_set);
+      }
+    }
+  } else {
+    visitor.Begin(clause);
   }
 
   // Bind all assigned variables to their respective constants.
@@ -1288,7 +1293,11 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
   }
 
   if (!cancelled) {
-    visitor.Commit(assumption);
+    if (assumption) {
+      visitor.Commit(*assumption);
+    } else {
+      visitor.Commit(clause);
+    }
   }
 
   advance_type = visitor.Advance();
@@ -1297,7 +1306,6 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
 
 bool SIPSGenerator::Impl::Advance(void) {
   if (positive_predicates.empty()) {
-    // (*gOut) << "not advancing\n";
     cancelled = true;
     return false;
   }
@@ -1326,6 +1334,10 @@ SIPSGenerator::~SIPSGenerator(void) {}
 SIPSGenerator::SIPSGenerator(ParsedPredicate assumption_)
     : impl(std::make_unique<Impl>(assumption_)) {}
 
+// Visit a clause without any assumptions.
+SIPSGenerator::SIPSGenerator(ParsedClause clause)
+    : impl(std::make_unique<Impl>(clause)) {}
+
 // Visit the current ordering. Returns `true` if the `visitor.Commit`
 // was invoked, and `false` if `visitor.Cancel` was invoked.
 bool SIPSGenerator::Visit(SIPSVisitor &visitor) const {
@@ -1343,7 +1355,11 @@ bool SIPSGenerator::Advance(void) const {
 // Reset the generator to be beginning.
 void SIPSGenerator::Rewind(void) {
   if (impl->started) {
-    impl.reset(new Impl(impl->assumption));
+    if (impl->assumption) {
+      impl.reset(new Impl(*(impl->assumption)));
+    } else {
+      impl.reset(new Impl(impl->clause));
+    }
   }
 }
 

@@ -432,10 +432,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             } else if (impl->data == "#import") {
               interpreter.basic.lexeme = Lexeme::kHashImportModuleStmt;
             }
-          } else if (impl->data == "trivial") {
-            interpreter.basic.lexeme = Lexeme::kKeywordTrivial;
-          } else if (impl->data == "complex") {
-            interpreter.basic.lexeme = Lexeme::kKeywordComplex;
           } else if (impl->data == "summary") {
             interpreter.basic.lexeme = Lexeme::kKeywordSummary;
           } else if (impl->data == "mutable") {
@@ -456,6 +452,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 9:
           if (impl->data == "aggregate") {
             interpreter.basic.lexeme = Lexeme::kKeywordAggregate;
+          } else if (impl->data == "unordered") {
+            interpreter.basic.lexeme = Lexeme::kKeywordUnordered;
           }
           break;
 

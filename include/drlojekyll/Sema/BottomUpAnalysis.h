@@ -3,6 +3,8 @@
 #pragma once
 
 #include <drlojekyll/Parse/Parse.h>
+
+#include <optional>
 #include <vector>
 
 namespace hyde {
@@ -57,7 +59,8 @@ class BottomUpVisitor::State {
  public:
   const unsigned id;
   const bool is_start_state;
-  const ParsedPredicate assumption;
+  const std::optional<ParsedPredicate> assumption;
+  const ParsedClause clause;
 
   inline const std::vector<State *> &Predecessors(void) const {
     return predecessors;
@@ -71,6 +74,7 @@ class BottomUpVisitor::State {
   friend class BottomUpAnalysis::Impl;
 
   State(unsigned id_, bool is_start_state_, ParsedPredicate assumption_);
+  State(unsigned id_, bool is_start_state_, ParsedClause clause_);
 
   std::vector<State *> predecessors;
   std::vector<State *> successors;

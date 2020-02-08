@@ -12,6 +12,10 @@ Node<QueryMap> *Node<QueryMap>::AsMap(void) noexcept {
   return this;
 }
 
+uint64_t Node<QueryMap>::Sort(void) noexcept {
+  return position.Index();
+}
+
 uint64_t Node<QueryMap>::Hash(void) noexcept {
   if (hash) {
     return hash;
@@ -35,8 +39,12 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 }
 
 // Put this map into a canonical form, which will make comparisons and
-// replacements easier. We also need to put the "attached" outputs into the
-// proper order.
+// replacements easier. Maps correspond to functors with inputs, whereas
+// functors without inputs are called generators. If the functor has inputs,
+// then some of them might be specified to belong to an `unordered` set, which
+// means that they can be re-ordered during canonicalization for the sake of
+// helping deduplicate common subexpressions. We also need to put the "attached"
+// outputs into the proper order.
 bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
   if (is_canonical) {
     return false;
@@ -58,30 +66,107 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
   auto i = columns.Size() - attached_columns.Size();
   assert(i == functor.Arity());
 
+  struct Param {
+    COL *output;
+    COL *input;
+    unsigned orig_index;
+    unsigned min_index;
+    bool can_reorder;
+  };
+
+  std::vector<unsigned> min_index;
+  min_index.reserve(i);
+
+  for (auto param : functor.Parameters()) {
+    min_index.push_back(param.Index());
+  }
+
+  // Go find the minimum index associated with each parameter.
+  const auto num_usets = functor.NumUnorderedParameterSets();
+  for (auto u = 0u; u < num_usets; ++u) {
+    auto found_min_index = ~0u;
+    for (auto param : functor.NthUnorderedSet(u)) {
+      found_min_index = std::min(found_min_index, param.Index());
+    }
+    for (auto param : functor.NthUnorderedSet(u)) {
+      min_index[param.Index()] = found_min_index;
+    }
+  }
+
+  std::vector<Param> params;
+  params.reserve(i);
+
   // The first few columns, which are the official outputs of the MAP, must
   // remain the same and in their original order.
-  for (auto j = 0u; j < i; ++j) {
-    auto new_out_col = new_output_cols.Create(
-        columns[j]->var, this, columns[j]->id);
-    columns[j]->ReplaceAllUsesWith(new_out_col);
+  for (auto j = 0u, k = 0u; j < i; ++j) {
+    const auto param = functor.NthParameter(j);
+    assert(param.Index() == j);
+
+    COL *input = nullptr;
+
+    if (ParameterBinding::kBound == param.Binding()) {
+      input = input_columns[k++];
+    }
+
+    params.push_back({columns[j], input,
+                      j, min_index[j], param.CanBeReordered()});
   }
+
+  // Sort the parameters, allowing us to re-sort inputs within the unordered
+  // sets. This lets us convert `add_i32(A, B, Sum)` into `add_i32(B, A, Sum)`
+  // if `A` and `B` belong to the same `unordered` set for `add_i32`. This
+  // can help CSE to merge two equivalent MAPs.
+  std::sort(
+      params.begin(), params.end(),
+      [] (const Param &a, const Param &b) {
+        if (a.min_index != b.min_index) {
+          return a.orig_index < b.orig_index;
+        }
+
+        assert(a.can_reorder && b.can_reorder);
+        assert(a.input && b.input);
+
+        if (a.input < b.input) {
+          return true;
+
+        } else if (a.input > b.input) {
+          return false;
+
+        } else {
+          return a.orig_index < b.orig_index;
+        }
+      });
+
+  // Create the new output columns.
+  for (auto j = 0u; j < i; ++j) {
+    const auto old_out_col = params[j].output;
+    auto new_out_col = new_output_cols.Create(
+        old_out_col->var, this, old_out_col->id);
+    old_out_col->ReplaceAllUsesWith(new_out_col);
+  }
+
+  UseList<COL> new_input_cols(this);
 
   // Map the `bound`-attributed input columns to the output columns of the
   // map, just in case any of the attached columns end up being redundant
   // w.r.t. these bound columns.
-  for (auto j = 0u, k = 0u; j < i; ++j) {
-    const auto param = functor.NthParameter(j);
-    if (ParameterBinding::kBound == param.Binding()) {
-      const auto input_col = input_columns[k++];
-      const auto new_output_col = new_output_cols[j];
-      in_to_out.emplace(input_col, new_output_col);
-
-      // Constant propagation on the bound columns.
-      if (input_col->IsConstant() && new_output_col->IsUsedIgnoreMerges()) {
-        new_output_col->ReplaceAllUsesWith(input_col);
-        non_local_changes = true;
-      }
+  for (auto j = 0u; j < i; ++j) {
+    const auto &param = params[j];
+    if (!param.input) {
+      continue;
     }
+
+    const auto input_col = param.input;
+    const auto new_output_col = new_output_cols[j];
+    in_to_out.emplace(input_col, new_output_col);
+
+    // Constant propagation on the bound columns.
+    if (input_col->IsConstant() && new_output_col->IsUsedIgnoreMerges()) {
+      new_output_col->ReplaceAllUsesWith(input_col);
+      non_local_changes = true;
+    }
+
+    new_input_cols.AddUse(input_col);
   }
 
   const auto num_cols = columns.Size();
@@ -135,6 +220,7 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
     old_out_col->ReplaceAllUsesWith(new_out_col);
   }
 
+  input_columns.Swap(new_input_cols);
   attached_columns.Swap(new_attached_cols);
   columns.Swap(new_output_cols);
 

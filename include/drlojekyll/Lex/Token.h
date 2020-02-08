@@ -145,9 +145,17 @@ enum class Lexeme : uint8_t {
   // Keyword for aggregation over some relation.
   kKeywordOver,
 
-  // Specifiers for the level of complexity of a functor.
-  kKeywordTrivial,
-  kKeywordComplex,
+  // Used when specifying that some subset of the `bound`-attributed parameters
+  // to a functor can be re-ordered for the sake of optimization. For example:
+  //
+  //      #functor add_i32(
+  //          bound @i32 LHS,
+  //          bound @i32 RHS,
+  //          free @i32 Sum) unordered(LHS, RHS)
+  //
+  // This lets us say that the optimizer is permitted to reorder the `LHS`
+  // and `RHS` parameters.
+  kKeywordUnordered,
 
   // Whether or not a local/export can be inlined.
   kKeywordInline,

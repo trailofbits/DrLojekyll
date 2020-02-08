@@ -86,6 +86,12 @@ class DeclarationContext {
 
   // All negative uses of this declaration.
   std::vector<Node<ParsedPredicate> *> negated_uses;
+
+  bool takes_input{false};
+  bool checked_takes_input{false};
+
+  bool generates_value{false};
+  bool checked_generates_value{false};
 };
 
 }  // namespace parse
@@ -239,15 +245,23 @@ class Node<ParsedParameter> {
   // Next in the declaration head.
   Node<ParsedParameter> *next{nullptr};
 
+  // Next in the unordered chain.
+  Node<ParsedParameter> *next_unordered{nullptr};
+
+  // If this parameter is `mutable(func)`, then this points to the functor
+  // associated with `func`.
+  Node<ParsedFunctor> *opt_merge{nullptr};
+
   Token opt_binding;
   Token name;
+  Token opt_unordered_name;  // Use in an unordered set.
   TypeLoc opt_type;
+
+  unsigned index{~0u};
 
   // `true` if `opt_type` was produced from parsing, as opposed to type
   // propagation.
   bool parsed_opt_type{false};
-
-  Node<ParsedFunctor> *opt_merge{nullptr};
 };
 
 template <>
@@ -289,6 +303,23 @@ class Node<ParsedClause> {
 
   // Compute the identifier for this clause.
   uint64_t Id(void) const noexcept;
+};
+
+struct UnorderedParameterSet {
+ public:
+  Token begin;
+  Token end;
+
+  // The mask formed by ORing together `1 << param.index` for each `param`.
+  // This lets us easily compare two sets, without having to deal with things
+  // like variable names being different.
+  uint64_t mask;
+
+  std::vector<Node<ParsedParameter> *> params;
+
+  inline DisplayRange SpellingRange(void) {
+    return DisplayRange(begin.Position(), end.NextPosition());
+  }
 };
 
 template <>
@@ -335,7 +366,7 @@ class Node<ParsedDeclaration> {
 
   Token name;
   Token rparen;
-  Token complexity_attribute;
+  std::vector<UnorderedParameterSet> unordered_sets;
   Token inline_attribute;
   bool is_aggregate{false};
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;

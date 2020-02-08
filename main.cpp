@@ -270,42 +270,29 @@ class GraphPrinter : public BottomUpVisitor {
 #endif
 
 #if 1
-static void CodeDumper(DisplayManager display_manager,
-                       ParsedModule module) {
-
-  BottomUpAnalysis analysis;
-  QueryBuilder query_builder;
-
+static void QueryDumper(DisplayManager display_manager,
+                        ParsedModule module) {
 
   hyde::OutputStream os(display_manager, std::cerr);
   gOut = &os;
 
-  std::unordered_map<ParsedDeclaration, std::vector<BottomUpVisitor::State *>>
-      decl_to_state;
-
-  for (auto state : analysis.GenerateStates(module)) {
-    decl_to_state[ParsedDeclaration::Of(state->assumption)].push_back(state);
+  QueryBuilder query_builder;
+  for (auto clause : module.Clauses()) {
+    FastBindingSIPSScorer scorer;
+    SIPSGenerator generator(clause);
+    query_builder.VisitClause(scorer, generator);
   }
 
-  for (auto &decl_states : decl_to_state) {
-    for (auto state : decl_states.second) {
-      DefaultSIPSScorer scorer;
-      SIPSGenerator generator(state->assumption);
-      query_builder.VisitClauseWithAssumption(scorer, generator);
-    }
-    auto query = query_builder.BuildQuery();
-    os << query;
-  }
+  auto query = query_builder.BuildQuery();
+  os << query;
 }
 
 #endif
-#if 1
+#if 0
 static void BottomUpDumper(DisplayManager display_manager,
                            ParsedModule module) {
 
   BottomUpAnalysis analysis;
-  QueryBuilder query_builder;
-
   hyde::OutputStream os(display_manager, std::cerr);
   gOut = &os;
 
@@ -314,19 +301,22 @@ static void BottomUpDumper(DisplayManager display_manager,
      << "start [shape=none border=none];\n";
 
   for (auto state : analysis.GenerateStates(module)) {
-
-    os << "s" << state->id
-       << " [label=\"" << ParsedClause::Containing(state->assumption)
-       << "\"];\n";
+    os << "s" << state->id << " [label=\"" << state->clause << "\"];\n";
 
     if (state->is_start_state) {
-      os << "start -> s" << state->id << " [label=\""
-         << state->assumption << "\"];\n";
+      os << "start -> s" << state->id;
+      if (state->assumption) {
+        os << " [label=\"" << *(state->assumption) << "\"]";
+      }
+      os << ";\n";
     }
 
     for (auto pred : state->Predecessors()) {
-      os << "s" << pred->id << " -> s" << state->id << " [label=\""
-         << state->assumption << "\"];\n";
+      os << "s" << pred->id << " -> s" << state->id;
+      if (state->assumption) {
+        os << " [label=\"" << *(state->assumption) << "\"]";
+      }
+      os << ";\n";
     }
   }
   os << "}\n";
@@ -374,8 +364,8 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 //    auto transformed_module = ConvertQueriesToMessages(
 //        display_manager, module);
 
-    CodeDumper(display_manager, module);
-    BottomUpDumper(display_manager, module);
+    QueryDumper(display_manager, module);
+//    BottomUpDumper(display_manager, module);
     //Simulate(os, module);
     return EXIT_SUCCESS;
   }

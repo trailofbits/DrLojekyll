@@ -126,6 +126,9 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // Returns `true` if this column is a constant.
   bool IsConstant(void) const noexcept;
 
+  // Returns `true` if this column is the output from a generator.
+  bool IsGenerator(void) const noexcept;
+
   // Returns `true` if this column is being used.
   bool IsUsed(void) const noexcept;
 
@@ -276,6 +279,11 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   virtual Node<QueryConstraint> *AsConstraint(void) noexcept;
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
+  // Return a number that can be used to help sort this node. The idea here
+  // is that we often want to try to merge together two different instances
+  // of the same underlying node when we can.
+  virtual uint64_t Sort(void) noexcept;
+
   // Hash this view, or return a cached hash. Useful for things like CSE. This
   // is a structural hash.
   virtual uint64_t Hash(void) noexcept = 0;
@@ -353,6 +361,10 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // INSERTs and mark the old old one as dead.
   bool is_used{false};
 
+  // Should `group_ids` be used to constrain merging? This applies to SELECTs
+  // as well as TUPLEs which have been used to replace SELECTs.
+  bool check_group_ids{false};
+
  protected:
   // Utility for depth calculation.
   static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);
@@ -367,6 +379,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   //            view.
   static bool CheckAllViewsMatch(const UseList<COL> &cols1,
                                  const UseList<COL> &cols2);
+
+  // Check if teh `group_ids` of two views have any overlaps.
+  static bool InsertSetsOverlap(Node<QueryView> *a, Node<QueryView> *b);
 };
 
 using VIEW = Node<QueryView>;
@@ -374,19 +389,29 @@ using VIEW = Node<QueryView>;
 template <>
 class Node<QuerySelect> final : public Node<QueryView> {
  public:
-  inline Node(Node<QueryRelation> *relation_)
-      : relation(relation_->CreateUse(this)) {}
+  inline Node(Node<QueryRelation> *relation_, DisplayRange range)
+      : position(range.From()),
+        relation(relation_->CreateUse(this)) {
+    check_group_ids = true;
+  }
 
-  inline Node(Node<QueryStream> *stream_)
-      : stream(stream_->CreateUse(this)) {}
+  inline Node(Node<QueryStream> *stream_, DisplayRange range)
+      : position(range.From()),
+        stream(stream_->CreateUse(this)) {
+    check_group_ids = true;
+  }
 
   virtual ~Node(void);
 
   Node<QuerySelect> *AsSelect(void) noexcept override;
 
+  uint64_t Sort(void) noexcept override;
   uint64_t Hash(void) noexcept override;
   unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+
+  // The instance of the predicate from which we are selecting.
+  DisplayPosition position;
 
   // The table from which this select takes its columns.
   UseRef<REL> relation;
@@ -450,12 +475,12 @@ using JOIN = Node<QueryJoin>;
 template <>
 class Node<QueryMap> final : public Node<QueryView> {
  public:
-  using Node<QueryView>::Node;
 
   virtual ~Node(void);
 
   Node<QueryMap> *AsMap(void) noexcept override;
 
+  uint64_t Sort(void) noexcept override;
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
@@ -463,9 +488,11 @@ class Node<QueryMap> final : public Node<QueryView> {
   // replacements easier.
   bool Canonicalize(QueryImpl *query) override;
 
-  inline explicit Node(ParsedFunctor functor_)
-      : functor(functor_) {}
+  inline explicit Node(ParsedFunctor functor_, DisplayRange range)
+      : position(range.From()),
+        functor(functor_) {}
 
+  const DisplayPosition position;
   const ParsedFunctor functor;
 };
 
@@ -584,6 +611,7 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Canonicalize(QueryImpl *query) override;
 
   const UseRef<REL> relation;
   const ParsedDeclaration decl;
@@ -628,6 +656,10 @@ class QueryImpl {
       do_view(view);
     }
   }
+
+  void Optimize(void);
+
+  void ConnectInsertsToSelects(void);
 
   const std::shared_ptr<query::QueryContext> context;
 

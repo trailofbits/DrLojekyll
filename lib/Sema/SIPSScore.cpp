@@ -6,7 +6,7 @@
 
 namespace hyde {
 
-class DefaultSIPSScorer::Impl {
+class BindingSpeedSIPSScorer::Impl {
  public:
   int best_permutation{-1};
   int current_permutation{-1};
@@ -14,21 +14,44 @@ class DefaultSIPSScorer::Impl {
   std::string best_score;
 };
 
-DefaultSIPSScorer::DefaultSIPSScorer(void)
+BindingSpeedSIPSScorer::BindingSpeedSIPSScorer(void)
     : impl(new Impl) {}
 
-DefaultSIPSScorer::~DefaultSIPSScorer(void) {}
+BindingSpeedSIPSScorer::~BindingSpeedSIPSScorer(void) {}
+FastBindingSIPSScorer::~FastBindingSIPSScorer(void) {}
+SlowBindingSIPSScorer::~SlowBindingSIPSScorer(void) {}
 
-int DefaultSIPSScorer::BestPermutation(void) const {
+int BindingSpeedSIPSScorer::BestPermutation(void) const {
   return impl->best_permutation;
 }
 
-void DefaultSIPSScorer::Begin(ParsedPredicate) {
+void BindingSpeedSIPSScorer::Begin(ParsedPredicate) {
   impl->current_permutation++;
   impl->current_score.clear();
 }
 
-void DefaultSIPSScorer::Commit(ParsedPredicate) {
+void BindingSpeedSIPSScorer::Begin(ParsedClause) {
+  impl->current_permutation++;
+  impl->current_score.clear();
+}
+
+void FastBindingSIPSScorer::Commit(ParsedPredicate pred) {
+  return Commit(ParsedClause::Containing(pred));
+}
+
+void FastBindingSIPSScorer::Commit(ParsedClause) {
+  std::reverse(impl->current_score.begin(), impl->current_score.end());
+  if (impl->best_score.empty() || impl->current_score > impl->best_score) {
+    impl->best_score.swap(impl->current_score);
+    impl->best_permutation = impl->current_permutation;
+  }
+}
+
+void SlowBindingSIPSScorer::Commit(ParsedPredicate pred) {
+  return Commit(ParsedClause::Containing(pred));
+}
+
+void SlowBindingSIPSScorer::Commit(ParsedClause) {
   std::reverse(impl->current_score.begin(), impl->current_score.end());
   if (impl->best_score.empty() || impl->current_score < impl->best_score) {
     impl->best_score.swap(impl->current_score);
@@ -36,7 +59,7 @@ void DefaultSIPSScorer::Commit(ParsedPredicate) {
   }
 }
 
-void DefaultSIPSScorer::AssertPresent(
+void BindingSpeedSIPSScorer::AssertPresent(
     ParsedDeclaration, ParsedPredicate,
     const Column *where_begin, const Column *where_end) {
   for (auto col = where_begin; col < where_end; ++col) {
@@ -44,7 +67,7 @@ void DefaultSIPSScorer::AssertPresent(
   }
 }
 
-void DefaultSIPSScorer::EnterFromWhereSelect(
+void BindingSpeedSIPSScorer::EnterFromWhereSelect(
     ParsedPredicate, ParsedDeclaration,
     const Column *where_begin, const Column *where_end,
     const Column *select_begin, const Column *select_end) {
@@ -56,7 +79,7 @@ void DefaultSIPSScorer::EnterFromWhereSelect(
   }
 }
 
-void DefaultSIPSScorer::EnterFromSelect(
+void BindingSpeedSIPSScorer::EnterFromSelect(
     ParsedPredicate, ParsedDeclaration,
     const Column *select_begin, const Column *select_end) {
   for (auto col = select_begin; col < select_end; ++col) {

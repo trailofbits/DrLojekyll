@@ -42,6 +42,12 @@ QueryImpl::~QueryImpl(void) {
   }
 }
 
+QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
+  const auto stream = sel.impl->stream.get();
+  assert(stream != nullptr);
+  return QueryStream(stream);
+}
+
 bool QueryStream::IsConstant(void) const noexcept {
   return impl->AsConstant() != nullptr;
 }
@@ -108,16 +114,19 @@ bool QueryView::ReplaceAllUsesWith(
   const auto num_cols = impl->columns.Size();
   assert(num_cols == that.impl->columns.Size());
 
-  // Maintain the set of group IDs, to prevent "unlucky" cases where we
-  // over-merge.
-  if (const auto this_select = impl->AsSelect()) {
-    const auto that_select = that.impl->AsSelect();
-    assert(that_select != nullptr);
-    that_select->group_ids.insert(
-        that_select->group_ids.end(),
-        this_select->group_ids.begin(),
-        this_select->group_ids.end());
-    std::sort(that_select->group_ids.begin(), that_select->group_ids.end());
+  // Maintain the set of group IDs, to prevent over-merging.
+  if (impl->check_group_ids || that.impl->check_group_ids) {
+    that.impl->group_ids.insert(
+        that.impl->group_ids.end(),
+        impl->group_ids.begin(),
+        impl->group_ids.end());
+    std::sort(that.impl->group_ids.begin(), that.impl->group_ids.end());
+
+    that.impl->check_group_ids = true;
+  }
+
+  if (const auto this_join = impl->AsJoin()) {
+    (void) this_join;
   }
 
   for (auto i = 0u; i < num_cols; ++i) {
@@ -242,6 +251,12 @@ const ParsedDeclaration &QueryInput::Declaration(void) const noexcept {
 
 const ParsedFunctor &QueryGenerator::Declaration(void) const noexcept {
   return impl->functor;
+}
+
+QueryRelation QueryRelation::From(const QuerySelect &sel) noexcept {
+  const auto rel = sel.impl->relation.get();
+  assert(rel != nullptr);
+  return QueryRelation(rel);
 }
 
 const ParsedDeclaration &QueryRelation::Declaration(void) const noexcept {
@@ -510,6 +525,12 @@ unsigned QueryMerge::NumMergedViews(void) const noexcept {
 QueryView QueryMerge::NthMergedView(unsigned n) const noexcept {
   assert(n < impl->merged_views.Size());
   return QueryView(impl->merged_views[n]);
+}
+
+// Range of views unioned together by this MERGE.
+UsedNodeRange<QueryView> QueryMerge::MergedViews(void) const {
+  return {UsedNodeIterator<QueryView>(impl->merged_views.begin()),
+          UsedNodeIterator<QueryView>(impl->merged_views.end())};
 }
 
 ComparisonOperator QueryConstraint::Operator(void) const {

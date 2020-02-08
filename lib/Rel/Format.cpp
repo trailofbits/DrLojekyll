@@ -70,9 +70,18 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto select : query.Selects()) {
     os << "v" << select.UniqueId() << " [ label=<" << kBeginTable;
     if (select.IsRelation()) {
-      os << "<TD>SELECT</TD>";
+      os << "<TD>PUSH</TD>";
+    } else if (select.IsStream()) {
+      auto stream = select.Stream();
+      if (stream.IsConstant()) {
+        os << "<TD>PULL</TD>";  // Pull from a stream.
+      } else if (stream.IsGenerator()) {
+        os << "<TD>PULL</TD>";  // Pull from a stream.
+      } else {
+        os << "<TD>PUSH</TD>";  // Pull from a stream.
+      }
     } else {
-      os << "<TD>PULL</TD>";  // Pull from a stream.
+      assert(false);
     }
     auto i = 0u;
     for (auto col : select.Columns()) {
@@ -413,6 +422,20 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto view = QueryView::Containing(col);
       os << "v" << tuple.UniqueId() << ":p" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+  }
+
+  for (auto merge : query.Merges()) {
+    os << "v" << merge.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD rowspan=\"2\">UNION</TD>";
+    for (auto col : merge.Columns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << col.Variable() << "</TD>";
+    }
+    os << kEndTable << ">];\n";
+
+    for (auto view : merge.MergedViews()) {
+      os << "v" << merge.UniqueId() << " -> v" << view.UniqueId() << ";\n";
     }
   }
 

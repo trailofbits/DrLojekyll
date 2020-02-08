@@ -4,10 +4,10 @@
 
 #message sys_open(@str UserName, @str FullPath)
 
-#functor is_dir(bound @str Path) complex
-#functor dir_entry(bound @str Path, free @str Entry) complex
-#functor join_path(bound @str DirName, bound @str FileName, free @str JoinedPath) complex
-#functor parent_dir(bound @str Path, free @str DirPath) complex
+#functor is_dir(bound @str Path)
+#functor dir_entry(bound @str Path, free @str Entry)
+#functor join_path(bound @str DirName, bound @str FileName, free @str JoinedPath)
+#functor parent_dir(bound @str Path, free @str DirPath)
 
 #local invalid_open(@str UserName, @str AccessedPath, @str WatchedDir)
 
@@ -30,4 +30,5 @@ evil_user(Name)
 invalid_open(UserName, AccessedPath, WatchedDir)
   : sys_open(UserName, AccessedPath)
   , parent_dir(AccessedPath, AccessedDir)
-  , watched_dir(AccessedDir, WatchedDir).
+  , watched_dir(AccessedDir, WatchedDir)
+  , evil_user(UserName).

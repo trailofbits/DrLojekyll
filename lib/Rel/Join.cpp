@@ -133,10 +133,14 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
   VIEW *incoming_view = nullptr;
   auto joins_at_least_two_views = false;
+  bool all_views_are_selects = true;
 
   for (auto &[out_col, input_cols] : out_to_in) {
     const auto max_i = input_cols.Size();
     assert(1u <= max_i);
+
+    // Sort the input columns within this pivot set. We use lexicographic
+    // ordering later as part of the stage that re-orders joins.
     input_cols.Sort();
 
     // Try to figure out if this JOIN actually joins together more than
@@ -153,6 +157,10 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
         }
       } else {
         all_are_constant = false;
+
+        if (!in_col->view->AsSelect()) {
+          all_views_are_selects = false;
+        }
 
         if (!incoming_view) {
           incoming_view = in_col->view;
@@ -205,7 +213,6 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
   //            `goto skip_remove;` should be sufficient to prevent anything
   //            unsafe.
   if (!joins_at_least_two_views) {
-
     for (auto &[out_col, input_cols] : out_to_in) {
       const auto num_input_cols = input_cols.Size();
       if (1 == num_input_cols) {
@@ -225,16 +232,44 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
       }
     }
 
-    for (auto &[out_col, input_cols] : out_to_in) {
-      out_col->ReplaceAllUsesWith(input_cols[0]);
+    // Create a tuple that forwards along the inputs to this join.
+    auto tuple = query->tuples.Create();
+    auto j = 0u;
+    for (auto col : columns) {
+      const auto new_out_col = tuple->columns.Create(col->var, tuple, col->id);
+      columns[j++]->ReplaceAllUsesWith(new_out_col);
     }
 
+    for (auto col : columns) {
+      auto in_set_it = out_to_in.find(col);
+      assert(in_set_it != out_to_in.end());
+
+      // If any of the columns in the pivot set is a constant, then forward
+      // that along.
+      for (auto in_col : in_set_it->second) {
+        if (in_col->IsConstant()) {
+          tuple->input_columns.AddUse(in_col);
+          goto next;
+        }
+      }
+
+      // Otherwise forward along the first one. This should end up being
+      // the smallest-values pointer in the pivot set due to earlier sorting.
+      tuple->input_columns.AddUse(in_set_it->second[0]);
+
+    next:
+      continue;
+    }
+
+    ReplaceAllUsesWith(tuple);
     out_to_in.clear();
+    is_used = false;
     return true;
   }
 skip_remove:
 
-  // Find unused output columns that aren't themselves pivots.
+  // Find unused output columns that aren't themselves pivots. Otherwise,
+  // mark pivot output columns for keeping.
   std::vector<COL *> keep_cols;
   for (auto &[out_col, input_cols] : out_to_in) {
     if (1 == input_cols.Size() && !out_col->NumUses()) {
@@ -310,24 +345,11 @@ skip_remove:
     return a < b;
   };
 
-  // Check if we need to sort the columns.
-  const auto max_i = columns.Size();
-  for (auto i = 1u; i < max_i; ++i) {
-    if (columns[i - 1] != columns[i] &&
-        !cmp(columns[i - 1], columns[i])) {
-      goto sort_columns;
-    }
-  }
-
-  is_canonical = true;  // Re-do it here, an `Update` might have changed it.
-  return non_local_changes;
-
-  sort_columns:
   columns.Sort(cmp);
 
   auto i = 0u;
   for (auto col : columns) {
-    col->index = i++;  // Fixup the indices.
+    col->index = i++;  // Fixup the indices now that we've sorted things.
   }
 
   hash = 0;

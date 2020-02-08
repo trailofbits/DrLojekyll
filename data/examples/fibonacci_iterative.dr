@@ -1,5 +1,5 @@
 
-#functor add_i32(bound @i32 L, bound @i32 R, free @i32 Sum) trivial
+#functor add_i32(bound @i32 L, bound @i32 R, free @i32 Sum) unordered(L, R)
 #local fibonnaci_loop(@i32 I, @i32 PN, @i32 CN, @i32 N)
 #query fibonnaci(bound @i32 N, free @i32 Result)
 #message init_fibonacci(@i32 N)

@@ -26,15 +26,15 @@ class SIPSScorer : public SIPSVisitor {
 
 // A simple SIPS scorer that gives preference to permutations of clause bodies
 // that more quickly bind their variables.
-class DefaultSIPSScorer final : public SIPSScorer {
+class BindingSpeedSIPSScorer : public SIPSScorer {
  public:
   class Impl;
 
-  DefaultSIPSScorer(void);
-  virtual ~DefaultSIPSScorer(void);
+  BindingSpeedSIPSScorer(void);
+  virtual ~BindingSpeedSIPSScorer(void);
 
   void Begin(ParsedPredicate) override;
-  void Commit(ParsedPredicate) override;
+  void Begin(ParsedClause) override;
 
   void AssertPresent(
       ParsedDeclaration, ParsedPredicate,
@@ -51,8 +51,24 @@ class DefaultSIPSScorer final : public SIPSScorer {
 
   int BestPermutation(void) const override;
 
- private:
+ protected:
   std::unique_ptr<Impl> impl;
+};
+
+class FastBindingSIPSScorer final : public BindingSpeedSIPSScorer {
+ public:
+  virtual ~FastBindingSIPSScorer(void);
+
+  void Commit(ParsedPredicate) override;
+  void Commit(ParsedClause) override;
+};
+
+class SlowBindingSIPSScorer final : public BindingSpeedSIPSScorer {
+ public:
+  virtual ~SlowBindingSIPSScorer(void);
+
+  void Commit(ParsedPredicate) override;
+  void Commit(ParsedClause) override;
 };
 
 }  // namespace hyde

@@ -115,6 +115,8 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 // A table in a query. Corresponds with a declared predicate in a Datalog.
 class QueryRelation : public query::QueryNode<QueryRelation> {
  public:
+  static QueryRelation From(const QuerySelect &sel) noexcept;
+
   const ParsedDeclaration &Declaration(void) const noexcept;
   bool IsPositive(void) const noexcept;
   bool IsNegative(void) const noexcept;
@@ -131,6 +133,8 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
 // The blocking vs. non-blocking is in relation to pull semantics.
 class QueryStream : public query::QueryNode<QueryStream> {
  public:
+  static QueryStream From(const QuerySelect &sel) noexcept;
+
   bool IsConstant(void) const noexcept;
   bool IsGenerator(void) const noexcept;
   bool IsInput(void) const noexcept;
@@ -233,6 +237,9 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
   QueryStream Stream(void) const noexcept;
 
  private:
+  friend class QueryRelation;
+  friend class QueryStream;
+
   using query::QueryNode<QuerySelect>::QueryNode;
 };
 
@@ -375,6 +382,12 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 
   // Nth view that is merged together at this point.
   QueryView NthMergedView(unsigned n) const noexcept;
+
+  // Range of views unioned together by this MERGE.
+  UsedNodeRange<QueryView> MergedViews(void) const;
+
+ private:
+  using query::QueryNode<QueryMerge>::QueryNode;
 };
 
 // A constraint between two columns. The constraint results in either one

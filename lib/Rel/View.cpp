@@ -38,6 +38,13 @@ Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
   return nullptr;
 }
 
+// Return a number that can be used to help sort this node. The idea here
+// is that we often want to try to merge together two different instances
+// of the same underlying node when we can.
+uint64_t Node<QueryView>::Sort(void) noexcept {
+  return Depth();
+}
+
 // Returns `true` if this view is being used. This is defined in terms of
 // whether or not the view is used in a merge, or whether or not any of its
 // columns are used.
@@ -133,6 +140,9 @@ bool Node<QueryView>::GuardWithTuple(QueryImpl *query) {
   }
 
   const auto tuple = query->tuples.Create();
+  if (check_group_ids) {
+    tuple->check_group_ids = true;
+  }
 
   // Make any merges use the tuple.
   ReplaceAllUsesWith(tuple);
@@ -174,7 +184,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
 
   auto do_cols = [&prev_view] (const auto &cols) -> bool {
     for (auto col : cols) {
-      if (!col->IsConstant()) {
+      if (!col->IsConstant() && !col->IsGenerator()) {
         if (prev_view) {
           if (prev_view != col->view) {
             return false;
@@ -187,6 +197,42 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
     return true;
   };
   return do_cols(cols1) && do_cols(cols2);
+}
+
+// Check if teh `group_ids` of two views have any overlaps.
+//
+// Two selects in the same logical clause are not allowed to be merged,
+// except in rare cases like constant streams. For example, consider the
+// following:
+//
+//    node_pairs(A, B) : node(A), node(B).
+//
+// `node_pairs` is the cross-product of `node`. The two selects associated
+// with each invocation of `node` are structurally the same, but cannot
+// be merged because otherwise we would not get the cross product.
+//
+// NOTE(pag): The `group_ids` are sorted.
+bool Node<QueryView>::InsertSetsOverlap(
+    Node<QueryView> *a, Node<QueryView> *b) {
+  if (!a->check_group_ids && !b->check_group_ids) {
+    return false;
+  }
+
+  for (auto i = 0u, j = 0u;
+       i < a->group_ids.size() && j < b->group_ids.size(); ) {
+
+    if (a->group_ids[i] == b->group_ids[j]) {
+      return true;
+
+    } else if (a->group_ids[i] < b->group_ids[j]) {
+      ++i;
+
+    } else {
+      ++j;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace hyde

@@ -61,8 +61,10 @@ local_decl: "#local" atom "(" param_list_1 ")" maybe_inline "\n"
 maybe_inline: "inline"
 maybe_inline:
 
-functor_decl: "#functor" atom "(" param_list_2 ")" "trivial" "\n"
-functor_decl: "#functor" atom "(" param_list_2 ")" "complex" "\n"
+functor_decl: "#functor" atom "(" param_list_2 ")" order_constraints "\n"
+
+order_constraints:
+order_constraints: "unordered" "(" param_list_3 ")" order_constraints
 
 param_list_0: type named_var "," param_list_0
 param_list_0: type named_var
@@ -75,6 +77,9 @@ param_list_1: named_var
 
 param_list_2: binding_specifier_2 type named_var "," param_list_2
 param_list_2: binding_specifier_2 type named_var
+
+param_list_3: named_var "," param_list_3
+param_list_3: named_var "," named_var
 
 type: "@i8"
 type: "@i16"

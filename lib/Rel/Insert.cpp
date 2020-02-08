@@ -31,6 +31,11 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   return hash;
 }
 
+bool Node<QueryInsert>::Canonicalize(QueryImpl *) {
+  assert(CheckAllViewsMatch(input_columns, attached_columns));
+  return false;
+}
+
 // Equality over inserts is structural.
 bool Node<QueryInsert>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {

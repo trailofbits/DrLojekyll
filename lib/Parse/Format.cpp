@@ -132,10 +132,14 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   os << ")";
   if (decl.IsFunctor()) {
     auto functor = ParsedFunctor::From(decl);
-    if (functor.IsComplex()) {
-      os << " complex";
-    } else {
-      os << " trivial";
+    for (auto i = 0u; i < functor.NumUnorderedParameterSets(); ++i) {
+      os << " unordered(";
+      comma = "";
+      for (auto param : functor.NthUnorderedSet(i)) {
+        os << comma << param.Name();
+        comma = ", ";
+      }
+      os << ")";
     }
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " inline";

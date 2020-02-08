@@ -195,9 +195,14 @@ void CodeGenBAM(
 
   BottomUpAnalysis analysis;
   for (auto state : analysis.GenerateStates(module)) {
-    DefaultSIPSScorer scorer;
-    SIPSGenerator generator(state->assumption);
-    scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
+    FastBindingSIPSScorer scorer;
+    if (state->assumption) {
+      SIPSGenerator generator(*(state->assumption));
+      scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
+    } else {
+      SIPSGenerator generator(state->clause);
+      scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
+    }
   }
 }
 

@@ -321,6 +321,10 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
   Token Name(void) const noexcept;
   TypeLoc Type(void) const noexcept;
   ParameterBinding Binding(void) const noexcept;
+  unsigned Index(void) const noexcept;
+
+  // Applies only to `bound` parameters of functors.
+  bool CanBeReordered(void) const noexcept;
 
   // Other declarations of this parameter. This goes and gets the list of
   // parameters that
@@ -424,6 +428,19 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   bool IsFunctor(void) const noexcept;
   bool IsExport(void) const noexcept;
   bool IsLocal(void) const noexcept;
+
+  // Does this declaration have a `mutable`-attributed parameter? If so, then
+  // this relation must be materialized.
+  bool HasMutableParameter(void) const noexcept;
+
+  // Does this declaration have a clause that directly depends on a `#message`?
+  bool HasDirectInputDependency(void) const noexcept;
+
+  // Does this declaration have a clause that directly depends on a `#functor`
+  // that only have `free`-attributed parameters? These are basically
+  // "generators" (they can be used to make unique IDs, random numbers,
+  // etc.) and so those values need to get saved.
+  bool HasDirectGeneratorDependency(void) const noexcept;
 
   // The kind of this declaration.
   DeclarationKind Kind(void) const noexcept;
@@ -599,15 +616,18 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   Token Name(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
+  NodeRange<ParsedParameter> Parameters(void) const;
 
-  bool IsComplex(void) const noexcept;
-  bool IsTrivial(void) const noexcept;
   bool IsAggregate(void) const noexcept;
 
   NodeRange<ParsedFunctor> Redeclarations(void) const;
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 
-  unsigned NumPositiveUses(void) const noexcept ;
+  unsigned NumPositiveUses(void) const noexcept;
+
+  unsigned NumUnorderedParameterSets(void) const noexcept;
+
+  NodeRange<ParsedParameter> NthUnorderedSet(unsigned n) const;
 
   inline unsigned NumNegatedUses(void) const noexcept {
     return 0;

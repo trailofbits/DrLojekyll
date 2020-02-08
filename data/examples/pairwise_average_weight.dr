@@ -1,8 +1,8 @@
 ; The purpose of this example is to see that joins "look right".
 
-#functor random_i32(free @i32 RandVal) trivial
-#functor add_i32(bound @i32 LHS, bound @i32 RHS, free @i32 Sum) trivial
-#functor div_i32(bound @i32 LHS, bound @i32 RHS, free @i32 Res) trivial
+#functor random_i32(free @i32 RandVal)
+#functor add_i32(bound @i32 LHS, bound @i32 RHS, free @i32 Sum) unordered(LHS, RHS)
+#functor div_i32(bound @i32 LHS, bound @i32 RHS, free @i32 Res)
 #local edge(@i32 From, @i32 To)
 #local edge_weight(@i32 From, @i32 To, @i32 Weight)
 #query pairwise_average_weight(bound @i32 X, free @i32 Avg)

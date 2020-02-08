@@ -41,6 +41,13 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
   return hash;
 }
 
+// Return a number that can be used to help sort this node. The idea here
+// is that we often want to try to merge together two different instances
+// of the same underlying node when we can.
+uint64_t Node<QuerySelect>::Sort(void) noexcept {
+  return position.Index();
+}
+
 unsigned Node<QuerySelect>::Depth(void) noexcept {
   depth = 1;  // Base case for cycles.
   depth = GetDepth(input_columns, 0) + 1;
@@ -64,9 +71,9 @@ bool Node<QuerySelect>::Equals(
     if (stream->AsInput() || stream->AsConstant()) {
       return true;
 
-      // Never let generators be merged, e.g. imagine that we have a generating
-      // functor that emulates SQL's "primary key auto increment". That should
-      // never be merged, even across `group_ids`.
+    // Never let generators be merged, e.g. imagine that we have a generating
+    // functor that emulates SQL's "primary key auto increment". That should
+    // never be merged, even across `group_ids`.
     } else if (stream->AsGenerator()) {
       return false;
 
@@ -84,29 +91,8 @@ bool Node<QuerySelect>::Equals(
       return true;
     }
 
-    // Two selects in the same logical clause are not allowed to be merged,
-    // except in rare cases like constant streams. For example, consider the
-    // following:
-    //
-    //    node_pairs(A, B) : node(A), node(B).
-    //
-    // `node_pairs` is the cross-product of `node`. The two selects associated
-    // with each invocation of `node` are structurally the same, but cannot
-    // be merged because otherwise we would not get the cross product.
-    //
-    // NOTE(pag): The `group_ids` are sorted.
-    for (auto i = 0u, j = 0u;
-         i < group_ids.size() && j < that->group_ids.size(); ) {
-
-      if (group_ids[i] == that->group_ids[j]) {
-        return false;
-
-      } else if (group_ids[i] < that->group_ids[j]) {
-        ++i;
-
-      } else {
-        ++j;
-      }
+    if (InsertSetsOverlap(this, that)) {
+      return false;
     }
 
     eq.Insert(this, that);
