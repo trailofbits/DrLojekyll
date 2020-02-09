@@ -9,7 +9,7 @@
 #functor join_path(bound @str DirName, bound @str FileName, free @str JoinedPath)
 #functor parent_dir(bound @str Path, free @str DirPath)
 
-#local invalid_open(@str UserName, @str AccessedPath, @str WatchedDir)
+#message invalid_open(@str UserName, @str AccessedPath, @str WatchedDir)
 
 #local evil_user(@str UserName)
 #message add_evil_user(@str UserName)

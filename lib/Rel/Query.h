@@ -607,6 +607,15 @@ class Node<QueryInsert> : public Node<QueryView> {
     is_used = true;
   }
 
+  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_)
+      : stream(stream_->CreateUse(this)),
+        decl(decl_) {
+
+    // Make all INSERTs initially look used. Replacing one with another will
+    // make it go unused.
+    is_used = true;
+  }
+
   Node<QueryInsert> *AsInsert(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -614,6 +623,7 @@ class Node<QueryInsert> : public Node<QueryView> {
   bool Canonicalize(QueryImpl *query) override;
 
   const UseRef<REL> relation;
+  const UseRef<STREAM> stream;
   const ParsedDeclaration decl;
 };
 

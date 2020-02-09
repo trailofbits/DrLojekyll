@@ -17,11 +17,10 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Rel/Format.h>
 #include <drlojekyll/Rel/Builder.h>
-#include <drlojekyll/Sema/BottomUpAnalysis.h>
 #include <drlojekyll/Sema/SIPSAnalysis.h>
 #include <drlojekyll/Sema/SIPSScore.h>
 #include <drlojekyll/Transforms/CombineModules.h>
-#include <drlojekyll/Transforms/ConvertQueriesToMessages.h>
+#include <drlojekyll/Transforms/ProxyExternalsWithExports.h>
 
 namespace hyde {
 
@@ -335,6 +334,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     return EXIT_FAILURE;
   } else {
     module = CombineModules(display_manager, module);
+    module = ProxyExternalsWithExports(display_manager, module);
 
     std::stringstream ss;
     do {

@@ -664,6 +664,10 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   NodeRange<ParsedClause> Clauses(void) const;
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 
+  // Returns `true` if this message is the head of any clause, i.e. if there
+  // are rules that publish this message.
+  bool IsPublished(void) const noexcept;
+
   unsigned NumPositiveUses(void) const noexcept;
 
   inline unsigned NumNegatedUses(void) const noexcept {

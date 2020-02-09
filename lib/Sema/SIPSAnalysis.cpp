@@ -1258,8 +1258,30 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
         goal_set = DisjointSet::Union(goal_set, param_set);
       }
     }
+
   } else {
     visitor.Begin(clause);
+
+    const auto decl = ParsedDeclaration::Of(clause);
+
+    // If this clause has bound parameters, then declare them.
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        const auto var_id = GetFreshVarId();
+        const auto var = clause.NthParameter(param.Index());
+        SIPSVisitor::Column col(param, var, param.Index(), var_id);
+        visitor.DeclareParameter(col);
+
+        const auto param_set = vars[var_id]->Find();
+        auto &goal_set = equalities[var];
+        if (!goal_set) {
+          goal_set = param_set;
+        } else {
+          visitor.AssertEqual(var, goal_set->Find()->id, var, param_set->id);
+          goal_set = DisjointSet::Union(goal_set, param_set);
+        }
+      }
+    }
   }
 
   // Bind all assigned variables to their respective constants.

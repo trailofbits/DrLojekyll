@@ -65,7 +65,7 @@ add_subdirectory(lib)
 
 function(main config)
     add_executable(test-${config}
-        main.cpp)
+            Main.cpp)
 
     target_link_libraries(test-${config}
         rel-${config}

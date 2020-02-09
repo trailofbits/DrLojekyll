@@ -76,6 +76,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
   bool IsAggregate(void) const noexcept;
+  bool IsBoundQueryInput(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
 
@@ -138,6 +139,7 @@ class QueryStream : public query::QueryNode<QueryStream> {
   bool IsConstant(void) const noexcept;
   bool IsGenerator(void) const noexcept;
   bool IsInput(void) const noexcept;
+  bool IsBoundQueryInput(void) const noexcept;
 
  private:
   friend class QueryGenerator;
@@ -414,7 +416,13 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
 // An insert of one or more columns into a relation.
 class QueryInsert : public query::QueryNode<QueryInsert> {
  public:
+  ParsedDeclaration Declaration(void) const noexcept;
+
+  bool IsRelation(void) const noexcept;
+  bool IsStream(void) const noexcept;
+
   QueryRelation Relation(void) const noexcept;
+  QueryStream Stream(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
   QueryColumn NthColumn(unsigned n) const noexcept;

@@ -51,6 +51,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   STREAM *StreamFor(ParsedLiteral literal) {
     if (literal.IsNumber() || literal.IsString()) {
+
       std::string spelling(literal.Spelling());
       spelling += literal.Type().Spelling();  // Make them type-specific.
 
@@ -110,7 +111,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     return view->columns.Create(column.var, view, column.id, column.n);
   }
 
-  void Begin(ParsedClause clause) override {
+  void Clear(void) {
     id_to_col.clear();
     pending_compares.clear();
     next_pending_compares.clear();
@@ -125,8 +126,28 @@ class QueryBuilderImpl : public SIPSVisitor {
     initial_view = nullptr;
   }
 
+  void Begin(ParsedClause clause) override {
+    Clear();
+
+    const auto decl = ParsedDeclaration::Of(clause);
+    auto has_bound_params = false;
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        has_bound_params = true;
+        break;
+      }
+    }
+
+    if (has_bound_params) {
+      const auto stream = context->inputs.Create(decl);
+      initial_view = query->selects.Create(
+          stream, decl.SpellingRange());
+      input_view = initial_view;
+    }
+  }
+
   void Begin(ParsedPredicate pred) override {
-    Begin(ParsedClause::Containing(pred));
+    Clear();
 
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsMessage()) {
@@ -1261,8 +1282,14 @@ class QueryBuilderImpl : public SIPSVisitor {
     // one-another across different clauses.
     EmptyEquivalenceClasses();
 
-    auto table = TableFor(decl);
-    auto insert = query->inserts.Create(table, decl);
+    INSERT *insert = nullptr;
+    if (decl.IsMessage()) {
+      auto stream = StreamFor(decl);
+      insert = query->inserts.Create(stream, decl);
+    } else {
+      auto table = TableFor(decl);
+      insert = query->inserts.Create(table, decl);
+    }
 
     for (auto col = begin; col < end; ++col) {
       (void) AddColumn(insert, *col);
@@ -1274,8 +1301,11 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     // Look to see if there's any negative use of `decl`, and insert into
     // there as well. This is equivalent to removing from the negative table.
+    //
+    // NOTE(pag): Not allowed negative uses of messages, hence no checking or
+    //            creation of streams here.
     for (auto pred : decl.NegativeUses()) {
-      table = TableFor(pred);
+      auto table = TableFor(pred);
       insert = query->inserts.Create(table, decl);
 
       for (auto col = begin; col < end; ++col) {

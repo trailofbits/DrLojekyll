@@ -60,6 +60,14 @@ bool QueryStream::IsInput(void) const noexcept {
   return impl->AsInput() != nullptr;
 }
 
+bool QueryStream::IsBoundQueryInput(void) const noexcept {
+  const auto input = impl->AsInput();
+  if (!input) {
+    return false;
+  }
+  return input->declaration.IsQuery();
+}
+
 QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
@@ -188,6 +196,14 @@ bool QueryColumn::IsMerge(void) const noexcept {
 
 bool QueryColumn::IsConstraint(void) const noexcept {
   return impl->view->AsConstraint() != nullptr;
+}
+
+bool QueryColumn::IsBoundQueryInput(void) const noexcept {
+  const auto sel = impl->view->AsSelect();
+  if (!sel || !sel->stream) {
+    return false;
+  }
+  return QueryStream(sel->stream.get()).IsBoundQueryInput();
 }
 
 // Returns a unique ID representing the equivalence class of this column.
@@ -578,8 +594,28 @@ UsedNodeRange<QueryColumn> QueryConstraint::InputCopiedColumns(void) const {
   return {impl->attached_columns.begin(), impl->attached_columns.end()};
 }
 
+ParsedDeclaration QueryInsert::Declaration(void) const noexcept {
+  return impl->decl;
+}
+
+bool QueryInsert::IsRelation(void) const noexcept {
+  return impl->relation.get() != nullptr;
+}
+
+bool QueryInsert::IsStream(void) const noexcept {
+  return impl->stream.get() != nullptr;
+}
+
 QueryRelation QueryInsert::Relation(void) const noexcept {
-  return QueryRelation(impl->relation.get());
+  const auto rel = impl->relation.get();
+  assert(rel != nullptr);
+  return QueryRelation(rel);
+}
+
+QueryStream QueryInsert::Stream(void) const noexcept {
+  const auto stream = impl->stream.get();
+  assert(stream != nullptr);
+  return QueryStream(stream);
 }
 
 unsigned QueryInsert::Arity(void) const noexcept {

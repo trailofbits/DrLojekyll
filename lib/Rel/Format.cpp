@@ -40,8 +40,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto input : query.Inputs()) {
     const auto decl = input.Declaration();
     const auto arity = decl.Arity();
-    os << "t" << input.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>INPUT " << ParsedDeclarationName(decl) << "</TD>";
+    os << "t" << input.UniqueId() << " [ label=<" << kBeginTable << "<TD>";
+    if (decl.IsMessage()) {
+      os << "RECV ";
+    } else if (decl.IsQuery()) {
+      os << "QUERY ";
+    }
+    os << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -384,9 +389,18 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto insert : query.Inserts()) {
-    os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>INSERT "
-       << ParsedDeclarationName(insert.Relation().Declaration()) << "</TD>";
+    const auto decl = insert.Declaration();
+    os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable << "<TD>";
+    if (decl.IsQuery()) {
+      os << "RESPOND ";
+
+    } else if (decl.IsMessage()) {
+      os << "SEND ";
+
+    } else {
+      os << "INSERT ";
+    }
+    os << ParsedDeclarationName(decl) << "</TD>";
 
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
       os << "<TD port=\"c" << i << "\">"

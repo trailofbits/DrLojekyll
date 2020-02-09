@@ -1073,6 +1073,12 @@ ParsedMessage::PositiveUses(void) const {
   return impl->PositiveUses();
 }
 
+// Returns `true` if this message is the head of any clause, i.e. if there
+// are rules that publish this message.
+bool ParsedMessage::IsPublished(void) const noexcept {
+  return !impl->context->clauses.empty();
+}
+
 unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
 }

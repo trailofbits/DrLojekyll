@@ -18,12 +18,21 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     return !decl.HasMutableParameter() &&
            !decl.IsQuery() &&
            !decl.IsMessage() &&
-           !decl.HasDirectGeneratorDependency();
+           !decl.HasDirectGeneratorDependency() &&
+           !decl.NumNegatedUses();
   };
 
+  // Go figure out what INSERTs can be connected to SELECTs, and also try
+  // to mark some INSERTs as no longer needed.
   for (auto insert : inserts) {
     if (can_connect(insert->decl)) {
+      insert->is_used = false;
       decl_to_inserts[insert->decl].push_back(insert);
+
+    } else if (!insert->decl.IsQuery() && !insert->decl.IsMessage()) {
+      if (!insert->decl.NumUses()) {
+        insert->is_used = false;
+      }
     }
   }
 
@@ -64,7 +73,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
           tuple->input_columns.AddUse(in_col);
         }
 
-        insert->is_used = false;
         merge->merged_views.AddUse(tuple);
       }
 

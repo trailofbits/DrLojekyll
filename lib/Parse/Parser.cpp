@@ -2150,6 +2150,7 @@ Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
   assign->rhs.literal = tok;
   std::string_view data;
   if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
+    assert(!data.empty());
     assign->rhs.data = data;
   } else {
     assert(false);
@@ -2227,6 +2228,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   Node<ParsedVariable> *rhs = nullptr;
   Token compare_op;
   std::unique_ptr<Node<ParsedPredicate>> pred;
+  bool equates_parameters = false;
 
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
@@ -2283,6 +2285,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           // Something like `foo(A, A)`, which we want to translate into
           // `foo(A, V123) : A=V123, ...`.
           } else {
+            equates_parameters = true;
+
             const auto new_tok = Token::Synthetic(
                 Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange());
             const auto dup_var = CreateVariable(
@@ -2449,6 +2453,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             auto assign = new Node<ParsedAssignment>(lhs);
             assign->rhs.literal = tok;
             assign->rhs.assigned_to = lhs;
+            std::string_view data;
+            if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
+              assert(!data.empty());
+              assign->rhs.data = data;
+            } else {
+              assert(false);
+            }
 
             // Add to the clause's assignment list.
             if (!clause->assignments.empty()) {
@@ -2752,6 +2763,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   const auto is_query_clause = DeclarationKind::kQuery ==
                                clause->declaration->context->kind;
 
+  // TODO(pag): Consider doing some kind of basic range restriction check and
+  //            transformation. For example, if we have `foo(A,A).` then is
+  //            it legal to translate that to `foo(A0, A0) : foo(A0, _).` and
+  //            `foo(A1, A1) : foo(_, A1).`?
+  if (equates_parameters) {
+
+  }
+
   // Go make sure we don't have two messages inside of a given clause. In our
   // bottom-up execution model, the "inputs" to the system are messages, which
   // are ephemeral. If we see that as triggering a clause, then we can't
@@ -2791,6 +2810,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     }
   }
 
+
+
   // Link all positive predicate uses into their respective declarations.
   for (auto &used_pred : clause->positive_predicates) {
     auto &pred_decl_context = used_pred->declaration->context;
@@ -2802,7 +2823,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   }
 
   // Link all negative predicate uses into their respective declarations.
-  for (auto &used_pred : clause->positive_predicates) {
+  for (auto &used_pred : clause->negated_predicates) {
     auto &pred_decl_context = used_pred->declaration->context;
     auto &negated_uses = pred_decl_context->negated_uses;
     if (!negated_uses.empty()) {
