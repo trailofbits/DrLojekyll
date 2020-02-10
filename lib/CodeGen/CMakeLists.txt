@@ -3,7 +3,8 @@
 function(codegen source_dir config)
     add_library(codegen-${config} STATIC
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/BAM.h"
-        "${source_dir}/BAM.cpp")
+        "${source_dir}/ParseBAM.cpp"
+        "${source_dir}/QueryBAM.cpp")
 
     target_link_libraries(codegen-${config} PUBLIC
         transforms-${config})
