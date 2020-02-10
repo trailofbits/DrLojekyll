@@ -34,20 +34,12 @@ void GenerateCode(
     FastBindingSIPSScorer scorer;
     if (state->assumption) {
       SIPSGenerator generator(*(state->assumption));
-      scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
+//      scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
     } else {
       SIPSGenerator generator(state->clause);
-      scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
+//      scorer.VisitBestScoringPermuation(scorer, bam_builder, generator);
     }
   }
-}
-
-// Generates BAM-like code following the push method of pipelined bottom-up
-// execution of Datalog.
-void GenerateCode(
-    const DisplayManager &display_manager, const Query &query,
-    std::ostream &cxx_os) {
-
 }
 
 }  // namespace hyde
