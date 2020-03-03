@@ -255,7 +255,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   // Returns `true` if we had to "guard" this view with a tuple so that we
   // can put it into canonical form.
-  bool GuardWithTuple(QueryImpl *query);
+  Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force=false);
 
   // Returns `true` if this view is being used.
   bool IsUsed(void) const noexcept;
@@ -435,9 +435,6 @@ class Node<QueryTuple> final : public Node<QueryView> {
   // canonical form of this tuple is one where all columns are sorted by
   // their pointer values.
   bool Canonicalize(QueryImpl *query) override;
-
- private:
-  bool LooksCanonical(void) const;
 };
 
 using TUPLE = Node<QueryTuple>;

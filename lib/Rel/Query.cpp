@@ -72,6 +72,34 @@ QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
 
+QueryView &QueryView::From(QuerySelect &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
+QueryView &QueryView::From(QueryTuple &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
+QueryView &QueryView::From(QueryJoin &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
+QueryView &QueryView::From(QueryMap &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
+QueryView &QueryView::From(QueryAggregate &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
+QueryView &QueryView::From(QueryMerge &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
+QueryView &QueryView::From(QueryConstraint &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
 DefinedNodeRange<QueryColumn> QueryView::Columns(void) const {
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
@@ -228,6 +256,19 @@ bool QueryColumn::ReplaceAllUsesWith(QueryColumn that) const noexcept {
 
   impl->ReplaceAllUsesWith(that.impl);
   return true;
+}
+
+// Apply a function to each user.
+void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
+  impl->view->ForEachUse([&user_cb] (User *user, Node<QueryView> *) {
+    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
+    user_cb(QueryView(user_view));
+  });
+
+  impl->ForEachUse([&user_cb] (User *user, Node<QueryColumn> *) {
+    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
+    user_cb(QueryView(user_view));
+  });
 }
 
 const ParsedVariable &QueryColumn::Variable(void) const noexcept {
@@ -393,9 +434,10 @@ DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
   const auto num_cols = impl->columns.Size();
   const auto num_group_cols = impl->attached_columns.Size();
   const auto first_group_col_index = num_cols - num_group_cols;
-  return {DefinedNodeIterator<QueryColumn>(
-      impl->columns.begin() + first_group_col_index),
-          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+  return {
+    DefinedNodeIterator<QueryColumn>(
+        impl->columns.begin() + first_group_col_index),
+    DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
 // Returns the number of output columns.
@@ -442,6 +484,17 @@ QueryAggregate &QueryAggregate::From(QueryView &view) {
 DefinedNodeRange<QueryColumn> QueryAggregate::Columns(void) const {
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+UsedNodeRange<QueryColumn> QueryAggregate::GroupColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->group_by_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->group_by_columns.end())};
+}
+
+UsedNodeRange<QueryColumn>
+QueryAggregate::ConfigurationColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->bound_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->bound_columns.end())};
 }
 
 // Returns the number of output columns.

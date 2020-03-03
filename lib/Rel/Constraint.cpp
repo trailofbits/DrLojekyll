@@ -55,7 +55,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-  bool non_local_changes = GuardWithTuple(query);
+  bool non_local_changes = !!GuardWithTuple(query);
 
   // We need to re-order the input columns, and possibly also the output
   // columns to match the input ordering.

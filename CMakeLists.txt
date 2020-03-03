@@ -65,21 +65,18 @@ add_subdirectory(lib)
 
 function(main config)
     add_executable(test-${config}
-            Main.cpp)
-
+        Main.cpp)
     target_link_libraries(test-${config}
         rel-${config}
         codegen-${config})
 endfunction(main)
 
-function(fuzz_harness config)
-    add_executable(fuzz_harness-${config}
-        fuzz_harness.cpp
-    )
-    target_link_libraries(fuzz_harness-${config}
-		parser-${config}
-    )
-endfunction(fuzz_harness)
+function(fuzzer config)
+    add_executable(fuzzer-${config}
+        Fuzzer.cpp)
+    target_link_libraries(fuzzer-${config}
+		parser-${config})
+endfunction(fuzzer)
 
 # Build everything in the `lib` dir using the `dbg`, `asan`, and `libfuzzer`
 # configurations.
@@ -91,7 +88,8 @@ main(dbg)
 main(asan)
 
 # Build the fuzz harness.
-if(NOT APPLE)
+if (NOT APPLE)
     lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
-    fuzz_harness(libfuzzer)
-endif()
+    fuzzer(libfuzzer)
+ endif(NOT APPLE)
+ 

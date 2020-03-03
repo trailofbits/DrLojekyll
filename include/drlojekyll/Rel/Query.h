@@ -95,6 +95,9 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   // queries.
   bool ReplaceAllUsesWith(QueryColumn that) const noexcept;
 
+  // Apply a function to each user.
+  void ForEachUser(std::function<void(QueryView)> user_cb) const;
+
  private:
   using query::QueryNode<QueryColumn>::QueryNode;
 
@@ -195,6 +198,10 @@ class QueryInput : public query::QueryNode<QueryInput> {
   friend class QuerySelect;
 };
 
+class QueryAggregate;
+class QueryMap;
+class QueryTuple;
+
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
 class QueryView : public query::QueryNode<QueryView> {
@@ -202,6 +209,14 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView Containing(QueryColumn col);
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
+
+  static QueryView &From(QuerySelect &view) noexcept;
+  static QueryView &From(QueryTuple &view) noexcept;
+  static QueryView &From(QueryJoin &view) noexcept;
+  static QueryView &From(QueryMap &view) noexcept;
+  static QueryView &From(QueryAggregate &view) noexcept;
+  static QueryView &From(QueryMerge &view) noexcept;
+  static QueryView &From(QueryConstraint &view) noexcept;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
@@ -357,6 +372,9 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // Returns the `nth` input summarized column.
   QueryColumn NthInputSummarizedColumn(unsigned n) const noexcept;
 
+  UsedNodeRange<QueryColumn> GroupColumns(void) const noexcept;
+  UsedNodeRange<QueryColumn> ConfigurationColumns(void) const noexcept;
+
   // The functor doing the aggregating.
   const ParsedFunctor &Functor(void) const noexcept;
 
@@ -485,3 +503,13 @@ class Query {
 };
 
 }  // namespace hyde
+namespace std {
+
+template<>
+struct hash<::hyde::QueryView> {
+  inline uint64_t operator()(::hyde::QueryView view) const noexcept {
+    return view.UniqueId();
+  }
+};
+
+}  // namespace std

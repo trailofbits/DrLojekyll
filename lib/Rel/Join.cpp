@@ -2,6 +2,8 @@
 
 #include "Query.h"
 
+#include <unordered_set>
+
 #include <drlojekyll/Util/EqualitySet.h>
 
 namespace hyde {
@@ -124,10 +126,33 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
   VerifyPivots();
 
+  // Maps incoming VIEWs to the pairs of `(out_col, in_col)`, where `out_col`
+  // is the output column associated with `in_col`, and `in_col` belongs to
+  // the mapped VIEW.
+  std::unordered_map<VIEW *, std::vector<std::pair<COL *, COL *>>>
+      in_view_to_inout_cols;
+
+  // Maps output columns to constant inputs.
+  std::unordered_map<COL *, COL *> out_to_constant_in;
+
+  // If any input column is a constant, then we're going to force this join to
+  // be guarded by a tuple. That simplifies const prop and downward
+  // restructuring.
+  for (auto &[out_col, input_cols] : out_to_in) {
+    for (COL *in_col : input_cols) {
+      if (in_col->IsConstant()) {
+        out_to_constant_in.emplace(out_col, in_col);
+      } else {
+        in_view_to_inout_cols[in_col->view].emplace_back(out_col, in_col);
+      }
+    }
+  }
+
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-  bool non_local_changes = GuardWithTuple(query);
+  const auto guard_tuple = GuardWithTuple(query, !out_to_constant_in.empty());
+  bool non_local_changes = !!guard_tuple;
 
   std::unordered_map<COL *, COL *> in_to_out;
 
@@ -146,9 +171,8 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
     // Try to figure out if this JOIN actually joins together more than
     // one view.
     COL *constant_col = nullptr;
-    bool all_are_constant = true;
 
-    for (auto in_col : input_cols) {
+    for (COL *in_col : input_cols) {
       if (in_col->IsConstant()) {
         if (constant_col) {
           assert(in_col == constant_col);
@@ -156,7 +180,6 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
           constant_col = in_col;
         }
       } else {
-        all_are_constant = false;
 
         if (!in_col->view->AsSelect()) {
           all_views_are_selects = false;
@@ -178,6 +201,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
         if (prev_out->NumUses() > out_col->NumUses()) {
           out_col->ReplaceAllUsesWith(prev_out);
+
         } else {
           prev_out->ReplaceAllUsesWith(out_col);
           prev_out = out_col;
@@ -185,24 +209,15 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
       } else {
         prev_out = out_col;
       }
-
-    // `input_cols` is a pivot set, one of the pivots is a constant, but not
-    // all of the pivots are constant. What we'll do is introduce a filter
-    // before the incoming views to constrain them to have the particular
-    // column as a pivot.
-    } else if (constant_col && !all_are_constant) {
-      // TODO(pag): Implement this.
     }
 
-    // There's a constant in the pivot set. Perform constant propagation.
-    if (constant_col && out_col->IsUsedIgnoreMerges()) {
+    // There's a constant, either in the pivot set or just a normal incoming
+    // column. Perform constant propagation.
+    //
+    // NOTE(pag): This JOIN is guaranteed to be guarded by a tuple.
+    if (constant_col) {
       out_col->ReplaceAllUsesWith(constant_col);
       non_local_changes = true;
-    }
-
-    // The entire pivot is unnecessary.
-    if (1 < max_i && constant_col && all_are_constant) {
-      // TODO(pag): Do something.
     }
   }
 
@@ -268,12 +283,61 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
   }
 skip_remove:
 
+  // At least one of the pivot columns is a constant. We want to generate
+  // FILTERs for all of the incoming views.
+  if (!out_to_constant_in.empty()) {
+    for (auto &[view, inout_cols] : in_view_to_inout_cols) {
+      std::sort(inout_cols.begin(), inout_cols.end(),
+                [] (std::pair<COL *, COL *> a, std::pair<COL *, COL *> b) {
+                  return a.first->index < b.first->index;
+                });
+
+      for (auto &[out_col, in_col] : inout_cols) {
+        const auto const_col_it = out_to_constant_in.find(out_col);
+        if (const_col_it == out_to_constant_in.end()) {
+          continue;
+        }
+
+        COL * const const_col = const_col_it->second;
+        const auto filter = query->constraints.Create(ComparisonOperator::kEqual);
+        filter->input_columns.AddUse(in_col);
+        filter->input_columns.AddUse(const_col);
+
+        const auto new_in_col = filter->columns.Create(
+            in_col->var, filter, in_col->id);
+
+        for (auto &[out_col2, in_col2] : inout_cols) {
+          if (out_col != out_col2) {
+            filter->attached_columns.AddUse(in_col2);
+            in_col2 = filter->columns.Create(in_col2->var, filter, in_col2->id);
+          }
+        }
+
+        in_col = new_in_col;
+      }
+    }
+  }
+
   // Find unused output columns that aren't themselves pivots. Otherwise,
-  // mark pivot output columns for keeping.
+  // mark pivot output columns for keeping. We can skip over constant outputs,
+  // even pivots, because the JOIN will be guarded by a TUPLE. We still have
+  // to inject FILTERs on the sources, though.
   std::vector<COL *> keep_cols;
-  for (auto &[out_col, input_cols] : out_to_in) {
-    if (1 == input_cols.Size() && !out_col->NumUses()) {
+  for (const auto &[out_col, input_cols] : out_to_in) {
+
+    // We don't need to keep constant pivots because they will have been
+    // filtered before coming in, and we don't need to keep constant outputs
+    // because we will have propagated them.
+    if (out_to_constant_in.count(out_col)) {
+      continue;
+
+    // We don't want to keep unused non-PIVOTs, as they don't matter.
+    } else if (1 == input_cols.Size() && !out_col->NumUses()) {
       non_local_changes = true;
+
+    // Either it's a non-constant pivot, which may or may not be used, but must
+    // be kept to preserve the higher-level semantics, or it's a used non-pivot,
+    // non-constant column.
     } else {
       keep_cols.push_back(out_col);
     }
@@ -281,19 +345,38 @@ skip_remove:
 
   // Keep only the output columns that are needed, and that correspond with
   // unique (non-pivot) incoming columns.
-  if (keep_cols.size() < columns.Size()) {
+  if (!out_to_constant_in.empty() || keep_cols.size() < columns.Size()) {
     DefList<COL> new_output_columns(this);
     std::unordered_map<COL *, UseList<COL>> new_out_to_in;
 
     for (auto old_out_col : keep_cols) {
+      assert(!out_to_constant_in.count(old_out_col));
+
       const auto new_out_col = new_output_columns.Create(
           old_out_col->var, this, old_out_col->id, new_output_columns.Size());
       old_out_col->ReplaceAllUsesWith(new_out_col);
 
       new_out_to_in.emplace(new_out_col, this);
       auto new_input_cols = new_out_to_in.find(new_out_col);
-      auto old_input_cols = out_to_in.find(old_out_col);
-      new_input_cols->second.Swap(old_input_cols->second);
+
+      // We can copy the old input column sets over.
+      if (out_to_constant_in.empty()) {
+        auto old_input_cols = out_to_in.find(old_out_col);
+        new_input_cols->second.Swap(old_input_cols->second);
+
+      // We need to rebuild the incoming column sets with any FILTERed inputs.
+      } else {
+        for (auto &[old_in_view, inout_cols] : in_view_to_inout_cols) {
+          for (auto [old_out_col2, filtered_in_col] : inout_cols) {
+            if (old_out_col2 == old_out_col) {
+              new_input_cols->second.AddUse(filtered_in_col);
+              break;
+            }
+          }
+        }
+      }
+
+      assert(!new_input_cols->second.Empty());
     }
 
     non_local_changes = true;
@@ -346,6 +429,14 @@ skip_remove:
   };
 
   columns.Sort(cmp);
+
+  // Recalculate the number of pivot sets.
+  num_pivots = 0;
+  for (auto &[out_col, in_cols] : out_to_in) {
+    if (1 < in_cols.Size()) {
+      ++num_pivots;
+    }
+  }
 
   auto i = 0u;
   for (auto col : columns) {

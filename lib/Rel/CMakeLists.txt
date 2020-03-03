@@ -3,7 +3,6 @@
 function(rel source_dir config)
     add_library(rel-${config} STATIC
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Builder.h"
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Composer.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Format.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Query.h"
         "${source_dir}/Aggregate.cpp"

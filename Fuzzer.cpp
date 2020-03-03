@@ -9,10 +9,10 @@
 
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
-
 
 void ParseAndVerify(std::string_view data) {
   hyde::DisplayManager display_manager;

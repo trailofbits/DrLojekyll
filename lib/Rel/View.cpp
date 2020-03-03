@@ -134,9 +134,9 @@ unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
 // If this view is used by a merge then we're not allowed to re-order the
 // columns. Instead, what we can do is create a tuple that will maintain
 // the ordering, and the canonicalize the join order below that tuple.
-bool Node<QueryView>::GuardWithTuple(QueryImpl *query) {
-  if (!this->Def<Node<QueryView>>::IsUsed()) {
-    return false;
+Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) {
+  if (!force && !this->Def<Node<QueryView>>::IsUsed()) {
+    return nullptr;
   }
 
   const auto tuple = query->tuples.Create();
@@ -155,7 +155,8 @@ bool Node<QueryView>::GuardWithTuple(QueryImpl *query) {
   for (auto col : columns) {
     tuple->input_columns.AddUse(col);
   }
-  return true;
+
+  return tuple;
 }
 
 // Utility for comparing use lists.

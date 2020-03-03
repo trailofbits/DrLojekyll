@@ -415,6 +415,22 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << insert.UniqueId() << ":c" << i << " -> "
          << "v" << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
+
+    for (auto select : query.Selects()) {
+      if (select.IsRelation() && insert.IsRelation()) {
+        if (select.Relation() == insert.Relation()) {
+          os << "t" << insert.Relation().UniqueId()
+             << " -> v" << insert.UniqueId()
+             << " [color=grey];\n";
+        }
+      } else if (select.IsStream() && insert.IsStream()) {
+        if (select.Stream() == insert.Stream()) {
+          os << "t" << insert.Stream().UniqueId()
+             << " -> v" << insert.UniqueId()
+             << " [color=grey];\n";
+        }
+      }
+    }
   }
 
   for (auto tuple : query.Tuples()) {

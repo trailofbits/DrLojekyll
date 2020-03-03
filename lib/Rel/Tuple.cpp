@@ -27,40 +27,6 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
   return hash;
 }
 
-// Used to tell if a tuple looks canonical. While canonicalizing a tuple, we
-// may affect the query graph and accidentally convert it back into a non-
-// canonical form.
-bool Node<QueryTuple>::LooksCanonical(void) const {
-
-  // Check if the input columns are in sorted order, and that they are all
-  // unique. If they are, then this tuple is in a canonical form already.
-  COL *prev_col = nullptr;
-  for (auto col : input_columns) {
-
-    // Out-of-order (sorted order).
-    if (prev_col > col) {
-      return false;
-
-      // If there's a redundant column, then it's only non-canonical if this
-      // tuple isn't being used by a merge.
-    } else if (prev_col == col && !this->Def<Node<QueryView>>::IsUsed()) {
-      return false;
-    }
-
-    prev_col = col;
-  }
-
-  // Check that all output columns are used. If they aren't used, then get
-  // rid of them.
-  for (auto col : columns) {
-    if (!col->IsUsed()) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 // Put this tuple into a canonical form, which will make comparisons and
 // replacements easier. Because comparisons are mostly pointer-based, the
 // canonical form of this tuple is one where all input columns are sorted,

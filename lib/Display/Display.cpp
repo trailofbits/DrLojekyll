@@ -66,7 +66,6 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
   };
 
   do {
-
     // Go through and import any read characters. This will perform tab
     // expansion according to `config`, and if a bad character is found, it
     // will swap out `stream` with something that can report the position.
