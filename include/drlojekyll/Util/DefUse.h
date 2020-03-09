@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+#include <memory>
+#include <cassert>
 
 namespace hyde {
 

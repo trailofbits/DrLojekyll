@@ -6,6 +6,8 @@
 #include <drlojekyll/Util/Node.h>
 
 #include <memory>
+#include <functional>
+#include <cassert>
 
 namespace hyde {
 namespace query {
