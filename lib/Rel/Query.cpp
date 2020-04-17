@@ -137,6 +137,10 @@ bool QueryView::IsConstraint(void) const noexcept {
   return impl->AsConstraint() != nullptr;
 }
 
+std::string QueryView::DebugString(void) const noexcept {
+  return impl->DebugString();
+}
+
 // Replace all uses of this view with `that` view.
 bool QueryView::ReplaceAllUsesWith(
     EqualitySet &eq, QueryView that) const noexcept {
@@ -351,6 +355,10 @@ QueryStream QuerySelect::Stream(void) const noexcept {
   return QueryStream(impl->stream.get());
 }
 
+std::string QuerySelect::DebugString(void) const noexcept {
+  return impl->DebugString();
+}
+
 QueryJoin &QueryJoin::From(QueryView &view) {
   assert(view.IsJoin());
   return reinterpret_cast<QueryJoin &>(view);
@@ -395,6 +403,10 @@ QueryColumn QueryJoin::NthPivotColumn(unsigned n) const noexcept {
   assert(n < impl->columns.Size());
   assert(n < impl->num_pivots);
   return QueryColumn(impl->columns[n]);
+}
+
+std::string QueryJoin::DebugString(void) const noexcept {
+  return impl->DebugString();
 }
 
 QueryMap &QueryMap::From(QueryView &view) {
@@ -473,6 +485,10 @@ QueryColumn QueryMap::NthCopiedColumn(unsigned n) const noexcept {
 QueryColumn QueryMap::NthInputCopiedColumn(unsigned n) const noexcept {
   assert(n < impl->attached_columns.Size());
   return QueryColumn(impl->attached_columns[n]);
+}
+
+std::string QueryMap::DebugString(void) const noexcept {
+  return impl->DebugString();
 }
 
 QueryAggregate &QueryAggregate::From(QueryView &view) {
@@ -563,6 +579,10 @@ const ParsedFunctor &QueryAggregate::Functor(void) const noexcept {
   return impl->functor;
 }
 
+std::string QueryAggregate::DebugString(void) const noexcept {
+  return impl->DebugString();
+}
+
 QueryMerge &QueryMerge::From(QueryView &view) {
   assert(view.IsMerge());
   return reinterpret_cast<QueryMerge &>(view);
@@ -600,6 +620,10 @@ QueryView QueryMerge::NthMergedView(unsigned n) const noexcept {
 UsedNodeRange<QueryView> QueryMerge::MergedViews(void) const {
   return {UsedNodeIterator<QueryView>(impl->merged_views.begin()),
           UsedNodeIterator<QueryView>(impl->merged_views.end())};
+}
+
+std::string QueryMerge::DebugString(void) const noexcept {
+  return impl->DebugString();
 }
 
 ComparisonOperator QueryConstraint::Operator(void) const {
@@ -647,6 +671,10 @@ UsedNodeRange<QueryColumn> QueryConstraint::InputCopiedColumns(void) const {
   return {impl->attached_columns.begin(), impl->attached_columns.end()};
 }
 
+std::string QueryConstraint::DebugString(void) const noexcept {
+  return impl->DebugString();
+}
+
 ParsedDeclaration QueryInsert::Declaration(void) const noexcept {
   return impl->decl;
 }
@@ -678,6 +706,10 @@ unsigned QueryInsert::Arity(void) const noexcept {
 QueryColumn QueryInsert::NthColumn(unsigned n) const noexcept {
   assert(n < impl->input_columns.Size());
   return QueryColumn(impl->input_columns[n]);
+}
+
+std::string QueryInsert::DebugString(void) const noexcept {
+  return impl->DebugString();
 }
 
 QueryTuple &QueryTuple::From(QueryView &view) {
@@ -712,6 +744,10 @@ QueryColumn QueryTuple::NthInputColumn(unsigned n) const noexcept {
 UsedNodeRange<QueryColumn> QueryTuple::InputColumns(void) const noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+std::string QueryTuple::DebugString(void) const noexcept {
+  return impl->DebugString();
 }
 
 DefinedNodeRange<QueryJoin> Query::Joins(void) const {

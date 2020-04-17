@@ -1655,7 +1655,7 @@ void ParserImpl::ParseLocalExport(
         if (Lexeme::kIdentifierAtom == lexeme) {
           parse::IdInterpreter interpreter = {};
           interpreter.info.atom_name_id = tok.IdentifierId();
-          interpreter.info.arity = 3;  // Old val, proposed val, new val.
+          interpreter.info.arity = 3 - 1;  // Old val, proposed val, new val.
           const auto id = interpreter.flat;
           if (!context->declarations.count(id)) {
             Error err(context->display_manager, sub_tok_range,

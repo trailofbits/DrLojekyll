@@ -28,69 +28,6 @@ namespace hyde {
 OutputStream *gOut = nullptr;
 
 #if 0
-class GraphPrinter : public BottomUpVisitor {
- public:
-  GraphPrinter(DisplayManager &display_manager_)
-      : display_manager(display_manager_),
-        os(display_manager, std::cerr) {}
-
-  virtual ~GraphPrinter(void) = default;
-
-  bool VisitState(const State *state) {
-    auto to_pred = state->assumption;
-    if (!seen.count(to_pred)) {
-      os << "p" << to_pred.UniqueId() << " [label=\""
-         << to_pred << "\"];\n";
-    }
-
-    if (state->parent) {
-      auto from_pred = state->parent->assumption;
-      if (!seen.count(from_pred)) {
-        os << "p" << from_pred.UniqueId() << " [label=\""
-           << from_pred << "\"];\n";
-      }
-
-      auto &edges = seen[from_pred];
-      if (edges.count(to_pred)) {
-        return false;
-      }
-
-      os << "p" << from_pred.UniqueId() << " -> p" << to_pred.UniqueId() << ";\n";
-
-      edges.insert(to_pred);
-    }
-
-    return true;
-  }
-
-  DisplayManager display_manager;
-  OutputStream os;
-  std::unordered_map<ParsedPredicate, std::unordered_set<ParsedPredicate>> seen;
-};
-#endif
-
-#if 1
-static void QueryDumper(DisplayManager display_manager,
-                        ParsedModule module) {
-
-  hyde::OutputStream os(display_manager, std::cerr);
-  gOut = &os;
-
-  QueryBuilder query_builder;
-  for (auto clause : module.Clauses()) {
-    FastBindingSIPSScorer scorer;
-    SIPSGenerator generator(clause);
-    query_builder.VisitClause(scorer, generator);
-  }
-
-  auto query = query_builder.BuildQuery();
-  os << query;
-
-  hyde::GenerateCode(display_manager, query, std::cerr);
-}
-
-#endif
-#if 0
 static void BottomUpDumper(DisplayManager display_manager,
                            ParsedModule module) {
 
@@ -128,50 +65,65 @@ static void BottomUpDumper(DisplayManager display_manager,
 
 }  // namespace hyde
 
+static void CompileModule(hyde::DisplayManager display_manager,
+                          hyde::ParsedModule module) {
+
+  hyde::OutputStream os(display_manager, std::cerr);
+  hyde::gOut = &os;
+
+  hyde::QueryBuilder query_builder;
+  for (auto clause : module.Clauses()) {
+    hyde::FastBindingSIPSScorer scorer;
+    hyde::SIPSGenerator generator(clause);
+    query_builder.VisitClause(scorer, generator);
+  }
+
+  auto query = query_builder.BuildQuery();
+  os << query;
+
+  hyde::GenerateCode(display_manager, query, std::cerr);
+}
+
 static int ProcessModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log,
-                         hyde::ParsedModule module) {
+                         hyde::ParsedModule module,
+                         const std::string &output_path) {
 
   if (!error_log.IsEmpty()) {
     error_log.Render(std::cerr);
     return EXIT_FAILURE;
-  } else {
-    module = CombineModules(display_manager, module);
-    module = ProxyExternalsWithExports(display_manager, module);
-
-    std::stringstream ss;
-    do {
-      hyde::OutputStream os(display_manager, ss);
-      os << module;
-    } while (false);
-
-    std::cerr << ss.str();
-
-    hyde::Parser parser(display_manager, error_log);
-    auto module2 = parser.ParseStream(ss, hyde::DisplayConfiguration());
-    if (!error_log.IsEmpty()) {
-      error_log.Render(std::cerr);
-      assert(error_log.IsEmpty());
-      return EXIT_FAILURE;
-    }
-
-    std::stringstream ss2;
-    do {
-      hyde::OutputStream os(display_manager, ss2);
-      os << module2;
-    } while (false);
-
-    std::cerr << ss.str() << "\n\n" << ss2.str() << "\n\n";
-    assert(ss.str() == ss2.str());
-
-//    auto transformed_module = ConvertQueriesToMessages(
-//        display_manager, module);
-
-    QueryDumper(display_manager, module);
-//    BottomUpDumper(display_manager, module);
-    //Simulate(os, module);
-    return EXIT_SUCCESS;
   }
+
+  module = CombineModules(display_manager, module);
+  module = ProxyExternalsWithExports(display_manager, module);
+
+  std::stringstream ss;
+  do {
+    hyde::OutputStream os(display_manager, ss);
+    os << module;
+  } while (false);
+
+  std::cerr << ss.str();
+
+  hyde::Parser parser(display_manager, error_log);
+  auto module2 = parser.ParseStream(ss, hyde::DisplayConfiguration());
+  if (!error_log.IsEmpty()) {
+    error_log.Render(std::cerr);
+    assert(error_log.IsEmpty());
+    return EXIT_FAILURE;
+  }
+
+  std::stringstream ss2;
+  do {
+    hyde::OutputStream os(display_manager, ss2);
+    os << module2;
+  } while (false);
+
+  std::cerr << "\n\n" << ss2.str() << "\n\n";
+  assert(ss.str() == ss2.str());
+
+  CompileModule(display_manager, module);
+  return EXIT_SUCCESS;
 }
 
 int main(int argc, char *argv[]) {
@@ -180,7 +132,7 @@ int main(int argc, char *argv[]) {
   hyde::Parser parser(display_manager, error_log);
 
   std::string input_path;
-  std::string output_path;
+  std::string output_path = "/dev/null";
   auto num_input_paths = 0;
 
   std::stringstream linked_module;
@@ -232,7 +184,7 @@ int main(int argc, char *argv[]) {
         true  // `use_tab_stops`.
     };
     auto module = parser.ParsePath(input_path, config);
-    return ProcessModule(display_manager, error_log, module);
+    return ProcessModule(display_manager, error_log, module, output_path);
 
   // Parse multiple modules as a single module including each module to
   // be parsed.
@@ -244,6 +196,6 @@ int main(int argc, char *argv[]) {
     };
 
     auto module = parser.ParseStream(linked_module, config);
-    return ProcessModule(display_manager, error_log, module);
+    return ProcessModule(display_manager, error_log, module, output_path);
   }
 }

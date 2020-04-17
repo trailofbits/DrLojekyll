@@ -25,11 +25,48 @@
 
 // TODO(pag):
 //    When calling operator() of some dest thing, inspect its incoming columns,
-//    and fille in any constants / generators, i.e. run the generator on the
+//    and fill in any constants / generators, i.e. run the generator on the
 //    producer-side.
 //
 //    Pass in a worker ID to each operator() ? Will that help?
+//
+//    Add a `bool` argument to every function that tells us if we're adding or
+//    removing the tuple.
+//
+//    Look for opportunities to co-locate data?
+//        -> infer a new data model?
+//
+//    Try to create specialized JOINs? E.g. if we can push an operator all the
+//    way to a join, we should:
+//        1)  if the operator applies to one of the non-pivot columns, push to
+//            down to one of the sources below the join
+//        2)  if it applies to the pivot, push it down to all sources below
+//            the join
+//        3)  if the join is a cross-product, and if the operator applies to
+//            two differently-sourced columns, then specialize the join by
+//            that operator
+//
+//    On a multi-way join, e.g. X=Y=Z, and pushing an X, generate code for:
+//      if count(Y=X) > count(Z=X):
+//        for ... where Z=X:
+//          for ... where Y=X:
+//            <code>
+//      else:
+//        ...
+//          ...
+//            <code>
+//
+//    Where <code> is duplicated on each side, so that if <code> pushes to
+//    a constraint, then the compiler can possibly hoist some of the constraints
+//    out of the loop.
+//
+//    Check for mutability of parameters on the query representation, using
+//    tainting, and doing so across INSERTs. The key here is that we should use
+//    mutability as a requirement to decide where tuple DIFFs are even possible.
+
 #include <set>
+
+
 namespace hyde {
 namespace {
 

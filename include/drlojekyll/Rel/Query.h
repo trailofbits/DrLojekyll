@@ -6,6 +6,7 @@
 #include <drlojekyll/Util/Node.h>
 
 #include <memory>
+#include <string>
 
 namespace hyde {
 namespace query {
@@ -226,6 +227,8 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
 
+  std::string DebugString(void) const noexcept;
+
   // Replace all uses of this view with `that` view. Returns `false` if the
   // two views have different arities, column types, or are from different
   // queries.
@@ -252,6 +255,8 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
 
   QueryRelation Relation(void) const noexcept;
   QueryStream Stream(void) const noexcept;
+
+  std::string DebugString(void) const noexcept;
 
  private:
   friend class QueryRelation;
@@ -289,6 +294,8 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // Returns the input column corresponding to the `n`th output column, where
   // this input column is not itself assocated with a pivot set.
   QueryColumn NthInputColumn(unsigned n) const noexcept;
+
+  std::string DebugString(void) const noexcept;
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
@@ -329,6 +336,8 @@ class QueryMap : public query::QueryNode<QueryMap> {
 
   // The range of input group columns.
   UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
+
+  std::string DebugString(void) const noexcept;
 
  private:
   using query::QueryNode<QueryMap>::QueryNode;
@@ -378,6 +387,8 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // The functor doing the aggregating.
   const ParsedFunctor &Functor(void) const noexcept;
 
+  std::string DebugString(void) const noexcept;
+
  private:
   using query::QueryNode<QueryAggregate>::QueryNode;
 };
@@ -406,6 +417,8 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   // Range of views unioned together by this MERGE.
   UsedNodeRange<QueryView> MergedViews(void) const;
 
+  std::string DebugString(void) const noexcept;
+
  private:
   using query::QueryNode<QueryMerge>::QueryNode;
 };
@@ -427,6 +440,8 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
   UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 
+  std::string DebugString(void) const noexcept;
+
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;
 };
@@ -444,6 +459,8 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 
   unsigned Arity(void) const noexcept;
   QueryColumn NthColumn(unsigned n) const noexcept;
+
+  std::string DebugString(void) const noexcept;
 
  private:
   using query::QueryNode<QueryInsert>::QueryNode;
@@ -464,6 +481,8 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
   unsigned NumInputColumns(void) const noexcept;
   QueryColumn NthInputColumn(unsigned n) const noexcept;
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+
+  std::string DebugString(void) const noexcept;
 
  private:
   using query::QueryNode<QueryTuple>::QueryNode;

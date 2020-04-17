@@ -61,7 +61,8 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  bool non_local_changes = GuardWithTuple(query);
+  const auto guard_tuple = GuardWithTuple(query);
+  bool non_local_changes = guard_tuple != nullptr;
   is_canonical = true;
 
   std::unordered_map<COL *, COL *> in_to_out;
@@ -115,7 +116,11 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     const auto in_col = group_by_columns[j];
 
     // Constant propagation.
-    // TODO(pag): What does it mean to group by a constant??
+    //
+    // TODO(pag): What does it mean to group by a constant?? Probably it means
+    //            that all sources have already FILTERed by that constant, and
+    //            so this constant node can be omitted from the group as all
+    //            sources will have done the right thing.
     if (in_col->IsConstant() && old_out_col->IsUsedIgnoreMerges()) {
       old_out_col->ReplaceAllUsesWith(in_col);
       non_local_changes = true;

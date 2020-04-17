@@ -14,43 +14,82 @@ namespace {
 static void RelabelGroupIDs(QueryImpl *query) {
 
   // Clear out all `group_id` sets, and reset the depth counters.
-  std::vector<VIEW *> sorted_views;
+  std::vector<COL *> sorted_cols;
+
+  unsigned i = 0u;
   query->ForEachView([&] (VIEW *view) {
     view->depth = 0;
+    view->hash = 0;
+    view->is_canonical = false;
     view->group_ids.clear();
-    if (!view->AsInsert()) {
-      sorted_views.push_back(view);
+    if (view->check_group_ids) {
+      view->group_ids.push_back(i++);
     }
+    for (auto col : view->columns) {
+      sorted_cols.push_back(col);
+    }
+  });
+
+  query->ForEachView([&] (VIEW *view) {
+    (void) view->Depth();  // Calculate view depth.
   });
 
   // Sort it so that we process deeper views (closer to INSERTs) first.
   std::sort(
-      sorted_views.begin(), sorted_views.end(),
-      [] (VIEW *a, VIEW *b) {
-        return a->Depth() > b->Depth();
+      sorted_cols.begin(), sorted_cols.end(),
+      [] (COL *a, COL *b) {
+        return a->view->Depth() > b->view->Depth();
       });
-
-  unsigned i = 0u;
-  for (auto insert : query->inserts) {
-    insert->group_ids.push_back(i++);
-  }
 
   // Propagate the group IDs down through the graph.
   for (i = 0; i < 2; ++i) {
-    for (auto view : sorted_views) {
-      for (auto col : view->columns) {
-        col->ForEachUse([=] (User *user_, COL *col) {
-          const auto user = reinterpret_cast<VIEW *>(user_);
+    for (auto col : sorted_cols) {
+      const auto view = col->view;
+
+      // Pull from uses.
+      if (auto merge = view->AsMerge(); merge) {
+        for (auto merged_view : merge->merged_views) {
           view->group_ids.insert(
               view->group_ids.end(),
-              user->group_ids.begin(),
-              user->group_ids.end());
-          std::sort(view->group_ids.begin(), view->group_ids.end());
-          auto it = std::unique(
-              view->group_ids.begin(), view->group_ids.end());
-          view->group_ids.erase(it, view->group_ids.end());
+              merged_view->group_ids.begin(),
+              merged_view->group_ids.end());
+        }
+
+        std::sort(view->group_ids.begin(), view->group_ids.end());
+        auto it = std::unique(
+            view->group_ids.begin(), view->group_ids.end());
+        view->group_ids.erase(it, view->group_ids.end());
+
+      // It's a select from a relation, we need to see all inserts to the
+      // relation.
+      } else if (auto sel = view->AsSelect(); sel && sel->relation) {
+        sel->relation->ForEachUse([=] (User *user, REL *rel) {
+          if (auto ins = reinterpret_cast<VIEW *>(user)->AsInsert(); ins) {
+            sel->group_ids.insert(
+                sel->group_ids.end(),
+                ins->group_ids.begin(),
+                ins->group_ids.end());
+          }
         });
+
+        std::sort(view->group_ids.begin(), view->group_ids.end());
+        auto it = std::unique(
+            view->group_ids.begin(), view->group_ids.end());
+        view->group_ids.erase(it, view->group_ids.end());
       }
+
+      // Push group IDs to users of this column.
+      col->ForEachUse([=] (User *user_, COL *col) {
+        const auto user = reinterpret_cast<VIEW *>(user_);
+        user->group_ids.insert(
+            user->group_ids.end(),
+            view->group_ids.begin(),
+            view->group_ids.end());
+        std::sort(user->group_ids.begin(), user->group_ids.end());
+        auto it = std::unique(
+            user->group_ids.begin(), user->group_ids.end());
+        user->group_ids.erase(it, user->group_ids.end());
+      });
     }
   }
 }
@@ -167,11 +206,11 @@ static bool CSE(QueryImpl *query, unsigned max_depth) {
 
 void QueryImpl::Optimize(void) {
 
-  ForEachView([&] (VIEW *view) {
-    view->is_canonical = false;
-    view->hash = 0;
-    view->depth = 0;
+  ForEachView([=] (Node<QueryView> *view) {
+    view->Canonicalize(this);
   });
+
+  RelabelGroupIDs(this);
 
   auto max_depth = 2u;
   for (auto insert : inserts) {

@@ -47,41 +47,56 @@ void QueryImpl::ConnectInsertsToSelects(void) {
   for (auto &[decl, insert_views] : decl_to_inserts) {
     assert(can_connect(decl));
 
-    for (auto select : decl_to_selects[decl]) {
+    const auto merge = merges.Create();
+    for (auto insert : insert_views) {
+      const auto ins_tuple = tuples.Create();
+      ins_tuple->check_group_ids = true;
 
-      // Create a MERGE that will read in a tuple of all incoming data to the
-      // INSERTs, thus letting us remove the INSERTs.
-      const auto merge = merges.Create();
+      bool is_first_merge = merge->merged_views.Empty();
+      for (auto in_col : insert->input_columns) {
 
-      // This MERGE takes the place of a SELECT, so it should behave the same
-      // with respect to preserving the fact that there sometimes need to be
-      // distinct flows (e.g. for cross-products, other joins).
-      merge->check_group_ids = true;
-
-      for (auto insert : insert_views) {
-        const auto tuple = tuples.Create();
-        tuple->check_group_ids = true;
-
-        bool is_first_merge = merge->merged_views.Empty();
-        for (auto in_col : insert->input_columns) {
-
-          if (is_first_merge) {
-            (void) merge->columns.Create(in_col->var, merge, in_col->id);
-          }
-
-          (void) tuple->columns.Create(in_col->var, tuple, in_col->id);
-          tuple->input_columns.AddUse(in_col);
+        if (is_first_merge) {
+          (void) merge->columns.Create(in_col->var, merge, in_col->id);
         }
 
-        merge->merged_views.AddUse(tuple);
+        (void) ins_tuple->columns.Create(in_col->var, ins_tuple, in_col->id);
+        ins_tuple->input_columns.AddUse(in_col);
+      }
+
+      merge->merged_views.AddUse(ins_tuple);
+    }
+
+    for (auto select : decl_to_selects[decl]) {
+      assert(select->check_group_ids);
+
+      // Create a TUPLE and MERGE that will read in a tuple of all incoming
+      // data to the INSERTs, thus letting us remove the INSERTs.
+      const auto sel_tuple = tuples.Create();
+
+      // This TUPLE takes the place of a SELECT, so it should behave the same
+      // with respect to preserving the fact that there sometimes need to be
+      // distinct flows (e.g. for cross-products, other joins).
+      sel_tuple->check_group_ids = true;
+      sel_tuple->group_ids = select->group_ids;
+
+      // Connect the MERGE to the TUPLE.
+      auto i = 0u;
+      for (auto merge_col : merge->columns) {
+        auto sel_col = select->columns[i++];
+        sel_tuple->columns.Create(sel_col->var, sel_tuple, sel_col->id);
+        sel_tuple->input_columns.AddUse(merge_col);
       }
 
       // Replace all uses of the SELECTed columns with the columns from the
-      // MERGE.
-      auto i = 0u;
-      for (auto out_col : select->columns) {
-        out_col->ReplaceAllUsesWith(merge->columns[i++]);
+      // TUPLE.
+      i = 0u;
+      for (auto sel_col : select->columns) {
+        auto sel_tuple_col = sel_tuple->columns[i++];
+        sel_col->ReplaceAllUsesWith(sel_tuple_col);
       }
+
+      // Replace all merges using the SELECT with ones that use the TUPLE.
+      select->ReplaceAllUsesWith(sel_tuple);
 
       select->is_used = false;
     }

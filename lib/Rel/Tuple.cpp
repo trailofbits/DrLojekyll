@@ -87,9 +87,18 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     }
   }
 
-  // If we have `check_group_ids`, then this TUPLE is taking the place of a
-  // SELECT, so it needs to be preserved.
-  if (all_from_same_view && !check_group_ids) {
+  // If we have `check_group_ids`, then this TUPLE might be taking the place
+  // of a SELECT, so it needs to be preserved. However, if the incoming view
+  // is also a TUPLE that also has `check_group_ids`, then we can safely merge
+  // the two.
+  if (all_from_same_view && check_group_ids) {
+    if (auto from_tuple = last_view->AsTuple();
+        !from_tuple || !from_tuple->check_group_ids) {
+      all_from_same_view = false;
+    }
+  }
+
+  if (all_from_same_view) {
     non_local_changes = true;
     for (auto [in_col, out_col] : in_to_out) {
       out_col->ReplaceAllUsesWith(in_col);

@@ -6,6 +6,8 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
+#define DEBUG(...)
+
 namespace hyde {
 namespace {
 
@@ -16,7 +18,7 @@ static const char *kEndTable = "</TR></TABLE>";
 
 OutputStream &operator<<(OutputStream &os, Query query) {
   os << "digraph {\n"
-     << "node [shape=none margin=0 nojustify=false labeljust=l];\n";
+     << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
   for (auto relation : query.Relations()) {
     const auto decl = relation.Declaration();
@@ -79,11 +81,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     } else if (select.IsStream()) {
       auto stream = select.Stream();
       if (stream.IsConstant()) {
-        os << "<TD>PULL</TD>";  // Pull from a stream.
+        os << "<TD>PULL</TD>";  // Pull from a constant.
       } else if (stream.IsGenerator()) {
-        os << "<TD>PULL</TD>";  // Pull from a stream.
+        os << "<TD>PULL</TD>";  // Pull from a generator.
       } else {
-        os << "<TD>PUSH</TD>";  // Pull from a stream.
+        os << "<TD>PUSH</TD>";  // Input stream pushes.
       }
     } else {
       assert(false);
@@ -94,6 +96,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << col.Variable() << "</TD>";
       ++i;
     }
+
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << select.DebugString() << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -170,6 +174,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "<TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>";
 
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString() << "</TD>";)
 
     os << kEndTable << ">];\n"
        << "v" << constraint.UniqueId() << ":p0 -> v"
@@ -253,6 +258,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       j++;
     }
 
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString() << "</TD>";)
+
     os << kEndTable << ">];\n";
 
     // Link the joined columns to their sources.
@@ -315,6 +322,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 //      os << "<TD colspan=\"" << diff << "\"></TD>";
 //    }
 
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString() << "</TD>";)
+
     os << kEndTable << ">];\n";
 
     for (auto i = 0u; i < num_group; ++i) {
@@ -367,6 +376,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = agg.NthInputSummarizedColumn(i);
       os << "<TD port=\"s" << i << "\">" << col.Variable() << "</TD>";
     }
+
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << agg.DebugString() << "</TD>";)
+
     os << kEndTable << ">];\n";
     for (auto i = 0u; i < num_group; ++i) {
       auto col = agg.NthInputGroupColumn(i);
@@ -407,6 +419,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << insert.NthColumn(i).Variable() << "</TD>";
     }
 
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString() << "</TD>";)
+
     os << kEndTable << ">];\n";
 
     for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
@@ -444,6 +458,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
       os << "<TD port=\"p" << i << "\"> </TD>";
     }
+
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString() << "</TD>";)
+
     os << kEndTable << ">];\n";
 
     // Link the input columns to their sources.

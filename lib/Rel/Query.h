@@ -279,6 +279,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   virtual Node<QueryConstraint> *AsConstraint(void) noexcept;
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
+  // Useful for communicating low-level debug info back to the formatter.
+  virtual std::string DebugString(void) const noexcept;
+
   // Return a number that can be used to help sort this node. The idea here
   // is that we often want to try to merge together two different instances
   // of the same underlying node when we can.

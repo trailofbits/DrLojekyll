@@ -2,6 +2,8 @@
 
 #include "Query.h"
 
+#include <sstream>
+
 namespace hyde {
 
 Node<QueryView>::~Node(void) {}
@@ -36,6 +38,29 @@ Node<QueryConstraint> *Node<QueryView>::AsConstraint(void) noexcept {
 
 Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
   return nullptr;
+}
+
+// Useful for communicating low-level debug info back to the formatter.
+std::string Node<QueryView>::DebugString(void) const noexcept {
+  std::stringstream ss;
+
+  if (!group_ids.empty()) {
+    if (check_group_ids) {
+      ss << "!";
+    }
+
+    auto sep = "group-ids(";
+    for (auto group_id : group_ids) {
+      ss << sep << group_id;
+      sep = ", ";
+    }
+    ss << ") ";
+  }
+
+  ss << "depth=" << depth;
+  ss << " used=" << is_used;
+  ss << " hash=" << std::hex << hash;
+  return ss.str();
 }
 
 // Return a number that can be used to help sort this node. The idea here
@@ -142,6 +167,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
   const auto tuple = query->tuples.Create();
   if (check_group_ids) {
     tuple->check_group_ids = true;
+    check_group_ids = false;
   }
 
   // Make any merges use the tuple.
@@ -200,7 +226,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
   return do_cols(cols1) && do_cols(cols2);
 }
 
-// Check if teh `group_ids` of two views have any overlaps.
+// Check if the `group_ids` of two views have any overlaps.
 //
 // Two selects in the same logical clause are not allowed to be merged,
 // except in rare cases like constant streams. For example, consider the
@@ -215,7 +241,12 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
 // NOTE(pag): The `group_ids` are sorted.
 bool Node<QueryView>::InsertSetsOverlap(
     Node<QueryView> *a, Node<QueryView> *b) {
-  if (!a->check_group_ids && !b->check_group_ids) {
+
+  if (a->check_group_ids != b->check_group_ids) {
+    return true;
+  }
+
+  if (!a->check_group_ids) {
     return false;
   }
 
