@@ -22,7 +22,7 @@ static void RelabelGroupIDs(QueryImpl *query) {
     view->hash = 0;
     view->is_canonical = false;
     view->group_ids.clear();
-    if (view->check_group_ids) {
+    if (view->AsJoin() || view->AsAggregate()) {
       view->group_ids.push_back(i++);
     }
     for (auto col : view->columns) {
@@ -63,6 +63,7 @@ static void RelabelGroupIDs(QueryImpl *query) {
       // It's a select from a relation, we need to see all inserts to the
       // relation.
       } else if (auto sel = view->AsSelect(); sel && sel->relation) {
+
         sel->relation->ForEachUse([=] (User *user, REL *rel) {
           if (auto ins = reinterpret_cast<VIEW *>(user)->AsInsert(); ins) {
             sel->group_ids.insert(
@@ -167,6 +168,7 @@ static bool CSE(QueryImpl *query, unsigned max_depth) {
     bool made_progress = false;
     for (auto view : ordered_views) {
       if (view->Canonicalize(query)) {
+        RelabelGroupIDs(query);
         made_progress = true;
       }
     }
@@ -206,8 +208,12 @@ static bool CSE(QueryImpl *query, unsigned max_depth) {
 
 void QueryImpl::Optimize(void) {
 
+  RelabelGroupIDs(this);
+
   ForEachView([=] (Node<QueryView> *view) {
-    view->Canonicalize(this);
+    if (view->Canonicalize(this)) {
+      RelabelGroupIDs(this);
+    }
   });
 
   RelabelGroupIDs(this);

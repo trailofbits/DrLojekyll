@@ -93,7 +93,14 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   // the two.
   if (all_from_same_view && check_group_ids) {
     if (auto from_tuple = last_view->AsTuple();
-        !from_tuple || !from_tuple->check_group_ids) {
+        from_tuple && from_tuple->check_group_ids) {
+      all_from_same_view = true;
+
+    } else if (auto from_sel = last_view->AsSelect();
+               from_sel && from_sel->check_group_ids) {
+      all_from_same_view = true;
+
+    } else {
       all_from_same_view = false;
     }
   }
@@ -102,6 +109,10 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     non_local_changes = true;
     for (auto [in_col, out_col] : in_to_out) {
       out_col->ReplaceAllUsesWith(in_col);
+    }
+
+    if (last_view->columns.Size() == columns.Size()) {
+      this->Def<Node<QueryView>>::ReplaceAllUsesWith(last_view);
     }
   }
 

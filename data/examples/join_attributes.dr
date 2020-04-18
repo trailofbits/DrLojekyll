@@ -5,6 +5,7 @@
                 free @str SubTitle,
                 free @str Author,
                 free @str Summary)
+
 attr(DocId, AttrKind, Attr) : add_attr(DocId, AttrKind, Attr).
 
 get_info(DocId, Title, SubTitle, Author, Summary)
