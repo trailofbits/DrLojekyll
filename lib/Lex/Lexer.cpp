@@ -297,11 +297,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       interpreter.basic.lexeme = Lexeme::kInvalidDirective;
       goto accumulate_directive_atom_keyword_variable;
 
-    // Type identifiers.
-    case '@':
-      interpreter.basic.lexeme = Lexeme::kInvalidTypeName;
-      goto accumulate_directive_atom_keyword_variable;
-
     // Atoms, keywords.
     case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
     case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
@@ -336,84 +331,85 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           }
           break;
 
-        case 3:
-          if (impl->data == "@i8") {
+        case 2:
+          if (impl->data == "i8") {
             interpreter.basic.lexeme = Lexeme::kTypeIn;
             interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 8;
 
-          } else if (impl->data == "@u8") {
+          } else if (impl->data == "u8") {
             interpreter.basic.lexeme = Lexeme::kTypeUn;
             interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 8;
           }
           break;
 
-        case 4:
-          if ('@' == impl->data[0]) {
-            if ('f' == impl->data[1]) {
-              if (impl->data == "@f32") {
-                interpreter.basic.lexeme = Lexeme::kTypeFn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 32;
-
-              } else if (impl->data == "@f64") {
-                interpreter.basic.lexeme = Lexeme::kTypeFn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 64;
-              }
-            } else if ('i' == impl->data[1]) {
-              if (impl->data == "@i16") {
-                interpreter.basic.lexeme = Lexeme::kTypeIn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 16;
-
-              } else if (impl->data == "@i32") {
-                interpreter.basic.lexeme = Lexeme::kTypeIn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 32;
-
-              } else if (impl->data == "@i64") {
-                interpreter.basic.lexeme = Lexeme::kTypeIn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 64;
-              }
-            } else if ('u' == impl->data[1]) {
-              if (impl->data == "@u16") {
-                interpreter.basic.lexeme = Lexeme::kTypeUn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 16;
-
-              } else if (impl->data == "@u32") {
-                interpreter.basic.lexeme = Lexeme::kTypeUn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 32;
-
-              } else if (impl->data == "@u64") {
-                interpreter.basic.lexeme = Lexeme::kTypeUn;
-                interpreter.type.spelling_width = 4;
-                interpreter.type.type_width = 64;
-              }
-            } else if (impl->data == "@str") {
-              interpreter.basic.lexeme = Lexeme::kTypeString;
+        case 3:
+          if ('f' == impl->data[0]) {
+            if (impl->data == "f32") {
+              interpreter.basic.lexeme = Lexeme::kTypeFn;
               interpreter.type.spelling_width = 4;
-              interpreter.type.type_width = 64;  // Size of the ID of the string.
+              interpreter.type.type_width = 32;
+
+            } else if (impl->data == "f64") {
+              interpreter.basic.lexeme = Lexeme::kTypeFn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 64;
             }
-          } else if (impl->data == "free") {
+          } else if ('i' == impl->data[0]) {
+            if (impl->data == "i16") {
+              interpreter.basic.lexeme = Lexeme::kTypeIn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 16;
+
+            } else if (impl->data == "i32") {
+              interpreter.basic.lexeme = Lexeme::kTypeIn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 32;
+
+            } else if (impl->data == "i64") {
+              interpreter.basic.lexeme = Lexeme::kTypeIn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 64;
+            }
+          } else if ('u' == impl->data[0]) {
+            if (impl->data == "u16") {
+              interpreter.basic.lexeme = Lexeme::kTypeUn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 16;
+
+            } else if (impl->data == "u32") {
+              interpreter.basic.lexeme = Lexeme::kTypeUn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 32;
+
+            } else if (impl->data == "u64") {
+              interpreter.basic.lexeme = Lexeme::kTypeUn;
+              interpreter.type.spelling_width = 4;
+              interpreter.type.type_width = 64;
+            }
+          } else if (impl->data == "str") {
+            interpreter.basic.lexeme = Lexeme::kTypeString;
+            interpreter.type.spelling_width = 4;
+            interpreter.type.type_width = 64;  // Size of the ID of the string.
+          }
+          break;
+        case 4:
+          if (impl->data == "free") {
             interpreter.basic.lexeme = Lexeme::kKeywordFree;
 
           } else if (impl->data == "over") {
             interpreter.basic.lexeme = Lexeme::kKeywordOver;
+
+          } else if (impl->data == "uuid") {
+            interpreter.basic.lexeme = Lexeme::kTypeUUID;
+            interpreter.type.spelling_width = 5;
+            interpreter.type.type_width = 128;
           }
           break;
         case 5:
           if (impl->data == "bound") {
             interpreter.basic.lexeme = Lexeme::kKeywordBound;
-
-          } else if (impl->data == "@uuid") {
-            interpreter.basic.lexeme = Lexeme::kTypeUUID;
-            interpreter.type.spelling_width = 5;
-            interpreter.type.type_width = 128;
           }
           break;
         case 6:

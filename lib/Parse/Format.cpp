@@ -22,40 +22,40 @@ OutputStream &operator<<(OutputStream &os, TypeKind type) {
   switch (type) {
     case TypeKind::kInvalid: break;
     case TypeKind::kSigned8:
-      repr = "@i8";
+      repr = "i8";
       break;
     case TypeKind::kSigned16:
-      repr = "@i16";
+      repr = "i16";
       break;
     case TypeKind::kSigned32:
-      repr = "@i32";
+      repr = "i32";
       break;
     case TypeKind::kSigned64:
-      repr = "@i64";
+      repr = "i64";
       break;
     case TypeKind::kUnsigned8:
-      repr = "@u8";
+      repr = "u8";
       break;
     case TypeKind::kUnsigned16:
-      repr = "@u16";
+      repr = "u16";
       break;
     case TypeKind::kUnsigned32:
-      repr = "@u32";
+      repr = "u32";
       break;
     case TypeKind::kUnsigned64:
-      repr = "@u64";
+      repr = "u64";
       break;
     case TypeKind::kFloat:
-      repr = "@f32";
+      repr = "f32";
       break;
     case TypeKind::kDouble:
-      repr = "@f64";
+      repr = "f64";
       break;
     case TypeKind::kString:
-      repr = "@str";
+      repr = "str";
       break;
     case TypeKind::kUUID:
-      repr = "@uuid";
+      repr = "uuid";
       break;
   }
   os << repr;

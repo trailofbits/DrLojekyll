@@ -1,12 +1,12 @@
-#message add_attr(@i32 DocId, @i8 AttrKind, @str Attr)
-#local attr(@i32 DocId, @i8 AttrKind, @str Attr)
-#local attr_consts(@i8 One, @i8 Two, @i8 Three, @i8 Four) inline
+#message add_attr(i32 DocId, i8 AttrKind, str Attr)
+#local attr(i32 DocId, i8 AttrKind, str Attr)
+#local attr_consts(i8 One, i8 Two, i8 Three, i8 Four) inline
 
-#query get_info(bound @i32 DocId,
-                free @str Title,
-                free @str SubTitle,
-                free @str Author,
-                free @str Summary)
+#query get_info(bound i32 DocId,
+                free str Title,
+                free str SubTitle,
+                free str Author,
+                free str Summary)
 
 attr(DocId, AttrKind, Attr) : add_attr(DocId, AttrKind, Attr).
 

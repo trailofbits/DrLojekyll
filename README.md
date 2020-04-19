@@ -16,8 +16,8 @@ program provides a query interface, where all reachable node IDs (`To`) from
 a given node ID (`From`) can be queried.
 
 ```
-#message directed_edge(@i64 From, @i64 To)
-#query transitive_closure(bound @i64 From, free @i64 To)
+#message directed_edge(i64 From, i64 To)
+#query transitive_closure(bound i64 From, free i64 To)
 
 transitive_closure(From, To) : directed_edge(From, To).
 transitive_closure(From, To) : transitive_closure(From, X)
@@ -81,18 +81,18 @@ param_list_2: binding_specifier_2 type named_var
 param_list_3: named_var "," param_list_3
 param_list_3: named_var "," named_var
 
-type: "@i8"
-type: "@i16"
-type: "@i32"
-type: "@i64"
-type: "@u8"
-type: "@u16"
-type: "@u32"
-type: "@u64"
-type: "@f32"
-type: "@f64"
-type: "@str"
-type: "@uuid"
+type: "i8"
+type: "i16"
+type: "i32"
+type: "i64"
+type: "u8"
+type: "u16"
+type: "u32"
+type: "u64"
+type: "f32"
+type: "f64"
+type: "str"
+type: "uuid"
 
 atom: r"[a-z][A-Za-z0-9_]*"
 named_var: r"[A-Z][A-Za-z0-9_]*"

@@ -755,8 +755,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         } else {
           Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
-          err << "Expected type name here ('@'-prefixed identifier) for "
-              << "parameter in functor '" << name << "', but got '"
+          err << "Expected type name here for parameter in functor '"
+              << name << "', but got '"
               << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
@@ -1203,9 +1203,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         } else {
           Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
-          err << "Expected type name here ('@'-prefixed identifier) for "
-              << "parameter in #query '" << name << "', but got '"
-              << tok << "' instead";
+          err << "Expected type name here for parameter in #query '"
+              << name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1375,9 +1374,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else {
           Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
-          err << "Expected type name here ('@'-prefixed identifier) for "
-              << "parameter in #message '" << name << "', but got '"
-              << tok << "' instead";
+          err << "Expected type name here for parameter in #message '"
+              << name << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -1567,10 +1565,9 @@ void ParserImpl::ParseLocalExport(
         } else {
           Error err(context->display_manager, sub_tok_range,
                     tok.SpellingRange());
-          err << "Expected type name ('@'-prefixed identifier) or variable "
-              << "name (capitalized identifier) for parameter in "
-              << introducer_tok << " '" << name << "', but got '" << tok
-              << "' instead";
+          err << "Expected type name or variable name (capitalized identifier) "
+              << "for parameter in " << introducer_tok << " '" << name
+              << "', but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
