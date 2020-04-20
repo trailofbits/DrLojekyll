@@ -82,11 +82,17 @@ enum class Lexeme : uint8_t {
   // `entrypoint_function` rule.
   kHashMessageDecl,
 
-  // Lexemes associated with importing modules.
+  // Used to import another module.
   //
   //    #import "path"
   //
   kHashImportModuleStmt,
+
+  // Used to include a C/C++ header our source file. This is translated down
+  // into an equivalent include statement in generated C++ code.
+  //
+  //    #include "path"
+  kHashIncludeStmt,
 
   // Declares a user-defined functor. These are functions that are defined
   // by native code modules. They must have globally unique names. When called

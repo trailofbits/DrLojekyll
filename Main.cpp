@@ -81,7 +81,7 @@ static void CompileModule(hyde::DisplayManager display_manager,
   auto query = query_builder.BuildQuery();
   os << query;
 
-  hyde::GenerateCode(display_manager, query, std::cerr);
+  hyde::GenerateCode(display_manager, module, query, std::cerr);
 }
 
 static int ProcessModule(hyde::DisplayManager display_manager,
@@ -151,17 +151,51 @@ int main(int argc, char *argv[]) {
         output_path = argv[i];
       }
 
-    // Input file search path.
-    } else if (!strcmp(argv[i], "-I")) {
+    // Datalog module file search path.
+    } else if (argv[i] == strstr(argv[i], "-M")) {
+      const char *path = nullptr;
+      if (strlen(argv[i]) == 2) {
+        path = &(argv[i][2]);
+      } else {
+        if (i >= argc) {
+          hyde::Error err;
+          err << "Command-line argument '-M' must be followed by a directory path";
+          error_log.Append(std::move(err));
+          continue;
+        }
+        path = argv[++i];
+      }
+
+      parser.AddModuleSearchPath(path);
+
+    // Include file search path.
+    } else if (!strcmp(argv[i], "-isystem")) {
       ++i;
       if (i >= argc) {
         hyde::Error err;
-        err << "Command-line argument '-I' must be followed by a directory path";
+        err << "Command-line argument '-isystem' must be followed by a directory path";
         error_log.Append(std::move(err));
 
       } else {
-        parser.AddSearchPath(argv[i]);
+        parser.AddIncludeSearchPath(argv[i], hyde::Parser::kSystemInclude);
       }
+
+    // Include file search path.
+    } else if (!strcmp(argv[i], "-I")) {
+      const char *path = nullptr;
+      if (strlen(argv[i]) == 2) {
+        path = &(argv[i][2]);
+      } else {
+        if (i >= argc) {
+          hyde::Error err;
+          err << "Command-line argument '-I' must be followed by a directory path";
+          error_log.Append(std::move(err));
+          continue;
+        }
+        path = argv[++i];
+      }
+
+      parser.AddIncludeSearchPath(path, hyde::Parser::kUserInclude);
 
     // Input datalog file, add it to the list of paths to parse.
     } else {

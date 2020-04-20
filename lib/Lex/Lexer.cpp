@@ -441,6 +441,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               interpreter.basic.lexeme = Lexeme::kHashMessageDecl;
             } else if (impl->data == "#functor") {
               interpreter.basic.lexeme = Lexeme::kHashFunctorDecl;
+            } else if (impl->data == "#include") {
+              interpreter.basic.lexeme = Lexeme::kHashIncludeStmt;
             }
           }
           break;

@@ -45,8 +45,17 @@ class Parser {
       std::istream &is,
       const DisplayConfiguration &config) const;
 
-  // Add a directory as a search path for files.
-  void AddSearchPath(std::string_view path) const;
+  // Add a directory as a search path for modules.
+  void AddModuleSearchPath(std::string_view path) const;
+
+  enum IncludeSearchPathKind : unsigned {
+    kSystemInclude,
+    kUserInclude
+  };
+
+  // Add a directory as a search path for includes.
+  void AddIncludeSearchPath(
+      std::string_view path, IncludeSearchPathKind kind) const;
 
  private:
   Parser(void) = delete;

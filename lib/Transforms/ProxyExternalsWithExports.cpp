@@ -78,6 +78,18 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
     break;
   }
 
+  for (auto include : module.Includes()) {
+    if (include.IsSystemInclude()) {
+      os << include << "\n";
+    }
+  }
+
+  for (auto include : module.Includes()) {
+    if (!include.IsSystemInclude()) {
+      os << include << "\n";
+    }
+  }
+
   for (auto decl : module.Messages()) {
     os << ParsedDeclaration(decl) << "\n";
   }

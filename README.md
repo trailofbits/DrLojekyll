@@ -40,11 +40,19 @@ module: import_list decl_list clause_list
 import_list: import import_list
 import_list:
 
+include_list: include include_list
+include_list: include_list
+
 decl_list: decl decl_list
 decl_list:
 
 clause_list: clause clause_list
 clause_list
+
+import: "#import" <double quoted string literal>
+
+include: "#include" <double quoted string literal>
+include: "#include" "<" <tokens...> ">"
 
 // Decls generally must fit inside a single line. They are allowed
 // to span multiple lines, but only if the new line characters exist

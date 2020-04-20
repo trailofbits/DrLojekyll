@@ -43,6 +43,7 @@ OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate);
 OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause);
 OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause);
 OutputStream &operator<<(OutputStream &os, ParsedClause clause);
+OutputStream &operator<<(OutputStream &os, ParsedInclude include);
 OutputStream &operator<<(OutputStream &os, ParsedModule module);
 
 }  // namespace hyde

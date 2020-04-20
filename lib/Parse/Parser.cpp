@@ -33,11 +33,15 @@ class SharedParserContext {
                       const ErrorLog &error_log_)
       : display_manager(display_manager_),
         error_log(error_log_) {
-    search_paths.push_back(file_manager.CurrentDirectory());
+    import_search_paths.push_back(file_manager.CurrentDirectory());
+    include_search_paths[1].push_back(file_manager.CurrentDirectory());
   }
 
   // Search paths for looking for imports.
-  std::vector<Path> search_paths;
+  std::vector<Path> import_search_paths;
+
+  // Search paths for looking for includes.
+  std::vector<Path> include_search_paths[2];
 
   // All parsed modules.
   Node<ParsedModule> *root_module{nullptr};
@@ -151,6 +155,9 @@ class ParserImpl {
 
   // Try to parse `sub_range` as an import.
   void ParseImport(Node<ParsedModule> *module);
+
+  // Try to parse `sub_range` as an include of C/C++ code.
+  void ParseInclude(Node<ParsedModule> *module);
 
   // Try to match a clause with a declaration.
   bool TryMatchClauseWithDecl(Node<ParsedModule> *module,
@@ -1882,7 +1889,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   std::error_code ec;
   std::string_view full_path;
 
-  for (auto search_path : context->search_paths) {
+  for (auto search_path : context->import_search_paths) {
     full_path = std::string_view();
 
     ec = context->file_manager.PushDirectory(search_path);
@@ -1896,22 +1903,24 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
       context->file_manager.PopDirectory();
       continue;
     }
-  }
 
-  if (ec || full_path.empty()) {
-    Error err(context->display_manager, SubTokenRange());
-    err << "Unable to locate module '" << tok
-        << "' requested by import declaration";
-    context->error_log.Append(std::move(err));
-    return;
+    break;
   }
 
   context->file_manager.PopDirectory();
 
+  if (ec || full_path.empty()) {
+    Error err(context->display_manager, SubTokenRange());
+    err << "Unable to locate module '" << tok
+        << "' requested by import statement";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
   // Save the old first search path, and put in the directory containing the
   // about-to-be parsed module as the new first search path.
-  Path prev_search0 = context->search_paths[0];
-  context->search_paths[0] =
+  Path prev_search0 = context->import_search_paths[0];
+  context->import_search_paths[0] =
       Path(context->file_manager, full_path).DirName();
 
   DisplayConfiguration sub_config = module->config;
@@ -1924,7 +1933,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
       sub_config);
 
   // Restore the old first search path.
-  context->search_paths[0] = prev_search0;
+  context->import_search_paths[0] = prev_search0;
 
   imp->imported_module = sub_mod.impl.get();
 
@@ -1933,6 +1942,115 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   }
 
   module->imports.push_back(std::move(imp));
+}
+
+// Try to parse `sub_range` as an include of C/C++ code.
+void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
+  Token tok;
+  if (!ReadNextSubToken(tok)) {
+    assert(false);
+  }
+
+  assert(tok.Lexeme() == Lexeme::kHashIncludeStmt);
+
+  auto after_directive = tok.NextPosition();
+  if (!ReadNextSubToken(tok)) {
+    Error err(context->display_manager, SubTokenRange(), after_directive);
+    err << "Expected string literal of file path here for include statement";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
+  std::string_view path_str;
+  DisplayRange path_range;
+  bool is_angled = false;
+
+  // Parse out an angled string literal, e.g. `#include <...>`.
+  if (Lexeme::kPuncLess == tok.Lexeme() &&
+      sub_tokens.back().Lexeme() == Lexeme::kPuncGreater) {
+
+    path_range = DisplayRange(tok.Position(), sub_tokens.back().NextPosition());
+    DisplayRange str(tok.NextPosition(), sub_tokens.back().Position());
+
+    if (!context->display_manager.TryReadData(str,  &path_str) ||
+        path_str.empty()) {
+      Error err(context->display_manager, SubTokenRange(), path_range);
+      err << "Empty or invalid angled string literal in include statement";
+      context->error_log.Append(std::move(err));
+      return;
+    }
+
+    is_angled = true;
+
+  // Parse out a string literal, e.g. `#include "..."`.
+  } else if (Lexeme::kLiteralString == tok.Lexeme()) {
+    const auto path_id = tok.StringId();
+    const auto path_len = tok.StringLength();
+    path_range = tok.SpellingRange();
+    if (!context->string_pool.TryReadString(path_id, path_len, &path_str) ||
+        !path_len) {
+      Error err(context->display_manager, SubTokenRange(), path_range);
+      err << "Empty or invalid string literal in include statement";
+      context->error_log.Append(std::move(err));
+      return;
+    }
+
+  } else {
+    Error err(context->display_manager, SubTokenRange(),
+              tok.SpellingRange());
+    err << "Expected string or angled string literal of file path here for "
+        << "include statement, got '"
+        << DisplayRange(tok.Position(), sub_tokens.back().NextPosition())
+        << "' instead";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
+  std::error_code ec;
+  std::string_view full_path;
+
+  auto found = false;
+  for (const auto &search_paths : context->include_search_paths) {
+    for (auto search_path : search_paths) {
+      full_path = std::string_view();
+
+      ec = context->file_manager.PushDirectory(search_path);
+      if (ec) {
+        continue;
+      }
+
+      Path path(context->file_manager, path_str);
+      ec = path.RealPath(&full_path);
+      if (ec) {
+        context->file_manager.PopDirectory();
+        continue;
+      }
+
+      found = true;
+      break;
+    }
+
+    if (found) {
+      break;
+    }
+  }
+
+  context->file_manager.PopDirectory();
+
+  if (ec || full_path.empty()) {
+    Error err(context->display_manager, SubTokenRange(), path_range);
+    err << "Unable to locate file '" << path_str
+        << "' requested by include statement";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
+  const auto include = new Node<ParsedInclude>(
+      SubTokenRange(), full_path, is_angled);
+  if (!module->includes.empty()) {
+    module->includes.back()->next = include;
+  }
+  module->includes.emplace_back(include);
 }
 
 // Try to match a clause with a declaration.
@@ -3248,6 +3366,13 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         }
         continue;
 
+      // Specify that the generated C++ code should contain a pre-processor
+      // include of some file.
+      case Lexeme::kHashIncludeStmt:
+        ReadLine();
+        ParseInclude(module);
+        continue;
+
       // A clause. For example:
       //
       //    foo(...).
@@ -3661,11 +3786,11 @@ ParsedModule Parser::ParsePath(
   // Special case for path parsing, we need to change the parser's current
   // working directory to the directory containing the file being parsed
   // so that we can do file-relative imports.
-  auto prev_path0 = impl->context->search_paths[0];
-  impl->context->search_paths[0] = path.DirName();
+  auto prev_path0 = impl->context->import_search_paths[0];
+  impl->context->import_search_paths[0] = path.DirName();
 
   auto module = impl->ParseDisplay(display, config);
-  impl->context->search_paths[0] = prev_path0;  // Restore back to the CWD.
+  impl->context->import_search_paths[0] = prev_path0;  // Restore back to the CWD.
 
   return module;
 }
@@ -3682,8 +3807,17 @@ ParsedModule Parser::ParseStream(
 }
 
 // Add a directory as a search path for files.
-void Parser::AddSearchPath(std::string_view path) const {
-  impl->context->search_paths.emplace_back(impl->context->file_manager, path);
+void Parser::AddModuleSearchPath(std::string_view path) const {
+  impl->context->import_search_paths.emplace_back(
+      impl->context->file_manager, path);
+}
+
+// Add a directory as a search path for includes.
+void Parser::AddIncludeSearchPath(
+    std::string_view path, IncludeSearchPathKind kind) const {
+  impl->context->include_search_paths[static_cast<unsigned>(kind)].emplace_back(
+      impl->context->file_manager, path);
+
 }
 
 }  // namespace hyde

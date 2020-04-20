@@ -376,9 +376,23 @@ static void GenerateAggregate(
 // Generates BAM-like code following the push method of pipelined bottom-up
 // execution of Datalog.
 void GenerateCode(
-    const DisplayManager &dm, const Query &query, std::ostream &cxx_os) {
+    const DisplayManager &dm, const ParsedModule &module, const Query &query,
+    std::ostream &cxx_os) {
 
   OutputStream os(dm, cxx_os);
+
+  for (auto include : module.Includes()) {
+    if (include.IsSystemInclude()) {
+      os << include << "\n";
+    }
+  }
+
+  for (auto include : module.Includes()) {
+    if (!include.IsSystemInclude()) {
+      os << include << "\n";
+    }
+  }
+
   os << "class Program final : public ::hyde::rt::Program<::Program> {\n"
      << " public:\n"
      << "  ~Program(void) = default;\n"

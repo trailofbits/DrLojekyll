@@ -11,11 +11,14 @@ namespace hyde {
 
 class DisplayManager;
 class Query;
+class ParsedModule;
 
 // Generates BAM-like code following the push method of pipelined bottom-up
 // execution of Datalog.
 void GenerateCode(
-    const DisplayManager &display_manager, const Query &query,
+    const DisplayManager &display_manager,
+    const ParsedModule &module,
+    const Query &query,
     std::ostream &cxx_os);
 
 }  // namespace hyde

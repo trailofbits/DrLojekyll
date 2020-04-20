@@ -417,6 +417,23 @@ class Node<ParsedImport> {
 };
 
 template <>
+class Node<ParsedInclude> {
+ public:
+  inline Node(DisplayRange range_, std::string_view path_, bool is_angled_)
+      : range(range_),
+        path(path_),
+        is_angled(is_angled_) {}
+
+  // Next include in this module.
+  Node<ParsedInclude> *next{nullptr};
+
+  const DisplayRange range;
+  const std::string path;
+  const bool is_angled;
+};
+
+
+template <>
  class Node<ParsedModule>
      : public std::enable_shared_from_this<Node<ParsedModule>> {
  public:
@@ -438,6 +455,7 @@ template <>
   std::vector<std::shared_ptr<Node<ParsedModule>>> non_root_modules;
 
   std::vector<std::unique_ptr<Node<ParsedImport>>> imports;
+  std::vector<std::unique_ptr<Node<ParsedInclude>>> includes;
   std::vector<std::unique_ptr<Node<ParsedExport>>> exports;
   std::vector<std::unique_ptr<Node<ParsedLocal>>> locals;
   std::vector<std::unique_ptr<Node<ParsedQuery>>> queries;

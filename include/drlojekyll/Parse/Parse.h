@@ -684,6 +684,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 };
 
 class ParsedImport;
+class ParsedInclude;
 
 // Represents a module parsed from a display.
 class ParsedModule {
@@ -695,6 +696,7 @@ class ParsedModule {
 
   NodeRange<ParsedQuery> Queries(void) const;
   NodeRange<ParsedImport> Imports(void) const;
+  NodeRange<ParsedInclude> Includes(void) const;
   NodeRange<ParsedLocal> Locals(void) const;
   NodeRange<ParsedExport> Exports(void) const;
   NodeRange<ParsedMessage> Messages(void) const;
@@ -742,6 +744,18 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
 
  protected:
   using parse::ParsedNode<ParsedImport>::ParsedNode;
+};
+
+// Represents a parsed include statement, for passing through down to the
+// code generator.
+class ParsedInclude : public parse::ParsedNode<ParsedInclude> {
+ public:
+  DisplayRange SpellingRange(void) const noexcept;
+  std::string_view IncludedFilePath(void) const noexcept;
+  bool IsSystemInclude(void) const noexcept;
+
+ protected:
+  using parse::ParsedNode<ParsedInclude>::ParsedNode;
 };
 
 }  // namespace hyde
