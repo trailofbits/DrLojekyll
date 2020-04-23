@@ -19,6 +19,10 @@ class OutputStream {
 
   OutputStream &operator<<(DisplayRange range);
 
+  inline OutputStream &operator<<(OutputStream &that) {
+    return that;
+  }
+
   template <typename T>
   OutputStream &operator<<(T val) {
     os << val;

@@ -1088,7 +1088,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       // Take the bound by column from inside of the aggregation.
       auto &nested_colset = agg->id_to_col[col->id];
       assert(nested_colset != nullptr);
-      agg->bound_columns.AddUse(nested_colset->Leader());
+      agg->config_columns.AddUse(nested_colset->Leader());
 
       // Outside (above) the aggregate, mark the incoming bound column
       // as equivalent to the aggregate's published bound column. This
@@ -1112,7 +1112,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     for (auto col = aggregate_begin; col < aggregate_end; ++col) {
       auto &nested_colset = agg->id_to_col[col->id];
       assert(nested_colset != nullptr);
-      agg->summarized_columns.AddUse(nested_colset->Leader());
+      agg->aggregated_columns.AddUse(nested_colset->Leader());
     }
 
     // "Publish" the aggregate's summary columns for use by everything else.
@@ -1135,10 +1135,10 @@ class QueryBuilderImpl : public SIPSVisitor {
         agg->group_by_columns.Size());
 
     assert(static_cast<unsigned>(bound_end - bound_begin) ==
-        agg->bound_columns.Size());
+        agg->config_columns.Size());
 
     assert(static_cast<unsigned>(aggregate_end - aggregate_begin) ==
-        agg->summarized_columns.Size());
+        agg->aggregated_columns.Size());
 
 //    // Make the group/bound columns of the aggregate visible to everyone else.
 //    for (auto j = 0u; j < i; ++j) {

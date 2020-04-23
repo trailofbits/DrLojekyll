@@ -33,8 +33,8 @@ QueryImpl::~QueryImpl(void) {
 
   for (auto agg : aggregates) {
     agg->group_by_columns.ClearWithoutErasure();
-    agg->bound_columns.ClearWithoutErasure();
-    agg->summarized_columns.ClearWithoutErasure();
+    agg->config_columns.ClearWithoutErasure();
+    agg->aggregated_columns.ClearWithoutErasure();
   }
 
   for (auto merge : merges) {
@@ -137,8 +137,21 @@ bool QueryView::IsConstraint(void) const noexcept {
   return impl->AsConstraint() != nullptr;
 }
 
+// Returns the depth of this node in the graph. This is defined as depth
+// from an input (associated with a message receive) node, where the deepest
+// nodes are typically responses to queries, or message publications.
+unsigned QueryView::Depth(void) const noexcept {
+  return impl->depth;
+}
+
+// Returns a useful string of internal metadata about this view.
 std::string QueryView::DebugString(void) const noexcept {
   return impl->DebugString();
+}
+
+// Get a hash of this view.
+uint64_t QueryView::Hash(void) const noexcept {
+  return impl->hash;
 }
 
 // Replace all uses of this view with `that` view.
@@ -195,8 +208,8 @@ bool QueryView::ReplaceAllUsesWith(
 
   } else if (const auto as_agg = impl->AsAggregate()) {
     as_agg->group_by_columns.Clear();
-    as_agg->bound_columns.Clear();
-    as_agg->summarized_columns.Clear();
+    as_agg->config_columns.Clear();
+    as_agg->aggregated_columns.Clear();
   }
 
   return true;
@@ -238,6 +251,14 @@ bool QueryColumn::IsBoundQueryInput(void) const noexcept {
   return QueryStream(sel->stream.get()).IsBoundQueryInput();
 }
 
+bool QueryColumn::IsConstant(void) const noexcept {
+  return impl->IsConstant();
+}
+
+bool QueryColumn::IsGenerator(void) const noexcept {
+  return impl->IsGenerator();
+}
+
 // Returns a unique ID representing the equivalence class of this column.
 // Two columns with the same equivalence class will have the same values.
 uint64_t QueryColumn::EquivalenceClass(void) const noexcept {
@@ -277,6 +298,10 @@ void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
 
 const ParsedVariable &QueryColumn::Variable(void) const noexcept {
   return impl->var;
+}
+
+const TypeLoc &QueryColumn::Type(void) const noexcept {
+  return impl->type;
 }
 
 bool QueryColumn::operator==(QueryColumn that) const noexcept {
@@ -435,20 +460,20 @@ UsedNodeRange<QueryColumn> QueryMap::InputCopiedColumns(void) const {
 
 // The resulting mapped columns.
 DefinedNodeRange<QueryColumn> QueryMap::Columns(void) const {
-  const auto num_group_cols = impl->attached_columns.Size();
+  const auto num_copied_cols = impl->attached_columns.Size();
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
           DefinedNodeIterator<QueryColumn>(
-              impl->columns.end() - num_group_cols)};
+              impl->columns.end() - num_copied_cols)};
 }
 
 // The resulting grouped columns.
 DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
   const auto num_cols = impl->columns.Size();
-  const auto num_group_cols = impl->attached_columns.Size();
-  const auto first_group_col_index = num_cols - num_group_cols;
+  const auto num_copied_cols = impl->attached_columns.Size();
+  const auto first_copied_col_index = num_cols - num_copied_cols;
   return {
     DefinedNodeIterator<QueryColumn>(
-        impl->columns.begin() + first_group_col_index),
+        impl->columns.begin() + first_copied_col_index),
     DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
@@ -497,20 +522,56 @@ QueryAggregate &QueryAggregate::From(QueryView &view) {
 }
 
 // The resulting mapped columns.
-DefinedNodeRange<QueryColumn> QueryAggregate::Columns(void) const {
+DefinedNodeRange<QueryColumn> QueryAggregate::Columns(void) const noexcept {
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
-UsedNodeRange<QueryColumn> QueryAggregate::GroupColumns(void) const noexcept {
+// Subsequences of the above.
+DefinedNodeRange<QueryColumn> QueryAggregate::GroupColumns(void) const noexcept {
+  if (impl->group_by_columns.Empty()) {
+    return {DefinedNodeIterator<QueryColumn>(impl->columns.end()),
+            DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+  } else {
+    auto begin = impl->columns.begin();
+    return {DefinedNodeIterator<QueryColumn>(begin),
+            DefinedNodeIterator<QueryColumn>(begin + impl->group_by_columns.Size())};
+  }
+}
+
+DefinedNodeRange<QueryColumn> QueryAggregate::ConfigurationColumns(void) const noexcept {
+  if (impl->config_columns.Empty()) {
+    return {DefinedNodeIterator<QueryColumn>(impl->columns.end()),
+            DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+  } else {
+    auto begin = impl->columns.begin() + impl->group_by_columns.Size();
+    return {DefinedNodeIterator<QueryColumn>(begin),
+            DefinedNodeIterator<QueryColumn>(begin + impl->config_columns.Size())};
+  }
+}
+
+// NOTE(pag): There should always be at least one summary column.
+DefinedNodeRange<QueryColumn> QueryAggregate::SummaryColumns(void) const noexcept {
+  auto begin = impl->columns.begin() +
+       (impl->group_by_columns.Size() + impl->config_columns.Size());
+  return {DefinedNodeIterator<QueryColumn>(begin),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+UsedNodeRange<QueryColumn> QueryAggregate::InputGroupColumns(void) const noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->group_by_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->group_by_columns.end())};
 }
 
 UsedNodeRange<QueryColumn>
-QueryAggregate::ConfigurationColumns(void) const noexcept {
-  return {UsedNodeIterator<QueryColumn>(impl->bound_columns.begin()),
-          UsedNodeIterator<QueryColumn>(impl->bound_columns.end())};
+QueryAggregate::InputConfigurationColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->config_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->config_columns.end())};
+}
+
+UsedNodeRange<QueryColumn> QueryAggregate::InputAggregatedColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->aggregated_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->aggregated_columns.end())};
 }
 
 // Returns the number of output columns.
@@ -525,12 +586,12 @@ unsigned QueryAggregate::NumGroupColumns(void) const noexcept {
 
 // Returns the number of columns used for configuration.
 unsigned QueryAggregate::NumConfigColumns(void) const noexcept {
-  return impl->bound_columns.Size();
+  return impl->config_columns.Size();
 }
 
 // Returns the number of columns being summarized.
 unsigned QueryAggregate::NumSummarizedColumns(void) const noexcept {
-  return impl->summarized_columns.Size();
+  return impl->aggregated_columns.Size();
 }
 
 // Returns the `nth` output grouping column.
@@ -543,16 +604,16 @@ QueryColumn QueryAggregate::NthGroupColumn(unsigned n) const noexcept {
 // Returns the `nth` output config column.
 QueryColumn QueryAggregate::NthConfigColumn(unsigned n) const noexcept {
   const auto num_group_cols = impl->group_by_columns.Size();
-  assert((n + num_group_cols) < impl->bound_columns.Size());
+  assert((n + num_group_cols) < impl->config_columns.Size());
   return QueryColumn(impl->columns[n + num_group_cols]);
 }
 
 // Returns the `nth` output summarized column.
 QueryColumn QueryAggregate::NthSummarizedColumn(unsigned n) const noexcept {
   const auto num_group_cols = impl->group_by_columns.Size();
-  const auto num_bound_cols = impl->bound_columns.Size();
+  const auto num_bound_cols = impl->config_columns.Size();
   const auto disp = num_group_cols + num_bound_cols;
-  assert((n + disp) < impl->summarized_columns.Size());
+  assert((n + disp) < impl->columns.Size());
   return QueryColumn(impl->columns[n + disp]);
 }
 
@@ -564,14 +625,14 @@ QueryColumn QueryAggregate::NthInputGroupColumn(unsigned n) const noexcept {
 
 // Returns the `nth` input config column.
 QueryColumn QueryAggregate::NthInputConfigColumn(unsigned n) const noexcept {
-  assert(n < impl->bound_columns.Size());
-  return QueryColumn(impl->bound_columns[n]);
+  assert(n < impl->config_columns.Size());
+  return QueryColumn(impl->config_columns[n]);
 }
 
 // Returns the `nth` input summarized column.
 QueryColumn QueryAggregate::NthInputSummarizedColumn(unsigned n) const noexcept {
-  assert(n < impl->summarized_columns.Size());
-  return QueryColumn(impl->summarized_columns[n]);
+  assert(n < impl->aggregated_columns.Size());
+  return QueryColumn(impl->aggregated_columns[n]);
 }
 
 // The functor doing the aggregating.

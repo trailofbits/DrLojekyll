@@ -110,6 +110,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
                        unsigned id_, unsigned index_=kInvalidIndex)
       : Def<Node<QueryColumn>>(this),
         var(var_),
+        type(var.Type()),
         view(view_),
         equiv_columns(std::make_shared<ColumnSet>(this)),
         id(id_),
@@ -139,6 +140,9 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   // Parsed variable associated with this column.
   const ParsedVariable var;
+
+  // Type of the variable; convenient for returning by reference.
+  const TypeLoc type;
 
   // View to which this column belongs.
   Node<QueryView> * const view;
@@ -504,8 +508,8 @@ class Node<QueryAggregate> : public Node<QueryView> {
   inline explicit Node(ParsedFunctor functor_)
       : functor(functor_),
         group_by_columns(this),
-        bound_columns(this),
-        summarized_columns(this) {}
+        config_columns(this),
+        aggregated_columns(this) {}
 
   virtual ~Node(void);
 
@@ -524,17 +528,17 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   // Columns that are `bound` before the aggregate, used by the relation being
   // summarized, but not being passed to the aggregating functor. These are
-  // unordered.
+  // unordered. These are not visible to the aggregating functor.
   UseList<COL> group_by_columns;
 
   // Columns that are `bound` for the aggregating functor. These are ordered.
-  UseList<COL> bound_columns;
+  // We think of this as being a form of grouping, where really they act like
+  // "specializations" for the aggregating functor. They kind of "configure" it.
+  UseList<COL> config_columns;
 
-  // Columns that are summarized by this aggregating functor. These are
-  // "in scope" of the aggregation. These are ordered.
-  //
-  // NOTE(pag): `columns.Size() == summarized_columns.Size()`.
-  UseList<COL> summarized_columns;
+  // Columns that are aggregated by this aggregating functor, and will be
+  // summarized. These are "in scope" of the aggregation. These are ordered.
+  UseList<COL> aggregated_columns;
 
   // `QueryBuilder::id_to_col`, at the time of building the aggregate, and then
   // after building, representing the state of `id_to_col` for the "scope" of

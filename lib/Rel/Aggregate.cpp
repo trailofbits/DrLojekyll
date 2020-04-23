@@ -25,13 +25,13 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
 
   // Mix in the hashes of the configuration columns.
   uint64_t bound_hash = 0;
-  for (auto col : bound_columns) {
+  for (auto col : config_columns) {
     bound_hash = __builtin_rotateright64(bound_hash, 16) ^ col->Hash();
   }
 
   // Mix in the hashes of the summarized columns.
   uint64_t summary_hash = 0;
-  for (auto col : summarized_columns) {
+  for (auto col : aggregated_columns) {
     summary_hash = __builtin_rotateright64(summary_hash, 16) ^ col->Hash();
   }
 
@@ -46,9 +46,9 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
   if (!depth) {
     depth = 2u;  // Base case in case of cycles.
 
-    auto real = GetDepth(bound_columns, 1u);
+    auto real = GetDepth(config_columns, 1u);
     real = GetDepth(group_by_columns, real);
-    real = GetDepth(summarized_columns, real);
+    real = GetDepth(aggregated_columns, real);
     depth = real + 1u;
   }
   return depth;
@@ -60,6 +60,8 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
   if (is_canonical) {
     return false;
   }
+
+  assert(attached_columns.Empty());
 
   const auto guard_tuple = GuardWithTuple(query);
   bool non_local_changes = guard_tuple != nullptr;
@@ -188,8 +190,8 @@ bool Node<QueryAggregate>::Equals(
   }
 
   if (!ColumnsEq(group_by_columns, that->group_by_columns) ||
-      !ColumnsEq(bound_columns, that->bound_columns) ||
-      !ColumnsEq(summarized_columns, that->summarized_columns)) {
+      !ColumnsEq(config_columns, that->config_columns) ||
+      !ColumnsEq(aggregated_columns, that->aggregated_columns)) {
     return false;
   }
 

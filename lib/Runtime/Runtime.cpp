@@ -36,9 +36,9 @@ static uint64_t NumWorkersMask(uint64_t num_workers) noexcept {
 ProgramBase::~ProgramBase(void) {}
 
 ProgramBase::ProgramBase(unsigned worker_id_, unsigned num_workers_)
-      : __worker_id(worker_id_),
-        __num_workers(num_workers_),
-        __num_workers_mask(NumWorkersMask(num_workers_)) {}
+    : __worker_id(worker_id_),
+      __num_workers(num_workers_),
+      __num_workers_mask(NumWorkersMask(num_workers_)) {}
 
 }  // namespace rt
 }  // namespace hyde

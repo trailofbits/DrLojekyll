@@ -109,6 +109,10 @@ class UseListIterator {
     return static_cast<unsigned>(it - that.it);
   }
 
+  inline UseListIterator<T> operator+(unsigned disp) const noexcept {
+    return UseListIterator<T>(&(it[disp]));
+  }
+
  private:
   const Use<T> * const *it;
 };
@@ -644,3 +648,46 @@ struct DefinedNodeRange {
 };
 
 }  // namespace hyde
+namespace std {
+
+template <typename T>
+struct iterator_traits<::hyde::UseListIterator<T>> {
+ public:
+  typedef std::forward_iterator_tag iterator_category;
+  typedef T *value_type;
+  typedef unsigned difference_type;
+  typedef void pointer;
+  typedef void reference;
+};
+
+template <typename T>
+struct iterator_traits<::hyde::DefListIterator<T>> {
+ public:
+  typedef std::forward_iterator_tag iterator_category;
+  typedef T *value_type;
+  typedef unsigned difference_type;
+  typedef void pointer;
+  typedef void reference;
+};
+
+template <typename T>
+struct iterator_traits<::hyde::UsedNodeIterator<T>> {
+ public:
+  typedef std::forward_iterator_tag iterator_category;
+  typedef T value_type;
+  typedef unsigned difference_type;
+  typedef void pointer;
+  typedef T reference;
+};
+
+template <typename T>
+struct iterator_traits<::hyde::DefinedNodeIterator<T>> {
+ public:
+  typedef std::forward_iterator_tag iterator_category;
+  typedef T value_type;
+  typedef unsigned difference_type;
+  typedef void pointer;
+  typedef T reference;
+};
+
+}  // namespace std

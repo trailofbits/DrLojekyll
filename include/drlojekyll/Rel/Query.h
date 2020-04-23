@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace hyde {
 namespace query {
@@ -79,7 +80,11 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsAggregate(void) const noexcept;
   bool IsBoundQueryInput(void) const noexcept;
 
+  bool IsConstant(void) const noexcept;
+  bool IsGenerator(void) const noexcept;
+
   const ParsedVariable &Variable(void) const noexcept;
+  const TypeLoc &Type(void) const noexcept;
 
   bool operator==(QueryColumn that) const noexcept;
   bool operator!=(QueryColumn that) const noexcept;
@@ -227,15 +232,21 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
 
+  // Returns the depth of this node in the graph. This is defined as depth
+  // from an input (associated with a message receive) node, where the deepest
+  // nodes are typically responses to queries, or message publications.
+  unsigned Depth(void) const noexcept;
+
+  // Returns a useful string of internal metadata about this view.
   std::string DebugString(void) const noexcept;
+
+  // Get a hash of this view.
+  uint64_t Hash(void) const noexcept;
 
   // Replace all uses of this view with `that` view. Returns `false` if the
   // two views have different arities, column types, or are from different
   // queries.
   bool ReplaceAllUsesWith(EqualitySet &eq, QueryView that) const noexcept;
-
-  // Get a hash of this view.
-  uint64_t Hash(void) const noexcept;
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -349,7 +360,12 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   static QueryAggregate &From(QueryView &view);
 
   // The resulting mapped columns.
-  DefinedNodeRange<QueryColumn> Columns(void) const;
+  DefinedNodeRange<QueryColumn> Columns(void) const noexcept;
+
+  // Subsequences of the above.
+  DefinedNodeRange<QueryColumn> GroupColumns(void) const noexcept;
+  DefinedNodeRange<QueryColumn> ConfigurationColumns(void) const noexcept;
+  DefinedNodeRange<QueryColumn> SummaryColumns(void) const noexcept;
 
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
@@ -381,8 +397,9 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // Returns the `nth` input summarized column.
   QueryColumn NthInputSummarizedColumn(unsigned n) const noexcept;
 
-  UsedNodeRange<QueryColumn> GroupColumns(void) const noexcept;
-  UsedNodeRange<QueryColumn> ConfigurationColumns(void) const noexcept;
+  UsedNodeRange<QueryColumn> InputGroupColumns(void) const noexcept;
+  UsedNodeRange<QueryColumn> InputConfigurationColumns(void) const noexcept;
+  UsedNodeRange<QueryColumn> InputAggregatedColumns(void) const noexcept;
 
   // The functor doing the aggregating.
   const ParsedFunctor &Functor(void) const noexcept;
@@ -523,6 +540,13 @@ class Query {
 
 }  // namespace hyde
 namespace std {
+
+template<>
+struct hash<::hyde::QueryColumn> {
+  inline uint64_t operator()(::hyde::QueryColumn col) const noexcept {
+    return col.UniqueId();
+  }
+};
 
 template<>
 struct hash<::hyde::QueryView> {
