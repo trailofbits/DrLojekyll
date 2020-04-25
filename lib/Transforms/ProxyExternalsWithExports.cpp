@@ -90,6 +90,10 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
     }
   }
 
+  for (auto code : module.Inlines()) {
+    os << code << "\n";
+  }
+
   for (auto decl : module.Messages()) {
     os << ParsedDeclaration(decl) << "\n";
   }

@@ -716,6 +716,16 @@ QueryColumn QueryConstraint::InputRHS(void) const {
   return QueryColumn(impl->input_columns[1]);
 }
 
+unsigned QueryConstraint::NumCopiedColumns(void) const noexcept {
+  return impl->attached_columns.Size();
+}
+
+QueryColumn QueryConstraint::NthCopiedColumn(unsigned n) const noexcept {
+  auto offset = ComparisonOperator::kEqual == impl->op ? (n + 1) : (n + 2);
+  assert(offset < impl->columns.Size());
+  return QueryColumn(impl->columns[offset]);
+}
+
 DefinedNodeRange<QueryColumn> QueryConstraint::CopiedColumns(void) const {
   auto begin = impl->columns.begin();
   const auto end = impl->columns.end();

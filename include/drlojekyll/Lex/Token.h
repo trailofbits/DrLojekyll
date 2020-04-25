@@ -17,6 +17,7 @@ enum class Lexeme : uint8_t {
   kInvalidNewLineInString,
   kInvalidEscapeInString,
   kInvalidUnterminatedString,
+  kInvalidUnterminatedCode,
   kInvalidStreamOrDisplay,
   kInvalidTypeName,
   kInvalidUnknown,
@@ -88,12 +89,6 @@ enum class Lexeme : uint8_t {
   //
   kHashImportModuleStmt,
 
-  // Used to include a C/C++ header our source file. This is translated down
-  // into an equivalent include statement in generated C++ code.
-  //
-  //    #include "path"
-  kHashIncludeStmt,
-
   // Declares a user-defined functor. These are functions that are defined
   // by native code modules. They must have globally unique names. When called
   // with all bound arguments, they must be pure, so that two uses can be
@@ -109,6 +104,25 @@ enum class Lexeme : uint8_t {
   // Associating functors with classes enables functors to manage a backing
   // store of state.
   kHashFunctorDecl,
+
+  // Used to include a C/C++ header our source file. This is translated down
+  // into an equivalent include statement in generated C++ code.
+  //
+  //    #include "path"
+  kHashIncludeStmt,
+
+  // Used to insert some C/C++ code "inline" into the Datalog code. This is
+  // an alternative to `#include`, and may itself contain `#include`s. The
+  // usage looks like:
+  //
+  //    #inline !<
+  //    ... code here ...
+  //    !>
+  //
+  // Inline code is placed into the generated C/C++ code *after* all `#include`
+  // statements, regardless of whether or not the `#include`s came before or
+  // after the `#inline` statements.
+  kHashInlineStmt,
 
   // Unsigned/signed integral types. `n` must be one of 8, 16, 32, or 64.
   // For example, `@i32` is a signed 32-bit integer, whereas `@u32` is
@@ -191,6 +205,11 @@ enum class Lexeme : uint8_t {
   kLiteralNumber,
   kLiteralString,
 
+  // Literal C/C++ code. Looks like:
+  //
+  // !< ... stuff here ... !>
+  kLiteralCode,
+
   // Identifiers, e.g. for atoms, functors, messages, etc.
   kIdentifierAtom,
   kIdentifierUnnamedAtom,
@@ -226,7 +245,11 @@ class Token {
   // Return this token's lexeme.
   ::hyde::Lexeme Lexeme(void) const;
 
-  // Return the spelling width of this token.
+  // Return the spelling width of this token. Returns `0` if unknown or if
+  // this token spans across more than one line.
+  //
+  // NOTE(pag): The spelling width is, in practice, not valid for code literals
+  //            as they can span multiple lines.
   unsigned SpellingWidth(void) const;
 
   // Returns `true` if this token's lexeme corresponds with a type.
@@ -250,6 +273,9 @@ class Token {
     return position.Column();
   }
 
+  // Return the ID of the corresponding code, or `0` if not a string.
+  unsigned CodeId(void) const;
+
   // Return the ID of the corresponding string, or `0` if not a string.
   unsigned StringId(void) const;
 
@@ -264,9 +290,6 @@ class Token {
 
   // Return the size, in bytes, of the corresponding type.
   unsigned TypeSizeInBytes(void) const;
-
-  // Returns the invalid escape char, or `\0` if not present.
-  char InvalidEscapeChar(void) const;
 
   // Returns the invalid char, or `\0` if not present.
   char InvalidChar(void) const;

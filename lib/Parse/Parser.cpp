@@ -159,6 +159,10 @@ class ParserImpl {
   // Try to parse `sub_range` as an include of C/C++ code.
   void ParseInclude(Node<ParsedModule> *module);
 
+  // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
+  // module.
+  void ParseInline(Node<ParsedModule> *module);
+
   // Try to match a clause with a declaration.
   bool TryMatchClauseWithDecl(Node<ParsedModule> *module,
                               Node<ParsedClause> *clause);
@@ -317,7 +321,7 @@ void ParserImpl::LexAllTokens(Display display) {
           break;
 
         case Lexeme::kInvalidEscapeInString:
-          error << "Invalid escape character '" << tok.InvalidEscapeChar()
+          error << "Invalid escape character '" << tok.InvalidChar()
                 << "' in string literal";
           tok = Token::FakeStringLiteral(tok.Position(), tok.SpellingWidth());
           break;
@@ -329,6 +333,12 @@ void ParserImpl::LexAllTokens(Display display) {
 
         case Lexeme::kInvalidUnterminatedString:
           error << "Unterminated string literal";
+          ignore_line = true;
+          // NOTE(pag): No recovery, i.e. exclude the token.
+          break;
+
+        case Lexeme::kInvalidUnterminatedCode:
+          error << "Unterminated code literal";
           ignore_line = true;
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
@@ -410,6 +420,7 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalidNewLineInString:
       case Lexeme::kInvalidEscapeInString:
       case Lexeme::kInvalidUnterminatedString:
+      case Lexeme::kInvalidUnterminatedCode:
       case Lexeme::kComment:
         continue;
 
@@ -1898,16 +1909,16 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     }
 
     Path path(context->file_manager, path_str);
+    context->file_manager.PopDirectory();
+
     ec = path.RealPath(&full_path);
+
     if (ec) {
-      context->file_manager.PopDirectory();
       continue;
     }
 
     break;
   }
-
-  context->file_manager.PopDirectory();
 
   if (ec || full_path.empty()) {
     Error err(context->display_manager, SubTokenRange());
@@ -2020,9 +2031,10 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
       }
 
       Path path(context->file_manager, path_str);
+      context->file_manager.PopDirectory();
+
       ec = path.RealPath(&full_path);
       if (ec) {
-        context->file_manager.PopDirectory();
         continue;
       }
 
@@ -2034,8 +2046,6 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
       break;
     }
   }
-
-  context->file_manager.PopDirectory();
 
   if (ec || full_path.empty()) {
     Error err(context->display_manager, SubTokenRange(), path_range);
@@ -2051,6 +2061,66 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
     module->includes.back()->next = include;
   }
   module->includes.emplace_back(include);
+}
+
+// Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
+// module.
+void ParserImpl::ParseInline(Node<ParsedModule> *module) {
+  Token tok;
+  if (!ReadNextSubToken(tok)) {
+    assert(false);
+  }
+
+  assert(tok.Lexeme() == Lexeme::kHashInlineStmt);
+
+  auto after_directive = tok.NextPosition();
+  if (!ReadNextSubToken(tok)) {
+    Error err(context->display_manager, SubTokenRange(), after_directive);
+    err << "Expected code literal or string literal for inline statement";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
+  std::string_view code;
+
+  if (Lexeme::kLiteralCode == tok.Lexeme()) {
+    const auto code_id = tok.CodeId();
+    if (!context->string_pool.TryReadCode(code_id, &code)) {
+      Error err(context->display_manager, SubTokenRange(), tok.SpellingRange());
+      err << "Empty or invalid code literal in inline statement";
+      context->error_log.Append(std::move(err));
+      return;
+    }
+
+  // Parse out a string literal, e.g. `#include "..."`.
+  } else if (Lexeme::kLiteralString == tok.Lexeme()) {
+    const auto code_id = tok.StringId();
+    const auto code_len = tok.StringLength();
+
+    if (!context->string_pool.TryReadString(code_id, code_len, &code) ||
+        !code_len) {
+      Error err(context->display_manager, SubTokenRange(), tok.SpellingRange());
+      err << "Empty or invalid string literal in inline statement";
+      context->error_log.Append(std::move(err));
+      return;
+    }
+
+  } else {
+    Error err(context->display_manager, SubTokenRange(),
+              tok.SpellingRange());
+    err << "Expected string or code literal for "
+        << "inline c/c++ code statement, but got '"
+        << DisplayRange(tok.Position(), sub_tokens.back().NextPosition())
+        << "' instead";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
+  const auto inline_node = new Node<ParsedInline>(SubTokenRange(), code);
+  if (!module->inlines.empty()) {
+    module->inlines.back()->next = inline_node;
+  }
+  module->inlines.emplace_back(inline_node);
 }
 
 // Try to match a clause with a declaration.
@@ -3371,6 +3441,17 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       case Lexeme::kHashIncludeStmt:
         ReadLine();
         ParseInclude(module);
+        continue;
+
+      // Specify that the generated C++ code should contain a pre-processor
+      // include of some file.
+      //
+      //    #inline !<
+      //    ...
+      //    !>
+      case Lexeme::kHashInlineStmt:
+        ReadLine();
+        ParseInline(module);
         continue;
 
       // A clause. For example:

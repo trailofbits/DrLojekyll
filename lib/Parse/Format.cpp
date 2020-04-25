@@ -234,6 +234,25 @@ OutputStream &operator<<(OutputStream &os, ParsedInclude include) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
+  const auto code = code_.CodeToInline();
+
+  if (code.empty()) {
+    return os;
+  }
+
+  os << "#inline !<";
+  if (code.front() == '\n' && code.back() == '\n') {
+    os << code;
+  } else if (code.front() == '\n') {
+    os << code << '\n';
+  } else if (code.back() == '\n') {
+    os << '\n' << code;
+  }
+  os << "!>";
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   if (os.KeepImports()) {
     for (auto import : module.Imports()) {
@@ -251,6 +270,10 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
     if (!include.IsSystemInclude()) {
       os << include << "\n";
     }
+  }
+
+  for (auto code : module.Inlines()) {
+    os << code << "\n";
   }
 
   for (auto decl : module.Queries()) {

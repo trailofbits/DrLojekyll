@@ -8,12 +8,28 @@ namespace hyde {
 namespace lex {
 
 struct BasicToken {
-  Lexeme lexeme;  // Common.
-  uint8_t unused;
-  char invalid_escape_char;
-  char invalid_char;
-  uint16_t error_offset;
-  uint16_t spelling_width;  // Common.
+  uint64_t lexeme:8;  // `Lexeme`.
+  uint64_t unused:40;
+  uint64_t spelling_width:16;  // Common to most things.
+};
+
+struct ErrorToken {
+  uint64_t lexeme:8;  // `Lexeme`.
+
+  // Can be an invalid char in the lexer, or an invalid escape character
+  // in a string.
+  int64_t invalid_char:8;
+
+  // Physical error location, relative to the physical location of the
+  // beginning of this token.
+  uint64_t error_offset:16;
+
+  // Logical error location, relative to the logical position of the beginning
+  // of this token.
+  uint64_t disp_lines:16;
+
+  // Column of the error.
+  uint64_t error_col:16;
 };
 
 struct TypeToken {
@@ -64,6 +80,23 @@ struct StringLiteralToken {
   uint64_t spelling_width:16;
 };
 
+struct CodeLiteralToken {
+  uint64_t lexeme:8;
+
+  // Unique ID of the represented code. The first code block has ID `0`, the
+  // second has ID `1`, etc.
+  uint64_t id:12;
+
+  // Number of bytes in the represented code.
+  uint64_t num_bytes:16;
+
+  // Displacement in terms of lines.
+  uint64_t disp_lines:16;
+
+  // The column immeidately following the `!>`.
+  uint64_t next_cols:12;
+};
+
 struct IdentifierToken {
   uint64_t lexeme:8;
 
@@ -81,10 +114,12 @@ struct IdentifierToken {
 union TokenInterpreter {
   uint64_t flat{0};
   BasicToken basic;
+  ErrorToken error;
   WhitespaceToken whitespace;
   TypeToken type;
   NumberLiteralToken number;
   StringLiteralToken string;
+  CodeLiteralToken code;
   IdentifierToken identifier;
 };
 

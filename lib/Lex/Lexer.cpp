@@ -76,12 +76,13 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     // to the stream underlying the display, or due to there being an invalid
     // character in the display.
     if (impl->reader.TryGetErrorMessage(nullptr)) {
-      interpreter.basic.lexeme = Lexeme::kInvalidStreamOrDisplay;
+      interpreter.basic.lexeme = static_cast<uint8_t>(
+          Lexeme::kInvalidStreamOrDisplay);
 
     // We've reached the end of this display, yield a token and pop this
     // display off the stack.
     } else {
-      interpreter.basic.lexeme = Lexeme::kEndOfFile;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kEndOfFile);
     }
 
     impl.reset();
@@ -114,7 +115,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         }
       }
 
-      interpreter.basic.lexeme = Lexeme::kWhitespace;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kWhitespace);
       interpreter.whitespace.num_leading_spaces = num_leading_spaces;
       interpreter.whitespace.num_leading_newlines = num_leading_lines;
       interpreter.whitespace.spelling_width =
@@ -124,98 +125,153 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     }
 
     case '(':
-      interpreter.basic.lexeme = Lexeme::kPuncOpenParen;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncOpenParen);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case ')':
-      interpreter.basic.lexeme = Lexeme::kPuncCloseParen;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncCloseParen);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '{':
-      interpreter.basic.lexeme = Lexeme::kPuncOpenBrace;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncOpenBrace);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '}':
-      interpreter.basic.lexeme = Lexeme::kPuncCloseBrace;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncCloseBrace);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '.':
-      interpreter.basic.lexeme = Lexeme::kPuncPeriod;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncPeriod);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case ',':
-      interpreter.basic.lexeme = Lexeme::kPuncComma;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncComma);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '=':
-      interpreter.basic.lexeme = Lexeme::kPuncEqual;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncEqual);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '!':
-      interpreter.basic.lexeme = Lexeme::kPuncExclaim;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncExclaim);
       interpreter.basic.spelling_width = 1;
 
       if (impl->reader.TryReadChar(&ch)) {
         if (ch == '=') {
-          interpreter.basic.lexeme = Lexeme::kPuncNotEqual;
+          interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncNotEqual);
           interpreter.basic.spelling_width = 2;
+
+        // Read it as an inline code literal.
+        } else if (ch == '<') {
+
+          auto done = false;
+          auto seen_exclaim = false;
+          auto error_offset = 2u;
+          impl->data.clear();
+
+          while (impl->reader.TryReadChar(&ch)) {
+            ++error_offset;
+            if ('!' == ch) {
+              if (seen_exclaim) {
+                impl->data.push_back('!');
+              } else {
+                seen_exclaim = true;
+              }
+            } else if ('>' == ch) {
+              if (seen_exclaim) {
+                done = true;
+                break;
+              } else {
+                impl->data.push_back('!');
+                impl->data.push_back(ch);
+                seen_exclaim = false;
+              }
+            } else {
+              impl->data.push_back(ch);
+            }
+          }
+
+          const auto after_pos = impl->reader.CurrentPosition();
+
+          if (!done) {
+            interpreter.error.error_offset = error_offset;
+            interpreter.error.error_col = after_pos.Column();
+            interpreter.error.disp_lines = after_pos.Line() - ret.position.Line();
+            interpreter.error.lexeme =
+                static_cast<uint8_t>(Lexeme::kInvalidUnterminatedCode);
+
+          } else {
+            interpreter.code.num_bytes = impl->data.size() + 4;
+            interpreter.code.next_cols = after_pos.Column();
+            interpreter.code.disp_lines = after_pos.Line() - ret.position.Line();
+            interpreter.code.id = string_pool.InternCode(impl->data);
+            interpreter.code.lexeme = static_cast<uint8_t>(Lexeme::kLiteralCode);
+          }
         } else {
           impl->reader.UnreadChar();
         }
       }
+
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '<':
-      interpreter.basic.lexeme = Lexeme::kPuncLess;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncLess);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case '>':
-      interpreter.basic.lexeme = Lexeme::kPuncGreater;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncGreater);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     case ':':
-      interpreter.basic.lexeme = Lexeme::kPuncColon;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncColon);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
 
     // String literal.
     case '"': {
-      interpreter.basic.lexeme = Lexeme::kLiteralString;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kLiteralString);
 
       uint16_t spelling_width = 1;
       auto prev_was_escape = false;
       auto is_invalid = false;
       auto is_finished = false;
+      auto error_offset = 1u;
       impl->data.clear();
 
       // Go collect all the characters of the string, and render them
       // into `impl->data`.
       while (impl->reader.TryReadChar(&ch)) {
         spelling_width += 1;
-        if ('\n' == ch) {
-          interpreter.basic.error_offset = static_cast<uint16_t>(
-              spelling_width - 1);
-          interpreter.basic.lexeme = Lexeme::kInvalidNewLineInString;
+        error_offset += 1;
+
+        if ('\n' == ch || '\r' == ch) {
+          const auto after_pos = impl->reader.CurrentPosition();
+          interpreter.error.error_offset = error_offset;
+          interpreter.error.error_col = after_pos.Column();
+          interpreter.error.disp_lines = after_pos.Line() - ret.position.Line();
+          interpreter.error.invalid_char = ch;
+          interpreter.error.lexeme =
+              static_cast<uint8_t>(Lexeme::kInvalidNewLineInString);
           is_invalid = true;
 
         } else if ('\\' == ch) {
@@ -253,10 +309,13 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 break;
               default:
                 if (!is_invalid) {
-                  interpreter.basic.error_offset = static_cast<uint16_t>(
-                      spelling_width - 1);
-                  interpreter.basic.invalid_escape_char = ch;
-                  interpreter.basic.lexeme = Lexeme::kInvalidEscapeInString;
+                  const auto after_pos = impl->reader.CurrentPosition();
+                  interpreter.error.error_offset = error_offset;
+                  interpreter.error.error_col = after_pos.Column();
+                  interpreter.error.disp_lines = after_pos.Line() - ret.position.Line();
+                  interpreter.error.invalid_char = ch;
+                  interpreter.error.lexeme =
+                      static_cast<uint8_t>(Lexeme::kInvalidEscapeInString);
                   is_invalid = true;
                 }
                 break;
@@ -281,10 +340,13 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           interpreter.string.spelling_width = spelling_width;
 
         } else {
-          interpreter.basic.lexeme = Lexeme::kInvalidUnterminatedString;
-          interpreter.basic.error_offset = static_cast<uint16_t>(
-              spelling_width - 1);  // Hrmm...
-          interpreter.basic.spelling_width = spelling_width;
+          const auto after_pos = impl->reader.CurrentPosition();
+          interpreter.error.error_offset = error_offset;
+          interpreter.error.error_col = after_pos.Column();
+          interpreter.error.disp_lines = after_pos.Line() - ret.position.Line();
+          interpreter.error.invalid_char = ch;
+          interpreter.error.lexeme =
+              static_cast<uint8_t>(Lexeme::kInvalidUnterminatedString);
         }
       }
 
@@ -294,7 +356,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Directives.
     case '#':
-      interpreter.basic.lexeme = Lexeme::kInvalidDirective;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kInvalidDirective);
       goto accumulate_directive_atom_keyword_variable;
 
     // Atoms, keywords.
@@ -302,7 +364,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
     case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u':
     case 'v': case 'w': case 'x': case 'y': case 'z':
-      interpreter.basic.lexeme = Lexeme::kIdentifierAtom;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kIdentifierAtom);
       goto accumulate_directive_atom_keyword_variable;
 
     // Variables.
@@ -311,7 +373,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     case 'H': case 'I': case 'J': case 'K': case 'L': case 'M': case 'N':
     case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T': case 'U':
     case 'V': case 'W': case 'X': case 'Y': case 'Z':
-      interpreter.basic.lexeme = Lexeme::kIdentifierVariable;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kIdentifierVariable);
       goto accumulate_directive_atom_keyword_variable;
 
     accumulate_directive_atom_keyword_variable:
@@ -325,7 +387,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       switch (impl->data.size()) {
         case 1:
           if (impl->data[0] == '_') {
-            interpreter.basic.lexeme = Lexeme::kIdentifierUnnamedVariable;
+            interpreter.basic.lexeme = static_cast<uint8_t>(
+                Lexeme::kIdentifierUnnamedVariable);
             interpreter.identifier.spelling_width = 1;
             interpreter.identifier.index = 1;  // See `DisplayManager::Impl::Impl`.
           }
@@ -333,12 +396,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
         case 2:
           if (impl->data == "i8") {
-            interpreter.basic.lexeme = Lexeme::kTypeIn;
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
             interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 8;
 
           } else if (impl->data == "u8") {
-            interpreter.basic.lexeme = Lexeme::kTypeUn;
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
             interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 8;
           }
@@ -347,111 +410,127 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 3:
           if ('f' == impl->data[0]) {
             if (impl->data == "f32") {
-              interpreter.basic.lexeme = Lexeme::kTypeFn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeFn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 32;
 
             } else if (impl->data == "f64") {
-              interpreter.basic.lexeme = Lexeme::kTypeFn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeFn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 64;
             }
           } else if ('i' == impl->data[0]) {
             if (impl->data == "i16") {
-              interpreter.basic.lexeme = Lexeme::kTypeIn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 16;
 
             } else if (impl->data == "i32") {
-              interpreter.basic.lexeme = Lexeme::kTypeIn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 32;
 
             } else if (impl->data == "i64") {
-              interpreter.basic.lexeme = Lexeme::kTypeIn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 64;
             }
           } else if ('u' == impl->data[0]) {
             if (impl->data == "u16") {
-              interpreter.basic.lexeme = Lexeme::kTypeUn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 16;
 
             } else if (impl->data == "u32") {
-              interpreter.basic.lexeme = Lexeme::kTypeUn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 32;
 
             } else if (impl->data == "u64") {
-              interpreter.basic.lexeme = Lexeme::kTypeUn;
+              interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
               interpreter.type.spelling_width = 4;
               interpreter.type.type_width = 64;
             }
           } else if (impl->data == "str") {
-            interpreter.basic.lexeme = Lexeme::kTypeString;
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeString);
             interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 64;  // Size of the ID of the string.
           }
           break;
         case 4:
           if (impl->data == "free") {
-            interpreter.basic.lexeme = Lexeme::kKeywordFree;
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kKeywordFree);
 
           } else if (impl->data == "over") {
-            interpreter.basic.lexeme = Lexeme::kKeywordOver;
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kKeywordOver);
 
           } else if (impl->data == "uuid") {
-            interpreter.basic.lexeme = Lexeme::kTypeUUID;
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUUID);
             interpreter.type.spelling_width = 5;
             interpreter.type.type_width = 128;
           }
           break;
         case 5:
           if (impl->data == "bound") {
-            interpreter.basic.lexeme = Lexeme::kKeywordBound;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordBound);
           }
           break;
         case 6:
           if (impl->data == "#query") {
-            interpreter.basic.lexeme = Lexeme::kHashQueryDecl;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kHashQueryDecl);
           } else if (impl->data == "#local") {
-            interpreter.basic.lexeme = Lexeme::kHashLocalDecl;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kHashLocalDecl);
           } else if (impl->data == "inline") {
-            interpreter.basic.lexeme = Lexeme::kKeywordInline;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordInline);
           }
           break;
         case 7:
           if (impl->data[0] == '#') {
             if (impl->data == "#export") {
-              interpreter.basic.lexeme = Lexeme::kHashExportDecl;
+              interpreter.basic.lexeme =
+                  static_cast<uint8_t>(Lexeme::kHashExportDecl);
             } else if (impl->data == "#import") {
-              interpreter.basic.lexeme = Lexeme::kHashImportModuleStmt;
+              interpreter.basic.lexeme =
+                  static_cast<uint8_t>(Lexeme::kHashImportModuleStmt);
+            } else if (impl->data == "#inline") {
+              interpreter.basic.lexeme =
+                  static_cast<uint8_t>(Lexeme::kHashInlineStmt);
             }
           } else if (impl->data == "summary") {
-            interpreter.basic.lexeme = Lexeme::kKeywordSummary;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordSummary);
           } else if (impl->data == "mutable") {
-            interpreter.basic.lexeme = Lexeme::kKeywordMutable;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordMutable);
           }
           break;
 
         case 8:
           if (impl->data[0] == '#') {
             if (impl->data == "#message") {
-              interpreter.basic.lexeme = Lexeme::kHashMessageDecl;
+              interpreter.basic.lexeme =
+                  static_cast<uint8_t>(Lexeme::kHashMessageDecl);
             } else if (impl->data == "#functor") {
-              interpreter.basic.lexeme = Lexeme::kHashFunctorDecl;
+              interpreter.basic.lexeme =
+                  static_cast<uint8_t>(Lexeme::kHashFunctorDecl);
             } else if (impl->data == "#include") {
-              interpreter.basic.lexeme = Lexeme::kHashIncludeStmt;
+              interpreter.basic.lexeme =
+                  static_cast<uint8_t>(Lexeme::kHashIncludeStmt);
             }
           }
           break;
 
         case 9:
           if (impl->data == "aggregate") {
-            interpreter.basic.lexeme = Lexeme::kKeywordAggregate;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordAggregate);
           } else if (impl->data == "unordered") {
-            interpreter.basic.lexeme = Lexeme::kKeywordUnordered;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordUnordered);
           }
           break;
 
@@ -460,8 +539,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       }
 
       // If we've found an identifier, then intern it.
-      if (interpreter.basic.lexeme == Lexeme::kIdentifierAtom ||
-          interpreter.basic.lexeme == Lexeme::kIdentifierVariable) {
+      if ((interpreter.basic.lexeme ==
+           static_cast<uint8_t>(Lexeme::kIdentifierAtom)) ||
+          (interpreter.basic.lexeme ==
+           static_cast<uint8_t>(Lexeme::kIdentifierVariable))) {
         interpreter.identifier.index = string_pool.InternString(impl->data);
         interpreter.identifier.spelling_width =
             static_cast<uint16_t>(impl->data.size());
@@ -523,15 +604,18 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.number.prefix_width = 1;  // `0`.
             interpreter.number.spelling_width = 2;
           } else {
-            interpreter.basic.lexeme = Lexeme::kInvalidNumber;
-            interpreter.basic.error_offset = 1;
-            interpreter.basic.spelling_width = 2;
+            interpreter.error.error_offset = 1;
+            interpreter.error.error_col = ret.position.Column() + 2;
+            interpreter.error.disp_lines = 0;
+            interpreter.error.invalid_char = impl->data[1];
+            interpreter.error.lexeme =
+                static_cast<uint8_t>(Lexeme::kInvalidNumber);
           }
 
         // Looks like a hexadecimal literal.
         } else if ('x' == impl->data[1] || 'X' == impl->data[1]) {
           auto all_hex = true;
-          uint16_t i = 2;
+          auto i = 2u;
           while (all_hex && i < impl->data.size()) {
             switch (impl->data[i]) {
               case '0': case '1': case '2': case '3': case '4': case '5':
@@ -545,6 +629,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 break;
             }
           }
+
           if (all_hex) {
             interpreter.number.lexeme = Lexeme::kLiteralNumber;
             interpreter.number.spelling_kind =
@@ -554,16 +639,18 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 static_cast<uint16_t>(impl->data.size());
 
           } else {
-            interpreter.basic.lexeme = Lexeme::kInvalidNumber;
-            interpreter.basic.error_offset = i;
-            interpreter.basic.spelling_width =
-                static_cast<uint16_t>(impl->data.size());
+            interpreter.error.error_offset = i;
+            interpreter.error.error_col = ret.position.Column() + i;
+            interpreter.error.disp_lines = 0;
+            interpreter.error.invalid_char = impl->data[i];
+            interpreter.error.lexeme =
+                static_cast<uint8_t>(Lexeme::kInvalidNumber);
           }
 
         // Looks like a binary literal.
         } else if ('b' == impl->data[1] || 'B' == impl->data[1]) {
           auto all_bin = true;
-          uint16_t i = 2;
+          auto i = 2u;
           while (all_bin && i < impl->data.size()) {
             switch (impl->data[i]) {
               case '0': case '1':
@@ -574,6 +661,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 break;
             }
           }
+
           if (all_bin) {
             interpreter.number.lexeme = Lexeme::kLiteralNumber;
             interpreter.number.spelling_kind =
@@ -583,17 +671,19 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 static_cast<uint16_t>(impl->data.size());
 
           } else {
-            interpreter.basic.lexeme = Lexeme::kInvalidNumber;
-            interpreter.basic.error_offset = i;
-            interpreter.basic.spelling_width =
-                static_cast<uint16_t>(impl->data.size());
+            interpreter.error.error_offset = i;
+            interpreter.error.error_col = ret.position.Column() + i;
+            interpreter.error.disp_lines = 0;
+            interpreter.error.invalid_char = impl->data[i];
+            interpreter.error.lexeme =
+                static_cast<uint8_t>(Lexeme::kInvalidNumber);
           }
 
         // Looks like an octal literal.
         } else {
           auto all_octal = true;
           auto has_leading_zeros = true;
-          uint16_t i = 1;
+          auto i = 1u;
           while (all_octal && i < impl->data.size()) {
             switch (impl->data[i]) {
               case '0':
@@ -622,17 +712,19 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 static_cast<uint16_t>(impl->data.size());
 
           } else {
-            interpreter.basic.lexeme = Lexeme::kInvalidNumber;
-            interpreter.basic.error_offset = i;
-            interpreter.basic.spelling_width =
-                static_cast<uint16_t>(impl->data.size());
+            interpreter.error.error_offset = i;
+            interpreter.error.error_col = ret.position.Column() + i;
+            interpreter.error.disp_lines = 0;
+            interpreter.error.invalid_char = impl->data[i];
+            interpreter.error.lexeme =
+                static_cast<uint8_t>(Lexeme::kInvalidNumber);
           }
         }
 
       // Looks like decimal.
       } else {
         auto all_decimal = true;
-        uint16_t i = 0;
+        auto i = 0u;
         while (all_decimal && i < impl->data.size()) {
           switch (impl->data[i]) {
             case '0': case '1': case '2': case '3': case '4': case '5':
@@ -653,10 +745,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               static_cast<uint16_t>(impl->data.size());
 
         } else {
-          interpreter.basic.lexeme = Lexeme::kInvalidNumber;
-          interpreter.basic.error_offset = i;
-          interpreter.basic.spelling_width =
-              static_cast<uint16_t>(impl->data.size());
+          interpreter.error.error_offset = i;
+          interpreter.error.error_col = ret.position.Column() + i;
+          interpreter.error.disp_lines = 0;
+          interpreter.error.invalid_char = impl->data[i];
+          interpreter.error.lexeme =
+              static_cast<uint8_t>(Lexeme::kInvalidNumber);
         }
       }
 
@@ -669,7 +763,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       accumulate_if([] (char next_ch) {
         return next_ch != '\n';
       });
-      interpreter.basic.lexeme = Lexeme::kComment;
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kComment);
       interpreter.basic.spelling_width =
           static_cast<uint16_t>(impl->data.size());
       ret.opaque_data = interpreter.flat;
@@ -677,17 +771,18 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Unknown, accumulate character up until a stop character.
     default:
-      interpreter.basic.invalid_char = ch;
+      interpreter.error.invalid_char = ch;
+
       if (kStopChars.find(ch) == std::string::npos) {
         accumulate_if([] (char next_ch) {
           return kStopChars.find(next_ch) == std::string::npos;
         });
       }
 
-      interpreter.basic.lexeme = Lexeme::kInvalidUnknown;
-      interpreter.basic.spelling_width =
-          static_cast<uint16_t>(impl->data.size());
-      ret.opaque_data = interpreter.flat;
+      interpreter.error.disp_lines = 0;
+      interpreter.error.error_col = ret.position.Column();
+      interpreter.error.error_offset = 0;
+      interpreter.error.lexeme = static_cast<uint8_t>(Lexeme::kInvalidUnknown);
       return true;
   }
 }

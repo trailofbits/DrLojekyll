@@ -685,6 +685,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 
 class ParsedImport;
 class ParsedInclude;
+class ParsedInline;
 
 // Represents a module parsed from a display.
 class ParsedModule {
@@ -697,6 +698,7 @@ class ParsedModule {
   NodeRange<ParsedQuery> Queries(void) const;
   NodeRange<ParsedImport> Imports(void) const;
   NodeRange<ParsedInclude> Includes(void) const;
+  NodeRange<ParsedInline> Inlines(void) const;
   NodeRange<ParsedLocal> Locals(void) const;
   NodeRange<ParsedExport> Exports(void) const;
   NodeRange<ParsedMessage> Messages(void) const;
@@ -746,7 +748,7 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
   using parse::ParsedNode<ParsedImport>::ParsedNode;
 };
 
-// Represents a parsed include statement, for passing through down to the
+// Represents a parsed `#include` statement, for passing through down to the
 // code generator.
 class ParsedInclude : public parse::ParsedNode<ParsedInclude> {
  public:
@@ -756,6 +758,19 @@ class ParsedInclude : public parse::ParsedNode<ParsedInclude> {
 
  protected:
   using parse::ParsedNode<ParsedInclude>::ParsedNode;
+};
+
+// Represents a parsed `#inline` statement, that lets us write C/C++ code
+// directly inside of a datalog module and have it pasted directly into
+// generated C/C++ code. This can be useful for making sure that certain
+// functors are inlined / inlinable, and thus visible to the compiler.
+class ParsedInline : public parse::ParsedNode<ParsedInline> {
+ public:
+  DisplayRange SpellingRange(void) const noexcept;
+  std::string_view CodeToInline(void) const noexcept;
+
+ protected:
+  using parse::ParsedNode<ParsedInline>::ParsedNode;
 };
 
 }  // namespace hyde

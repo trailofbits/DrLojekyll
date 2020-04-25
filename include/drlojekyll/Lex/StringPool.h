@@ -13,10 +13,16 @@ class StringPool {
   ~StringPool(void);
   StringPool(void);
 
+  // Intern a code block into the pool, returning its ID.
+  unsigned InternCode(std::string_view code) const;
+
+  // Read out some code block given its ID.
+  bool TryReadCode(unsigned id, std::string_view *code_out) const;
+
   // Intern a string into the pool, returning its offset in the pool.
   unsigned InternString(std::string_view data, bool force=false) const;
 
-  // Read out some string.
+  // Read out some string given its index and length.
   bool TryReadString(
       unsigned index, unsigned len, std::string_view *data_out) const;
 

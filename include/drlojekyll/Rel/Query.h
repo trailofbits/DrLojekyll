@@ -454,6 +454,9 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
   QueryColumn InputLHS(void) const;
   QueryColumn InputRHS(void) const;
 
+  unsigned NumCopiedColumns(void) const noexcept;
+  QueryColumn NthCopiedColumn(unsigned n) const noexcept;
+
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
   UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 

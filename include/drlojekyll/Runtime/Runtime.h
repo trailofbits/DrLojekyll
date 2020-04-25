@@ -14,8 +14,9 @@ struct UUID {
   uint64_t high;
 };
 
-struct String {
-  char opaque[64];
+union String {
+  uint64_t opaque_qwords[64 / sizeof(uint64_t)];
+  char opaque_bytes[64];
 };
 
 class ProgramBase {
@@ -55,9 +56,17 @@ class Program : ProgramBase {
   T * const * const __workers;
 };
 
-template <typename KeyType, typename... RemainingKeyTypes>
+// Template for hashing multiple values.
+template <typename... KeyTypes>
 struct Hash {
-
+  inline static uint64_t Update(uint64_t hash, KeyTypes... keys) noexcept {
+    auto apply_each = [&hash] (auto val) {
+      hash = Hash<decltype(val)>::Update(hash, val);
+    };
+    int force[] = {(apply_each(keys), 0)...};
+    (void) force;
+    return hash;
+  }
 };
 
 #define HASH_MIX(a, b) \
@@ -65,28 +74,58 @@ struct Hash {
      (((a) >> 43) * 0xc2b2ae35ull) ^ \
       ((b) * 0xcc9e2d51ull))
 
-#define MAKE_HASH_IMPL(type, utype) \
+#define MAKE_HASH_IMPL(type, utype, cast) \
     template <> \
     struct Hash<type> { \
      public: \
       inline static uint64_t Update(uint64_t hash, type val_) noexcept { \
-        const uint64_t val = static_cast<utype>(val_); \
+        const uint64_t val = cast<utype>(val_); \
         return HASH_MIX(hash, val); \
       } \
     }
 
-MAKE_HASH_IMPL(int8_t, uint8_t);
-MAKE_HASH_IMPL(uint8_t, uint8_t);
-MAKE_HASH_IMPL(int16_t, uint16_t);
-MAKE_HASH_IMPL(uint16_t, uint16_t);
-MAKE_HASH_IMPL(int32_t, uint32_t);
-MAKE_HASH_IMPL(uint32_t, uint32_t);
-MAKE_HASH_IMPL(int64_t, uint64_t);
-MAKE_HASH_IMPL(uint64_t, uint64_t);
+MAKE_HASH_IMPL(int8_t, uint8_t, static_cast);
+MAKE_HASH_IMPL(uint8_t, uint8_t, static_cast);
+MAKE_HASH_IMPL(int16_t, uint16_t, static_cast);
+MAKE_HASH_IMPL(uint16_t, uint16_t, static_cast);
+MAKE_HASH_IMPL(int32_t, uint32_t, static_cast);
+MAKE_HASH_IMPL(uint32_t, uint32_t, static_cast);
+MAKE_HASH_IMPL(int64_t, uint64_t, static_cast);
+MAKE_HASH_IMPL(uint64_t, uint64_t, static_cast);
+MAKE_HASH_IMPL(float, uint32_t &, reinterpret_cast);
+MAKE_HASH_IMPL(double, uint64_t &, reinterpret_cast);
 
 #undef MAKE_HASH_IMPL
 
+template <>
+struct Hash<UUID> {
+ public:
+  inline static uint64_t Update(uint64_t hash, UUID uuid) noexcept {
+    const auto high = HASH_MIX(hash, uuid.high);
+    return HASH_MIX(high, uuid.low);
+  }
+};
 
+template <>
+struct Hash<String> {
+ public:
+  inline static uint64_t Update(uint64_t hash, String str) noexcept {
+    _Pragma("unroll")
+    for (auto qword : str.opaque_qwords) {
+      hash = HASH_MIX(hash, qword);
+    }
+    return hash;
+  }
+};
+
+template <typename T>
+struct Hash<const T &> : public Hash<T> {};
+
+template <typename T>
+struct Hash<T &> : public Hash<T> {};
+
+template <typename T>
+struct Hash<T &&> : public Hash<T> {};
 
 // The `alignas` will force it to have size 64, but be empty. As an empty
 // struct, it will benefit from the empty base class optimization, so additional
@@ -115,7 +154,7 @@ class Aggregate<AggregatorType, NoGroupVars, ConfigVars<ConfigVarTypes...>> {
   }
 };
 
-template <typename AggregatorType, typename...GroupVarTypes>
+template <typename AggregatorType, typename... GroupVarTypes>
 class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, NoConfigVars> {
  public:
   AggregatorType &operator()(
@@ -125,7 +164,7 @@ class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, NoConfigVars> {
   }
 };
 
-template <typename AggregatorType, typename...GroupVarTypes, typename... ConfigVarTypes>
+template <typename AggregatorType, typename... GroupVarTypes, typename... ConfigVarTypes>
 class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, GroupVars<ConfigVarTypes...>> {
  public:
   AggregatorType &operator()(
@@ -134,6 +173,33 @@ class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, GroupVars<ConfigVa
       ConfigVarTypes&&... config_vars) noexcept {
 
   }
+};
+
+template <typename... Keys>
+struct PivotVars {};  // Equi-join.
+
+struct NoPivotVars {};  // Cross-product.
+
+template <typename... Keys>
+struct SourceVars {};
+
+struct NoSourceVars {};
+
+template <typename PivotSetType, unsigned kNumSources, typename... SourceSetTypes>
+class Join;
+
+// Equi-join over one or more keys.
+template <typename... PivotKeyTypes, unsigned kNumSources, typename... SourceSetTypes>
+class Join<PivotVars<PivotKeyTypes...>, kNumSources, SourceSetTypes...> {
+ public:
+  static_assert(kNumSources == sizeof...(SourceSetTypes));
+};
+
+// Cross-product.
+template <unsigned kNumSources, typename... SourceSetTypes>
+class Join<NoPivotVars, kNumSources, SourceSetTypes...> {
+ public:
+  static_assert(kNumSources == sizeof...(SourceSetTypes));
 };
 
 }  // namespace rt

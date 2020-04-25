@@ -64,7 +64,13 @@
 //    Check for mutability of parameters on the query representation, using
 //    tainting, and doing so across INSERTs. The key here is that we should use
 //    mutability as a requirement to decide where tuple DIFFs are even possible.
-
+//
+//    Analyze the how `bound` columns in queries relate to other columns, and
+//    figure out what JOINs need to be eager, and which ones can be demand-based.
+//
+//    Analyze how columns that are outputted from a join are used, and for each
+//    user, possibly create an index that gives them easy query-based access if
+//    we will have the join not push its results forward.
 namespace hyde {
 namespace {
 
@@ -343,6 +349,7 @@ static void CallUsers(const DisplayManager &dm, OutputStream &os,
   }
 }
 
+// Declare the function that will do aggregate some results.
 static void DeclareAggregate(
     OutputStream &os, QueryAggregate agg,
     std::unordered_set<ParsedFunctor> &seen_functors) {
@@ -835,7 +842,6 @@ static void DefineMap(const DisplayManager &dm, OutputStream &os, QueryMap map) 
     }
   }
 
-
   os << "] : " << functor.Name() << '_' << binding_pattern
      << "(__input_added";
 
@@ -878,7 +884,68 @@ static void DeclareConstraint(OutputStream &os, QueryConstraint filter) {
   for (auto col : filter.InputCopiedColumns()) {
     os << ", " << TypeName(col) << CommentOnCol(os, col);
   }
+
   os << ") noexcept;\n";
+}
+
+static void DefineConstraint(const DisplayManager &dm, OutputStream &os,
+                             QueryConstraint filter) {
+  const auto lhs = filter.LHS();
+  const auto rhs = filter.RHS();
+
+  std::vector<QueryColumn> cols;
+  cols.push_back(lhs);
+  cols.push_back(rhs);
+  FillContainerFromRange(cols, filter.InputCopiedColumns());
+
+  os << "void V" << filter.UniqueId() << "(\n    unsigned __added";
+
+  auto [col_to_id, id_to_col] = ArgumentList(os, cols);
+
+  os << ") noexcept {\n";
+
+  for (auto [col, id] : col_to_id) {
+    os << "  const auto C" << col.UniqueId() << " = I" << id << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+
+  if (filter.NumCopiedColumns()) {
+    os << "\n  // Copied columns.\n";
+    auto i = 0u;
+    for (auto col : filter.InputCopiedColumns()) {
+      auto out_col = filter.NthCopiedColumn(i++);
+      os << "  const auto C" << out_col.UniqueId() << " = C"
+         << col.UniqueId() << ";"
+         << CommentOnCol(os, out_col) << '\n';
+    }
+  }
+
+  os << "  if (C" << lhs.UniqueId();
+  switch (filter.Operator()) {
+    case ComparisonOperator::kEqual:
+      os << " == ";
+      break;
+    case ComparisonOperator::kNotEqual:
+      os << " != ";
+      break;
+    case ComparisonOperator::kLessThan:
+      os << " < ";
+      break;
+    case ComparisonOperator::kGreaterThan:
+      os << " > ";
+      break;
+  }
+
+  os << "C" << rhs.UniqueId() << ")) {\n";
+
+  CallUsers(dm, os, QueryView::From(filter), "    ");
+
+  os << "  }\n}\n\n";
+}
+
+static void DeclareJoin(OutputStream &os, QueryJoin join) {
+  (void) os;
+  (void) join;
 }
 
 }  // namespace
@@ -912,6 +979,10 @@ void GenerateCode(
     DeclareAggregate(os, view, seen_functors);
   }
 
+  for (auto view : query.Joins()) {
+    DeclareJoin(os, view);
+  }
+
   os << '\n';
 
   for (auto include : module.Includes()) {
@@ -926,6 +997,10 @@ void GenerateCode(
     }
   }
 
+  for (auto code : module.Inlines()) {
+    os << code.CodeToInline() << '\n';
+  }
+
   os << '\n';
 
   for (auto view : query.Tuples()) {
@@ -938,6 +1013,10 @@ void GenerateCode(
 
   for (auto view : query.Maps()) {
     DefineMap(dm, os, view);
+  }
+
+  for (auto view : query.Constraints()) {
+    DefineConstraint(dm, os, view);
   }
 
   for (auto view : query.Aggregates()) {

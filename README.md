@@ -35,24 +35,31 @@ arity. Clauses cannot be defined for functors, which are implemented by native
 code extension modules.
 
 ```
-module: import_list decl_list clause_list
+module: import_list include_list decl_list clause_list
 
 import_list: import import_list
 import_list:
 
 include_list: include include_list
-include_list: include_list
+include_list: inline_code include_list
+include_list:
 
 decl_list: decl decl_list
+decl_list: inline_code decl_list
 decl_list:
 
 clause_list: clause clause_list
+clause_list: inline_code clause_list
 clause_list
 
 import: "#import" <double quoted string literal>
 
 include: "#include" <double quoted string literal>
 include: "#include" "<" <tokens...> ">"
+
+// Single and multi-line inline statements.
+inline_code: "#inline" "!<" <anything...> "!>"
+inline_code: "#inline" <double quoted string literal>
 
 // Decls generally must fit inside a single line. They are allowed
 // to span multiple lines, but only if the new line characters exist

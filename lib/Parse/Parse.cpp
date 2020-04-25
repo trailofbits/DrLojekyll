@@ -1122,6 +1122,14 @@ NodeRange<ParsedInclude> ParsedModule::Includes(void) const {
   }
 }
 
+NodeRange<ParsedInline> ParsedModule::Inlines(void) const {
+  if (impl->inlines.empty()) {
+    return NodeRange<ParsedInline>();
+  } else {
+    return NodeRange<ParsedInline>(impl->inlines.front().get());
+  }
+}
+
 NodeRange<ParsedLocal> ParsedModule::Locals(void) const {
   if (impl->locals.empty()) {
     return NodeRange<ParsedLocal>();
@@ -1181,7 +1189,6 @@ ParsedModule ParsedImport::ImportedModule(void) const noexcept {
   return ParsedModule(impl->imported_module->shared_from_this());
 }
 
-
 DisplayRange ParsedInclude::SpellingRange(void) const noexcept {
   return impl->range;
 }
@@ -1192,6 +1199,14 @@ std::string_view ParsedInclude::IncludedFilePath(void) const noexcept {
 
 bool ParsedInclude::IsSystemInclude(void) const noexcept {
   return impl->is_angled;
+}
+
+DisplayRange ParsedInline::SpellingRange(void) const noexcept {
+  return impl->range;
+}
+
+std::string_view ParsedInline::CodeToInline(void) const noexcept {
+  return impl->code;
 }
 
 }  // namespace hyde

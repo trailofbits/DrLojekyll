@@ -432,6 +432,19 @@ class Node<ParsedInclude> {
   const bool is_angled;
 };
 
+template <>
+class Node<ParsedInline> {
+ public:
+  inline Node(DisplayRange range_, std::string_view code_)
+      : range(range_),
+        code(code_) {}
+
+  // Next inline in this module.
+  Node<ParsedInline> *next{nullptr};
+
+  const DisplayRange range;
+  const std::string code;
+};
 
 template <>
  class Node<ParsedModule>
@@ -456,6 +469,7 @@ template <>
 
   std::vector<std::unique_ptr<Node<ParsedImport>>> imports;
   std::vector<std::unique_ptr<Node<ParsedInclude>>> includes;
+  std::vector<std::unique_ptr<Node<ParsedInline>>> inlines;
   std::vector<std::unique_ptr<Node<ParsedExport>>> exports;
   std::vector<std::unique_ptr<Node<ParsedLocal>>> locals;
   std::vector<std::unique_ptr<Node<ParsedQuery>>> queries;
