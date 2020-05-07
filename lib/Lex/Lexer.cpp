@@ -397,12 +397,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 2:
           if (impl->data == "i8") {
             interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
-            interpreter.type.spelling_width = 4;
+            interpreter.type.spelling_width = 2;
             interpreter.type.type_width = 8;
 
           } else if (impl->data == "u8") {
             interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
-            interpreter.type.spelling_width = 4;
+            interpreter.type.spelling_width = 2;
             interpreter.type.type_width = 8;
           }
           break;
@@ -411,50 +411,46 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           if ('f' == impl->data[0]) {
             if (impl->data == "f32") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeFn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 32;
 
             } else if (impl->data == "f64") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeFn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 64;
             }
           } else if ('i' == impl->data[0]) {
             if (impl->data == "i16") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 16;
 
             } else if (impl->data == "i32") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 32;
 
             } else if (impl->data == "i64") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeIn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 64;
             }
           } else if ('u' == impl->data[0]) {
             if (impl->data == "u16") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 16;
 
             } else if (impl->data == "u32") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 32;
 
             } else if (impl->data == "u64") {
               interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUn);
-              interpreter.type.spelling_width = 4;
+              interpreter.type.spelling_width = 3;
               interpreter.type.type_width = 64;
             }
-          } else if (impl->data == "str") {
-            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeString);
-            interpreter.type.spelling_width = 4;
-            interpreter.type.type_width = 64;  // Size of the ID of the string.
           }
           break;
         case 4:
@@ -466,24 +462,45 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
           } else if (impl->data == "uuid") {
             interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUUID);
-            interpreter.type.spelling_width = 5;
+            interpreter.type.spelling_width = 4;
+            interpreter.type.type_width = 128;
+
+          } else if (impl->data == "utf8") {
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUTF8);
+            interpreter.type.spelling_width = 4;
             interpreter.type.type_width = 128;
           }
           break;
         case 5:
           if (impl->data == "bound") {
+            interpreter.basic.spelling_width = 5;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordBound);
+
+          } else if (impl->data == "ascii") {
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeASCII);
+            interpreter.type.spelling_width = 5;
+            interpreter.type.type_width = 128;
+
+          } else if (impl->data == "bytes") {
+            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeASCII);
+            interpreter.type.spelling_width = 5;
+            interpreter.type.type_width = 128;
           }
           break;
         case 6:
           if (impl->data == "#query") {
+            interpreter.basic.spelling_width = 6;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kHashQueryDecl);
+
           } else if (impl->data == "#local") {
+            interpreter.basic.spelling_width = 6;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kHashLocalDecl);
+
           } else if (impl->data == "inline") {
+            interpreter.basic.spelling_width = 6;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordInline);
           }
@@ -491,19 +508,27 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 7:
           if (impl->data[0] == '#') {
             if (impl->data == "#export") {
+              interpreter.basic.spelling_width = 7;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashExportDecl);
+
             } else if (impl->data == "#import") {
+              interpreter.basic.spelling_width = 7;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashImportModuleStmt);
+
             } else if (impl->data == "#inline") {
+              interpreter.basic.spelling_width = 7;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashInlineStmt);
             }
           } else if (impl->data == "summary") {
+            interpreter.basic.spelling_width = 7;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordSummary);
+
           } else if (impl->data == "mutable") {
+            interpreter.basic.spelling_width = 7;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordMutable);
           }
@@ -512,12 +537,17 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 8:
           if (impl->data[0] == '#') {
             if (impl->data == "#message") {
+              interpreter.basic.spelling_width = 8;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashMessageDecl);
+
             } else if (impl->data == "#functor") {
+              interpreter.basic.spelling_width = 8;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashFunctorDecl);
+
             } else if (impl->data == "#include") {
+              interpreter.basic.spelling_width = 8;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashIncludeStmt);
             }
@@ -526,9 +556,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
         case 9:
           if (impl->data == "aggregate") {
+            interpreter.basic.spelling_width = 9;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordAggregate);
+
           } else if (impl->data == "unordered") {
+            interpreter.basic.spelling_width = 9;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordUnordered);
           }

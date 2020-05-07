@@ -121,8 +121,12 @@ static const char *TypeName(TypeLoc loc) {
       return "float";
     case TypeKind::kDouble:
       return "double";
-    case TypeKind::kString:
-      return "::hyde::rt::String";
+    case TypeKind::kBytes:
+      return "::hyde::rt::Bytes";
+    case TypeKind::kASCII:
+      return "::hyde::rt::ASCII";
+    case TypeKind::kUTF8:
+      return "::hyde::rt::UTF8";
     case TypeKind::kUUID:
       return "::hyde::rt::UUID";
     default:

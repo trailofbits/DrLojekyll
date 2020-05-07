@@ -45,10 +45,6 @@ std::string Node<QueryView>::DebugString(void) const noexcept {
   std::stringstream ss;
 
   if (!group_ids.empty()) {
-    if (check_group_ids) {
-      ss << "!";
-    }
-
     auto sep = "group-ids(";
     for (auto group_id : group_ids) {
       ss << sep << group_id;
@@ -153,6 +149,23 @@ unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
   return depth;
 }
 
+// Return the number of uses of this view.
+unsigned Node<QueryView>::NumUses(void) const noexcept {
+  std::vector<VIEW *> users;
+  users.reserve(columns.Size() * 2);
+
+  for (auto col : columns) {
+    col->ForEachUser([&users] (VIEW *user) {
+      users.push_back(user);
+    });
+  }
+
+  std::sort(users.begin(), users.end());
+  auto it = std::unique(users.begin(), users.end());
+  users.erase(it, users.end());
+  return static_cast<unsigned>(users.size());
+}
+
 // Returns `true` if we had to "guard" this view with a tuple so that we
 // can put it into canonical form.
 //
@@ -165,10 +178,6 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
   }
 
   const auto tuple = query->tuples.Create();
-  if (check_group_ids) {
-    tuple->check_group_ids = true;
-    check_group_ids = false;
-  }
 
   // Make any merges use the tuple.
   ReplaceAllUsesWith(tuple);
@@ -242,13 +251,13 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
 bool Node<QueryView>::InsertSetsOverlap(
     Node<QueryView> *a, Node<QueryView> *b) {
 
-  if (a->check_group_ids != b->check_group_ids) {
-    return true;
-  }
-
-  if (!a->check_group_ids) {
-    return false;
-  }
+//  if (a->check_group_ids != b->check_group_ids) {
+//    return true;
+//  }
+//
+//  if (!a->check_group_ids) {
+//    return false;
+//  }
 
   for (auto i = 0u, j = 0u;
        i < a->group_ids.size() && j < b->group_ids.size(); ) {

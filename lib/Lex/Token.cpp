@@ -125,7 +125,9 @@ unsigned Token::SpellingWidth(void) const {
 // Returns `true` if this token's lexeme corresponds with a type.
 bool Token::IsType(void) const {
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kTypeString:
+    case ::hyde::Lexeme::kTypeASCII:
+    case ::hyde::Lexeme::kTypeUTF8:
+    case ::hyde::Lexeme::kTypeBytes:
     case ::hyde::Lexeme::kTypeUUID:
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:

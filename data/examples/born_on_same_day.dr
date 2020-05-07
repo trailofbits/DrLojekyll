@@ -1,6 +1,6 @@
-#message add_person(str Name, i16 BirthYear, i8 BirthMonth, i8 BirthDay)
-#local person(str Name, i16 BirthYear, i8 BirthMonth, i8 BirthDay)
-#query born_on_same_day(bound i16 BirthYear, bound i8 BirthMonth, bound i8 BirthDay, free str Name1, free str Name2)
+#message add_person(utf8 Name, i16 BirthYear, i8 BirthMonth, i8 BirthDay)
+#local person(utf8 Name, i16 BirthYear, i8 BirthMonth, i8 BirthDay)
+#query born_on_same_day(bound i16 BirthYear, bound i8 BirthMonth, bound i8 BirthDay, free utf8 Name1, free utf8 Name2)
 person(Name, BirthYear, BirthMonth, BirthDay)
     : add_person(Name, BirthYear, BirthMonth, BirthDay).
 born_on_same_day(BirthYear, BirthMonth, BirthDay, Name1, Name2)

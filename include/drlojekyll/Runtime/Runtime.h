@@ -14,7 +14,17 @@ struct UUID {
   uint64_t high;
 };
 
-union String {
+union ASCII {
+  uint64_t opaque_qwords[64 / sizeof(uint64_t)];
+  char opaque_bytes[64];
+};
+
+union UTF8 {
+  uint64_t opaque_qwords[64 / sizeof(uint64_t)];
+  char opaque_bytes[64];
+};
+
+union Bytes {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
   char opaque_bytes[64];
 };
@@ -107,9 +117,33 @@ struct Hash<UUID> {
 };
 
 template <>
-struct Hash<String> {
+struct Hash<ASCII> {
  public:
-  inline static uint64_t Update(uint64_t hash, String str) noexcept {
+  inline static uint64_t Update(uint64_t hash, ASCII str) noexcept {
+    _Pragma("unroll")
+    for (auto qword : str.opaque_qwords) {
+      hash = HASH_MIX(hash, qword);
+    }
+    return hash;
+  }
+};
+
+template <>
+struct Hash<UTF8> {
+ public:
+  inline static uint64_t Update(uint64_t hash, UTF8 str) noexcept {
+    _Pragma("unroll")
+    for (auto qword : str.opaque_qwords) {
+      hash = HASH_MIX(hash, qword);
+    }
+    return hash;
+  }
+};
+
+template <>
+struct Hash<Bytes> {
+ public:
+  inline static uint64_t Update(uint64_t hash, Bytes str) noexcept {
     _Pragma("unroll")
     for (auto qword : str.opaque_qwords) {
       hash = HASH_MIX(hash, qword);

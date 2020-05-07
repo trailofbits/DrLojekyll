@@ -133,6 +133,9 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // Returns `true` if this column is being used.
   bool IsUsed(void) const noexcept;
 
+  template <typename T>
+  void ForEachUser(T user_cb) const;
+
   // Basic form of `IsUsed`.
   inline bool IsUsedIgnoreMerges(void) const noexcept {
     return this->Def<Node<QueryColumn>>::IsUsed();
@@ -307,6 +310,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   //            equivalence, just to keep things sane.
   virtual bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept = 0;
 
+  // Return the number of uses of this view.
+  unsigned NumUses(void) const noexcept;
+
   // The selected columns.
   DefList<COL> columns;
 
@@ -368,9 +374,8 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // INSERTs and mark the old old one as dead.
   bool is_used{false};
 
-  // Should `group_ids` be used to constrain merging? This applies to SELECTs
-  // as well as TUPLEs which have been used to replace SELECTs.
-  bool check_group_ids{false};
+  // Is this node dead?
+  bool is_dead{false};
 
  protected:
   // Utility for depth calculation.
@@ -398,15 +403,13 @@ class Node<QuerySelect> final : public Node<QueryView> {
  public:
   inline Node(Node<QueryRelation> *relation_, DisplayRange range)
       : position(range.From()),
-        relation(relation_->CreateUse(this)) {
-    check_group_ids = true;
-  }
+        relation(relation_->CreateUse(this)),
+        inserts(this) {}
 
   inline Node(Node<QueryStream> *stream_, DisplayRange range)
       : position(range.From()),
-        stream(stream_->CreateUse(this)) {
-    check_group_ids = true;
-  }
+        stream(stream_->CreateUse(this)),
+        inserts(this) {}
 
   virtual ~Node(void);
 
@@ -423,6 +426,9 @@ class Node<QuerySelect> final : public Node<QueryView> {
   // The table from which this select takes its columns.
   UseRef<REL> relation;
   UseRef<STREAM> stream;
+
+  // Inserts that might feed this SELECT.
+  UseList<Node<QueryView>> inserts;
 };
 
 using SELECT = Node<QuerySelect>;
@@ -632,6 +638,19 @@ class Node<QueryInsert> : public Node<QueryView> {
 };
 
 using INSERT = Node<QueryInsert>;
+
+template <typename T>
+void Node<QueryColumn>::ForEachUser(T user_cb) const {
+  view->ForEachUse([&user_cb] (User *user, Node<QueryView> *) {
+    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
+    user_cb(user_view);
+  });
+
+  ForEachUse([&user_cb] (User *user, Node<QueryColumn> *) {
+    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
+    user_cb(user_view);
+  });
+}
 
 class QueryImpl {
  public:

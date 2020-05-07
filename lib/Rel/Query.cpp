@@ -168,15 +168,11 @@ bool QueryView::ReplaceAllUsesWith(
   assert(num_cols == that.impl->columns.Size());
 
   // Maintain the set of group IDs, to prevent over-merging.
-  if (impl->check_group_ids || that.impl->check_group_ids) {
-    that.impl->group_ids.insert(
-        that.impl->group_ids.end(),
-        impl->group_ids.begin(),
-        impl->group_ids.end());
-    std::sort(that.impl->group_ids.begin(), that.impl->group_ids.end());
-
-    that.impl->check_group_ids = true;
-  }
+  that.impl->group_ids.insert(
+      that.impl->group_ids.end(),
+      impl->group_ids.begin(),
+      impl->group_ids.end());
+  std::sort(that.impl->group_ids.begin(), that.impl->group_ids.end());
 
   if (const auto this_join = impl->AsJoin()) {
     (void) this_join;

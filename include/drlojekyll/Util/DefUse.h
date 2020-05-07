@@ -309,7 +309,7 @@ class Def {
   }
 
   template <typename CB>
-  inline void ForEachUse(CB cb) {
+  inline void ForEachUse(CB cb) const {
     for (const auto &use : uses) {
       if (use) {
         cb(use->user, use->def_being_used);

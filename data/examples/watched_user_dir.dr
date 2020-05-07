@@ -1,18 +1,18 @@
 
-#local watched_dir(str Path, str WatchedDir)
-#message add_watched_dir(str DirName)
+#local watched_dir(utf8 Path, utf8 WatchedDir)
+#message add_watched_dir(utf8 DirName)
 
-#message sys_open(str UserName, str FullPath)
+#message sys_open(utf8 UserName, utf8 FullPath)
 
-#functor is_dir(bound str Path)
-#functor dir_entry(bound str Path, free str Entry)
-#functor join_path(bound str DirName, bound str FileName, free str JoinedPath)
-#functor parent_dir(bound str Path, free str DirPath)
+#functor is_dir(bound utf8 Path)
+#functor dir_entry(bound utf8 Path, free utf8 Entry)
+#functor join_path(bound utf8 DirName, bound utf8 FileName, free utf8 JoinedPath)
+#functor parent_dir(bound utf8 Path, free utf8 DirPath)
 
-#message invalid_open(str UserName, str AccessedPath, str WatchedDir)
+#message invalid_open(utf8 UserName, utf8 AccessedPath, utf8 WatchedDir)
 
-#local evil_user(str UserName)
-#message add_evil_user(str UserName)
+#local evil_user(utf8 UserName)
+#message add_evil_user(utf8 UserName)
 
 watched_dir(Dir, Dir)
   : add_watched_dir(Dir)

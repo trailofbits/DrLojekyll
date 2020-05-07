@@ -207,6 +207,7 @@ class QueryInput : public query::QueryNode<QueryInput> {
 class QueryAggregate;
 class QueryMap;
 class QueryTuple;
+class QueryKVIndex;
 
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
@@ -506,6 +507,32 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
 
  private:
   using query::QueryNode<QueryTuple>::QueryNode;
+};
+
+// A key-value index is similar to a tuple, except that some of the columns
+// are mutable.
+class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
+ public:
+  static QueryKVIndex &From(QueryView &view);
+
+  // The resulting mapped columns.
+  DefinedNodeRange<QueryColumn> Columns(void) const;
+
+  unsigned Arity(void) const noexcept;
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+
+  unsigned NumMutableColumns(void) const noexcept;
+  QueryColumn NthMultableColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> MutableColumns(void) const noexcept;
+
+  std::string DebugString(void) const noexcept;
+
+ private:
+  using query::QueryNode<QueryKVIndex>::QueryNode;
 };
 
 // A query.

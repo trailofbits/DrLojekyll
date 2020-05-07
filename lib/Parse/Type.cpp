@@ -9,7 +9,9 @@ namespace {
 
 static TypeKind TokToTypeKind(Token tok) noexcept {
   switch (tok.Lexeme()) {
-    case Lexeme::kTypeString: return TypeKind::kString;
+    case Lexeme::kTypeBytes: return TypeKind::kBytes;
+    case Lexeme::kTypeASCII: return TypeKind::kASCII;
+    case Lexeme::kTypeUTF8: return TypeKind::kUTF8;
     case Lexeme::kTypeUUID: return TypeKind::kUUID;
     case Lexeme::kTypeIn:
       switch (tok.TypeSizeInBytes()) {
@@ -56,8 +58,11 @@ unsigned SizeInBytes(TypeKind kind) noexcept {
     case TypeKind::kUnsigned64: return 8;
     case TypeKind::kFloat: return 4;
     case TypeKind::kDouble: return 8;
-    case TypeKind::kString: return 0;
-    case TypeKind::kUUID: return 16;
+    case TypeKind::kBytes:
+    case TypeKind::kASCII:
+    case TypeKind::kUTF8:
+    case TypeKind::kUUID:
+      return 16;
   }
 }
 
@@ -71,21 +76,23 @@ TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
   return *this;
 }
 
-const char *TypeLoc::Spelling(void) const noexcept {
+const char *Spelling(TypeKind kind) noexcept {
   switch (kind) {
     case TypeKind::kInvalid: return "";
-    case TypeKind::kSigned8: return "@i8";
-    case TypeKind::kSigned16: return "@i16";
-    case TypeKind::kSigned32: return "@i32";
-    case TypeKind::kSigned64: return "@i64";
-    case TypeKind::kUnsigned8: return "@u8";
-    case TypeKind::kUnsigned16: return "@u16";
-    case TypeKind::kUnsigned32: return "@u32";
-    case TypeKind::kUnsigned64: return "@u64";
-    case TypeKind::kFloat: return "@f32";
-    case TypeKind::kDouble: return "@f64";
-    case TypeKind::kString: return "@str";
-    case TypeKind::kUUID: return "@uuid";
+    case TypeKind::kSigned8: return "i8";
+    case TypeKind::kSigned16: return "i16";
+    case TypeKind::kSigned32: return "i32";
+    case TypeKind::kSigned64: return "i64";
+    case TypeKind::kUnsigned8: return "u8";
+    case TypeKind::kUnsigned16: return "u16";
+    case TypeKind::kUnsigned32: return "u32";
+    case TypeKind::kUnsigned64: return "u64";
+    case TypeKind::kFloat: return "f32";
+    case TypeKind::kDouble: return "f64";
+    case TypeKind::kBytes: return "bytes";
+    case TypeKind::kASCII: return "ascii";
+    case TypeKind::kUTF8: return "utf8";
+    case TypeKind::kUUID: return "uuid";
   }
 }
 

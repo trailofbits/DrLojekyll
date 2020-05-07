@@ -18,47 +18,7 @@ OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
 }
 
 OutputStream &operator<<(OutputStream &os, TypeKind type) {
-  const char *repr = "";
-  switch (type) {
-    case TypeKind::kInvalid: break;
-    case TypeKind::kSigned8:
-      repr = "i8";
-      break;
-    case TypeKind::kSigned16:
-      repr = "i16";
-      break;
-    case TypeKind::kSigned32:
-      repr = "i32";
-      break;
-    case TypeKind::kSigned64:
-      repr = "i64";
-      break;
-    case TypeKind::kUnsigned8:
-      repr = "u8";
-      break;
-    case TypeKind::kUnsigned16:
-      repr = "u16";
-      break;
-    case TypeKind::kUnsigned32:
-      repr = "u32";
-      break;
-    case TypeKind::kUnsigned64:
-      repr = "u64";
-      break;
-    case TypeKind::kFloat:
-      repr = "f32";
-      break;
-    case TypeKind::kDouble:
-      repr = "f64";
-      break;
-    case TypeKind::kString:
-      repr = "str";
-      break;
-    case TypeKind::kUUID:
-      repr = "uuid";
-      break;
-  }
-  os << repr;
+  os << Spelling(type);
   return os;
 }
 

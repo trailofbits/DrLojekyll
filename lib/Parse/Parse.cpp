@@ -576,7 +576,10 @@ bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
   return false;
 }
 
-// Does this declaration have a clause that directly depends on a `#message`?
+// Does this declaration have a clause that directly depends on a `#functor`
+// that only have `free`-attributed parameters? These are basically
+// "generators" (they can be used to make unique IDs, random numbers,
+// etc.) and so those values need to get saved.
 bool ParsedDeclaration::HasDirectGeneratorDependency(void) const noexcept {
   auto context = impl->context.get();
   if (context->checked_generates_value) {

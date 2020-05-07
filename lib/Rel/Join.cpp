@@ -228,6 +228,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
   //            `goto skip_remove;` should be sufficient to prevent anything
   //            unsafe.
   if (!joins_at_least_two_views) {
+
     for (auto &[out_col, input_cols] : out_to_in) {
       const auto num_input_cols = input_cols.Size();
       if (1 == num_input_cols) {
@@ -278,6 +279,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
     ReplaceAllUsesWith(tuple);
     out_to_in.clear();
+    num_pivots = 0;
     is_used = false;
     return true;
   }

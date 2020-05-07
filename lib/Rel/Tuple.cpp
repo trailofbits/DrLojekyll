@@ -87,22 +87,19 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     }
   }
 
-  // If we have `check_group_ids`, then this TUPLE might be taking the place
-  // of a SELECT, so it needs to be preserved. However, if the incoming view
-  // is also a TUPLE that also has `check_group_ids`, then we can safely merge
-  // the two.
-  if (all_from_same_view && check_group_ids) {
-    if (auto from_tuple = last_view->AsTuple();
-        from_tuple && from_tuple->check_group_ids) {
-      all_from_same_view = true;
+  // If this tuple is forwarding the values of something else along, and if it
+  // is the only user of that other hting, then forward those values along,
+  // otherwise we'll depend on CSE to try to merge this tuple with any other
+  // equivalent tuples.
+  if (all_from_same_view && last_view) {
+    all_from_same_view = 1 == last_view->NumUses();
+  }
 
-    } else if (auto from_sel = last_view->AsSelect();
-               from_sel && from_sel->check_group_ids) {
-      all_from_same_view = true;
-
-    } else {
-      all_from_same_view = false;
-    }
+  // All inputs are constants, or their corresponding outputs are not used,
+  // or both.s
+  if (!last_view) {
+    is_used = this->Def<Node<QueryView>>::IsUsed();
+    all_from_same_view = false;
   }
 
   if (all_from_same_view) {

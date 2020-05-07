@@ -37,9 +37,14 @@ void QueryImpl::ConnectInsertsToSelects(void) {
   }
 
   for (auto select : selects) {
-    if (auto rel = select->relation.get()) {
+    if (auto rel = select->relation.get(); rel) {
       if (can_connect(rel->decl)) {
         decl_to_selects[rel->decl].push_back(select);
+
+      } else if (decl_to_inserts.count(rel->decl)) {
+        for (auto insert : decl_to_inserts[rel->decl]) {
+          select->inserts.AddUse(insert);
+        }
       }
     }
   }
@@ -50,7 +55,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     const auto merge = merges.Create();
     for (auto insert : insert_views) {
       const auto ins_tuple = tuples.Create();
-      ins_tuple->check_group_ids = true;
 
       bool is_first_merge = merge->merged_views.Empty();
       for (auto in_col : insert->input_columns) {
@@ -67,7 +71,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     }
 
     for (auto select : decl_to_selects[decl]) {
-      assert(select->check_group_ids);
 
       // Create a TUPLE and MERGE that will read in a tuple of all incoming
       // data to the INSERTs, thus letting us remove the INSERTs.
@@ -76,7 +79,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       // This TUPLE takes the place of a SELECT, so it should behave the same
       // with respect to preserving the fact that there sometimes need to be
       // distinct flows (e.g. for cross-products, other joins).
-      sel_tuple->check_group_ids = true;
       sel_tuple->group_ids = select->group_ids;
 
       // Connect the MERGE to the TUPLE.

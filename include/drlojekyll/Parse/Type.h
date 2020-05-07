@@ -23,12 +23,15 @@ enum class TypeKind {
   kUnsigned64,
   kFloat,
   kDouble,
-  kString,
+  kBytes,
+  kASCII,
+  kUTF8,
   kUUID
 };
 
 unsigned SizeInBits(TypeKind kind) noexcept;
 unsigned SizeInBytes(TypeKind kind) noexcept;
+const char *Spelling(TypeKind kind) noexcept;
 
 // Type and location of that type.
 class TypeLoc {
@@ -64,7 +67,9 @@ class TypeLoc {
     return kind != that.kind;
   }
 
-  const char *Spelling(void) const noexcept;
+  inline const char *Spelling(void) const noexcept {
+    return ::hyde::Spelling(kind);
+  }
 
  private:
   template <typename>

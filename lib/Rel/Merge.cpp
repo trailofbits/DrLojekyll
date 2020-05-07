@@ -121,31 +121,32 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
     const auto num_cols = columns.Size();
     assert(merged_view->columns.Size() == num_cols);
 
-    // This merge view requires certain uniqueness properties, so we need
-    // to go and maintain those, but the incoming view does not respect those
-    // properties, so go and introduce them.
-    if (check_group_ids && !merged_view->check_group_ids) {
-      auto tuple = query->tuples.Create();
-      tuple->check_group_ids = true;
-      auto i = 0u;
-      for (auto input_col : merged_view->columns) {
-        tuple->input_columns.AddUse(input_col);
-        const auto output_col = tuple->columns.Create(
-            input_col->var, tuple, input_col->id);
-        columns[i++]->ReplaceAllUsesWith(output_col);
-      }
-
-    // Forward the columns directly along.
-    } else {
+//    // This merge view requires certain uniqueness properties, so we need
+//    // to go and maintain those, but the incoming view does not respect those
+//    // properties, so go and introduce them.
+//    if (check_group_ids && !merged_view->check_group_ids) {
+//      auto tuple = query->tuples.Create();
+//      tuple->check_group_ids = true;
+//      auto i = 0u;
+//      for (auto input_col : merged_view->columns) {
+//        tuple->input_columns.AddUse(input_col);
+//        const auto output_col = tuple->columns.Create(
+//            input_col->var, tuple, input_col->id);
+//        columns[i++]->ReplaceAllUsesWith(output_col);
+//      }
+//
+//    // Forward the columns directly along.
+//    } else {
       auto i = 0u;
       for (auto input_col : merged_view->columns) {
         columns[i++]->ReplaceAllUsesWith(input_col);
       }
-    }
+//    }
 
     merged_views.Clear();  // Clear it out.
     hash = 0;
     is_canonical = true;
+    is_dead = true;
     return true;
   }
 

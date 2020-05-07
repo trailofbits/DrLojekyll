@@ -36,6 +36,11 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
 bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
+  if (is_dead) {
+    is_canonical = true;
+    return false;
+  }
+
   is_canonical = AttachedColumnsAreCanonical();
 
   // Check to see if the input columns are ordered correctly. We can reorder
@@ -108,16 +113,24 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
       }
     }
 
-    // For inequality, we can re-order the inputs, but must also re-order the
-    // outputs.
+  // For inequality, we can re-order the inputs, but must also re-order the
+  // outputs.
   } else if (ComparisonOperator::kNotEqual == op &&
-      input_columns[0] > input_columns[1]) {
+             input_columns[0] > input_columns[1]) {
 
     input_columns.Sort();
 
     const auto lhs_col = input_columns[0];
     const auto rhs_col = input_columns[1];
-    assert(lhs_col != rhs_col);
+
+    // This is kind of bad but totally possible. We've proven that we can't
+    // satisfy this particular constraint.
+    if (lhs_col == rhs_col) {
+      hash = 0;
+      is_canonical = true;
+      is_dead = true;
+      return non_local_changes;
+    }
 
     auto new_lhs_out = new_output_cols.Create(
         columns[1]->var, this, columns[1]->id);
@@ -141,12 +154,20 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
       non_local_changes = true;
     }
 
-    // Preserve the column ordering for the output columns of other
-    // comparisons.
+  // Preserve the column ordering for the output columns of other
+  // comparisons.
   } else {
     const auto lhs_col = input_columns[0];
     const auto rhs_col = input_columns[1];
-    assert(lhs_col != rhs_col);
+
+    // This is kind of bad but totally possible. We've proven that we can't
+    // satisfy this particular constraint.
+    if (lhs_col == rhs_col) {
+      hash = 0;
+      is_canonical = true;
+      is_dead = true;
+      return non_local_changes;
+    }
 
     const auto new_lhs_out = new_output_cols.Create(
         columns[0]->var, this, columns[0]->id);
