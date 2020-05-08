@@ -219,6 +219,7 @@ class QueryView : public query::QueryNode<QueryView> {
 
   static QueryView &From(QuerySelect &view) noexcept;
   static QueryView &From(QueryTuple &view) noexcept;
+  static QueryView &From(QueryKVIndex &view) noexcept;
   static QueryView &From(QueryJoin &view) noexcept;
   static QueryView &From(QueryMap &view) noexcept;
   static QueryView &From(QueryAggregate &view) noexcept;
@@ -227,6 +228,7 @@ class QueryView : public query::QueryNode<QueryView> {
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
+  bool IsKVIndex(void) const noexcept;
   bool IsJoin(void) const noexcept;
   bool IsMap(void) const noexcept;
   bool IsAggregate(void) const noexcept;
@@ -518,16 +520,24 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
   // The resulting mapped columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
+  QueryColumn NthKeyColumn(unsigned n) const noexcept;
+  DefinedNodeRange<QueryColumn> KeyColumns(void) const;
+
+  QueryColumn NthValueColumn(unsigned n) const noexcept;
+  DefinedNodeRange<QueryColumn> ValueColumns(void) const;
+
   unsigned Arity(void) const noexcept;
   QueryColumn NthColumn(unsigned n) const noexcept;
 
-  unsigned NumInputColumns(void) const noexcept;
-  QueryColumn NthInputColumn(unsigned n) const noexcept;
-  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+  unsigned NumKeyColumns(void) const noexcept;
+  QueryColumn NthInputKeyColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputKeyColumns(void) const noexcept;
 
-  unsigned NumMutableColumns(void) const noexcept;
-  QueryColumn NthMultableColumn(unsigned n) const noexcept;
-  UsedNodeRange<QueryColumn> MutableColumns(void) const noexcept;
+  unsigned NumValueColumns(void) const noexcept;
+  QueryColumn NthInputValueColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputValueColumns(void) const noexcept;
+
+  const ParsedFunctor &NthValueMergeFunctor(unsigned n) const noexcept;
 
   std::string DebugString(void) const noexcept;
 
@@ -543,6 +553,7 @@ class Query {
   DefinedNodeRange<QueryJoin> Joins(void) const;
   DefinedNodeRange<QuerySelect> Selects(void) const;
   DefinedNodeRange<QueryTuple> Tuples(void) const;
+  DefinedNodeRange<QueryKVIndex> KVIndices(void) const;
   DefinedNodeRange<QueryRelation> Relations(void) const;
   DefinedNodeRange<QueryInsert> Inserts(void) const;
   DefinedNodeRange<QueryMap> Maps(void) const;

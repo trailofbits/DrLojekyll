@@ -37,7 +37,7 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
   }
 
   hash <<= 4;
-  hash |= 1;
+  hash |= query::kSelectId;
   return hash;
 }
 

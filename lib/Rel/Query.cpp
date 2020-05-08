@@ -80,6 +80,10 @@ QueryView &QueryView::From(QueryTuple &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
+QueryView &From(QueryKVIndex &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
 QueryView &QueryView::From(QueryJoin &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
@@ -115,6 +119,10 @@ bool QueryView::IsSelect(void) const noexcept {
 
 bool QueryView::IsTuple(void) const noexcept {
   return impl->AsTuple() != nullptr;
+}
+
+bool QueryView::IsKVIndex(void) const noexcept {
+  return impl->AsKVIndex() != nullptr;
 }
 
 bool QueryView::IsJoin(void) const noexcept {
@@ -817,6 +825,79 @@ std::string QueryTuple::DebugString(void) const noexcept {
   return impl->DebugString();
 }
 
+QueryKVIndex &QueryKVIndex::From(QueryView &view) {
+  assert(view.IsTuple());
+  return reinterpret_cast<QueryKVIndex &>(view);
+}
+
+unsigned QueryKVIndex::Arity(void) const noexcept {
+  return impl->columns.Size();
+}
+
+DefinedNodeRange<QueryColumn> QueryKVIndex::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+DefinedNodeRange<QueryColumn> QueryKVIndex::KeyColumns(void) const {
+  const auto it = impl->columns.begin();
+  return {DefinedNodeIterator<QueryColumn>(it),
+          DefinedNodeIterator<QueryColumn>(it + impl->input_columns.Size())};
+}
+
+DefinedNodeRange<QueryColumn> QueryKVIndex::ValueColumns(void) const {
+  const auto it = impl->columns.begin();
+  return {DefinedNodeIterator<QueryColumn>(it + impl->input_columns.Size()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+unsigned QueryKVIndex::NumKeyColumns(void) const noexcept {
+  return impl->input_columns.Size();
+}
+
+unsigned QueryKVIndex::NumValueColumns(void) const noexcept {
+  return impl->attached_columns.Size();
+}
+
+QueryColumn QueryKVIndex::NthKeyColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
+QueryColumn QueryKVIndex::NthInputKeyColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->input_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryKVIndex::InputKeyColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+QueryColumn QueryKVIndex::NthValueColumn(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return QueryColumn(impl->columns[impl->input_columns.Size() + n]);
+}
+
+QueryColumn QueryKVIndex::NthInputValueColumn(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return QueryColumn(impl->attached_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryKVIndex::InputValueColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->attached_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->attached_columns.end())};
+}
+
+const ParsedFunctor &QueryKVIndex::NthValueMergeFunctor(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return impl->merge_functors[n];
+}
+
+std::string QueryKVIndex::DebugString(void) const noexcept {
+  return impl->DebugString();
+}
+
 DefinedNodeRange<QueryJoin> Query::Joins(void) const {
   return {DefinedNodeIterator<QueryJoin>(impl->joins.begin()),
           DefinedNodeIterator<QueryJoin>(impl->joins.end())};
@@ -830,6 +911,11 @@ DefinedNodeRange<QuerySelect> Query::Selects(void) const {
 DefinedNodeRange<QueryTuple> Query::Tuples(void) const {
   return {DefinedNodeIterator<QueryTuple>(impl->tuples.begin()),
           DefinedNodeIterator<QueryTuple>(impl->tuples.end())};
+}
+
+DefinedNodeRange<QueryKVIndex> Query::KVIndices(void) const {
+  return {DefinedNodeIterator<QueryKVIndex>(impl->kv_indices.begin()),
+          DefinedNodeIterator<QueryKVIndex>(impl->kv_indices.end())};
 }
 
 DefinedNodeRange<QueryRelation> Query::Relations(void) const {

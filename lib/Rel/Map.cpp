@@ -33,7 +33,7 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
   }
 
   hash <<= 4;
-  hash |= 4;
+  hash |= query::kMapId;
 
   return hash;
 }

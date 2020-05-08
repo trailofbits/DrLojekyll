@@ -26,7 +26,7 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
   }
 
   hash <<= 4;
-  hash |= 2;
+  hash |= query::kConstraintId;
 
   return hash;
 }

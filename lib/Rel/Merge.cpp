@@ -24,7 +24,7 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   if (!merged_views.Empty()) {
     hash = merged_views[0]->columns.Size();
     hash <<= 4;
-    hash |= 3;
+    hash |= query::kMergeId;
   }
 
   auto merged_hashes = hash;
@@ -37,7 +37,7 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
 
   hash = merged_hashes;
   hash <<= 4;
-  hash |= 3;
+  hash |= query::kMergeId;
 
   return hash;
 }

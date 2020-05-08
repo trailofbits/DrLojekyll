@@ -15,8 +15,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       decl_to_selects;
 
   auto can_connect = [] (ParsedDeclaration decl) {
-    return !decl.HasMutableParameter() &&
-           !decl.IsQuery() &&
+    return !decl.IsQuery() &&
            !decl.IsMessage() &&
            !decl.HasDirectGeneratorDependency() &&
            !decl.NumNegatedUses();
@@ -53,6 +52,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     assert(can_connect(decl));
 
     const auto merge = merges.Create();
+    Node<QueryView> *view = merge;
     for (auto insert : insert_views) {
       const auto ins_tuple = tuples.Create();
 
@@ -70,6 +70,48 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       merge->merged_views.AddUse(ins_tuple);
     }
 
+    // If the decl has at least one mutable parameter then we need a KV index.
+    if (decl.HasMutableParameter()) {
+      auto index = kv_indices.Create();
+
+      view = merge->GuardWithTuple(this, true);
+
+      // Create the key columns.
+      auto i = 0u;
+      for (auto param : decl.Parameters()) {
+        const auto merge_col = merge->columns[i++];
+        if (param.Binding() != ParameterBinding::kMutable) {
+          const auto key_col = index->columns.Create(
+              merge_col->var, index, merge_col->id);
+          merge_col->ReplaceAllUsesWith(key_col);
+        }
+      }
+
+      // Create the value columns.
+      i = 0u;
+      for (auto param : decl.Parameters()) {
+        const auto merge_col = merge->columns[i++];
+        if (param.Binding() == ParameterBinding::kMutable) {
+          const auto val_col = index->columns.Create(
+              merge_col->var, index, merge_col->id);
+          merge_col->ReplaceAllUsesWith(val_col);
+        }
+      }
+
+      // Create the inputs.
+      i = 0u;
+      for (auto param : decl.Parameters()) {
+        const auto merge_col = merge->columns[i++];
+        if (param.Binding() == ParameterBinding::kMutable) {
+          index->merge_functors.push_back(ParsedFunctor::MergeOperatorOf(param));
+          index->attached_columns.AddUse(merge_col);
+        } else {
+          index->input_columns.AddUse(merge_col);
+        }
+        ++i;
+      }
+    }
+
     for (auto select : decl_to_selects[decl]) {
 
       // Create a TUPLE and MERGE that will read in a tuple of all incoming
@@ -83,7 +125,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
       // Connect the MERGE to the TUPLE.
       auto i = 0u;
-      for (auto merge_col : merge->columns) {
+      for (auto merge_col : view->columns) {
         auto sel_col = select->columns[i++];
         sel_tuple->columns.Create(sel_col->var, sel_tuple, sel_col->id);
         sel_tuple->input_columns.AddUse(merge_col);

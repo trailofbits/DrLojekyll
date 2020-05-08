@@ -37,7 +37,7 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
 
   hash = functor.Id() ^ group_hash ^ bound_hash ^ summary_hash;
   hash <<= 4;
-  hash |= 5;
+  hash |= query::kAggregateId;
 
   return hash;
 }

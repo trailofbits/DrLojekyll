@@ -23,7 +23,7 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
   }
 
   hash <<= 4;
-  hash |= 8;
+  hash |= query::kTupleId;
   return hash;
 }
 

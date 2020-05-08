@@ -16,6 +16,10 @@ Node<QueryTuple> *Node<QueryView>::AsTuple(void) noexcept {
   return nullptr;
 }
 
+Node<QueryKVIndex> *Node<QueryView>::AsKVIndex(void) noexcept {
+  return nullptr;
+}
+
 Node<QueryJoin> *Node<QueryView>::AsJoin(void) noexcept {
   return nullptr;
 }

@@ -37,7 +37,7 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   }
 
   hash <<= 4;
-  hash |= 6;
+  hash |= query::kJoinId;
 
   return hash;
 }

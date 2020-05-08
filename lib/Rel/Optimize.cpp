@@ -22,7 +22,7 @@ static void RelabelGroupIDs(QueryImpl *query) {
     view->hash = 0;
     view->is_canonical = false;
     view->group_ids.clear();
-    if (view->AsJoin() || view->AsAggregate()) {
+    if (view->AsJoin() || view->AsAggregate() || view->AsKVIndex()) {
       view->group_ids.push_back(i++);
 
     } else {
@@ -68,6 +68,7 @@ static void RelabelGroupIDs(QueryImpl *query) {
 static bool RemoveUnusedViews(QueryImpl *query) {
   auto ret = query->selects.RemoveUnused() |
              query->tuples.RemoveUnused() |
+             query->kv_indices.RemoveUnused() |
              query->joins.RemoveUnused() |
              query->maps.RemoveUnused() |
              query->aggregates.RemoveUnused() |

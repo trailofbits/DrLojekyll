@@ -16,6 +16,7 @@ function(rel source_dir config)
         "${source_dir}/Input.cpp"
         "${source_dir}/Insert.cpp"
         "${source_dir}/Join.cpp"
+        "${source_dir}/KVIndex.cpp"
         "${source_dir}/Map.cpp"
         "${source_dir}/Merge.cpp"
         "${source_dir}/Optimize.cpp"

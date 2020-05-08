@@ -190,6 +190,44 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   }
 
+  for (auto kv : query.KVIndices()) {
+    os << "v" << kv.UniqueId() << " [ label=<" << kBeginTable;
+    os << "<TD rowspan=\"2\">KEYS</TD>";
+    for (auto col : kv.KeyColumns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << col.Variable() << "</TD>";
+    }
+    os << "<TD rowspan=\"2\">VALS</TD>";
+    auto i = 0u;
+    for (auto col : kv.ValueColumns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">"
+         << kv.NthValueMergeFunctor(i).Name() << "(" << col.Variable()
+         << ")</TD>";
+    }
+    os << "</TR><TR>";
+    i = 0u;
+    for (auto col : kv.InputKeyColumns()) {
+      os << "<TD port=\"g" << (i++) << "\">" << col.Variable() << "</TD>";
+    }
+    for (auto col : kv.InputValueColumns()) {
+      os << "<TD port=\"g" << (i++) << "\">" << col.Variable() << "</TD>";
+    }
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString() << "</TD>";)
+
+    os << kEndTable << ">];\n";
+
+    i = 0u;
+    for (auto col : kv.InputKeyColumns()) {
+      const auto view = QueryView::Containing(col);
+      os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+    for (auto col : kv.InputValueColumns()) {
+      const auto view = QueryView::Containing(col);
+      os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v"
+         << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
+    }
+  }
+
   const char *kColors[] = {
       "antiquewhite",
       "aquamarine",

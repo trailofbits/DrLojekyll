@@ -26,7 +26,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   }
 
   hash <<= 4;
-  hash |= 7;
+  hash |= query::kInsertId;
 
   return hash;
 }

@@ -577,11 +577,11 @@ template <typename T>
 void ParserImpl::AddDeclAndCheckConsistency(
     std::vector<std::unique_ptr<Node<T>>> &decl_list,
     std::unique_ptr<Node<T>> decl) {
+  const auto num_params = decl->parameters.size();
 
   if (1 < decl->context->redeclarations.size()) {
     const auto prev_decl = reinterpret_cast<Node<T> *>(
         decl->context->redeclarations.front());
-    const auto num_params = decl->parameters.size();
     assert(prev_decl->parameters.size() == num_params);
 
     for (size_t i = 0; i < num_params; ++i) {
