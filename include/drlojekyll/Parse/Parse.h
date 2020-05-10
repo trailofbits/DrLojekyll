@@ -462,6 +462,7 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
+  unsigned NumClauses(void) const noexcept;
 
   bool IsInline(void) const noexcept;
 

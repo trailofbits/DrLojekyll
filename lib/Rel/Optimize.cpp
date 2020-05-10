@@ -194,13 +194,19 @@ void QueryImpl::Optimize(void) {
     max_depth = std::max(max_depth, insert->Depth());
   }
 
-  for (auto i = 0; i < max_depth; ++i) {
-    if (CSE(this, max_depth)) {
-      i = 0;
-    }
+  auto step = [=] (void) {
+    auto done = !CSE(this, max_depth);
     if (RemoveUnusedViews(this)) {
       RelabelGroupIDs(this);
-      i = 0;
+    }
+    return done;
+  };
+
+  step();
+
+  for (auto i = 0; i < max_depth; ++i) {
+    if (!step()) {
+      break;
     }
   }
 }

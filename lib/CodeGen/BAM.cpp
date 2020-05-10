@@ -697,6 +697,60 @@ static void DefineTuple(const DisplayManager &dm, OutputStream &os,
   os << "}\n\n";
 }
 
+static void DeclareKVIndex(OutputStream &os, QueryKVIndex view) {
+  os << "static void V" << view.UniqueId() << "(unsigned __added";
+  for (auto col : view.Columns()) {
+    os << ", " << TypeName(col) << CommentOnCol(os, col);
+  }
+  os << ") noexcept;\n";
+}
+
+static void DefineKVIndex(const DisplayManager &dm, OutputStream &os,
+                          QueryKVIndex view) {
+
+  os << "// Set for tracking unique elements in the merge.\n"
+     << "static ::hyde::rt::Set<";
+
+  auto sep = "";
+  for (const auto col : view.Columns()) {
+    os << sep << TypeName(col) << CommentOnCol(os, col);
+    sep = ",\n                       ";
+  }
+
+  const auto id = view.UniqueId();
+
+  os << "> S" << id << ";\n\n"
+     << "/* Merge; just forwards stuff to users. */\n"
+     << "void V" << view.UniqueId() << "(\n    unsigned __added";
+  for (auto col : view.Columns()) {
+    os << ",\n    " << TypeName(col) << " C " << col.UniqueId()
+       << CommentOnCol(os, col);
+  }
+  os << ") noexcept {\n"
+     << "  const auto __hash = ::hyde::rt::Hash<";
+
+  sep = "";
+  for (auto col : view.Columns()) {
+    os << sep << TypeName(col);
+    sep = ", ";
+  }
+
+  os << ">::Update(" << QueryView::From(view).Hash();
+  for (auto col : view.Columns()) {
+    os << ", C" << col.UniqueId();
+  }
+
+  os << ");\n"
+     << "  if (S" << id << ".Add(__hash, __added";
+  for (auto col : view.Columns()) {
+    os << ", C" << col.UniqueId();
+  }
+  os << ") {\n";
+
+  CallUsers(dm, os, QueryView::From(view), "    ");
+  os << "  }\n}\n\n";
+}
+
 static void DeclareMerge(OutputStream &os, QueryMerge view) {
   os << "static void V" << view.UniqueId() << "(unsigned __added";
   for (auto col : view.Columns()) {
@@ -708,15 +762,48 @@ static void DeclareMerge(OutputStream &os, QueryMerge view) {
 static void DefineMerge(const DisplayManager &dm, OutputStream &os,
                         QueryMerge view) {
 
-  os << "/* Merge; just forwards stuff to users. */\n"
+
+  os << "// Set for tracking unique elements in the merge.\n"
+     << "static ::hyde::rt::Set<";
+
+  auto sep = "";
+  for (const auto col : view.Columns()) {
+    os << sep << TypeName(col) << CommentOnCol(os, col);
+    sep = ",\n                       ";
+  }
+
+  const auto id = view.UniqueId();
+
+  os << "> S" << id << ";\n\n"
+     << "/* Merge; just forwards stuff to users. */\n"
      << "void V" << view.UniqueId() << "(\n    unsigned __added";
   for (auto col : view.Columns()) {
     os << ",\n    " << TypeName(col) << " C " << col.UniqueId()
        << CommentOnCol(os, col);
   }
-  os << ") noexcept {\n";
-  CallUsers(dm, os, QueryView::From(view), "  ");
-  os << "}\n\n";
+  os << ") noexcept {\n"
+     << "  const auto __hash = ::hyde::rt::Hash<";
+
+  sep = "";
+  for (auto col : view.Columns()) {
+    os << sep << TypeName(col);
+    sep = ", ";
+  }
+
+  os << ">::Update(" << QueryView::From(view).Hash();
+  for (auto col : view.Columns()) {
+    os << ", C" << col.UniqueId();
+  }
+
+  os << ");\n"
+     << "  if (S" << id << ".Add(__hash, __added";
+  for (auto col : view.Columns()) {
+    os << ", C" << col.UniqueId();
+  }
+  os << ") {\n";
+
+  CallUsers(dm, os, QueryView::From(view), "    ");
+  os << "  }\n}\n\n";
 }
 
 static void DeclareMap(OutputStream &os, QueryMap map,
@@ -967,6 +1054,10 @@ void GenerateCode(
     DeclareTuple(os, view);
   }
 
+  for (auto view : query.KVIndices()) {
+    DeclareKVIndex(os, view);
+  }
+
   for (auto view : query.Merges()) {
     DeclareMerge(os, view);
   }
@@ -1009,6 +1100,10 @@ void GenerateCode(
 
   for (auto view : query.Tuples()) {
     DefineTuple(dm, os, view);
+  }
+
+  for (auto view : query.KVIndices()) {
+    DefineKVIndex(dm, os, view);
   }
 
   for (auto view : query.Merges()) {

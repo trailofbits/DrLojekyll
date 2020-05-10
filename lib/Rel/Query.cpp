@@ -80,7 +80,7 @@ QueryView &QueryView::From(QueryTuple &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &From(QueryKVIndex &view) noexcept {
+QueryView &QueryView::From(QueryKVIndex &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 

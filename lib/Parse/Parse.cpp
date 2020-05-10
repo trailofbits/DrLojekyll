@@ -724,6 +724,10 @@ unsigned ParsedDeclaration::NumNegatedUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->negated_uses.size());
 }
 
+unsigned ParsedDeclaration::NumClauses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->clauses.size());
+}
+
 bool ParsedDeclaration::IsInline(void) const noexcept {
   return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
 }

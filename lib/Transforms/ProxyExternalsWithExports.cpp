@@ -119,7 +119,7 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
       }
     }
 
-    if (has_bound_params || IsUsed(decl)) {
+    if (1 < decl.NumClauses() || has_bound_params || IsUsed(decl)) {
       proxied_decls.insert(decl);
       ProxyExternal(os, decl, "#query");
     } else {

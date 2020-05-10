@@ -236,5 +236,29 @@ class Join<NoPivotVars, kNumSources, SourceSetTypes...> {
   static_assert(kNumSources == sizeof...(SourceSetTypes));
 };
 
+// Set.
+template <typename... Keys>
+class Set {
+ public:
+  bool Add(uint64_t hash, unsigned added, Keys&&... keys) {
+
+  }
+};
+
+// Key/value mapping with a merge operator.
+template <typename...>
+class Map;
+
+template <typename... Keys>
+struct KeyVars {};
+
+template <typename... Values>
+struct ValueVars {};
+
+template <typename... Keys, typename... Values>
+class Map<KeyVars<Keys...>, ValueVars<Values...>> {
+
+};
+
 }  // namespace rt
 }  // namespace hyde
