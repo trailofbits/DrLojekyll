@@ -115,7 +115,7 @@ enum class Lexeme : uint8_t {
   // an alternative to `#include`, and may itself contain `#include`s. The
   // usage looks like:
   //
-  //    #inline !<
+  //    #inline <!
   //    ... code here ...
   //    !>
   //
@@ -215,7 +215,7 @@ enum class Lexeme : uint8_t {
 
   // Literal C/C++ code. Looks like:
   //
-  // !< ... stuff here ... !>
+  // <! ... stuff here ... !>
   kLiteralCode,
 
   // Identifiers, e.g. for atoms, functors, messages, etc.

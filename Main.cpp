@@ -81,7 +81,7 @@ static void CompileModule(hyde::DisplayManager display_manager,
   auto query = query_builder.BuildQuery();
   os << query;
 
-  hyde::GenerateCode(display_manager, module, query, std::cerr);
+  hyde::GenerateCode(module, query, os);
 }
 
 static int ProcessModule(hyde::DisplayManager display_manager,

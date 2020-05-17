@@ -2,23 +2,15 @@
 
 #pragma once
 
-#include <iosfwd>
-
-#include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/Node.h>
-
 namespace hyde {
 
-class DisplayManager;
 class Query;
 class ParsedModule;
+class OutputStream;
 
 // Generates BAM-like code following the push method of pipelined bottom-up
 // execution of Datalog.
-void GenerateCode(
-    const DisplayManager &display_manager,
-    const ParsedModule &module,
-    const Query &query,
-    std::ostream &cxx_os);
+void GenerateCode(const ParsedModule &module, const Query &query,
+                  OutputStream &os);
 
 }  // namespace hyde

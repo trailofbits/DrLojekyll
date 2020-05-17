@@ -288,26 +288,32 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // are ordered first.
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
-  // The number of output columns. This is the number of all non-pivot incoming
-  // columns.
-  unsigned NumOutputColumns(void) const noexcept;
+  // List of the output pivot columns.
+  DefinedNodeRange<QueryColumn> PivotColumns(void) const noexcept;
 
-  // Returns the `nth` joined output column. This column is not a pivot.
-  QueryColumn NthOutputColumn(unsigned n) const noexcept;
-
-  // Returns the `nth` pivot output column.
-  QueryColumn NthPivotColumn(unsigned n) const noexcept;
+  // List of the output non-pivot columns.
+  DefinedNodeRange<QueryColumn> MergedColumns(void) const noexcept;
 
   // Returns the number of pivot columns. If the number of pivots is zero, then
   // this join is the cross-product.
-  unsigned NumPivots(void) const noexcept;
+  unsigned NumPivotColumns(void) const noexcept;
+
+  // The number of output columns. This is the number of all non-pivot incoming
+  // columns.
+  unsigned NumMergedColumns(void) const noexcept;
+
+  // Returns the `nth` pivot output column.
+  QueryColumn NthOutputPivotColumn(unsigned n) const noexcept;
 
   // Returns the set of pivot columns proposed by the Nth incoming view.
-  UsedNodeRange<QueryColumn> NthPivotSet(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> NthInputPivotSet(unsigned n) const noexcept;
+
+  // Returns the `nth` joined output column. This column is not a pivot.
+  QueryColumn NthOutputMergedColumn(unsigned n) const noexcept;
 
   // Returns the input column corresponding to the `n`th output column, where
   // this input column is not itself assocated with a pivot set.
-  QueryColumn NthInputColumn(unsigned n) const noexcept;
+  QueryColumn NthInputMergedColumn(unsigned n) const noexcept;
 
   std::string DebugString(void) const noexcept;
 
@@ -563,6 +569,42 @@ class Query {
   DefinedNodeRange<QueryInput> Inputs(void) const;
   DefinedNodeRange<QueryGenerator> Generators(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
+
+
+  template <typename T>
+  void ForEachView(T cb) const {
+    for (auto view : Joins()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Selects()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Tuples()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : KVIndices()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Maps()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Aggregates()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Merges()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Constraints()) {
+      cb(QueryView::From(view));
+    }
+  }
 
   Query(const Query &) = default;
   Query(Query &&) noexcept = default;

@@ -201,7 +201,7 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
     return os;
   }
 
-  os << "#inline !<";
+  os << "#inline <!";
   if (code.front() == '\n' && code.back() == '\n') {
     os << code;
   } else if (code.front() == '\n') {

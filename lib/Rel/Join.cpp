@@ -59,47 +59,46 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 //
 // TODO(pag): Re-implement to work in the case of constant propagations.
 void Node<QueryJoin>::VerifyPivots(void) {
-  return;
-//  if (!num_pivots) {
-//    return;
-//  }
-//
-//  pivot_views.clear();
-//
-//  auto pivot_col = columns[0];
-//  auto in_col_set = out_to_in.find(pivot_col);
-//  assert(in_col_set != out_to_in.end());
-//  assert(1 < in_col_set->second.Size());
-//  for (auto in_pivot_col : in_col_set->second) {
-//    pivot_views.push_back(in_pivot_col->view);
-//  }
-//
-//  std::sort(pivot_views.begin(), pivot_views.end());
-//  auto it = std::unique(pivot_views.begin(), pivot_views.end());
-//  pivot_views.erase(it, pivot_views.end());
-//
-//  const auto num_pivot_views = pivot_views.size();
-//
-//  for (auto i = 1u; i < num_pivots; ++i) {
-//    next_pivot_views.clear();
-//
-//    pivot_col = columns[i];
-//    in_col_set = out_to_in.find(pivot_col);
-//    assert(in_col_set != out_to_in.end());
-//    assert(1 < in_col_set->second.Size());
-//    for (auto in_pivot_col : in_col_set->second) {
-//      next_pivot_views.push_back(in_pivot_col->view);
-//    }
-//
-//    std::sort(next_pivot_views.begin(), next_pivot_views.end());
-//    it = std::unique(next_pivot_views.begin(), next_pivot_views.end());
-//    next_pivot_views.erase(it, next_pivot_views.end());
-//
-//    assert(num_pivot_views == next_pivot_views.size());
-//    for (auto j = 0u; j < num_pivot_views; ++j) {
-//      assert(pivot_views[j] == next_pivot_views[j]);
-//    }
-//  }
+  if (!num_pivots) {
+    return;
+  }
+
+  pivot_views.clear();
+
+  auto pivot_col = columns[0];
+  auto in_col_set = out_to_in.find(pivot_col);
+  assert(in_col_set != out_to_in.end());
+  assert(1 < in_col_set->second.Size());
+  for (auto in_pivot_col : in_col_set->second) {
+    pivot_views.push_back(in_pivot_col->view);
+  }
+
+  std::sort(pivot_views.begin(), pivot_views.end());
+  auto it = std::unique(pivot_views.begin(), pivot_views.end());
+  pivot_views.erase(it, pivot_views.end());
+
+  const auto num_pivot_views = pivot_views.size();
+
+  for (auto i = 1u; i < num_pivots; ++i) {
+    next_pivot_views.clear();
+
+    pivot_col = columns[i];
+    in_col_set = out_to_in.find(pivot_col);
+    assert(in_col_set != out_to_in.end());
+    assert(1 < in_col_set->second.Size());
+    for (auto in_pivot_col : in_col_set->second) {
+      next_pivot_views.push_back(in_pivot_col->view);
+    }
+
+    std::sort(next_pivot_views.begin(), next_pivot_views.end());
+    it = std::unique(next_pivot_views.begin(), next_pivot_views.end());
+    next_pivot_views.erase(it, next_pivot_views.end());
+
+    assert(num_pivot_views == next_pivot_views.size());
+    for (auto j = 0u; j < num_pivot_views; ++j) {
+      assert(pivot_views[j] == next_pivot_views[j]);
+    }
+  }
 }
 
 // Put this join into a canonical form, which will make comparisons and
@@ -113,6 +112,7 @@ void Node<QueryJoin>::VerifyPivots(void) {
 //            a merge.
 bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
   if (is_canonical) {
+    VerifyPivots();
     return false;
   }
 
@@ -123,8 +123,6 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
   assert(num_pivots <= columns.Size());
   assert(out_to_in.size() == columns.Size());
-
-  VerifyPivots();
 
   // Maps incoming VIEWs to the pairs of `(out_col, in_col)`, where `out_col`
   // is the output column associated with `in_col`, and `in_col` belongs to
@@ -281,6 +279,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
     out_to_in.clear();
     num_pivots = 0;
     is_used = false;
+    VerifyPivots();
     return true;
   }
 skip_remove:
@@ -447,6 +446,7 @@ skip_remove:
 
   hash = 0;
   is_canonical = true;
+  VerifyPivots();
   return non_local_changes;
 }
 

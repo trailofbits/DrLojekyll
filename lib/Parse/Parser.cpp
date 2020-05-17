@@ -3446,7 +3446,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       // Specify that the generated C++ code should contain a pre-processor
       // include of some file.
       //
-      //    #inline !<
+      //    #inline <!
       //    ...
       //    !>
       case Lexeme::kHashInlineStmt:

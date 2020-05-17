@@ -254,12 +254,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 //         << color << "\">" << join.NthPivotColumn(i).Variable() << "</TD>";
 //    }
 
-    const auto num_pivots = join.NumPivots();
-    const auto num_outputs = join.NumOutputColumns();
+    const auto num_pivots = join.NumPivotColumns();
+    const auto num_outputs = join.NumMergedColumns();
     auto i = 0u;
     for (; i < num_pivots; ++i) {
-      const auto pivot_set_size = join.NthPivotSet(i).size();
-      const auto col = join.NthPivotColumn(i);
+      const auto pivot_set_size = join.NthInputPivotSet(i).size();
+      const auto col = join.NthOutputPivotColumn(i);
       const auto color = kColors[i];
       os << "<TD port=\"c" << col.UniqueId() << "\" colspan=\""
          << pivot_set_size << "\" bgcolor=\""
@@ -273,7 +273,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (i = 0u; i < num_outputs; ++i) {
-      const auto col = join.NthOutputColumn(i);
+      const auto col = join.NthOutputMergedColumn(i);
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
     }
@@ -283,7 +283,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     auto j = 0u;
     for (i = 0u; i < num_pivots; ++i) {
       auto color = kColors[i];
-      for (auto col : join.NthPivotSet(i)) {
+      for (auto col : join.NthInputPivotSet(i)) {
         os << "<TD bgcolor=\"" << color << "\" port=\"p" << j << "\">"
            << col.Variable() << "</TD>";
         j++;
@@ -291,7 +291,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (i = 0u; i < num_outputs; ++i) {
-      const auto col = join.NthInputColumn(i);
+      const auto col = join.NthInputMergedColumn(i);
       os << "<TD port=\"p" << j << "\">" << col.Variable() << "</TD>";
       j++;
     }
@@ -304,7 +304,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     j = 0u;
     for (i = 0u; i < num_pivots; ++i) {
-      for (auto col : join.NthPivotSet(i)) {
+      for (auto col : join.NthInputPivotSet(i)) {
         const auto view = QueryView::Containing(col);
         os << "v" << join.UniqueId() << ":p" << j << " -> v"
            << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
@@ -313,7 +313,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (i = 0u; i < num_outputs; ++i) {
-      const auto col = join.NthInputColumn(i);
+      const auto col = join.NthInputMergedColumn(i);
       const auto view = QueryView::Containing(col);
       os << "v" << join.UniqueId() << ":p" << j << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";

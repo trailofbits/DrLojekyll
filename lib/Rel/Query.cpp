@@ -113,6 +113,20 @@ DefinedNodeRange<QueryColumn> QueryJoin::Columns(void) const {
   return QueryView(impl).Columns();
 }
 
+// List of the output pivot columns.
+DefinedNodeRange<QueryColumn> QueryJoin::PivotColumns(void) const noexcept {
+  const auto it = impl->columns.begin();
+  return {DefinedNodeIterator<QueryColumn>(it),
+          DefinedNodeIterator<QueryColumn>(it + NumPivotColumns())};
+}
+
+// List of the output non-pivot columns.
+DefinedNodeRange<QueryColumn> QueryJoin::MergedColumns(void) const noexcept {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
+                                           NumPivotColumns()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
 bool QueryView::IsSelect(void) const noexcept {
   return impl->AsSelect() != nullptr;
 }
@@ -395,16 +409,16 @@ QueryJoin &QueryJoin::From(QueryView &view) {
 
 // The number of output columns. This is the number of all non-pivot incoming
 // columns.
-unsigned QueryJoin::NumOutputColumns(void) const noexcept {
+unsigned QueryJoin::NumMergedColumns(void) const noexcept {
   return impl->columns.Size() - impl->num_pivots;
 }
 
-unsigned QueryJoin::NumPivots(void) const noexcept {
+unsigned QueryJoin::NumPivotColumns(void) const noexcept {
   return impl->num_pivots;
 }
 
 // Returns the set of pivot columns proposed by the Nth incoming view.
-UsedNodeRange<QueryColumn> QueryJoin::NthPivotSet(unsigned n) const noexcept {
+UsedNodeRange<QueryColumn> QueryJoin::NthInputPivotSet(unsigned n) const noexcept {
   assert(n < impl->num_pivots);
   auto use_list = impl->out_to_in.find(impl->columns[n]);
   assert(use_list != impl->out_to_in.end());
@@ -413,7 +427,7 @@ UsedNodeRange<QueryColumn> QueryJoin::NthPivotSet(unsigned n) const noexcept {
 }
 
 // Returns the set of input columns proposed by the Nth incoming view.
-QueryColumn QueryJoin::NthInputColumn(unsigned n) const noexcept {
+QueryColumn QueryJoin::NthInputMergedColumn(unsigned n) const noexcept {
   assert((n + impl->num_pivots) < impl->columns.Size());
   auto use_list = impl->out_to_in.find(impl->columns[n + impl->num_pivots]);
   assert(use_list != impl->out_to_in.end());
@@ -422,13 +436,13 @@ QueryColumn QueryJoin::NthInputColumn(unsigned n) const noexcept {
 }
 
 // Returns the `nth` output column.
-QueryColumn QueryJoin::NthOutputColumn(unsigned n) const noexcept {
+QueryColumn QueryJoin::NthOutputMergedColumn(unsigned n) const noexcept {
   assert((n + impl->num_pivots)  < impl->columns.Size());
   return QueryColumn(impl->columns[n + impl->num_pivots]);
 }
 
 // Returns the `nth` pivot output column.
-QueryColumn QueryJoin::NthPivotColumn(unsigned n) const noexcept {
+QueryColumn QueryJoin::NthOutputPivotColumn(unsigned n) const noexcept {
   assert(n < impl->columns.Size());
   assert(n < impl->num_pivots);
   return QueryColumn(impl->columns[n]);

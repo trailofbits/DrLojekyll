@@ -323,6 +323,9 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
   ParameterBinding Binding(void) const noexcept;
   unsigned Index(void) const noexcept;
 
+  // Returns `true` if this variable is an unnamed variable.
+  bool IsUnnamed(void) const noexcept;
+
   // Applies only to `bound` parameters of functors.
   bool CanBeReordered(void) const noexcept;
 

@@ -58,7 +58,7 @@ include: "#include" <double quoted string literal>
 include: "#include" "<" <tokens...> ">"
 
 // Single and multi-line inline statements.
-inline_code: "#inline" "!<" <anything...> "!>"
+inline_code: "#inline" "<!" <anything...> "!>"
 inline_code: "#inline" <double quoted string literal>
 
 // Decls generally must fit inside a single line. They are allowed

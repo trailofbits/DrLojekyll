@@ -6,27 +6,54 @@
 #include <cstdint>
 #include <unordered_map>
 
+#if defined(__clang__) || defined(__GNUC__)
+# define DR_INLINE __attribute__((always_inline)) inline
+#elif defined(_MSVC_LANG)
+# define DR_INLINE __forceinline
+#else
+# define DR_INLINE inline
+#endif
+
 namespace hyde {
 namespace rt {
 
-struct UUID {
-  uint64_t low;
-  uint64_t high;
+union UUID {
+  uint8_t opaque_bytes[16];
+  struct {
+    uint64_t low;
+    uint64_t high;
+  } __attribute__((packed)) opaque_pair;
+
+  inline bool operator<(UUID other) const noexcept {
+    return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
+  }
 };
 
 union ASCII {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
-  char opaque_bytes[64];
+  uint8_t opaque_bytes[64];
+
+  inline bool operator<(UUID other) const noexcept {
+    return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
+  }
 };
 
 union UTF8 {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
   char opaque_bytes[64];
+
+  inline bool operator<(UUID other) const noexcept {
+    return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
+  }
 };
 
 union Bytes {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
   char opaque_bytes[64];
+
+  inline bool operator<(UUID other) const noexcept {
+    return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
+  }
 };
 
 class ProgramBase {
@@ -44,32 +71,11 @@ class ProgramBase {
   const uint64_t __num_workers_mask;
 };
 
-template <typename T>
-class Program : ProgramBase {
- public:
-  virtual ~Program(void) = default;
-
-  inline Program(unsigned worker_id_, unsigned num_workers_,
-          T *workers_[])
-      : ProgramBase(worker_id_, num_workers_),
-        __workers(workers_) {}
-
-  template <typename... KeyTypes>
-  static uint64_t Hash(uint64_t version, KeyTypes... keys) noexcept {
-    return 0;
-  }
-
-  virtual void Init(void) noexcept = 0;
-  virtual void Step(unsigned selector, void *data) noexcept = 0;
-
- protected:
-  T * const * const __workers;
-};
-
 // Template for hashing multiple values.
 template <typename... KeyTypes>
 struct Hash {
-  inline static uint64_t Update(uint64_t hash, KeyTypes... keys) noexcept {
+  inline static uint64_t Update(KeyTypes... keys) noexcept {
+    uint64_t hash = 0;
     auto apply_each = [&hash] (auto val) {
       hash = Hash<decltype(val)>::Update(hash, val);
     };
@@ -79,6 +85,9 @@ struct Hash {
   }
 };
 
+// TODO(pag): Make the hash function follow a hilbert-curve-like construction.
+//
+//            Or have it do some kind of order preservation.
 #define HASH_MIX(a, b) \
     ((((a) << 37) * 0x85ebca6bull) ^ \
      (((a) >> 43) * 0xc2b2ae35ull) ^ \
@@ -107,12 +116,31 @@ MAKE_HASH_IMPL(double, uint64_t &, reinterpret_cast);
 
 #undef MAKE_HASH_IMPL
 
+using i8 = int8_t;
+using i16 = int16_t;
+using i32 = int32_t;
+using i64 = int64_t;
+
+using u8 = uint8_t;
+using u16 = uint16_t;
+using u32 = uint32_t;
+using u64 = uint64_t;
+
+using f32 = float;
+using f64 = double;
+
+using uuid = UUID;
+
+using bytes = Bytes;
+using utf8 = UTF8;
+using ascii = ASCII;
+
 template <>
 struct Hash<UUID> {
  public:
   inline static uint64_t Update(uint64_t hash, UUID uuid) noexcept {
-    const auto high = HASH_MIX(hash, uuid.high);
-    return HASH_MIX(high, uuid.low);
+    const auto high = HASH_MIX(hash, uuid.opaque_pair.high);
+    return HASH_MIX(high, uuid.opaque_pair.low);
   }
 };
 
@@ -178,21 +206,27 @@ struct NoConfigVars {};
 template <typename AggregatorType, typename GroupTuple, typename KeyTuple>
 class Aggregate;
 
-template <typename AggregatorType, typename... ConfigVarTypes>
-class Aggregate<AggregatorType, NoGroupVars, ConfigVars<ConfigVarTypes...>> {
+template <typename AggregatorType>
+class Aggregate<AggregatorType, NoConfigVars, NoGroupVars> {
  public:
-  AggregatorType &operator()(
-      uint64_t hash,
+  AggregatorType &GetForUpdate(void) noexcept {
+
+  }
+};
+
+template <typename AggregatorType, typename... ConfigVarTypes>
+class Aggregate<AggregatorType, ConfigVars<ConfigVarTypes...>, NoGroupVars> {
+ public:
+  AggregatorType &Get(
       ConfigVarTypes&&... config_vars) noexcept {
 
   }
 };
 
 template <typename AggregatorType, typename... GroupVarTypes>
-class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, NoConfigVars> {
+class Aggregate<AggregatorType, NoConfigVars, GroupVars<GroupVarTypes...>> {
  public:
-  AggregatorType &operator()(
-      uint64_t hash,
+  AggregatorType &Get(
       GroupVarTypes&&... group_vars) noexcept {
 
   }
@@ -201,8 +235,7 @@ class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, NoConfigVars> {
 template <typename AggregatorType, typename... GroupVarTypes, typename... ConfigVarTypes>
 class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, GroupVars<ConfigVarTypes...>> {
  public:
-  AggregatorType &operator()(
-      uint64_t hash,
+  AggregatorType &Get(
       GroupVarTypes&&... group_vars,
       ConfigVarTypes&&... config_vars) noexcept {
 
@@ -222,11 +255,84 @@ struct NoSourceVars {};
 template <typename PivotSetType, unsigned kNumSources, typename... SourceSetTypes>
 class Join;
 
+// Storage model for K/V mapping of an equi-join:
+//
+//  prefix:<pivots>            -> <size1>:<size2>:<size3>:<bloom filter>
+//  prefix:<pivots>:<N>:<...>  -> <entry>
+//  prefix:<pivots>:<N>:<...>  -> <entry>
+//  prefix:<pivots>:<N>:<...>  -> <entry>
+//  prefix:<pivots>:<M>:<...>  -> <entry>
+
+template <typename...>
+struct JoinEntry;
+
+namespace detail {
+
+template <typename...>
+struct MapSourceVars;
+
+template <typename... Vars>
+struct MapSourceVars<SourceVars<Vars...>> {
+  using Type = std::tuple<std::vector<std::tuple<Vars...>>>;
+};
+
+template <typename...>
+struct ConcatTupleTypes;
+
+template <typename... LVars>
+struct ConcatTupleTypes<std::tuple<LVars...>> {
+  using Type = std::tuple<LVars...>;
+};
+
+template <typename... LVars, typename... RVars>
+struct ConcatTupleTypes<std::tuple<LVars...>, std::tuple<RVars...>> {
+  using Type = std::tuple<LVars..., RVars...>;
+};
+
+template <typename... Vars, typename... Rest>
+struct MapSourceVars<SourceVars<Vars...>, Rest...> {
+  using Type = typename ConcatTupleTypes<
+      std::tuple<std::vector<std::tuple<Vars...>>>,
+      typename MapSourceVars<Rest...>::Type>::Type;
+};
+
+}  // namespace detail
+
+template <>
+struct JoinEntry<NoPivotVars, NoSourceVars> {};
+
+template <typename... PVars>
+struct JoinEntry<PivotVars<PVars...>, NoSourceVars> {
+  std::tuple<PVars...> key;
+  std::tuple<> values;
+};
+
+template <typename... PVars, typename... SVarSets>
+struct JoinEntry<PivotVars<PVars...>, SVarSets...> {
+  std::tuple<PVars...> key;
+  typename detail::MapSourceVars<SVarSets...>::Type values;
+};
+
+template <typename... SVarSets>
+struct JoinEntry<NoPivotVars, SVarSets...> {
+  std::tuple<> key;
+  typename detail::MapSourceVars<SVarSets...>::Type values;
+};
+
+//// Cross-product with no source vars.
+//template <unsigned kNumSources>
+//class Join<NoPivotVars, kNumSources, NoSourceVars> {
+// public:
+//  static_assert(false, "Not possible");
+//};
+
+
 // Equi-join over one or more keys.
 template <typename... PivotKeyTypes, unsigned kNumSources, typename... SourceSetTypes>
 class Join<PivotVars<PivotKeyTypes...>, kNumSources, SourceSetTypes...> {
  public:
   static_assert(kNumSources == sizeof...(SourceSetTypes));
+  using Entry = JoinEntry<PivotVars<PivotKeyTypes...>, SourceSetTypes...>;
 };
 
 // Cross-product.
@@ -234,20 +340,33 @@ template <unsigned kNumSources, typename... SourceSetTypes>
 class Join<NoPivotVars, kNumSources, SourceSetTypes...> {
  public:
   static_assert(kNumSources == sizeof...(SourceSetTypes));
+  using Entry = JoinEntry<NoPivotVars, SourceSetTypes...>;
 };
 
-// Set.
-template <typename... Keys>
+
+// Set. Really this is more like a key/value map, mapping the tuple to `RC`,
+// which is a bitset tracking which sources contributed this value.
+template <typename RC, typename... Keys>
 class Set {
  public:
-  bool Add(uint64_t hash, unsigned added, Keys&&... keys) {
+
+  // Returns `true` if the entry was added.
+  bool Add(Keys&&... keys, RC insert) {
 
   }
+
+  // Returns `true` if the entry was deleted.
+  bool Remove(Keys&&... keys, RC clear) {
+
+  }
+
 };
 
 // Key/value mapping with a merge operator.
 template <typename...>
 class Map;
+
+struct EmptyKeyVars {};
 
 template <typename... Keys>
 struct KeyVars {};
@@ -255,10 +374,71 @@ struct KeyVars {};
 template <typename... Values>
 struct ValueVars {};
 
+// A "proper" key/value mapping.
 template <typename... Keys, typename... Values>
 class Map<KeyVars<Keys...>, ValueVars<Values...>> {
+ public:
+  std::tuple<bool, Values...> Get(Keys... keys) const noexcept {
 
+  }
+
+  inline void Update(Keys... keys, Values... vals) noexcept {
+
+  }
+
+  inline void Insert(Keys... keys, Values... vals) noexcept {
+
+  }
+
+  inline void Erase(Keys... keys) noexcept {
+
+  }
 };
+
+// Really, a glorified global variable.
+template <typename ...Values>
+class Map<EmptyKeyVars, ValueVars<Values...>> {
+ public:
+  inline std::tuple<bool, Values...> Get(void) const noexcept {
+    return val;
+  }
+
+  inline void Insert(Values... vals) noexcept {
+    std::make_tuple<Values..., bool>(vals..., true).swap(val);
+  }
+
+  inline void Update(Values... vals) noexcept {
+    std::make_tuple<Values..., bool>(vals..., true).swap(val);
+  }
+
+  inline void Erase(void) noexcept {
+    std::tuple<Values..., bool>().swap(val);
+  }
+
+ private:
+  std::tuple<Values..., bool> val;
+};
+
+#define INIT_AGGREGATOR(name, binding_pattern, ...) \
+  struct name ## _ ## binding_pattern ## _result; \
+  struct name ## _ ## binding_pattern ## _config; \
+  extern "C" \
+  void name ## _ ## binding_pattern ## _init( \
+      __VA_ARGS__ __VA_OPT__(,) \
+      name ## _ ## binding_pattern ## _config &self)
+
+#define UPDATE_AGGREGATOR(name, binding_pattern, ...) \
+  struct name ## _ ## binding_pattern ## _result; \
+  struct name ## _ ## binding_pattern ## _config; \
+  extern "C" \
+  void name ## _ ## binding_pattern ## _update( \
+      __VA_ARGS__ __VA_OPT__(,) \
+      bool add, \
+      name ## _ ## binding_pattern ## _config &self)
+
+
+#define MERGE_VALUES(name, type, prev_var, proposed_var) \
+    extern "C" type name ## _merge(type prev_var, type proposed_var)
 
 }  // namespace rt
 }  // namespace hyde

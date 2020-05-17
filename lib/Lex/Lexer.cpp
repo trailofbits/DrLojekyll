@@ -13,6 +13,8 @@
 
 #include "Token.h"
 
+#include <iostream>
+
 namespace hyde {
 namespace {
 
@@ -174,9 +176,17 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         if (ch == '=') {
           interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncNotEqual);
           interpreter.basic.spelling_width = 2;
+        } else {
+          impl->reader.UnreadChar();
+        }
+      }
 
-        // Read it as an inline code literal.
-        } else if (ch == '<') {
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '<':
+      if (impl->reader.TryReadChar(&ch)) {
+        if (ch == '!') {  // Read it as an inline code literal.
 
           auto done = false;
           auto seen_exclaim = false;
@@ -196,10 +206,13 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                 done = true;
                 break;
               } else {
-                impl->data.push_back('!');
                 impl->data.push_back(ch);
-                seen_exclaim = false;
               }
+            } else if (seen_exclaim) {
+              seen_exclaim = false;
+              impl->data.push_back('!');
+              impl->data.push_back(ch);
+
             } else {
               impl->data.push_back(ch);
             }
@@ -221,15 +234,15 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.code.id = string_pool.InternCode(impl->data);
             interpreter.code.lexeme = static_cast<uint8_t>(Lexeme::kLiteralCode);
           }
+
+          ret.opaque_data = interpreter.flat;
+          return true;
+
         } else {
           impl->reader.UnreadChar();
         }
       }
 
-      ret.opaque_data = interpreter.flat;
-      return true;
-
-    case '<':
       interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncLess);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;

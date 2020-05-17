@@ -291,16 +291,16 @@ TypeLoc ParsedLiteral::Type(void) const noexcept {
 }
 
 DisplayRange ParsedComparison::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->lhs.used_var->name.Position(),
-                      impl->rhs.used_var->name.NextPosition());
+  return DisplayRange(impl->lhs.UseBase::used_var->name.Position(),
+                      impl->rhs.UseBase::used_var->name.NextPosition());
 }
 
 ParsedVariable ParsedComparison::LHS(void) const noexcept {
-  return ParsedVariable(impl->lhs.used_var);
+  return ParsedVariable(impl->lhs.UseBase::used_var);
 }
 
 ParsedVariable ParsedComparison::RHS(void) const noexcept {
-  return ParsedVariable(impl->rhs.used_var);
+  return ParsedVariable(impl->rhs.UseBase::used_var);
 }
 
 ComparisonOperator ParsedComparison::Operator(void) const noexcept {
@@ -331,12 +331,12 @@ ParsedComparison::Using(ParsedVariable var) {
 }
 
 DisplayRange ParsedAssignment::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->lhs.used_var->name.Position(),
+  return DisplayRange(impl->lhs.UseBase::used_var->name.Position(),
                       impl->rhs.literal.NextPosition());
 }
 
 ParsedVariable ParsedAssignment::LHS(void) const noexcept {
-  return ParsedVariable(impl->lhs.used_var);
+  return ParsedVariable(impl->lhs.UseBase::used_var);
 }
 
 ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
@@ -389,14 +389,14 @@ unsigned ParsedPredicate::Arity(void) const noexcept {
 // Return the `n`th argument of this predicate.
 ParsedVariable ParsedPredicate::NthArgument(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedVariable(impl->argument_uses[n]->used_var);
+  return ParsedVariable(impl->argument_uses[n]->UseBase::used_var);
 }
 
 // All variables used as arguments to this predicate.
 NodeRange<ParsedVariable> ParsedPredicate::Arguments(void) const {
   assert(0 < Arity());
   return NodeRange<ParsedVariable>(
-      impl->argument_uses.front()->used_var,
+      impl->argument_uses.front()->UseBase::used_var,
       static_cast<intptr_t>(__builtin_offsetof(
           Node<ParsedVariable>, next_var_in_arg_list)));
 }
@@ -450,6 +450,11 @@ ParameterBinding ParsedParameter::Binding(void) const noexcept {
 
 unsigned ParsedParameter::Index(void) const noexcept {
   return impl->index;
+}
+
+// Returns `true` if this variable is an unnamed variable.
+bool ParsedParameter::IsUnnamed(void) const noexcept {
+  return impl->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable;
 }
 
 // Applies only to `bound` parameters of functors.
@@ -764,11 +769,11 @@ ParsedClause ParsedClause::Containing(ParsedPredicate pred) noexcept {
 }
 
 ParsedClause ParsedClause::Containing(ParsedAssignment assignment) noexcept {
-  return ParsedClause(assignment.impl->lhs.used_var->context->clause);
+  return ParsedClause(assignment.impl->lhs.UseBase::used_var->context->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedComparison compare) noexcept {
-  return ParsedClause(compare.impl->lhs.used_var->context->clause);
+  return ParsedClause(compare.impl->lhs.UseBase::used_var->context->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
