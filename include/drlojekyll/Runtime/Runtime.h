@@ -209,7 +209,7 @@ class Aggregate;
 template <typename AggregatorType>
 class Aggregate<AggregatorType, NoConfigVars, NoGroupVars> {
  public:
-  AggregatorType &GetForUpdate(void) noexcept {
+  AggregatorType *Get(void) noexcept {
 
   }
 };
@@ -217,7 +217,7 @@ class Aggregate<AggregatorType, NoConfigVars, NoGroupVars> {
 template <typename AggregatorType, typename... ConfigVarTypes>
 class Aggregate<AggregatorType, ConfigVars<ConfigVarTypes...>, NoGroupVars> {
  public:
-  AggregatorType &Get(
+  AggregatorType *Get(
       ConfigVarTypes&&... config_vars) noexcept {
 
   }
@@ -226,7 +226,7 @@ class Aggregate<AggregatorType, ConfigVars<ConfigVarTypes...>, NoGroupVars> {
 template <typename AggregatorType, typename... GroupVarTypes>
 class Aggregate<AggregatorType, NoConfigVars, GroupVars<GroupVarTypes...>> {
  public:
-  AggregatorType &Get(
+  AggregatorType *Get(
       GroupVarTypes&&... group_vars) noexcept {
 
   }
@@ -235,7 +235,7 @@ class Aggregate<AggregatorType, NoConfigVars, GroupVars<GroupVarTypes...>> {
 template <typename AggregatorType, typename... GroupVarTypes, typename... ConfigVarTypes>
 class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, GroupVars<ConfigVarTypes...>> {
  public:
-  AggregatorType &Get(
+  AggregatorType *Get(
       GroupVarTypes&&... group_vars,
       ConfigVarTypes&&... config_vars) noexcept {
 

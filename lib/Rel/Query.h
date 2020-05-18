@@ -390,6 +390,12 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Is this node dead?
   bool is_dead{false};
 
+  // `true` if this view can produce deletions. For example, when an aggregate
+  // is updated, the old summary values are produced as a deletion. Similarly,
+  // when a kvindex is updated, if the new values differ from the old ones, a
+  // deletion record is produced.
+  bool can_produce_deletions{false};
+
  protected:
   // Utility for depth calculation.
   static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);

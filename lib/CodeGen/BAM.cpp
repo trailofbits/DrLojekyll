@@ -100,7 +100,7 @@
 namespace hyde {
 namespace {
 
-static unsigned gNextAggregate = 0;
+static unsigned gNextAggregate = 1;
 
 //static unsigned TypeSize(TypeLoc loc) {
 //  switch (loc.Kind()) {
@@ -355,7 +355,13 @@ static void CallUsers(OutputStream &os, QueryView view, const char *indent,
   std::vector<QueryColumn> input_cols;
 
   ForEachUser(view, [&] (QueryView target_view) {
-    os << indent << "V" << target_view.UniqueId();
+
+    if (target_view.IsAggregate()) {
+      os << indent << "__stages[(__wid * 2) + " << added << "].V"
+         << target_view.UniqueId() << "_inbox.emplace_back(";
+    } else {
+      os << indent << "V" << target_view.UniqueId();
+    }
 
     input_cols.clear();
 
@@ -424,7 +430,12 @@ static void CallUsers(OutputStream &os, QueryView view, const char *indent,
       assert(false);
     }
 
-    os << '<' << added << ">(\n" << indent << "    ";
+    if (!target_view.IsAggregate()) {
+      os << '<' << added << ">(";
+    }
+
+    os << "\n" << indent << "    ";
+
     auto sep = "";
     for (auto in_col : input_cols) {
       if (in_col.IsConstant()) {
@@ -448,7 +459,9 @@ static void CallUsers(OutputStream &os, QueryView view, const char *indent,
       sep = ", ";
     }
 
-    os << sep << "\n    " << indent << "__stages, __wid, __nw);\n";
+    if (!target_view.IsAggregate()) {
+      os << sep << "\n    " << indent << "__stages, __wid, __nw);\n";
+    }
   });
 }
 
@@ -535,26 +548,7 @@ static void DeclareAggregate(
     os << sep << functor.Name() << '_' << binding_pattern
        << "_config &__agg, bool __added);\n\n";
   }
-  os << "template <bool __added>\n"
-     << "static DR_INLINE void V" << agg.UniqueId() << '(';
-  auto sep = "";
-  for (auto col : agg.InputGroupColumns()) {
-    os << sep << TypeName(col) << CommentOnCol(os, col);
-    sep = ", ";
-  }
-
-  for (auto col : agg.InputConfigurationColumns()) {
-    os << sep << TypeName(col) << CommentOnCol(os, col);
-    sep = ", ";
-  }
-
-  for (auto col : agg.InputAggregatedColumns()) {
-    os << sep << TypeName(col) << CommentOnCol(os, col);
-  }
-
-  os << ") noexcept;\n";
 }
-
 
 // Generate code associated with an aggregate.
 static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
@@ -593,14 +587,23 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
   }
 
   os << "/* Aggregate: " << ParsedDeclaration(summarizer) << " \n";
+
+  std::vector<QueryColumn> index_to_col;
+  auto num_group_configs = 0u;
+
   for (auto col : group_cols) {
     os << " * Group var: " << col.Variable() << "\n";
+    index_to_col.push_back(col);
+    ++num_group_configs;
   }
   for (auto col : config_cols) {
     os << " * Config var: " << col.Variable() << "\n";
+    index_to_col.push_back(col);
+    ++num_group_configs;
   }
   for (auto col : agg_cols) {
     os << " * Aggregating var: " << col.Variable() << "\n";
+    index_to_col.push_back(col);
   }
   for (auto col : summary_cols) {
     os << " * Summary var: " << col.Variable() << "\n";
@@ -638,30 +641,108 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
 
   os << "> MA" << id << ";\n\n";
 
+  //
+  //  auto [col_to_index, index_to_col] = ArgumentList(
+  //      os, group_cols, config_cols, agg_cols);
 
   os << "template <bool __added>\n"
-     << "static DR_INLINE void V" << id << '(';
-
-  auto [col_to_index, index_to_col] = ArgumentList(
-      os, group_cols, config_cols, agg_cols);
-
-  os << ",\n    Stage *__stages"
+     << "static DR_INLINE void V" << id << "(\n    Stage *__stages"
      << ",\n    unsigned __wid"
-     << ",\n    unsigned __nw) noexcept {\n";
+     << ",\n    unsigned __nw) noexcept {\n"
+     << "  " << summarizer.Name() << '_' << binding_pattern
+     << " *__prev_agg = nullptr;\n";
+
+  auto sep = "";
+
+  for (auto col : agg.GroupColumns()) {
+    os << "  " << TypeName(col) << " prev_C" << col.UniqueId() << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+  for (auto col : agg.ConfigurationColumns()) {
+    os << "  " << TypeName(col) << " prev_C" << col.UniqueId() << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+  for (auto col : agg.SummaryColumns()) {
+    os << "  " << TypeName(col) << " prev_C" << col.UniqueId() << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+  os << "  auto update_prev = [=] (void) -> void {\n"
+     << "    auto [";
+
+  sep = "";
+  for (const auto col : agg.SummaryColumns()) {
+    os << sep << "new_C" << col.UniqueId();
+    sep = ", ";
+  }
+
+  os << "] = __prev_agg.Summarize();\n"
+     << "    if (";
+
+  sep = "";
+  for (const auto col : agg.SummaryColumns()) {
+    os << sep << "new_C" << col.UniqueId() << " != " << "prev_C"
+       << col.UniqueId();
+    sep = " || ";
+  }
+
+  os << ") {\n\n"
+     << "      // Remove the old summary values.\n";
+
+  for (const auto col : agg.GroupColumns()) {
+    os << "      const auto C" << col.UniqueId() << " = prev_C"
+       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
+  }
+  for (const auto col : agg.ConfigurationColumns()) {
+    os << "      const auto C" << col.UniqueId() << " = prev_C"
+       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
+  }
+  for (const auto col : agg.SummaryColumns()) {
+    os << "      auto C" << col.UniqueId() << " = prev_C" << col.UniqueId()
+       << ';' << CommentOnCol(os, col) << '\n';
+  }
+
+  AddTuple(os, QueryView::From(agg), "      ", "0");
+
+  os << "\n"
+     << "      // Send the new summary values.\n";
+
+  for (const auto col : agg.SummaryColumns()) {
+    os << "      C" << col.UniqueId() << " = new_C" << col.UniqueId() << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+
+  AddTuple(os, QueryView::From(agg), "      ", "1");
+
+  os << "    }\n"
+     << "  };\n\n"
+     << "  for (auto [";
+
+  auto i = 0u;
+  sep = "";
+  std::unordered_map<QueryColumn, unsigned> col_to_index;
+  for (auto col : index_to_col) {
+    os << sep << 'I' << i;
+    col_to_index.emplace(col, i++);
+    sep = ", ";
+  }
+
+  os << "] : __stages[(__wid * 2) + __added].V" << agg.UniqueId()
+     << "_inbox) {\n";
 
   // Now name the column variables.
   for (auto [col, index] : col_to_index) {
-    os << "  const auto C" << col.UniqueId() << " = I" << index << ";"
+    os << "    const auto C" << col.UniqueId() << " = I" << index << ";"
        << CommentOnCol(os, col) << '\n';
   }
 
   // If there are group/config columns then we can spread work out across
   // workers.
-  os << "\n  if (1 < __nw) {\n";
-  if (!group_cols.empty() || !config_cols.empty()) {
-    os << "    const auto __hash = Hash<";
+  os << "    if (1 < __nw) {\n";
 
-    auto sep = "";
+  if (!group_cols.empty() || !config_cols.empty()) {
+    os << "      const auto __hash = Hash<";
+
+    sep = "";
     for (auto col : group_cols) {
       os << sep << TypeName(col);
       sep = ", ";
@@ -681,153 +762,94 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
       os << sep << 'C' << col.UniqueId();
       sep = ", ";
     }
-    os << ");\n";
+    os << ");\n\n";
 
   // If there are no group/config cols, then do a fixed assignment of the
   // aggregate to a worker.
   } else {
-    os << "    const auto __hash = " << (gNextAggregate++) << "u;\n";
+    os << "      const auto __hash = " << (gNextAggregate++) << "u;\n\n";
   }
 
-  os << "    // Send this tuple to another worker.\n"
-     << "    if (const auto __owid = __hash % __nw; __owid != __wid) {\n";
+  os << "      // Send this tuple to another worker.\n"
+     << "      if (const auto __owid = __hash % __nw; __owid != __wid) {\n"
+     << "        __stages[(2u * __owid) + __added].V" << agg.UniqueId()
+     << "_inbox.emplace_back(";
 
-  AddTuple(os, QueryView::From(agg), "      ", "__added", "__owid");
+  sep = "\n            ";
+  for (auto j = 0u; j < i; ++j) {
+    os << sep << 'I' << j << CommentOnCol(os, index_to_col[j]);
+    sep = ",\n            ";
+  }
 
-  os << "      return;\n"
-     << "    }\n"
-     << "  }\n\n"
-     << "  auto &__agg = MA" << id << ".Get(";
+  os << ");\n"
+     << "        continue;\n"
+     << "      }\n"
+     << "    }\n";
 
-  auto sep = "";
-  for (const auto col : group_cols) {
-    os << sep << "C" << col.UniqueId();
+
+  os << "    const auto __agg = MA" << id << ".Get(";
+
+  sep = "";
+  for (auto i = 0u; i < num_group_configs; ++i) {
+    os << sep << 'I' << i;
     sep = ", ";
   }
+  os << ");\n"
+     << "    if (__prev_agg == __agg) {\n";
 
+  // Cal the summarizer function.
+  os << "      " << summarizer.Name() << '_' << binding_pattern << "_update(";
+  sep = "";
+  for (auto i = num_group_configs; i < index_to_col.size(); ++i) {
+    os << sep << 'I' << i;
+    sep = ", ";
+  }
+  os << sep << "__agg, __added);\n"
+     << "      continue;\n"
+     << "    } else if (__prev_agg) {\n"
+     << "      update_prev();\n"
+     << "    }\n"
+     << "    __prev_agg = nullptr;\n"
+     << "    const auto __has_current = __agg->IsInitialized();\n"
+     << "    if (!__has_current) {\n"
+     << "      if constexpr (!__added) {\n"
+     << "        continue;\n"
+     << "      }\n"
+     << "      " << summarizer.Name() << '_' << binding_pattern << "_init(";
+
+  sep = "\n          ";
   for (const auto col : config_cols) {
-    os << sep << col.UniqueId();
-    sep = ", ";
-  }
-
-  os << ");\n\n"
-     << "  const auto __has_current = __agg.IsInitialized();\n"
-     << "  if (!__has_current) {\n"
-     << "    if constexpr (!__added) {\n"
-     << "      return;\n"
-     << "    }\n"
-     << "    " << summarizer.Name() << '_' << binding_pattern << "_init(";
-
-  auto b = 0u;
-  sep = "\n        ";
-
-  // Pass them in the order that they appear in the functor declaration.
-  for (auto param : summarizer.Parameters()) {
-    switch (param.Binding()) {
-      case ParameterBinding::kImplicit:
-      case ParameterBinding::kMutable:
-      case ParameterBinding::kFree:
-        assert(false);
-        break;
-
-      case ParameterBinding::kBound:
-        os << sep << "C" << config_cols[b].UniqueId()
-           << CommentOnCol(os, config_cols[b]);
-        ++b;
-        sep = ",\n        ";
-        break;
-
-      case ParameterBinding::kAggregate:
-      case ParameterBinding::kSummary:
-        break;
-    }
+    os << sep << "C" << col.UniqueId() << CommentOnCol(os, col);
+    sep = ",\n          ";
   }
 
   os << sep << "__agg);\n"
-     << "  }\n\n"
-     << "  // Get the old summary values, update the aggregate, and get the "
-     << "  // new summary values.\n"
-     << "  const auto [";
+     << "    }\n\n";
+  os << "    __prev_agg = __agg;\n";
 
+  i = 0u;
+  for (auto col : agg.GroupColumns()) {
+    os << "    prev_C" << col.UniqueId() << " = I" << (i++) << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+  for (auto col : agg.ConfigurationColumns()) {
+    os << "    prev_C" << col.UniqueId() << " = I" << (i++) << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+
+  os << "    " << summarizer.Name() << '_' << binding_pattern << "_update(";
   sep = "";
-  for (const auto col : summary_cols) {
-    os << sep << "old_C" << col.UniqueId();
+  for (auto i = num_group_configs; i < index_to_col.size(); ++i) {
+    os << sep << 'I' << i;
     sep = ", ";
   }
+  os << sep << "__agg, __added);\n";
 
-  os << "] = __agg.Summarize();\n";
-
-  // Cal the summarizer function.
-  os << "  " << summarizer.Name() << '_' << binding_pattern << "_update(";
-  auto a = 0u;
-  sep = "\n      ";
-
-  // Pass them in the order that they appear in the functor declaration.
-  for (auto param : summarizer.Parameters()) {
-    switch (param.Binding()) {
-      case ParameterBinding::kImplicit:
-      case ParameterBinding::kMutable:
-      case ParameterBinding::kFree:
-        assert(false);
-        break;
-
-      case ParameterBinding::kAggregate:
-        os << sep << "C" << agg_cols[a].UniqueId()
-           << CommentOnCol(os, agg_cols[a]);
-        ++a;
-        sep = ",\n      ";
-        break;
-
-      case ParameterBinding::kBound:
-      case ParameterBinding::kSummary:
-        break;
-    }
-  }
-
-  os << sep << "__agg, __added);\n"
-     << "  const auto [";
-
-  sep = "";
-  for (const auto col : summary_cols) {
-    os << sep << "new_C" << col.UniqueId();
-    sep = ", ";
-  }
-  os << "] = __agg.Summarize();\n\n"
-     << "  if (__has_current) {\n"
-     << "    if (";
-
-  sep = "";
-  for (const auto col : summary_cols) {
-    os << sep << "old_C" << col.UniqueId() << " != new_C" << col.UniqueId();
-    sep = "||\n      ";
-  }
-
-  os << ") {\n";
-
-  // Remove the old version.
-  os << "      // Remove the old summary values.\n";
-  for (const auto col : summary_cols) {
-    os << "      const auto C" << col.UniqueId() << " = old_C" << col.UniqueId()
-       << ';' << CommentOnCol(os, col) << '\n';
-  }
-
-  AddTuple(os, QueryView::From(agg), "      ", "0");
-
-  os << "    } else {\n"
-     << "      return;  // Nothing changed.\n"
-     << "    }\n"
-     << "  }\n\n";
-
-  // Add the new version.
-  os << "  // Add the new summary values.\n";
-  for (const auto col : summary_cols) {
-    os << "  const auto C" << col.UniqueId() << " = new_C" << col.UniqueId()
-       << ';' << CommentOnCol(os, col) << '\n';
-  }
-
-  AddTuple(os, QueryView::From(agg), "  ", "1");
-
-  os << "}\n\n";
+  os << "  }\n\n"
+     << "  if (__prev_agg) {\n"
+     << "    update_prev();\n"
+     << "  }\n"
+     << "}\n\n";
 }
 
 static void DefineTuple(OutputStream &os, QueryTuple view) {
@@ -1375,6 +1397,29 @@ static void DefineStage(OutputStream &os, Query query) {
     if (view.IsJoin()) {
 
     } else {
+      // For aggregates, we need to have a holding area for their inputs to
+      // enable sharding the work across multiple threads. It also means that
+      // we can have aggregates process all of their work in sequence. This
+      // lets us compress out removals :-D
+      if (view.IsAggregate()) {
+        auto agg = QueryAggregate::From(view);
+        os << "  std::vector<std::tuple<";
+        for (const auto col : agg.InputGroupColumns()) {
+          os << sep << TypeName(col);
+          sep = ", ";
+        }
+        for (const auto col : agg.InputConfigurationColumns()) {
+          os << sep << TypeName(col);
+          sep = ", ";
+        }
+        for (const auto col : agg.InputAggregatedColumns()) {
+          os << sep << TypeName(col);
+          sep = ", ";
+        }
+        os << ">> V" << id << "_inbox;\n";
+      }
+
+      sep = "";
       os << "  std::vector<std::tuple<";
       for (const auto col : view.Columns()) {
         os << sep << TypeName(col);
@@ -1428,13 +1473,12 @@ static void DefineStep(OutputStream &os, Query query) {
     });
   }
 
-  os << '\n'
-     << "// Stepping function for advancing execution one step. This function\n"
+  os << "// Stepping function for advancing execution one step. This function\n"
      << "// takes in the current worker id `__wid` and the total number of\n"
      << "// workers `__nw`. `__stages` is an `__nw * 2` element array, where\n"
      << "// there are two entries per worker: the first is for removals, the\n"
      << "// second is for insertions.\n"
-     << "extern \"C\" void Step(Stage *__stages, unsigned __wid,"
+     << "extern \"C\" void Step(Stage *__stages, unsigned __wid, "
      << "unsigned __nw) {\n"
      << "  Stage *__stage = nullptr;\n"
      << "  bool __changed = false;\n"
@@ -1443,6 +1487,17 @@ static void DefineStep(OutputStream &os, Query query) {
 
   auto i = 0;
   for (auto added : {"false", "true"}) {
+    if (!i) {
+      os << "\n"
+         << "  // The first stage of dataflow execution is to process removals.\n"
+         << "  // Removals will be processed until none are present.\n\n";
+    } else {
+      os << "\n"
+         << "  // The second stage of dataflow execution is to process insertions,\n"
+         << "  // which are processed in grouped, batched by the depth of the node\n"
+         << "  // in the dataflow graph. If anything is changed, then we jump back\n"
+         << "  // to the first stage to process removals.\n\n";
+    }
     os << "  __stage = &(__stages[(2u * __wid) + " << (i++) << "]);\n";
 
     for (const auto &views : views_by_depth) {
@@ -1455,25 +1510,39 @@ static void DefineStep(OutputStream &os, Query query) {
         auto sep = "";
         if (view.IsJoin()) {
 
-        } else {
-          os << "  if (auto __vec = &(__stage->V" << id << "); !__vec->empty()) {\n"
+        // Process the aggregate inbox first.
+        //
+        // NOTE(pag): We don't need to reverse the order because there is no
+        //            risk that the inbox will change while we're processing it.
+        } else if (view.IsAggregate()) {
+          os << "  // Process the aggregate's inbox.\n"
+             << "  if (auto __vec = &(__stage->V" << id << "_inbox); !__vec->empty()) {\n"
              << "    __changed = true;\n"
              << "    ([=] (void) {\n"
              << "      std::sort(__vec->begin(), __vec->end());\n"
-             << "      std::reverse(__vec->begin(), __vec->end());\n"
-             << "      do {\n"
-             << "        auto [";
-          for (const auto col : view.Columns()) {
-            os << sep << "C" << col.UniqueId() << CommentOnCol(os, col);
-            sep = ",\n              ";
-          }
-          os << "] = __vec->back();\n"
-             << "        __vec->pop_back();\n";
-          CallUsers(os, view, "        ", added);
-          os << "      } while (!__vec->empty());\n"
-             << "    })();\n"
-             << "  }\n";
+             << "      V" << id << '<' << added << ">(__stages, __wid, __nw);\n"
+             << "      __vec->clear();\n"
+             << "    )();\n"
+             << "  }\n\n";
         }
+
+        os << "  if (auto __vec = &(__stage->V" << id << "); !__vec->empty()) {\n"
+           << "    __changed = true;\n"
+           << "    ([=] (void) {\n"
+           << "      std::sort(__vec->begin(), __vec->end());\n"
+           << "      std::reverse(__vec->begin(), __vec->end());\n"
+           << "      do {\n"
+           << "        auto [";
+        for (const auto col : view.Columns()) {
+          os << sep << "C" << col.UniqueId() << CommentOnCol(os, col);
+          sep = ",\n              ";
+        }
+        os << "] = __vec->back();\n"
+           << "        __vec->pop_back();\n";
+        CallUsers(os, view, "        ", added);
+        os << "      } while (!__vec->empty());\n"
+           << "    })();\n"
+           << "  }\n\n";
       }
 
       // We let ourselves process all additions in a given level without
