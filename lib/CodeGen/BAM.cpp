@@ -650,7 +650,8 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
      << ",\n    unsigned __wid"
      << ",\n    unsigned __nw) noexcept {\n"
      << "  " << summarizer.Name() << '_' << binding_pattern
-     << " *__prev_agg = nullptr;\n";
+     << " *__prev_agg = nullptr;\n"
+     << "  auto __has_current = false;\n";
 
   auto sep = "";
 
@@ -676,7 +677,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
   }
 
   os << "] = __prev_agg.Summarize();\n"
-     << "    if (";
+     << "    if (__has_current && (";
 
   sep = "";
   for (const auto col : agg.SummaryColumns()) {
@@ -685,7 +686,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
     sep = " || ";
   }
 
-  os << ") {\n\n"
+  os << ")) {\n\n"
      << "      // Remove the old summary values.\n";
 
   for (const auto col : agg.GroupColumns()) {
@@ -705,6 +706,26 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
 
   os << "\n"
      << "      // Send the new summary values.\n";
+
+  for (const auto col : agg.SummaryColumns()) {
+    os << "      C" << col.UniqueId() << " = new_C" << col.UniqueId() << ';'
+       << CommentOnCol(os, col) << '\n';
+  }
+
+  AddTuple(os, QueryView::From(agg), "      ", "1");
+
+  os << "\n"
+     << "    // First tuple for this aggregate.\n"
+     << "    } else if (!__has_current) {\n";
+
+  for (const auto col : agg.GroupColumns()) {
+    os << "      const auto C" << col.UniqueId() << " = prev_C"
+       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
+  }
+  for (const auto col : agg.ConfigurationColumns()) {
+    os << "      const auto C" << col.UniqueId() << " = prev_C"
+       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
+  }
 
   for (const auto col : agg.SummaryColumns()) {
     os << "      C" << col.UniqueId() << " = new_C" << col.UniqueId() << ';'
@@ -795,6 +816,9 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
     sep = ", ";
   }
   os << ");\n"
+     << "\n"
+     << "    // This tuple will be summarized into the same aggregate as the\n"
+     << "    // previous tuple.\n"
      << "    if (__prev_agg == __agg) {\n";
 
   // Cal the summarizer function.
@@ -806,11 +830,16 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
   }
   os << sep << "__agg, __added);\n"
      << "      continue;\n"
+     << "\n"
+     << "    // This tuple belongs to a differently-configured aggregate. Commit\n"
+     << "    // changes to that prior aggregate.\n"
      << "    } else if (__prev_agg) {\n"
      << "      update_prev();\n"
      << "    }\n"
      << "    __prev_agg = nullptr;\n"
-     << "    const auto __has_current = __agg->IsInitialized();\n"
+     << "\n"
+     << "    // Check if we should initialize the aggregate.\n"
+     << "    __has_current = __agg->IsInitialized();\n"
      << "    if (!__has_current) {\n"
      << "      if constexpr (!__added) {\n"
      << "        continue;\n"
@@ -824,8 +853,9 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
   }
 
   os << sep << "__agg);\n"
-     << "    }\n\n";
-  os << "    __prev_agg = __agg;\n";
+     << "    }\n\n"
+     << "    // Update the current aggregate.\n"
+     << "    __prev_agg = __agg;\n";
 
   i = 0u;
   for (auto col : agg.GroupColumns()) {
@@ -846,6 +876,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
   os << sep << "__agg, __added);\n";
 
   os << "  }\n\n"
+     << "  // If we updated an aggregate then commit the changes.\n"
      << "  if (__prev_agg) {\n"
      << "    update_prev();\n"
      << "  }\n"
@@ -1553,7 +1584,7 @@ static void DefineStep(OutputStream &os, Query query) {
       if (i) {
         os << "  if (__changed) {\n"
            << "    goto __restart;\n"
-           << "  }\n";
+           << "  }\n\n";
       }
     }
 
@@ -1563,7 +1594,7 @@ static void DefineStep(OutputStream &os, Query query) {
     if (!i) {
       os << "  if (__changed) {\n"
          << "    goto __restart;\n"
-         << "  }\n";
+         << "  }\n\n";
     }
   }
 
