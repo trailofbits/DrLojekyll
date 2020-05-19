@@ -393,7 +393,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (num_group) {
       os << "<TD colspan=\"" << num_group << "\">GROUP</TD>";
     }
-    auto num_config = agg.NumConfigColumns();
+    auto num_config = agg.NumConfigurationColumns();
     if (num_config) {
       os << "<TD colspan=\"" << num_config << "\">CONFIG</TD>";
     }
@@ -407,7 +407,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"g1_" << i << "\">" << col.Variable() << "</TD>";
     }
     for (auto i = 0u; i < num_config; ++i) {
-      auto col = agg.NthInputConfigColumn(i);
+      auto col = agg.NthInputConfigurationColumn(i);
       os << "<TD port=\"g2_" << i << "\">" << col.Variable() << "</TD>";
     }
     for (auto i = 0u; i < num_summ; ++i) {
@@ -425,7 +425,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
     for (auto i = 0u; i < num_config; ++i) {
-      auto col = agg.NthInputConfigColumn(i);
+      auto col = agg.NthInputConfigurationColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":g2_" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";

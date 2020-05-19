@@ -18,6 +18,9 @@ static void RelabelGroupIDs(QueryImpl *query) {
 
   unsigned i = 0u;
   query->ForEachView([&] (VIEW *view) {
+    if (view->is_dead) {
+      return;
+    }
     view->depth = 0;
     view->hash = 0;
     view->is_canonical = false;
@@ -33,6 +36,10 @@ static void RelabelGroupIDs(QueryImpl *query) {
   });
 
   query->ForEachView([&] (VIEW *view) {
+    if (view->is_dead) {
+      return;
+    }
+
     (void) view->Depth();  // Calculate view depth.
   });
 

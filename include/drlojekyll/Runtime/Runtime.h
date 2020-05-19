@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 #if defined(__clang__) || defined(__GNUC__)
-# define DR_INLINE __attribute__((always_inline)) inline
+# define DR_INLINE [[gnu::always_inline]] inline
 #elif defined(_MSVC_LANG)
 # define DR_INLINE __forceinline
 #else
@@ -419,22 +419,22 @@ class Map<EmptyKeyVars, ValueVars<Values...>> {
   std::tuple<Values..., bool> val;
 };
 
-#define INIT_AGGREGATOR(name, binding_pattern, ...) \
+#define CONFIGURE_AGGREGATOR(name, binding_pattern, ...) \
   struct name ## _ ## binding_pattern ## _result; \
   struct name ## _ ## binding_pattern ## _config; \
   extern "C" \
   void name ## _ ## binding_pattern ## _init( \
-      __VA_ARGS__ __VA_OPT__(,) \
-      name ## _ ## binding_pattern ## _config &self)
+      name ## _ ## binding_pattern ## _config &self, \
+      #__VA_ARGS__)
 
 #define UPDATE_AGGREGATOR(name, binding_pattern, ...) \
   struct name ## _ ## binding_pattern ## _result; \
   struct name ## _ ## binding_pattern ## _config; \
   extern "C" \
   void name ## _ ## binding_pattern ## _update( \
-      __VA_ARGS__ __VA_OPT__(,) \
+      name ## _ ## binding_pattern ## _config &self, \
       bool add, \
-      name ## _ ## binding_pattern ## _config &self)
+      #__VA_ARGS__)
 
 
 #define MERGE_VALUES(name, type, prev_var, proposed_var) \

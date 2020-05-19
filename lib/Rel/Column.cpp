@@ -56,7 +56,10 @@ Node<QueryColumn> *ColumnSet::Leader(void) {
 
 Node<QueryColumn>::~Node(void) {
   if (equiv_columns) {
-    const auto col_set = equiv_columns->Find();
+    std::shared_ptr<ColumnSet> our_equiv_columns;
+    our_equiv_columns.swap(equiv_columns);
+
+    const auto col_set = our_equiv_columns->Find();
     auto it = std::remove_if(
         col_set->columns.begin(), col_set->columns.end(),
         [=](COL *col) {
@@ -64,8 +67,7 @@ Node<QueryColumn>::~Node(void) {
         });
     col_set->columns.erase(it);
 
-    equiv_columns->parent.reset();
-    equiv_columns.reset();
+    our_equiv_columns->parent.reset();
   }
 }
 

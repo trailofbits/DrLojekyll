@@ -383,7 +383,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   unsigned NumGroupColumns(void) const noexcept;
 
   // Returns the number of columns used for configuration.
-  unsigned NumConfigColumns(void) const noexcept;
+  unsigned NumConfigurationColumns(void) const noexcept;
 
   // Returns the number of columns being summarized.
   unsigned NumSummarizedColumns(void) const noexcept;
@@ -392,7 +392,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   QueryColumn NthGroupColumn(unsigned n) const noexcept;
 
   // Returns the `nth` output config column.
-  QueryColumn NthConfigColumn(unsigned n) const noexcept;
+  QueryColumn NthConfigurationColumn(unsigned n) const noexcept;
 
   // Returns the `nth` output summarized column.
   QueryColumn NthSummarizedColumn(unsigned n) const noexcept;
@@ -401,7 +401,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   QueryColumn NthInputGroupColumn(unsigned n) const noexcept;
 
   // Returns the `nth` input config column.
-  QueryColumn NthInputConfigColumn(unsigned n) const noexcept;
+  QueryColumn NthInputConfigurationColumn(unsigned n) const noexcept;
 
   // Returns the `nth` input summarized column.
   QueryColumn NthInputSummarizedColumn(unsigned n) const noexcept;

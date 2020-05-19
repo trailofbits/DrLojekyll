@@ -603,7 +603,7 @@ unsigned QueryAggregate::NumGroupColumns(void) const noexcept {
 }
 
 // Returns the number of columns used for configuration.
-unsigned QueryAggregate::NumConfigColumns(void) const noexcept {
+unsigned QueryAggregate::NumConfigurationColumns(void) const noexcept {
   return impl->config_columns.Size();
 }
 
@@ -620,7 +620,7 @@ QueryColumn QueryAggregate::NthGroupColumn(unsigned n) const noexcept {
 }
 
 // Returns the `nth` output config column.
-QueryColumn QueryAggregate::NthConfigColumn(unsigned n) const noexcept {
+QueryColumn QueryAggregate::NthConfigurationColumn(unsigned n) const noexcept {
   const auto num_group_cols = impl->group_by_columns.Size();
   assert((n + num_group_cols) < impl->config_columns.Size());
   return QueryColumn(impl->columns[n + num_group_cols]);
@@ -642,7 +642,7 @@ QueryColumn QueryAggregate::NthInputGroupColumn(unsigned n) const noexcept {
 }
 
 // Returns the `nth` input config column.
-QueryColumn QueryAggregate::NthInputConfigColumn(unsigned n) const noexcept {
+QueryColumn QueryAggregate::NthInputConfigurationColumn(unsigned n) const noexcept {
   assert(n < impl->config_columns.Size());
   return QueryColumn(impl->config_columns[n]);
 }

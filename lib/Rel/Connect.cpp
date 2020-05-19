@@ -108,7 +108,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
         } else {
           index->input_columns.AddUse(merge_col);
         }
-        ++i;
       }
     }
 

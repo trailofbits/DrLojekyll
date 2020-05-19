@@ -21,6 +21,23 @@
 
 #include "Parse.h"
 
+// TODO(pag):
+//
+//    Add syntax like:
+//
+//        foo(A, B)
+//          : a(...),
+//            b(...)
+//          : c(...).
+//
+//    As a variant form of
+//
+//        foo(A, B)
+//          : a(...),
+//            b(...).
+//        foo(A, B)
+//          : c(...).
+
 namespace hyde {
 namespace {
 

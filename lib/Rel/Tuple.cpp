@@ -87,6 +87,18 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     }
   }
 
+  // Figure out how many input columns are really needed. A single input
+  // columns might be able to multiple output column, thus leading to
+  // `in_to_out.size()` matching `columns.Size()`.
+  std::vector<COL *> needed_inputs;
+  for (auto [in_col, out_col] : in_to_out) {
+    needed_inputs.push_back(in_col);
+    (void) out_col;
+  }
+  std::sort(needed_inputs.begin(), needed_inputs.end());
+  auto needed_inputs_it = std::unique(needed_inputs.begin(), needed_inputs.end());
+  needed_inputs.erase(needed_inputs_it, needed_inputs.end());
+
   // If this tuple is forwarding the values of something else along, and if it
   // is the only user of that other hting, then forward those values along,
   // otherwise we'll depend on CSE to try to merge this tuple with any other
@@ -124,11 +136,11 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   input_columns.Sort();
 
   // Shrinking the number of columns.
-  if (max_i > in_to_out.size()) {
+  if (max_i > needed_inputs.size()) {
 
     DefList<COL> new_output_cols(this);
-    for (auto in_col : input_columns) {
-      if (const auto old_out_col = in_to_out[in_col]) {
+    for (auto in_col : needed_inputs) {
+      if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
         const auto new_out_col = new_output_cols.Create(
             old_out_col->var, this, old_out_col->id);
         old_out_col->ReplaceAllUsesWith(new_out_col);
@@ -136,7 +148,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     }
 
     UseList<COL> new_input_cols(this);
-    for (auto in_col : input_columns) {
+    for (auto in_col : needed_inputs) {
       if (in_to_out[in_col]) {
         new_input_cols.AddUse(in_col);
       }

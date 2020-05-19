@@ -1,9 +1,11 @@
 
 #include <algorithm>
 #include <climits>
+
+#functor min(aggregate i32 Val, summary i32 MinVal)
 #inline <!
 
-INIT_AGGREGATOR(min, as) {
+CONFIGURE_AGGREGATOR(min, as) {
   self.MinVal = INT_MAX;
 }
 
@@ -11,23 +13,25 @@ UPDATE_AGGREGATOR(min, as, i32 Val) {
 	self.MinVal = std::min<i32>(self.MinVal, Val);
 }
 
+!>
+
+#functor min(bound i32 OldMin, bound i32 ProposedMin, free i32 NewMin)
+#inline <!
+
 MERGE_VALUES(min, i32, OldMin, ProposedMin) {
   return std::min<i32>(OldMin, ProposedMin);
 } 
 
 !>
 
-#functor min(aggregate i32 Val, summary i32 MinVal)
-#functor min(bound i32 OldMin, bound i32 ProposedMin, free i32 NewMin)
-
 #query first_block(free i32 Address)
 #message add_basic_block(i32 BlockAddress)
 #local agg_first_block(Address)
-#local mut_first_block(mutable(min) Address)
+#local mut_first_block(i32 A, mutable(min) Address)
 
 agg_first_block(MinAddress) : min(BlockAddress, MinAddress) over add_basic_block(BlockAddress).
-mut_first_block(Address) : add_basic_block(Address).
+mut_first_block(Address, Address) : add_basic_block(Address).
 
  
 first_block(MinAddress) : agg_first_block(MinAddress).
-first_block(MinAddress) : mut_first_block(MinAddress).
+first_block(MinAddress) : mut_first_block(_, MinAddress).

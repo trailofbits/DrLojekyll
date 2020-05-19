@@ -252,6 +252,11 @@ class Def {
   explicit Def(T *self_)
       : self(self_) {}
 
+  ~Def(void) {
+    std::vector<std::unique_ptr<Use<T>>> our_uses;
+    our_uses.swap(uses);
+  }
+
   Use<T> *CreateUse(User *user) {
     const auto use = new Use<T>;
     user->Update(User::gNextTimestamp++);
