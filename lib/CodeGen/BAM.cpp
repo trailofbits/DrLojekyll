@@ -919,6 +919,7 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
   }
   os << '\n'
      << "  for (auto [";
+  sep = "";
   for (auto col : view.ValueColumns()) {
     os << sep << "proposed_C" << col.UniqueId();
     sep = ", ";
