@@ -706,8 +706,30 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
   AddTuple(os, QueryView::From(agg), "      ", "true");
 
   os << "    }\n"
-     << "  };\n\n"
-     << "  for (auto [";
+     << "  };\n\n";
+
+  // There aren't group/config columns, so we can
+  if (!num_group_and_config_cols) {
+    os << "  // There are no group/config columns to hash, so we can check\n"
+       << "  // the entire range to see if it's on the right worker.\n"
+       << "  if (1 < __nw) {\n"
+       << "    if (auto __owid = " << (gNextUnhomedInbox++) << " % __nw; "
+       << "__owid != __wid) {\n"
+       << "      auto &__ovec = __stages[(__owid * 2) + __added].V" << id
+       << "_inbox;\n"
+       << "      if (__ovec.empty()) {\n"
+       << "        __ovec.swap(__vec);\n"
+       << "      } else {\n"
+       << "        if (__ovec.size() < __vec.size()) {\n"
+       << "          __ovec.swap(__vec);\n"
+       << "        }\n"
+       << "        __ovec.insert(__ovec.end(), __vec.begin(), __vec.end());\n"
+       << "      }\n"
+       << "    }\n"
+       << "  }\n\n";
+  }
+
+  os << "  for (auto [";
 
   auto i = 0u;
   sep = "";
@@ -728,10 +750,9 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
 
   // If there are group/config columns then we can spread work out across
   // workers.
-  os << "    if (1 < __nw) {\n";
-
   if (num_group_and_config_cols) {
-    os << "      const auto __hash = Hash<";
+    os << "    if (1 < __nw) {\n"
+       << "      const auto __hash = Hash<";
 
     sep = "";
     for (i = 0u; i < num_group_and_config_cols; ++i) {
@@ -746,34 +767,29 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
       os << sep << 'I' << i;
       sep = ", ";
     }
-    os << ");\n\n";
+    os << ");\n\n"
+       << "      // Send this tuple to another worker.\n"
+       << "      if (const auto __owid = __hash % __nw; __owid != __wid) {\n"
+       << "        if (__prev_agg) {\n"
+       << "          __update_prev();\n"
+       << "          __prev_agg = nullptr;\n"
+       << "        }\n"
+       << "        __stages[(2u * __owid) + __added].V" << agg.UniqueId()
+       << "_inbox.emplace_back(";
 
-  // If there are no group/config cols, then do a fixed assignment of the
-  // aggregate to a worker.
-  } else {
-    os << "      const auto __hash = " << (gNextUnhomedInbox++) << "u;\n\n";
+    sep = "\n            ";
+    for (auto j = 0u; j < i; ++j) {
+      os << sep << 'I' << j << CommentOnCol(os, index_to_col[j]);
+      sep = ",\n            ";
+    }
+
+    os << ");\n"
+       << "        continue;\n"
+       << "      }\n"
+       << "    }\n\n";
   }
 
-  os << "      // Send this tuple to another worker.\n"
-     << "      if (const auto __owid = __hash % __nw; __owid != __wid) {\n"
-     << "        if (__prev_agg) {\n"
-     << "          __update_prev();\n"
-     << "          __prev_agg = nullptr;\n"
-     << "        }\n"
-     << "        __stages[(2u * __owid) + __added].V" << agg.UniqueId()
-     << "_inbox.emplace_back(";
-
-  sep = "\n            ";
-  for (auto j = 0u; j < i; ++j) {
-    os << sep << 'I' << j << CommentOnCol(os, index_to_col[j]);
-    sep = ",\n            ";
-  }
-
-  os << ");\n"
-     << "        continue;\n"
-     << "      }\n"
-     << "    }\n\n"
-     << "    if (__prev_agg) {\n\n";
+  os << "    if (__prev_agg) {\n\n";
 
   if (num_group_and_config_cols) {
     os << "      // This tuple belongs to a differently-configured aggregate.\n"
@@ -896,6 +912,9 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "      if (__ovec.empty()) {\n"
      << "        __ovec.swap(__vec);\n"
      << "      } else {\n"
+     << "        if (__ovec.size() < __vec.size()) {\n"
+     << "          __ovec.swap(__vec);\n"
+     << "        }\n"
      << "        __ovec.insert(__ovec.end(), __vec.begin(), __vec.end());\n"
      << "      }\n"
      << "      return;\n"
@@ -1013,7 +1032,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
 
   os << "  auto __has_prev = false;\n"
      << "  auto __is_first = false;\n"
-     << "  const auto &__vec = __stages[(__wid * 2) + __added];\n\n"
+     << "  auto &__vec = __stages[(__wid * 2) + __added];\n\n"
      << "  // Sort the inbox by the keys, maintaining the order of values.\n"
      << "  std::stable_sort(__vec->begin(), __vec->end(), "
      << "[] (auto __lhs, auto __rhs) -> bool {\n"
