@@ -22,8 +22,7 @@
 #include "Parse.h"
 
 // TODO(pag):
-//
-//    Add syntax like:
+//  - Add syntax like:
 //
 //        foo(A, B)
 //          : a(...),
@@ -37,6 +36,35 @@
 //            b(...).
 //        foo(A, B)
 //          : c(...).
+//
+//  - Add an ordered choice operator :-. This would only be allowed for #local
+//    definitions, because otherwise you could define clauses in other modules
+//    and not guarantee an order.
+//        foo(A, B)
+//          :- x(Y, Y, Z),
+//             ....
+//
+//    Independent of cut, the semantics of ordered sequencing doesn't actually
+//    matter, and so really, it's all about ordering and the CUT operator.
+//    One possibility is that if one case is proven, then all others are somehow
+//    double checked. If any fail, the tuple is not sent forward. The mechanics
+//    of that double checking isn't super idea.
+//
+//        not_x(A) :- x(A), !, fail.
+//        not_x(A).
+//
+//    What might that look like as a data flow? On its own, perhaps nothing,
+//    but we could require, in the sips visior, that any variable appearing
+//    before a CUT is bound, and thus the usage with the argument A is bound.
+//
+//        foo(A) : bar(A), not_x(A).
+//
+//        [bar A] -+----------------------------------.
+//                 +-> [ANTI-JOIN (A,A)] -> not_x(A) --+--> [JOIN (A,A)] -->
+//          [x A] -'
+//
+//    Maybe an ANTI-JOIN is actually what is needed to support !x(A), and
+//    CUTs and ordered choice should be ignored!
 
 namespace hyde {
 namespace {
@@ -307,9 +335,16 @@ void ParserImpl::LexAllTokens(Display display) {
                   tok.SpellingRange(), tok.ErrorPosition());
 
       switch (lexeme) {
-        case Lexeme::kInvalid:
-          assert(false);
+        case Lexeme::kInvalid: {
+          std::stringstream error_ss;
+          if (reader.TryGetErrorMessage(&error_ss)) {
+            error << error_ss.str();
+          } else {
+            error << "Unrecognized token in stream";
+          }
+          ignore_line = true;
           break;
+        }
 
         case Lexeme::kInvalidStreamOrDisplay: {
           std::stringstream error_ss;
@@ -2355,7 +2390,13 @@ Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
     assert(!data.empty());
     assign->rhs.data = data;
   } else {
-    assert(false);
+    switch (tok.Lexeme()) {
+      case Lexeme::kLiteralNumber:
+        assign->rhs.data = "0";
+        break;
+      default:
+        break;
+    }
   }
   assign->rhs.assigned_to = lhs;
 

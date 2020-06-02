@@ -56,6 +56,163 @@ union Bytes {
   }
 };
 
+template <typename... Args>
+class Rows {
+ public:
+  using SelfType = Rows<Args...>;
+  using TupleType = std::tuple<Args...>;
+
+  ~Rows(void) {
+    if (begin_) {
+      delete [] begin_;
+    }
+  }
+
+  Rows(SelfType &&that) noexcept
+      : begin_(that.begin_),
+        next_(that.next_),
+        end_(that.end_),
+        is_sorted(that.is_sorted),
+        is_empty(that.is_empty) {
+    that.begin_ = nullptr;
+    that.next_ = nullptr;
+    that.end_ = nullptr;
+    that.is_sorted = true;
+    that.is_empty = true;
+  }
+
+  SelfType Release(void) {
+    return SelfType(std::move(*this));
+  }
+
+  SelfType &operator=(SelfType &&that) noexcept {
+    next_ = begin_;
+    is_sorted = true;
+    is_empty = true;
+
+    std::swap(begin_, that.begin_);
+    std::swap(next_, that.next_);
+    std::swap(end_, that.end_);
+    std::swap(is_sorted, that.is_sorted);
+    std::swap(is_empty, that.is_empty);
+
+    return *this;
+  }
+
+  const TupleType *begin(void) const {
+    return begin_;
+  }
+
+  const TupleType *end(void) const {
+    return next_;
+  }
+
+  uint64_t Size(void) const {
+    return static_cast<uint64_t>(end_ - begin_);
+  }
+
+  void Emplace(Args&&... vals) {
+
+    if (next_ >= end_) {
+      auto curr_size = Size();
+      auto new_size = ((curr_size * 5u) / 3u) + 4096u;
+      auto new_begin = new std::tuple<Args...>[new_size];
+      std::move(begin_, end_, new_begin);
+      delete [] begin_;
+      begin_ = new_begin;
+      next_ = &(new_begin[curr_size]);
+      end_ = &(new_begin[new_size]);
+    }
+
+    *next_++ = std::make_tuple<Args...>(vals...);
+
+    if (is_empty) {
+      is_sorted = true;
+      is_empty = false;
+
+    } else if (is_sorted) {
+      const auto prev_tuple = next_[-2];
+      const auto curr_tuple = next_[-1];
+      if (prev_tuple == curr_tuple) {
+        --next_;
+
+      } else if (prev_tuple > curr_tuple) {
+        is_sorted = false;
+      }
+    }
+  }
+
+  void Sort(void) {
+    if (!is_sorted && !is_empty) {
+      std::sort(begin_, next_);
+      next_ = std::unique(begin_, next_);
+      is_sorted = true;
+    }
+  }
+
+  static void RemoveCommon(SelfType &a, SelfType &b) {
+    a.Sort();
+    b.Sort();
+
+    auto a_it = a.begin_;
+    auto a_end = a.next_;
+    auto a_result = a.begin_;
+
+    auto b_it = b.begin_;
+    auto b_end = b.next_;
+    auto b_result = b.begin_;
+
+    for (; a_it != a_end && b_it != b_end; ) {
+      const auto a = *a_it;
+      const auto b = *b_it;
+      if (a < b) {
+        if (a_it != a_result) {
+          *a_result = std::move(a);
+          ++a_result;
+        }
+        ++a_it;
+
+      } else if (b < a) {
+        if (b_it != b_result) {
+          *b_result = std::move(b);
+          ++b_result;
+        }
+        ++b_it;
+      }
+    }
+
+    a.next_ = a_result;
+    b.next_ = b_result;
+
+    a.is_empty = a.begin_ == a.next_;
+    b.is_empty = b.begin_ == b.next_;
+  }
+
+  void RemoveCommon(Rows<Args...> &b) {
+    return RemoveCommon(*this, b);
+  }
+
+  void Clear(void) {
+    is_empty = true;
+    is_sorted = true;
+    next_ = begin_;
+  }
+
+  bool IsEmpty(void) const {
+    return is_empty;
+  }
+
+ private:
+  Rows(const SelfType &) = delete;
+  SelfType &operator=(const SelfType &) = delete;
+
+  TupleType *begin_{nullptr};
+  TupleType *next_{nullptr};
+  TupleType *end_{nullptr};
+  bool is_sorted{true};
+  bool is_empty{true};
+};
+
 class ProgramBase {
  public:
   virtual ~ProgramBase(void);

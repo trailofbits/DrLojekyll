@@ -18,7 +18,7 @@
 namespace hyde {
 namespace {
 
-static const std::string kStopChars = " \n,.:()!#{}[];=-+*/&^$%'~`";
+static const std::string kStopChars = " \r\t\n,.:()!#{}[]<>;=-+*/&^$%\"'~`";
 
 }  // namespace
 
@@ -605,32 +605,31 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         if (!std::isdigit(next_ch)) {
           is_all_decimal = false;
         }
-        return std::isalnum(next_ch);
+        switch (next_ch) {
+          case '0': case '1': case '2': case '3': case '4': case '5':
+          case '6': case '7': case '8': case '9':
+          case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
+          case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
+          case 'x': case 'X':
+            return true;
+          default:
+            return false;
+        }
       });
 
-      // Go look for decimal points.
-      if (is_all_decimal) {
-        if (impl->reader.TryReadChar(&ch)) {
-          if (ch == '.') {
-            if (impl->reader.TryReadChar(&ch)) {
-              if (std::isdigit(ch)) {
-                impl->data.push_back('.');
-                impl->data.push_back(ch);
-                accumulate_if([](char next_ch) {
-                  return std::isdigit(next_ch);
-                });
-
-                interpreter.number.has_decimal_point = true;
-              } else {
-                impl->reader.UnreadChar();  // Non-digit.
-                impl->reader.UnreadChar();  // Period.
-              }
-            } else {
-              impl->reader.UnreadChar();
-            }
-          } else {
-            impl->reader.UnreadChar();
-          }
+      // We read a number, but it was attached to another token.
+      if (impl->reader.TryReadChar(&ch)) {
+        impl->reader.UnreadChar();
+        const auto error_pos = impl->reader.CurrentPosition();
+        if (kStopChars.find(ch) == std::string::npos) {
+          interpreter.error.error_offset = impl->data.size();
+          interpreter.error.error_col = error_pos.Column();
+          interpreter.error.disp_lines = 0;
+          interpreter.error.invalid_char = ch;
+          interpreter.error.lexeme =
+              static_cast<uint8_t>(Lexeme::kInvalidNumber);
+          ret.opaque_data = interpreter.flat;
+          return true;
         }
       }
 
@@ -768,36 +767,77 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         }
 
       // Looks like decimal.
+      } else if (is_all_decimal) {
+
+        // Go look for decimal points, might be floating point.
+        if (impl->reader.TryReadChar(&ch)) {
+          if (ch == '.') {
+            if (impl->reader.TryReadChar(&ch)) {
+              if (std::isdigit(ch)) {
+                impl->data.push_back('.');
+                impl->data.push_back(ch);
+                accumulate_if([](char next_ch) {
+                  return std::isdigit(next_ch);
+                });
+
+                interpreter.number.has_decimal_point = true;
+
+                // We read a number, but it was attached to another token.
+                if (impl->reader.TryReadChar(&ch)) {
+                  impl->reader.UnreadChar();
+                  const auto error_pos = impl->reader.CurrentPosition();
+                  if (kStopChars.find(ch) == std::string::npos) {
+                    interpreter.error.error_offset = impl->data.size();
+                    interpreter.error.error_col = error_pos.Column();
+                    interpreter.error.disp_lines = 0;
+                    interpreter.error.invalid_char = ch;
+                    interpreter.error.lexeme =
+                        static_cast<uint8_t>(Lexeme::kInvalidNumber);
+                    ret.opaque_data = interpreter.flat;
+                    return true;
+                  }
+                }
+
+              } else {
+                impl->reader.UnreadChar();  // Non-digit.
+                impl->reader.UnreadChar();  // Period.
+              }
+            } else {
+              impl->reader.UnreadChar();
+            }
+          } else {
+            impl->reader.UnreadChar();
+          }
+        }
+
+        interpreter.number.lexeme = Lexeme::kLiteralNumber;
+        interpreter.number.spelling_kind =
+            lex::NumberSpellingKind::kDecimal;
+        interpreter.number.spelling_width =
+            static_cast<uint16_t>(impl->data.size());
+
+      // Some weird mix.
       } else {
-        auto all_decimal = true;
         auto i = 0u;
-        while (all_decimal && i < impl->data.size()) {
+        is_all_decimal = true;
+        while (is_all_decimal && i < impl->data.size()) {
           switch (impl->data[i]) {
             case '0': case '1': case '2': case '3': case '4': case '5':
             case '6': case '7': case '8': case '9':
               ++i;
               continue;
             default:
-              all_decimal = false;
+              is_all_decimal = false;
               break;
           }
         }
 
-        if (all_decimal) {
-          interpreter.number.lexeme = Lexeme::kLiteralNumber;
-          interpreter.number.spelling_kind =
-              lex::NumberSpellingKind::kDecimal;
-          interpreter.number.spelling_width =
-              static_cast<uint16_t>(impl->data.size());
-
-        } else {
-          interpreter.error.error_offset = i;
-          interpreter.error.error_col = ret.position.Column() + i;
-          interpreter.error.disp_lines = 0;
-          interpreter.error.invalid_char = impl->data[i];
-          interpreter.error.lexeme =
-              static_cast<uint8_t>(Lexeme::kInvalidNumber);
-        }
+        interpreter.error.error_offset = i;
+        interpreter.error.error_col = ret.position.Column() + i;
+        interpreter.error.disp_lines = 0;
+        interpreter.error.invalid_char = impl->data[i];
+        interpreter.error.lexeme =
+            static_cast<uint8_t>(Lexeme::kInvalidNumber);
       }
 
       ret.opaque_data = interpreter.flat;
@@ -829,6 +869,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       interpreter.error.error_col = ret.position.Column();
       interpreter.error.error_offset = 0;
       interpreter.error.lexeme = static_cast<uint8_t>(Lexeme::kInvalidUnknown);
+      ret.opaque_data = interpreter.flat;
       return true;
   }
 }

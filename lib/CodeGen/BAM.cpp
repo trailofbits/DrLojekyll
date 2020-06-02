@@ -76,7 +76,43 @@
 //
 //    Have a way of marking some queries as `materialized` or `populate`, to
 //    say that we should eagerly fill them up.
-
+//
+//    Taint nodes in terms of whether or not they can produce removals. Propagate
+//    this taint. Use this to make the tuple processor more state-machine like
+//    rather than going and redoing all the things.
+//
+//    For things like MAPs, FILTERs, and AGGREGATEs, we may want a column-
+//    oriented input representation.
+//
+//      - Might be able to create a kind of symbolic arity estimator, where we
+//        can then go and reason about the number of entries in a given column,
+//        or leader columns.
+//
+//      - Think of things like: if a MAP goes an MAPs some columns, it would
+//        so something like: iterate over the columns, producing a new set of
+//        columns that could index into the old ones (for the pass-through'd)
+//        columns, and tell us which to include or not.
+//
+//      - Ditto for filters.
+//
+//      - Think about whether or not it makes sense to store columns of things
+//        in memory in a compressed representation always.
+//
+//    Try:
+//      Consider breaking some of the control-flow in the MAPs, KVINDEXs,
+//      AGGREGATEs to operate in batches. E.g. first run through a batch that is
+//      approximately cache-sized and make sure every aggregate is initialized,
+//      then re-go over the batch and do the aggregating. Goal is to minimize the
+//      amount of branching in the inner loop by breaking it out into multiple
+//      loops, eaach doing part of the control flow.
+//
+//    Check:
+//      Is it possible have a deletion be received before its corresponding
+//      addition?
+//
+//      I think it is possible to have deletions processed before recipients
+//      see insertions.
+//
 namespace hyde {
 namespace {
 
@@ -637,7 +673,6 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
 
   os << '\n'
      << "  auto &__vec = __stages[(__wid * 2) + __added].V" << id << "_inbox;\n"
-     << "  std::sort(__vec->begin(), __vec->end());\n\n"
      << "  auto __update_prev = [=] (void) -> void {\n"
      << "    auto [";
 
@@ -713,7 +748,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
     os << "  // There are no group/config columns to hash, so we can check\n"
        << "  // the entire range to see if it's on the right worker.\n"
        << "  if (1 < __nw) {\n"
-       << "    if (auto __owid = " << (gNextUnhomedInbox++) << " % __nw; "
+       << "    if (auto __owid = " << (gNextUnhomedInbox++) << " & __nw; "
        << "__owid != __wid) {\n"
        << "      auto &__ovec = __stages[(__owid * 2) + __added].V" << id
        << "_inbox;\n"
@@ -769,7 +804,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg) {
     }
     os << ");\n\n"
        << "      // Send this tuple to another worker.\n"
-       << "      if (const auto __owid = __hash % __nw; __owid != __wid) {\n"
+       << "      if (const auto __owid = __hash & __nw; __owid != __wid) {\n"
        << "        if (__prev_agg) {\n"
        << "          __update_prev();\n"
        << "          __prev_agg = nullptr;\n"
@@ -905,7 +940,7 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "\n"
      << "    // These tuples are on the wrong worker, move them over.\n"
      << "    if (const auto __owid = " << (gNextUnhomedInbox++)
-     << "u % __nw; __owid != __wid) {\n"
+     << "u & __nw; __owid != __wid) {\n"
      << "      auto &__vec = __stage.V" << id << "_inbox;\n"
      << "      auto &__ovec = __stages[(__owid * 2) + __added].V"
      << id << "_inbox;\n"
@@ -1165,7 +1200,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
     sep = ", ";
   }
   os << ");\n"
-     << "      if (const auto __owid = __hash % __nw; __owid != __wid) {\n"
+     << "      if (const auto __owid = __hash & __nw; __owid != __wid) {\n"
      << "        __stages[(__owid * 2) + __added].emplace_back(";
 
   sep = "\n            ";
@@ -1318,7 +1353,7 @@ static void DefineMerge(OutputStream &os, QueryMerge view) {
 
   os << ");\n"
      << "    // Send this tuple to another worker.\n"
-     << "    if (const auto __owid = __hash % __nw; __owid != __wid) {\n";
+     << "    if (const auto __owid = __hash & __nw; __owid != __wid) {\n";
 
   AddTuple(os, QueryView::From(view), "      ", "__added", "__owid");
 
@@ -1603,7 +1638,7 @@ static void DefineStage(OutputStream &os, Query query) {
     // lets us compress out removals :-D
     if (view.IsAggregate()) {
       auto agg = QueryAggregate::From(view);
-      os << "  std::vector<std::tuple<";
+      os << "  ::hyde::Rows<";
       for (const auto col : agg.InputGroupColumns()) {
         os << sep << TypeName(col);
         sep = ", ";
@@ -1625,7 +1660,7 @@ static void DefineStage(OutputStream &os, Query query) {
     // we can more easily define their inboxes as having the same types as their
     // output columns.
     } else if (UseInbox(view)) {
-      os << "  std::vector<std::tuple<";
+      os << "  ::hyde::Rows<";
       for (const auto col : view.Columns()) {
         os << sep << TypeName(col);
         sep = ", ";
@@ -1634,7 +1669,7 @@ static void DefineStage(OutputStream &os, Query query) {
     }
 
     sep = "";
-    os << "  std::vector<std::tuple<";
+    os << "  ::hyde::Rows<";
     for (const auto col : view.Columns()) {
       os << sep << TypeName(col);
       sep = ", ";
@@ -1701,20 +1736,22 @@ static void DefineStep(OutputStream &os, Query query) {
   os << "__restart:\n"
      << "  __changed = false;\n";
 
-  auto i = 0;
   for (auto added : {"false", "true"}) {
-    if (!i) {
+    const auto is_remove_stage = 0 == strcmp(added, "false");
+    const auto is_add_stage = !is_remove_stage;
+
+    if (is_remove_stage) {
       os << "\n"
          << "  // The first stage of dataflow execution is to process removals.\n"
          << "  // Removals will be processed until none are present.\n\n";
     } else {
       os << "\n"
          << "  // The second stage of dataflow execution is to process insertions,\n"
-         << "  // which are processed in grouped, batched by the depth of the node\n"
+         << "  // which are processed in groups, batched by the depth of the node\n"
          << "  // in the dataflow graph. If anything is changed, then we jump back\n"
          << "  // to the first stage to process removals.\n\n";
     }
-    os << "  __stage = &(__stages[(2u * __wid) + " << (i++) << "]);\n";
+    os << "  __stage = &(__stages[(2u * __wid) + " << added << "]);\n";
 
     for (const auto &views : views_by_depth) {
       if (views.empty()) {
@@ -1728,36 +1765,63 @@ static void DefineStep(OutputStream &os, Query query) {
 
         if (view.IsJoin()) {
 
-        // Process the aggregate inbox first.
+        // Process the inbox first.
         //
         // NOTE(pag): We don't need to reverse the order because there is no
         //            risk that the inbox will change while we're processing it.
         } else if (use_inbox) {
           os << "  // Process the inbox.\n"
-             << "  if (auto __vec = &(__stage->V" << id
-             << "_inbox); !__vec->empty()) {\n"
-             << "    __changed = true;\n"
-             << "    V" << id << '<' << added << ">(__stages, __wid, __nw);\n"
-             << "    __vec->clear();\n"
+             << "  if (auto &__vec = __stage->V" << id
+             << "_inbox); !__vec.IsEmpty()) {\n"
+             << "    __changed = true;\n";
+
+          // If we're processing removals, then remove anything that the removal
+          // list and the insertion list have in common. Removing stuff ends up
+          // sorting the underlying data.
+          if (is_remove_stage) {
+            os << "    auto &__ivec = __stages[(__wid * 2) + true].V"
+               << id << "_inbox;\n"
+               << "    __vec.RemoveCommon(__ivec);\n";
+
+          } else {
+            os << "    __vec.Sort();\n";
+          }
+
+          // Invoke the inbox.
+          os << "    V" << id << '<' << added << ">(__stages, __wid, __nw);\n"
+             << "    __vec.Clear();\n"
              << "  }\n\n";
         }
 
-        os << "  if (auto __vec = &(__stage->V" << id << "); !__vec->empty()) {\n"
-           << "    __changed = true;\n"
+        os << "  if (auto __vec = &(__stage->V" << id << "); !__vec->IsEmpty()) {\n"
            << "    ([=] (void) {\n"
-           << "      std::reverse(__vec->begin(), __vec->end());\n"
-           << "      do {\n"
-           << "        auto [";
+           << "      auto __local = __vec->Release();\n";
+
+        // If we're processing removals, then remove anything that the removal
+        // list and the insertion list have in common. Removing stuff ends up
+        // sorting the underlying data.
+        if (is_remove_stage) {
+          os << "      auto &__ivec = __stages[(__wid * 2) + true].V"
+             << id << ";\n"
+             << "      __local.RemoveCommon(__ivec);\n";
+        } else {
+          os << "      __local.Sort();\n";
+        }
+        os << "      for (auto [";
 
         sep = "";
         for (const auto col : view.Columns()) {
           os << sep << "C" << col.UniqueId() << CommentOnCol(os, col);
           sep = ",\n              ";
         }
-        os << "] = __vec->back();\n"
-           << "        __vec->pop_back();\n";
+        os << "] : __local) {\n"
+           << "        __changed = true;\n";
+
         CallUsers(os, view, "        ", added);
-        os << "      } while (!__vec->empty());\n"
+        os << "      }\n"
+           << "      if (__vec->IsEmpty()) {\n"
+           << "        *__vec = std::move(__local);\n"  // Keep the memory.
+           << "      }\n"
            << "    })();\n"
            << "  }\n\n";
       }
@@ -1767,7 +1831,7 @@ static void DefineStep(OutputStream &os, Query query) {
       //
       // TODO(pag): Is this only well-defined for removals? Is this well-defined
       //            at all?
-      if (i) {
+      if (is_add_stage) {
         os << "  if (__changed) {\n"
            << "    goto __restart;\n"
            << "  }\n\n";
@@ -1777,7 +1841,7 @@ static void DefineStep(OutputStream &os, Query query) {
     // We let ourselves process all removals at a time.
     //
     // TODO(pag): Is this well-defined?
-    if (!i) {
+    if (is_remove_stage) {
       os << "  if (__changed) {\n"
          << "    goto __restart;\n"
          << "  }\n\n";
