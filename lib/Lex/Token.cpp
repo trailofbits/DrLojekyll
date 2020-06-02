@@ -52,7 +52,6 @@ DisplayPosition Token::NextPosition(void) const {
 
   switch (Lexeme()) {
     case ::hyde::Lexeme::kInvalid:
-    case ::hyde::Lexeme::kInvalidStreamOrDisplay:
       return DisplayPosition();
 
     case ::hyde::Lexeme::kEndOfFile:
@@ -76,6 +75,17 @@ DisplayPosition Token::NextPosition(void) const {
       line += token_interpreter.code.disp_lines;
       column = token_interpreter.code.next_cols;
       break;
+
+    case ::hyde::Lexeme::kInvalidDirective:
+    case ::hyde::Lexeme::kInvalidNumber:
+    case ::hyde::Lexeme::kInvalidNewLineInString:
+    case ::hyde::Lexeme::kInvalidEscapeInString:
+    case ::hyde::Lexeme::kInvalidUnterminatedString:
+    case ::hyde::Lexeme::kInvalidUnterminatedCode:
+    case ::hyde::Lexeme::kInvalidStreamOrDisplay:
+    case ::hyde::Lexeme::kInvalidTypeName:
+    case ::hyde::Lexeme::kInvalidUnknown:
+      return ErrorPosition();
 
     default:
       index += token_interpreter.basic.spelling_width;

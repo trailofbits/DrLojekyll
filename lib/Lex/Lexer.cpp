@@ -11,9 +11,9 @@
 
 #include <drlojekyll/Lex/StringPool.h>
 
-#include "Token.h"
-
 #include <iostream>
+
+#include "Token.h"
 
 namespace hyde {
 namespace {
@@ -78,7 +78,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     // to the stream underlying the display, or due to there being an invalid
     // character in the display.
     if (impl->reader.TryGetErrorMessage(nullptr)) {
-      interpreter.basic.lexeme = static_cast<uint8_t>(
+      interpreter.error.disp_lines = 0;
+      interpreter.error.error_col = ret.position.Column();
+      interpreter.error.invalid_char = '\0';
+      interpreter.error.error_offset = 0;
+      interpreter.error.lexeme = static_cast<uint8_t>(
           Lexeme::kInvalidStreamOrDisplay);
 
     // We've reached the end of this display, yield a token and pop this
@@ -602,15 +606,14 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     case '6': case '7': case '8': case '9': {
       auto is_all_decimal = true;
       accumulate_if([&is_all_decimal] (char next_ch) {
-        if (!std::isdigit(next_ch)) {
-          is_all_decimal = false;
-        }
         switch (next_ch) {
           case '0': case '1': case '2': case '3': case '4': case '5':
           case '6': case '7': case '8': case '9':
+            return true;
           case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
           case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
           case 'x': case 'X':
+            is_all_decimal = false;
             return true;
           default:
             return false;
@@ -818,6 +821,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
       // Some weird mix.
       } else {
+        std::cerr << "HERE?!\n";
         auto i = 0u;
         is_all_decimal = true;
         while (is_all_decimal && i < impl->data.size()) {
