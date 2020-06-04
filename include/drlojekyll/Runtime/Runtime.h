@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <type_traits>
 #include <unordered_map>
 
 #if defined(__clang__) || defined(__GNUC__)
@@ -56,177 +57,116 @@ union Bytes {
   }
 };
 
-template <typename... Args>
-class Rows {
+// A work list that lets us generically store tuple data and the "case" that
+// should handle the tuple data.
+template <size_t kNumCases>
+class WorkList {
+ private:
+  static constexpr bool kIdIsI8 = static_cast<uint8_t>(kNumCases) == kNumCases;
+  static constexpr bool kIdIsI16 = static_cast<uint16_t>(kNumCases) == kNumCases;
+
+  enum : size_t {
+    kMinSize = 4096u
+  };
+
  public:
-  using SelfType = Rows<Args...>;
-  using TupleType = std::tuple<Args...>;
 
-  ~Rows(void) {
-    if (begin_) {
-      delete [] begin_;
-    }
+  using IdType = typename std::conditional<
+      kIdIsI8, uint8_t,
+      typename std::conditional<
+          kIdIsI16, uint16_t,
+          uint32_t>::type>::type;
+
+  static_assert(sizeof(IdType) < kMinSize);
+
+  WorkList(void)
+      : begin_(new uint8_t[kMinSize]),
+        end_(&(begin_[kMinSize])) {
+    Clear();
   }
 
-  Rows(SelfType &&that) noexcept
-      : begin_(that.begin_),
-        next_(that.next_),
-        end_(that.end_),
-        is_sorted(that.is_sorted),
-        is_empty(that.is_empty) {
-    that.begin_ = nullptr;
-    that.next_ = nullptr;
-    that.end_ = nullptr;
-    that.is_sorted = true;
-    that.is_empty = true;
+  ~WorkList(void) {
+    delete[] begin_;
   }
 
-  SelfType Release(void) {
-    return SelfType(std::move(*this));
+  void Clear(void) noexcept {
+    *reinterpret_cast<IdType *>(begin_) = kNumCases;
+    curr_ = &(begin_[sizeof(IdType)]);
+    load_ = 0;
   }
 
-  SelfType &operator=(SelfType &&that) noexcept {
-    next_ = begin_;
-    is_sorted = true;
-    is_empty = true;
-
-    std::swap(begin_, that.begin_);
-    std::swap(next_, that.next_);
-    std::swap(end_, that.end_);
-    std::swap(is_sorted, that.is_sorted);
-    std::swap(is_empty, that.is_empty);
-
-    return *this;
-  }
-
-  const TupleType *begin(void) const {
-    return begin_;
-  }
-
-  const TupleType *end(void) const {
-    return next_;
-  }
-
-  uint64_t Size(void) const {
-    return static_cast<uint64_t>(end_ - begin_);
-  }
-
-  void Emplace(Args&&... vals) {
-
-    if (next_ >= end_) {
-      auto curr_size = Size();
-      auto new_size = ((curr_size * 5u) / 3u) + 4096u;
-      auto new_begin = new std::tuple<Args...>[new_size];
-      std::move(begin_, end_, new_begin);
-      delete [] begin_;
-      begin_ = new_begin;
-      next_ = &(new_begin[curr_size]);
-      end_ = &(new_begin[new_size]);
+  template <typename... Args>
+  void EmplaceBack(Args... args, IdType case_id) noexcept {
+    using Tuple = std::tuple<Args...>;
+    constexpr auto needed_space = sizeof(Tuple) + sizeof(IdType) + sizeof(bool);
+    if (&(curr_[needed_space]) >= end_) {
+      Resize();
     }
 
-    *next_++ = std::make_tuple<Args...>(vals...);
+    *reinterpret_cast<Tuple *>(curr_) = std::make_tuple<Args...>(args...);
+    curr_ += sizeof(Tuple);
 
-    if (is_empty) {
-      is_sorted = true;
-      is_empty = false;
+    *reinterpret_cast<IdType *>(curr_) = case_id;
+    curr_ += sizeof(IdType);
 
-    } else if (is_sorted) {
-      const auto prev_tuple = next_[-2];
-      const auto curr_tuple = next_[-1];
-      if (prev_tuple == curr_tuple) {
-        --next_;
-
-      } else if (prev_tuple > curr_tuple) {
-        is_sorted = false;
-      }
-    }
+    load_ += sizeof(Tuple);
   }
 
-  void Sort(void) {
-    if (!is_sorted && !is_empty) {
-      std::sort(begin_, next_);
-      next_ = std::unique(begin_, next_);
-      is_sorted = true;
-    }
+  IdType PopCase(void) noexcept {
+    curr_ -= sizeof(IdType);
+    return *reinterpret_cast<IdType *>(curr_);
   }
 
-  static void RemoveCommon(SelfType &a, SelfType &b) {
-    a.Sort();
-    b.Sort();
-
-    auto a_it = a.begin_;
-    auto a_end = a.next_;
-    auto a_result = a.begin_;
-
-    auto b_it = b.begin_;
-    auto b_end = b.next_;
-    auto b_result = b.begin_;
-
-    for (; a_it != a_end && b_it != b_end; ) {
-      const auto a = *a_it;
-      const auto b = *b_it;
-      if (a < b) {
-        if (a_it != a_result) {
-          *a_result = std::move(a);
-          ++a_result;
-        }
-        ++a_it;
-
-      } else if (b < a) {
-        if (b_it != b_result) {
-          *b_result = std::move(b);
-          ++b_result;
-        }
-        ++b_it;
-      }
-    }
-
-    a.next_ = a_result;
-    b.next_ = b_result;
-
-    a.is_empty = a.begin_ == a.next_;
-    b.is_empty = b.begin_ == b.next_;
+  template <typename... Args>
+  const std::tuple<Args...> &PopTuple(void) noexcept {
+    using Tuple = std::tuple<Args...>;
+    curr_ -= sizeof(Tuple);
+    return *reinterpret_cast<Tuple *>(curr_);
   }
 
-  void RemoveCommon(Rows<Args...> &b) {
-    return RemoveCommon(*this, b);
-  }
-
-  void Clear(void) {
-    is_empty = true;
-    is_sorted = true;
-    next_ = begin_;
-  }
-
-  bool IsEmpty(void) const {
-    return is_empty;
+  size_t Load(void) const {
+    return load_;
   }
 
  private:
-  Rows(const SelfType &) = delete;
-  SelfType &operator=(const SelfType &) = delete;
+  using SelfType = WorkList<kNumCases>;
 
-  TupleType *begin_{nullptr};
-  TupleType *next_{nullptr};
-  TupleType *end_{nullptr};
-  bool is_sorted{true};
-  bool is_empty{true};
+  WorkList(const SelfType &) = delete;
+  WorkList(SelfType &&) noexcept = delete;
+
+  [[gnu::noinline]]
+  void Resize(void) {
+    auto curr_size = end_ - begin_;
+    auto new_size = ((curr_size * 5u) / 3u) + kMinSize;
+    auto new_begin = new uint8_t[new_size];
+    std::move(begin_, end_, new_begin);
+    delete [] begin_;
+    curr_ = &(new_begin[curr_ - begin_]);
+    end_ = &(new_begin[new_size]);
+    begin_ = new_begin;
+  }
+
+  uint8_t *begin_;
+  uint8_t *curr_{nullptr};
+  uint8_t *end_;
+  uint64_t load_{0};
 };
 
-class ProgramBase {
- public:
-  virtual ~ProgramBase(void);
 
-  ProgramBase(unsigned worker_id_, unsigned num_workers_);
-
-  virtual void Init(void) noexcept = 0;
-  virtual void Step(unsigned selector, void *data) noexcept = 0;
-
- protected:
-  const unsigned __worker_id;
-  const unsigned __num_workers;
-  const uint64_t __num_workers_mask;
-};
+//class ProgramBase {
+// public:
+//  virtual ~ProgramBase(void);
+//
+//  ProgramBase(unsigned worker_id_, unsigned num_workers_);
+//
+//  virtual void Init(void) noexcept = 0;
+//  virtual void Step(unsigned selector, void *data) noexcept = 0;
+//
+// protected:
+//  const unsigned __worker_id;
+//  const unsigned __num_workers;
+//  const uint64_t __num_workers_mask;
+//};
 
 // Template for hashing multiple values.
 template <typename... KeyTypes>

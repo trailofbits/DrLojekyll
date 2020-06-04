@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...)
+#define DEBUG(...) __VA_ARGS__
 
 namespace hyde {
 namespace {
@@ -211,7 +211,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto col : kv.InputValueColumns()) {
       os << "<TD port=\"g" << (i++) << "\">" << col.Variable() << "</TD>";
     }
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << kv.DebugString() << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -335,7 +335,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "<TD rowspan=\"2\">MAP "
        << ParsedDeclarationName(map.Functor()) << "</TD>";
-    for (auto col : map.Columns()) {
+    for (auto col : map.MappedColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
     }
@@ -397,7 +397,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (num_config) {
       os << "<TD colspan=\"" << num_config << "\">CONFIG</TD>";
     }
-    auto num_summ = agg.NumSummarizedColumns();
+    auto num_summ = agg.NumAggregateColumns();
     if (num_summ) {
       os << "<TD colspan=\"" << num_summ << "\">SUMMARIZE</TD>";
     }
@@ -411,7 +411,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"g2_" << i << "\">" << col.Variable() << "</TD>";
     }
     for (auto i = 0u; i < num_summ; ++i) {
-      auto col = agg.NthInputSummarizedColumn(i);
+      auto col = agg.NthInputAggregateColumn(i);
       os << "<TD port=\"s" << i << "\">" << col.Variable() << "</TD>";
     }
 
@@ -431,7 +431,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
     }
     for (auto i = 0u; i < num_summ; ++i) {
-      auto col = agg.NthInputSummarizedColumn(i);
+      auto col = agg.NthInputAggregateColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":s" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
@@ -452,17 +452,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
     os << ParsedDeclarationName(decl) << "</TD>";
 
-    for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
+    for (auto i = 0u, max_i = insert.NumInputColumns(); i < max_i; ++i) {
       os << "<TD port=\"c" << i << "\">"
-         << insert.NthColumn(i).Variable() << "</TD>";
+         << insert.NthInputColumn(i).Variable() << "</TD>";
     }
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString() << "</TD>";)
 
     os << kEndTable << ">];\n";
 
-    for (auto i = 0u, max_i = insert.Arity(); i < max_i; ++i) {
-      const auto col = insert.NthColumn(i);
+    for (auto i = 0u, max_i = insert.NumInputColumns(); i < max_i; ++i) {
+      const auto col = insert.NthInputColumn(i);
       const auto view = QueryView::Containing(col);
       os << "v" << insert.UniqueId() << ":c" << i << " -> "
          << "v" << view.UniqueId() << ":c" << col.UniqueId() << ";\n";
@@ -517,6 +517,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
     }
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString() << "</TD>";)
     os << kEndTable << ">];\n";
 
     for (auto view : merge.MergedViews()) {

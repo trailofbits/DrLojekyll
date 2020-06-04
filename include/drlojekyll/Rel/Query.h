@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 #include <utility>
 
 namespace hyde {
@@ -191,9 +192,6 @@ class QueryInput : public query::QueryNode<QueryInput> {
  public:
   const ParsedDeclaration &Declaration(void) const noexcept;
 
-  // The input columns.
-  DefinedNodeRange<QueryColumn> Columns(void) const;
-
   static QueryInput &From(QueryStream &stream);
 
   QueryRelation Relation(void) const noexcept;
@@ -208,6 +206,7 @@ class QueryAggregate;
 class QueryMap;
 class QueryTuple;
 class QueryKVIndex;
+class QueryInsert;
 
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
@@ -225,6 +224,7 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView &From(QueryAggregate &view) noexcept;
   static QueryView &From(QueryMerge &view) noexcept;
   static QueryView &From(QueryConstraint &view) noexcept;
+  static QueryView &From(QueryInsert &view) noexcept;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
@@ -234,6 +234,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsAggregate(void) const noexcept;
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
+  bool IsInsert(void) const noexcept;
 
   // Returns the depth of this node in the graph. This is defined as depth
   // from an input (associated with a message receive) node, where the deepest
@@ -302,6 +303,12 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // columns.
   unsigned NumMergedColumns(void) const noexcept;
 
+  // The number of views joined together.
+  unsigned NumJoinedViews(void) const noexcept;
+
+  // Return a list of the joined views.
+  const std::vector<QueryView> &JoinedViews(void) const noexcept;
+
   // Returns the `nth` pivot output column.
   QueryColumn NthOutputPivotColumn(unsigned n) const noexcept;
 
@@ -331,10 +338,13 @@ class QueryMap : public query::QueryNode<QueryMap> {
   QueryColumn NthInputColumn(unsigned n) const noexcept;
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
-  // The resulting mapped columns. This does not include group by columns.
+  // All output columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
-  // The resulting grouped columns.
+  // The resulting mapped columns. This does not include copied columns.
+  DefinedNodeRange<QueryColumn> MappedColumns(void) const;
+
+  // The resulting copied columns.
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
 
   // Returns the number of output columns.
@@ -385,8 +395,11 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // Returns the number of columns used for configuration.
   unsigned NumConfigurationColumns(void) const noexcept;
 
-  // Returns the number of columns being summarized.
-  unsigned NumSummarizedColumns(void) const noexcept;
+  // Returns the number of columns being aggregates.
+  unsigned NumAggregateColumns(void) const noexcept;
+
+  // Returns the number of sumary columns being produced.
+  unsigned NumSummaryColumns(void) const noexcept;
 
   // Returns the `nth` output grouping column.
   QueryColumn NthGroupColumn(unsigned n) const noexcept;
@@ -395,7 +408,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   QueryColumn NthConfigurationColumn(unsigned n) const noexcept;
 
   // Returns the `nth` output summarized column.
-  QueryColumn NthSummarizedColumn(unsigned n) const noexcept;
+  QueryColumn NthSummaryColumn(unsigned n) const noexcept;
 
   // Returns the `nth` input grouping column.
   QueryColumn NthInputGroupColumn(unsigned n) const noexcept;
@@ -404,7 +417,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   QueryColumn NthInputConfigurationColumn(unsigned n) const noexcept;
 
   // Returns the `nth` input summarized column.
-  QueryColumn NthInputSummarizedColumn(unsigned n) const noexcept;
+  QueryColumn NthInputAggregateColumn(unsigned n) const noexcept;
 
   UsedNodeRange<QueryColumn> InputGroupColumns(void) const noexcept;
   UsedNodeRange<QueryColumn> InputConfigurationColumns(void) const noexcept;
@@ -478,6 +491,8 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
 // An insert of one or more columns into a relation.
 class QueryInsert : public query::QueryNode<QueryInsert> {
  public:
+  static QueryInsert &From(QueryView &view);
+
   ParsedDeclaration Declaration(void) const noexcept;
 
   bool IsRelation(void) const noexcept;
@@ -486,8 +501,9 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
   QueryRelation Relation(void) const noexcept;
   QueryStream Stream(void) const noexcept;
 
-  unsigned Arity(void) const noexcept;
-  QueryColumn NthColumn(unsigned n) const noexcept;
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
   std::string DebugString(void) const noexcept;
 
@@ -602,6 +618,10 @@ class Query {
     }
 
     for (auto view : Constraints()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Inserts()) {
       cb(QueryView::From(view));
     }
   }

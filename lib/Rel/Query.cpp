@@ -104,6 +104,10 @@ QueryView &QueryView::From(QueryConstraint &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
+QueryView &QueryView::From(QueryInsert &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
+
 DefinedNodeRange<QueryColumn> QueryView::Columns(void) const {
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
@@ -157,6 +161,10 @@ bool QueryView::IsMerge(void) const noexcept {
 
 bool QueryView::IsConstraint(void) const noexcept {
   return impl->AsConstraint() != nullptr;
+}
+
+bool QueryView::IsInsert(void) const noexcept {
+  return impl->AsInsert() != nullptr;
 }
 
 // Returns the depth of this node in the graph. This is defined as depth
@@ -417,6 +425,22 @@ unsigned QueryJoin::NumPivotColumns(void) const noexcept {
   return impl->num_pivots;
 }
 
+// The number of views joined together.
+unsigned QueryJoin::NumJoinedViews(void) const noexcept {
+  if (impl->pivot_views.empty()) {
+    impl->VerifyPivots();
+  }
+  return static_cast<unsigned>(impl->pivot_views.size());
+}
+
+// Return a list of the joined views.
+const std::vector<QueryView> &QueryJoin::JoinedViews(void) const noexcept {
+  if (impl->pivot_views.empty()) {
+    impl->VerifyPivots();
+  }
+  return impl->public_pivot_views;
+}
+
 // Returns the set of pivot columns proposed by the Nth incoming view.
 UsedNodeRange<QueryColumn> QueryJoin::NthInputPivotSet(unsigned n) const noexcept {
   assert(n < impl->num_pivots);
@@ -476,8 +500,13 @@ UsedNodeRange<QueryColumn> QueryMap::InputCopiedColumns(void) const {
           impl->attached_columns.end()};
 }
 
-// The resulting mapped columns.
 DefinedNodeRange<QueryColumn> QueryMap::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+// The resulting mapped columns.
+DefinedNodeRange<QueryColumn> QueryMap::MappedColumns(void) const {
   const auto num_copied_cols = impl->attached_columns.Size();
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
           DefinedNodeIterator<QueryColumn>(
@@ -608,8 +637,15 @@ unsigned QueryAggregate::NumConfigurationColumns(void) const noexcept {
 }
 
 // Returns the number of columns being summarized.
-unsigned QueryAggregate::NumSummarizedColumns(void) const noexcept {
+unsigned QueryAggregate::NumAggregateColumns(void) const noexcept {
   return impl->aggregated_columns.Size();
+}
+
+// Returns the number of sumary columns being produced.
+unsigned QueryAggregate::NumSummaryColumns(void) const noexcept {
+  const auto num_group_cols = impl->group_by_columns.Size();
+  const auto num_bound_cols = impl->config_columns.Size();
+  return impl->columns.Size() - (num_group_cols + num_bound_cols);
 }
 
 // Returns the `nth` output grouping column.
@@ -627,7 +663,7 @@ QueryColumn QueryAggregate::NthConfigurationColumn(unsigned n) const noexcept {
 }
 
 // Returns the `nth` output summarized column.
-QueryColumn QueryAggregate::NthSummarizedColumn(unsigned n) const noexcept {
+QueryColumn QueryAggregate::NthSummaryColumn(unsigned n) const noexcept {
   const auto num_group_cols = impl->group_by_columns.Size();
   const auto num_bound_cols = impl->config_columns.Size();
   const auto disp = num_group_cols + num_bound_cols;
@@ -648,7 +684,7 @@ QueryColumn QueryAggregate::NthInputConfigurationColumn(unsigned n) const noexce
 }
 
 // Returns the `nth` input summarized column.
-QueryColumn QueryAggregate::NthInputSummarizedColumn(unsigned n) const noexcept {
+QueryColumn QueryAggregate::NthInputAggregateColumn(unsigned n) const noexcept {
   assert(n < impl->aggregated_columns.Size());
   return QueryColumn(impl->aggregated_columns[n]);
 }
@@ -764,6 +800,11 @@ std::string QueryConstraint::DebugString(void) const noexcept {
   return impl->DebugString();
 }
 
+QueryInsert &QueryInsert::From(QueryView &view) {
+  assert(view.IsInsert());
+  return reinterpret_cast<QueryInsert &>(view);
+}
+
 ParsedDeclaration QueryInsert::Declaration(void) const noexcept {
   return impl->decl;
 }
@@ -788,13 +829,18 @@ QueryStream QueryInsert::Stream(void) const noexcept {
   return QueryStream(stream);
 }
 
-unsigned QueryInsert::Arity(void) const noexcept {
+unsigned QueryInsert::NumInputColumns(void) const noexcept {
   return static_cast<unsigned>(impl->input_columns.Size());
 }
 
-QueryColumn QueryInsert::NthColumn(unsigned n) const noexcept {
+QueryColumn QueryInsert::NthInputColumn(unsigned n) const noexcept {
   assert(n < impl->input_columns.Size());
   return QueryColumn(impl->input_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryInsert::InputColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
 }
 
 std::string QueryInsert::DebugString(void) const noexcept {

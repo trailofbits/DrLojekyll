@@ -77,8 +77,14 @@ void Node<QueryJoin>::VerifyPivots(void) {
   auto it = std::unique(pivot_views.begin(), pivot_views.end());
   pivot_views.erase(it, pivot_views.end());
 
+  public_pivot_views.clear();
+  for (auto v : pivot_views) {
+    public_pivot_views.emplace_back(v);
+  }
+
   const auto num_pivot_views = pivot_views.size();
 
+  // TODO(pag): I forgot what this does or why I started the loop at `1`.
   for (auto i = 1u; i < num_pivots; ++i) {
     next_pivot_views.clear();
 

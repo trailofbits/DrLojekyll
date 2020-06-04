@@ -18,7 +18,7 @@
 namespace hyde {
 namespace {
 
-static const std::string kStopChars = " \r\t\n,.:()!#{}[]<>;=-+*/&^$%\"'~`";
+static const std::string kStopChars = " \r\t\n,.()!#{}[]<>:;=-+*/?\\|&^$%\"'~`@_";
 
 }  // namespace
 

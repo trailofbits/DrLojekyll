@@ -518,6 +518,8 @@ class Node<QueryJoin> final : public Node<QueryView> {
   std::vector<VIEW *> pivot_views;
   std::vector<VIEW *> next_pivot_views;
 
+  std::vector<QueryView> public_pivot_views;
+
   // Number of pivot columns.
   unsigned num_pivots{0};
 };
