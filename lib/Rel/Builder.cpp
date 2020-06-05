@@ -1677,6 +1677,7 @@ Query QueryBuilder::BuildQuery(void) {
   impl->query->Optimize();
   impl->query->ConnectInsertsToSelects();
   impl->query->Optimize();
+  impl->query->TrackDifferentialUpdates();
 
   Query ret(std::move(impl->query));
   impl.reset(new QueryBuilderImpl(impl->context));

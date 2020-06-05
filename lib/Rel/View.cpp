@@ -8,6 +8,62 @@ namespace hyde {
 
 Node<QueryView>::~Node(void) {}
 
+const char *Node<QuerySelect>::KindName(void) const noexcept {
+  if (relation) {
+    return "PUSH";
+  } else if (auto s = stream.get(); s) {
+    if (s->AsConstant()) {
+      return "CONST";
+    } else if (s->AsGenerator()) {
+      return "GENERATE";
+    } else if (s->AsInput()) {
+      return "INPUT";
+    } else {
+      return "STREAM";
+    }
+  } else {
+    return "SELECT";
+  }
+}
+
+const char *Node<QueryTuple>::KindName(void) const noexcept {
+  return "TUPLE";
+}
+
+const char *Node<QueryKVIndex>::KindName(void) const noexcept {
+  return "KVINDEX";
+}
+
+const char *Node<QueryJoin>::KindName(void) const noexcept {
+  return "JOIN";
+}
+
+const char *Node<QueryMap>::KindName(void) const noexcept {
+  return "MAP";
+}
+
+const char *Node<QueryAggregate>::KindName(void) const noexcept {
+  return "AGGREGATE";
+}
+
+const char *Node<QueryMerge>::KindName(void) const noexcept {
+  return "UNION";
+}
+
+const char *Node<QueryConstraint>::KindName(void) const noexcept {
+  return "FILTER";
+}
+
+const char *Node<QueryInsert>::KindName(void) const noexcept {
+  if (decl.Kind() == DeclarationKind::kQuery) {
+    return "RESPOND";
+  } else if (decl.Kind() == DeclarationKind::kMessage) {
+    return "SEND";
+  } else {
+    return "INSERT";
+  }
+}
+
 Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {
   return nullptr;
 }

@@ -8,12 +8,15 @@
 #include <memory>
 #include <ostream>
 #include <sstream>
+#include <set>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <iostream>
 
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
@@ -114,12 +117,12 @@
 //      I think it is possible to have deletions processed before recipients
 //      see insertions.
 //
-//
 //    Try:
-//      Make MAPs actuall take in WorkLists, which are Stage-allocated, and
-//      which are available for them to fill up. Then they have to push in
-//      cased tuples of the right type. Then there will be no weir memory
-//      management issues.
+//      Make it so that MERGEs don't do source tracking if they can't produce
+//      deletions.
+//
+//    Todo:
+//      Other specializations related to stuff not needing to support removal?
 namespace hyde {
 namespace {
 
@@ -469,17 +472,22 @@ static void CallUsers(OutputStream &os, QueryView view,
                       ViewCaseMap &case_map, const char *indent,
                       const char *added, bool is_add) {
 
+  if (!is_add) {
+    assert(view.CanProduceDeletions());
+  }
+
   ForEachUser(view, [&] (QueryView target_view) {
 
     auto case_key = std::make_tuple(view.UniqueId(), target_view.UniqueId(),
                                     is_add);
+    assert(case_map.count(case_key));
     auto case_id = case_map[case_key];
-    os << target_view.UniqueId();
-    assert(0 < case_id);
+
     auto input_cols = InputColumnSpec(view, target_view);
 
     os << indent << "__stages[__wid].depth_" << target_view.Depth()
        << ".EmplaceBack(";
+
     auto sep = "";
     for (auto in_col : input_cols) {
       os << sep << '\n' << indent  << "    ";
@@ -504,91 +512,64 @@ static void CallUsers(OutputStream &os, QueryView view,
 // Declare the function that will do aggregate some results.
 static void DeclareAggregate(
     OutputStream &os, QueryAggregate agg,
-    std::unordered_set<ParsedFunctor> &seen_functors) {
+    std::set<std::pair<ParsedFunctor, bool>> &seen_functors) {
 
-  auto functor = agg.Functor();
-  if (!seen_functors.count(functor)) {
-    seen_functors.insert(functor);
+  const auto functor = agg.Functor();
+  const std::pair<ParsedFunctor, bool> key(
+      functor, QueryView::From(agg).CanReceiveDeletions());
 
-    const auto binding_pattern = BindingPattern(functor);
-
-    os << "// Aggregator object (will collect results); extends the empty\n"
-       << "// to ensure a minimum size, but uses empty base class optimization\n"
-       << "// to place config vars inside of the aggregator.\n"
-       << "struct " << functor.Name() << '_' << binding_pattern << "_config"
-       << " : public ::hyde::rt::AggregateConfiguration {\n";
-
-    for (auto param : functor.Parameters()) {
-      os << "  " << TypeName(param.Type()) << ' ' << param.Name()
-         << ';' << CommentOnParam(os, param) << '\n';
-    }
-
-    os << "};\n\n"
-       << "// Return type of the aggregator.\n"
-       << "struct " << functor.Name() << '_' << binding_pattern
-       << "_result {\n";
-
-    for (auto param : functor.Parameters()) {
-      switch (param.Binding()) {
-        case ParameterBinding::kImplicit:
-        case ParameterBinding::kMutable:
-        case ParameterBinding::kFree:
-          assert(false);
-          break;
-
-        case ParameterBinding::kSummary:
-          os << "  " << TypeName(param.Type()) << ' ' << param.Name()
-             << ';' << CommentOnParam(os, param) << '\n';
-          break;
-
-        case ParameterBinding::kBound:
-        case ParameterBinding::kAggregate:
-          break;
-      }
-    }
-
-    // Forward declare the aggregator as returning the above structure.
-    os << "};\n\n"
-       << "// Initializer function for the aggregate configuration.\n"
-       << "extern \"C\" void " << functor.Name() << '_' << binding_pattern
-       << "_init(";
-    auto sep = "";
-    for (auto param : functor.Parameters()) {
-      switch (param.Binding()) {
-        case ParameterBinding::kBound:
-          os << sep << TypeName(param.Type()) << ' ' << param.Name();
-          sep = ", ";
-          break;
-        default:
-          break;
-      }
-    }
-
-    os << sep << functor.Name() << '_' << binding_pattern
-       << "_config &__agg);\n\n"
-       << "// Update function that adds/removes a value from the aggregate.\n"
-       << "extern \"C\" void " << functor.Name() << '_' << binding_pattern
-       << "_update(";
-    sep = "";
-    for (auto param : functor.Parameters()) {
-      switch (param.Binding()) {
-        case ParameterBinding::kAggregate:
-          os << sep << TypeName(param.Type()) << ' ' << param.Name();
-          sep = ", ";
-          break;
-        default:
-          break;
-      }
-    }
-
-    os << sep << functor.Name() << '_' << binding_pattern
-       << "_config &__agg, bool __added);\n\n";
+  if (seen_functors.count(key)) {
+    return;
   }
+  seen_functors.insert(key);
+
+  const auto binding_pattern = BindingPattern(functor);
+
+  os << "// Aggregator object (will collect results). This is a default\n"
+     << "// implementation that should really be replaced via specialization\n"
+     << "// via user code.\n"
+     << "struct " << functor.Name() << '_' << binding_pattern << "_config {\n";
+
+  for (auto param : functor.Parameters()) {
+    os << "  " << TypeName(param.Type()) << ' ' << param.Name()
+       << ';' << CommentOnParam(os, param) << '\n';
+  }
+
+  os << "};\n\n"
+     << "// Return type when we ask for the summaries from an aggregate..\n"
+     << "using " << functor.Name() << '_' << binding_pattern
+     << "_result = std::tuple<";
+
+  auto sep = "";
+  for (auto param : functor.Parameters()) {
+    switch (param.Binding()) {
+      case ParameterBinding::kImplicit:
+      case ParameterBinding::kMutable:
+      case ParameterBinding::kFree:
+        assert(false);
+        break;
+
+      case ParameterBinding::kSummary:
+        os << sep << TypeName(param.Type());
+        sep = ", ";
+        break;
+
+      case ParameterBinding::kBound:
+      case ParameterBinding::kAggregate:
+        break;
+    }
+  }
+
+  // Forward declare the aggregator as returning the above structure.
+  os << ">;\n\n";
 }
 
 // Generate code associated with an aggregate.
 static void DefineAggregate(OutputStream &os, QueryAggregate agg,
                             ViewCaseMap case_map) {
+
+  const auto view = QueryView::From(agg);
+  assert(view.CanProduceDeletions());
 
   const auto id = agg.UniqueId();
   const auto summarizer = agg.Functor();
@@ -616,7 +597,72 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   for (auto col : agg.SummaryColumns()) {
     os << " * Summary var: " << col.Variable() << "\n";
   }
-  os << " */\n\n";
+  os << " */\n\n"
+     << "// Initializer function for the aggregate configuration.\n"
+     << "extern \"C\" void " << summarizer.Name() << '_' << binding_pattern
+     << "_init(hyde_rt_";
+
+  if (view.CanReceiveDeletions()) {
+    os << "Differential";
+  }
+
+  os << "AggregateState<" << summarizer.Name() << '_' << binding_pattern
+     << "_config> &";
+
+  for (auto param : summarizer.Parameters()) {
+    switch (param.Binding()) {
+      case ParameterBinding::kBound:
+        os << ", " << TypeName(param.Type());
+        break;
+      default:
+        break;
+    }
+  }
+
+  os << ");\n\n"
+     << "// Function that adds a value from the aggregate.\n"
+     << "extern \"C\" void " << summarizer.Name() << '_' << binding_pattern
+     << "_add(hyde_rt_";
+
+  if (view.CanReceiveDeletions()) {
+    os << "Differential";
+  }
+
+  os << "AggregateState<" << summarizer.Name() << '_' << binding_pattern
+     << "_config> &";
+
+  for (auto param : summarizer.Parameters()) {
+    switch (param.Binding()) {
+      case ParameterBinding::kBound:
+      case ParameterBinding::kAggregate:
+        os << ", " << TypeName(param.Type()) ;
+        break;
+      default:
+        break;
+    }
+  }
+
+  os << ");\n\n";
+
+  if (view.CanReceiveDeletions()) {
+    os << "// Function that removes a value from the aggregate.\n"
+       << "extern \"C\" void " << summarizer.Name() << '_' << binding_pattern
+       << "_remove(hyde_rt_DifferentialAggregateState<" << summarizer.Name()
+       << '_' << binding_pattern << "_config> &";
+
+    for (auto param : summarizer.Parameters()) {
+      switch (param.Binding()) {
+        case ParameterBinding::kBound:
+        case ParameterBinding::kAggregate:
+          os << ", " << TypeName(param.Type()) ;
+          break;
+        default:
+          break;
+      }
+    }
+
+    os << ");\n\n";
+  }
 
   // This means that we are grouping, and within each group, we need an
   // instance of a configured map.
@@ -733,7 +779,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
 
   os << ");\n"
      << "    if (auto __owid = __hash & __wm; __owid != __wid) {\n"
-     << "      __stages[__owid].depth_" << QueryView::From(agg).Depth()
+     << "      __stages[__owid].depth_" << view.Depth()
      << ".EmplaceBack(";
 
   i = 0u;
@@ -758,11 +804,18 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
     sep = ", ";
   }
 
+  assert(case_map.count(std::make_tuple(id, id, true)));
   auto add_case_id = case_map[std::make_tuple(id, id, true)];
-  auto rem_case_id = case_map[std::make_tuple(id, id, false)];
 
-  os << sep << "(__added ? " << add_case_id << " : " << rem_case_id << "));\n"
-     << "      return 1u;\n"
+  if (view.CanReceiveDeletions()) {
+    assert(case_map.count(std::make_tuple(id, id, false)));
+    auto rem_case_id = case_map[std::make_tuple(id, id, false)];
+    os << sep << "(__added ? " << add_case_id << " : " << rem_case_id << "));\n";
+  } else {
+    os << sep << "add_case_id);\n";
+  }
+
+  os << "      return 1u;\n"
      << "    }\n"
      << "  }\n\n"
      << "  const auto __agg = MA" << id << ".Get(";
@@ -815,7 +868,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
        << CommentOnCol(os, col) << '\n';
   }
 
-  CallUsers(os, QueryView::From(agg), case_map, "      ", "true", true);
+  CallUsers(os, view, case_map, "      ", "true", true);
 
   os << "    }\n\n"
      << "  // This aggregate has been initialized, so we need to get the old\n"
@@ -832,22 +885,32 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
     sep = ", ";
   }
 
-  os << "] = __agg->Summarize();\n"
-     << "    constexpr auto __update = __added ? "
-     << summarizer.Name() << '_' << binding_pattern << "_add"
-     << " : " << summarizer.Name() << '_' << binding_pattern << "_remove;\n"
-     << "    __update(__agg";
+  os << "] = __agg->Summarize();\n";
 
-  i = 0u;
-  for (auto col : agg.ConfigurationColumns()) {
-    (void) col;
-    os << ", C" << (i++);
+  if (view.CanReceiveDeletions()) {
+    os << "    constexpr auto __update = __added ? "
+       << summarizer.Name() << '_' << binding_pattern << "_add"
+       << " : " << summarizer.Name() << '_' << binding_pattern << "_remove;\n"
+       << "    __update(*__agg";
+  } else {
+    os << "    static_assert(__added);\n"
+       << "    " << summarizer.Name() << '_' << binding_pattern
+       << "_add(*__agg";
   }
 
-  i = 0u;
-  for (auto col : agg.InputAggregatedColumns()) {
-    (void) col;
-    os << ", A" << (i++);
+  auto c = 0u;
+  auto a = 0u;
+  for (auto param : summarizer.Parameters()) {
+    switch (param.Binding()) {
+      case ParameterBinding::kBound:
+        os << ", C" << (c++);
+        break;
+      case ParameterBinding::kAggregate:
+        os << ", A" << (a++);
+        break;
+      default:
+        break;
+    }
   }
 
   os << ");\n"
@@ -888,7 +951,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
 
   // Do the adds first, because we are adding to a work list, and so we will
   // pop off the removals before processing the adds.
-  CallUsers(os, QueryView::From(agg), case_map, "    ", "true", true);
+  CallUsers(os, view, case_map, "    ", "true", true);
 
   i = 0u;
   for (auto col : agg.SummaryColumns()) {
@@ -898,7 +961,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
 
   os << "\n    // Removals (processed before insertions).\n";
 
-  CallUsers(os, QueryView::From(agg), case_map, "    ", "false", false);
+  CallUsers(os, view, case_map, "    ", "false", false);
 
   os << "  }\n"
      << "  return 0u;\n"
@@ -918,28 +981,41 @@ static void DeclareView(OutputStream &os, QueryView view) {
   os << ") noexcept;\n\n";
 }
 
-static void DefineTuple(OutputStream &os, QueryTuple view,
+static void DefineTuple(OutputStream &os, QueryTuple tuple,
                         ViewCaseMap &case_map) {
+
+  const auto view = QueryView::From(tuple);
+
   os << "/* Tuple; just forwards stuff to users. */\n"
      << "template <bool __added, typename Tuple>\n"
-     << "unsigned V" << view.UniqueId() << "("
+     << "unsigned V" << tuple.UniqueId() << "("
      << "\n    Stage *__stages, unsigned __wid, unsigned /* __wm */,"
      << "\n    const Tuple &__tuple) noexcept {\n"
      << "  const auto [";
 
   auto sep = "";
-  for (auto col : view.Columns()) {
+  for (auto col : tuple.Columns()) {
     os << sep << 'C' << col.UniqueId() << CommentOnCol(os, col);
     sep = ",\n              ";
   }
 
-  os << "] = __tuple;\n"
-     << "  if constexpr (__added) {\n";
-  CallUsers(os, QueryView::From(view), case_map, "    ", "true", true);
-  os << "  } else {\n";
-  CallUsers(os, QueryView::From(view), case_map, "    ", "false", false);
-  os << "  }\n"
-     << "  return 0u;\n"
+  os << "] = __tuple;\n";
+
+  if (view.CanReceiveDeletions()) {
+    assert(view.CanProduceDeletions());
+
+    os << "  if constexpr (__added) {\n";
+    CallUsers(os, QueryView::From(tuple), case_map, "    ", "true", true);
+    os << "  } else {\n";
+    CallUsers(os, QueryView::From(tuple), case_map, "    ", "false", false);
+    os << "  }\n";
+
+  } else {
+    os << "  static_assert(__added);\n";
+    CallUsers(os, QueryView::From(tuple), case_map, "  ", "true", true);
+  }
+
+  os << "  return 0u;\n"
      << "}\n\n";
 }
 
@@ -1412,60 +1488,62 @@ static void DefineMerge(OutputStream &os, QueryMerge view) {
 //  os << "}\n\n";
 }
 
-static void DeclareMap(OutputStream &os, QueryMap map,
-                       std::unordered_set<ParsedFunctor> &seen_functors) {
+
+static void DeclareGenerator(OutputStream &os, QueryMap map,
+                             std::unordered_set<ParsedFunctor> &seen_functors) {
   const auto functor = map.Functor();
-  if (!seen_functors.count(functor)) {
-    seen_functors.insert(functor);
-
-    const auto binding_pattern = BindingPattern(functor);
-
-    // Declare the tuple type as a structure.
-    os << "\n"
-       << "struct " << functor.Name() << '_' << binding_pattern
-       << "_result {\n";
-
-    for (auto param : functor.Parameters()) {
-      switch (param.Binding()) {
-        case ParameterBinding::kImplicit:
-        case ParameterBinding::kMutable:
-        case ParameterBinding::kSummary:
-        case ParameterBinding::kAggregate:
-          assert(false);
-          break;
-
-        case ParameterBinding::kBound:
-          break;
-
-        case ParameterBinding::kFree:
-          os << "  " << TypeName(param.Type()) << ' ' << param.Name() << ";\n";
-          break;
-      }
-    }
-
-    // Forward declare the aggregator as returning a generator of the above
-    // structure type.
-    os << "  bool __added;\n"
-       << "};\n\n"
-       << "extern \"C\" ::hyde::rt::Generator<" <<  functor.Name()
-       << '_' << binding_pattern << "_result> "
-       << functor.Name() << '_' << binding_pattern << "(\n    ";
-
-    auto sep = "";
-    for (auto param : functor.Parameters()) {
-      if (param.Binding() == ParameterBinding::kBound) {
-        os << sep << TypeName(param.Type()) << CommentOnParam(os, param);
-        sep = ", ";
-      }
-    }
-
-    os << ");\n\n";
+  if (seen_functors.count(functor)) {
+    return;
   }
-}
+  seen_functors.insert(functor);
 
+  const auto binding_pattern = BindingPattern(functor);
+
+  // Declare the tuple type as a structure.
+  os << "\n"
+     << "using " << functor.Name() << '_' << binding_pattern
+     << "_generator = ::hyde::rt::Generator<";
+
+  auto sep = "";
+  for (auto param : functor.Parameters()) {
+    switch (param.Binding()) {
+      case ParameterBinding::kImplicit:
+      case ParameterBinding::kMutable:
+      case ParameterBinding::kSummary:
+      case ParameterBinding::kAggregate:
+        assert(false);
+        break;
+
+      case ParameterBinding::kBound:
+        break;
+
+      case ParameterBinding::kFree:
+        os << sep << TypeName(param.Type());
+        sep = ", ";
+        break;
+    }
+  }
+
+  // Forward declare the aggregator as returning a generator of the above
+  // structure type.
+  os << ">;\n\n"
+     << "extern \"C\" void " << functor.Name() << '_' << binding_pattern
+     << "(\n    " << functor.Name() << '_' << binding_pattern
+     << "_generator &";
+
+  for (auto param : functor.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << ",\n    " << TypeName(param.Type()) << CommentOnParam(os, param);
+    }
+  }
+
+  os << ");\n\n";
+}
 
 static void DefineMap(OutputStream &os, QueryMap map,
                       ViewCaseMap &case_map) {
+  const auto view = QueryView::From(map);
+  const auto id = map.UniqueId();
   const auto functor = map.Functor();
   const auto binding_pattern = BindingPattern(functor);
 
@@ -1485,8 +1563,8 @@ static void DefineMap(OutputStream &os, QueryMap map,
 
   os << " */\n"
      << "template <bool __added, typename Tuple>\n"
-     << "void V" << map.UniqueId() << "("
-     << "\n    Stage *__stages, unsigned __wid, unsigned __wm,"
+     << "void V" << id << "("
+     << "\n    Stage *__stages, unsigned __wid, unsigned,"
      << "\n    const Tuple &__tuple) noexcept {\n";
 
   std::vector<QueryColumn> input_cols;
@@ -1542,31 +1620,37 @@ static void DefineMap(OutputStream &os, QueryMap map,
        << col_to_id[in_col] << ';' << CommentOnCol(os, out_col) << '\n';
   }
 
-  os << "  // Loop for each produced tuple (may produce removals).\n"
+  os << "  __stages[__wid].G" << id << ".Clear();\n"
+     << functor.Name() << '_' << binding_pattern
+     << "(__stages[__wid].G" << id;
+
+  for (auto col : bound_cols) {
+    os << ", " << col.UniqueId();
+  }
+
+  os << ");\n\n"
+     << "  // Loop for each produced tuple.\n"
      << "  for (auto [";
+
   sep = "";
   for (auto col : free_cols) {
     os << sep << 'C' << col.UniqueId() << CommentOnCol(os, col);
     sep = ",\n        ";
   }
 
-  os << "] : " << functor.Name() << '_' << binding_pattern
-     << "(";
+  os << "] : __stages[__wid].G" << id << ") {\n";
 
-  sep = "";
-
-  for (auto col : bound_cols) {
-    os << sep << 'C' << col.UniqueId();
-    sep = ", ";
+  if (view.CanProduceDeletions()) {
+    os << "    if constexpr (__added) {\n";
+    CallUsers(os, QueryView::From(map), case_map, "      ", "true", true);
+    os << "    } else {\n";
+    CallUsers(os, QueryView::From(map), case_map, "      ", "false", false);
+    os << "    }\n";
+  } else {
+    os << "    static_assert(__added);\n";
+    CallUsers(os, QueryView::From(map), case_map, "    ", "true", true);
   }
-
-  os << ")) {\n"
-     << "    if constexpr (__added) {\n";
-  CallUsers(os, QueryView::From(map), case_map, "      ", "true", true);
-  os << "    } else {\n";
-  CallUsers(os, QueryView::From(map), case_map, "      ", "false", false);
-  os << "    }\n"
-     << "  }\n"
+  os << "  }\n"
      << "  return 0u;\n"
      << "}\n\n";
 }
@@ -1648,11 +1732,19 @@ static void DefineStage(OutputStream &os, Query query) {
 
   std::vector<unsigned> num_cases_at_depth;
   query.ForEachView([&] (QueryView view) {
+
+    if (view.IsMap()) {
+      const auto map = QueryMap::From(view);
+      const auto functor = map.Functor();
+      const auto binding_pattern = BindingPattern(functor);
+      os << functor.Name() << '_' << binding_pattern
+         << "_generator G" << view.UniqueId() << ";\n";
+    }
+
     const auto depth = view.Depth();
     num_cases_at_depth.resize(std::max(num_cases_at_depth.size(), depth + 1ul));
 
-    // TODO(pag): Base this on whether or not `view` can receive removals.
-    auto can_remove_scale = 2u;
+    auto can_remove_scale = view.CanReceiveDeletions() ? 2u : 1u;
     auto num_cases = 1u;
 
     if (view.IsJoin()) {
@@ -1747,11 +1839,22 @@ static void DefineStep(
       const auto id = view.UniqueId();
 
       for (const auto is_add_stage : {false, true}) {
+        if (!is_add_stage && !view.CanReceiveDeletions()) {
+          continue;
+        }
 
         auto do_case = [&] (QueryView source_view, bool has_source_view) {
           auto cols = InputColumnSpec(source_view, view);
 
-          os << "      case " << num_cases << ": {\n"
+          os << "      // " << (is_add_stage ? "Add " : "Remove ")
+             << view.KindName();
+
+          for (auto col : view.Columns()) {
+            os << ' ' << col.Variable();
+          }
+
+          os << "\n"
+             << "      case " << num_cases << ": {\n"
              << "        __changed = true;\n"
              << "        auto &__tuple = __stage.depth_" << depth << ".PopTuple<";
 
@@ -1842,19 +1945,21 @@ static void DefineStep(
 void GenerateCode(const ParsedModule &module, const Query &query,
                   OutputStream &os) {
 
-  std::unordered_set<ParsedFunctor> seen_functors;
+  std::unordered_set<ParsedFunctor> seen_generators;
+//  std::set<std::pair<ParsedFunctor, bool>> seen_functors;
+  std::set<std::pair<ParsedFunctor, bool>> seen_aggregators;
 
   os << "struct Stage;\n";
 
   DefineMergeSources(os, query);
 
   for (auto view : query.Maps()) {
-    DeclareMap(os, view, seen_functors);
+    DeclareGenerator(os, view, seen_generators);
     DeclareView(os, QueryView::From(view));
   }
 
   for (auto view : query.Aggregates()) {
-    DeclareAggregate(os, view, seen_functors);
+    DeclareAggregate(os, view, seen_aggregators);
     DeclareView(os, QueryView::From(view));
   }
 
@@ -1891,7 +1996,8 @@ void GenerateCode(const ParsedModule &module, const Query &query,
   }
 
   for (auto code : module.Inlines()) {
-    os << code.CodeToInline() << '\n';
+    os << code.CodeToInline()
+       << '\n';
   }
 
   os << '\n';

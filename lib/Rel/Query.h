@@ -272,6 +272,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
            reinterpret_cast<uintptr_t>(this));
   }
 
+  // Returns the kind name, e.g. UNION, JOIN, etc.
+  virtual const char *KindName(void) const noexcept = 0;
+
   // Returns `true` if we had to "guard" this view with a tuple so that we
   // can put it into canonical form.
   Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force=false);
@@ -390,10 +393,11 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Is this node dead?
   bool is_dead{false};
 
-  // `true` if this view can produce deletions. For example, when an aggregate
-  // is updated, the old summary values are produced as a deletion. Similarly,
-  // when a kvindex is updated, if the new values differ from the old ones, a
-  // deletion record is produced.
+  // `true` if this view can receive/produce deletions. For example, when an
+  // aggregate is updated, the old summary values are produced as a deletion.
+  // Similarly, when a kvindex is updated, if the new values differ from the
+  // old ones, a deletion record is produced.
+  bool can_receive_deletions{false};
   bool can_produce_deletions{false};
 
  protected:
@@ -432,6 +436,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
 
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QuerySelect> *AsSelect(void) noexcept override;
 
   uint64_t Sort(void) noexcept override;
@@ -457,6 +462,7 @@ class Node<QueryTuple> final : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryTuple> *AsTuple(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -476,8 +482,14 @@ using TUPLE = Node<QueryTuple>;
 template <>
 class Node<QueryKVIndex> final : public Node<QueryView> {
  public:
+  Node(void)
+      : Node<QueryView>() {
+    can_produce_deletions = true;
+  }
+
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryKVIndex> *AsKVIndex(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -499,6 +511,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryJoin> *AsJoin(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -532,6 +545,7 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryMap> *AsMap(void) noexcept override;
 
   uint64_t Sort(void) noexcept override;
@@ -559,10 +573,13 @@ class Node<QueryAggregate> : public Node<QueryView> {
       : functor(functor_),
         group_by_columns(this),
         config_columns(this),
-        aggregated_columns(this) {}
+        aggregated_columns(this) {
+    can_produce_deletions = true;
+  }
 
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryAggregate> *AsAggregate(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -606,6 +623,7 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryMerge> *AsMerge(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -630,6 +648,7 @@ class Node<QueryConstraint> : public Node<QueryView> {
 
   virtual ~Node(void);
 
+  const char *KindName(void) const noexcept override;
   Node<QueryConstraint> *AsConstraint(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -670,6 +689,7 @@ class Node<QueryInsert> : public Node<QueryView> {
     is_used = true;
   }
 
+  const char *KindName(void) const noexcept override;
   Node<QueryInsert> *AsInsert(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
@@ -685,13 +705,13 @@ using INSERT = Node<QueryInsert>;
 
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
-  view->ForEachUse([&user_cb] (User *user, Node<QueryView> *) {
-    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
+  view->ForEachUse([&user_cb] (User *user, VIEW *) {
+    auto user_view = reinterpret_cast<VIEW *>(user);
     user_cb(user_view);
   });
 
   ForEachUse([&user_cb] (User *user, Node<QueryColumn> *) {
-    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
+    auto user_view = reinterpret_cast<VIEW *>(user);
     user_cb(user_view);
   });
 }
@@ -740,6 +760,8 @@ class QueryImpl {
   void Optimize(void);
 
   void ConnectInsertsToSelects(void);
+
+  void TrackDifferentialUpdates(void);
 
   const std::shared_ptr<query::QueryContext> context;
 

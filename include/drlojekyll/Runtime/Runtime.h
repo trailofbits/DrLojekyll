@@ -15,6 +15,12 @@
 # define DR_INLINE inline
 #endif
 
+template <typename T>
+class hyde_rt_AggregateState : public T {};
+
+template <typename T>
+class hyde_rt_DifferentialAggregateState : public hyde_rt_AggregateState<T> {};
+
 namespace hyde {
 namespace rt {
 
@@ -152,6 +158,62 @@ class WorkList {
   uint64_t load_{0};
 };
 
+template <typename... Args>
+class Generator {
+ public:
+  using Tuple = std::tuple<Args...>;
+
+  Generator(void)
+      : begin_(&(inline_[0])),
+        curr_(begin_),
+        end_(&(inline_[sizeof(inline_) / sizeof(Tuple)])) {}
+
+  ~Generator(void) {
+    if (begin_ != &(inline_[0])) {
+      delete [] begin_;
+    }
+  }
+
+  void Reset(void) {
+    curr_ = begin_;
+  }
+
+  void Yield(Args... args) {
+    if (curr_ >= end_) {
+      Resize();
+    }
+    *curr_++ = std::make_tuple<Args...>(args...);
+  }
+
+  const Tuple *begin(void) const noexcept {
+    return begin_;
+  }
+
+  const Tuple *end(void) const noexcept {
+    return end_;
+  }
+
+ private:
+
+  [[gnu::noinline]]
+  void Resize(void) {
+    auto curr_size = end_ - begin_;
+    auto new_size = curr_size * 2u;
+    auto new_begin = new Tuple[new_size];
+    std::move(begin_, end_, new_begin);
+    if (begin_ != &(inline_[0])) {
+      delete [] begin_;
+    }
+    curr_ = &(new_begin[curr_size]);
+    end_ = &(new_begin[new_size]);
+    begin_ = new_begin;
+  }
+
+  Tuple *begin_;
+  Tuple *curr_;
+  Tuple *end_;
+  Tuple inline_[16];
+};
 
 //class ProgramBase {
 // public:
@@ -516,23 +578,49 @@ class Map<EmptyKeyVars, ValueVars<Values...>> {
   std::tuple<Values..., bool> val;
 };
 
-#define CONFIGURE_AGGREGATOR(name, binding_pattern, ...) \
-  struct name ## _ ## binding_pattern ## _result; \
+#define AGGREGATOR_CONFIG(name, binding_pattern) \
+    template <typename> \
+    class hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config>
+
+#define DIFF_AGGREGATOR_CONFIG(name, binding_pattern) \
+    template <typename> \
+    class hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config>
+
+#define AGGREGATOR_INIT(name, binding_pattern, ...) \
   struct name ## _ ## binding_pattern ## _config; \
   extern "C" \
   void name ## _ ## binding_pattern ## _init( \
-      name ## _ ## binding_pattern ## _config &self, \
+      hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
       #__VA_ARGS__)
 
-#define UPDATE_AGGREGATOR(name, binding_pattern, ...) \
+#define AGGREGATOR_ADD(name, binding_pattern, ...) \
+  struct name ## _ ## binding_pattern ## _config; \
+  extern "C" \
+  void name ## _ ## binding_pattern ## _add( \
+      hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
+      #__VA_ARGS__)
+
+#define DIFF_AGGREGATOR_INIT(name, binding_pattern, ...) \
+  struct name ## _ ## binding_pattern ## _config; \
+  extern "C" \
+  void name ## _ ## binding_pattern ## _init( \
+      hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
+      #__VA_ARGS__)
+
+#define DIFF_AGGREGATOR_ADD(name, binding_pattern, ...) \
+  struct name ## _ ## binding_pattern ## _config; \
+  extern "C" \
+  void name ## _ ## binding_pattern ## _add( \
+      hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
+      #__VA_ARGS__)
+
+#define DIFF_AGGREGATOR_REMOVE(name, binding_pattern, ...) \
   struct name ## _ ## binding_pattern ## _result; \
   struct name ## _ ## binding_pattern ## _config; \
   extern "C" \
-  void name ## _ ## binding_pattern ## _update( \
-      name ## _ ## binding_pattern ## _config &self, \
-      bool add, \
+  void name ## _ ## binding_pattern ## _remove( \
+      hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
       #__VA_ARGS__)
-
 
 #define MERGE_VALUES(name, type, prev_var, proposed_var) \
     extern "C" type name ## _merge(type prev_var, type proposed_var)

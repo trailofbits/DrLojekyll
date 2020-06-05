@@ -226,6 +226,8 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView &From(QueryConstraint &view) noexcept;
   static QueryView &From(QueryInsert &view) noexcept;
 
+  const char *KindName(void) const noexcept;
+
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
   bool IsKVIndex(void) const noexcept;
@@ -235,6 +237,12 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
   bool IsInsert(void) const noexcept;
+
+  // Can this view receive inputs that should logically "delete" entries?
+  bool CanReceiveDeletions(void) const noexcept;
+
+  // Can this view produce outputs that should logically "delete" entries?
+  bool CanProduceDeletions(void) const noexcept;
 
   // Returns the depth of this node in the graph. This is defined as depth
   // from an input (associated with a message receive) node, where the deepest

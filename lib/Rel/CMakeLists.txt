@@ -11,6 +11,7 @@ function(rel source_dir config)
         "${source_dir}/Connect.cpp"
         "${source_dir}/Constant.cpp"
         "${source_dir}/Constraint.cpp"
+        "${source_dir}/Differential.cpp"
         "${source_dir}/Format.cpp"
         "${source_dir}/Generator.cpp"
         "${source_dir}/Input.cpp"

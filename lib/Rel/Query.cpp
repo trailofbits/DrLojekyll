@@ -131,6 +131,10 @@ DefinedNodeRange<QueryColumn> QueryJoin::MergedColumns(void) const noexcept {
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
+const char *QueryView::KindName(void) const noexcept {
+  return impl->KindName();
+}
+
 bool QueryView::IsSelect(void) const noexcept {
   return impl->AsSelect() != nullptr;
 }
@@ -165,6 +169,16 @@ bool QueryView::IsConstraint(void) const noexcept {
 
 bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
+}
+
+// Can this view receive inputs that should logically "delete" entries?
+bool QueryView::CanReceiveDeletions(void) const noexcept {
+  return impl->can_receive_deletions;
+}
+
+// Can this view produce outputs that should logically "delete" entries?
+bool QueryView::CanProduceDeletions(void) const noexcept {
+  return impl->can_produce_deletions;
 }
 
 // Returns the depth of this node in the graph. This is defined as depth
