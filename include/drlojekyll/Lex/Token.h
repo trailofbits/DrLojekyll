@@ -185,7 +185,22 @@ enum class Lexeme : uint8_t {
   // and `RHS` parameters.
   kKeywordUnordered,
 
-  // Whether or not a local/export can be inlined.
+  // Used with non-generator functors to tell the compiler that the outputs
+  // (free variables) of the functor, which in this case is like a map, are
+  // not pure with respect to the bound parameters. For example, a directory
+  // listng functor should be marked as impure, as the file system might have
+  // changed since the last invocation of the listing.
+  //
+  //    #functor foo(...) impure
+  //
+  // The implication is that impure functors will be "wrapped" with additional
+  // state tracking in order to ensure that output values that were previously
+  // produced but not produced by the current invocation are subsequently
+  // removed from any relations.
+  kKeywordImpure,
+
+  // Whether or not a local/export can be inlined. The inline keyword is a hint
+  // and the compiler is free the aggressively inline or ignore the hint.
   kKeywordInline,
 
   kPuncOpenParen,

@@ -1002,6 +1002,10 @@ bool ParsedFunctor::IsAggregate(void) const noexcept {
   return impl->is_aggregate;
 }
 
+bool ParsedFunctor::IsPure(void) const noexcept {
+  return impl->is_pure;
+}
+
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
   assert(decl.IsFunctor());
   return reinterpret_cast<const ParsedFunctor &>(decl);

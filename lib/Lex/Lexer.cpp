@@ -520,6 +520,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.spelling_width = 6;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordInline);
+
+          } else if (impl->data == "impure") {
+            interpreter.basic.spelling_width = 6;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordImpure);
           }
           break;
         case 7:

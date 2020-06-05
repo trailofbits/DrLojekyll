@@ -3,6 +3,7 @@
 #pragma once
 
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Parse/ErrorLog.h>
 
 #include <memory>
 #include <unordered_map>
@@ -369,6 +370,7 @@ class Node<ParsedDeclaration> {
   std::vector<UnorderedParameterSet> unordered_sets;
   Token inline_attribute;
   bool is_aggregate{false};
+  bool is_pure{true};
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
 
  private:
@@ -447,7 +449,7 @@ class Node<ParsedInline> {
 };
 
 template <>
- class Node<ParsedModule>
+class Node<ParsedModule>
      : public std::enable_shared_from_this<Node<ParsedModule>> {
  public:
   Node(const DisplayConfiguration &config_)

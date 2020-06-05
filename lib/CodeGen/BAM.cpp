@@ -121,8 +121,12 @@
 //      Make it so that MERGEs don't do source tracking if they can't produce
 //      deletions.
 //
-//    Todo:
+//    TODO:
 //      Other specializations related to stuff not needing to support removal?
+//
+//    TODO:
+//      Custom zero-arg specialization of a generator that increments a number
+//      for yielding. I.e. `__gen.Yield()` increments the loop count.
 namespace hyde {
 namespace {
 
@@ -667,9 +671,12 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   // This means that we are grouping, and within each group, we need an
   // instance of a configured map.
   os << "// Maps config/group vars to aggregators.\n"
-     << "static ::hyde::rt::Aggregate<"
-     << "\n    " << summarizer.Name() << '_' << binding_pattern
-     << "_config  /* Configured aggregator type */";
+     << "static ::hyde::rt::Aggregate<\n    hyde_rt_";
+  if (view.CanReceiveDeletions()) {
+    os << "Differetial";
+  }
+  os << "AggregateState<" << summarizer.Name() << '_' << binding_pattern
+     << "_config>  /* Configured aggregator type */";
 
   if (!agg.NumGroupColumns()) {
     os << ",\n    ::hyde::rt::NoGroupVars";
@@ -974,7 +981,7 @@ static void DeclareView(OutputStream &os, QueryView view) {
      << "\n    Stage *__stages, unsigned __wid, unsigned __wm,"
      << "\n    const Tuple &__tuple";
 
-  if (view.IsMerge()) {
+  if (view.IsMerge() && view.CanReceiveDeletions()) {
     os << ", RC" << view.UniqueId();
   }
 
@@ -1620,9 +1627,10 @@ static void DefineMap(OutputStream &os, QueryMap map,
        << col_to_id[in_col] << ';' << CommentOnCol(os, out_col) << '\n';
   }
 
-  os << "  __stages[__wid].G" << id << ".Clear();\n"
-     << functor.Name() << '_' << binding_pattern
-     << "(__stages[__wid].G" << id;
+  os << "  auto &__gen = __stages[__wid].G" << id << ";\n"
+     << "  __gen.Clear();\n"
+     << "  " << functor.Name() << '_' << binding_pattern
+     << "(__gen";
 
   for (auto col : bound_cols) {
     os << ", " << col.UniqueId();
@@ -1638,7 +1646,7 @@ static void DefineMap(OutputStream &os, QueryMap map,
     sep = ",\n        ";
   }
 
-  os << "] : __stages[__wid].G" << id << ") {\n";
+  os << "] : __gen) {\n";
 
   if (view.CanProduceDeletions()) {
     os << "    if constexpr (__added) {\n";
@@ -1657,6 +1665,7 @@ static void DefineMap(OutputStream &os, QueryMap map,
 
 static void DefineConstraint(OutputStream &os, QueryConstraint filter,
                              ViewCaseMap &case_map) {
+  const auto view = QueryView::From(filter);
 
   os << "/* Constraint; conditionally forwards stuff to users. */\n"
      << "template <bool __added, typename Tuple>\n"
@@ -1695,12 +1704,18 @@ static void DefineConstraint(OutputStream &os, QueryConstraint filter,
     os << "    const auto C" << rhs.UniqueId() << " = __rhs;\n";
   }
 
-  os << "    if constexpr (__added) {\n";
-  CallUsers(os, QueryView::From(filter), case_map, "      ", "true", true);
-  os << "    } else {\n";
-  CallUsers(os, QueryView::From(filter), case_map, "      ", "false", false);
-  os << "    }\n"
-     << "  }\n"
+  if (view.CanReceiveDeletions()) {
+    os << "    if constexpr (__added) {\n";
+    CallUsers(os, QueryView::From(filter), case_map, "      ", "true", true);
+    os << "    } else {\n";
+    CallUsers(os, QueryView::From(filter), case_map, "      ", "false", false);
+    os << "    }\n";
+  } else {
+    os << "    static_assert(__added);\n";
+    CallUsers(os, QueryView::From(filter), case_map, "      ", "true", true);
+  }
+
+  os << "  }\n"
      << "  return 0u;\n"
      << "}\n\n";
 }
@@ -1737,7 +1752,7 @@ static void DefineStage(OutputStream &os, Query query) {
       const auto map = QueryMap::From(view);
       const auto functor = map.Functor();
       const auto binding_pattern = BindingPattern(functor);
-      os << functor.Name() << '_' << binding_pattern
+      os << "  " << functor.Name() << '_' << binding_pattern
          << "_generator G" << view.UniqueId() << ";\n";
     }
 

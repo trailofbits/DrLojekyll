@@ -92,6 +92,9 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   os << ")";
   if (decl.IsFunctor()) {
     auto functor = ParsedFunctor::From(decl);
+    if (!functor.IsPure()) {
+      os << " impure";
+    }
     for (auto i = 0u; i < functor.NumUnorderedParameterSets(); ++i) {
       os << " unordered(";
       comma = "";

@@ -624,6 +624,8 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 
   bool IsAggregate(void) const noexcept;
 
+  bool IsPure(void) const noexcept;
+
   NodeRange<ParsedFunctor> Redeclarations(void) const;
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 
