@@ -613,6 +613,27 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 //
 // The above example feasibly adds one to `Pred`, subtracts one from `Succ`, or
 // checks that `Pred+1 == Succ`.
+//
+// The `unordered` qualifier in the below functor declaration tells the
+// optimizer that if a value is feeding into `A` and a value is feeding into
+// `B`, then it is free to swap the order of those values, usually so that it
+// can merge two separate uses in the data flow graph.
+//
+//    #functor add(bound i32 A, bound i32 B, free i32 Res) unordered(A, B)
+//
+// The `impure` qualifier in the below example tells Dr. Lojekyll that it can't
+// trust a functor to produce the same outputs given the same inputs. This
+// qualifier cannot be used on aggregating functors, functors that have no
+// bound parameters (treated by default as impure), or on functors used to
+// merge mutable parameters.
+//
+//    #functor blah(...) impure
+//
+// Usage of an `impure` qualifier implies additional state tracking and also
+// differential data flow. For example: lets say `blah(10, A)` produces a value
+// `A=0` on the first use. At a later time, it produces `A=1`. The implication
+// is that the data flow node will have to produce a deletion record of
+// `-(10, 0)` before it produces an insertion record `+(10, 1)`.
 class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
  public:
   static const ParsedFunctor &From(const ParsedDeclaration &decl);

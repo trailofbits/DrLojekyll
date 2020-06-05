@@ -558,7 +558,9 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   inline explicit Node(ParsedFunctor functor_, DisplayRange range)
       : position(range.From()),
-        functor(functor_) {}
+        functor(functor_) {
+    this->can_produce_deletions = !functor.IsPure();
+  }
 
   const DisplayPosition position;
   const ParsedFunctor functor;
