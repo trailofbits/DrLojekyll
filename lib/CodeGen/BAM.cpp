@@ -353,7 +353,7 @@ static void DefineMergeSources(OutputStream &os, Query query) {
   });
 
   for (const auto &[to_view, from_views] : to_from) {
-    if (!to_view.IsMerge()) {
+    if (!to_view.IsMerge() || !to_view.CanReceiveDeletions()) {
       continue;
     }
 

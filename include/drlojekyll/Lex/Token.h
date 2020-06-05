@@ -37,7 +37,7 @@ enum class Lexeme : uint8_t {
 
   // Declare a rule that will be defined in this module.
   //
-  //    #local helper(@i32 A, @i32 B)
+  //    #local helper(i32 A, i32 B)
   //
   // Internal rule declarations specify the type of the rule and its
   // parameters, and are not visible outside of the module. Their names
@@ -47,7 +47,7 @@ enum class Lexeme : uint8_t {
   // Declare a rule that will be defined in this module, but visible outside
   // of this module.
   //
-  //    #export helper(@i32 A, @i32 B)
+  //    #export helper(i32 A, i32 B)
   //
   // Exported rule declarations specify the type of the rule and its
   // parameters. Their names must be globally unique.
@@ -57,7 +57,7 @@ enum class Lexeme : uint8_t {
   // outside of this module, and exported to RPC interfaces. These rules are
   // guaranteed to be backed by physical entries in the database.
   //
-  //    #query tc(bound @type A, free @type B)
+  //    #query tc(bound type A, free type B)
   //
   // Declares `tc` as a 2-tuple, where modules using `tc` must always supply
   // a bound value for `A`, i.e. they can query for `B`s using concrete `A`s.
@@ -74,9 +74,9 @@ enum class Lexeme : uint8_t {
   // can only contain one subscribed message. Messages must have globally unique
   // names that never conflict with defined clauses.
   //
-  //    #message is_function(bound @u64 EA)
-  //    #local has_symbol_name(@u64 EA, @str Name).
-  //    #export entrypoint_function(@u64 EA)
+  //    #message is_function(bound u64 EA)
+  //    #local has_symbol_name(u64 EA, ascii Name).
+  //    #export entrypoint_function(u64 EA)
   //    entrypoint_function(EA) : is_function(EA), has_symbol_name(EA, "_start").
   //
   // Any time a `is_function` message is published, we attempt to prove the
@@ -125,12 +125,12 @@ enum class Lexeme : uint8_t {
   kHashInlineStmt,
 
   // Unsigned/signed integral types. `n` must be one of 8, 16, 32, or 64.
-  // For example, `@i32` is a signed 32-bit integer, whereas `@u32` is
+  // For example, `i32` is a signed 32-bit integer, whereas `u32` is
   // an unsigned 32-bit integer.
   kTypeIn,
   kTypeUn,
 
-  // Floating point integral types. `@f32` is a `float`, and `@f64` is
+  // Floating point integral types. `f32` is a `float`, and `f64` is
   // a `double`.
   kTypeFn,
 
@@ -158,9 +158,9 @@ enum class Lexeme : uint8_t {
   // Binding specifier declaring that a parameter is mutable, and wrap the
   // merge operation of that parameter. For example:
   //
-  //    #functor merge_i8(bound @i8 OldVal, bound @i8 ProposedVal,
-  //                      free @i8 NewVal) trivial
-  //    #local byte_val(@i64 Address, mutable(merge_i8) ByteVal)
+  //    #functor merge_i8(bound i8 OldVal, bound i8 ProposedVal,
+  //                      free i8 NewVal) trivial
+  //    #local byte_val(i64 Address, mutable(merge_i8) ByteVal)
   //
   // Proofs of `byte_val` implicitly end with a merge operation, where
   // `merge_i8` in this case is invoked, and the produced value is the `NewVal`
@@ -177,9 +177,9 @@ enum class Lexeme : uint8_t {
   // to a functor can be re-ordered for the sake of optimization. For example:
   //
   //      #functor add_i32(
-  //          bound @i32 LHS,
-  //          bound @i32 RHS,
-  //          free @i32 Sum) unordered(LHS, RHS)
+  //          bound i32 LHS,
+  //          bound i32 RHS,
+  //          free i32 Sum) unordered(LHS, RHS)
   //
   // This lets us say that the optimizer is permitted to reorder the `LHS`
   // and `RHS` parameters.

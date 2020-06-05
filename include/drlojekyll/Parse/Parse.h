@@ -286,9 +286,9 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
 
 // Represents a call to an aggregation functor over some predicate. For example:
 //
-//    #functor count_i32(aggregate @i32 Val, summary @i32 NumVals)
-//    #local node(@i32 Id)
-//    #local num_nodes(@i32 NumNodes) : count_i32(Id, NumNodes) over node(Id).
+//    #functor count_i32(aggregate i32 Val, summary i32 NumVals)
+//    #local node(i32 Id)
+//    #local num_nodes(i32 NumNodes) : count_i32(Id, NumNodes) over node(Id).
 //
 // The requirement for use is that any summary value
 class ParsedAggregate : public parse::ParsedNode<ParsedAggregate> {
@@ -304,11 +304,14 @@ class ParsedAggregate : public parse::ParsedNode<ParsedAggregate> {
 
 // Represents a parsed parameter. The following are valid forms:
 //
-//    free @type A
-//    bound @type A
+//    free type A
+//    bound type A
 //    free A
 //    bound A
-//    @type A
+//    type A
+//    mutable(merge_functor) A
+//    aggregate type A
+//    summary type A
 //
 // Parameter names (`A` in the above example) must be identifiers beginning with
 // an upper case character, or `_`.
@@ -489,7 +492,7 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
 // Represents a rule that has been exported to the user for querying the
 // database. These rules must have global unique names. For example:
 //
-//    #query rule(bound @type Var, free @type Var)
+//    #query rule(bound type Var, free type Var)
 //
 // Exported rules are unique in that they limit the scope of how they can be
 // used, by requiring that users bind all `bound`-attributed arguments. The
@@ -531,7 +534,7 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
 // Represents a rule that has been exported to other modules. These rules
 // must have global unique names. For example:
 //
-//    #export rule(@type Var, @type Var)
+//    #export rule(type Var, type Var)
 //
 // Exports must correspond with clauses defined within the current module, and
 // only the current module. The same extern cannot be defined in multiple
@@ -567,7 +570,7 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
 // can be several locals with different names/prototypes, and they will not
 // be treated as referencing the same things. For example:
 //
-//    #local rule(@type Var, @type Var)
+//    #local rule(type Var, type Var)
 //
 // Locals must correspond with clauses defined within the current module, and
 // only the current module.
@@ -604,9 +607,9 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 // Represents a rule that is supplied by a plugin. These rules must have
 // globally unique names, and follow similar declaration rules as exports.
 //
-//    #functor add1(bound @i32 Pred, free @i32 Succ)
-//    #functor add1(free @i32 Pred, bound @i32 Succ)
-//    #functor add1(bound @i32 Pred, bound @i32 Succ)
+//    #functor add1(bound i32 Pred, free i32 Succ)
+//    #functor add1(free i32 Pred, bound i32 Succ)
+//    #functor add1(bound i32 Pred, bound i32 Succ)
 //
 // The above example feasibly adds one to `Pred`, subtracts one from `Succ`, or
 // checks that `Pred+1 == Succ`.
