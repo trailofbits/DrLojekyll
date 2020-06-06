@@ -36,6 +36,11 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
+  if (state_for_kvindex) {
+    is_canonical = true;
+    return false;
+  }
+
   bool non_local_changes = false;
 
   std::unordered_map<COL *, COL *> in_to_out;

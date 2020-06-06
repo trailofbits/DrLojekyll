@@ -970,7 +970,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
           err << "Expected period at end of declaration/clause";
           context->error_log.Append(std::move(err));
         } else {
-          ParseClause(module);
+          (void) ParseClause(module);
         }
 
         if (first_non_import.IsInvalid()) {
@@ -987,10 +987,17 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
                     sub_tokens.back().NextPosition());
           err << "Expected period here at end of declaration/clause";
           context->error_log.Append(std::move(err));
-        } else {
-          Error err(context->display_manager, SubTokenRange());
-          err << "Deletion clauses are not yet supported";
+
+        } else if (2 > sub_tokens.size()) {
+          Error err(context->display_manager, SubTokenRange(),
+                    tok.NextPosition());
+          err << "Expected atom here (lower case identifier) after the '!' "
+              << "for the name of the negated clause head being declared";
           context->error_log.Append(std::move(err));
+
+        } else {
+          ++next_sub_tok_index;
+          ParseClause(module, tok);
         }
 
         if (first_non_import.IsInvalid()) {

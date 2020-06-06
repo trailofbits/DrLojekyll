@@ -4,6 +4,11 @@
 
 #include <cassert>
 
+#include <drlojekyll/Sema/SIPSAnalysis.h>
+#include <drlojekyll/Sema/SIPSScore.h>
+
+#include "Builder.h"
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
 
@@ -1035,6 +1040,23 @@ DefinedNodeRange<QueryMerge> Query::Merges(void) const {
 DefinedNodeRange<QueryConstraint> Query::Constraints(void) const {
   return {DefinedNodeIterator<QueryConstraint>(impl->constraints.begin()),
           DefinedNodeIterator<QueryConstraint>(impl->constraints.end())};
+}
+
+// Build and return a new query.
+Query Query::Build(const ParsedModule &module) {
+  hyde::QueryBuilder query_builder;
+  for (auto clause : module.Clauses()) {
+    hyde::FastBindingSIPSScorer scorer;
+    hyde::SIPSGenerator generator(clause);
+    query_builder.VisitClause(scorer, generator);
+  }
+  for (auto clause : module.DeletionClauses()) {
+    hyde::FastBindingSIPSScorer scorer;
+    hyde::SIPSGenerator generator(clause);
+    query_builder.VisitClause(scorer, generator);
+  }
+
+  return query_builder.BuildQuery();
 }
 
 Query::~Query(void) {}

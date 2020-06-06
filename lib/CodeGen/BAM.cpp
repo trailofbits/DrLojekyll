@@ -373,7 +373,7 @@ static void DefineMergeSources(OutputStream &os, Query query) {
   }
   os << "\n";
 }
-//
+
 //static void AddTuple(OutputStream &os, QueryView view, const char *indent,
 //                     const char *stage, const char *wid="__wid") {
 //  os << indent << "__stages[" << wid << " + " << stage << "]."
@@ -1114,23 +1114,31 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "}\n\n";
 }
 
-static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
+static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
+                          ViewCaseMap case_map) {
+  const auto view = QueryView::From(kv);
+
   auto i = 0u;
-  for (auto col : view.ValueColumns()) {
-    auto functor = view.NthValueMergeFunctor(i++);
+  for (auto col : kv.ValueColumns()) {
+    auto functor = kv.NthValueMergeFunctor(i++);
     os << "extern \"C\" " << TypeName(col) << ' ' << functor.Name() << "_merge("
-       << TypeName(col) << ", " << TypeName(col) << ");\n";
+       << TypeName(col) << ", " << TypeName(col) << ");\n\n";
   }
 
-  os << "// Mapping for maintaining key/value tuples.\n"
-     << "static ::hyde::rt::Map<\n    ";
+  os << "// Mapping for maintaining key/value tuples.\n";
 
-  const auto id = view.UniqueId();
+  if (view.CanReceiveDeletions()) {
+    os << "static ::hyde::rt::DifferentialMap<\n    ";
+  } else {
+    os << "static ::hyde::rt::Map<\n    ";
+  }
+
+  const auto id = kv.UniqueId();
 
   auto sep = "";
-  if (view.NumKeyColumns()) {
+  if (kv.NumKeyColumns()) {
     os << "::hyde::rt::KeyVars<";
-    for (const auto col : view.KeyColumns()) {
+    for (const auto col : kv.KeyColumns()) {
       os << sep << TypeName(col) << CommentOnCol(os, col);
       sep = ",\n                    ";
     }
@@ -1141,7 +1149,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
 
   os << ",\n    ::hyde::ValueVars<";
   sep = "";
-  for (const auto col : view.ValueColumns()) {
+  for (const auto col : kv.ValueColumns()) {
     os << sep << TypeName(col) << CommentOnCol(os, col);
     sep = ",\n                      ";
   }
@@ -1153,8 +1161,8 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << ",\n    unsigned __wid"
      << ",\n    unsigned __wm) noexcept {\n";
 
-  if (!view.NumKeyColumns()) {
-    DefineGlobalVarTail(os, view);
+  if (!kv.NumKeyColumns()) {
+    DefineGlobalVarTail(os, kv);
     return;
   }
 
@@ -1169,7 +1177,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "    const auto __lhs_keys = std::make_tuple(";
 
   i = 0u;
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     (void) col;
     os << sep << "std::get<" << (i++) << ">(__lhs)";
     sep = ", ";
@@ -1180,7 +1188,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
   sep = "";
 
   i = 0u;
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     (void) col;
     os << sep << "std::get<" << (i++) << ">(__rhs)";
     sep = ", ";
@@ -1189,7 +1197,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "    return __lhs_keys < __rhs_keys;\n"
      << "  };\n\n";
 
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << "  " << TypeName(col) << " prev_" << col.UniqueId()
        << ", first_C" << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
   }
@@ -1202,7 +1210,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "      if (__is_first || (";
 
   sep = "";
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << sep << "first_C" << col.UniqueId() << " != prev_C" << col.UniqueId();
     sep = " && ";
   }
@@ -1213,7 +1221,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "          __stages[(__wid * 2) + false].V" << id << "_inbox.emplace_back(";
 
   sep = "\n              ";
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << sep << "first_C" << col.UniqueId();
     sep = ",\n              ";
   }
@@ -1223,7 +1231,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "        KV" << id << ".Put(";
 
   sep = "";
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << sep << "prev_C" << col.UniqueId();
     sep = ", ";
   }
@@ -1231,7 +1239,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
   os << ");\n"
      << "        __stages[(__wid * 2) + true].V" << id << ".emplace_back(";
   sep = "\n            ";
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << sep << "prev_C" << col.UniqueId();
     sep = ",\n            ";
   }
@@ -1246,7 +1254,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "    } else if (";
 
   sep = "";
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << sep << "first_C" << col.UniqueId() << " == prev_C" << col.UniqueId();
     sep = " && ";
   }
@@ -1255,7 +1263,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "      KV" << id << ".Erase(";
 
   sep = "\n          ";
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     os << sep << "prev_C" << col.UniqueId();
     sep = ",\n          ";
   }
@@ -1263,7 +1271,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
   os << ");\n"
      << "      __stages[(__wid * 2) + false].V" << id << ".emplace_back(";
   sep = "\n          ";
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << sep << "prev_C" << col.UniqueId();
     sep = ",\n          ";
   }
@@ -1274,7 +1282,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "  for (const auto [";
 
   sep = "";
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << sep << "proposed_C" << col.UniqueId();
     sep = ", ";
   }
@@ -1284,13 +1292,13 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "    if (1 < __wm) {\n"
      << "      const auto __hash = Hash<";
   sep = "";
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     os << sep << TypeName(col);
     sep = ", ";
   }
   os << ">::Compute(";
   sep = "";
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     os << sep << "proposed_C" << col.UniqueId();
     sep = ", ";
   }
@@ -1299,7 +1307,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "        __stages[(__owid * 2) + __added].emplace_back(";
 
   sep = "\n            ";
-  for (auto col : view.Columns()) {
+  for (auto col : kv.Columns()) {
     os << sep << "proposed_C" << col.UniqueId() << CommentOnCol(os, col);
     sep = ",\n            ";
   }
@@ -1313,7 +1321,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "      if (";
 
   sep = "";
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     os << sep << "prev_C" << col.UniqueId() << " != proposed_C" << col.UniqueId();
     sep = " || ";
   }
@@ -1324,9 +1332,9 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "      } else if contexpr (__added) {\n";
 
   i = 0u;
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << "        prev_C" << col.UniqueId() << " = "
-       << view.NthValueMergeFunctor(i++).Name() << "_merge(\n"
+       << kv.NthValueMergeFunctor(i++).Name() << "_merge(\n"
        << "            prev_C"
        << col.UniqueId() << ", proposed_C" << col.UniqueId() << ");\n";
   }
@@ -1340,7 +1348,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "      } else if (__is_first || (";
 
   sep = "";
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << sep << "proposed_C" << col.UniqueId() << " != first_C"
        << col.UniqueId();
     sep = " || ";
@@ -1354,14 +1362,14 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "    const auto [";
 
   sep = "";
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << sep << "curr_C" << col.UniqueId();
     sep = ", ";
   }
 
   os << sep << "__initialized] =\n        KV" << id << ".Get(";
   sep = "";
-  for (auto col : view.KeyColumns()) {
+  for (auto col : kv.KeyColumns()) {
     os << sep << "proposed_C" << col.UniqueId();
     sep = ", ";
   }
@@ -1371,15 +1379,15 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
      << "      if constexpr (__added) {\n";
 
   i = 0u;
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << "        first_C" << col.UniqueId() << " = curr_C"
        << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n'
        << "        prev_C" << col.UniqueId() << " = "
-       << view.NthValueMergeFunctor(i++).Name() << "_merge(curr_C"
+       << kv.NthValueMergeFunctor(i++).Name() << "_merge(curr_C"
        << col.UniqueId() << ", proposed_C" << col.UniqueId() << ");\n";
   }
   os << "      } else {\n";
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << "        first_C" << col.UniqueId() << " = proposed_C"
        << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n'
        << "        prev_C" << col.UniqueId() << " = proposed_C"
@@ -1388,7 +1396,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex view) {
 
   os << "      }\n"
      << "    } else {\n";
-  for (auto col : view.ValueColumns()) {
+  for (auto col : kv.ValueColumns()) {
     os << "      first_C" << col.UniqueId() << " = proposed_C"
        << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n'
        << "      prev_C" << col.UniqueId() << " = proposed_C"
@@ -1994,6 +2002,10 @@ void GenerateCode(const ParsedModule &module, const Query &query,
     DeclareView(os, QueryView::From(view));
   }
 
+  for (auto view : query.KVIndices()) {
+    DeclareView(os, QueryView::From(view));
+  }
+
   os << '\n';
 
   DefineStage(os, query);
@@ -2037,12 +2049,11 @@ void GenerateCode(const ParsedModule &module, const Query &query,
     DefineAggregate(os, view, case_map);
   }
 
+  for (auto view : query.KVIndices()) {
+    DefineKVIndex(os, view, case_map);
+  }
+
   if (false) {
-
-
-    for (auto view : query.KVIndices()) {
-      DefineKVIndex(os, view);
-    }
 
     for (auto view : query.Merges()) {
       DefineMerge(os, view);

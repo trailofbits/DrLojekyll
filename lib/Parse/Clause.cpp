@@ -5,7 +5,7 @@
 namespace hyde {
 
 // Try to parse `sub_range` as a clause.
-void ParserImpl::ParseClause(Node<ParsedModule> *module,
+void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
                              Node<ParsedDeclaration> *decl) {
 
   auto clause = std::make_unique<Node<ParsedClause>>(module);
@@ -572,6 +572,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   const auto is_query_clause = DeclarationKind::kQuery ==
                                clause->declaration->context->kind;
 
+  // We don't let deletion clauses be specified on queries because a query
+  // gives us point-in-time results according to some request.
+  if (is_query_clause && negation_tok.IsValid()) {
+    Error err(context->display_manager, SubTokenRange(),
+              negation_tok.SpellingRange());
+    err << "Deletion clauses cannot be specified on queries";
+    context->error_log.Append(std::move(err));
+    return;
+  }
+
   // TODO(pag): Consider doing some kind of basic range restriction check and
   //            transformation. For example, if we have `foo(A,A).` then is
   //            it legal to translate that to `foo(A0, A0) : foo(A0, _).` and
@@ -585,6 +595,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   // are ephemeral. If we see that as triggering a clause, then we can't
   // easily account for two messages triggering a given clause, when the
   // ordering in time of those messages can be unbounded.
+  //
+  // TODO(pag): This restriction can be eliminated by rewriting the module to
+  //            proxy messages with locals/exports. Do that then remove this
+  //            issue.
   Node<ParsedPredicate> *prev_message = nullptr;
   for (auto &used_pred : clause->positive_predicates) {
     auto kind = used_pred->declaration->context->kind;
@@ -610,6 +624,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     // We might rewrite queries into a kind of request/response message pattern,
     // and so to make our lives easier later on, we restrict query clause bodies
     // to not be allowed to contain messages.
+    //
+    // TODO(pag): This restriction can be eliminated by rewriting messages used
+    //            by queries to be proxied by locals. Do that then remove this
+    //            issue.
     if (is_query_clause) {
       Error err(context->display_manager, SubTokenRange(),
                 ParsedPredicate(used_pred.get()).SpellingRange());
@@ -618,8 +636,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       return;
     }
   }
-
-
 
   // Link all positive predicate uses into their respective declarations.
   for (auto &used_pred : clause->positive_predicates) {
@@ -641,21 +657,34 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     negated_uses.push_back(used_pred.get());
   }
 
-  // Link the clause in to the module.
-  if (!module->clauses.empty()) {
-    module->clauses.back()->next_in_module = clause.get();
+  auto &clause_decl_context = clause->declaration->context;
+
+  std::vector<Node<ParsedClause> *> *module_clause_list = nullptr;
+  std::vector<std::unique_ptr<Node<ParsedClause>>> *decl_clause_list = nullptr;
+
+  if (negation_tok.IsValid()) {
+    clause->negation = negation_tok;
+    module_clause_list = &(module->deletion_clauses);
+    decl_clause_list = &(clause_decl_context->deletion_clauses);
+
+  } else {
+    module_clause_list = &(module->clauses);
+    decl_clause_list = &(clause_decl_context->clauses);
   }
-  module->clauses.push_back(clause.get());
+
+  // Link the clause in to the module.
+  if (!module_clause_list->empty()) {
+    module_clause_list->back()->next_in_module = clause.get();
+  }
+  module_clause_list->push_back(clause.get());
 
   // Link the clause in to its respective declaration.
-  auto &clause_decl_context = clause->declaration->context;
-  auto &clauses = clause_decl_context->clauses;
-  if (!clauses.empty()) {
-    clauses.back()->next = clause.get();
+  if (!decl_clause_list->empty()) {
+    decl_clause_list->back()->next = clause.get();
   }
 
   // Add this clause to its decl context.
-  clauses.emplace_back(std::move(clause));
+  decl_clause_list->emplace_back(std::move(clause));
 }
 
 }  // namespace hyde

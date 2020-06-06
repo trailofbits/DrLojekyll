@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Rel/Builder.h>
+#include "Builder.h"
 
 #include <set>
 #include <tuple>
@@ -1438,6 +1438,7 @@ class QueryBuilderImpl : public SIPSVisitor {
         grouped_cols[col->Find()].push_back(col);
       }
       for (auto [view, _] : eq_views) {
+        (void) _;
         for (auto col : view->columns) {
           auto &col_group = grouped_cols[col->Find()];
           // Make sure that we don't put more than one column from every source
@@ -1454,6 +1455,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
 
       for (auto &[_, col_group] : grouped_cols) {
+        (void) _;
         if (col_group.size() == eq_views.size()) {
           num_pivot_sets[leader_col] += 1;
         }
@@ -1674,9 +1676,10 @@ void QueryBuilder::VisitClause(
 
 // Return the final query, which may include several different inserts.
 Query QueryBuilder::BuildQuery(void) {
-  impl->query->Optimize();
-  impl->query->ConnectInsertsToSelects();
-  impl->query->Optimize();
+
+//  impl->query->Optimize();
+//  impl->query->ConnectInsertsToSelects();
+//  impl->query->Optimize();
   impl->query->TrackDifferentialUpdates();
 
   Query ret(std::move(impl->query));

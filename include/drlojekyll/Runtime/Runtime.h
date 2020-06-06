@@ -525,6 +525,10 @@ class Set {
 template <typename...>
 class Map;
 
+// Key/value mapping with a merge operator, that supports removals.
+template <typename...>
+class DifferentialMap;
+
 struct EmptyKeyVars {};
 
 template <typename... Keys>
@@ -622,7 +626,7 @@ class Map<EmptyKeyVars, ValueVars<Values...>> {
       hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
       #__VA_ARGS__)
 
-#define MERGE_VALUES(name, type, prev_var, proposed_var) \
+#define MERGE(name, type, prev_var, proposed_var) \
     extern "C" type name ## _merge(type prev_var, type proposed_var)
 
 }  // namespace rt

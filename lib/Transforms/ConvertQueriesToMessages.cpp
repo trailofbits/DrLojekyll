@@ -175,6 +175,10 @@ ParsedModule ConvertQueriesToMessages(DisplayManager &display_manager,
     os << clause << "\n";
   }
 
+  for (auto clause : module.DeletionClauses()) {
+    os << clause << "\n";
+  }
+
   // TODO(pag): Have the local `<name>` publish to the message `response_<name>`
   //            Parser support is needed.
 

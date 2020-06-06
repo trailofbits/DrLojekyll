@@ -391,6 +391,9 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
   // All aggregations.
   NodeRange<ParsedAggregate> Aggregates(void) const;
 
+  // Is this a deletion clause?
+  bool IsDeletion(void) const noexcept;
+
  protected:
   friend class ParsedDeclaration;
 
@@ -734,6 +737,7 @@ class ParsedModule {
   NodeRange<ParsedMessage> Messages(void) const;
   NodeRange<ParsedFunctor> Functors(void) const;
   NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedClause> DeletionClauses(void) const;
 
   // The root module of this parse.
   ParsedModule RootModule(void) const;

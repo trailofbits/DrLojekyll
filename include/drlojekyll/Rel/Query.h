@@ -47,6 +47,7 @@ class ParsedDeclaration;
 class ParsedFunctor;
 class ParsedLiteral;
 class ParsedMessage;
+class ParsedModule;
 class ParsedPredicate;
 class ParsedVariable;
 class TypeLoc;
@@ -578,6 +579,9 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 // A query.
 class Query {
  public:
+  // Build and return a new query.
+  static Query Build(const ParsedModule &module);
+
   ~Query(void);
 
   DefinedNodeRange<QueryJoin> Joins(void) const;
@@ -593,7 +597,6 @@ class Query {
   DefinedNodeRange<QueryInput> Inputs(void) const;
   DefinedNodeRange<QueryGenerator> Generators(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
-
 
   template <typename T>
   void ForEachView(T cb) const {

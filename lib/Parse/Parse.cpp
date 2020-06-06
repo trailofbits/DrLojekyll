@@ -780,6 +780,11 @@ ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
   return ParsedClause(agg.impl->functor->clause);
 }
 
+// Is this a deletion clause?
+bool ParsedClause::IsDeletion(void) const noexcept {
+  return impl->negation.IsValid();
+}
+
 // Return the total number of uses of `var` in its clause body.
 unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
   return static_cast<unsigned>(var.impl->context->assignment_uses.size() +
@@ -788,8 +793,10 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->name.Position(),
-                       impl->dot.NextPosition());
+  return DisplayRange(
+      (impl->negation.IsValid() ? impl->negation.Position() :
+                                  impl->name.Position()),
+      impl->dot.NextPosition());
 }
 
 // Returns the arity of this clause.
@@ -1184,6 +1191,16 @@ NodeRange<ParsedClause> ParsedModule::Clauses(void) const {
   } else {
     return NodeRange<ParsedClause>(
         impl->clauses.front(),
+        __builtin_offsetof(Node<ParsedClause>, next_in_module));
+  }
+}
+
+NodeRange<ParsedClause> ParsedModule::DeletionClauses(void) const {
+  if (impl->deletion_clauses.empty()) {
+    return NodeRange<ParsedClause>();
+  } else {
+    return NodeRange<ParsedClause>(
+        impl->deletion_clauses.front(),
         __builtin_offsetof(Node<ParsedClause>, next_in_module));
   }
 }

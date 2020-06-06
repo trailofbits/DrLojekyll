@@ -87,23 +87,6 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query) {
     ++i;
   }
 
-  // Check if the values are canonical; if its a constant or isn't used then
-  // drop it.
-  for (auto col : attached_columns) {
-
-    // Input is a constant, forward it along.
-    if (col->IsConstant()) {
-      columns[i]->ReplaceAllUsesWith(col);
-      is_canonical = false;
-
-    // Output is not used, don't forward the inputs.
-    } else if (!columns[i]->IsUsed()) {
-      is_canonical = false;
-    }
-
-    ++i;
-  }
-
   if (is_canonical) {
     return false;
   }
@@ -124,21 +107,20 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query) {
     }
   }
 
-  // Make the new output columns for the attached (mutable) columns.
-  for (auto j = 0u, max_j = attached_columns.Size(); j < max_j; ++j) {
-    const auto col = attached_columns[j];
+  // Make the new output columns for the attached (mutable) columns. These
+  // are all preserved.
+  for (auto col : attached_columns) {
+    (void) col;
     const auto old_out_col = columns[i++];
-    if (!col->IsConstant() && old_out_col->IsUsed()) {
-      const auto new_out_col = new_output_columns.Create(
-          old_out_col->var, this, old_out_col->id);
-      old_out_col->ReplaceAllUsesWith(new_out_col);
-    }
+    const auto new_out_col = new_output_columns.Create(
+        old_out_col->var, this, old_out_col->id);
+    old_out_col->ReplaceAllUsesWith(new_out_col);
   }
 
   // Add uses for the new input columns.
   i = 0u;
   for (auto col : input_columns) {
-    if (!col->IsConstant() && columns[i]->IsUsed()) {
+    if (!col->IsConstant()) {
       new_input_columns.AddUse(col);
     }
   }

@@ -4,10 +4,12 @@ function(sema source_dir config)
     add_library(sema-${config} STATIC
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/BottomUpAnalysis.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/ModuleIterator.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/RangeRestriction.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/SIPSScore.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Sema/SIPSAnalysis.h"
         "${source_dir}/BottomUpAnalysis.cpp"
         "${source_dir}/ModuleIterator.cpp"
+        "${source_dir}/RangeRestriction.cpp"
         "${source_dir}/SIPSScore.cpp"
         "${source_dir}/SIPSAnalysis.cpp")
 

@@ -173,7 +173,7 @@ class ParserImpl {
                                  Node<ParsedPredicate> *pred);
 
   // Try to parse `sub_range` as a clause.
-  void ParseClause(Node<ParsedModule> *module,
+  void ParseClause(Node<ParsedModule> *module, Token negation_tok=Token(),
                    Node<ParsedDeclaration> *decl=nullptr);
 
   // Create a variable.

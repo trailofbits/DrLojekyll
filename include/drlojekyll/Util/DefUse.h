@@ -28,6 +28,9 @@ template <typename T>
 class UseRef;
 
 template <typename T>
+class WeakUseRef;
+
+template <typename T>
 class Def;
 
 template <typename T>
@@ -54,6 +57,9 @@ class Use {
  private:
   template <typename>
   friend class UseRef;
+
+  template <typename>
+  friend class WeakUseRef;
 
   template <typename>
   friend class UseList;
@@ -266,32 +272,49 @@ class Def {
     return use;
   }
 
+  Use<T> *CreateWeakUse(User *user) {
+    const auto use = new Use<T>;
+    use->def_being_used = this->self;
+    use->user = user;
+    weak_uses.emplace_back(use);
+    return use;
+  }
+
   void ReplaceAllUsesWith(T *that) {
-    if (self == that->self || uses.empty()) {
+    if (self == that->self) {
       return;
+    }
+
+    // Replace the weak uses.
+    for (auto &weak_use : weak_uses) {
+      if (const auto use_val = weak_use.release(); use_val) {
+        use_val->def_being_used = that->self;
+        that->weak_uses.emplace_back(use_val);
+      }
     }
 
     auto i = that->uses.size();
 
     // First, move the uses into the target's use list.
     for (auto &use : uses) {
-      if (const auto use_val = use.release()) {
+      if (const auto use_val = use.release(); use_val) {
         use_val->def_being_used = that->self;
         that->uses.emplace_back(use_val);
       }
     }
 
+    weak_uses.clear();
     uses.clear();
 
     // Now, go through all those moved uses (in the target's use list), and
-    // tell all the users that there's been an update.
+    // tell all the users that there's been a strong update.
     //
     // NOTE(pag): We assume that `Update` does not end up triggering any
     //            use removals.
     const auto max_i = that->uses.size();
     const auto time = User::gNextTimestamp++;
     for (; i < max_i; ++i) {
-      if (auto use_val = that->uses[i].get()) {
+      if (auto use_val = that->uses[i].get(); use_val) {
         use_val->user->Update(time);
       }
     }
@@ -330,6 +353,9 @@ class Def {
   friend class UseRef;
 
   template <typename>
+  friend class WeakUseRef;
+
+  template <typename>
   friend class UseList;
 
   template <typename>
@@ -359,11 +385,25 @@ class Def {
     uses.erase(it, uses.end());
   }
 
+  // Erase a use from the uses list.
+  void EraseWeakUse(Use<T> *to_remove) {
+    if (!to_remove) {
+      return;
+    }
+
+    auto it = std::remove_if(weak_uses.begin(), weak_uses.end(),
+                             [=] (const std::unique_ptr<Use<T>> &a) {
+                               return a.get() == to_remove;
+                             });
+    weak_uses.erase(it, weak_uses.end());
+  }
+
   // Points to this definition, just in case of multiple inheritance.
   T * const self;
 
   // All uses of this definition.
   std::vector<std::unique_ptr<Use<T>>> uses;
+  std::vector<std::unique_ptr<Use<T>>> weak_uses;
 };
 
 template <typename T>
@@ -429,6 +469,52 @@ class UseRef {
   UseRef(UseRef<T> &&) noexcept = delete;
   UseRef<T> &operator=(const UseRef<T> &) = delete;
   UseRef<T> &operator=(UseRef<T> &&) noexcept = delete;
+
+  Use<T> *use{nullptr};
+};
+
+
+template <typename T>
+class WeakUseRef {
+ public:
+  WeakUseRef(Use<T> *use_)
+      : use(use_) {}
+
+  WeakUseRef(void) = default;
+
+  ~WeakUseRef(void) {
+    if (use) {
+      const auto use_copy = use;
+      use = nullptr;
+      use_copy->def_being_used->EraseWeakUse(use_copy);
+    }
+  }
+
+  T *operator->(void) const noexcept {
+    return use->def_being_used;
+  }
+
+  T &operator*(void) const noexcept {
+    return *(use->def_being_used);
+  }
+
+  T *get(void) const noexcept {
+    return use ? use->def_being_used : nullptr;
+  }
+
+  operator bool(void) const noexcept {
+    return !!use;
+  }
+
+  void ClearWithoutErasure(void) {
+    use = nullptr;
+  }
+
+ private:
+  WeakUseRef(const WeakUseRef<T> &) = delete;
+  WeakUseRef(WeakUseRef<T> &&) noexcept = delete;
+  WeakUseRef<T> &operator=(const WeakUseRef<T> &) = delete;
+  WeakUseRef<T> &operator=(WeakUseRef<T> &&) noexcept = delete;
 
   Use<T> *use{nullptr};
 };

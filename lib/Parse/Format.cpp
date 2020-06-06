@@ -183,6 +183,9 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
+  if (clause.IsDeletion()) {
+    os << '!';
+  }
   os << ParsedClauseHead(clause) << " : "
      << ParsedClauseBody(clause) << ".";
   return os;
@@ -260,6 +263,10 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   }
 
   for (auto clause : module.Clauses()) {
+    os << clause << "\n";
+  }
+
+  for (auto clause : module.DeletionClauses()) {
     os << clause << "\n";
   }
 

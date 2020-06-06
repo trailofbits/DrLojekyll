@@ -17,9 +17,7 @@
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Rel/Format.h>
-#include <drlojekyll/Rel/Builder.h>
-#include <drlojekyll/Sema/SIPSAnalysis.h>
-#include <drlojekyll/Sema/SIPSScore.h>
+#include <drlojekyll/Sema/RangeRestriction.h>
 #include <drlojekyll/Transforms/CombineModules.h>
 #include <drlojekyll/Transforms/ProxyExternalsWithExports.h>
 
@@ -71,14 +69,7 @@ static void CompileModule(hyde::DisplayManager display_manager,
   hyde::OutputStream os(display_manager, std::cerr);
   hyde::gOut = &os;
 
-  hyde::QueryBuilder query_builder;
-  for (auto clause : module.Clauses()) {
-    hyde::FastBindingSIPSScorer scorer;
-    hyde::SIPSGenerator generator(clause);
-    query_builder.VisitClause(scorer, generator);
-  }
-
-  auto query = query_builder.BuildQuery();
+  auto query = hyde::Query::Build(module);
   os << query;
 
   hyde::GenerateCode(module, query, os);
@@ -88,6 +79,10 @@ static int ProcessModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log,
                          hyde::ParsedModule module,
                          const std::string &output_path) {
+
+  if (error_log.IsEmpty()) {
+    CheckForRangeRestrictionErrors(display_manager, module, error_log);
+  }
 
   if (!error_log.IsEmpty()) {
     error_log.Render(std::cerr);

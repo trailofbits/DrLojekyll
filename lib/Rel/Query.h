@@ -473,6 +473,15 @@ class Node<QueryTuple> final : public Node<QueryView> {
   // canonical form of this tuple is one where all columns are sorted by
   // their pointer values.
   bool Canonicalize(QueryImpl *query) override;
+
+  // Does this tuple keep track of the state of some K/V index? The issue here
+  // is that a K/V index might need to be differential, i.e. it can receive
+  // deletions of state that was merged into the K/V store. However, the actual
+  // merge operator of a k/v index is not smart enough to handle such
+  // differentials, and so to handle them, the updates, minus the differential,
+  // would need to be replayed. Knowing what columns need to be tracked for
+  // those cases is tricky.
+  WeakUseRef<VIEW> state_for_kvindex;
 };
 
 using TUPLE = Node<QueryTuple>;

@@ -127,9 +127,36 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
     }
   }
 
-  for (auto clause : module.Clauses()) {
+  auto comma = "";
+
+  auto do_pred = [&] (ParsedPredicate pred) {
+    auto decl = ParsedDeclaration::Of(pred);
+    if (proxied_decls.find(decl) != proxied_decls.end()) {
+      os << comma;
+      if (pred.IsNegated()) {
+        os << "!";
+      }
+      os << decl.Name();
+      comma = "_proxy(";
+      for (auto arg : pred.Arguments()) {
+        os << comma << arg.Name();
+        comma = ", ";
+      }
+      os << ")";
+    } else {
+      os << comma << pred;
+    }
+    comma = ", ";
+  };
+
+  auto do_clause = [&] (ParsedClause clause) {
     auto decl = ParsedDeclaration::Of(clause);
-    auto comma = "";
+    comma = "";
+
+    if (clause.IsDeletion()) {
+      os << "!";
+    }
+
     if (proxied_decls.find(decl) != proxied_decls.end()) {
       os << decl.Name() << "_proxy(";
       for (auto var : clause.Parameters()) {
@@ -153,26 +180,6 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
       comma = ", ";
     }
 
-    auto do_pred = [&] (ParsedPredicate pred) {
-      decl = ParsedDeclaration::Of(pred);
-      if (proxied_decls.find(decl) != proxied_decls.end()) {
-        os << comma;
-        if (pred.IsNegated()) {
-          os << "!";
-        }
-        os << decl.Name();
-        comma = "_proxy(";
-        for (auto arg : pred.Arguments()) {
-          os << comma << arg.Name();
-          comma = ", ";
-        }
-        os << ")";
-      } else {
-        os << comma << pred;
-      }
-      comma = ", ";
-    };
-
     for (auto pred : clause.PositivePredicates()) {
       do_pred(pred);
     }
@@ -188,6 +195,14 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
     }
 
     os << ".\n";
+  };
+
+  for (auto clause : module.Clauses()) {
+    do_clause(clause);
+  }
+
+  for (auto clause : module.DeletionClauses()) {
+    do_clause(clause);
   }
 
   DisplayConfiguration config;

@@ -81,6 +81,7 @@ class DeclarationContext {
   // All clauses associated with a given `DeclarationBase` and each of its
   // redeclarations.
   std::vector<std::unique_ptr<Node<ParsedClause>>> clauses;
+  std::vector<std::unique_ptr<Node<ParsedClause>>> deletion_clauses;
 
   // All positive uses of this declaration.
   std::vector<Node<ParsedPredicate> *> positive_uses;
@@ -93,6 +94,8 @@ class DeclarationContext {
 
   bool generates_value{false};
   bool checked_generates_value{false};
+
+  bool can_be_deleted{false};
 };
 
 }  // namespace parse
@@ -285,6 +288,7 @@ class Node<ParsedClause> {
   // The declaration associated with this clause (definition).
   Node<ParsedDeclaration> *declaration{nullptr};
 
+  Token negation;
   Token name;
   Token rparen;
   Token dot;
@@ -480,6 +484,7 @@ class Node<ParsedModule>
 
   // All clauses defined in this module.
   std::vector<Node<ParsedClause> *> clauses;
+  std::vector<Node<ParsedClause> *> deletion_clauses;
 
   // Local declarations, grouped by `id=(name_id, arity)`.
   std::unordered_map<uint64_t, Node<ParsedDeclaration> *> local_declarations;
