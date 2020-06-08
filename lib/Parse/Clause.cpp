@@ -676,6 +676,19 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     if (has_errors) {
       return;
     }
+
+  } else if (!prev_message && !decl->context->deletion_clauses.empty()) {
+    Error err(context->display_manager, SubTokenRange(),
+              negation_tok.SpellingRange().From());
+    err << "All positive clauses of " << decl->name << '/'
+        << decl->parameters.size() << " must directly depend on a message "
+        << "because of the presence of a deletion clause";
+
+    auto del_clause = decl->context->deletion_clauses.front().get();
+    auto note = err.Note(context->display_manager,
+                         ParsedClause(del_clause).SpellingRange());
+    note << "First deletion clause is here";
+    context->error_log.Append(std::move(err));
   }
 
   // Keep track of whether or not any clause for this decl uses messages.
