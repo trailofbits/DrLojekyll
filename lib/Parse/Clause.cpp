@@ -164,6 +164,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             return;
 
           } else {
+            decl = clause->declaration;
             state = 4;
             continue;
           }
@@ -636,6 +637,49 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       return;
     }
   }
+
+  if (negation_tok.IsValid()) {
+    // Negation (i.e. removal) clauses must have a direct dependency on a
+    // message. This keeps removal in the control of external users, and means
+    // that, absent external messages, the system won't get into trivial cycles
+    // that preven fixpoints.
+    if (!prev_message) {
+      Error err(context->display_manager, SubTokenRange(),
+                negation_tok.SpellingRange().From());
+      err << "The explicit deletion clause for " << decl->name << '/'
+          << decl->parameters.size() << " must directly depend on a message";
+      context->error_log.Append(std::move(err));
+      return;
+    }
+
+    // Check that all other insertions depend on messages? The key here is to
+    // not permit a situation where you ask to remove a tuple, but where that
+    // tuple is independently provable via multiple "paths" (that don't use
+    // messages). Because a message is ultimately ephemeral, there is no prior
+    // record of its receipt per se, and so there is no prior evidence to re-
+    // prove a clause head that we're asking to remove.
+    auto has_errors = false;
+    for (const auto &clause : decl->context->clauses) {
+      if (!clause->depends_on_messages) {
+        Error err(context->display_manager, SubTokenRange(),
+                  negation_tok.SpellingRange().From());
+        err << "All positive clauses of " << decl->name << '/'
+            << decl->parameters.size() << " must directly depend on a message "
+            << "because of the presence of a deletion clause";
+
+        auto note = err.Note(context->display_manager,
+                             ParsedClause(clause.get()).SpellingRange());
+        note << "Clause without a direct message dependency is here";
+        context->error_log.Append(std::move(err));
+      }
+    }
+    if (has_errors) {
+      return;
+    }
+  }
+
+  // Keep track of whether or not any clause for this decl uses messages.
+  clause->depends_on_messages = true;
 
   // Link all positive predicate uses into their respective declarations.
   for (auto &used_pred : clause->positive_predicates) {

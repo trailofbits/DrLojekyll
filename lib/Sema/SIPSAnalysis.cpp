@@ -385,12 +385,11 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
 
   if (cancelled) {
     return false;
-
-  } else {
-    visitor.Insert(
-        decl, &(bound_params.front()), &((&(bound_params.back()))[1]));
-    return true;
   }
+
+  visitor.Insert(
+      decl, &(bound_params.front()), &((&(bound_params.back()))[1]));
+  return true;
 }
 
 // Bind the free parameters used in selection predicate.

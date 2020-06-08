@@ -19,8 +19,8 @@ namespace parse {
 union IdInterpreter {
   uint64_t flat{0};
   struct {
-    uint64_t module_id:12;
-    uint64_t arity:4;
+    uint64_t module_id:10;
+    uint64_t arity:6;
     uint64_t atom_name_id:24;
     uint64_t var_id:24;
   } info;
@@ -305,6 +305,9 @@ class Node<ParsedClause> {
 
   std::unordered_map<unsigned, unsigned> named_var_ids;
   unsigned next_var_id{1};
+
+  // Does this clause depend on any messages?
+  bool depends_on_messages{false};
 
   // Compute the identifier for this clause.
   uint64_t Id(void) const noexcept;

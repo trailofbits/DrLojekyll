@@ -530,7 +530,7 @@ void ParserImpl::ParseLocalExport(
         if (Lexeme::kIdentifierAtom == lexeme) {
           parse::IdInterpreter interpreter = {};
           interpreter.info.atom_name_id = tok.IdentifierId();
-          interpreter.info.arity = 3 - 1;  // Old val, proposed val, new val.
+          interpreter.info.arity = 3;  // Old val, proposed val, new val.
           const auto id = interpreter.flat;
           if (!context->declarations.count(id)) {
             Error err(context->display_manager, sub_tok_range,
@@ -737,7 +737,7 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
-  interpreter.info.arity = clause->head_variables.size() - 1;
+  interpreter.info.arity = clause->head_variables.size();
   const auto id = interpreter.flat;
 
   // There are no forward declarations associated with this ID.
@@ -818,7 +818,7 @@ bool ParserImpl::TryMatchPredicateWithDecl(
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
-  interpreter.info.arity = pred->argument_uses.size() - 1;
+  interpreter.info.arity = pred->argument_uses.size();
   const auto id = interpreter.flat;
 
   DisplayRange pred_head_range(

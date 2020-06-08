@@ -76,7 +76,7 @@ uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
       id.info.module_id = ~0u;
     }
   }
-  id.info.arity = parameters.size() - 1;
+  id.info.arity = parameters.size();
   return id.flat;
 }
 

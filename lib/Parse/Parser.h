@@ -26,7 +26,7 @@
 namespace hyde {
 namespace {
 
-static constexpr size_t kMaxArity = 16;
+static constexpr size_t kMaxArity = 63;
 
 // Information shared by multiple parsers.
 class SharedParserContext {
@@ -216,7 +216,7 @@ Node<T> *ParserImpl::AddDecl(
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = name.IdentifierId();
-  interpreter.info.arity = arity - 1;
+  interpreter.info.arity = arity;
 
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
@@ -267,7 +267,7 @@ void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = decl->name.IdentifierId();
-  interpreter.info.arity = decl->parameters.size() - 1;
+  interpreter.info.arity = decl->parameters.size();
   const auto id = interpreter.flat;
 
   decl->context->redeclarations.pop_back();
