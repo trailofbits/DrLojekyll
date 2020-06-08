@@ -8,18 +8,16 @@ MERGE(add_u32, u32, LHS, RHS) {
 !>
 
 #functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res)
-#local num_functions_(mutable(add_u32) Count)
-#query num_functions(free u32 Count)
+#local num_functions(mutable(add_u32) Count)
+#query get_num_functions(free u32 Count)
 
 #message add_function(u64 EA)
 #message remove_function(u64 EA)
 
 #export function(u64 EA)
 
-
-
 function(EA) : add_function(EA).
 !function(EA) : remove_function(EA).
 
-num_functions_(1) : function(EA).
-num_functions(Count) : num_functions_(Count).
+num_functions(1) : function(EA).
+get_num_functions(Count) : num_functions(Count).

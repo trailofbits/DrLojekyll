@@ -572,16 +572,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
   const auto is_query_clause = DeclarationKind::kQuery ==
                                clause->declaration->context->kind;
-
-  // We don't let deletion clauses be specified on queries because a query
-  // gives us point-in-time results according to some request.
-  if (is_query_clause && negation_tok.IsValid()) {
-    Error err(context->display_manager, SubTokenRange(),
-              negation_tok.SpellingRange());
-    err << "Deletion clauses cannot be specified on queries";
-    context->error_log.Append(std::move(err));
-    return;
-  }
+  const auto is_message_clause = DeclarationKind::kMessage ==
+                                 clause->declaration->context->kind;
 
   // TODO(pag): Consider doing some kind of basic range restriction check and
   //            transformation. For example, if we have `foo(A,A).` then is
@@ -639,11 +631,33 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   }
 
   if (negation_tok.IsValid()) {
+    // We don't let deletion clauses be specified on queries because a query
+    // gives us point-in-time results according to some request.
+    if (is_query_clause) {
+      Error err(context->display_manager, SubTokenRange(),
+                negation_tok.SpellingRange());
+      err << "Deletion clauses cannot be specified on queries";
+      context->error_log.Append(std::move(err));
+      return;
+
+    // We also don't support negations of messages, as it's a message isn't
+    // something that "exists" in the database. That is, we can publish the
+    // fact that something was deleted/changed, but we can't publish the
+    // deletion of a message because they are ephemeral, and even if we had
+    // received a corresponding "equivalent" message, then we never really
+    // stored it to begin with.
+    } else if (is_message_clause) {
+      Error err(context->display_manager, SubTokenRange(),
+                negation_tok.SpellingRange());
+      err << "Deletion clauses cannot be specified on messages";
+      context->error_log.Append(std::move(err));
+      return;
+
     // Negation (i.e. removal) clauses must have a direct dependency on a
     // message. This keeps removal in the control of external users, and means
     // that, absent external messages, the system won't get into trivial cycles
     // that preven fixpoints.
-    if (!prev_message) {
+    } else if (!prev_message) {
       Error err(context->display_manager, SubTokenRange(),
                 negation_tok.SpellingRange().From());
       err << "The explicit deletion clause for " << decl->name << '/'
