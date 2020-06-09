@@ -24,5 +24,25 @@ class DataStream {
   virtual bool TryGetErrorMessage(std::ostream *os) const = 0;
 };
 
+// Stream that lets one read from data buffer.
+class StringViewStream final : public display::DataStream {
+ public:
+  explicit StringViewStream(const std::string_view data_);
+
+  virtual ~StringViewStream(void);
+
+  bool ReadData(std::string_view *data_out) override;
+
+  bool TryGetErrorMessage(std::ostream *) const override;
+
+  void MarkAsDone(void) {
+    done = true;
+  }
+
+ private:
+  std::string_view data;
+  bool done{false};
+};
+
 }  // namespace display
 }  // namespace hyde

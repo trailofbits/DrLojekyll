@@ -20,7 +20,10 @@ class ErrorStream final : public display::DataStream {
   explicit ErrorStream(std::string &&error_message_)
       : error_message(std::forward<std::string>(error_message_)) {}
 
-  bool ReadData(std::string_view *) override {
+  bool ReadData(std::string_view *data_out) override {
+    if (data_out) {
+      *data_out = std::string_view();
+    }
     return false;
   }
 
@@ -43,6 +46,11 @@ DisplayImpl::DisplayImpl(unsigned id_,
     : id(id_),
       config(config_),
       stream(stream_) {
+  if (!stream) {
+    std::stringstream ss;
+    ss << "Empty stream '" << config.name << "'";
+    stream.reset(new ErrorStream(ss.str()));
+  }
   data.reserve(4096);
 }
 
@@ -125,6 +133,12 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
     }
 
   } while (stream->ReadData(&data_read));
+
+  // Swap out the old stream, ideally closing file descriptors that may be
+  // left open.
+  auto new_stream = new display::StringViewStream(data);
+  new_stream->MarkAsDone();
+  stream.reset(new_stream);
 
   return false;
 }

@@ -79,39 +79,6 @@ class AllFailedVisitor : public SIPSVisitor {
     log.Append(std::move(err));
   }
 
-  // Declares a variable identified by `id`.
-  void DeclareVariable(ParsedVariable var, unsigned id) override {
-    id_to_var.emplace(id, var);
-  }
-
-  // Declares a constant identified by `id`.
-  void DeclareConstant(ParsedLiteral val, unsigned id) override {
-    id_to_val.emplace(id, val);
-  }
-
-  struct Dummy {
-   public:
-    DisplayRange SpellingRange(void) const noexcept {
-      return DisplayRange();
-    }
-  };
-
-  std::variant<ParsedVariable, ParsedLiteral, Dummy>
-  Value(unsigned id) const {
-    auto var_it = id_to_var.find(id);
-    if (var_it != id_to_var.end()) {
-      return var_it->second;
-    }
-
-    auto val_it = id_to_val.find(id);
-    if (val_it != id_to_val.end()) {
-      return val_it->second;
-    }
-
-    assert(false);
-    return Dummy();
-  }
-
   // Notify the visitor that visiting cannot complete/continue due to an
   // invalid comparison `compare` that relates the variable identified by
   // `lhs_id` to the variable identified by `rhs_id`.
@@ -125,11 +92,31 @@ class AllFailedVisitor : public SIPSVisitor {
     log.Append(std::move(err));
   }
 
+  // Notify the visitor that visiting cannot complete due to binding
+  // restrictions on a particular predicate. A range `[begin, end)` of
+  // failed bindings is provided.
+  void CancelPredicate(const FailedBinding *begin,
+                       const FailedBinding *end) override {
+    assert(begin < end);
+
+    auto clause = ParsedClause::Containing(begin->predicate);
+    Error err(dm, clause.SpellingRange(), begin->predicate.SpellingRange());
+    err << "Unable to find binding of variables for parameters of '"
+        << begin->declaration.Name() << '/' << begin->declaration.Arity()
+        << '/';
+
+    for (auto redecl : begin->declaration.Redeclarations()) {
+      auto note = err.Note(dm, redecl.SpellingRange());
+      note << "Declaration of '" << redecl.Name() << '/' << redecl.Arity()
+           << "' is here";
+    }
+
+    log.Append(std::move(err));
+  }
+
  private:
   const DisplayManager dm;
   const ErrorLog log;
-  std::unordered_map<unsigned, ParsedVariable> id_to_var;
-  std::unordered_map<unsigned, ParsedLiteral> id_to_val;
 };
 
 

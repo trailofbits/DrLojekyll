@@ -11,8 +11,6 @@
 
 #include <drlojekyll/Lex/StringPool.h>
 
-#include <iostream>
-
 #include "Token.h"
 
 namespace hyde {
@@ -826,7 +824,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
       // Some weird mix.
       } else {
-        std::cerr << "HERE?!\n";
         auto i = 0u;
         is_all_decimal = true;
         while (is_all_decimal && i < impl->data.size()) {

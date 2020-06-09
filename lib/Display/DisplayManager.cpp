@@ -29,7 +29,10 @@ class BadFilePathStream final : public display::DataStream {
       : path(path_),
         ec(ec_) {}
 
-  bool ReadData(std::string_view *) override {
+  bool ReadData(std::string_view *out_data) override {
+    if (out_data) {
+      *out_data = std::string_view();
+    }
     return false;
   }
 
@@ -59,6 +62,9 @@ class FilePathStream final : public display::DataStream {
   // Read data into `data_out`.
   bool ReadData(std::string_view *data_out) override {
     if (done) {
+      if (data_out) {
+        *data_out = std::string_view();
+      }
       return false;
     }
 
@@ -123,6 +129,9 @@ class UserSuppliedStream final : public display::DataStream {
   // Read data into `data_out`.
   bool ReadData(std::string_view *data_out) override {
     if (done) {
+      if (data_out) {
+        *data_out = std::string_view();
+      }
       return false;
     }
 
@@ -169,35 +178,6 @@ class UserSuppliedStream final : public display::DataStream {
   std::string data;
 };
 
-// Stream that lets one read from data buffer.
-class StringViewStream final : public display::DataStream {
- public:
-  explicit StringViewStream(const std::string_view data_)
-      : data(data_) {}
-
-  virtual ~StringViewStream(void) = default;
-
-  bool ReadData(std::string_view *data_out) override {
-    if (done) {
-      return false;
-    } else {
-      if (data_out) {
-        *data_out = data;
-      }
-      done = true;
-      return true;
-    }
-  }
-
-  bool TryGetErrorMessage(std::ostream *) const override {
-    return false;
-  }
-
- private:
-  std::string_view data;
-  bool done{false};
-};
-
 }  // namespace
 
 // Manages ownership of one or more displays.
@@ -235,7 +215,7 @@ std::string_view DisplayManager::DisplayName(DisplayPosition position) const {
 Display DisplayManager::OpenBuffer(std::string_view data,
                                    const DisplayConfiguration &config) const {
   auto id = static_cast<unsigned>(impl->displays.size());
-  auto stream = new StringViewStream(data);
+  auto stream = new display::StringViewStream(data);
   auto display = new DisplayImpl(id, config, stream);
   impl->displays.emplace_back(display);
   return Display(display);
@@ -273,8 +253,8 @@ Display DisplayManager::OpenPath(std::string_view path_,
 }
 
 // Open an input/output stream.
-Display DisplayManager::OpenStream(std::istream &is,
-                                   const DisplayConfiguration &config) const {
+Display DisplayManager::OpenStream(
+    std::istream &is, const DisplayConfiguration &config) const {
   if (&is == &(std::cin) && impl->stdin_display) {
     return Display(impl->stdin_display);
   }

@@ -92,6 +92,7 @@ int main(int argc, char *argv[]) {
 
   std::string input_path;
   std::string output_path = "/dev/null";
+  std::string file_path;
   auto num_input_paths = 0;
 
   std::stringstream linked_module;
@@ -158,7 +159,28 @@ int main(int argc, char *argv[]) {
 
     // Input datalog file, add it to the list of paths to parse.
     } else {
-      linked_module << "#import \"" << argv[i] << "\"\n";
+      file_path.clear();
+
+      for (auto ch : std::string_view(argv[i])) {
+        switch (ch) {
+          case '\n':
+            file_path.push_back('\\');
+            file_path.push_back('n');
+            break;
+          case '\t':
+            file_path.push_back('\\');
+            file_path.push_back('t');
+            break;
+          case '"':
+            file_path.push_back('\\');
+            file_path.push_back('"');
+            break;
+          default:
+            file_path.push_back(ch);
+        }
+      }
+
+      linked_module << "#import \"" << file_path << "\"\n";
       input_path = argv[i];
       ++num_input_paths;
     }
