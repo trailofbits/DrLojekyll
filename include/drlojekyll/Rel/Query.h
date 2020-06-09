@@ -130,8 +130,6 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
   static QueryRelation From(const QuerySelect &sel) noexcept;
 
   const ParsedDeclaration &Declaration(void) const noexcept;
-  bool IsPositive(void) const noexcept;
-  bool IsNegative(void) const noexcept;
 
  private:
   using query::QueryNode<QueryRelation>::QueryNode;
@@ -504,6 +502,7 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 
   ParsedDeclaration Declaration(void) const noexcept;
 
+  bool IsDelete(void) const noexcept;
   bool IsRelation(void) const noexcept;
   bool IsStream(void) const noexcept;
 

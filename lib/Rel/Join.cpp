@@ -254,6 +254,9 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
     // Create a tuple that forwards along the inputs to this join.
     auto tuple = query->tuples.Create();
+    tuple->can_receive_deletions = can_receive_deletions;
+    tuple->can_produce_deletions = can_produce_deletions;
+
     auto j = 0u;
     for (auto col : columns) {
       const auto new_out_col = tuple->columns.Create(col->var, tuple, col->id);
@@ -307,6 +310,9 @@ skip_remove:
 
         COL * const const_col = const_col_it->second;
         const auto filter = query->constraints.Create(ComparisonOperator::kEqual);
+        const VIEW *in_view = in_col->view;
+        filter->can_receive_deletions = in_view->can_produce_deletions;
+        filter->can_produce_deletions = filter->can_receive_deletions;
         filter->input_columns.AddUse(in_col);
         filter->input_columns.AddUse(const_col);
 

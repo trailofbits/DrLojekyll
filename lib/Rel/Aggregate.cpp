@@ -177,11 +177,11 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
 bool Node<QueryAggregate>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsAggregate();
-  if (!that || columns.Size() != that->columns.Size()) {
-    return false;
-  }
-
-  if (functor != that->functor) {
+  if (!that ||
+      functor != that->functor ||
+      columns.Size() != that->columns.Size() ||
+      can_receive_deletions != that->can_receive_deletions ||
+      can_produce_deletions != that->can_produce_deletions) {
     return false;
   }
 

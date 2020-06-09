@@ -126,8 +126,10 @@
 //
 //    TODO:
 //      Custom zero-arg specialization of a generator that increments a number
-//      for yielding. I.e. `__gen.Yield()` increments the loop count.
+//      for yielding. I.e. `__gen.Emit()` increments the loop count.
 namespace hyde {
+extern OutputStream *gOut;
+
 namespace {
 
 using ViewCaseMap = std::map<std::tuple<uint64_t, uint64_t, bool>, unsigned>;
@@ -219,7 +221,6 @@ static OutputStream &CommentOnVar(OutputStream &os, ParsedVariable var) {
   }
   return os;
 }
-
 
 // Comment containing a variable's name, if any, to be placed after one of
 // our column variable names.
@@ -1516,6 +1517,7 @@ static void DeclareGenerator(OutputStream &os, QueryMap map,
 
   // Declare the tuple type as a structure.
   os << "\n"
+     << "struct " << functor.Name() << '_' << binding_pattern << "_tag {};\n"
      << "using " << functor.Name() << '_' << binding_pattern
      << "_generator = ::hyde::rt::Generator<";
 
@@ -1637,8 +1639,9 @@ static void DefineMap(OutputStream &os, QueryMap map,
 
   os << "  auto &__gen = __stages[__wid].G" << id << ";\n"
      << "  __gen.Clear();\n"
-     << "  " << functor.Name() << '_' << binding_pattern
-     << "(__gen";
+     << "  ::hyde::rt::InlineDefinition<"  << functor.Name() << '_'
+     << binding_pattern << "_tag>(" << functor.Name() << '_' << binding_pattern
+     << ")(__gen";
 
   for (auto col : bound_cols) {
     os << ", " << col.UniqueId();

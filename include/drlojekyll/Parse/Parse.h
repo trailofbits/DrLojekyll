@@ -466,12 +466,15 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   NodeRange<ParsedDeclaration> Redeclarations(void) const;
   NodeRange<ParsedParameter> Parameters(void) const;
   NodeRange<ParsedClause> Clauses(void) const;
+  NodeRange<ParsedClause> DeletionClauses(void) const;
+
   NodeRange<ParsedPredicate> PositiveUses(void) const;
   NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
   unsigned NumClauses(void) const noexcept;
+  unsigned NumDeletionClauses(void) const noexcept;
 
   bool IsInline(void) const noexcept;
 

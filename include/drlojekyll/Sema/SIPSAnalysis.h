@@ -109,7 +109,9 @@ class SIPSVisitor {
 
   // Tell the visitor that we're going to insert into a table.
   virtual void Insert(
-      ParsedDeclaration decl, const Column *begin,
+      ParsedClause clause,
+      ParsedDeclaration decl,
+      const Column *begin,
       const Column *end);
 
   // Selects some columns from a predicate where some of the column values are

@@ -26,10 +26,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "t" << relation.UniqueId() << " [ label=<" << kBeginTable
        << "<TD>RELATION ";
 
-    if (relation.IsNegative()) {
-      os << "!";
-    }
-
     os << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
@@ -466,13 +462,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     for (auto select : query.Selects()) {
 
-      auto color = QueryView::From(select ).CanReceiveDeletions() ? " [color=pink]" : " [color=grey]";
+      auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=pink]" : " [color=grey]";
 
       if (select.IsRelation() && insert.IsRelation()) {
         if (select.Relation() == insert.Relation()) {
           os << "t" << insert.Relation().UniqueId()
              << " -> v" << insert.UniqueId()
-             << color << " [color=grey];\n";
+             << color << ";\n";
         }
       } else if (select.IsStream() && insert.IsStream()) {
         if (select.Stream() == insert.Stream()) {

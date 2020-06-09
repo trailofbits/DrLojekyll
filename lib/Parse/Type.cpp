@@ -78,7 +78,7 @@ TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
 
 const char *Spelling(TypeKind kind) noexcept {
   switch (kind) {
-    case TypeKind::kInvalid: return "";
+    case TypeKind::kInvalid: return "<invalid>";
     case TypeKind::kSigned8: return "i8";
     case TypeKind::kSigned16: return "i16";
     case TypeKind::kSigned32: return "i32";

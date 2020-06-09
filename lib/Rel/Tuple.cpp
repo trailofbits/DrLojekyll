@@ -186,6 +186,8 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
 bool Node<QueryTuple>::Equals(EqualitySet &, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsTuple();
   return that &&
+         can_receive_deletions == that->can_receive_deletions &&
+         can_produce_deletions == that->can_produce_deletions &&
          columns.Size() == that->columns.Size() &&
          ColumnsEq(input_columns, that->input_columns) &&
          !InsertSetsOverlap(this, that);

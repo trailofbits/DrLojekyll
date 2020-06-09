@@ -178,7 +178,7 @@ class Generator {
     curr_ = begin_;
   }
 
-  void Yield(Args... args) {
+  void Emit(Args... args) {
     if (curr_ >= end_) {
       Resize();
     }
@@ -582,6 +582,21 @@ class Map<EmptyKeyVars, ValueVars<Values...>> {
   std::tuple<Values..., bool> val;
 };
 
+template <typename Tag>
+struct InlineRedefinition {
+  static constexpr bool kIsDefined = false;
+};
+
+template <typename Tag, typename Ret, typename... ArgTypes>
+inline static auto InlineDefinition(
+    Ret (*func)(ArgTypes...)) -> Ret (*)(ArgTypes...) {
+  if constexpr (InlineRedefinition<Tag>::kIsDefined) {
+    return InlineRedefinition<Tag>::template Run<Ret, ArgTypes...>;
+  } else {
+    return func;
+  }
+}
+
 #define AGGREGATOR_CONFIG(name, binding_pattern) \
     template <typename> \
     class hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config>
@@ -591,43 +606,60 @@ class Map<EmptyKeyVars, ValueVars<Values...>> {
     class hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config>
 
 #define AGGREGATOR_INIT(name, binding_pattern, ...) \
-  struct name ## _ ## binding_pattern ## _config; \
-  extern "C" \
-  void name ## _ ## binding_pattern ## _init( \
-      hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
-      #__VA_ARGS__)
+    struct name ## _ ## binding_pattern ## _config; \
+    extern "C" \
+    void name ## _ ## binding_pattern ## _init( \
+        hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
+        #__VA_ARGS__)
 
 #define AGGREGATOR_ADD(name, binding_pattern, ...) \
-  struct name ## _ ## binding_pattern ## _config; \
-  extern "C" \
-  void name ## _ ## binding_pattern ## _add( \
-      hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
-      #__VA_ARGS__)
+    struct name ## _ ## binding_pattern ## _config; \
+    extern "C" \
+    void name ## _ ## binding_pattern ## _add( \
+        hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
+        #__VA_ARGS__)
 
 #define DIFF_AGGREGATOR_INIT(name, binding_pattern, ...) \
-  struct name ## _ ## binding_pattern ## _config; \
-  extern "C" \
-  void name ## _ ## binding_pattern ## _init( \
-      hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
-      #__VA_ARGS__)
+    struct name ## _ ## binding_pattern ## _config; \
+    extern "C" \
+    void name ## _ ## binding_pattern ## _init( \
+        hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
+        #__VA_ARGS__)
 
 #define DIFF_AGGREGATOR_ADD(name, binding_pattern, ...) \
-  struct name ## _ ## binding_pattern ## _config; \
-  extern "C" \
-  void name ## _ ## binding_pattern ## _add( \
-      hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
-      #__VA_ARGS__)
+    struct name ## _ ## binding_pattern ## _config; \
+    extern "C" \
+    void name ## _ ## binding_pattern ## _add( \
+        hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
+        #__VA_ARGS__)
 
 #define DIFF_AGGREGATOR_REMOVE(name, binding_pattern, ...) \
-  struct name ## _ ## binding_pattern ## _result; \
-  struct name ## _ ## binding_pattern ## _config; \
-  extern "C" \
-  void name ## _ ## binding_pattern ## _remove( \
-      hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
-      #__VA_ARGS__)
+    struct name ## _ ## binding_pattern ## _result; \
+    struct name ## _ ## binding_pattern ## _config; \
+    extern "C" \
+    void name ## _ ## binding_pattern ## _remove( \
+        hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
+        #__VA_ARGS__)
 
 #define MERGE(name, type, prev_var, proposed_var) \
     extern "C" type name ## _merge(type prev_var, type proposed_var)
+
+#define MAP(name, binding_pattern, ...) \
+    struct name ## _ ## binding_pattern ## _mapper \
+        : public name ## _ ## binding_pattern ## _generator { \
+      void Run(__VA_ARGS__); \
+    }; \
+    template <> \
+    struct InlineRedefinition<name ## _ ## binding_pattern ## _tag> { \
+      using __GenType = name ## _ ## binding_pattern ## _generator; \
+      using __SelfType = name ## _ ## binding_pattern ## _mapper; \
+      static constexpr bool kIsDefined = true; \
+      template <typename Ret, typename... Args> \
+      static Ret Run(__GenType &__self, Args... __args) { \
+        return reinterpret_cast<__SelfType &>(__self).Run(__args...); \
+      } \
+    }; \
+    void name ## _ ## binding_pattern ## _mapper ::Run(__VA_ARGS__)
 
 }  // namespace rt
 }  // namespace hyde

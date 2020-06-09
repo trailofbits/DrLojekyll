@@ -260,6 +260,8 @@ bool Node<QueryConstraint>::Equals(
   const auto that = that_->AsConstraint();
   return that &&
          op == that->op &&
+         can_receive_deletions == that->can_receive_deletions &&
+         can_produce_deletions == that->can_produce_deletions &&
          columns.Size() == that_->columns.Size() &&
          ColumnsEq(input_columns, that->input_columns) &&
          ColumnsEq(attached_columns, that->attached_columns);

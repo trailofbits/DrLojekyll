@@ -18,7 +18,7 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
   }
 
   if (relation) {
-    hash = relation->decl.Id();
+    hash = relation->declaration.Id();
 
   } else if (stream) {
     if (auto generator_stream = stream->AsGenerator()) {
@@ -58,7 +58,10 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 bool Node<QuerySelect>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsSelect();
-  if (!that || columns.Size() != that->columns.Size() ||
+  if (!that ||
+      can_receive_deletions != that->can_receive_deletions ||
+      can_produce_deletions != that->can_produce_deletions ||
+      columns.Size() != that->columns.Size() ||
       input_columns.Size() != that->input_columns.Size()) {
     return false;
   }
@@ -83,7 +86,7 @@ bool Node<QuerySelect>::Equals(
     }
 
   } else if (relation) {
-    if (!that->relation || relation->decl.Id() != that->relation->decl.Id()) {
+    if (!that->relation || relation->declaration.Id() != that->relation->declaration.Id()) {
       return false;
     }
 

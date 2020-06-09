@@ -184,15 +184,11 @@ using COL = Node<QueryColumn>;
 template <>
 class Node<QueryRelation> : public Def<Node<QueryRelation>> {
  public:
-  inline Node(ParsedDeclaration decl_, bool is_positive_)
+  inline explicit Node(ParsedDeclaration decl_)
       : Def<Node<QueryRelation>>(this),
-        decl(decl_),
-        is_positive(is_positive_) {}
+        declaration(decl_) {}
 
-  const ParsedDeclaration decl;
-
-  // Is this a positive or negative table?
-  const bool is_positive;
+  const ParsedDeclaration declaration;
 };
 
 using REL = Node<QueryRelation>;
@@ -427,12 +423,20 @@ class Node<QuerySelect> final : public Node<QueryView> {
   inline Node(Node<QueryRelation> *relation_, DisplayRange range)
       : position(range.From()),
         relation(relation_->CreateUse(this)),
-        inserts(this) {}
+        inserts(this) {
+    this->can_receive_deletions = 0u < relation->declaration.NumDeletionClauses();
+    this->can_produce_deletions = this->can_receive_deletions;
+  }
 
   inline Node(Node<QueryStream> *stream_, DisplayRange range)
       : position(range.From()),
         stream(stream_->CreateUse(this)),
-        inserts(this) {}
+        inserts(this) {
+    if (auto input_stream = stream->AsInput(); input_stream) {
+      this->can_receive_deletions = 0u < input_stream->declaration.NumDeletionClauses();
+      this->can_produce_deletions = this->can_receive_deletions;
+    }
+  }
 
   virtual ~Node(void);
 
@@ -682,22 +686,30 @@ class Node<QueryInsert> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
+  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_,
+              bool is_insert_=true)
       : relation(relation_->CreateUse(this)),
-        decl(decl_) {
+        declaration(decl_),
+        is_insert(is_insert_) {
 
     // Make all INSERTs initially look used. Replacing one with another will
     // make it go unused.
     is_used = true;
   }
 
-  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_)
+  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_,
+              bool is_insert_=true)
       : stream(stream_->CreateUse(this)),
-        decl(decl_) {
+        declaration(decl_),
+        is_insert(is_insert_) {
 
     // Make all INSERTs initially look used. Replacing one with another will
     // make it go unused.
     is_used = true;
+
+    if (!is_insert) {
+      this->can_produce_deletions = true;
+    }
   }
 
   const char *KindName(void) const noexcept override;
@@ -709,7 +721,8 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   const UseRef<REL> relation;
   const UseRef<STREAM> stream;
-  const ParsedDeclaration decl;
+  const ParsedDeclaration declaration;
+  const bool is_insert;
 };
 
 using INSERT = Node<QueryInsert>;

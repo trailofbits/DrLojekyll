@@ -57,7 +57,7 @@ void SIPSVisitor::AssertPresent(
 void SIPSVisitor::AssertAbsent(
     ParsedDeclaration, ParsedPredicate, const Column *, const Column *) {}
 void SIPSVisitor::Insert(
-    ParsedDeclaration, const Column *, const Column *) {}
+    ParsedClause, ParsedDeclaration, const Column *, const Column *) {}
 void SIPSVisitor::EnterFromWhereSelect(
     ParsedPredicate, ParsedDeclaration, const Column *, const Column *,
     const Column *, const Column *) {}
@@ -409,9 +409,9 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
   }
 
   if (bound_params.empty()) {
-    visitor.Insert(decl, nullptr, nullptr);
+    visitor.Insert(clause, decl, nullptr, nullptr);
   } else {
-    visitor.Insert(decl, BeginPtr(bound_params), EndPtr(bound_params));
+    visitor.Insert(clause, decl, BeginPtr(bound_params), EndPtr(bound_params));
   }
   return true;
 }

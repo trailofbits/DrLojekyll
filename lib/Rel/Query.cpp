@@ -213,6 +213,11 @@ bool QueryView::ReplaceAllUsesWith(
     return false;
   }
 
+  // TODO(pag): Think about relaxing these constraints? Relaxing means fewer
+  //            unions but more differential tracking.
+  assert(impl->can_receive_deletions == that.impl->can_receive_deletions);
+  assert(impl->can_produce_deletions == that.impl->can_produce_deletions);
+
   const auto num_cols = impl->columns.Size();
   assert(num_cols == that.impl->columns.Size());
 
@@ -391,15 +396,7 @@ QueryRelation QueryRelation::From(const QuerySelect &sel) noexcept {
 }
 
 const ParsedDeclaration &QueryRelation::Declaration(void) const noexcept {
-  return impl->decl;
-}
-
-bool QueryRelation::IsPositive(void) const noexcept {
-  return impl->is_positive;
-}
-
-bool QueryRelation::IsNegative(void) const noexcept {
-  return !impl->is_positive;
+  return impl->declaration;
 }
 
 QuerySelect &QuerySelect::From(QueryView &view) {
@@ -825,7 +822,11 @@ QueryInsert &QueryInsert::From(QueryView &view) {
 }
 
 ParsedDeclaration QueryInsert::Declaration(void) const noexcept {
-  return impl->decl;
+  return impl->declaration;
+}
+
+bool QueryInsert::IsDelete(void) const noexcept {
+  return !impl->is_insert;
 }
 
 bool QueryInsert::IsRelation(void) const noexcept {

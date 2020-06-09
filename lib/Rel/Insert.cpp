@@ -18,7 +18,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   }
 
   // Start with an initial hash just in case there's a cycle somewhere.
-  hash = decl.Id();
+  hash = declaration.Id();
 
   // Mix in the hashes of the input by columns; these are ordered.
   for (auto col : input_columns) {
@@ -37,11 +37,12 @@ bool Node<QueryInsert>::Canonicalize(QueryImpl *) {
 }
 
 // Equality over inserts is structural.
-bool Node<QueryInsert>::Equals(
-    EqualitySet &eq, Node<QueryView> *that_) noexcept {
+bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   const auto that = that_->AsInsert();
   return that &&
-         decl.Id() == that->decl.Id() &&
+         is_insert == that->is_insert &&
+         can_produce_deletions == that->can_produce_deletions &&
+         declaration.Id() == that->declaration.Id() &&
          columns.Size() == that->columns.Size() &&
          ColumnsEq(input_columns, that->input_columns) &&
          is_used == that->is_used;

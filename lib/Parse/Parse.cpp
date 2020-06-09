@@ -89,6 +89,15 @@ NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
   }
 }
 
+// Return a list of clauses associated with this declaration.
+NodeRange<ParsedClause> Node<ParsedDeclaration>::DeletionClauses(void) const {
+  if (context->deletion_clauses.empty()) {
+    return NodeRange<ParsedClause>();
+  } else {
+    return NodeRange<ParsedClause>(context->deletion_clauses.front().get());
+  }
+}
+
 // Return a list of positive uses of this definition.
 NodeRange<ParsedPredicate>
 Node<ParsedDeclaration>::PositiveUses(void) const {
@@ -716,6 +725,10 @@ NodeRange<ParsedClause> ParsedDeclaration::Clauses(void) const {
   return impl->Clauses();
 }
 
+NodeRange<ParsedClause> ParsedDeclaration::DeletionClauses(void) const {
+  return impl->DeletionClauses();
+}
+
 NodeRange<ParsedPredicate>
 ParsedDeclaration::PositiveUses(void) const {
   return impl->PositiveUses();
@@ -736,6 +749,10 @@ unsigned ParsedDeclaration::NumNegatedUses(void) const noexcept {
 
 unsigned ParsedDeclaration::NumClauses(void) const noexcept {
   return static_cast<unsigned>(impl->context->clauses.size());
+}
+
+unsigned ParsedDeclaration::NumDeletionClauses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->deletion_clauses.size());
 }
 
 bool ParsedDeclaration::IsInline(void) const noexcept {

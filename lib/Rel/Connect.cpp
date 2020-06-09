@@ -18,18 +18,19 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     return !decl.IsQuery() &&
            !decl.IsMessage() &&
            !decl.HasDirectGeneratorDependency() &&
-           !decl.NumNegatedUses();
+           !decl.NumNegatedUses() &&
+           !decl.NumDeletionClauses();
   };
 
   // Go figure out what INSERTs can be connected to SELECTs, and also try
   // to mark some INSERTs as no longer needed.
   for (auto insert : inserts) {
-    if (can_connect(insert->decl)) {
+    if (can_connect(insert->declaration)) {
       insert->is_used = false;
-      decl_to_inserts[insert->decl].push_back(insert);
+      decl_to_inserts[insert->declaration].push_back(insert);
 
-    } else if (!insert->decl.IsQuery() && !insert->decl.IsMessage()) {
-      if (!insert->decl.NumUses()) {
+    } else if (!insert->declaration.IsQuery() && !insert->declaration.IsMessage()) {
+      if (!insert->declaration.NumUses()) {
         insert->is_used = false;
       }
     }
@@ -37,11 +38,11 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
   for (auto select : selects) {
     if (auto rel = select->relation.get(); rel) {
-      if (can_connect(rel->decl)) {
-        decl_to_selects[rel->decl].push_back(select);
+      if (can_connect(rel->declaration)) {
+        decl_to_selects[rel->declaration].push_back(select);
 
-      } else if (decl_to_inserts.count(rel->decl)) {
-        for (auto insert : decl_to_inserts[rel->decl]) {
+      } else if (decl_to_inserts.count(rel->declaration)) {
+        for (auto insert : decl_to_inserts[rel->declaration]) {
           select->inserts.AddUse(insert);
         }
       }
@@ -53,7 +54,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
     const auto merge = merges.Create();
     Node<QueryView> *view = merge;
-    for (auto insert : insert_views) {
+    for (INSERT *insert : insert_views) {
       const auto ins_tuple = tuples.Create();
 
       bool is_first_merge = merge->merged_views.Empty();

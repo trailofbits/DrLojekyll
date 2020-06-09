@@ -38,7 +38,8 @@ class QueryBuilderImpl : public SIPSVisitor {
                                context->decl_to_neg_relation;
     auto &table = rels[decl];
     if (!table) {
-      table = context->relations.Create(decl, is_positive);
+      (void) is_positive;
+      table = context->relations.Create(decl);
     }
 
     return table;
@@ -46,6 +47,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   // Get the table for a given predicate.
   REL *TableFor(ParsedPredicate pred) {
+    assert(pred.IsPositive());  // TODO(pag): Figure this out later.
     return TableFor(ParsedDeclaration::Of(pred), pred.IsPositive());
   }
 
@@ -1236,10 +1238,8 @@ class QueryBuilderImpl : public SIPSVisitor {
     return made_progress;
   }
 
-  void Insert(
-      ParsedDeclaration decl,
-      const Column *begin,
-      const Column *end) override {
+  void Insert(ParsedClause clause, ParsedDeclaration decl,
+              const Column *begin, const Column *end) override {
 
     // There may be unresolved comparisons, i.e. where the SIPS visitor had
     // us compare IDs, but we didn't have columns associated with them at that
@@ -1284,11 +1284,12 @@ class QueryBuilderImpl : public SIPSVisitor {
 
     INSERT *insert = nullptr;
     if (decl.IsMessage()) {
+      assert(!clause.IsDeletion());
       auto stream = StreamFor(decl);
       insert = query->inserts.Create(stream, decl);
     } else {
       auto table = TableFor(decl);
-      insert = query->inserts.Create(table, decl);
+      insert = query->inserts.Create(table, decl, !clause.IsDeletion());
     }
 
     for (auto col = begin; col < end; ++col) {
@@ -1297,25 +1298,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       assert(prev_colset);
       const auto prev_col = prev_colset->Leader();
       insert->input_columns.AddUse(prev_col);
-    }
-
-    // Look to see if there's any negative use of `decl`, and insert into
-    // there as well. This is equivalent to removing from the negative table.
-    //
-    // NOTE(pag): Not allowed negative uses of messages, hence no checking or
-    //            creation of streams here.
-    for (auto pred : decl.NegativeUses()) {
-      auto table = TableFor(pred);
-      insert = query->inserts.Create(table, decl);
-
-      for (auto col = begin; col < end; ++col) {
-        (void) AddColumn(insert, *col);
-        const auto &prev_colset = id_to_col[col->id];
-        assert(prev_colset);
-        const auto prev_col = prev_colset->Leader();
-        insert->input_columns.AddUse(prev_col);
-      }
-      break;  // Don't need more than one.
     }
   }
 
@@ -1677,9 +1659,11 @@ void QueryBuilder::VisitClause(
 // Return the final query, which may include several different inserts.
 Query QueryBuilder::BuildQuery(void) {
 
-//  impl->query->Optimize();
-//  impl->query->ConnectInsertsToSelects();
-//  impl->query->Optimize();
+  impl->query->TrackDifferentialUpdates();
+  impl->query->Optimize();
+  impl->query->ConnectInsertsToSelects();
+  impl->query->TrackDifferentialUpdates();
+  impl->query->Optimize();
   impl->query->TrackDifferentialUpdates();
 
   Query ret(std::move(impl->query));

@@ -55,12 +55,14 @@ const char *Node<QueryConstraint>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryInsert>::KindName(void) const noexcept {
-  if (decl.Kind() == DeclarationKind::kQuery) {
+  if (declaration.Kind() == DeclarationKind::kQuery) {
     return "RESPOND";
-  } else if (decl.Kind() == DeclarationKind::kMessage) {
+  } else if (declaration.Kind() == DeclarationKind::kMessage) {
     return "SEND";
-  } else {
+  } else if (is_insert) {
     return "INSERT";
+  } else {
+    return "DELETE";
   }
 }
 
@@ -249,6 +251,11 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
 
   for (auto col : columns) {
     tuple->input_columns.AddUse(col);
+  }
+
+  if (can_produce_deletions) {
+    tuple->can_receive_deletions = true;
+    tuple->can_produce_deletions = true;
   }
 
   return tuple;

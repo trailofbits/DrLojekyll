@@ -357,6 +357,9 @@ class Node<ParsedDeclaration> {
   // Return a list of clauses associated with this declaration.
   NodeRange<ParsedClause> Clauses(void) const;
 
+  // Return a list of clauses associated with this declaration.
+  NodeRange<ParsedClause> DeletionClauses(void) const;
+
   // Return a list of positive uses of this definition.
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 

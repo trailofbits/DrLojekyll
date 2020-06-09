@@ -1175,117 +1175,131 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
         return true;
       };
 
+  auto do_clause = [&] (Node<ParsedClause> *clause) -> bool {
+    auto i = 0u;
+
+    for (const auto &var : clause->head_variables) {
+      const auto &decl_param = clause->declaration->parameters[i++];
+
+      // Head variable-based top-down. The head variable has a type, so
+      // propagate that type through all uses and check that they all
+      // match.
+      if (var->type.IsValid()) {
+      var_has_type:
+
+        if (decl_param->opt_type.IsInvalid()) {
+          decl_param->opt_type = var->type;
+          changed = true;
+
+        } else if (!var_param_eq_p(var.get(), decl_param.get())) {
+          return false;
+        }
+
+        if (!check_apply_var_types(var.get())) {
+          return false;
+        }
+
+      // Declaration-based top-down: the declaration is typed, so propagate
+      // the type from the declaration down to the argument.
+      } else if (decl_param->opt_type.IsValid()) {
+        var->type = decl_param->opt_type;
+        changed = true;
+        goto var_has_type;
+
+      // Bottom-up propagation step: find the first typed use of the variable,
+      // then assign that type to the parameter variable.
+      } else {
+        for (auto next_var = var->next_use; next_var != nullptr;
+             next_var = next_var->next_use) {
+          if (next_var->type.IsValid()) {
+            var->type = next_var->type;
+            changed = true;
+            goto var_has_type;
+          }
+        }
+
+        // If we reached down here then the parameter variable's type was
+        // not inferred from any use.
+        missing.push_back(var.get());
+      }
+    }
+
+    // Go through all assignments and propagate the variable's type to the
+    // literals.
+    for (const auto &assign : clause->assignments) {
+      auto lhs_type = assign->lhs.used_var->type;
+      if (lhs_type.IsValid()) {
+        assign->rhs.type = lhs_type;
+      } else {
+        missing.push_back(assign->lhs.used_var);
+      }
+    }
+
+    // Go through all comparisons and try to match up the types of the
+    // compared variables.
+    for (const auto &cmp : clause->comparisons) {
+      auto &lhs_type = cmp->lhs.used_var->type;
+      auto &rhs_type = cmp->rhs.used_var->type;
+      auto lhs_is_valid = lhs_type.IsValid();
+      auto rhs_is_valid = rhs_type.IsValid();
+      if (lhs_is_valid && rhs_is_valid) {
+        if (!var_var_eq_p(cmp->lhs.used_var, cmp->rhs.used_var)) {
+          return false;
+        }
+      } else if (lhs_is_valid) {
+        rhs_type = lhs_type;
+        changed = true;
+        check_apply_var_types(cmp->rhs.used_var);
+
+      } else if (rhs_is_valid) {
+        lhs_type = rhs_type;
+        changed = true;
+        check_apply_var_types(cmp->lhs.used_var);
+
+      } else {
+        missing.push_back(cmp->lhs.used_var);
+        missing.push_back(cmp->rhs.used_var);
+      }
+    }
+
+    // Go through all positive predicates, and do declaration-based
+    // bottom-up type propagation.
+    for (const auto &pred : clause->positive_predicates) {
+      if (!pred_valid(pred.get())) {
+        return false;
+      }
+    }
+
+    for (const auto &pred : clause->negated_predicates) {
+      if (!pred_valid(pred.get())) {
+        return false;
+      }
+    }
+
+    // Go through all aggregates.
+    for (const auto &agg : clause->aggregates) {
+      if (!pred_valid(agg->functor.get()) ||
+          !pred_valid(agg->predicate.get())) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   for (; changed; ) {
     changed = false;
     missing.clear();
 
-    for (auto &clause : module->clauses) {
-      auto i = 0u;
-
-      for (const auto &var : clause->head_variables) {
-        const auto &decl_param = clause->declaration->parameters[i++];
-
-        // Head variable-based top-down. The head variable has a type, so
-        // propagate that type through all uses and check that they all
-        // match.
-        if (var->type.IsValid()) {
-        var_has_type:
-
-          if (decl_param->opt_type.IsInvalid()) {
-            decl_param->opt_type = var->type;
-            changed = true;
-
-          } else if (!var_param_eq_p(var.get(), decl_param.get())) {
-            return false;
-          }
-
-          if (!check_apply_var_types(var.get())) {
-            return false;
-          }
-
-        // Declaration-based top-down: the declaration is typed, so propagate
-        // the type from the declaration down to the argument.
-        } else if (decl_param->opt_type.IsValid()) {
-          var->type = decl_param->opt_type;
-          changed = true;
-          goto var_has_type;
-
-        // Bottom-up propagation step: find the first typed use of the variable,
-        // then assign that type to the parameter variable.
-        } else {
-          for (auto next_var = var->next_use; next_var != nullptr;
-               next_var = next_var->next_use) {
-            if (next_var->type.IsValid()) {
-              var->type = next_var->type;
-              changed = true;
-              goto var_has_type;
-            }
-          }
-
-          // If we reached down here then the parameter variable's type was
-          // not inferred from any use.
-          missing.push_back(var.get());
-        }
+    for (auto clause : module->clauses) {
+      if (!do_clause(clause)) {
+        return false;
       }
+    }
 
-      // Go through all assignments and propagate the variable's type to the
-      // literals.
-      for (const auto &assign : clause->assignments) {
-        auto lhs_type = assign->lhs.used_var->type;
-        if (lhs_type.IsValid()) {
-          assign->rhs.type = lhs_type;
-        } else {
-          missing.push_back(assign->lhs.used_var);
-        }
-      }
-
-      // Go through all comparisons and try to match up the types of the
-      // compared variables.
-      for (const auto &cmp : clause->comparisons) {
-        auto &lhs_type = cmp->lhs.used_var->type;
-        auto &rhs_type = cmp->rhs.used_var->type;
-        auto lhs_is_valid = lhs_type.IsValid();
-        auto rhs_is_valid = rhs_type.IsValid();
-        if (lhs_is_valid && rhs_is_valid) {
-          if (!var_var_eq_p(cmp->lhs.used_var, cmp->rhs.used_var)) {
-            return false;
-          }
-        } else if (lhs_is_valid) {
-          rhs_type = lhs_type;
-          changed = true;
-          check_apply_var_types(cmp->rhs.used_var);
-
-        } else if (rhs_is_valid) {
-          lhs_type = rhs_type;
-          changed = true;
-          check_apply_var_types(cmp->lhs.used_var);
-
-        } else {
-          missing.push_back(cmp->lhs.used_var);
-          missing.push_back(cmp->rhs.used_var);
-        }
-      }
-
-      // Go through all positive predicates, and do declaration-based
-      // bottom-up type propagation.
-      for (const auto &pred : clause->positive_predicates) {
-        if (!pred_valid(pred.get())) {
-          return false;
-        }
-      }
-
-      for (const auto &pred : clause->negated_predicates) {
-        if (!pred_valid(pred.get())) {
-          return false;
-        }
-      }
-
-      // Go through all aggregates.
-      for (const auto &agg : clause->aggregates) {
-        if (!pred_valid(agg->functor.get()) ||
-            !pred_valid(agg->predicate.get())) {
-          return false;
-        }
+    for (auto clause : module->deletion_clauses) {
+      if (!do_clause(clause)) {
+        return false;
       }
     }
   }
