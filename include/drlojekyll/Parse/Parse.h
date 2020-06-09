@@ -24,7 +24,7 @@ namespace parse {
 template<typename T>
 class ParsedNode {
  public:
-  inline ParsedNode(Node<T> *impl_)
+  inline explicit ParsedNode(Node<T> *impl_)
       : impl(impl_) {}
 
   inline bool operator==(const ParsedNode<T> &that) const {

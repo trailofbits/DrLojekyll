@@ -67,6 +67,14 @@ class SIPSVisitor {
   // Declares a constant identified by `id`.
   virtual void DeclareConstant(ParsedLiteral val, unsigned id);
 
+  // Asserts that a zero-arity exported predicate must be assumed `true` in
+  // this clause.
+  virtual void AssertTrue(ParsedPredicate pred, ParsedExport cond_var);
+
+  // Asserts that a zero-arity exported predicate must be assumed `false`
+  // (missing) in this clause.
+  virtual void AssertFalse(ParsedPredicate pred, ParsedExport cond_var);
+
   // Asserts that the value of the variable identified by `lhs_id` must match
   // the value of the variable identified by `rhs_id`.
   virtual void AssertEqual(ParsedVariable lhs_var, unsigned lhs_id,
@@ -156,6 +164,11 @@ class SIPSVisitor {
   // starting from no assumptions.
   virtual void Commit(ParsedClause clause);
 
+  // If we have someting like: `head(...) : ..., blah, ..., !blah.` where
+  // `blah` is a zero-arity predicate (i.e. a boolean value).
+  virtual void CancelContradiction(ParsedPredicate true_pred,
+                                   ParsedPredicate false_pred);
+
   // Notify the visitor that visiting cannot complete/continue due to an
   // invalid comparison `compare` that relates the variable identified by
   // `lhs_id` to the variable identified by `rhs_id`.
@@ -176,7 +189,8 @@ class SIPSVisitor {
   // Notify the visitor that visiting cannot complete due to binding
   // restrictions on a particular predicate. A range `[begin, end)` of
   // failed bindings is provided.
-  virtual void CancelPredicate(const FailedBinding *begin, FailedBinding *end);
+  virtual void CancelPredicate(const FailedBinding *begin,
+                               const FailedBinding *end);
 
   // Cancel due to their being a message on which we must depend.
   virtual void CancelMessage(const ParsedPredicate predicate);

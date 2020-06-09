@@ -191,7 +191,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
 
     RemoveDecl<ParsedQuery>(std::move(query));
   } else {
-    AddDeclAndCheckConsistency<ParsedQuery>(
+    FinalizeDeclAndCheckConsistency<ParsedQuery>(
         module->queries, std::move(query));
   }
 }

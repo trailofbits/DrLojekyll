@@ -368,7 +368,7 @@ ParsedPredicate::Using(ParsedVariable var) {
 DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
   return DisplayRange(
       impl->negation_pos.IsValid() ? impl->negation_pos : impl->name.Position(),
-      impl->rparen.NextPosition());
+      impl->rparen.IsValid() ? impl->rparen.NextPosition(): impl->name.NextPosition());
 }
 
 // Returns `true` if this is a positive predicate.
@@ -478,7 +478,11 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->name.Position(), impl->rparen.NextPosition());
+  if (impl->rparen.IsValid()) {
+    return DisplayRange(impl->name.Position(), impl->rparen.NextPosition());
+  } else {
+    return impl->name.SpellingRange();
+  }
 }
 
 // Return the ID of this declaration.
@@ -700,6 +704,7 @@ ParsedDeclaration::Parameters(void) const {
 
 NodeRange<ParsedDeclaration>
 ParsedDeclaration::Redeclarations(void) const {
+  assert(!impl->context->redeclarations.empty());
   return NodeRange<ParsedDeclaration>(
       reinterpret_cast<Node<ParsedDeclaration> *>(
           impl->context->redeclarations.front()),
@@ -812,16 +817,22 @@ ParsedVariable ParsedClause::NthParameter(unsigned n) const noexcept {
 
 // All variables used in the body of the clause.
 NodeRange<ParsedVariable> ParsedClause::Parameters(void) const {
-  assert(!impl->head_variables.empty());
-  return NodeRange<ParsedVariable>(
-      impl->head_variables.front().get());
+  if (impl->head_variables.empty()) {
+    return NodeRange<ParsedVariable>();
+  } else {
+    return NodeRange<ParsedVariable>(
+        impl->head_variables.front().get());
+  }
 }
 
 // All body_variables used in the clause. Some variables might be repeated.
 NodeRange<ParsedVariable> ParsedClause::Variables(void) const {
-  assert(!impl->body_variables.empty());
-  return NodeRange<ParsedVariable>(
-      impl->body_variables.front().get());
+  if (impl->body_variables.empty()) {
+    return NodeRange<ParsedVariable>();
+  } else {
+    return NodeRange<ParsedVariable>(
+        impl->body_variables.front().get());
+  }
 }
 
 // All instances of `var` in its clause.

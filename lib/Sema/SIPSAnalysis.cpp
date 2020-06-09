@@ -26,6 +26,17 @@ static bool OrderPredicates(std::pair<unsigned, ParsedPredicate> a,
   return a.first < b.first;
 }
 
+template <typename T>
+inline static const T *BeginPtr(const std::vector<T> &vec) {
+  return vec.empty() ? nullptr : &(vec.front());
+}
+
+
+template <typename T>
+inline static const T *EndPtr(const std::vector<T> &vec) {
+  return vec.empty() ? nullptr : &((&(vec.back()))[1]);
+}
+
 }  // namespace
 
 SIPSVisitor::~SIPSVisitor(void) {}
@@ -34,6 +45,9 @@ void SIPSVisitor::Begin(ParsedClause) {}
 void SIPSVisitor::DeclareParameter(const Column &) {}
 void SIPSVisitor::DeclareVariable(ParsedVariable, unsigned) {}
 void SIPSVisitor::DeclareConstant(ParsedLiteral, unsigned) {}
+void SIPSVisitor::CancelContradiction(ParsedPredicate, ParsedPredicate) {}
+void SIPSVisitor::AssertTrue(ParsedPredicate, ParsedExport) {}
+void SIPSVisitor::AssertFalse(ParsedPredicate, ParsedExport) {}
 void SIPSVisitor::AssertEqual(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertNotEqual(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertLessThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
@@ -75,7 +89,7 @@ void SIPSVisitor::Commit(ParsedClause) {}
 void SIPSVisitor::CancelComparison(ParsedComparison, unsigned, unsigned) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedComparison, ParsedVariable) {}
 void SIPSVisitor::CancelRangeRestriction(ParsedClause, ParsedVariable) {}
-void SIPSVisitor::CancelPredicate(const FailedBinding *, FailedBinding *) {}
+void SIPSVisitor::CancelPredicate(const FailedBinding *, const FailedBinding *) {}
 void SIPSVisitor::CancelMessage(const ParsedPredicate) {}
 SIPSVisitor::AdvanceType SIPSVisitor::Advance(void) { return kTryNextPermutation; }
 
@@ -153,7 +167,7 @@ class SIPSGenerator::Impl {
 
   // The predicate which we are assuming has been provided and comes with
   // concrete data.
-  const std::optional<ParsedPredicate> assumption;
+  std::optional<ParsedPredicate> assumption;
 
   // The vector of positive predicates which we will evaluate.
   std::vector<std::pair<unsigned, ParsedPredicate>> positive_predicates;
@@ -216,7 +230,9 @@ SIPSGenerator::Impl::Impl(ParsedClause clause_)
   auto i = 0u;
   for (auto pred : clause.PositivePredicates()) {
     assert(pred.IsPositive());
-    positive_predicates.emplace_back(i++, pred);
+    if (pred.Arity()) {
+      positive_predicates.emplace_back(i++, pred);
+    }
   }
 }
 
@@ -235,9 +251,15 @@ SIPSGenerator::Impl::Impl(ParsedPredicate assumption_)
   auto i = 0u;
   for (auto pred : clause.PositivePredicates()) {
     assert(pred.IsPositive());
-    if (pred != assumption_) {
+    if (pred != assumption_ && pred.Arity()) {
       positive_predicates.emplace_back(i++, pred);
     }
+  }
+
+  // If the basic assumption is a boolean value predicate then treat this
+  // as if we're just trying to prove the general clause.
+  if (!assumption_.Arity()) {
+    assumption = std::nullopt;
   }
 }
 
@@ -268,8 +290,7 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
       if (!FindRedeclMatchingBindingConstraints(visitor, predicate, decl)) {
         assert(!failed_bindings.empty());
         visitor.CancelPredicate(
-            &(failed_bindings.front()),
-            &((&(failed_bindings.back()))[1]));
+            BeginPtr(failed_bindings), EndPtr(failed_bindings));
         cancelled = true;
         return;
       }
@@ -283,10 +304,14 @@ void SIPSGenerator::Impl::VisitNegatedPredicates(SIPSVisitor &visitor) {
         ++i;
       }
 
-      visitor.AssertAbsent(
-          decl, predicate,
-          &(bound_params.front()),
-          &((&(bound_params.back()))[1]));
+      if (decl.Arity()) {
+        assert(!bound_params.empty());
+        visitor.AssertAbsent(
+            decl, predicate, BeginPtr(bound_params), EndPtr(bound_params));
+      } else {
+        assert(bound_params.empty());
+        visitor.AssertAbsent(decl, predicate, nullptr, nullptr);
+      }
 
     } while (false);
 
@@ -338,9 +363,7 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
       }
     }
 
-    visitor.CancelPredicate(
-        &(failed_bindings.front()),
-        &((&(failed_bindings.back()))[1]));
+    visitor.CancelPredicate(BeginPtr(failed_bindings), EndPtr(failed_bindings));
   }
 
   // There remain one or more aggregates that haven't successfully been
@@ -357,9 +380,7 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
     auto decl = ParsedDeclaration::Of(predicate);
     if (!FindRedeclMatchingBindingConstraints(visitor, predicate, decl)) {
       assert(!failed_bindings.empty());
-      visitor.CancelPredicate(
-          &(failed_bindings.front()),
-          &((&(failed_bindings.back()))[1]));
+      visitor.CancelPredicate(BeginPtr(failed_bindings), EndPtr(failed_bindings));
     }
   }
 
@@ -387,8 +408,11 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
     return false;
   }
 
-  visitor.Insert(
-      decl, &(bound_params.front()), &((&(bound_params.back()))[1]));
+  if (bound_params.empty()) {
+    visitor.Insert(decl, nullptr, nullptr);
+  } else {
+    visitor.Insert(decl, BeginPtr(bound_params), EndPtr(bound_params));
+  }
   return true;
 }
 
@@ -436,6 +460,12 @@ bool SIPSGenerator::Impl::FindRedeclMatchingBindingConstraints(
 
   const auto arity = predicate.Arity();
   for (auto redecl : decl.Redeclarations()) {
+
+    if (!arity) {
+      decl = redecl;
+      return true;
+    }
+
     for (auto i = 0U; i < arity; ++i) {
       const auto redecl_param = redecl.NthParameter(i);
       const auto redecl_param_binding = redecl_param.Binding();
@@ -577,9 +607,7 @@ bool SIPSGenerator::Impl::VisitPredicate(
   // ones "cost" us in implicit later binding.
   failed_bindings.clear();
   if (!FindRedeclMatchingBindingConstraints(visitor, predicate, decl)) {
-    visitor.CancelPredicate(
-        &(failed_bindings.front()),
-        &((&(failed_bindings.back()))[1]));
+    visitor.CancelPredicate(BeginPtr(failed_bindings), EndPtr(failed_bindings));
     cancelled = true;
     return false;
   }
@@ -587,16 +615,20 @@ bool SIPSGenerator::Impl::VisitPredicate(
   CollectPredicateBoundAndFreeVars(visitor, decl, predicate);
 
   if (bound_params.empty() && free_params.empty()) {
-    assert(false);  // Not possible.
-    return VisitPredicate(visitor, p + 1);
+    if (!decl.Arity()) {
+      visitor.AssertPresent(decl, predicate, nullptr, nullptr);
+      return VisitPredicate(visitor, p + 1);
+    } else {
+      assert(false);  // Not possible.
+      return VisitPredicate(visitor, p + 1);
+    }
 
   // We only have bound parameters. This is equivalent to asking if a tuple
   // is present, i.e. if a certain row exists in a table.
   } else if (free_params.empty()) {
     assert(!bound_params.empty());
     visitor.AssertPresent(
-        decl, predicate, &(bound_params.front()),
-        &((&(bound_params.back()))[1]));
+        decl, predicate, BeginPtr(bound_params), EndPtr(bound_params));
 
     return VisitPredicate(visitor, p + 1);
 
@@ -605,8 +637,7 @@ bool SIPSGenerator::Impl::VisitPredicate(
     assert(!free_params.empty());
 
     visitor.EnterFromSelect(
-        predicate, decl, &(free_params.front()),
-        &((&(free_params.back()))[1]));
+        predicate, decl, BeginPtr(free_params), EndPtr(free_params));
 
     BindFreeParams(visitor);
 
@@ -625,8 +656,8 @@ bool SIPSGenerator::Impl::VisitPredicate(
     assert(!bound_params.empty());
     visitor.EnterFromWhereSelect(
         predicate, decl,
-        &(bound_params.front()), &((&(bound_params.back()))[1]),
-        &(free_params.front()), &((&(free_params.back()))[1]));
+        BeginPtr(bound_params), EndPtr(bound_params),
+        BeginPtr(free_params), EndPtr(free_params));
 
     BindFreeParams(visitor);
 
@@ -1024,63 +1055,63 @@ bool SIPSGenerator::Impl::VisitAggregate(
     }
   }
 
-  SIPSVisitor::Column *outer_group_begin = nullptr;
-  SIPSVisitor::Column *outer_group_end = nullptr;
+  const SIPSVisitor::Column *outer_group_begin = nullptr;
+  const SIPSVisitor::Column *outer_group_end = nullptr;
 
-  SIPSVisitor::Column *inner_group_begin = nullptr;
-  SIPSVisitor::Column *inner_group_end = nullptr;
+  const SIPSVisitor::Column *inner_group_begin = nullptr;
+  const SIPSVisitor::Column *inner_group_end = nullptr;
 
-  SIPSVisitor::Column *aggregate_begin = nullptr;
-  SIPSVisitor::Column *aggregate_end = nullptr;
+  const SIPSVisitor::Column *aggregate_begin = nullptr;
+  const SIPSVisitor::Column *aggregate_end = nullptr;
 
-  SIPSVisitor::Column *config_begin = nullptr;
-  SIPSVisitor::Column *config_end = nullptr;
+  const SIPSVisitor::Column *config_begin = nullptr;
+  const SIPSVisitor::Column *config_end = nullptr;
 
-  SIPSVisitor::Column *collect_begin = nullptr;
-  SIPSVisitor::Column *collect_end = nullptr;
+  const SIPSVisitor::Column *collect_begin = nullptr;
+  const SIPSVisitor::Column *collect_end = nullptr;
 
-  SIPSVisitor::Column *summary_begin = nullptr;
-  SIPSVisitor::Column *summary_end = nullptr;
+  const SIPSVisitor::Column *summary_begin = nullptr;
+  const SIPSVisitor::Column *summary_end = nullptr;
 
   // `bound`-attributed arguments to the aggregating functor.
   if (!aggregate_input_params.empty()) {
-    config_begin = &(aggregate_input_params.front());
-    config_end = &((&(aggregate_input_params.back()))[1]);
+    config_begin = BeginPtr(aggregate_input_params);
+    config_end = EndPtr(aggregate_input_params);
   }
 
   // `aggregate`-attributed arguments to the aggregating functor.
   if (!aggregate_collection_params.empty()) {
-    collect_begin = &(aggregate_collection_params.front());
-    collect_end = &((&(aggregate_collection_params.back()))[1]);
+    collect_begin = BeginPtr(aggregate_collection_params);
+    collect_end = EndPtr(aggregate_collection_params);
   }
 
   // `summary`-attributed arguments to the aggregating functor.
   if (!free_params.empty()) {
-    summary_begin = &(free_params.front());
-    summary_end = &((&(free_params.back()))[1]);
+    summary_begin = BeginPtr(free_params);
+    summary_end = EndPtr(free_params);
   }
 
   // Bound parameters to the predicate being summarized that do not correspond
   // with `bound`-attributed parameters to the summarizing functor. These are
   // coming from the clause "outside" of the aggregation.
   if (!outer_group_by_params.empty()) {
-    outer_group_begin = &(outer_group_by_params.front());
-    outer_group_end = &((&(outer_group_by_params.back()))[1]);
+    outer_group_begin = BeginPtr(outer_group_by_params);
+    outer_group_end = EndPtr(outer_group_by_params);
   }
 
   // Bound parameters to the predicate being summarized that correspond with
   // `bound`-attributed parameters to the summarizing functor. These are
   // coming from the clause "outside" of the aggregation.
   if (!inner_group_by_params.empty()) {
-    inner_group_begin = &(inner_group_by_params.front());
-    inner_group_end = &((&(inner_group_by_params.back()))[1]);
+    inner_group_begin = BeginPtr(inner_group_by_params);
+    inner_group_end = EndPtr(inner_group_by_params);
   }
 
   // Free parameters produced by the predicate being summarized, and which
   // will feed into the `aggregate`-attribued parameters of the functor.
   if (!summarized_free_params.empty()) {
-    aggregate_begin = &(summarized_free_params.front());
-    aggregate_end = &((&(summarized_free_params.back()))[1]);
+    aggregate_begin = BeginPtr(summarized_free_params);
+    aggregate_end = EndPtr(summarized_free_params);
   }
 
   // Tell the visitor that we're going to enter an aggregation, and pass it the
@@ -1109,8 +1140,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
 
     visitor.AssertPresent(
         summarized_decl, summarized_predicate,
-        &(summarized_bound_params.front()),
-        &((&(summarized_bound_params.back()))[1]));
+        BeginPtr(summarized_bound_params), EndPtr(summarized_bound_params));
 
     ApplyDeferredAsserts(visitor);
 
@@ -1147,8 +1177,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
     assert(!summarized_free_params.empty());
     visitor.EnterFromWhereSelect(
         summarized_predicate, summarized_decl,
-        &(summarized_bound_params.front()),
-        &((&(summarized_bound_params.back()))[1]),
+        BeginPtr(summarized_bound_params), EndPtr(summarized_bound_params),
         aggregate_begin, aggregate_end);
 
     ApplyDeferredAsserts(visitor);
@@ -1299,12 +1328,47 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
     aggregates.push_back(aggregate);
   }
 
+  std::unordered_map<ParsedExport, std::vector<ParsedPredicate>> true_preds;
+  std::unordered_map<ParsedExport, std::vector<ParsedPredicate>> false_preds;
+
+  for (auto pred : clause.PositivePredicates()) {
+    assert(pred.IsPositive());
+    if (!pred.Arity()) {
+      auto pred_decl = ParsedDeclaration::Of(pred);
+      assert(pred_decl.IsExport());
+      auto export_decl = ParsedExport::From(pred_decl);
+      true_preds[export_decl].push_back(pred);
+    }
+  }
+
   aggregates_processed.clear();
   aggregates_processed.resize(aggregates.size(), false);
 
   negative_predicates.clear();
   for (auto pred : clause.NegatedPredicates()) {
-    negative_predicates.push_back(pred);
+    if (pred.Arity()) {
+      negative_predicates.push_back(pred);
+    } else {
+      auto pred_decl = ParsedDeclaration::Of(pred);
+      assert(pred_decl.IsExport());
+      auto export_decl = ParsedExport::From(pred_decl);
+      false_preds[export_decl].push_back(pred);
+    }
+  }
+
+  for (const auto &[export_decl, preds] : true_preds) {
+    visitor.AssertTrue(preds.front(), export_decl);
+  }
+
+  for (const auto &[export_decl, preds] : false_preds) {
+    auto true_preds_it = true_preds.find(export_decl);
+    if (true_preds_it != true_preds.end()) {
+      visitor.CancelContradiction(true_preds_it->second.front(), preds.front());
+      cancelled = true;
+      return false;
+    } else {
+      visitor.AssertFalse(preds.front(), export_decl);
+    }
   }
 
   // NOTE(pag): This will visit comparisons, negations, and aggregates.

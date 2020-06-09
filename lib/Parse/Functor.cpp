@@ -543,7 +543,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     }
 
     // Do generic consistency checking.
-    AddDeclAndCheckConsistency<ParsedFunctor>(
+    FinalizeDeclAndCheckConsistency<ParsedFunctor>(
         module->functors, std::move(functor));
 
   } else {

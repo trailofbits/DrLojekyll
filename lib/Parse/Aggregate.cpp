@@ -37,7 +37,6 @@ bool ParserImpl::ParseAggregatedPredicate(
         if (Lexeme::kPuncOpenParen == lexeme) {
           anon_decl.reset(new Node<ParsedLocal>(
               module, DeclarationKind::kLocal));
-          anon_decl->context->redeclarations.push_back(anon_decl.get());
           anon_decl->directive_pos = tok.Position();
           anon_decl->name = Token::Synthetic(
               Lexeme::kIdentifierUnnamedAtom, tok.SpellingRange());

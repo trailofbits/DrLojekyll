@@ -17,49 +17,13 @@
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Rel/Format.h>
-#include <drlojekyll/Sema/RangeRestriction.h>
+#include <drlojekyll/Sema/SIPSChecker.h>
 #include <drlojekyll/Transforms/CombineModules.h>
 #include <drlojekyll/Transforms/ProxyExternalsWithExports.h>
 
 namespace hyde {
 
 OutputStream *gOut = nullptr;
-
-#if 0
-static void BottomUpDumper(DisplayManager display_manager,
-                           ParsedModule module) {
-
-  BottomUpAnalysis analysis;
-  hyde::OutputStream os(display_manager, std::cerr);
-  gOut = &os;
-
-  os << "digraph {\n"
-     << "node [shape=record margin=0 nojustify=false labeljust=l];\n"
-     << "start [shape=none border=none];\n";
-
-  for (auto state : analysis.GenerateStates(module)) {
-    os << "s" << state->id << " [label=\"" << state->clause << "\"];\n";
-
-    if (state->is_start_state) {
-      os << "start -> s" << state->id;
-      if (state->assumption) {
-        os << " [label=\"" << *(state->assumption) << "\"]";
-      }
-      os << ";\n";
-    }
-
-    for (auto pred : state->Predecessors()) {
-      os << "s" << pred->id << " -> s" << state->id;
-      if (state->assumption) {
-        os << " [label=\"" << *(state->assumption) << "\"]";
-      }
-      os << ";\n";
-    }
-  }
-  os << "}\n";
-}
-#endif
-
 
 }  // namespace hyde
 
@@ -81,7 +45,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
                          const std::string &output_path) {
 
   if (error_log.IsEmpty()) {
-    CheckForRangeRestrictionErrors(display_manager, module, error_log);
+    CheckForErrors(display_manager, module, error_log);
   }
 
   if (!error_log.IsEmpty()) {

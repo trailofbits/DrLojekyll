@@ -81,6 +81,11 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl_name) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
+  if (!decl.Arity()) {
+    assert(decl.IsExport());
+    return os;
+  }
+
   os << "#" << decl.KindName() << " " << ParsedDeclarationName(decl);
 
   auto comma = "(";
@@ -142,12 +147,14 @@ OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
 
 OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause) {
   os << ParsedDeclarationName(ParsedDeclaration::Of(clause.clause));
-  auto comma = "(";
-  for (auto param : clause.clause.Parameters()) {
-    os << comma << param;
-    comma = ", ";
+  if (clause.clause.Arity()) {
+    auto comma = "(";
+    for (auto param : clause.clause.Parameters()) {
+      os << comma << param;
+      comma = ", ";
+    }
+    os << ")";
   }
-  os << ")";
   return os;
 }
 
@@ -255,7 +262,9 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   }
 
   for (auto decl : module.Exports()) {
-    os << ParsedDeclaration(decl) << "\n";
+    if (decl.Arity()) {
+      os << ParsedDeclaration(decl) << "\n";
+    }
   }
 
   for (auto decl : module.Locals()) {
@@ -280,12 +289,14 @@ OutputStream &operator<<(OutputStream &os, ParsedPredicate pred) {
 
   os << ParsedDeclarationName(ParsedDeclaration::Of(pred));
 
-  auto comma = "(";
-  for (auto arg : pred.Arguments()) {
-    os << comma << arg;
-    comma = ", ";
+  if (pred.Arity()) {
+    auto comma = "(";
+    for (auto arg : pred.Arguments()) {
+      os << comma << arg;
+      comma = ", ";
+    }
+    os << ")";
   }
-  os << ")";
   return os;
 }
 

@@ -336,12 +336,18 @@ class Node<ParsedDeclaration> {
   inline Node(Node<ParsedModule> *module_,
               const DeclarationKind kind_)
       : module(module_),
-        context(std::make_shared<parse::DeclarationContext>(kind_)) {}
+        context(std::make_shared<parse::DeclarationContext>(kind_)) {
+    context->redeclarations.push_back(this);
+  }
 
   inline Node(Node<ParsedModule> *module_,
               const std::shared_ptr<parse::DeclarationContext> &context_)
       : module(module_),
-        context(context_) {}
+        context(context_) {
+    assert(!context->redeclarations.empty());
+    context->redeclarations.back()->next_redecl = this;
+    context->redeclarations.push_back(this);
+  }
 
   const char *KindName(void) const;
 

@@ -4,12 +4,15 @@
 
 #include <ostream>
 #include <memory>
+#include <variant>
+#include <utility>
+
+#include <drlojekyll/Util/Compiler.h>
+#include <drlojekyll/Display/DisplayPosition.h>
 
 namespace hyde {
 
 class DisplayManager;
-class DisplayPosition;
-class DisplayRange;
 
 enum class Color : unsigned char {
   kNone,
@@ -56,6 +59,15 @@ class ErrorStream {
 
   const ErrorStream &operator<<(const DisplayRange &range) const;
 
+  template <typename T1, typename... Rest>
+  const ErrorStream &operator<<(std::variant<T1, Rest...> options) const {
+    std::visit([=] (auto &&arg) {
+      DisplayRange range = arg.SpellingRange();
+      (*this) << range;
+    }, options);
+    return *this;
+  }
+
   template <typename T>
   inline const ErrorStream &operator<<(T data) const {
     (*os) << data;
@@ -63,6 +75,7 @@ class ErrorStream {
   }
 
  private:
+
   friend class Error;
   friend class Note;
 

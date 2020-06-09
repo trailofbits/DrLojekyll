@@ -125,7 +125,7 @@ class ParserImpl {
   void RemoveDecl(std::unique_ptr<Node<T>> decl);
 
   template <typename T>
-  void AddDeclAndCheckConsistency(
+  void FinalizeDeclAndCheckConsistency(
       std::vector<std::unique_ptr<Node<T>>> &decl_list,
       std::unique_ptr<Node<T>> decl);
 
@@ -201,9 +201,8 @@ class ParserImpl {
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
 template <typename T>
-Node<T> *ParserImpl::AddDecl(
-    Node<ParsedModule> *module, DeclarationKind kind, Token name,
-    size_t arity) {
+Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
+                             Token name, size_t arity) {
 
   if (arity > kMaxArity) {
     Error err(context->display_manager, SubTokenRange(),
@@ -221,40 +220,36 @@ Node<T> *ParserImpl::AddDecl(
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
 
-  if (first_decl_it != context->declarations.end()) {
-    const auto first_decl = first_decl_it->second;
-    auto &decl_context = first_decl->context;
-    if (decl_context->kind != kind) {
-      Error err(context->display_manager, SubTokenRange(),
-                name.SpellingRange());
-      err << "Cannot re-declare '" << first_decl->name
-          << "' as a " << first_decl->KindName();
+  std::shared_ptr<parse::DeclarationContext> decl_context;
 
-      DisplayRange first_decl_range(
-          first_decl->directive_pos, first_decl->rparen.NextPosition());
-      auto note = err.Note(context->display_manager, first_decl_range);
-      note << "Original declaration is here";
-
-      context->error_log.Append(std::move(err));
-      return nullptr;
-
-    } else {
-      auto decl = new Node<T>(module, decl_context);
-      if (!decl_context->redeclarations.empty()) {
-        decl_context->redeclarations.back()->next_redecl = decl;
-      }
-      decl_context->redeclarations.push_back(decl);
-      return decl;
-    }
-  } else {
+  // This is the first time we've seen this declaration.
+  if (first_decl_it == context->declarations.end()) {
     auto decl = new Node<T>(module, kind);
-    auto &decl_context = decl->context;
-    if (!decl_context->redeclarations.empty()) {
-      decl_context->redeclarations.back()->next_redecl = decl;
-    }
-    decl_context->redeclarations.push_back(decl);
+    decl_context = decl->context;
     context->declarations.emplace(id, decl);
     return decl;
+  }
+
+  // We've seen this declaration before.
+  const auto first_decl = first_decl_it->second;
+
+  decl_context = first_decl->context;
+  if (decl_context->kind != kind) {
+    Error err(context->display_manager, SubTokenRange(),
+              name.SpellingRange());
+    err << "Cannot re-declare '" << first_decl->name
+        << "' as a " << first_decl->KindName();
+
+    DisplayRange first_decl_range(
+        first_decl->directive_pos, first_decl->rparen.NextPosition());
+    auto note = err.Note(context->display_manager, first_decl_range);
+    note << "Original declaration is here";
+
+    context->error_log.Append(std::move(err));
+    return nullptr;
+
+  } else {
+    return new Node<T>(module, decl_context);
   }
 }
 
@@ -270,7 +265,9 @@ void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
   interpreter.info.arity = decl->parameters.size();
   const auto id = interpreter.flat;
 
+  assert(decl.get() == decl->context->redeclarations.back());
   decl->context->redeclarations.pop_back();
+
   if (!decl->context->redeclarations.empty()) {
     decl->context->redeclarations.back()->next_redecl = nullptr;
 
@@ -282,14 +279,16 @@ void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.
 template <typename T>
-void ParserImpl::AddDeclAndCheckConsistency(
+void ParserImpl::FinalizeDeclAndCheckConsistency(
     std::vector<std::unique_ptr<Node<T>>> &decl_list,
     std::unique_ptr<Node<T>> decl) {
   const auto num_params = decl->parameters.size();
 
-  if (1 < decl->context->redeclarations.size()) {
-    const auto prev_decl = reinterpret_cast<Node<T> *>(
-        decl->context->redeclarations.front());
+  const parse::DeclarationContext *decl_context = decl->context.get();
+  auto &redecls = decl_context->redeclarations;
+
+  if (1 < redecls.size()) {
+    const auto prev_decl = reinterpret_cast<Node<T> *>(redecls.front());
     assert(prev_decl->parameters.size() == num_params);
 
     for (size_t i = 0; i < num_params; ++i) {

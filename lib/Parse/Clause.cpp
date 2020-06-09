@@ -39,6 +39,21 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   std::unique_ptr<Node<ParsedPredicate>> pred;
   bool equates_parameters = false;
 
+  // Link `pred` into `clause`.
+  auto link_pred = [&] (void) {
+    if (negation_pos.IsValid()) {
+      if (!clause->negated_predicates.empty()) {
+        clause->negated_predicates.back()->next = pred.get();
+      }
+      clause->negated_predicates.emplace_back(std::move(pred));
+    } else {
+      if (!clause->positive_predicates.empty()) {
+        clause->positive_predicates.back()->next = pred.get();
+      }
+      clause->positive_predicates.emplace_back(std::move(pred));
+    }
+  };
+
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
@@ -66,12 +81,28 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 2;
           continue;
 
+        } else if (Lexeme::kPuncColon == lexeme) {
+          if (!TryMatchClauseWithDecl(module, clause.get())) {
+            return;
+
+          } else {
+            decl = clause->declaration;
+            state = 5;
+            continue;
+          }
+
+          state = 5;
+          continue;
+
+        // TODO(pag): Support `foo.` syntax? Could be an intersting way to
+        //            turn on/off options.
+
         } else {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
           err << "Expected opening parenthesis here to begin parameter list of "
-              << "clause head '" << clause->name << "', but got '"
-              << tok << "' instead";
+              << "clause head '" << clause->name << "', or a colon for a zero-"
+              << "arity predicate, but got '" << tok << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -396,11 +427,30 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 13;
           continue;
 
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+            return;
+          }
+          state = 9;
+          clause->dot = tok;
+          link_pred();
+
+          continue;
+
+        } else if (Lexeme::kPuncComma == lexeme) {
+          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+            return;
+          }
+          state = 5;
+          link_pred();
+          continue;
+
         } else {
           Error err(context->display_manager, SubTokenRange(),
                     tok.SpellingRange());
-          err << "Expected opening parenthesis here to test predicate '"
-              << pred->name << "', but got '" << tok << "' instead";
+          err << "Expected an opening parenthesis, comma, or period here to"
+              << "test predicate '" << pred->name << "', but got '" << tok
+              << "' instead";
           context->error_log.Append(std::move(err));
           return;
         }
@@ -503,6 +553,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             // For messages, we don't allow negations because we think of them
             // as ephemeral, i.e. not even part of the database. They come in
             // to trigger some action, and leave.
+            //
+            // We *do* allow negation of queries because we proxy them
+            // externally via later source-to-source transforms.
             if (kind == DeclarationKind::kFunctor ||
                 kind == DeclarationKind::kMessage) {
               Error err(context->display_manager, SubTokenRange(),
@@ -512,22 +565,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               context->error_log.Append(std::move(err));
               return;
             }
-
-            if (!clause->negated_predicates.empty()) {
-              clause->negated_predicates.back()->next = pred.get();
-            }
-            clause->negated_predicates.emplace_back(std::move(pred));
-            state = 8;
-            continue;
-
-          } else {
-            if (!clause->positive_predicates.empty()) {
-              clause->positive_predicates.back()->next = pred.get();
-            }
-            clause->positive_predicates.emplace_back(std::move(pred));
-            state = 8;
-            continue;
           }
+
+          link_pred();
+          state = 8;
+          continue;
 
         } else if (Lexeme::kPuncComma == lexeme) {
           state = 13;

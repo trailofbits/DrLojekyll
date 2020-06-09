@@ -171,7 +171,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
     RemoveDecl<ParsedMessage>(std::move(message));
 
   } else {
-    AddDeclAndCheckConsistency<ParsedMessage>(
+    FinalizeDeclAndCheckConsistency<ParsedMessage>(
         module->messages, std::move(message));
   }
 }

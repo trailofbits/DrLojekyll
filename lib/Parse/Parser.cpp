@@ -715,7 +715,7 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local to the module.
   } else {
-    AddDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
+    FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
   }
 }
 
@@ -740,21 +740,35 @@ bool ParserImpl::TryMatchClauseWithDecl(
   interpreter.info.arity = clause->head_variables.size();
   const auto id = interpreter.flat;
 
+  DisplayRange directive_range;
+
+  // If it's a zero-arity clause head then it's treated by default as an
+  // `#export`.
+  if (clause->head_variables.empty()) {
+    if (!context->declarations.count(id)) {
+      auto export_decl = new Node<ParsedExport>(module, DeclarationKind::kExport);
+      export_decl->name = clause->name;
+      module->exports.emplace_back(export_decl);
+      context->declarations.emplace(id, export_decl);
+    }
+
+    directive_range = clause->name.SpellingRange();
+
   // There are no forward declarations associated with this ID.
   // We'll report an error, then invent one.
-  if (!context->declarations.count(id)) {
+  } else if (!context->declarations.count(id)) {
     Error err(context->display_manager, SubTokenRange(),
               clause_head_range);
     err << "Missing declaration for '" << clause->name << "/"
         << clause->head_variables.size() << "'";
     context->error_log.Append(std::move(err));
 
-    // Recover by adding a local declaration; this will let us keep
+    // Recover by adding a local_decl declaration; this will let us keep
     // parsing.
-    auto local = new Node<ParsedLocal>(module, DeclarationKind::kLocal);
-    local->directive_pos = clause->name.Position();
-    local->name = clause->name;
-    local->rparen = clause->rparen;
+    auto local_decl = new Node<ParsedLocal>(module, DeclarationKind::kLocal);
+    local_decl->directive_pos = clause->name.Position();
+    local_decl->name = clause->name;
+    local_decl->rparen = clause->rparen;
     Node<ParsedParameter> *prev_param = nullptr;
     for (const auto &param_var : clause->head_variables) {
       auto param = new Node<ParsedParameter>;
@@ -762,17 +776,17 @@ bool ParserImpl::TryMatchClauseWithDecl(
       if (prev_param) {
         prev_param->next = param;
       }
-      local->parameters.emplace_back(param);
+      local_decl->parameters.emplace_back(param);
       prev_param = param;
     }
 
-    module->locals.emplace_back(local);
-    context->declarations.emplace(id, local);
+    module->locals.emplace_back(local_decl);
+    context->declarations.emplace(id, local_decl);
   }
 
   clause->declaration = context->declarations[id];
 
-  DisplayRange directive_range(
+  directive_range = DisplayRange(
       clause->declaration->directive_pos,
       clause->declaration->rparen.NextPosition());
 
@@ -785,8 +799,7 @@ bool ParserImpl::TryMatchClauseWithDecl(
         << clause->name << "'; functors are defined by native "
         << "code modules";
 
-    auto note = err.Note(context->display_manager,
-                         directive_range);
+    auto note = err.Note(context->display_manager, directive_range);
     note << "Functor '" << clause->name
          << "' is first declared here";
 
@@ -794,7 +807,9 @@ bool ParserImpl::TryMatchClauseWithDecl(
     return false;
 
   // Don't allow us to define clauses for predicates exported by
-  // other modules.
+  // other modules. What this says is that we need to have a redeclaration
+  // within our current module that matches this declaration. That is, we can't
+  // just declare a clause without first declaring
   } else if (decl_context->kind == DeclarationKind ::kExport &&
              module != clause->declaration->module) {
     Error err(context->display_manager, SubTokenRange());
@@ -833,9 +848,21 @@ bool ParserImpl::TryMatchPredicateWithDecl(
     return false;
   }
 
+  // A zero-argument predicate is like a boolean variable / option, and is
+  // declared/invented on the spot. Later we'll make sure that there are clauses
+  // that prove it.
+  if (pred->argument_uses.empty()) {
+    if (!context->declarations.count(id)) {
+      auto export_decl = new Node<ParsedExport>(
+          module, DeclarationKind::kExport);
+      export_decl->name = pred->name;
+      module->exports.emplace_back(export_decl);
+      context->declarations.emplace(id, export_decl);
+    }
+
   // There are no forward declarations associated with this ID.
   // We'll report an error and invent one.
-  if (!context->declarations.count(id)) {
+  } else if (!context->declarations.count(id)) {
     Error err(context->display_manager, SubTokenRange(),
               pred_head_range);
     err << "Missing declaration for '" << pred->name << "/"
