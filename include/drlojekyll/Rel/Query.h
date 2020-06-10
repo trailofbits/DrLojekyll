@@ -201,6 +201,7 @@ class QueryInput : public query::QueryNode<QueryInput> {
   friend class QuerySelect;
 };
 
+class ParsedExport;
 class QueryAggregate;
 class QueryMap;
 class QueryTuple;
@@ -214,6 +215,10 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView Containing(QueryColumn col);
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
+
+  inline static QueryView &From(QueryView &view) noexcept {
+    return view;
+  }
 
   static QueryView &From(QuerySelect &view) noexcept;
   static QueryView &From(QueryTuple &view) noexcept;
@@ -253,6 +258,14 @@ class QueryView : public query::QueryNode<QueryView> {
 
   // Get a hash of this view.
   uint64_t Hash(void) const noexcept;
+
+  // Positive conditions, i.e. zero-argument predicates, that must be true
+  // for tuples to be accepted into this node.
+  const std::vector<ParsedExport> &PositiveConditions(void) const noexcept;
+
+  // Negative conditions, i.e. zero-argument predicates, that must be false
+  // for tuples to be accepted into this node.
+  const std::vector<ParsedExport> &NegativeConditions(void) const noexcept;
 
   // Replace all uses of this view with `that` view. Returns `false` if the
   // two views have different arities, column types, or are from different

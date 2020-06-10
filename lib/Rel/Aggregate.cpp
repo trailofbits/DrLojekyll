@@ -35,9 +35,8 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
     summary_hash = __builtin_rotateright64(summary_hash, 16) ^ col->Hash();
   }
 
-  hash = functor.Id() ^ group_hash ^ bound_hash ^ summary_hash;
-  hash <<= 4;
-  hash |= query::kAggregateId;
+  hash = HashInit();
+  hash ^= functor.Id() ^ group_hash ^ bound_hash ^ summary_hash;
 
   return hash;
 }
@@ -181,7 +180,9 @@ bool Node<QueryAggregate>::Equals(
       functor != that->functor ||
       columns.Size() != that->columns.Size() ||
       can_receive_deletions != that->can_receive_deletions ||
-      can_produce_deletions != that->can_produce_deletions) {
+      can_produce_deletions != that->can_produce_deletions ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions) {
     return false;
   }
 

@@ -15,15 +15,12 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = columns.Size();
+  hash = HashInit();
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
     hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
   }
-
-  hash <<= 4;
-  hash |= query::kTupleId;
   return hash;
 }
 
@@ -100,6 +97,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     needed_inputs.push_back(in_col);
     (void) out_col;
   }
+
   std::sort(needed_inputs.begin(), needed_inputs.end());
   auto needed_inputs_it = std::unique(needed_inputs.begin(), needed_inputs.end());
   needed_inputs.erase(needed_inputs_it, needed_inputs.end());
@@ -108,6 +106,18 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   // is the only user of that other hting, then forward those values along,
   // otherwise we'll depend on CSE to try to merge this tuple with any other
   // equivalent tuples.
+  //
+  // The check for the number of uses on the last view helps us avoid the
+  // situation where we have the following triangle dataflow pattern leading
+  // into a JOIN. If we eliminated the TUPLE, then the INPUT would flow into the
+  // same JOIN pivot columns multiple times, then the JOIN would be
+  // canonicalized away into nothing.
+  //
+  //                 |
+  //         .-<-- INPUT -->--.
+  //        /                 |
+  //    JOIN --<-- TUPLE --<--'
+  //
   if (all_from_same_view && last_view) {
     all_from_same_view = 1 == last_view->NumUses();
   }
@@ -120,6 +130,24 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   }
 
   if (all_from_same_view) {
+    if (last_view->positive_conditions.empty()) {
+      last_view->positive_conditions.swap(positive_conditions);
+    } else if (!positive_conditions.empty()) {
+      last_view->positive_conditions.insert(
+          last_view->positive_conditions.end(),
+          positive_conditions.begin(), positive_conditions.end());
+    }
+
+    if (last_view->negative_conditions.empty()) {
+      last_view->negative_conditions.swap(negative_conditions);
+    } else if (!negative_conditions.empty()) {
+      last_view->negative_conditions.insert(
+          last_view->negative_conditions.end(),
+          negative_conditions.begin(), negative_conditions.end());
+    }
+
+    last_view->OrderConditions();
+
     non_local_changes = true;
     for (auto [in_col, out_col] : in_to_out) {
       out_col->ReplaceAllUsesWith(in_col);
@@ -186,6 +214,8 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
 bool Node<QueryTuple>::Equals(EqualitySet &, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsTuple();
   return that &&
+         positive_conditions == that->positive_conditions &&
+         negative_conditions == that->negative_conditions &&
          can_receive_deletions == that->can_receive_deletions &&
          can_produce_deletions == that->can_produce_deletions &&
          columns.Size() == that->columns.Size() &&

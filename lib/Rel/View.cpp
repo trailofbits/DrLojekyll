@@ -169,6 +169,17 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
   });
 }
 
+// Sort the `positive_conditions` and `negative_conditions`.
+void Node<QueryView>::OrderConditions(void) {
+  std::sort(positive_conditions.begin(), positive_conditions.end());
+  auto pos_it = std::unique(positive_conditions.begin(), positive_conditions.end());
+  positive_conditions.erase(pos_it, positive_conditions.end());
+
+  std::sort(negative_conditions.begin(), negative_conditions.end());
+  auto neg_it = std::unique(negative_conditions.begin(), negative_conditions.end());
+  negative_conditions.erase(neg_it, negative_conditions.end());
+}
+
 // Check to see if the attached columns are ordered and unique. If they're
 // not unique then we can deduplicate them.
 bool Node<QueryView>::AttachedColumnsAreCanonical(void) const noexcept {
@@ -228,6 +239,31 @@ unsigned Node<QueryView>::NumUses(void) const noexcept {
   return static_cast<unsigned>(users.size());
 }
 
+static const std::hash<const char *> kCStrHasher;
+
+// Initializer for an updated hash value.
+uint64_t Node<QueryView>::HashInit(void) const noexcept {
+  uint64_t hash = kCStrHasher(this->KindName());
+  hash <<= 1u;
+  hash |= can_receive_deletions;
+  hash <<= 1u;
+  hash |= can_produce_deletions;
+  hash = __builtin_rotateright64(hash, 13);
+  hash *= columns.Size();
+
+  for (auto positive_cond : this->positive_conditions) {
+    hash = __builtin_rotateright64(hash, 13);
+    hash ^= positive_cond.UniqueId();
+  }
+
+  for (auto negative_cond : this->positive_conditions) {
+    hash = __builtin_rotateright64(hash, 13);
+    hash ^= ~negative_cond.UniqueId();
+  }
+
+  return hash;
+}
+
 // Returns `true` if we had to "guard" this view with a tuple so that we
 // can put it into canonical form.
 //
@@ -240,6 +276,14 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
   }
 
   const auto tuple = query->tuples.Create();
+  tuple->positive_conditions = positive_conditions;
+  tuple->negative_conditions = negative_conditions;
+  tuple->group_ids = group_ids;
+
+  if (can_produce_deletions) {
+    tuple->can_receive_deletions = true;
+    tuple->can_produce_deletions = true;
+  }
 
   // Make any merges use the tuple.
   ReplaceAllUsesWith(tuple);
@@ -251,11 +295,6 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
 
   for (auto col : columns) {
     tuple->input_columns.AddUse(col);
-  }
-
-  if (can_produce_deletions) {
-    tuple->can_receive_deletions = true;
-    tuple->can_produce_deletions = true;
   }
 
   return tuple;

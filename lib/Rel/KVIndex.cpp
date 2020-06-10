@@ -34,7 +34,7 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = columns.Size();
+  hash = HashInit();
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
@@ -50,8 +50,6 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
     hash ^= __builtin_rotateright64(hash, 16) ^ functor.Hash();
   }
 
-  hash <<= 4;
-  hash |= query::kKVIndexId;
   return hash;
 }
 
@@ -60,6 +58,8 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
   const auto that = that_->AsKVIndex();
   return that &&
          columns.Size() == that->columns.Size() &&
+         positive_conditions == that->positive_conditions &&
+         negative_conditions == that->negative_conditions &&
          ColumnsEq(input_columns, that->input_columns) &&
          ColumnsEq(attached_columns, that->attached_columns) &&
          MergeFunctorsEq(merge_functors, that->merge_functors) &&

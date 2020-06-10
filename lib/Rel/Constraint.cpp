@@ -17,16 +17,16 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = static_cast<unsigned>(op);
+  hash = HashInit();
+  hash ^= static_cast<unsigned>(op);
+
   for (auto col : input_columns) {
     hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
   }
+
   for (auto col : attached_columns) {
     hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
   }
-
-  hash <<= 4;
-  hash |= query::kConstraintId;
 
   return hash;
 }
@@ -263,6 +263,8 @@ bool Node<QueryConstraint>::Equals(
          can_receive_deletions == that->can_receive_deletions &&
          can_produce_deletions == that->can_produce_deletions &&
          columns.Size() == that_->columns.Size() &&
+         positive_conditions == that->positive_conditions &&
+         negative_conditions == that->negative_conditions &&
          ColumnsEq(input_columns, that->input_columns) &&
          ColumnsEq(attached_columns, that->attached_columns);
 }

@@ -20,6 +20,23 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   os << "digraph {\n"
      << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
+  auto do_conds = [&] (int row_span, auto view_) {
+    auto view = QueryView::From(view_);
+    const auto &pos_conds = view.PositiveConditions();
+    const auto &neg_conds = view.NegativeConditions();
+    if (pos_conds.empty() && neg_conds.empty()) {
+      return;
+    }
+
+    os << "<TD rowspan=\"" << row_span << "\">COND</TD>";
+    for (auto cond : pos_conds) {
+      os << "<TD rowspan=\"" << row_span << "\">" << cond.Name() << "</TD>";
+    }
+    for (auto cond : neg_conds) {
+      os << "<TD rowspan=\"" << row_span << "\">!" << cond.Name() << "</TD>";
+    }
+  };
+
   for (auto relation : query.Relations()) {
     const auto decl = relation.Declaration();
     const auto arity = decl.Arity();
@@ -71,8 +88,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto select : query.Selects()) {
-    os << "v" << select.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>" << QueryView::From(select).KindName() << "</TD>";
+    os << "v" << select.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, select);
+    os << "<TD>" << QueryView::From(select).KindName() << "</TD>";
 
     auto i = 0u;
     for (auto col : select.Columns()) {
@@ -109,6 +127,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto constraint : query.Constraints()) {
     os << "v" << constraint.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, constraint);
+
     const auto out_copied_cols = constraint.CopiedColumns();
     const auto in_copied_cols = constraint.InputCopiedColumns();
     if (!out_copied_cols.empty()) {
@@ -118,6 +138,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
            << "</TD>";
       }
     }
+
     os << "<TD rowspan=\"2\">FILTER ";
     switch (constraint.Operator()) {
       case ComparisonOperator::kEqual:
@@ -180,6 +201,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto kv : query.KVIndices()) {
     os << "v" << kv.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, kv);
     os << "<TD rowspan=\"2\">KEYS</TD>";
     for (auto col : kv.KeyColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">" << col.Variable() << "</TD>";
@@ -231,6 +253,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, join);
 
 //    auto num_pivot_inputs = 0u;
 //    auto num_pivots = join.NumPivotSets();
@@ -316,6 +339,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto map : query.Maps()) {
     os << "v" << map.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, map);
 
     auto num_group = map.NumCopiedColumns();
     if (num_group) {
@@ -377,6 +401,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto agg : query.Aggregates()) {
     os << "v" << agg.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(3, agg);
     os << "<TD rowspan=\"3\">AGGREGATE "
        << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
@@ -438,7 +463,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto insert : query.Inserts()) {
     const auto decl = insert.Declaration();
-    os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable << "<TD>"
+    os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, insert);
+    os << "<TD>"
        << QueryView::From(insert).KindName() << ' '
        << ParsedDeclarationName(decl) << "</TD>";
 
@@ -481,8 +508,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto tuple : query.Tuples()) {
-    os << "v" << tuple.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD rowspan=\"2\">TUPLE</TD>";
+    os << "v" << tuple.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, tuple);
+    os << "<TD rowspan=\"2\">TUPLE</TD>";
     for (auto col : tuple.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
@@ -508,8 +536,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto merge : query.Merges()) {
-    os << "v" << merge.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD rowspan=\"2\">UNION</TD>";
+    os << "v" << merge.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, merge);
+    os << "<TD rowspan=\"2\">UNION</TD>";
     for (auto col : merge.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";

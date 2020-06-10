@@ -28,7 +28,6 @@ class QueryBuilderImpl : public SIPSVisitor {
       : context(context_),
         query(std::make_shared<QueryImpl>(context_)) {}
 
-
   virtual ~QueryBuilderImpl(void) = default;
 
   REL *TableFor(ParsedDeclaration decl, bool is_positive=true) {
@@ -126,6 +125,8 @@ class QueryBuilderImpl : public SIPSVisitor {
     context->select_group_id += 1;
     input_view = nullptr;
     initial_view = nullptr;
+    positive_conditions.clear();
+    negative_conditions.clear();
   }
 
   void Begin(ParsedClause clause) override {
@@ -1299,6 +1300,10 @@ class QueryBuilderImpl : public SIPSVisitor {
       const auto prev_col = prev_colset->Leader();
       insert->input_columns.AddUse(prev_col);
     }
+
+    insert->positive_conditions.swap(positive_conditions);
+    insert->negative_conditions.swap(negative_conditions);
+    insert->OrderConditions();
   }
 
 //  // Do a full join of the initial relation select against the input stream.
@@ -1598,6 +1603,18 @@ class QueryBuilderImpl : public SIPSVisitor {
 //    CreateFullJoin(tuple, where_cols);
 //  }
 
+  // Asserts that a zero-arity exported predicate must be assumed `true` in
+  // this clause.
+  void AssertTrue(ParsedPredicate, ParsedExport cond_var) override {
+    positive_conditions.push_back(cond_var);
+  }
+
+  // Asserts that a zero-arity exported predicate must be assumed `false`
+  // (missing) in this clause.
+  void AssertFalse(ParsedPredicate, ParsedExport cond_var) override {
+    negative_conditions.push_back(cond_var);
+  }
+
   // Context shared by all queries created by this query builder. E.g. all
   // tables are shared across queries.
   std::shared_ptr<query::QueryContext> context;
@@ -1608,6 +1625,10 @@ class QueryBuilderImpl : public SIPSVisitor {
   // The initial view from which we're selecting.
   SELECT *initial_view{nullptr};
   SELECT *input_view{nullptr};
+
+  // Zero argument predicates that constrain this node.
+  std::vector<ParsedExport> positive_conditions;
+  std::vector<ParsedExport> negative_conditions;
 
   // All columns in some select...where.
   std::vector<const Column *> sips_cols;

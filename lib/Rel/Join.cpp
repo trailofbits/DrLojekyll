@@ -19,8 +19,10 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
     return hash;
   }
 
+  hash = HashInit();
+
   if (out_to_in.empty()) {
-    return 0;
+    return hash;
   }
 
   assert(input_columns.Size() == 0);
@@ -35,9 +37,6 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
     }
     hash = __builtin_rotateleft64(hash, 13) ^ col_set_hash;
   }
-
-  hash <<= 4;
-  hash |= query::kJoinId;
 
   return hash;
 }
@@ -254,6 +253,8 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
     // Create a tuple that forwards along the inputs to this join.
     auto tuple = query->tuples.Create();
+    tuple->positive_conditions.swap(positive_conditions);
+    tuple->negative_conditions.swap(negative_conditions);
     tuple->can_receive_deletions = can_receive_deletions;
     tuple->can_produce_deletions = can_produce_deletions;
 
@@ -470,7 +471,9 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
       num_pivots != that->num_pivots ||
       out_to_in.empty() ||
       that->out_to_in.empty() ||
-      out_to_in.size() != that->out_to_in.size()) {
+      out_to_in.size() != that->out_to_in.size() ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions) {
     return false;
   }
 

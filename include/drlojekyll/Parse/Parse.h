@@ -567,6 +567,14 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
     return NumPositiveUses() + NumNegatedUses();
   }
 
+  inline bool operator<(ParsedExport that) const noexcept {
+    return impl < that.impl;
+  }
+
+  inline bool operator==(ParsedExport that) const noexcept {
+    return impl == that.impl;
+  }
+
  protected:
   friend class ParsedDeclaration;
   using parse::ParsedNode<ParsedExport>::ParsedNode;

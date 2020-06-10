@@ -200,7 +200,19 @@ std::string QueryView::DebugString(void) const noexcept {
 
 // Get a hash of this view.
 uint64_t QueryView::Hash(void) const noexcept {
-  return impl->hash;
+  return impl->hash ? impl->hash : impl->Hash();
+}
+
+// Positive conditions, i.e. zero-argument predicates, that must be true
+// for tuples to be accepted into this node.
+const std::vector<ParsedExport> &QueryView::PositiveConditions(void) const noexcept {
+  return impl->positive_conditions;
+}
+
+// Negative conditions, i.e. zero-argument predicates, that must be false
+// for tuples to be accepted into this node.
+const std::vector<ParsedExport> &QueryView::NegativeConditions(void) const noexcept {
+  return impl->negative_conditions;
 }
 
 // Replace all uses of this view with `that` view.

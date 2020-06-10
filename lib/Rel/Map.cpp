@@ -21,7 +21,8 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = functor.Id();
+  hash = HashInit();
+  hash ^= functor.Id();
 
   // Mix in the hashes of the merged views and columns;
   for (auto input_col : input_columns) {
@@ -31,9 +32,6 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
   for (auto input_col : attached_columns) {
     hash = __builtin_rotateright64(hash, 16) ^ input_col->Hash();
   }
-
-  hash <<= 4;
-  hash |= query::kMapId;
 
   return hash;
 }
@@ -235,11 +233,10 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
 bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsMap();
   if (!that || columns.Size() != that->columns.Size() ||
-      attached_columns.Size() != that->attached_columns.Size()) {
-    return false;
-  }
-
-  if (functor != that->functor) {
+      attached_columns.Size() != that->attached_columns.Size() ||
+      functor != that->functor ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions) {
     return false;
   }
 

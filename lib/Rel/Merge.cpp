@@ -21,10 +21,10 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   //
   // NOTE(pag): We don't include the number of merged views, as there may
   //            be redundancies in them after.
-  if (!merged_views.Empty()) {
-    hash = merged_views[0]->columns.Size();
-    hash <<= 4;
-    hash |= query::kMergeId;
+  hash = HashInit();
+
+  if (merged_views.Empty()) {
+    return hash;
   }
 
   auto merged_hashes = hash;
@@ -36,8 +36,6 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   }
 
   hash = merged_hashes;
-  hash <<= 4;
-  hash |= query::kMergeId;
 
   return hash;
 }
@@ -137,10 +135,10 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
 //
 //    // Forward the columns directly along.
 //    } else {
-      auto i = 0u;
-      for (auto input_col : merged_view->columns) {
-        columns[i++]->ReplaceAllUsesWith(input_col);
-      }
+    auto i = 0u;
+    for (auto input_col : merged_view->columns) {
+      columns[i++]->ReplaceAllUsesWith(input_col);
+    }
 //    }
 
     merged_views.Clear();  // Clear it out.
@@ -164,12 +162,12 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
 bool Node<QueryMerge>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
   const auto that = that_->AsMerge();
-  if (!that || columns.Size() != that->columns.Size()) {
-    return false;
-  }
-
   const auto num_views = merged_views.Size();
-  if (num_views != that->merged_views.Size()) {
+  if (!that ||
+      columns.Size() != that->columns.Size() ||
+      num_views != that->merged_views.Size() ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions) {
     return false;
   }
 

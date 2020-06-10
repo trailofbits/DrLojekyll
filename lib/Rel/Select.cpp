@@ -17,27 +17,23 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
     return hash;
   }
 
+  hash = HashInit();
+
   if (relation) {
-    hash = relation->declaration.Id();
+    hash ^= relation->declaration.Id();
 
   } else if (stream) {
     if (auto generator_stream = stream->AsGenerator()) {
-      hash = generator_stream->functor.Id();
+      hash ^= generator_stream->functor.Id();
 
     } else if (auto const_stream  = stream->AsConstant()) {
-      hash = std::hash<std::string_view>()(
+      hash ^= std::hash<std::string_view>()(
           const_stream->literal.Spelling());
 
     } else if (auto input_stream = stream->AsInput()) {
-      hash = input_stream->declaration.Id();
-
-    } else {
-      hash = 0;
+      hash ^= input_stream->declaration.Id();
     }
   }
-
-  hash <<= 4;
-  hash |= query::kSelectId;
   return hash;
 }
 
@@ -61,6 +57,8 @@ bool Node<QuerySelect>::Equals(
   if (!that ||
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions ||
       columns.Size() != that->columns.Size() ||
       input_columns.Size() != that->input_columns.Size()) {
     return false;

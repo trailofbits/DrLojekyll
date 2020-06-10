@@ -57,6 +57,9 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     for (INSERT *insert : insert_views) {
       const auto ins_tuple = tuples.Create();
 
+      ins_tuple->positive_conditions.swap(insert->positive_conditions);
+      ins_tuple->negative_conditions.swap(insert->negative_conditions);
+
       bool is_first_merge = merge->merged_views.Empty();
       for (auto in_col : insert->input_columns) {
 
@@ -79,7 +82,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
       // Create the key columns.
       auto i = 0u;
-      for (auto param : decl.Parameters()) {
+      for (ParsedParameter param : decl.Parameters()) {
         const auto merge_col = merge->columns[i++];
         if (param.Binding() != ParameterBinding::kMutable) {
           const auto key_col = index->columns.Create(
@@ -90,7 +93,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
       // Create the value columns.
       i = 0u;
-      for (auto param : decl.Parameters()) {
+      for (ParsedParameter param : decl.Parameters()) {
         const auto merge_col = merge->columns[i++];
         if (param.Binding() == ParameterBinding::kMutable) {
           const auto val_col = index->columns.Create(
@@ -101,7 +104,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
       // Create the inputs.
       i = 0u;
-      for (auto param : decl.Parameters()) {
+      for (ParsedParameter param : decl.Parameters()) {
         const auto merge_col = merge->columns[i++];
         if (param.Binding() == ParameterBinding::kMutable) {
           index->merge_functors.push_back(ParsedFunctor::MergeOperatorOf(param));
@@ -112,11 +115,14 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       }
     }
 
-    for (auto select : decl_to_selects[decl]) {
+    for (SELECT *select : decl_to_selects[decl]) {
 
       // Create a TUPLE and MERGE that will read in a tuple of all incoming
       // data to the INSERTs, thus letting us remove the INSERTs.
       const auto sel_tuple = tuples.Create();
+
+      sel_tuple->positive_conditions.swap(select->positive_conditions);
+      sel_tuple->negative_conditions.swap(select->negative_conditions);
 
       // This TUPLE takes the place of a SELECT, so it should behave the same
       // with respect to preserving the fact that there sometimes need to be
