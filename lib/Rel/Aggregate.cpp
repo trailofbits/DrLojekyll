@@ -166,7 +166,6 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
 
   columns.Swap(new_output_cols);
 
-
   assert(CheckAllViewsMatch(input_columns, attached_columns));
   is_canonical = true;
   return true;

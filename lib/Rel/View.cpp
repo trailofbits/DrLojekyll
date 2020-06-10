@@ -171,13 +171,8 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
 
 // Sort the `positive_conditions` and `negative_conditions`.
 void Node<QueryView>::OrderConditions(void) {
-  std::sort(positive_conditions.begin(), positive_conditions.end());
-  auto pos_it = std::unique(positive_conditions.begin(), positive_conditions.end());
-  positive_conditions.erase(pos_it, positive_conditions.end());
-
-  std::sort(negative_conditions.begin(), negative_conditions.end());
-  auto neg_it = std::unique(negative_conditions.begin(), negative_conditions.end());
-  negative_conditions.erase(neg_it, negative_conditions.end());
+  positive_conditions.Unique();
+  negative_conditions.Unique();
 }
 
 // Check to see if the attached columns are ordered and unique. If they're
@@ -253,12 +248,12 @@ uint64_t Node<QueryView>::HashInit(void) const noexcept {
 
   for (auto positive_cond : this->positive_conditions) {
     hash = __builtin_rotateright64(hash, 13);
-    hash ^= positive_cond.UniqueId();
+    hash ^= positive_cond->declaration.UniqueId();
   }
 
   for (auto negative_cond : this->positive_conditions) {
     hash = __builtin_rotateright64(hash, 13);
-    hash ^= ~negative_cond.UniqueId();
+    hash ^= ~negative_cond->declaration.UniqueId();
   }
 
   return hash;
@@ -276,8 +271,13 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
   }
 
   const auto tuple = query->tuples.Create();
-  tuple->positive_conditions = positive_conditions;
-  tuple->negative_conditions = negative_conditions;
+  for (auto cond : positive_conditions) {
+    tuple->positive_conditions.AddUse(cond);
+  }
+  for (auto cond : negative_conditions) {
+    tuple->negative_conditions.AddUse(cond);
+  }
+
   tuple->group_ids = group_ids;
 
   if (can_produce_deletions) {

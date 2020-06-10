@@ -205,14 +205,12 @@ uint64_t QueryView::Hash(void) const noexcept {
 
 // Positive conditions, i.e. zero-argument predicates, that must be true
 // for tuples to be accepted into this node.
-const std::vector<ParsedExport> &QueryView::PositiveConditions(void) const noexcept {
-  return impl->positive_conditions;
+UsedNodeRange<QueryCondition> QueryView::PositiveConditions(void) const noexcept {
+  return {impl->positive_conditions.begin(), impl->positive_conditions.end()};
 }
 
-// Negative conditions, i.e. zero-argument predicates, that must be false
-// for tuples to be accepted into this node.
-const std::vector<ParsedExport> &QueryView::NegativeConditions(void) const noexcept {
-  return impl->negative_conditions;
+UsedNodeRange<QueryCondition> QueryView::NegativeConditions(void) const noexcept {
+  return {impl->negative_conditions.begin(), impl->negative_conditions.end()};
 }
 
 // Replace all uses of this view with `that` view.
@@ -257,6 +255,8 @@ bool QueryView::ReplaceAllUsesWith(
   }
 
   impl->ReplaceAllUsesWith(that.impl);
+  impl->positive_conditions.Clear();
+  impl->negative_conditions.Clear();
   impl->input_columns.Clear();
   impl->attached_columns.Clear();
   impl->is_used = false;
@@ -372,6 +372,25 @@ bool QueryColumn::operator==(QueryColumn that) const noexcept {
 
 bool QueryColumn::operator!=(QueryColumn that) const noexcept {
   return impl != that.impl;
+}
+
+// The declaration of the
+const ParsedDeclaration &QueryCondition::Predicate(void) const noexcept {
+  return impl->declaration;
+}
+
+// The list of views that produce nodes iff this condition is true.
+UsedNodeRange<QueryView> QueryCondition::PositiveUsers(void) const {
+  impl->positive_users.RemoveNull();
+  impl->positive_users.Unique();
+  return {impl->positive_users.begin(), impl->positive_users.end()};
+}
+
+// The list of views that produce nodes iff this condition is false.
+UsedNodeRange<QueryView> QueryCondition::NegativeUsers(void) const {
+  impl->negative_users.RemoveNull();
+  impl->negative_users.Unique();
+  return {impl->negative_users.begin(), impl->negative_users.end()};
 }
 
 const ParsedLiteral &QueryConstant::Literal(void) const noexcept {

@@ -1301,9 +1301,23 @@ class QueryBuilderImpl : public SIPSVisitor {
       insert->input_columns.AddUse(prev_col);
     }
 
-    insert->positive_conditions.swap(positive_conditions);
-    insert->negative_conditions.swap(negative_conditions);
-    insert->OrderConditions();
+    std::sort(positive_conditions.begin(), positive_conditions.end());
+    auto it = std::unique(positive_conditions.begin(), positive_conditions.end());
+    positive_conditions.erase(it, positive_conditions.end());
+
+    std::sort(negative_conditions.begin(), negative_conditions.end());
+    it = std::unique(negative_conditions.begin(), negative_conditions.end());
+    negative_conditions.erase(it, negative_conditions.end());
+
+    for (COND *cond : positive_conditions) {
+      insert->positive_conditions.AddUse(cond);
+      cond->positive_users.AddUse(insert);
+    }
+
+    for (auto cond : negative_conditions) {
+      insert->negative_conditions.AddUse(cond);
+      cond->negative_users.AddUse(insert);
+    }
   }
 
 //  // Do a full join of the initial relation select against the input stream.
@@ -1606,13 +1620,21 @@ class QueryBuilderImpl : public SIPSVisitor {
   // Asserts that a zero-arity exported predicate must be assumed `true` in
   // this clause.
   void AssertTrue(ParsedPredicate, ParsedExport cond_var) override {
-    positive_conditions.push_back(cond_var);
+    auto &cond = context->decl_to_condition[cond_var];
+    if (!cond) {
+      cond = context->conditions.Create(cond_var);
+    }
+    positive_conditions.push_back(cond);
   }
 
   // Asserts that a zero-arity exported predicate must be assumed `false`
   // (missing) in this clause.
   void AssertFalse(ParsedPredicate, ParsedExport cond_var) override {
-    negative_conditions.push_back(cond_var);
+    auto &cond = context->decl_to_condition[cond_var];
+    if (!cond) {
+      cond = context->conditions.Create(cond_var);
+    }
+    negative_conditions.push_back(cond);
   }
 
   // Context shared by all queries created by this query builder. E.g. all
@@ -1627,8 +1649,8 @@ class QueryBuilderImpl : public SIPSVisitor {
   SELECT *input_view{nullptr};
 
   // Zero argument predicates that constrain this node.
-  std::vector<ParsedExport> positive_conditions;
-  std::vector<ParsedExport> negative_conditions;
+  std::vector<COND *> positive_conditions;
+  std::vector<COND *> negative_conditions;
 
   // All columns in some select...where.
   std::vector<const Column *> sips_cols;

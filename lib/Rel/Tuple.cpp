@@ -33,11 +33,6 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     return false;
   }
 
-  if (state_for_kvindex) {
-    is_canonical = true;
-    return false;
-  }
-
   bool non_local_changes = false;
 
   std::unordered_map<COL *, COL *> in_to_out;
@@ -130,20 +125,16 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   }
 
   if (all_from_same_view) {
-    if (last_view->positive_conditions.empty()) {
-      last_view->positive_conditions.swap(positive_conditions);
-    } else if (!positive_conditions.empty()) {
-      last_view->positive_conditions.insert(
-          last_view->positive_conditions.end(),
-          positive_conditions.begin(), positive_conditions.end());
+    if (!positive_conditions.Empty()) {
+      for (auto cond : positive_conditions) {
+        last_view->positive_conditions.AddUse(cond);
+      }
     }
 
-    if (last_view->negative_conditions.empty()) {
-      last_view->negative_conditions.swap(negative_conditions);
-    } else if (!negative_conditions.empty()) {
-      last_view->negative_conditions.insert(
-          last_view->negative_conditions.end(),
-          negative_conditions.begin(), negative_conditions.end());
+    if (!negative_conditions.Empty()) {
+      for (auto cond : negative_conditions) {
+        last_view->negative_conditions.AddUse(cond);
+      }
     }
 
     last_view->OrderConditions();

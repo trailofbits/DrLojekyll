@@ -47,6 +47,9 @@ class QueryContext {
   // stream.
   std::unordered_map<std::string, Node<QueryConstant> *> spelling_to_constant;
 
+  // Mapping between export conditions and actual condition nodes.
+  std::unordered_map<ParsedExport, Node<QueryCondition> *> decl_to_condition;
+
   // Selects within the same group cannot be merged. A group comes from
   // importing a clause, given an assumption.
   unsigned select_group_id{0};
@@ -57,6 +60,7 @@ class QueryContext {
   DefList<Node<QueryRelation>> relations;
   DefList<Node<QueryConstant>> constants;
   DefList<Node<QueryGenerator>> generators;
+  DefList<Node<QueryCondition>> conditions;
 };
 
 }  // namespace query
@@ -169,6 +173,29 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
 using COL = Node<QueryColumn>;
 
+// A condition to be tested in order to admit tuples into a relation or
+// produce tuples.
+template <>
+class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
+ public:
+  inline explicit Node(ParsedExport decl_)
+      : Def<Node<QueryCondition>>(this),
+        declaration(decl_),
+        positive_users(this, true  /* is_weak */),
+        negative_users(this, true  /* is_weak */) {}
+
+  // The declaration of the `ParsedExport` that is associated with this
+  // zero-argument predicate.
+  const ParsedDeclaration declaration;
+
+  // *WEAK* use list of views using this condition.
+  UseList<Node<QueryView>> positive_users;
+  UseList<Node<QueryView>> negative_users;
+};
+
+using COND = Node<QueryCondition>;
+
+// A "table" of data.
 template <>
 class Node<QueryRelation> : public Def<Node<QueryRelation>> {
  public:
@@ -181,6 +208,7 @@ class Node<QueryRelation> : public Def<Node<QueryRelation>> {
 
 using REL = Node<QueryRelation>;
 
+// A stream of values.
 template <>
 class Node<QueryStream> : public Def<Node<QueryStream>> {
  public:
@@ -196,6 +224,7 @@ class Node<QueryStream> : public Def<Node<QueryStream>> {
 
 using STREAM = Node<QueryStream>;
 
+// Use of a constant.
 template <>
 class Node<QueryConstant> final : public Node<QueryStream> {
  public:
@@ -211,6 +240,7 @@ class Node<QueryConstant> final : public Node<QueryStream> {
 
 using CONST = Node<QueryConstant>;
 
+// Call to a functor that has no bound parameters.
 template <>
 class Node<QueryGenerator> final : public Node<QueryStream> {
  public:
@@ -226,6 +256,7 @@ class Node<QueryGenerator> final : public Node<QueryStream> {
 
 using GEN = Node<QueryGenerator>;
 
+// Input, i.e. a messsage.
 template <>
 class Node<QueryInput> final : public Node<QueryStream> {
  public:
@@ -251,7 +282,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
       : Def<Node<QueryView>>(this),
         columns(this),
         input_columns(this),
-        attached_columns(this) {
+        attached_columns(this),
+        positive_conditions(this),
+        negative_conditions(this) {
     assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
            reinterpret_cast<uintptr_t>(this));
   }
@@ -343,6 +376,10 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // their sources.
   UseList<COL> attached_columns;
 
+  // Zero argument predicates that constrain this node.
+  UseList<COND> positive_conditions;
+  UseList<COND> negative_conditions;
+
   // Selects on within the same group generally cannot be merged. For example,
   // if you had this code:
   //
@@ -363,10 +400,6 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // some null case that we don't really want. What we need, then, is to
   // maintain which groups a given select is derived from.
   std::vector<unsigned> group_ids;
-
-  // Zero argument predicates that constrain this node.
-  std::vector<ParsedExport> positive_conditions;
-  std::vector<ParsedExport> negative_conditions;
 
   // Hash of this node, and its dependencies. A zero value implies that the
   // hash is invalid. Final hashes always have their low 3 bits as a non-zero
@@ -477,15 +510,6 @@ class Node<QueryTuple> final : public Node<QueryView> {
   // canonical form of this tuple is one where all columns are sorted by
   // their pointer values.
   bool Canonicalize(QueryImpl *query) override;
-
-  // Does this tuple keep track of the state of some K/V index? The issue here
-  // is that a K/V index might need to be differential, i.e. it can receive
-  // deletions of state that was merged into the K/V store. However, the actual
-  // merge operator of a k/v index is not smart enough to handle such
-  // differentials, and so to handle them, the updates, minus the differential,
-  // would need to be replayed. Knowing what columns need to be tracked for
-  // those cases is tricky.
-  WeakUseRef<VIEW> state_for_kvindex;
 };
 
 using TUPLE = Node<QueryTuple>;

@@ -22,18 +22,18 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   auto do_conds = [&] (int row_span, auto view_) {
     auto view = QueryView::From(view_);
-    const auto &pos_conds = view.PositiveConditions();
-    const auto &neg_conds = view.NegativeConditions();
+    const auto pos_conds = view.PositiveConditions();
+    const auto neg_conds = view.NegativeConditions();
     if (pos_conds.empty() && neg_conds.empty()) {
       return;
     }
 
     os << "<TD rowspan=\"" << row_span << "\">COND</TD>";
     for (auto cond : pos_conds) {
-      os << "<TD rowspan=\"" << row_span << "\">" << cond.Name() << "</TD>";
+      os << "<TD rowspan=\"" << row_span << "\">" << cond.Predicate().Name() << "</TD>";
     }
     for (auto cond : neg_conds) {
-      os << "<TD rowspan=\"" << row_span << "\">!" << cond.Name() << "</TD>";
+      os << "<TD rowspan=\"" << row_span << "\">!" << cond.Predicate().Name() << "</TD>";
     }
   };
 

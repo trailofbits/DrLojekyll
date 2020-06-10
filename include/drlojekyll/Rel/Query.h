@@ -124,6 +124,22 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   friend class Node;
 };
 
+// A condition related to a zero-argument predicate that must be tested.
+class QueryCondition : public query::QueryNode<QueryCondition> {
+ public:
+  // The declaration of the
+  const ParsedDeclaration &Predicate(void) const noexcept;
+
+  // The list of views that produce nodes iff this condition is true.
+  UsedNodeRange<QueryView> PositiveUsers(void) const;
+
+  // The list of views that produce nodes iff this condition is false.
+  UsedNodeRange<QueryView> NegativeUsers(void) const;
+
+ private:
+  using query::QueryNode<QueryCondition>::QueryNode;
+};
+
 // A table in a query. Corresponds with a declared predicate in a Datalog.
 class QueryRelation : public query::QueryNode<QueryRelation> {
  public:
@@ -259,13 +275,10 @@ class QueryView : public query::QueryNode<QueryView> {
   // Get a hash of this view.
   uint64_t Hash(void) const noexcept;
 
-  // Positive conditions, i.e. zero-argument predicates, that must be true
+  // Conditions, i.e. zero-argument predicates, that must be true (or false)
   // for tuples to be accepted into this node.
-  const std::vector<ParsedExport> &PositiveConditions(void) const noexcept;
-
-  // Negative conditions, i.e. zero-argument predicates, that must be false
-  // for tuples to be accepted into this node.
-  const std::vector<ParsedExport> &NegativeConditions(void) const noexcept;
+  UsedNodeRange<QueryCondition> PositiveConditions(void) const noexcept;
+  UsedNodeRange<QueryCondition> NegativeConditions(void) const noexcept;
 
   // Replace all uses of this view with `that` view. Returns `false` if the
   // two views have different arities, column types, or are from different

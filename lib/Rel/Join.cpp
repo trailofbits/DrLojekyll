@@ -253,8 +253,13 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
     // Create a tuple that forwards along the inputs to this join.
     auto tuple = query->tuples.Create();
-    tuple->positive_conditions.swap(positive_conditions);
-    tuple->negative_conditions.swap(negative_conditions);
+    for (auto cond : positive_conditions) {
+      tuple->positive_conditions.AddUse(cond);
+    }
+    for (auto cond : negative_conditions) {
+      tuple->negative_conditions.AddUse(cond);
+    }
+
     tuple->can_receive_deletions = can_receive_deletions;
     tuple->can_produce_deletions = can_produce_deletions;
 
