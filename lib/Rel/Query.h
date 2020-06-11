@@ -179,10 +179,12 @@ template <>
 class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
  public:
   inline explicit Node(ParsedExport decl_)
-      : Def<Node<QueryCondition>>(this),
+      : User(this),
+        Def<Node<QueryCondition>>(this),
         declaration(decl_),
         positive_users(this, true  /* is_weak */),
-        negative_users(this, true  /* is_weak */) {}
+        negative_users(this, true  /* is_weak */),
+        setters(this) {}
 
   // The declaration of the `ParsedExport` that is associated with this
   // zero-argument predicate.
@@ -191,6 +193,9 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
   // *WEAK* use list of views using this condition.
   UseList<Node<QueryView>> positive_users;
   UseList<Node<QueryView>> negative_users;
+
+  // Views that produce values for this condition.
+  UseList<Node<QueryView>> setters;
 };
 
 using COND = Node<QueryCondition>;
@@ -279,7 +284,8 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   virtual ~Node(void);
 
   Node(void)
-      : Def<Node<QueryView>>(this),
+      : User(this),
+        Def<Node<QueryView>>(this),
         columns(this),
         input_columns(this),
         attached_columns(this),
@@ -432,6 +438,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
  protected:
   // Utility for depth calculation.
   static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);
+  static unsigned GetDepth(const UseList<COND> &conds, unsigned depth);
 
   // Utility for comparing use lists.
   static bool ColumnsEq(const UseList<COL> &c1s, const UseList<COL> &c2s);
@@ -753,14 +760,12 @@ using INSERT = Node<QueryInsert>;
 
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
-  view->ForEachUse([&user_cb] (User *user, VIEW *) {
-    auto user_view = reinterpret_cast<VIEW *>(user);
-    user_cb(user_view);
+  view->ForEachUse<VIEW>([&user_cb] (VIEW *user, VIEW *) {
+    user_cb(user);
   });
 
-  ForEachUse([&user_cb] (User *user, Node<QueryColumn> *) {
-    auto user_view = reinterpret_cast<VIEW *>(user);
-    user_cb(user_view);
+  ForEachUse<VIEW>([&user_cb] (VIEW *view, COL *) {
+    user_cb(view);
   });
 }
 

@@ -18,8 +18,9 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     return !decl.IsQuery() &&
            !decl.IsMessage() &&
            !decl.HasDirectGeneratorDependency() &&
-           !decl.NumNegatedUses() &&
-           !decl.NumDeletionClauses();
+           !decl.NumNegatedUses() &&  // Not used in an existence check.
+           !decl.NumDeletionClauses() &&  // Not deleted.
+           decl.Arity();  // Not a condition.
   };
 
   // Go figure out what INSERTs can be connected to SELECTs, and also try

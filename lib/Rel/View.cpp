@@ -35,7 +35,11 @@ const char *Node<QueryKVIndex>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryJoin>::KindName(void) const noexcept {
-  return "JOIN";
+  if (num_pivots) {
+    return "JOIN";
+  } else {
+    return "PRODUCT";
+  }
 }
 
 const char *Node<QueryMap>::KindName(void) const noexcept {
@@ -60,9 +64,17 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
   } else if (declaration.Kind() == DeclarationKind::kMessage) {
     return "SEND";
   } else if (is_insert) {
-    return "INSERT";
+    if (declaration.Arity()) {
+      return "INSERT";
+    } else {
+      return "INCREMENT";
+    }
   } else {
-    return "DELETE";
+    if (declaration.Arity()) {
+      return "DELETE";
+    } else {
+      return "DECREMENT";
+    }
   }
 }
 
@@ -158,13 +170,13 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
   is_canonical = false;
 
   for (auto col : columns) {
-    col->ForEachUse([=] (User *user, COL *) {
+    col->ForEachUse<VIEW>([=] (VIEW *user, COL *) {
       user->Update(next_timestamp);
     });
   }
 
   // Update merges.
-  ForEachUse([=] (User *user, Node<QueryView> *) {
+  ForEachUse<VIEW>([=] (VIEW *user, VIEW *) {
     user->Update(next_timestamp);
   });
 }
@@ -198,12 +210,17 @@ bool Node<QueryView>::Canonicalize(QueryImpl *) {
 }
 
 unsigned Node<QueryView>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-    auto real = GetDepth(input_columns, 1u);
-    real = GetDepth(attached_columns, real);
-    depth = real + 1u;
+  if (depth) {
+    return depth;
   }
+
+  depth = 2u;  // Base case in case of cycles.
+  auto real = GetDepth(input_columns, 1u);
+  real = GetDepth(attached_columns, real);
+  real = GetDepth(positive_conditions, real);
+  real = GetDepth(negative_conditions, real);
+  depth = real + 1u;
+
   return depth;
 }
 
@@ -212,6 +229,18 @@ unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
     const auto input_depth = input_col->view->Depth();
     if (input_depth >= depth) {
       depth = input_depth;
+    }
+  }
+  return depth;
+}
+
+unsigned Node<QueryView>::GetDepth(const UseList<COND> &conds, unsigned depth) {
+  for (const auto cond : conds) {
+    for (auto view : cond->setters) {
+      const auto input_depth = view->Depth();
+      if (input_depth >= depth) {
+        depth = input_depth;
+      }
     }
   }
   return depth;

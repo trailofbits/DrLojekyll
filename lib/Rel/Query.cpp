@@ -15,7 +15,13 @@
 namespace hyde {
 namespace query {
 
-QueryContext::~QueryContext(void) {}
+QueryContext::~QueryContext(void) {
+  for (auto cond : conditions) {
+    cond->setters.ClearWithoutErasure();
+    cond->positive_users.ClearWithoutErasure();
+    cond->negative_users.ClearWithoutErasure();
+  }
+}
 
 }  // namespace query
 
@@ -23,6 +29,8 @@ QueryImpl::~QueryImpl(void) {
   ForEachView([] (VIEW *view) {
     view->input_columns.ClearWithoutErasure();
     view->attached_columns.ClearWithoutErasure();
+    view->positive_conditions.ClearWithoutErasure();
+    view->negative_conditions.ClearWithoutErasure();
   });
 
   for (auto select : selects) {
@@ -347,14 +355,12 @@ bool QueryColumn::ReplaceAllUsesWith(QueryColumn that) const noexcept {
 
 // Apply a function to each user.
 void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
-  impl->view->ForEachUse([&user_cb] (User *user, Node<QueryView> *) {
-    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
-    user_cb(QueryView(user_view));
+  impl->view->ForEachUse<VIEW>([&user_cb] (VIEW *view, VIEW *) {
+    user_cb(QueryView(view));
   });
 
-  impl->ForEachUse([&user_cb] (User *user, Node<QueryColumn> *) {
-    auto user_view = reinterpret_cast<Node<QueryView> *>(user);
-    user_cb(QueryView(user_view));
+  impl->ForEachUse<VIEW>([&user_cb] (VIEW *view, COL *) {
+    user_cb(QueryView(view));
   });
 }
 
@@ -391,6 +397,25 @@ UsedNodeRange<QueryView> QueryCondition::NegativeUsers(void) const {
   impl->negative_users.RemoveNull();
   impl->negative_users.Unique();
   return {impl->negative_users.begin(), impl->negative_users.end()};
+}
+
+// The list of views that set or unset this condition.
+UsedNodeRange<QueryView> QueryCondition::Setters(void) const {
+  return {impl->setters.begin(), impl->setters.end()};
+}
+
+// Can this condition be deleted?
+bool QueryCondition::CanBeDeleted(void) const noexcept {
+  return 0 < impl->declaration.NumDeletionClauses();
+}
+
+// Depth of this node.
+unsigned QueryCondition::Depth(void) const noexcept {
+  auto depth = 1u;
+  for (auto setter : impl->setters) {
+    depth = std::max(depth, setter->Depth());
+  }
+  return depth;
 }
 
 const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
@@ -1007,6 +1032,11 @@ const ParsedFunctor &QueryKVIndex::NthValueMergeFunctor(unsigned n) const noexce
 
 std::string QueryKVIndex::DebugString(void) const noexcept {
   return impl->DebugString();
+}
+
+DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
+  return {DefinedNodeIterator<QueryCondition>(impl->context->conditions.begin()),
+          DefinedNodeIterator<QueryCondition>(impl->context->conditions.end())};
 }
 
 DefinedNodeRange<QueryJoin> Query::Joins(void) const {

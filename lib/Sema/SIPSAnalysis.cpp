@@ -42,7 +42,7 @@ inline static const T *EndPtr(const std::vector<T> &vec) {
 SIPSVisitor::~SIPSVisitor(void) {}
 void SIPSVisitor::Begin(ParsedPredicate) {}
 void SIPSVisitor::Begin(ParsedClause) {}
-void SIPSVisitor::DeclareParameter(const Column &) {}
+void SIPSVisitor::DeclareParameter(const ParamColumn &) {}
 void SIPSVisitor::DeclareVariable(ParsedVariable, unsigned) {}
 void SIPSVisitor::DeclareConstant(ParsedLiteral, unsigned) {}
 void SIPSVisitor::CancelContradiction(ParsedPredicate, ParsedPredicate) {}
@@ -53,36 +53,37 @@ void SIPSVisitor::AssertNotEqual(ParsedVariable, unsigned, ParsedVariable, unsig
 void SIPSVisitor::AssertLessThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertGreaterThan(ParsedVariable, unsigned, ParsedVariable, unsigned) {}
 void SIPSVisitor::AssertPresent(
-    ParsedDeclaration, ParsedPredicate, const Column *, const Column *) {}
+    ParsedDeclaration, ParsedPredicate, const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::AssertAbsent(
-    ParsedDeclaration, ParsedPredicate, const Column *, const Column *) {}
+    ParsedDeclaration, ParsedPredicate, const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::Insert(
-    ParsedClause, ParsedDeclaration, const Column *, const Column *) {}
+    ParsedClause, ParsedDeclaration, const ParamColumn *, const ParamColumn *,
+    const VarColumn *bound_begin, const VarColumn *bound_end) {}
 void SIPSVisitor::EnterFromWhereSelect(
-    ParsedPredicate, ParsedDeclaration, const Column *, const Column *,
-    const Column *, const Column *) {}
+    ParsedPredicate, ParsedDeclaration, const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::EnterSelectFromSummary(
     ParsedPredicate functor, ParsedDeclaration decl,
-    const Column *, const Column *,
-    const Column *, const Column *,
-    const Column *, const Column *,
-    const Column *, const Column *) {}
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::EnterFromSelect(
-    ParsedPredicate, ParsedDeclaration, const Column *, const Column *) {}
+    ParsedPredicate, ParsedDeclaration, const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::EnterAggregation(
     ParsedPredicate, ParsedDeclaration,
-    const Column *, const Column *,
-    const Column *, const Column *,
-    const Column *, const Column *,
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *,
     ParsedPredicate, ParsedDeclaration,
-    const Column *, const Column *,
-    const Column *, const Column *,
-    const Column *, const Column *) {}
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::Collect(
     ParsedPredicate, ParsedDeclaration,
-    const Column *, const Column *,
-    const Column *, const Column *,
-    const Column *, const Column *) {}
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *,
+    const ParamColumn *, const ParamColumn *) {}
 void SIPSVisitor::ExitSelect(ParsedPredicate, ParsedDeclaration) {}
 void SIPSVisitor::Commit(ParsedPredicate) {}
 void SIPSVisitor::Commit(ParsedClause) {}
@@ -196,33 +197,32 @@ class SIPSGenerator::Impl {
 
   std::vector<SIPSVisitor::FailedBinding> failed_bindings;
 
-  std::vector<SIPSVisitor::Column> bound_params;
-  std::vector<SIPSVisitor::Column> free_params;
-  std::vector<std::tuple<ParsedVariable, unsigned, ParsedVariable, unsigned>> deferred_asserts
-  ;
+  std::vector<SIPSVisitor::ParamColumn> bound_params;
+  std::vector<SIPSVisitor::ParamColumn> free_params;
+  std::vector<std::tuple<ParsedVariable, unsigned, ParsedVariable, unsigned>> deferred_asserts;
 
   // The `bound`-marked parameters to the aggregating functor.
-  std::vector<SIPSVisitor::Column> aggregate_input_params;
+  std::vector<SIPSVisitor::ParamColumn> aggregate_input_params;
 
   // The `summarize`d-marked parameters to the aggregating functor.
-  std::vector<SIPSVisitor::Column> aggregate_collection_params;
+  std::vector<SIPSVisitor::ParamColumn> aggregate_collection_params;
 
   // The incoming bound parameters to the predicate being summarized. These
   // get partitioned into `inner_group_by_params` and `outer_group_by_params`.
-  std::vector<SIPSVisitor::Column> summarized_bound_params;
+  std::vector<SIPSVisitor::ParamColumn> summarized_bound_params;
 
   // The incoming bound parameters to the predicate being summarized which
   // also correspond to `bound` parameters of the aggregating functor. These
   // are like "inner group by" columns.
-  std::vector<SIPSVisitor::Column> inner_group_by_params;
+  std::vector<SIPSVisitor::ParamColumn> inner_group_by_params;
 
   // The incoming bound parameters to the predicate being summarized which
   // do not correspond with `bound` parameters of the aggregating functor.
   // These are like "outer group by" columns.
-  std::vector<SIPSVisitor::Column> outer_group_by_params;
+  std::vector<SIPSVisitor::ParamColumn> outer_group_by_params;
 
   // The free parameters produced by the predicate being summarized.
-  std::vector<SIPSVisitor::Column> summarized_free_params;
+  std::vector<SIPSVisitor::ParamColumn> summarized_free_params;
 };
 
 SIPSGenerator::Impl::Impl(ParsedClause clause_)
@@ -408,11 +408,15 @@ bool SIPSGenerator::Impl::VisitEndOfClause(SIPSVisitor &visitor) {
     return false;
   }
 
-  if (bound_params.empty()) {
-    visitor.Insert(clause, decl, nullptr, nullptr);
-  } else {
-    visitor.Insert(clause, decl, BeginPtr(bound_params), EndPtr(bound_params));
+  std::vector<SIPSVisitor::VarColumn> bound_vars;
+  for (auto [var, set] : equalities) {
+    if (set->Find() == set) {
+      bound_vars.emplace_back(var, set->id);
+    }
   }
+
+  visitor.Insert(clause, decl, BeginPtr(bound_params), EndPtr(bound_params),
+                 BeginPtr(bound_vars), EndPtr(bound_vars));
   return true;
 }
 
@@ -952,7 +956,7 @@ bool SIPSGenerator::Impl::VisitAggregate(
     auto functor_arg = aggregate_functor.NthArgument(i);
     switch (functor_decl.NthParameter(i).Binding()) {
       case ParameterBinding::kBound: {
-        const SIPSVisitor::Column *col = nullptr;
+        const SIPSVisitor::ParamColumn *col = nullptr;
         for (auto &bp : bound_params) {
           if (bp.n == i) {
             assert(!((seen >> i) & 1));
@@ -1055,23 +1059,23 @@ bool SIPSGenerator::Impl::VisitAggregate(
     }
   }
 
-  const SIPSVisitor::Column *outer_group_begin = nullptr;
-  const SIPSVisitor::Column *outer_group_end = nullptr;
+  const SIPSVisitor::ParamColumn *outer_group_begin = nullptr;
+  const SIPSVisitor::ParamColumn *outer_group_end = nullptr;
 
-  const SIPSVisitor::Column *inner_group_begin = nullptr;
-  const SIPSVisitor::Column *inner_group_end = nullptr;
+  const SIPSVisitor::ParamColumn *inner_group_begin = nullptr;
+  const SIPSVisitor::ParamColumn *inner_group_end = nullptr;
 
-  const SIPSVisitor::Column *aggregate_begin = nullptr;
-  const SIPSVisitor::Column *aggregate_end = nullptr;
+  const SIPSVisitor::ParamColumn *aggregate_begin = nullptr;
+  const SIPSVisitor::ParamColumn *aggregate_end = nullptr;
 
-  const SIPSVisitor::Column *config_begin = nullptr;
-  const SIPSVisitor::Column *config_end = nullptr;
+  const SIPSVisitor::ParamColumn *config_begin = nullptr;
+  const SIPSVisitor::ParamColumn *config_end = nullptr;
 
-  const SIPSVisitor::Column *collect_begin = nullptr;
-  const SIPSVisitor::Column *collect_end = nullptr;
+  const SIPSVisitor::ParamColumn *collect_begin = nullptr;
+  const SIPSVisitor::ParamColumn *collect_end = nullptr;
 
-  const SIPSVisitor::Column *summary_begin = nullptr;
-  const SIPSVisitor::Column *summary_end = nullptr;
+  const SIPSVisitor::ParamColumn *summary_begin = nullptr;
+  const SIPSVisitor::ParamColumn *summary_end = nullptr;
 
   // `bound`-attributed arguments to the aggregating functor.
   if (!aggregate_input_params.empty()) {
@@ -1264,7 +1268,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
     const auto decl = ParsedDeclaration::Of(initial_pred);
     for (auto param : decl.Parameters()) {
       const auto var_id = GetFreshVarId();
-      SIPSVisitor::Column col(
+      SIPSVisitor::ParamColumn col(
           param, initial_pred.NthArgument(var_id), var_id, var_id);
       visitor.DeclareParameter(col);
     }
@@ -1297,7 +1301,7 @@ bool SIPSGenerator::Impl::Visit(hyde::SIPSVisitor &visitor) {
       if (param.Binding() == ParameterBinding::kBound) {
         const auto var_id = GetFreshVarId();
         const auto var = clause.NthParameter(param.Index());
-        SIPSVisitor::Column col(param, var, param.Index(), var_id);
+        SIPSVisitor::ParamColumn col(param, var, param.Index(), var_id);
         visitor.DeclareParameter(col);
 
         const auto param_set = vars[var_id]->Find();

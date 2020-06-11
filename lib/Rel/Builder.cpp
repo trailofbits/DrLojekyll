@@ -108,7 +108,7 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   // Add a column to a view.
-  COL *AddColumn(VIEW *view, const Column &column) {
+  COL *AddColumn(VIEW *view, const ParamColumn &column) {
     return view->columns.Create(column.var, view, column.id, column.n);
   }
 
@@ -167,7 +167,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     initial_view->group_ids.push_back(context->select_group_id);
   }
 
-  void DeclareParameter(const Column &param) override {
+  void DeclareParameter(const ParamColumn &param) override {
     auto &prev_colset = id_to_col[param.id];
     const auto param_col = AddColumn(initial_view, param);
     if (input_view != initial_view) {
@@ -700,7 +700,7 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   virtual void EnterFromSelect(
       ParsedPredicate pred, ParsedDeclaration decl,
-      const Column *select_begin, const Column *select_end) override {
+      const ParamColumn *select_begin, const ParamColumn *select_end) override {
 
     ProcessUnresolvedCompares();
 
@@ -730,8 +730,8 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void EnterFromWhereSelect(
       ParsedPredicate pred, ParsedDeclaration decl,
-      const Column *where_begin, const Column *where_end,
-      const Column *select_begin, const Column *select_end) override {
+      const ParamColumn *where_begin, const ParamColumn *where_end,
+      const ParamColumn *select_begin, const ParamColumn *select_end) override {
 
     ProcessUnresolvedCompares();
 
@@ -930,13 +930,13 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void EnterAggregation(
       ParsedPredicate functor, ParsedDeclaration functor_decl,
-      const Column *bound_begin, const Column *bound_end,
-      const Column *aggregate_begin, const Column *aggregate_end,
-      const Column *summary_begin, const Column *summary_end,
+      const ParamColumn *bound_begin, const ParamColumn *bound_end,
+      const ParamColumn *aggregate_begin, const ParamColumn *aggregate_end,
+      const ParamColumn *summary_begin, const ParamColumn *summary_end,
       ParsedPredicate predicate, ParsedDeclaration predicate_decl,
-      const Column *outer_group_begin, const Column *outer_group_end,
-      const Column *inner_group_begin, const Column *inner_group_end,
-      const Column *free_begin, const Column *free_end) override {
+      const ParamColumn *outer_group_begin, const ParamColumn *outer_group_end,
+      const ParamColumn *inner_group_begin, const ParamColumn *inner_group_end,
+      const ParamColumn *free_begin, const ParamColumn *free_end) override {
 
     ProcessUnresolvedCompares();
     assert(unresolved_compares.empty());
@@ -1037,10 +1037,10 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   void EnterSelectFromSummary(
       ParsedPredicate functor, ParsedDeclaration decl,
-      const Column *group_begin, const Column *group_end,  // Unrelated to the functor.
-      const Column *bound_begin, const Column *bound_end,
-      const Column *aggregate_begin, const Column *aggregate_end,
-      const Column *summary_begin, const Column *summary_end) override {
+      const ParamColumn *group_begin, const ParamColumn *group_end,  // Unrelated to the functor.
+      const ParamColumn *bound_begin, const ParamColumn *bound_end,
+      const ParamColumn *aggregate_begin, const ParamColumn *aggregate_end,
+      const ParamColumn *summary_begin, const ParamColumn *summary_end) override {
 
     ProcessUnresolvedCompares();
 
@@ -1169,8 +1169,8 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void AssertPresent(
-      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
-      const Column *end) override {
+      ParsedDeclaration decl, ParsedPredicate pred, const ParamColumn *begin,
+      const ParamColumn *end) override {
 
     // We handle aggregates in a special way.
     if (!query->pending_aggregates.empty()) {
@@ -1211,8 +1211,8 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void AssertAbsent(
-      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
-      const Column *end) override {
+      ParsedDeclaration decl, ParsedPredicate pred, const ParamColumn *begin,
+      const ParamColumn *end) override {
     AssertPresent(decl, pred, begin, end);
   }
 
@@ -1240,7 +1240,8 @@ class QueryBuilderImpl : public SIPSVisitor {
   }
 
   void Insert(ParsedClause clause, ParsedDeclaration decl,
-              const Column *begin, const Column *end) override {
+              const ParamColumn *begin, const ParamColumn *end,
+              const VarColumn *bound_begin, const VarColumn *bound_end) override {
 
     // There may be unresolved comparisons, i.e. where the SIPS visitor had
     // us compare IDs, but we didn't have columns associated with them at that
@@ -1279,9 +1280,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 //      ReifyPendingComparisons();
 //    }
 
-    // Empty out all equivalence classes. We don't want them interfering with
-    // one-another across different clauses.
-    EmptyEquivalenceClasses();
 
     INSERT *insert = nullptr;
     if (decl.IsMessage()) {
@@ -1293,13 +1291,30 @@ class QueryBuilderImpl : public SIPSVisitor {
       insert = query->inserts.Create(table, decl, !clause.IsDeletion());
     }
 
-    for (auto col = begin; col < end; ++col) {
-      (void) AddColumn(insert, *col);
-      const auto &prev_colset = id_to_col[col->id];
-      assert(prev_colset);
-      const auto prev_col = prev_colset->Leader();
-      insert->input_columns.AddUse(prev_col);
+    // Normal insert into a table.
+    if (decl.Arity()) {
+      for (auto col = begin; col < end; ++col) {
+        (void) AddColumn(insert, *col);
+        const auto &prev_colset = id_to_col[col->id];
+        assert(prev_colset);
+        const auto prev_col = prev_colset->Leader();
+        insert->input_columns.AddUse(prev_col);
+      }
+
+    // We've proven a zero-argument predicate.
+    } else {
+      for (auto col = bound_begin; col < bound_end; ++col) {
+        insert->columns.Create(col->var, insert, col->id);
+        const auto &prev_colset = id_to_col[col->id];
+        assert(prev_colset);
+        const auto prev_col = prev_colset->Leader();
+        insert->input_columns.AddUse(prev_col);
+      }
     }
+
+    // Empty out all equivalence classes. We don't want them interfering with
+    // one-another across different clauses.
+    EmptyEquivalenceClasses();
 
     std::sort(positive_conditions.begin(), positive_conditions.end());
     auto it = std::unique(positive_conditions.begin(), positive_conditions.end());
@@ -1314,9 +1329,19 @@ class QueryBuilderImpl : public SIPSVisitor {
       cond->positive_users.AddUse(insert);
     }
 
-    for (auto cond : negative_conditions) {
+    for (COND *cond : negative_conditions) {
       insert->negative_conditions.AddUse(cond);
       cond->negative_users.AddUse(insert);
+    }
+
+    if (!decl.Arity()) {
+      assert(decl.IsExport());
+      const auto export_decl = ParsedExport::From(decl);
+      auto &cond = context->decl_to_condition[export_decl];
+      if (!cond) {
+        cond = context->conditions.Create(export_decl);
+      }
+      cond->setters.AddUse(insert);
     }
   }
 
@@ -1620,6 +1645,8 @@ class QueryBuilderImpl : public SIPSVisitor {
   // Asserts that a zero-arity exported predicate must be assumed `true` in
   // this clause.
   void AssertTrue(ParsedPredicate, ParsedExport cond_var) override {
+    assert(ParsedDeclaration(cond_var).NumClauses());
+
     auto &cond = context->decl_to_condition[cond_var];
     if (!cond) {
       cond = context->conditions.Create(cond_var);
@@ -1630,6 +1657,8 @@ class QueryBuilderImpl : public SIPSVisitor {
   // Asserts that a zero-arity exported predicate must be assumed `false`
   // (missing) in this clause.
   void AssertFalse(ParsedPredicate, ParsedExport cond_var) override {
+    assert(ParsedDeclaration(cond_var).NumClauses());
+
     auto &cond = context->decl_to_condition[cond_var];
     if (!cond) {
       cond = context->conditions.Create(cond_var);
@@ -1653,7 +1682,7 @@ class QueryBuilderImpl : public SIPSVisitor {
   std::vector<COND *> negative_conditions;
 
   // All columns in some select...where.
-  std::vector<const Column *> sips_cols;
+  std::vector<const ParamColumn *> sips_cols;
 
   // All query columns in some where.
   std::vector<COL *> where_cols;
@@ -1666,7 +1695,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 
   using PendingCompare = std::tuple<
       ComparisonOperator, ParsedVariable, COL *, ParsedVariable, COL *>;
-
 
   std::vector<std::pair<VIEW *, std::vector<COL *>>> pending_presence_checks;
 

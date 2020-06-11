@@ -48,6 +48,8 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
     auto real = GetDepth(config_columns, 1u);
     real = GetDepth(group_by_columns, real);
     real = GetDepth(aggregated_columns, real);
+    real = GetDepth(positive_conditions, real);
+    real = GetDepth(negative_conditions, real);
     depth = real + 1u;
   }
   return depth;

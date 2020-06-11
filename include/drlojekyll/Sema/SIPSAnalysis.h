@@ -34,9 +34,9 @@ class SIPSVisitor {
     const ParsedParameter bound_parameter;
   };
 
-  struct Column {
-    inline Column(ParsedParameter param_, ParsedVariable var_,
-                  unsigned n_, unsigned id_)
+  struct ParamColumn {
+    inline ParamColumn(ParsedParameter param_, ParsedVariable var_,
+                       unsigned n_, unsigned id_)
         : param(param_),
           var(var_),
           n(n_),
@@ -45,6 +45,15 @@ class SIPSVisitor {
     const ParsedParameter param;
     const ParsedVariable var;
     const unsigned n;  // This is the `n`th parameter.
+    const unsigned id;
+  };
+
+  struct VarColumn {
+    inline VarColumn(ParsedVariable var_, unsigned id_)
+        : var(var_),
+          id(id_) {}
+
+    const ParsedVariable var;
     const unsigned id;
   };
 
@@ -59,7 +68,7 @@ class SIPSVisitor {
   virtual void Begin(ParsedClause clause);
 
   // Declares a concrete parameter identified by `id`.
-  virtual void DeclareParameter(const Column &col);
+  virtual void DeclareParameter(const ParamColumn &col);
 
   // Declares a variable identified by `id`.
   virtual void DeclareVariable(ParsedVariable var, unsigned id);
@@ -98,34 +107,36 @@ class SIPSVisitor {
   // Asserts the presence of some tuple. This is for positive predicates. Uses
   // the variable ids in the range `[begin_id, end_id)`.
   virtual void AssertPresent(
-      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
-      const Column *end);
+      ParsedDeclaration decl, ParsedPredicate pred, const ParamColumn *begin,
+      const ParamColumn *end);
 
   // Asserts the absence of some tuple. This is for negative predicates. Uses
   // the variable ids in the range `[begin_id, end_id)`.
   virtual void AssertAbsent(
-      ParsedDeclaration decl, ParsedPredicate pred, const Column *begin,
-      const Column *end);
+      ParsedDeclaration decl, ParsedPredicate pred, const ParamColumn *begin,
+      const ParamColumn *end);
 
   // Tell the visitor that we're going to insert into a table.
   virtual void Insert(
       ParsedClause clause,
       ParsedDeclaration decl,
-      const Column *begin,
-      const Column *end);
+      const ParamColumn *begin,
+      const ParamColumn *end,
+      const VarColumn *bound_begin,
+      const VarColumn *bound_end);
 
   // Selects some columns from a predicate where some of the column values are
   // fixed.
   virtual void EnterFromWhereSelect(
       ParsedPredicate pred, ParsedDeclaration from,
-      const Column *where_begin, const Column *where_end,
-      const Column *select_begin, const Column *select_end);
+      const ParamColumn *where_begin, const ParamColumn *where_end,
+      const ParamColumn *select_begin, const ParamColumn *select_end);
 
   // Selects some columns from a predicate where some of the column values are
   // fixed.
   virtual void EnterFromSelect(
       ParsedPredicate pred, ParsedDeclaration from,
-      const Column *select_begin, const Column *select_end);
+      const ParamColumn *select_begin, const ParamColumn *select_end);
 
   // Exits the a selection.
   virtual void ExitSelect(ParsedPredicate pred, ParsedDeclaration from);
@@ -134,29 +145,29 @@ class SIPSVisitor {
   // that are not themselves being summarized or aggregates.
   virtual void EnterAggregation(
       ParsedPredicate functor, ParsedDeclaration functor_decl,
-      const Column *bound_begin, const Column *bound_end,
-      const Column *aggregate_begin, const Column *aggregate_end,
-      const Column *summary_begin, const Column *summary_end,
+      const ParamColumn *bound_begin, const ParamColumn *bound_end,
+      const ParamColumn *aggregate_begin, const ParamColumn *aggregate_end,
+      const ParamColumn *summary_begin, const ParamColumn *summary_end,
       ParsedPredicate predicate, ParsedDeclaration predicate_decl,
-      const Column *outer_group_begin, const Column *outer_group_end,
-      const Column *inner_group_begin, const Column *inner_group_end,
-      const Column *free_begin, const Column *free_end);
+      const ParamColumn *outer_group_begin, const ParamColumn *outer_group_end,
+      const ParamColumn *inner_group_begin, const ParamColumn *inner_group_end,
+      const ParamColumn *free_begin, const ParamColumn *free_end);
 
   // Tell the visitor that we're going to insert into an aggregation.
   virtual void Collect(
       ParsedPredicate functor, ParsedDeclaration functor_decl,
-      const Column *bound_begin, const Column *bound_end,
-      const Column *aggregate_begin, const Column *aggregate_end,
-      const Column *summary_begin, const Column *summary_end);
+      const ParamColumn *bound_begin, const ParamColumn *bound_end,
+      const ParamColumn *aggregate_begin, const ParamColumn *aggregate_end,
+      const ParamColumn *summary_begin, const ParamColumn *summary_end);
 
   // Tell the visitor that is can finish summarizing, and prepare to select
   // the summaries.
   virtual void EnterSelectFromSummary(
       ParsedPredicate functor, ParsedDeclaration decl,
-      const Column *group_begin, const Column *group_end,
-      const Column *bound_begin, const Column *bound_end,
-      const Column *aggregate_begin, const Column *aggregate_end,
-      const Column *summary_begin, const Column *summary_end);
+      const ParamColumn *group_begin, const ParamColumn *group_end,
+      const ParamColumn *bound_begin, const ParamColumn *bound_end,
+      const ParamColumn *aggregate_begin, const ParamColumn *aggregate_end,
+      const ParamColumn *summary_begin, const ParamColumn *summary_end);
 
   // Notify the visitor that we were successful in visiting the clause body,
   // starting from the assumption `assumption`.

@@ -61,7 +61,7 @@ void SlowBindingSIPSScorer::Commit(ParsedClause) {
 
 void BindingSpeedSIPSScorer::AssertPresent(
     ParsedDeclaration, ParsedPredicate,
-    const Column *where_begin, const Column *where_end) {
+    const ParamColumn *where_begin, const ParamColumn *where_end) {
   for (auto col = where_begin; col < where_end; ++col) {
     impl->current_score.push_back('\0');
   }
@@ -69,8 +69,8 @@ void BindingSpeedSIPSScorer::AssertPresent(
 
 void BindingSpeedSIPSScorer::EnterFromWhereSelect(
     ParsedPredicate, ParsedDeclaration,
-    const Column *where_begin, const Column *where_end,
-    const Column *select_begin, const Column *select_end) {
+    const ParamColumn *where_begin, const ParamColumn *where_end,
+    const ParamColumn *select_begin, const ParamColumn *select_end) {
   for (auto col = select_begin; col < select_end; ++col) {
     impl->current_score.push_back('\1');
   }
@@ -81,7 +81,7 @@ void BindingSpeedSIPSScorer::EnterFromWhereSelect(
 
 void BindingSpeedSIPSScorer::EnterFromSelect(
     ParsedPredicate, ParsedDeclaration,
-    const Column *select_begin, const Column *select_end) {
+    const ParamColumn *select_begin, const ParamColumn *select_end) {
   for (auto col = select_begin; col < select_end; ++col) {
     impl->current_score.push_back('\1');
   }

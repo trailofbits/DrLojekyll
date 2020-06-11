@@ -41,15 +41,21 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
 }
 
 unsigned Node<QueryMerge>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-
-    auto real = 1u;
-    for (auto merged_view : merged_views) {
-      real = std::max(real, merged_view->Depth());
-    }
-    depth = real + 1u;
+  if (depth) {
+    return depth;
   }
+  depth = 2u;  // Base case in case of cycles.
+
+  auto real = 1u;
+  for (auto merged_view : merged_views) {
+    real = std::max(real, merged_view->Depth());
+  }
+
+  real = GetDepth(positive_conditions, real);
+  real = GetDepth(negative_conditions, real);
+
+  depth = real + 1u;
+
   return depth;
 }
 

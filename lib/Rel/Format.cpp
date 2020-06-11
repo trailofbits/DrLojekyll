@@ -87,6 +87,16 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << ">];\n";
   }
 
+  for (auto cond : query.Conditions()) {
+    os << "c" << cond.UniqueId() << " [ label=<" << kBeginTable
+       << "<TD port=\"p0\">" << cond.Predicate().Name() << "</TD>" << kEndTable
+       << ">];\n";
+
+    for (auto view : cond.Setters()) {
+      os << "c" << cond.UniqueId() << " -> v" << view.UniqueId() << ";\n";
+    }
+  }
+
   for (auto select : query.Selects()) {
     os << "v" << select.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, select);

@@ -136,6 +136,15 @@ class QueryCondition : public query::QueryNode<QueryCondition> {
   // The list of views that produce nodes iff this condition is false.
   UsedNodeRange<QueryView> NegativeUsers(void) const;
 
+  // The list of views that set or unset this condition.
+  UsedNodeRange<QueryView> Setters(void) const;
+
+  // Can this condition be deleted?
+  bool CanBeDeleted(void) const noexcept;
+
+  // Depth of this node.
+  unsigned Depth(void) const noexcept;
+
  private:
   using query::QueryNode<QueryCondition>::QueryNode;
 };
@@ -609,6 +618,7 @@ class Query {
 
   ~Query(void);
 
+  DefinedNodeRange<QueryCondition> Conditions(void) const;
   DefinedNodeRange<QueryJoin> Joins(void) const;
   DefinedNodeRange<QuerySelect> Selects(void) const;
   DefinedNodeRange<QueryTuple> Tuples(void) const;

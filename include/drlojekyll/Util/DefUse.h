@@ -10,6 +10,10 @@ namespace hyde {
 
 class User {
  public:
+  template <typename T>
+  explicit User(T *)
+      : user_id(typeid(T).hash_code()) {}
+
   virtual ~User(void);
 
   // NOTE(pag): It is forbidden to remove/replace uses within an `Update`.
@@ -17,7 +21,11 @@ class User {
 
   static uint64_t gNextTimestamp;
 
+  const size_t user_id;
+
  protected:
+  User(void) = delete;
+
   uint64_t timestamp{0u};
 };
 
@@ -203,6 +211,11 @@ class UseList {
   }
 
   void ClearWithoutErasure(void) {
+    if (is_weak) {
+      for (auto use : uses) {
+        delete use;
+      }
+    }
     uses.clear();
   }
 
@@ -397,11 +410,12 @@ class Def {
     return static_cast<unsigned>(uses.size());
   }
 
-  template <typename CB>
+  template <typename U, typename CB>
   inline void ForEachUse(CB cb) const {
+    const auto user_id = typeid(U).hash_code();
     for (const auto &use : uses) {
-      if (use) {
-        cb(use->user, use->def_being_used);
+      if (use && use->user->user_id == user_id) {
+        cb(reinterpret_cast<U *>(use->user), use->def_being_used);
       }
     }
   }

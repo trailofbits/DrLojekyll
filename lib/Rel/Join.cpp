@@ -42,15 +42,20 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
 }
 
 unsigned Node<QueryJoin>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-
-    auto real = 1u;
-    for (const auto &[out_col, in_cols] : out_to_in) {
-      real = GetDepth(in_cols, real);
-    }
-    depth = real + 1u;
+  if (depth) {
+    return depth;
   }
+  depth = 2u;  // Base case in case of cycles.
+
+  auto real = 1u;
+  for (const auto &[out_col, in_cols] : out_to_in) {
+    real = GetDepth(in_cols, real);
+  }
+
+  real = GetDepth(positive_conditions, real);
+  real = GetDepth(negative_conditions, real);
+  depth = real + 1u;
+
   return depth;
 }
 

@@ -38,16 +38,16 @@ class BindingSpeedSIPSScorer : public SIPSScorer {
 
   void AssertPresent(
       ParsedDeclaration, ParsedPredicate,
-      const Column *where_begin, const Column *where_end) override;
+      const ParamColumn *where_begin, const ParamColumn *where_end) override;
 
   void EnterFromWhereSelect(
       ParsedPredicate, ParsedDeclaration,
-      const Column *where_begin, const Column *where_end,
-      const Column *select_begin, const Column *select_end) override;
+      const ParamColumn *where_begin, const ParamColumn *where_end,
+      const ParamColumn *select_begin, const ParamColumn *select_end) override;
 
   void EnterFromSelect(
       ParsedPredicate, ParsedDeclaration,
-      const Column *select_begin, const Column *select_end) override;
+      const ParamColumn *select_begin, const ParamColumn *select_end) override;
 
   int BestPermutation(void) const override;
 
