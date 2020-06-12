@@ -85,6 +85,33 @@ QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
 
+QueryView::QueryView(const QuerySelect &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryTuple &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryKVIndex &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryJoin &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryMap &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryAggregate &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryMerge &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryConstraint &view)
+    : QueryView(view.impl) {}
+
+QueryView::QueryView(const QueryInsert &view)
+    : QueryView(view.impl) {}
+
 QueryView &QueryView::From(QuerySelect &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
@@ -415,7 +442,7 @@ unsigned QueryCondition::Depth(void) const noexcept {
   for (auto setter : impl->setters) {
     depth = std::max(depth, setter->Depth());
   }
-  return depth;
+  return depth + 1u;
 }
 
 const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
@@ -599,6 +626,12 @@ DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
 // Returns the number of output columns.
 unsigned QueryMap::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->columns.Size());
+}
+
+// Returns whether or not this map behaves more like a filter, i.e. if the
+// number of `free`-attributed parameters in `Functor()` is zero.
+bool QueryMap::IsFilterLike(void) const noexcept {
+  return 0 == impl->num_free_params;
 }
 
 // Returns the `nth` output column.

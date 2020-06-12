@@ -45,11 +45,20 @@ uint64_t Node<QuerySelect>::Sort(void) noexcept {
 }
 
 unsigned Node<QuerySelect>::Depth(void) noexcept {
-  depth = 1;  // Base case for cycles.
-  auto real = GetDepth(input_columns, 0);
+  if (depth) {
+    return depth;
+  }
+
+  auto estimate = EstimateDepth(input_columns, 0u);
+  estimate = EstimateDepth(positive_conditions, estimate);
+  estimate = EstimateDepth(negative_conditions, estimate);
+  depth = estimate + 1u;  // Base case if there are cycles.
+
+  auto real = GetDepth(input_columns, 0u);
   real = GetDepth(positive_conditions, real);
   real = GetDepth(negative_conditions, real);
   depth = real + 1u;
+
   return depth;
 }
 

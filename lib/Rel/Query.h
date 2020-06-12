@@ -464,7 +464,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
                                  const UseList<COL> &cols2);
 
  protected:
-  // Utility for depth calculation.
+  // Utilities for depth calculation.
+  static unsigned EstimateDepth(const UseList<COL> &cols, unsigned depth);
+  static unsigned EstimateDepth(const UseList<COND> &conds, unsigned depth);
   static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);
   static unsigned GetDepth(const UseList<COND> &conds, unsigned depth);
 
@@ -625,10 +627,19 @@ class Node<QueryMap> final : public Node<QueryView> {
       : position(range.From()),
         functor(functor_) {
     this->can_produce_deletions = !functor.IsPure();
+    for (auto param : functor.Parameters()) {
+      if (ParameterBinding::kFree == param.Binding()) {
+        ++num_free_params;
+      }
+    }
   }
 
   const DisplayPosition position;
   const ParsedFunctor functor;
+
+  // Number of `free` parameters in this functor. This distinguishes this map
+  // from being a filter/predicate.
+  unsigned num_free_params{0};
 };
 
 using MAP = Node<QueryMap>;

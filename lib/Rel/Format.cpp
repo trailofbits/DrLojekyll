@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...) __VA_ARGS__
+#define DEBUG(...)
 
 namespace hyde {
 namespace {
@@ -104,8 +104,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto cond : query.Conditions()) {
     os << "c" << cond.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD port=\"p0\">" << cond.Predicate().Name() << "</TD>" << kEndTable
-       << ">];\n";
+       << "<TD port=\"p0\">" << cond.Predicate().Name() << "</TD>";
+    if (DEBUG(1 + ) 0) {
+      os << "</TR><TR><TD>depth=" << cond.Depth() << "</TD>";
+    }
+    os << kEndTable << ">];\n";
 
     for (auto view : cond.Setters()) {
       os << "c" << cond.UniqueId() << " -> v" << view.UniqueId() << ";\n";
@@ -115,7 +118,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto select : query.Selects()) {
     os << "v" << select.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, select);
-    os << "<TD>" << QueryView::From(select).KindName() << "</TD>";
+    os << "<TD>" << QueryView(select).KindName() << "</TD>";
 
     auto i = 0u;
     for (auto col : select.Columns()) {
@@ -164,7 +167,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-    os << "<TD rowspan=\"2\">FILTER ";
+    os << "<TD rowspan=\"2\">" << QueryView(constraint).KindName() << ' ';
     switch (constraint.Operator()) {
       case ComparisonOperator::kEqual:
         os << "eq";
@@ -293,11 +296,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << color << "\">" << col.Variable() << "</TD>";
     }
 
-    if (num_pivots) {
-      os << "<TD rowspan=\"2\">JOIN</TD>";
-    } else {
-      os << "<TD rowspan=\"2\">PRODUCT</TD>";
-    }
+    os << "<TD rowspan=\"2\">" << QueryView(join).KindName() << "</TD>";
 
     for (i = 0u; i < num_outputs; ++i) {
       const auto col = join.NthOutputMergedColumn(i);
@@ -364,7 +363,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-    os << "<TD rowspan=\"2\">MAP "
+    os << "<TD rowspan=\"2\">" << QueryView(map).KindName() << ' '
        << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.MappedColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
@@ -395,7 +394,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << kEndTable << ">];\n";
 
-    auto color = QueryView::From(map).CanReceiveDeletions() ? " [color=purple]" : "";
+    auto color = QueryView(map).CanReceiveDeletions() ? " [color=purple]" : "";
 
     for (auto i = 0u; i < num_group; ++i) {
       auto col = map.NthInputCopiedColumn(i);
@@ -416,7 +415,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto agg : query.Aggregates()) {
     os << "v" << agg.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(3, agg);
-    os << "<TD rowspan=\"3\">AGGREGATE "
+    os << "<TD rowspan=\"3\">" << QueryView(agg).KindName() << ' '
        << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
@@ -480,7 +479,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, insert);
     os << "<TD>"
-       << QueryView::From(insert).KindName() << ' '
+       << QueryView(insert).KindName() << ' '
        << ParsedDeclarationName(decl) << "</TD>";
 
     for (auto i = 0u, max_i = insert.NumInputColumns(); i < max_i; ++i) {
@@ -524,7 +523,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto tuple : query.Tuples()) {
     os << "v" << tuple.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, tuple);
-    os << "<TD rowspan=\"2\">TUPLE</TD>";
+    os << "<TD rowspan=\"2\">" << QueryView(tuple).KindName() << "</TD>";
     for (auto col : tuple.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
@@ -552,7 +551,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto merge : query.Merges()) {
     os << "v" << merge.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, merge);
-    os << "<TD rowspan=\"2\">UNION</TD>";
+    os << "<TD rowspan=\"2\">" << QueryView(merge).KindName() << "</TD>";
     for (auto col : merge.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";

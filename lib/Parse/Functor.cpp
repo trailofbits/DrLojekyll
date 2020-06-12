@@ -41,6 +41,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   Token impure;
 
   unsigned num_bound_params = 0;
+  unsigned num_free_params = 0;
 
   const auto sub_tok_range = SubTokenRange();
 
@@ -86,6 +87,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kKeywordFree == lexeme) {
+          ++num_free_params;
           last_free = tok;
           param.reset(new Node<ParsedParameter>);
           param->opt_binding = tok;
@@ -213,6 +215,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
             functor->is_pure = false;
             state = 6;
             continue;
+
           } else {
             Error err(context->display_manager, sub_tok_range,
                       tok.SpellingRange());

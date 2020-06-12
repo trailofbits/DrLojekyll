@@ -43,7 +43,19 @@ const char *Node<QueryJoin>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryMap>::KindName(void) const noexcept {
-  return "MAP";
+  if (num_free_params) {
+    if (functor.IsPure()) {
+      return "MAP";
+    } else {
+      return "FUNCTION";
+    }
+  } else {
+    if (functor.IsPure()) {
+      return "PREDICATE";
+    } else {
+      return "FILTER";
+    }
+  }
 }
 
 const char *Node<QueryAggregate>::KindName(void) const noexcept {
@@ -55,7 +67,7 @@ const char *Node<QueryMerge>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryConstraint>::KindName(void) const noexcept {
-  return "FILTER";
+  return "COMPARE";
 }
 
 const char *Node<QueryInsert>::KindName(void) const noexcept {
@@ -226,7 +238,12 @@ unsigned Node<QueryView>::Depth(void) noexcept {
     return depth;
   }
 
-  depth = 2u;  // Base case in case of cycles.
+  auto estimate = EstimateDepth(input_columns, 1u);
+  estimate = EstimateDepth(attached_columns, depth);
+  estimate = EstimateDepth(positive_conditions, depth);
+  estimate = EstimateDepth(negative_conditions, depth);
+  depth = estimate + 1u;
+
   auto real = GetDepth(input_columns, 1u);
   real = GetDepth(attached_columns, real);
   real = GetDepth(positive_conditions, real);
@@ -234,6 +251,28 @@ unsigned Node<QueryView>::Depth(void) noexcept {
   depth = real + 1u;
 
   return depth;
+}
+
+unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols, unsigned depth) {
+  for (const auto input_col : cols) {
+    const auto input_depth = input_col->view->depth;
+    if (input_depth >= depth) {
+      depth = input_depth;
+    }
+  }
+  return depth;
+}
+
+unsigned Node<QueryView>::EstimateDepth(const UseList<COND> &conds, unsigned depth) {
+  auto cond_depth = 2u;
+  auto has_conds = false;
+  for (const auto cond : conds) {
+    has_conds = true;
+    for (auto view : cond->setters) {
+      cond_depth = std::max(cond_depth, view->depth);
+    }
+  }
+  return has_conds ? std::max(depth, cond_depth + 1u) : depth;
 }
 
 unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
@@ -248,11 +287,9 @@ unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
 
 unsigned Node<QueryView>::GetDepth(const UseList<COND> &conds, unsigned depth) {
   for (const auto cond : conds) {
-    for (auto view : cond->setters) {
-      const auto input_depth = view->Depth();
-      if (input_depth >= depth) {
-        depth = input_depth;
-      }
+    auto cond_depth = QueryCondition(cond).Depth();
+    if (cond_depth >= depth) {
+      depth = cond_depth;
     }
   }
   return depth;

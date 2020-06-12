@@ -49,12 +49,15 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
     return depth;
   }
 
-  depth = 2u;  // Base case in case of cycles.
+  auto estimate = EstimateDepth(positive_conditions, 1u);
+  estimate = EstimateDepth(negative_conditions, estimate);
   for (const auto &[out_col, in_cols] : out_to_in) {
     for (COL *in_col : in_cols) {
-      depth = std::max(depth, in_col->view->depth);
+      estimate = std::max(estimate, in_col->view->depth);
     }
   }
+
+  depth = estimate + 1u;  // Base case in case of cycles.
 
   auto real = 1u;
   for (const auto &[out_col, in_cols] : out_to_in) {

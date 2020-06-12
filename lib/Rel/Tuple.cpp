@@ -112,7 +112,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   needed_inputs.erase(needed_inputs_it, needed_inputs.end());
 
   // If this tuple is forwarding the values of something else along, and if it
-  // is the only user of that other hting, then forward those values along,
+  // is the only user of that other thing, then forward those values along,
   // otherwise we'll depend on CSE to try to merge this tuple with any other
   // equivalent tuples.
   //

@@ -44,11 +44,13 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
-
-  depth = 2u;  // Base case in case of cycles.
+  auto estimate = EstimateDepth(positive_conditions, 1u);
+  estimate = EstimateDepth(negative_conditions, estimate);
   for (auto merged_view : merged_views) {
-    depth = std::max(depth, merged_view->depth);
+    estimate = std::max(estimate, merged_view->depth);
   }
+
+  depth = estimate + 1u;
 
   auto real = 1u;
   for (auto merged_view : merged_views) {

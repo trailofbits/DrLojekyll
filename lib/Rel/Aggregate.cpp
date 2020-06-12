@@ -44,16 +44,24 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
 }
 
 unsigned Node<QueryAggregate>::Depth(void) noexcept {
-  if (!depth) {
-    depth = 2u;  // Base case in case of cycles.
-
-    auto real = GetDepth(config_columns, 1u);
-    real = GetDepth(group_by_columns, real);
-    real = GetDepth(aggregated_columns, real);
-    real = GetDepth(positive_conditions, real);
-    real = GetDepth(negative_conditions, real);
-    depth = real + 1u;
+  if (depth) {
+    return depth;
   }
+
+  auto estimate = EstimateDepth(config_columns, 1u);
+  estimate = EstimateDepth(group_by_columns, estimate);
+  estimate = EstimateDepth(aggregated_columns, estimate);
+  estimate = EstimateDepth(positive_conditions, estimate);
+  estimate = EstimateDepth(negative_conditions, estimate);
+  depth = estimate + 1u;
+
+  auto real = GetDepth(config_columns, 1u);
+  real = GetDepth(group_by_columns, real);
+  real = GetDepth(aggregated_columns, real);
+  real = GetDepth(positive_conditions, real);
+  real = GetDepth(negative_conditions, real);
+  depth = real + 1u;
+
   return depth;
 }
 

@@ -209,6 +209,7 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
   using query::QueryNode<QueryConstant>::QueryNode;
 
   friend class QuerySelect;
+  friend class QueryView;
 };
 
 // A set of concrete inputs to a query.
@@ -240,6 +241,16 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView Containing(QueryColumn col);
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
+
+  explicit QueryView(const QuerySelect &view);
+  explicit QueryView(const QueryTuple &view);
+  explicit QueryView(const QueryKVIndex &view);
+  explicit QueryView(const QueryJoin &view);
+  explicit QueryView(const QueryMap &view);
+  explicit QueryView(const QueryAggregate &view);
+  explicit QueryView(const QueryMerge &view);
+  explicit QueryView(const QueryConstraint &view);
+  explicit QueryView(const QueryInsert &view);
 
   inline static QueryView &From(QueryView &view) noexcept {
     return view;
@@ -318,6 +329,7 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
  private:
   friend class QueryRelation;
   friend class QueryStream;
+  friend class QueryView;
 
   using query::QueryNode<QuerySelect>::QueryNode;
 };
@@ -368,6 +380,8 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
+
+  friend class QueryView;
 };
 
 // Map input to zero or more outputs. Maps correspond to non-aggregating
@@ -392,6 +406,10 @@ class QueryMap : public query::QueryNode<QueryMap> {
   // Returns the number of output columns.
   unsigned Arity(void) const noexcept;
 
+  // Returns whether or not this map behaves more like a filter, i.e. if the
+  // number of `free`-attributed parameters in `Functor()` is zero.
+  bool IsFilterLike(void) const noexcept;
+
   // Returns the `nth` output column.
   QueryColumn NthColumn(unsigned n) const noexcept;
 
@@ -413,6 +431,8 @@ class QueryMap : public query::QueryNode<QueryMap> {
 
  private:
   using query::QueryNode<QueryMap>::QueryNode;
+
+  friend class QueryView;
 };
 
 // An aggregate operation.
@@ -472,6 +492,8 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
 
  private:
   using query::QueryNode<QueryAggregate>::QueryNode;
+
+  friend class QueryView;
 };
 
 // A merge between two or more views of the same arity, where the columns have
@@ -502,6 +524,8 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 
  private:
   using query::QueryNode<QueryMerge>::QueryNode;
+
+  friend class QueryView;
 };
 
 // A constraint between two columns. The constraint results in either one
@@ -528,6 +552,8 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
 
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;
+
+  friend class QueryView;
 };
 
 // An insert of one or more columns into a relation.
@@ -552,6 +578,8 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 
  private:
   using query::QueryNode<QueryInsert>::QueryNode;
+
+  friend class QueryView;
 };
 
 // An tuple packages one or more columns into a temporary relation for
@@ -574,6 +602,8 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
 
  private:
   using query::QueryNode<QueryTuple>::QueryNode;
+
+  friend class QueryView;
 };
 
 // A key-value index is similar to a tuple, except that some of the columns
@@ -608,6 +638,8 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 
  private:
   using query::QueryNode<QueryKVIndex>::QueryNode;
+
+  friend class QueryView;
 };
 
 // A query.

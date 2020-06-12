@@ -17,7 +17,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
   auto can_connect = [] (ParsedDeclaration decl) {
     return !decl.IsQuery() &&
            !decl.IsMessage() &&
-           !decl.HasDirectGeneratorDependency() &&
            !decl.NumNegatedUses() &&  // Not used in an existence check.
            !decl.NumDeletionClauses() &&  // Not deleted.
            decl.Arity();  // Not a condition.
