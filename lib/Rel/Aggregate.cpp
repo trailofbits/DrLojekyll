@@ -111,6 +111,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
   UseList<COL> new_group_by_columns(this);
 
   for (auto j = 0u; j < i; ++j) {
+    const auto in_col = group_by_columns[j];
     const auto old_out_col = columns[j];
 
     // If the output column is never used, then get rid of it.
@@ -119,11 +120,10 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     //            in a merge, which would not show up in a normal def-use
     //            list.
     if (!old_out_col->IsUsed()) {
+      in_col->view->is_canonical = false;
       non_local_changes = true;  // Shrinking the number of columns.
       continue;
     }
-
-    const auto in_col = group_by_columns[j];
 
     // Constant propagation.
     //
@@ -139,6 +139,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
 
     auto &out_col = in_to_out[in_col];
     if (out_col) {
+      in_col->view->is_canonical = false;
       non_local_changes = true;  // Shrinking the number of columns.
 
       if (out_col->NumUses() > old_out_col->NumUses()) {

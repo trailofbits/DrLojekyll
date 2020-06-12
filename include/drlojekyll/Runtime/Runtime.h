@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <unordered_map>
@@ -25,7 +26,7 @@ namespace hyde {
 namespace rt {
 
 union UUID {
-  uint8_t opaque_bytes[16];
+  std::byte opaque_bytes[16];
   struct {
     uint64_t low;
     uint64_t high;
@@ -38,7 +39,7 @@ union UUID {
 
 union ASCII {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
-  uint8_t opaque_bytes[64];
+  std::byte opaque_bytes[64];
 
   inline bool operator<(UUID other) const noexcept {
     return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
@@ -47,7 +48,7 @@ union ASCII {
 
 union UTF8 {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
-  char opaque_bytes[64];
+  std::byte opaque_bytes[64];
 
   inline bool operator<(UUID other) const noexcept {
     return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
@@ -56,7 +57,7 @@ union UTF8 {
 
 union Bytes {
   uint64_t opaque_qwords[64 / sizeof(uint64_t)];
-  char opaque_bytes[64];
+  std::byte opaque_bytes[64];
 
   inline bool operator<(UUID other) const noexcept {
     return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
@@ -86,7 +87,7 @@ class WorkList {
   static_assert(sizeof(IdType) < kMinSize);
 
   WorkList(void)
-      : begin_(new uint8_t[kMinSize]),
+      : begin_(new std::byte[kMinSize]),
         end_(&(begin_[kMinSize])) {
     Clear();
   }
@@ -96,7 +97,7 @@ class WorkList {
   }
 
   void Clear(void) noexcept {
-    *reinterpret_cast<IdType *>(begin_) = kNumCases;
+    *reinterpret_cast<IdType *>(begin_) = static_cast<IdType>(kNumCases);
     curr_ = &(begin_[sizeof(IdType)]);
     load_ = 0;
   }
@@ -144,7 +145,7 @@ class WorkList {
   void Resize(void) {
     auto curr_size = end_ - begin_;
     auto new_size = ((curr_size * 5u) / 3u) + kMinSize;
-    auto new_begin = new uint8_t[new_size];
+    auto new_begin = new std::byte[new_size];
     std::move(begin_, end_, new_begin);
     delete [] begin_;
     curr_ = &(new_begin[curr_ - begin_]);
@@ -152,9 +153,9 @@ class WorkList {
     begin_ = new_begin;
   }
 
-  uint8_t *begin_;
-  uint8_t *curr_{nullptr};
-  uint8_t *end_;
+  std::byte *begin_;
+  std::byte *curr_{nullptr};
+  std::byte *end_;
   uint64_t load_{0};
 };
 
@@ -262,6 +263,8 @@ struct Hash {
       } \
     }
 
+MAKE_HASH_IMPL(std::byte, unsigned char, static_cast);
+MAKE_HASH_IMPL(bool, uint8_t, static_cast);
 MAKE_HASH_IMPL(int8_t, uint8_t, static_cast);
 MAKE_HASH_IMPL(uint8_t, uint8_t, static_cast);
 MAKE_HASH_IMPL(int16_t, uint16_t, static_cast);

@@ -172,12 +172,12 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
 // Invoked any time time that any of the columns used by this view are
 // modified.
 void Node<QueryView>::Update(uint64_t /* next_timestamp */) {
+//  is_canonical = false;
 //  if (timestamp >= next_timestamp) {
 //    return;
 //  }
 //
 //  timestamp = next_timestamp;
-//  is_canonical = false;
 //  hash = 0;
 //  depth = 0;
 //

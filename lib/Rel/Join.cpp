@@ -48,7 +48,13 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
+
   depth = 2u;  // Base case in case of cycles.
+  for (const auto &[out_col, in_cols] : out_to_in) {
+    for (COL *in_col : in_cols) {
+      depth = std::max(depth, in_col->view->depth);
+    }
+  }
 
   auto real = 1u;
   for (const auto &[out_col, in_cols] : out_to_in) {

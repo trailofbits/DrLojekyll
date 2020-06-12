@@ -209,16 +209,18 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   for (auto j = 0u; i < num_cols; ++i, ++j) {
     const auto old_out_col = columns[i];
 
+    const auto in_col = attached_columns[j];
+
     // If the output column is never used, then get rid of it.
     //
     // NOTE(pag): `IsUsed` on a column checks to see if its view is used
     //            in a merge, which would not show up in a normal def-use
     //            list.
     if (!old_out_col->IsUsed()) {
+      non_local_changes = true;
+      in_col->view->is_canonical = false;
       continue;
     }
-
-    const auto in_col = attached_columns[j];
 
     // If the old input column is a constant, then propagate it rather than
     // attach it.
@@ -230,6 +232,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
 
     auto &out_col = in_to_out[in_col];
     if (out_col) {
+      in_col->view->is_canonical = false;
       non_local_changes = true;  // Shrinking the number of columns.
 
       if (out_col->NumUses() > old_out_col->NumUses()) {

@@ -829,6 +829,7 @@ class QueryImpl {
   }
 
   void Simplify(void);
+  void Canonicalize(void);
   void Optimize(void);
 
   void ConnectInsertsToSelects(void);

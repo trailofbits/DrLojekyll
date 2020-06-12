@@ -67,6 +67,8 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     }
 
     if (!out_col->IsUsed()) {
+      non_local_changes = true;
+      in_col->view->is_canonical = false;
       continue;  // Shrinking the number of columns.
     }
 
@@ -81,6 +83,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
 
     auto &prev_out_col = in_to_out[in_col];
     if (prev_out_col) {
+      in_col->view->is_canonical = false;
       non_local_changes = true;  // Shrinking the number of columns.
 
       if (out_col->NumUses() > prev_out_col->NumUses()) {

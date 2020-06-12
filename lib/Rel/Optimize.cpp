@@ -136,8 +136,8 @@ static bool CSE(CandidateList &all_views) {
 
     std::sort(to_replace.begin(), to_replace.end(),
               [] (std::pair<VIEW *, VIEW *> a, std::pair<VIEW *, VIEW *> b) {
-      return std::max(a.first->Depth(), a.second->Depth()) <
-             std::max(b.first->Depth(), b.second->Depth());
+      return std::min(a.first->Depth(), a.second->Depth()) <
+             std::min(b.first->Depth(), b.second->Depth());
     });
 
     while (!to_replace.empty()) {
@@ -194,6 +194,23 @@ void QueryImpl::Simplify(void) {
   RelabelGroupIDs(this);
 }
 
+void QueryImpl::Canonicalize(void) {
+  this->ForEachView([&] (VIEW *view) {
+    view->is_canonical = false;
+    view->depth = 0;
+  });
+
+  // Canonicalize all views.
+  for (auto non_local_changes = true; non_local_changes; ) {
+    non_local_changes = false;
+    this->ForEachView([&] (VIEW *view) {
+      non_local_changes = view->Canonicalize(this) || non_local_changes;
+    });
+  }
+
+  RemoveUnusedViews(this);
+  RelabelGroupIDs(this);
+}
 
 void QueryImpl::Optimize(void) {
   CandidateList views;
@@ -215,59 +232,16 @@ void QueryImpl::Optimize(void) {
   };
 
   RemoveUnusedViews(this);
-  ForEachView([] (VIEW *view) {
-    view->is_canonical = false;
-    view->depth = 0;
-    view->hash = 0;
-  });
-
-  auto max_depth = 2u;
-  for (auto insert : inserts) {
-    max_depth = std::max(max_depth, insert->Depth());
-  }
 
   // Apply CSE to all views.
   do_cse();
 
-  this->ForEachView([&] (VIEW *view) {
-    view->is_canonical = false;
-  });
-
-  // Canonicalize all views.
-  for (auto non_local_changes = true; non_local_changes; ) {
-    non_local_changes = false;
-    this->ForEachView([&] (VIEW *view) {
-      non_local_changes = view->Canonicalize(this) || non_local_changes;
-    });
-  }
-
-  RemoveUnusedViews(this);
-  RelabelGroupIDs(this);
+  Canonicalize();
 
   // Apply CSE to all canonical views.
   do_cse();
 
-
-//  ForEachView([=, &has_error] (VIEW *view) {
-//    if (has_error) {
-//      return;
-//    }
-//
-//    if (view->Canonicalize(this)) {
-//      RelabelGroupIDs(this);
-//    }
-//
-//    if (view->valid != VIEW::kValid) {
-//      has_error = true;
-//      return;
-//    }
-//  });
-//
-//  if (has_error) {
-//    assert(false);
-//    return;
-//  }
-
+  Canonicalize();
 }
 
 }  // namespace hyde
