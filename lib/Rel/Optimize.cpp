@@ -21,9 +21,10 @@ static void RelabelGroupIDs(QueryImpl *query) {
     if (view->is_dead) {
       return;
     }
+
     view->depth = 0;
     view->hash = 0;
-    view->is_canonical = false;
+
     view->group_ids.clear();
     if (view->AsJoin() || view->AsAggregate() || view->AsKVIndex()) {
       view->group_ids.push_back(i++);
@@ -73,149 +74,200 @@ static void RelabelGroupIDs(QueryImpl *query) {
 
 // Remove unused views.
 static bool RemoveUnusedViews(QueryImpl *query) {
-  auto ret = query->selects.RemoveUnused() |
-             query->tuples.RemoveUnused() |
-             query->kv_indices.RemoveUnused() |
-             query->joins.RemoveUnused() |
-             query->maps.RemoveUnused() |
-             query->aggregates.RemoveUnused() |
-             query->merges.RemoveUnused() |
-             query->constraints.RemoveUnused() |
-             query->inserts.RemoveUnused();
-  return 0 != ret;
+  size_t ret = 0;
+  size_t all_ret = 0;
+  do {
+    ret = query->selects.RemoveUnused() |
+          query->tuples.RemoveUnused() |
+          query->kv_indices.RemoveUnused() |
+          query->joins.RemoveUnused() |
+          query->maps.RemoveUnused() |
+          query->aggregates.RemoveUnused() |
+          query->merges.RemoveUnused() |
+          query->constraints.RemoveUnused() |
+          query->inserts.RemoveUnused();
+    all_ret |= ret;
+  } while (ret);
+
+  return 0 != all_ret;
 }
+
+using CandidateList = std::vector<VIEW *>;
+using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
 
 // Perform common subexpression elimination, which will first identify
 // candidate subexpressions for possible elimination using hashing, and
 // then will perform recursive equality checks.
-static bool CSE(QueryImpl *query, unsigned max_depth) {
+static bool CSE(CandidateList &all_views) {
+  EqualitySet eq;
+  CandidateLists candidate_groups;
 
-  using CandidateList = std::vector<VIEW *>;
-  using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
-
-  auto apply_list = [=] (EqualitySet &eq, CandidateList &list,
-                         CandidateList &ipr) -> bool {
-    ipr.clear();
-    std::sort(list.begin(), list.end(), [] (VIEW *a, VIEW *b) {
-      return a->Sort() < b->Sort();
-    });
-    while (!list.empty()) {
-      auto v1 = list.front();
-      for (auto j = 1u; j < list.size(); ++j) {
-        auto v2 = list[j];
-        eq.Clear();
-        if (QueryView(v1).ReplaceAllUsesWith(eq, QueryView(v2))) {
-          v1 = v2;
-        } else {
-          ipr.push_back(v2);
-        }
-      }
-      list.swap(ipr);
-      ipr.clear();
-    }
-    return false;
-  };
+  for (auto view : all_views) {
+    candidate_groups[view->HashInit()].push_back(view);
+  }
 
   auto changed = false;
 
-  std::vector<VIEW *> in_progress;
-  std::vector<VIEW *> ordered_views;
-  EqualitySet equalities;
-  CandidateLists candidates;
+  std::vector<std::pair<VIEW *, VIEW *>> to_replace;
+  std::unordered_map<VIEW *, VIEW *> top_map;
+  auto resolve = [&] (VIEW *a) {
+    while (top_map.count(a)) {
+      a = top_map[a];
+    }
+    return a;
+  };
 
-  // Repeatedly canonicalize until no more changes to the number of views
-  // or number of columns.
-  for (auto c = 0u; c < max_depth; ++c) {
-    ordered_views.clear();
+  for (auto &[hash, candidates] : candidate_groups) {
+    (void) hash;
 
-    query->ForEachView([&](VIEW *view) {
-      if (view->IsUsed()) {
-        ordered_views.push_back(view);
-        view->is_canonical = false;
+    std::sort(candidates.begin(), candidates.end());
+    for (auto i = 0u; i < candidates.size(); ++i) {
+      auto v1 = candidates[i];
+      for (auto j = i + 1u; j < candidates.size(); ++j) {
+        auto v2 = candidates[j];
+
+        eq.Clear();
+        if (v1->Equals(eq, v2)) {
+          to_replace.emplace_back(v1, v2);
+          top_map.emplace(v1, v2);
+        }
       }
+    }
+
+    std::sort(to_replace.begin(), to_replace.end(),
+              [] (std::pair<VIEW *, VIEW *> a, std::pair<VIEW *, VIEW *> b) {
+      return std::max(a.first->Depth(), a.second->Depth()) <
+             std::max(b.first->Depth(), b.second->Depth());
     });
 
-    // Sort the views so that we process the ones closer to the inputs
-    // before the ones that are close to the outputs (inserts).
-    std::sort(ordered_views.begin(), ordered_views.end(),
-              [](VIEW *a, VIEW *b) {
-                return a->Depth() < b->Depth();
-              });
+    while (!to_replace.empty()) {
+      auto [v1, v2] = to_replace.back();
+      to_replace.pop_back();
+      v2 = resolve(v2);
 
-    bool made_progress = false;
-    for (auto view : ordered_views) {
-      if (view->Canonicalize(query)) {
-        RelabelGroupIDs(query);
-        made_progress = true;
+      eq.Clear();
+      if (v1 != v2 &&
+          v1->IsUsed() &&
+          v2->IsUsed() &&
+          QueryView(v1).ReplaceAllUsesWith(eq, QueryView(v2))) {
+        changed = true;
       }
-    }
-
-    if (!made_progress) {
-      break;
-    }
-  }
-
-  RelabelGroupIDs(query);
-
-  for (auto view : ordered_views) {
-    candidates[view->Hash()].push_back(view);
-  }
-
-  // Apply CSE in reverse postorder.
-  for (auto view : ordered_views) {
-    if (!view->IsUsed()) {
-      continue;  // We've replaced it.
-    }
-
-    auto &eq_views = candidates[view->Hash()];
-    if (1 >= eq_views.size()) {
-      continue;  // Doesn't look structurally equivalent to anything.
-    }
-
-    in_progress.clear();
-    if (apply_list(equalities, eq_views, in_progress)) {
-      changed = true;
     }
   }
 
   return changed;
 }
 
+template <typename T>
+static void FillViews(T &def_list, CandidateList &views_out) {
+  for (auto view : def_list) {
+    if (view->IsUsed()) {
+      views_out.push_back(view);
+    }
+  }
+}
+
 }  // namespace
 
-void QueryImpl::Optimize(void) {
-  RelabelGroupIDs(this);
+void QueryImpl::Simplify(void) {
+  CandidateList views;
 
-  ForEachView([=] (Node<QueryView> *view) {
-    if (view->Canonicalize(this)) {
-      RelabelGroupIDs(this);
-    }
-  });
+  // Start by applying CSE to the SELECTs only. This will improve
+  // canonicalization of the initial TUPLEs and other things.
+  FillViews(selects, views);
+  CSE(views);
 
-  if (RemoveUnusedViews(this)) {
-    RelabelGroupIDs(this);
+  views.clear();
+
+  // Now canonicalize JOINs, which will eliminate columns of useless joins.
+  for (auto join : joins) {
+    join->Canonicalize(this);
   }
+
+  // Some of those useless JOINs are converted into TUPLEs, so canonicalize
+  // those.
+  for (auto tuple : tuples) {
+    tuple->Canonicalize(this);
+  }
+
+  RemoveUnusedViews(this);
+  RelabelGroupIDs(this);
+}
+
+
+void QueryImpl::Optimize(void) {
+  CandidateList views;
+
+  auto do_cse = [&] (void) {
+    views.clear();
+    this->ForEachView([&views] (VIEW *view) {
+      views.push_back(view);
+    });
+
+    while (CSE(views)) {
+      RemoveUnusedViews(this);
+      RelabelGroupIDs(this);
+      views.clear();
+      this->ForEachView([&views] (VIEW *view) {
+        views.push_back(view);
+      });
+    }
+  };
+
+  RemoveUnusedViews(this);
+  ForEachView([] (VIEW *view) {
+    view->is_canonical = false;
+    view->depth = 0;
+    view->hash = 0;
+  });
 
   auto max_depth = 2u;
   for (auto insert : inserts) {
     max_depth = std::max(max_depth, insert->Depth());
   }
 
-  auto step = [=] (void) {
-    auto done = !CSE(this, max_depth);
-    if (RemoveUnusedViews(this)) {
-      RelabelGroupIDs(this);
-    }
-    return done;
-  };
+  // Apply CSE to all views.
+  do_cse();
 
-  step();
+  this->ForEachView([&] (VIEW *view) {
+    view->is_canonical = false;
+  });
 
-  for (auto i = 0; i < max_depth; ++i) {
-    if (!step()) {
-      break;
-    }
+  // Canonicalize all views.
+  for (auto non_local_changes = true; non_local_changes; ) {
+    non_local_changes = false;
+    this->ForEachView([&] (VIEW *view) {
+      non_local_changes = view->Canonicalize(this) || non_local_changes;
+    });
   }
+
+  RemoveUnusedViews(this);
+  RelabelGroupIDs(this);
+
+  // Apply CSE to all canonical views.
+  do_cse();
+
+
+//  ForEachView([=, &has_error] (VIEW *view) {
+//    if (has_error) {
+//      return;
+//    }
+//
+//    if (view->Canonicalize(this)) {
+//      RelabelGroupIDs(this);
+//    }
+//
+//    if (view->valid != VIEW::kValid) {
+//      has_error = true;
+//      return;
+//    }
+//  });
+//
+//  if (has_error) {
+//    assert(false);
+//    return;
+//  }
+
 }
 
 }  // namespace hyde

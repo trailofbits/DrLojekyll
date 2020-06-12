@@ -87,7 +87,8 @@ bool Node<QuerySelect>::Equals(
     }
 
   } else if (relation) {
-    if (!that->relation || relation->declaration.Id() != that->relation->declaration.Id()) {
+    if (!that->relation ||
+        relation->declaration.Id() != that->relation->declaration.Id()) {
       return false;
     }
 

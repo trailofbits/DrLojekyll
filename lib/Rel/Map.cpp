@@ -21,19 +21,20 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = HashInit();
-  hash ^= functor.Id();
+  hash = HashInit() ^ functor.Id();
+  auto local_hash = hash;
 
   // Mix in the hashes of the merged views and columns;
   for (auto input_col : input_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ input_col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ input_col->Hash();
   }
 
   for (auto input_col : attached_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ input_col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ input_col->Hash();
   }
 
-  return hash;
+  hash = local_hash;
+  return local_hash;
 }
 
 // Put this map into a canonical form, which will make comparisons and
@@ -49,6 +50,11 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
   }
 
   is_canonical = AttachedColumnsAreCanonical();
+
+  if (valid == VIEW::kValid &&
+      !CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidBeforeCanonicalize;
+  }
 
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
@@ -222,7 +228,9 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
   attached_columns.Swap(new_attached_cols);
   columns.Swap(new_output_cols);
 
-  assert(CheckAllViewsMatch(input_columns, attached_columns));
+  if (!CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidAfterCanonicalize;
+  }
 
   hash = 0;
   is_canonical = true;
@@ -231,25 +239,28 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
 
 // Equality over maps is pointer-based.
 bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
-  const auto that = that_->AsMap();
-  if (!that || columns.Size() != that->columns.Size() ||
-      attached_columns.Size() != that->attached_columns.Size() ||
-      functor != that->functor ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions) {
-    return false;
-  }
-
-  if (eq.Contains(this, that)) {
+  if (eq.Contains(this, that_)) {
     return true;
   }
 
-  if (!ColumnsEq(input_columns, that->input_columns) ||
-      !ColumnsEq(attached_columns, that->attached_columns)) {
+  const auto that = that_->AsMap();
+  if (!that ||
+      columns.Size() != that->columns.Size() ||
+      attached_columns.Size() != that->attached_columns.Size() ||
+      functor != that->functor ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions ||
+      InsertSetsOverlap(this, that)) {
     return false;
   }
 
   eq.Insert(this, that);
+
+  if (!ColumnsEq(eq, input_columns, that->input_columns) ||
+      !ColumnsEq(eq, attached_columns, that->attached_columns)) {
+    eq.Remove(this, that);
+    return false;
+  }
 
   return true;
 }

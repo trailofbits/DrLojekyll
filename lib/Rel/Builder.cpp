@@ -2,6 +2,7 @@
 
 #include "Builder.h"
 
+#include <map>
 #include <set>
 #include <tuple>
 #include <unordered_set>
@@ -323,10 +324,13 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
       while (true) {
         if (auto view_join = col->view->AsJoin()) {
+
+          // It's from a non-cross-product join; take it directly.
           if (view_join->num_pivots) {
             found_col = col;
             return col;
 
+          // It's from cross-product, look into its source.
           } else {
             auto in_set = view_join->out_to_in.find(col);
             assert(in_set != view_join->out_to_in.end());
@@ -339,6 +343,28 @@ class QueryBuilderImpl : public SIPSVisitor {
         }
       }
     };
+
+    // Convert all constants into a TUPLE so that they appear just like another
+    // view to the product.
+    TUPLE *consts_view = nullptr;
+    for (auto &col : inout) {
+      if (!col || !(col->IsConstant() || col->IsGenerator())) {
+        continue;
+      }
+
+      if (!consts_view) {
+        consts_view = query->tuples.Create();
+      }
+
+      const auto new_col = consts_view->columns.Create(
+          col->var, consts_view, col->id);
+      col->ReplaceAllUsesWith(new_col);
+      col = new_col;
+      consts_view->input_columns.AddUse(col);
+      if (merge_sets) {
+        COL::Union(col,  new_col);
+      }
+    }
 
     VIEW *last_view = nullptr;
     bool coming_from_different_views = false;
@@ -384,11 +410,10 @@ class QueryBuilderImpl : public SIPSVisitor {
             col->var, join, col->id, join->columns.Size());
 
         join->out_to_in.emplace(out_col, join);
+        col->ReplaceAllUsesWith(out_col);
         if (merge_sets) {
           COL::Union(out_col, col);
         }
-
-        col->ReplaceAllUsesWith(out_col);
       }
     }
 
@@ -408,7 +433,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       }
     }
 
-    assert(num_replaced == num_present);
+//    assert(num_replaced == num_present);
     return join;
   }
 
@@ -1239,6 +1264,110 @@ class QueryBuilderImpl : public SIPSVisitor {
     return made_progress;
   }
 
+  void FixupInputColumns(std::vector<COL *> &input_cols) {
+    VIEW *prev_view = nullptr;
+    bool has_prev_view = false;
+    for (auto prev_col : input_cols) {
+      if (prev_col->IsConstant() || prev_col->IsGenerator()) {
+        continue;
+      }
+      if (!has_prev_view) {
+        prev_view = prev_col->view;
+        has_prev_view = true;
+
+      } else if (prev_col->view != prev_view) {
+        prev_view = nullptr;
+      }
+    }
+
+    if (!has_prev_view || prev_view) {
+      return;
+    }
+
+    // The columns we want to insert come from different places; we need to
+    // create a JOIN. Ideally, we want it to be an equi-JOIN, so we'll try
+    // to find pivots.
+    std::unordered_map<COL *, ColumnSet *> col_to_colset;
+    std::unordered_set<ColumnSet *> colsets;
+
+    for (const auto &[id, colset_] : id_to_col) {
+      (void) id;
+      auto colset = colset_->Find();
+      colsets.insert(colset);
+      for (auto col : *colset) {
+        col_to_colset.emplace(col, colset);
+      }
+    }
+
+    std::unordered_set<VIEW *> seen_views;
+    std::map<std::pair<VIEW *, ColumnSet *>, std::vector<COL *>> colset_to_cols;
+
+    for (auto prev_col : input_cols) {
+      if (prev_col->IsConstant() || prev_col->IsGenerator()) {
+        continue;
+      }
+      auto prev_view = prev_col->view;
+      if (seen_views.count(prev_view)) {
+        continue;
+      }
+      seen_views.insert(prev_view);
+
+      // Try to find pivot candidates.
+      for (auto col : prev_view->columns) {
+        if (auto colset = col_to_colset[col]; colset) {
+          colset_to_cols[{prev_view, colset}].push_back(col);
+        }
+      }
+    }
+
+    std::unordered_set<COL *> equiv_cols;
+
+    for (auto colset : colsets) {
+      equiv_cols.clear();
+      COL *first_col = nullptr;
+      for (auto view : seen_views) {
+        if (auto equiv_cols_it = colset_to_cols.find({view, colset});
+            equiv_cols_it != colset_to_cols.end() &&
+            !equiv_cols_it->second.empty()) {
+//          equiv_cols.insert(equiv_cols_it->second[0]);
+          auto eq_col = equiv_cols_it->second[0];
+          if (first_col) {
+            pending_compares.emplace_back(
+                ComparisonOperator::kEqual, first_col->var, first_col, eq_col->var, eq_col);
+          } else {
+            first_col = eq_col;
+          }
+        }
+      }
+//
+//      if (CreateJoin(equiv_cols)) {
+//        auto changed = false;
+//        for (auto &col : input_cols) {
+//          auto leader_col = col->Find();
+//          if (col != leader_col) {
+//            col = leader_col;
+//            changed = true;
+//          }
+//        }
+//        assert(changed);
+//        FixupInputColumns(input_cols);
+//        return;
+//      }
+    }
+
+    ReifyPendingComparisons();
+
+    for (auto &col : input_cols) {
+      col = col->Find();
+    }
+
+    CreateProduct(input_cols, true  /* merge_cols */);
+
+    for (auto &col : input_cols) {
+      col = col->Find();
+    }
+  }
+
   void Insert(ParsedClause clause, ParsedDeclaration decl,
               const ParamColumn *begin, const ParamColumn *end,
               const VarColumn *bound_begin, const VarColumn *bound_end) override {
@@ -1280,7 +1409,6 @@ class QueryBuilderImpl : public SIPSVisitor {
 //      ReifyPendingComparisons();
 //    }
 
-
     INSERT *insert = nullptr;
     if (decl.IsMessage()) {
       assert(!clause.IsDeletion());
@@ -1291,14 +1419,15 @@ class QueryBuilderImpl : public SIPSVisitor {
       insert = query->inserts.Create(table, decl, !clause.IsDeletion());
     }
 
+    std::vector<COL *> input_cols;
+
     // Normal insert into a table.
     if (decl.Arity()) {
       for (auto col = begin; col < end; ++col) {
         (void) AddColumn(insert, *col);
         const auto &prev_colset = id_to_col[col->id];
         assert(prev_colset);
-        const auto prev_col = prev_colset->Leader();
-        insert->input_columns.AddUse(prev_col);
+        input_cols.push_back(prev_colset->Leader());
       }
 
     // We've proven a zero-argument predicate.
@@ -1307,14 +1436,28 @@ class QueryBuilderImpl : public SIPSVisitor {
         insert->columns.Create(col->var, insert, col->id);
         const auto &prev_colset = id_to_col[col->id];
         assert(prev_colset);
-        const auto prev_col = prev_colset->Leader();
-        insert->input_columns.AddUse(prev_col);
+        input_cols.push_back(prev_colset->Leader());
       }
+    }
+
+    // TODO(pag): Handle: `foo : bar, baz.`.
+
+    // Make sure that all columns are either from the same view, or are
+    // constants / generators.
+    if (!input_cols.empty()) {
+      FixupInputColumns(input_cols);
+    }
+
+    for (auto prev_col : input_cols) {
+      assert(prev_col == prev_col->Find());
+      insert->input_columns.AddUse(prev_col);
     }
 
     // Empty out all equivalence classes. We don't want them interfering with
     // one-another across different clauses.
     EmptyEquivalenceClasses();
+
+    assert(VIEW::CheckAllViewsMatch(insert->input_columns));
 
     std::sort(positive_conditions.begin(), positive_conditions.end());
     auto it = std::unique(positive_conditions.begin(), positive_conditions.end());
@@ -1731,7 +1874,7 @@ void QueryBuilder::VisitClause(
 Query QueryBuilder::BuildQuery(void) {
 
   impl->query->TrackDifferentialUpdates();
-  impl->query->Optimize();
+  impl->query->Simplify();
   impl->query->ConnectInsertsToSelects();
   impl->query->TrackDifferentialUpdates();
   impl->query->Optimize();

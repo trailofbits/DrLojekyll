@@ -54,6 +54,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     assert(can_connect(decl));
 
     const auto merge = merges.Create();
+
     Node<QueryView> *view = merge;
     for (INSERT *insert : insert_views) {
       const auto ins_tuple = tuples.Create();

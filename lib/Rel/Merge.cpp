@@ -167,31 +167,30 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
 // Equality over merge is pointer-based.
 bool Node<QueryMerge>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsMerge();
   const auto num_views = merged_views.Size();
   if (!that ||
       columns.Size() != that->columns.Size() ||
       num_views != that->merged_views.Size() ||
       positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions) {
-    return false;
-  }
-
-  if (eq.Contains(this, that)) {
-    return true;
-  }
-
-  for (auto i = 0u; i < num_views; ++i) {
-    if (merged_views[i] != that->merged_views[i]) {
-      return false;
-    }
-  }
-
-  if (InsertSetsOverlap(this, that)) {
+      negative_conditions != that->negative_conditions ||
+      InsertSetsOverlap(this, that)) {
     return false;
   }
 
   eq.Insert(this, that);  // Base case in case of cycles.
+
+  for (auto i = 0u; i < num_views; ++i) {
+    if (!merged_views[i]->Equals(eq, that->merged_views[i])) {
+      eq.Remove(this, that);
+      return false;
+    }
+  }
+
   return true;
 }
 

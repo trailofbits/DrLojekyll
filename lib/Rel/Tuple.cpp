@@ -2,6 +2,8 @@
 
 #include "Query.h"
 
+#include <drlojekyll/Util/EqualitySet.h>
+
 namespace hyde {
 
 Node<QueryTuple>::~Node(void) {}
@@ -16,12 +18,15 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  auto local_hash = hash;
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
   }
-  return hash;
+
+  hash = local_hash;
+  return local_hash;
 }
 
 // Put this tuple into a canonical form, which will make comparisons and
@@ -30,6 +35,12 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 // deduplicated, and where all output columns are guaranteed to be used.
 bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
   if (is_canonical) {
+    return false;
+  }
+
+  if (valid == VIEW::kValid &&
+      !CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidBeforeCanonicalize;
     return false;
   }
 
@@ -194,7 +205,9 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
     });
   }
 
-  assert(CheckAllViewsMatch(input_columns, attached_columns));
+  if (!CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidAfterCanonicalize;
+  }
 
   hash = 0;
   is_canonical = true;
@@ -202,16 +215,29 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query) {
 }
 
 // Equality over tuples are pointer-based.
-bool Node<QueryTuple>::Equals(EqualitySet &, Node<QueryView> *that_) noexcept {
+bool Node<QueryTuple>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsTuple();
-  return that &&
-         positive_conditions == that->positive_conditions &&
-         negative_conditions == that->negative_conditions &&
-         can_receive_deletions == that->can_receive_deletions &&
-         can_produce_deletions == that->can_produce_deletions &&
-         columns.Size() == that->columns.Size() &&
-         ColumnsEq(input_columns, that->input_columns) &&
-         !InsertSetsOverlap(this, that);
+  if (!that ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions ||
+      can_receive_deletions != that->can_receive_deletions ||
+      can_produce_deletions != that->can_produce_deletions ||
+      columns.Size() != that->columns.Size() ||
+      InsertSetsOverlap(this, that)) {
+    return false;
+  }
+
+  eq.Insert(this, that);
+  if (!ColumnsEq(eq, input_columns, that->input_columns)) {
+    eq.Remove(this, that);
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace hyde

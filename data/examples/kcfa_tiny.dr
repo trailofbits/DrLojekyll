@@ -1,0 +1,96 @@
+; k-CFA for lambda calculus, adapted from: https://gist.github.com/kmicinski/d5d6815de5a0fb5bdad9c2ca331edfd7
+
+
+#message add_prog(i32 X)
+#message add_lam(i32 Id, i32 X, i32 Y, i32 Idbody)
+#message add_app(i32 Id, i32 F, i32 A0, i32 A1)
+#message add_var(i32 Id, i32 Var)
+
+#local prog(i32 X)
+#local lam(i32 Id, i32 X, i32 Y, i32 Idbody)
+#local app(i32 Id, i32 F, i32 A0, i32 A1)
+#local var(i32 Id, i32 Var)
+
+#local time(i32 Dt0, i32 Dt1)
+#local step(i32 From, i32 Dt0, i32 Dt1, i32 Toid, i32 Dto_t0, i32 Dto_t1, i32 Clo_lam, i32 Dclo_t0, i32 Dclo_t1)
+#local aeval(i32 Id, i32 Dt0, i32 Dt1, i32 Id1, i32 Dot0, i32 Dot1)
+#local store(i32 Var, i32 Dt0, i32 Dt1, i32 Stored_lam, i32 Dot0, i32 Dot1)
+
+#query reaches_cfg(bound i32 Id, bound i32 Dt0, bound i32 Dt1)
+#query reaches_clo(bound i32 Id, bound i32 Dt0, bound i32 Dt1)
+
+prog(X) : add_prog(X).
+lam(Id, X, Y, Idbody) : add_lam(Id, X, Y, Idbody).
+app(Id, F, A0, A1) : add_app(Id, F, A0, A1).
+var(Id, Var) : add_var(Id, Var).
+
+; run the program:
+reaches_cfg(X, X, X) : prog(X).
+time(X, X) : prog(X).
+
+; with an app step,
+store(X,Id,T0,A0_lam,A0_t0,A0_t1)
+  : app(Id,Idf,Ida0,Ida1),
+    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+    lam(Clo_lam,X,Y,Id_body),
+    reaches_cfg(Id,T0,T1).
+
+store(Y,Id,T0,A1_lam,A0_t0,A0_t1)
+  : app(Id,Idf,Ida0,Ida1),
+    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+    lam(Clo_lam,X,Y,Id_body),
+    reaches_cfg(Id,T0,T1).
+
+step(Id,T0,T1,Id_body,Id,T0,Clo_lam,Clo_t0,Clo_t1)
+  : app(Id,Idf,Ida0,Ida1),
+    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+    lam(Clo_lam,X,Y,Id_body),
+    reaches_cfg(Id,T0,T1).
+
+reaches_cfg(Id_body,Id,T0)
+  : app(Id,Idf,Ida0,Ida1),
+    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+    lam(Clo_lam,X,Y,Id_body),
+    reaches_cfg(Id,T0,T1).
+
+reaches_clo(Clo_lam,Clo_t0,Clo_t1)
+  : app(Id,Idf,Ida0,Ida1),
+    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+    lam(Clo_lam,X,Y,Id_body),
+    reaches_cfg(Id,T0,T1).
+
+time(Id,T0)
+  : app(Id,Idf,Ida0,Ida1),
+    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+    lam(Clo_lam,X,Y,Id_body),
+    reaches_cfg(Id,T0,T1).
+
+; and eval of lambdas,
+aeval(Id,T0,T1,Id,T0,T1) : time(T0,T1), lam(Id,_,_,_).
+
+; and eval of local parameter x at t,
+aeval(Ref_id,T0,T1,Clo_lam,Clo_t0,Clo_t1)
+  : var(Ref_id,X),
+    reaches_clo(Clo_lam,Clo_t0,Clo_t1),
+    store(X,T0,T1,Clo_lam,Clo_t0,Clo_t1).
+
+; otherise, propagate free variables
+aeval(Id_ref,T0,T1,Clo_lam,Clo_t0,Clo_t1)
+  : step(Id_call,_,_,Id_body,T0,T1,Tclo_lam,To_clo_t0,To_clo_t1),
+    lam(Tclo_lam,P0,P1,Tclo_lam_body),
+    var(Id_ref,X),
+    aeval(Id_ref,Lam_t0,Lam_t1,Clo_lam,Clo_t0,Clo_t1),
+    P0 != X,
+    P1 != X.

@@ -115,7 +115,7 @@ Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
 }
 
 // Useful for communicating low-level debug info back to the formatter.
-std::string Node<QueryView>::DebugString(void) const noexcept {
+std::string Node<QueryView>::DebugString(void) noexcept {
   std::stringstream ss;
 
   if (!group_ids.empty()) {
@@ -127,9 +127,21 @@ std::string Node<QueryView>::DebugString(void) const noexcept {
     ss << ") ";
   }
 
-  ss << "depth=" << depth;
+  ss << "depth=" << Depth();
   ss << " used=" << is_used;
-  ss << " hash=" << std::hex << hash;
+  ss << " hash=" << std::hex << this->Hash();
+  switch (valid) {
+    case kValid: break;
+    case kInvalidBeforeCanonicalize:
+      ss << "<B><FONT COLOR=\"RED\">BEFORE</FONT></B>";
+      break;
+    case kInvalidAfterCanonicalize:
+      ss << "<B><FONT COLOR=\"RED\">AFTER</FONT></B>";
+      break;
+  }
+  if (!producer.empty()) {
+    ss << ' ' << producer;
+  }
   return ss.str();
 }
 
@@ -159,26 +171,26 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
 
 // Invoked any time time that any of the columns used by this view are
 // modified.
-void Node<QueryView>::Update(uint64_t next_timestamp) {
-  if (timestamp >= next_timestamp) {
-    return;
-  }
-
-  timestamp = next_timestamp;
-  hash = 0;
-  depth = 0;
-  is_canonical = false;
-
-  for (auto col : columns) {
-    col->ForEachUse<VIEW>([=] (VIEW *user, COL *) {
-      user->Update(next_timestamp);
-    });
-  }
-
-  // Update merges.
-  ForEachUse<VIEW>([=] (VIEW *user, VIEW *) {
-    user->Update(next_timestamp);
-  });
+void Node<QueryView>::Update(uint64_t /* next_timestamp */) {
+//  if (timestamp >= next_timestamp) {
+//    return;
+//  }
+//
+//  timestamp = next_timestamp;
+//  is_canonical = false;
+//  hash = 0;
+//  depth = 0;
+//
+//  for (auto col : columns) {
+//    col->ForEachUse<VIEW>([=] (VIEW *user, COL *) {
+//      user->Update(next_timestamp);
+//    });
+//  }
+//
+//  // Update merges.
+//  ForEachUse<VIEW>([=] (VIEW *user, VIEW *) {
+//    user->Update(next_timestamp);
+//  });
 }
 
 // Sort the `positive_conditions` and `negative_conditions`.
@@ -273,7 +285,7 @@ uint64_t Node<QueryView>::HashInit(void) const noexcept {
   hash <<= 1u;
   hash |= can_produce_deletions;
   hash = __builtin_rotateright64(hash, 13);
-  hash *= columns.Size();
+  hash *= (columns.Size() + 7u);
 
   for (auto positive_cond : this->positive_conditions) {
     hash = __builtin_rotateright64(hash, 13);
@@ -286,6 +298,31 @@ uint64_t Node<QueryView>::HashInit(void) const noexcept {
   }
 
   return hash;
+}
+
+// Upward facing hash. The idea here is that we sometimes have multiple nodes
+// that have the same hash, and thus are candidates for CSE, and we want to
+// decide: among those candidates, which nodes /should/ be merged. We decide
+// this by looking up the dataflow graph (to some limited depth) and creating
+// a rough hash of how this node gets used.
+uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
+
+  auto up_hash = HashInit();
+
+  if (!depth) {
+    return up_hash;
+  }
+
+  unsigned i = 0u;
+  for (auto col : columns) {
+    col->ForEachUse<VIEW>([=, &up_hash] (VIEW *user, COL *) {
+      up_hash = __builtin_rotateright64(up_hash, i + 7u);
+      up_hash ^= user->UpHash(depth - 1u);
+    });
+    ++i;
+  }
+
+  return up_hash;
 }
 
 // Returns `true` if we had to "guard" this view with a tuple so that we
@@ -326,19 +363,52 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) 
     tuple->input_columns.AddUse(col);
   }
 
+  if (!CheckAllViewsMatch(tuple->input_columns, attached_columns)) {
+    tuple->valid = VIEW::kInvalidBeforeCanonicalize;
+  }
+
+  std::stringstream ss;
+  ss << "GUARD(" << KindName();
+  if (!producer.empty()) {
+    ss << ": " << producer;
+  }
+  ss << ')';
+  tuple->producer = ss.str();
+
   return tuple;
 }
 
 // Utility for comparing use lists.
 bool Node<QueryView>::ColumnsEq(
-    const UseList<COL> &c1s, const UseList<COL> &c2s) {
+    EqualitySet &eq, const UseList<COL> &c1s, const UseList<COL> &c2s) {
   const auto num_cols = c1s.Size();
   if (num_cols != c2s.Size()) {
     return false;
   }
   for (auto i = 0u; i < num_cols; ++i) {
-    if (c1s[i] != c2s[i]) {
+    auto a = c1s[i];
+    auto b = c2s[i];
+    if (a->type.Kind() != b->type.Kind() ||
+        !a->view->Equals(eq, b->view)) {
       return false;
+    }
+  }
+  return true;
+}
+
+// Check that all non-constant views in `cols1` match.
+bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
+  VIEW *prev_view = nullptr;
+
+  for (auto col : cols1) {
+    if (!col->IsConstant() && !col->IsGenerator()) {
+      if (prev_view) {
+        if (prev_view != col->view) {
+          return false;
+        }
+      } else {
+        prev_view = col->view;
+      }
     }
   }
   return true;

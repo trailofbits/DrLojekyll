@@ -54,6 +54,15 @@ Node<QueryColumn> *ColumnSet::Leader(void) {
   return col_set->columns[0];
 }
 
+bool ColumnSet::Contains(Node<QueryColumn> *search_col) const {
+  for (auto col : columns) {
+    if (col == search_col) {
+      return true;
+    }
+  }
+  return false;
+}
+
 Node<QueryColumn>::~Node(void) {
   if (equiv_columns) {
     std::shared_ptr<ColumnSet> our_equiv_columns;
@@ -103,10 +112,25 @@ bool Node<QueryColumn>::IsUsed(void) const noexcept {
   return view->Def<Node<QueryView>>::IsUsed();
 }
 
-uint64_t Node<QueryColumn>::Hash(void) const noexcept {
-  const auto addr = reinterpret_cast<uintptr_t>(this);
-  const auto view_addr = reinterpret_cast<uintptr_t>(this);
-  return __builtin_rotateright64(addr, 4) ^ (addr * view_addr);
+// Return the index of this column inside of its view.
+unsigned Node<QueryColumn>::Index(void) noexcept {
+  if (index >= view->columns.Size() ||
+      this != view->columns[index]) {
+    auto i = 0u;
+    for (auto col : view->columns) {
+      if (col == this) {
+        index = i;
+        break;
+      }
+      ++i;
+    }
+  }
+  return index;
+}
+
+uint64_t Node<QueryColumn>::Hash(void) noexcept {
+  return __builtin_rotateright64(view->Hash(), 3u + Index()) *
+         0xff51afd7ed558ccdull;
 }
 
 void Node<QueryColumn>::ReplaceAllUsesWith(Node<QueryColumn> *that) {

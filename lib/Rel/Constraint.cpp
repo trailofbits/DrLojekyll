@@ -17,18 +17,21 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
     return hash;
   }
 
-  hash = HashInit();
-  hash ^= static_cast<unsigned>(op);
+  // Base case for recursion.
+  hash = HashInit() ^ static_cast<unsigned>(op);
+
+  auto local_hash = hash;
 
   for (auto col : input_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
   }
 
   for (auto col : attached_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
   }
 
-  return hash;
+  hash = local_hash;
+  return local_hash;
 }
 
 // Put this constraint into a canonical form, which will make comparisons and
@@ -42,6 +45,12 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   }
 
   is_canonical = AttachedColumnsAreCanonical();
+
+  if (valid == VIEW::kValid &&
+      !CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidBeforeCanonicalize;
+    return false;
+  }
 
   // Check to see if the input columns are ordered correctly. We can reorder
   // them only in the case of (in)equality comparisons.
@@ -247,26 +256,45 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   attached_columns.Swap(new_attached_cols);
   columns.Swap(new_output_cols);
 
-  assert(CheckAllViewsMatch(input_columns, attached_columns));
-
   hash = 0;
   is_canonical = true;
+
+  if (!CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidAfterCanonicalize;
+  }
+
   return non_local_changes;
 }
 
 // Equality over constraints is pointer-based.
 bool Node<QueryConstraint>::Equals(
-    EqualitySet &, Node<QueryView> *that_) noexcept {
+    EqualitySet &eq, Node<QueryView> *that_) noexcept {
+
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsConstraint();
-  return that &&
-         op == that->op &&
-         can_receive_deletions == that->can_receive_deletions &&
-         can_produce_deletions == that->can_produce_deletions &&
-         columns.Size() == that_->columns.Size() &&
-         positive_conditions == that->positive_conditions &&
-         negative_conditions == that->negative_conditions &&
-         ColumnsEq(input_columns, that->input_columns) &&
-         ColumnsEq(attached_columns, that->attached_columns);
+  if (!that ||
+      op != that->op ||
+      can_receive_deletions != that->can_receive_deletions ||
+      can_produce_deletions != that->can_produce_deletions ||
+      columns.Size() != that_->columns.Size() ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions ||
+      InsertSetsOverlap(this, that)) {
+    return false;
+  }
+
+  eq.Insert(this, that);
+
+  if (!ColumnsEq(eq, input_columns, that->input_columns) ||
+      !ColumnsEq(eq, attached_columns, that->attached_columns)) {
+    eq.Remove(this, that);
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace hyde

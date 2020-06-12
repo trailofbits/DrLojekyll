@@ -18,34 +18,53 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   }
 
   // Start with an initial hash just in case there's a cycle somewhere.
-  hash = HashInit();
-  hash ^= declaration.Id();
+  hash = HashInit() ^ declaration.Id();
+
+  auto local_hash = hash;
 
   // Mix in the hashes of the input by columns; these are ordered.
   for (auto col : input_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
   }
 
-  return hash;
+  hash = local_hash;
+  return local_hash;
 }
 
 bool Node<QueryInsert>::Canonicalize(QueryImpl *) {
-  assert(CheckAllViewsMatch(input_columns, attached_columns));
+  if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
+    valid = VIEW::kInvalidBeforeCanonicalize;
+  }
+  assert(attached_columns.Empty());
   return false;
 }
 
 // Equality over inserts is structural.
 bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
+
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsInsert();
-  return that &&
-         is_insert == that->is_insert &&
-         can_produce_deletions == that->can_produce_deletions &&
-         declaration.Id() == that->declaration.Id() &&
-         columns.Size() == that->columns.Size() &&
-         positive_conditions == that->positive_conditions &&
-         negative_conditions == that->negative_conditions &&
-         ColumnsEq(input_columns, that->input_columns) &&
-         is_used == that->is_used;
+  if (!that ||
+      is_insert != that->is_insert ||
+      is_used != that->is_used ||
+      can_produce_deletions != that->can_produce_deletions ||
+      declaration.Id() != that->declaration.Id() ||
+      columns.Size() != that->columns.Size() ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions) {
+    return false;
+  }
+
+  eq.Insert(this, that);
+  if (!ColumnsEq(eq, input_columns, that->input_columns)) {
+    eq.Remove(this, that);
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace hyde

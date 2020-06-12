@@ -14,6 +14,21 @@ namespace {
 static const char *kBeginTable = "<TABLE cellpadding=\"0\" cellspacing=\"0\" border=\"1\"><TR>";
 static const char *kEndTable = "</TR></TABLE>";
 
+static const char *kColors[] = {
+    "antiquewhite",
+    "aquamarine",
+    "cadetblue1",
+    "chartreuse1",
+    "chocolate1",
+    "deepskyblue2",
+    "goldenrod1",
+    "beige",
+    "cadetblue3",
+    "floralwhite",
+    "gainsboro",
+    "darkseagreen1",
+};
+
 }  // namespace
 
 OutputStream &operator<<(OutputStream &os, Query query) {
@@ -249,17 +264,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
   }
-
-  const char *kColors[] = {
-      "antiquewhite",
-      "aquamarine",
-      "cadetblue1",
-      "chartreuse1",
-      "chocolate1",
-      "darkslategrey",
-      "deepskyblue2",
-      "goldenrod1",
-  };
 
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;

@@ -25,6 +25,8 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
     return hash;
   }
 
+  auto local_hash = hash;
+
   assert(input_columns.Size() == 0);
 
   for (auto col : columns) {
@@ -35,10 +37,11 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
       col_set_hash = __builtin_rotateright64(col_set_hash, 16) ^
                      in_col->Hash();
     }
-    hash = __builtin_rotateleft64(hash, 13) ^ col_set_hash;
+    local_hash = __builtin_rotateleft64(local_hash, 13) ^ col_set_hash;
   }
 
-  return hash;
+  hash = local_hash;
+  return local_hash;
 }
 
 unsigned Node<QueryJoin>::Depth(void) noexcept {
@@ -258,6 +261,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
 
     // Create a tuple that forwards along the inputs to this join.
     auto tuple = query->tuples.Create();
+    tuple->producer = "JOIN-WITH-NO-PIVOTS";
     for (auto cond : positive_conditions) {
       tuple->positive_conditions.AddUse(cond);
     }
@@ -321,6 +325,7 @@ skip_remove:
 
         COL * const const_col = const_col_it->second;
         const auto filter = query->constraints.Create(ComparisonOperator::kEqual);
+        filter->producer = "JOIN-CONST-PIVOT";
         const VIEW *in_view = in_col->view;
         filter->can_receive_deletions = in_view->can_produce_deletions;
         filter->can_produce_deletions = filter->can_receive_deletions;
@@ -475,21 +480,22 @@ skip_remove:
 
 // Equality over joins is pointer-based.
 bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsJoin();
   if (!that ||
       columns.Size() != that->columns.Size() ||
       num_pivots != that->num_pivots ||
-      out_to_in.empty() ||
-      that->out_to_in.empty() ||
       out_to_in.size() != that->out_to_in.size() ||
       positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions) {
+      negative_conditions != that->negative_conditions ||
+      InsertSetsOverlap(this, that)) {
     return false;
   }
 
-  if (eq.Contains(this, that)) {
-    return true;
-  }
+  eq.Insert(this, that);
 
   auto i = 0u;
   for (const auto j1_out_col : columns) {
@@ -501,14 +507,15 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
 
     const auto j1_in_cols = out_to_in.find(j1_out_col);
     const auto j2_in_cols = that->out_to_in.find(j2_out_col);
-    assert(j1_in_cols != out_to_in.end());
-    assert(j2_in_cols != that->out_to_in.end());
-    if (!ColumnsEq(j1_in_cols->second, j2_in_cols->second)) {
+
+    if (j1_in_cols == out_to_in.end() ||  // Join not used.
+        j2_in_cols == that->out_to_in.end() ||  // Join not used.
+        !ColumnsEq(eq, j1_in_cols->second, j2_in_cols->second)) {
+      eq.Remove(this, that);
       return false;
     }
   }
 
-  eq.Insert(this, that);
   return true;
 }
 

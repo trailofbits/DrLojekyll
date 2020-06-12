@@ -17,6 +17,9 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
     return hash;
   }
 
+  // Base case for recursion.
+  hash = HashInit() ^ functor.Id();
+
   // Mix in the hashes of the group by columns.
   uint64_t group_hash = 0;
   for (auto col : group_by_columns) {
@@ -35,8 +38,7 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
     summary_hash = __builtin_rotateright64(summary_hash, 16) ^ col->Hash();
   }
 
-  hash = HashInit();
-  hash ^= functor.Id() ^ group_hash ^ bound_hash ^ summary_hash;
+  hash ^= group_hash ^ bound_hash ^ summary_hash;
 
   return hash;
 }
@@ -59,6 +61,12 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 // replacements easier.
 bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
   if (is_canonical) {
+    return false;
+  }
+
+  if (valid == VIEW::kValid &&
+      !CheckAllViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidBeforeCanonicalize;
     return false;
   }
 
@@ -94,7 +102,6 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
 
   // The group by columns are in order and unique.
   if (is_canonical) {
-    assert(CheckAllViewsMatch(input_columns, attached_columns));
     return non_local_changes;
   }
 
@@ -176,6 +183,11 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
 // Equality over aggregates is structural.
 bool Node<QueryAggregate>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
+
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsAggregate();
   if (!that ||
       functor != that->functor ||
@@ -183,22 +195,20 @@ bool Node<QueryAggregate>::Equals(
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
       positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions) {
-    return false;
-  }
-
-  if (eq.Contains(this, that)) {
-    return true;
-  }
-
-  if (!ColumnsEq(group_by_columns, that->group_by_columns) ||
-      !ColumnsEq(config_columns, that->config_columns) ||
-      !ColumnsEq(aggregated_columns, that->aggregated_columns)) {
+      negative_conditions != that->negative_conditions ||
+      InsertSetsOverlap(this, that)) {
     return false;
   }
 
   // In case of cycles, assume that these two aggregates are equivalent.
   eq.Insert(this, that);
+
+  if (!ColumnsEq(eq, group_by_columns, that->group_by_columns) ||
+      !ColumnsEq(eq, config_columns, that->config_columns) ||
+      !ColumnsEq(eq, aggregated_columns, that->aggregated_columns)) {
+    eq.Remove(this, that);
+    return false;
+  }
 
   return true;
 }

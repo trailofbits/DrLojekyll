@@ -2,6 +2,8 @@
 
 #include "Query.h"
 
+#include <drlojekyll/Util/EqualitySet.h>
+
 namespace hyde {
 namespace {
 
@@ -35,35 +37,51 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  auto local_hash = hash;
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
   }
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : attached_columns) {
-    hash = __builtin_rotateright64(hash, 16) ^ col->Hash();
+    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
   }
 
   for (auto functor : merge_functors) {
-    hash ^= __builtin_rotateright64(hash, 16) ^ functor.Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 16) ^ functor.Hash();
   }
 
-  return hash;
+  hash = local_hash;
+  return local_hash;
 }
 
 bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
                                 Node<QueryView> *that_) noexcept {
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
   const auto that = that_->AsKVIndex();
-  return that &&
-         columns.Size() == that->columns.Size() &&
-         positive_conditions == that->positive_conditions &&
-         negative_conditions == that->negative_conditions &&
-         ColumnsEq(input_columns, that->input_columns) &&
-         ColumnsEq(attached_columns, that->attached_columns) &&
-         MergeFunctorsEq(merge_functors, that->merge_functors) &&
-         !InsertSetsOverlap(this, that);
+  if (!that ||
+      columns.Size() != that->columns.Size() ||
+      positive_conditions != that->positive_conditions ||
+      negative_conditions != that->negative_conditions ||
+      !MergeFunctorsEq(merge_functors, that->merge_functors) ||
+      InsertSetsOverlap(this, that)) {
+    return false;
+  }
+
+  eq.Insert(this, that);
+
+  if (!ColumnsEq(eq, input_columns, that->input_columns) ||
+      !ColumnsEq(eq, attached_columns, that->attached_columns)) {
+    eq.Remove(this, that);
+    return false;
+  }
+
+  return true;
 }
 
 // Put the KV index into a canonical form. The only real internal optimization

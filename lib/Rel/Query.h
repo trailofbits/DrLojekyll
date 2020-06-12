@@ -10,7 +10,6 @@
 
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
-#include <drlojekyll/Util/DisjointSet.h>
 
 namespace hyde {
 namespace query {
@@ -67,13 +66,28 @@ class QueryContext {
 
 class EqualitySet;
 
-struct ColumnSet : std::enable_shared_from_this<ColumnSet> {
+// NOTE(pag): Columns contain a `ColumnSet`, which is used during query
+//            build time to organize them into equivalence classes. Importantly,
+//            the scope of validity of these equivalence classes is per build.
+//            Across separate builds, the equivalence classes are all reset.
+//            After query builds, they must not be depended upon. Consider the
+//            following:
+//
+//                foo(A) : bar(A), A=1.
+//                foo(A) : bar(A), A=2.
+//
+//            On a per-clause basis, `A` and `1` will end up in the same
+//            equivalence class, as will `A` and `2`, but we cannot let those
+//            equivalence classes interfere.
+class ColumnSet : public std::enable_shared_from_this<ColumnSet> {
+ public:
   ColumnSet(Node<QueryColumn> *self) {
     columns.push_back(self);
   }
 
   ColumnSet *Find(void);
   Node<QueryColumn> *Leader(void);
+  bool Contains(Node<QueryColumn> *col) const;
 
   std::shared_ptr<ColumnSet> parent;
   bool is_sorted{true};
@@ -89,20 +103,6 @@ struct ColumnSet : std::enable_shared_from_this<ColumnSet> {
 };
 
 // Represents all values that could inhabit some relation's tuple.
-//
-// NOTE(pag): Columns derive from `DisjointSet`, which is used during query
-//            build time to organize them into equivalence classes. Importantly,
-//            the scope of validity of these equivalence classes is per build.
-//            Across separate builds, the equivalence classes are all reset.
-//            After query builds, they must not be depended upon. Consider the
-//            following:
-//
-//                foo(A) : bar(A), A=1.
-//                foo(A) : bar(A), A=2.
-//
-//            On a per-clause basis, `A` and `1` will end up in the same
-//            equivalence class, as will `A` and `2`, but we cannot let those
-//            equivalence classes interfere.
 template <>
 class Node<QueryColumn> : public Def<Node<QueryColumn>> {
  public:
@@ -125,8 +125,11 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   Node<QueryColumn> *Find(void);
   static void Union(Node<QueryColumn> *a, Node<QueryColumn> *b);
 
+  // Return the index of this column inside of its view.
+  unsigned Index(void) noexcept;
+
   // Hash this column.
-  uint64_t Hash(void) const noexcept;
+  uint64_t Hash(void) noexcept;
 
   // Returns `true` if this column is a constant.
   bool IsConstant(void) const noexcept;
@@ -331,7 +334,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
   // Useful for communicating low-level debug info back to the formatter.
-  virtual std::string DebugString(void) const noexcept;
+  virtual std::string DebugString(void) noexcept;
 
   // Return a number that can be used to help sort this node. The idea here
   // is that we often want to try to merge together two different instances
@@ -359,6 +362,13 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   // Initializer for an updated hash value.
   uint64_t HashInit(void) const noexcept;
+
+  // Upward facing hash. The idea here is that we sometimes have multiple nodes
+  // that have the same hash, and thus are candidates for CSE, and we want to
+  // decide: among those candidates, which nodes /should/ be merged. We decide
+  // this by looking up the dataflow graph (to some limited depth) and creating
+  // a rough hash of how this node gets used.
+  uint64_t UpHash(unsigned depth) const noexcept;
 
   // The selected columns.
   DefList<COL> columns;
@@ -435,21 +445,32 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   bool can_receive_deletions{false};
   bool can_produce_deletions{false};
 
- protected:
-  // Utility for depth calculation.
-  static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);
-  static unsigned GetDepth(const UseList<COND> &conds, unsigned depth);
+  std::string producer;
 
-  // Utility for comparing use lists.
-  static bool ColumnsEq(const UseList<COL> &c1s, const UseList<COL> &c2s);
+  // Does this ode break an invariant?
+  enum {
+    kValid,
+    kInvalidBeforeCanonicalize,
+    kInvalidAfterCanonicalize
+  } valid{kValid};
 
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
   //            columns in both of the lists independently reference the same
   //            view.
+  static bool CheckAllViewsMatch(const UseList<COL> &cols1);
   static bool CheckAllViewsMatch(const UseList<COL> &cols1,
                                  const UseList<COL> &cols2);
+
+ protected:
+  // Utility for depth calculation.
+  static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);
+  static unsigned GetDepth(const UseList<COND> &conds, unsigned depth);
+
+  // Utility for comparing use lists.
+  static bool ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
+                        const UseList<COL> &c2s);
 
   // Check if teh `group_ids` of two views have any overlaps.
   static bool InsertSetsOverlap(Node<QueryView> *a, Node<QueryView> *b);
@@ -778,9 +799,6 @@ class QueryImpl {
 
   template <typename CB>
   void ForEachView(CB do_view) {
-    for (auto view : joins) {
-      do_view(view);
-    }
     for (auto view : selects) {
       do_view(view);
     }
@@ -810,6 +828,7 @@ class QueryImpl {
     }
   }
 
+  void Simplify(void);
   void Optimize(void);
 
   void ConnectInsertsToSelects(void);
