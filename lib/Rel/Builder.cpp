@@ -191,6 +191,7 @@ class QueryBuilderImpl : public SIPSVisitor {
     const auto stream = StreamFor(val);
 
     auto &prev_colset = id_to_col[id];
+#ifndef NDEBUG
     if (prev_colset) {
       const auto prev_col = prev_colset->Leader();
       const auto sel = prev_col->view->AsSelect();
@@ -199,6 +200,7 @@ class QueryBuilderImpl : public SIPSVisitor {
       assert(sel->stream->AsConstant() != nullptr);
       return;
     }
+#endif
 
     const auto select = query->selects.Create(stream, val.SpellingRange());
     const auto col = select->columns.Create(

@@ -128,8 +128,10 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
   // This merged view only merges other things.
   if (merged_views.Size() == 1) {
     const auto merged_view = merged_views[0];
+#ifndef NDEBUG
     const auto num_cols = columns.Size();
     assert(merged_view->columns.Size() == num_cols);
+#endif
 
 //    // This merge view requires certain uniqueness properties, so we need
 //    // to go and maintain those, but the incoming view does not respect those
