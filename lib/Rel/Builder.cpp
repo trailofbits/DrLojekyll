@@ -197,6 +197,8 @@ class QueryBuilderImpl : public SIPSVisitor {
       assert(sel != nullptr);
       assert(sel->stream);
       assert(sel->stream->AsConstant() != nullptr);
+      (void) prev_col;
+      (void) sel;
       return;
     }
 
