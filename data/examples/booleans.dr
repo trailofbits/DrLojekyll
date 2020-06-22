@@ -6,9 +6,15 @@
 #message add_user(i32 UserID)
 #query user_is_logged_in(bound i32 UserId)
 
+#local foo(A, B)
+#local bar(A, B)
+
+foo(A, A) : add_user(A).
+bar(A, B) : foo(A, B), A != B.
+
 user(ID) : add_user(ID).
 
-is_logged_in : log_in(ID), user(ID).
+is_logged_in : log_in(ID), user(ID), bar(ID, ID).
 !is_logged_in : log_out(ID), user(ID).
 
 user_is_logged_in(ID) : is_logged_in, user(ID).

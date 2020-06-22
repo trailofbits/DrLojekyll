@@ -3,19 +3,19 @@
 ; results.
 
 #functor latest_i32(bound i32 OldVal, bound i32 ProposedVal, free i32 NewVal)
-#functor random_i32(free i32 RandVal)
 #functor div_i32(bound i32 LHS, bound i32 RHS, free i32 Res)
 #functor sum_i32(aggregate i32 Val, summary i32 Sum)
 #functor count_i32(aggregate i32 Val, summary i32 Count)
+#functor new_weight_i32(bound i32 OldWeight, bound i32 NewWeight, free i32 NewWeightOut)
 
 #local node(i32 X)
 #local edge(i32 From, i32 To)
-#local edge_weight(i32 From, i32 To, i32 Weight)
+#local edge_weight(i32 From, i32 To, mutable(new_weight_i32) Weight)
 #query average_incoming_weight(bound i32 X, free i32 Avg)
-#message add_edge(i32 From, i32 To)
+#message add_edge(i32 From, i32 To, i32 Weight)
 
-edge(From, To) : add_edge(From, To).
-edge_weight(From, To, Weight) : edge(From, To), random_i32(Weight).
+edge(From, To) : add_edge(From, To, _).
+edge_weight(From, To, Weight) : add_edge(From, To, Weight).
 
 node(From) : edge(From, _).
 node(To) : edge(_, To).
