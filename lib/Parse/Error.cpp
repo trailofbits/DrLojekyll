@@ -4,7 +4,6 @@
 
 #include <iomanip>
 #include <cassert>
-#include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/DisplayPosition.h>
 
 #include <drlojekyll/Lex/Token.h>
@@ -132,36 +131,31 @@ const ErrorColorScheme Error::kDefaultColorScheme = {
 
 
 const ErrorStream &ErrorStream::operator<<(const DisplayRange &range) const {
-  if (dm) {
-    std::string_view data;
-    if (dm->TryReadData(range, &data)) {
-      (*os) << data;
-    }
+  std::string_view data;
+  if (dm.TryReadData(range, &data)) {
+    (*os) << data;
   }
   return *this;
 }
 
 // Stream in a token.
 const ErrorStream &ErrorStream::operator<<(const Token &token) const {
-  if (dm) {
-    std::string_view token_data;
-    if (dm->TryReadData(token.SpellingRange(), &token_data)) {
-      (*os) << token_data;
-    }
+  std::string_view token_data;
+  if (dm.TryReadData(token.SpellingRange(), &token_data)) {
+    (*os) << token_data;
   }
   return *this;
 }
 
 Error::~Error(void) {}
 
-// A basic error message with no file/location information.
-Error::Error(void)
-    : impl(std::make_shared<ErrorImpl>()) {}
+// An error with no position information.
+Error::Error(const DisplayManager &dm)
+    : impl(std::make_shared<ErrorImpl>(dm)) {}
 
 // An error message related to a line:column offset.
 Error::Error(const DisplayManager &dm, const DisplayPosition &pos)
-    : Error() {
-  impl->display_manager = &dm;
+    : Error(dm) {
   impl->path = dm.DisplayName(pos);
   impl->line = pos.Line();
   impl->column = pos.Column();
@@ -172,6 +166,7 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range)
     : Error(dm, range.From()) {
   std::string_view char_range;
   if (dm.TryReadData(range, &char_range)) {
+    impl->hightlight_line = range.From().Line();
     impl->source = char_range;
     impl->source.push_back(' ');
     impl->source.push_back(' ');
@@ -182,7 +177,8 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range)
 // character in particular being referenced.
 Error::Error(const DisplayManager &dm, const DisplayRange &range_,
              const DisplayPosition &pos_in_range)
-   : Error(dm, DisplayRange(pos_in_range, NextByte(dm, pos_in_range))) {}
+   : Error(dm, range_, DisplayRange(pos_in_range, NextByte(dm, pos_in_range)),
+           pos_in_range) {}
 
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced, where the error itself is at
@@ -244,25 +240,23 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
 
 // Attach an empty to the the error message.
 ::hyde::Note Error::Note(void) const {
-  Error note;
+  Error note(impl->display_manager);
   note.impl->next.swap(impl->next);
   impl->next.swap(note.impl);
   return ::hyde::Note(note.impl.get());
 }
 
 // Attach a note to the original error.
-::hyde::Note Error::Note(const DisplayManager &dm,
-                         const DisplayPosition &pos) const {
-  Error note(dm, pos);
+::hyde::Note Error::Note(const DisplayPosition &pos) const {
+  Error note(impl->display_manager, pos);
   note.impl->next.swap(impl->next);
   impl->next.swap(note.impl);
   return ::hyde::Note(impl->next.get());
 }
 
 // An note related to a highlighted range of tokens.
-::hyde::Note Error::Note(const DisplayManager &dm,
-                         const DisplayRange &range) const {
-  Error note(dm, range);
+::hyde::Note Error::Note(const DisplayRange &range) const {
+  Error note(impl->display_manager, range);
   note.impl->next.swap(impl->next);
   impl->next.swap(note.impl);
   return ::hyde::Note(impl->next.get());
@@ -270,9 +264,9 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
 
 // A note related to a highlighted range of tokens, with one
 // character in particular being referenced.
-::hyde::Note Error::Note(const DisplayManager &dm, const DisplayRange &range,
+::hyde::Note Error::Note(const DisplayRange &range,
                          const DisplayPosition &pos_in_range) const {
-  Error note(dm, range, pos_in_range);
+  Error note(impl->display_manager, range, pos_in_range);
   note.impl->next.swap(impl->next);
   impl->next.swap(note.impl);
   return ::hyde::Note(impl->next.get());
@@ -280,9 +274,9 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
 
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced.
-::hyde::Note Error::Note(const DisplayManager &dm, const DisplayRange &range,
+::hyde::Note Error::Note(const DisplayRange &range,
                          const DisplayRange &sub_range) const {
-  Error note(dm, range, sub_range);
+  Error note(impl->display_manager, range, sub_range);
   note.impl->next.swap(impl->next);
   impl->next.swap(note.impl);
   return ::hyde::Note(impl->next.get());

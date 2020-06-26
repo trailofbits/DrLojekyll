@@ -197,7 +197,7 @@ class UseList {
   void Unique(void) noexcept {
     const auto end = uses.end();
     std::sort(uses.begin(), end, OrderUses);
-    auto it = std::unique(uses.begin(), end, OrderUses);
+    auto it = std::unique(uses.begin(), end, UsesEqual);
 
     if (is_weak) {
       for (auto del_it = it; del_it != end; ++del_it) {
@@ -245,13 +245,23 @@ class UseList {
 
   static bool OrderUses(Use<T> *a, Use<T> *b) {
     if (a && b) {
-      return a->get() < b->get();
+      return a->get()->Sort() < b->get()->Sort();
     } else if (!a && !b) {
       return false;
     } else if (!a) {
       return false;
     } else {
       return true;
+    }
+  }
+
+  static bool UsesEqual(Use<T> *a, Use<T> *b) {
+    if (a == b) {
+      return true;
+    } else if (a && b) {
+      return a->get() == b->get();
+    } else {
+      return false;
     }
   }
 

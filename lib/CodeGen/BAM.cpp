@@ -239,34 +239,8 @@ static OutputStream &CommentOnCol(OutputStream &os, QueryColumn col) {
 
 // Return a binding string for a functor.
 static std::string BindingPattern(ParsedFunctor decl) {
-  std::stringstream ss;
-  for (auto param : decl.Parameters()) {
-    switch (param.Binding()) {
-      case ParameterBinding::kImplicit:
-        assert(false);
-        break;
-      case ParameterBinding::kMutable:
-        ss << 'm';
-        break;
-      case ParameterBinding::kFree:
-        ss << 'f';
-        break;
-
-      case ParameterBinding::kBound:
-        ss << 'b';
-        break;
-
-      case ParameterBinding::kSummary:
-        ss << 's';
-        break;
-
-      case ParameterBinding::kAggregate:
-        ss << 'a';
-        break;
-    }
-  }
-
-  return ss.str();
+  const auto pattern = ParsedDeclaration(decl).BindingPattern();
+  return std::string(pattern.begin(), pattern.end());
 }
 
 // We sometimes deal in terms of input columns, and so there may actually be
@@ -517,11 +491,11 @@ static void CallUsers(OutputStream &os, QueryView view,
 // Declare the function that will do aggregate some results.
 static void DeclareAggregate(
     OutputStream &os, QueryAggregate agg,
-    std::set<std::pair<ParsedFunctor, bool>> &seen_functors) {
+    std::set<std::pair<uint64_t, bool>> &seen_functors) {
 
   const auto functor = agg.Functor();
-  const std::pair<ParsedFunctor, bool> key(
-      functor, QueryView::From(agg).CanReceiveDeletions());
+  const std::pair<uint64_t, bool> key(
+      functor.UniqueId(), QueryView::From(agg).CanReceiveDeletions());
 
   if (seen_functors.count(key)) {
     return;
@@ -530,7 +504,9 @@ static void DeclareAggregate(
 
   const auto binding_pattern = BindingPattern(functor);
 
-  os << "// Aggregator object (will collect results). This is a default\n"
+  os << "#indef AGGREGATOR_" << functor.Name() << '_' << binding_pattern << '\n'
+     << "#define AGGREGATOR_" << functor.Name() << '_' << binding_pattern << '\n'
+     << "// Aggregator object (will collect results). This is a default\n"
      << "// implementation that should really be replaced via specialization\n"
      << "// via user code.\n"
      << "struct " << functor.Name() << '_' << binding_pattern << "_config {\n";
@@ -566,7 +542,8 @@ static void DeclareAggregate(
   }
 
   // Forward declare the aggregator as returning the above structure.
-  os << ">;\n\n";
+  os << ">;\n"
+     << "#endif\n\n";
 }
 
 // Generate code associated with an aggregate.
@@ -1506,55 +1483,75 @@ static void DefineMerge(OutputStream &os, QueryMerge view) {
 
 
 static void DeclareGenerator(OutputStream &os, QueryMap map,
-                             std::unordered_set<ParsedFunctor> &seen_functors) {
+                             std::unordered_set<uint64_t> &seen_functors) {
   const auto functor = map.Functor();
-  if (seen_functors.count(functor)) {
+  if (seen_functors.count(functor.UniqueId())) {
     return;
   }
-  seen_functors.insert(functor);
+  seen_functors.insert(functor.UniqueId());
 
   const auto binding_pattern = BindingPattern(functor);
 
   // Declare the tuple type as a structure.
   os << "\n"
-     << "struct " << functor.Name() << '_' << binding_pattern << "_tag {};\n"
-     << "using " << functor.Name() << '_' << binding_pattern
-     << "_generator = ::hyde::rt::Generator<";
+     << "#ifndef FUNCTOR_" << functor.Name() << '_' << binding_pattern << '\n'
+     << "#define FUNCTOR_" << functor.Name() << '_' << binding_pattern << '\n'
+     << "struct " << functor.Name() << '_' << binding_pattern << "_tag {};\n";
 
-  auto sep = "";
-  for (auto param : functor.Parameters()) {
-    switch (param.Binding()) {
-      case ParameterBinding::kImplicit:
-      case ParameterBinding::kMutable:
-      case ParameterBinding::kSummary:
-      case ParameterBinding::kAggregate:
-        assert(false);
-        break;
+  if (!map.IsFilterLike()) {
+    os << "using " << functor.Name() << '_' << binding_pattern
+       << "_generator = ::hyde::rt::Generator<";
 
-      case ParameterBinding::kBound:
-        break;
+    auto sep = "";
+    for (auto param : functor.Parameters()) {
+      switch (param.Binding()) {
+        case ParameterBinding::kImplicit:
+        case ParameterBinding::kMutable:
+        case ParameterBinding::kSummary:
+        case ParameterBinding::kAggregate:
+          assert(false);
+          break;
 
-      case ParameterBinding::kFree:
-        os << sep << TypeName(param.Type());
-        sep = ", ";
-        break;
+        case ParameterBinding::kBound:
+          break;
+
+        case ParameterBinding::kFree:
+          os << sep << TypeName(param.Type());
+          sep = ", ";
+          break;
+      }
     }
+
+    // Forward declare the aggregator as returning a generator of the above
+    // structure type.
+    os << ">;\n";
   }
 
-  // Forward declare the aggregator as returning a generator of the above
-  // structure type.
-  os << ">;\n\n"
-     << "extern \"C\" void " << functor.Name() << '_' << binding_pattern
-     << "(\n    " << functor.Name() << '_' << binding_pattern
-     << "_generator &";
+  os << "extern \"C\" ";
+  if (map.IsFilterLike()) {
+    os << "bool ";
+  } else {
+    os << "void ";
+  }
+  os << functor.Name() << '_' << binding_pattern
+     << "(";
+
+  auto sep = "\n    ";
+
+  if (!map.IsFilterLike()) {
+    os << sep << functor.Name() << '_' << binding_pattern
+       << "_generator &";
+  }
 
   for (auto param : functor.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
-      os << ",\n    " << TypeName(param.Type()) << CommentOnParam(os, param);
+      os << sep << TypeName(param.Type()) << CommentOnParam(os, param);
+      sep = ",\n    ";
     }
   }
 
-  os << ");\n\n";
+  os << ");\n"
+     << "#endif\n\n";
 }
 
 static void DefineMap(OutputStream &os, QueryMap map,
@@ -1578,8 +1575,61 @@ static void DefineMap(OutputStream &os, QueryMap map,
     os << " * Output copied column: " << col.Variable().Name() << '\n';
   }
 
-  os << " */\n"
-     << "template <bool __added, typename Tuple>\n"
+  os << " */\n\n";
+
+  if (!functor.IsPure()) {
+    os << "#ifndef FUNCTOR_KV_" << functor.Name() << '_' << binding_pattern << '\n'
+       << "#define FUNCTOR_KV_" << functor.Name() << '_' << binding_pattern << '\n';
+    if (map.IsFilterLike()) {
+      os << "// The functor isn't pure, and it has no free parameters, so it\n"
+         << "// behaves like a filter\n";
+
+      if (view.CanReceiveDeletions()) {
+        os << "static ::hyde::rt::DifferentialMap<\n    ";
+      } else {
+        os << "static ::hyde::rt::Map<\n    ";
+      }
+
+    } else {
+      os << "// The functor isn't pure, thus we need to record the outputs\n"
+         << "// of each execution so that upon re-executing, we can send\n"
+         << "// differential updates about what has changed since the last\n"
+         << "// execution.\n";
+
+      if (view.CanReceiveDeletions()) {
+        os << "static ::hyde::rt::DifferentialMultiMap<\n    ";
+      } else {
+        os << "static ::hyde::rt::MultiMap<\n    ";
+      }
+    }
+
+    auto sep = "";
+    os << "::hyde::rt::KeyVars<";
+    for (const auto param : functor.Parameters()) {
+      if (ParameterBinding::kBound == param.Binding()) {
+        os << sep << TypeName(param.Type()) << CommentOnParam(os, param);
+        sep = ",\n                    ";
+      }
+    }
+
+    os << ">,\n    ::hyde::ValueVars<";
+    if (map.IsFilterLike()) {
+      os << "bool";
+
+    } else {
+      sep = "";
+      for (const auto param : functor.Parameters()) {
+        if (ParameterBinding::kFree == param.Binding()) {
+          os << sep << TypeName(param.Type()) << CommentOnParam(os, param);
+          sep = ",\n                      ";
+        }
+      }
+    }
+    os << ">> KV_" << functor.Name() << '_' << binding_pattern << ";\n";
+    os << "#endif\n\n";
+  }
+
+  os << "template <bool __added, typename Tuple>\n"
      << "void V" << id << "("
      << "\n    Stage *__stages, unsigned __wid, unsigned,"
      << "\n    const Tuple &__tuple) noexcept {\n";
@@ -1637,27 +1687,208 @@ static void DefineMap(OutputStream &os, QueryMap map,
        << col_to_id[in_col] << ';' << CommentOnCol(os, out_col) << '\n';
   }
 
-  os << "  auto &__gen = __stages[__wid].G" << id << ";\n"
-     << "  __gen.Clear();\n"
-     << "  ::hyde::rt::InlineDefinition<"  << functor.Name() << '_'
-     << binding_pattern << "_tag>(" << functor.Name() << '_' << binding_pattern
-     << ")(__gen";
+  // If this function isn't pure then that means that we can produce differential
+  // updates that revoke prior results.
+  if (!functor.IsPure()) {
 
-  for (auto col : bound_cols) {
-    os << ", " << col.UniqueId();
+    os << '\n'
+       << "  auto &__kv = KV_" << functor.Name() << '_'
+       << binding_pattern << ";\n";
+
+    // It's a predicate that isn't pure.
+    if (map.IsFilterLike()) {
+      sep= "";
+      os << "  const auto [";
+
+      if (map.IsFilterLike()) {
+        os << "__prev_res";
+        sep = ", ";
+      } else {
+        for (auto col : free_cols) {
+          os << sep << "prev_C" << col.UniqueId();
+          sep = ", ";
+        }
+      }
+
+      os << sep << "__has_prev] = __kv.Get(";
+
+      sep = "\n      ";
+      for (auto col : bound_cols) {
+        os << sep << "C" << col.UniqueId() << CommentOnCol(os, col);
+        sep = ",\n      ";
+      }
+
+      os << ");\n\n";
+
+      // If we have received a deletion request on an impure functor then we
+      // don't need need to invoke the functor; instead we just need to delete
+      // any prior saved values. In the case of a predicate/filter-like functor,
+      // we only need to forward the deletion to readers if the last invocation
+      // returned `true`, i.e. if the users of the columns even received bound
+      // columns.
+      if (view.CanReceiveDeletions()) {
+        os << "  // If we're deleting things then go delete the prior record.\n"
+           << "  if constexpr (!__added) {\n"
+           << "    if (!__has_prev) {\n"
+           << "      return;  // Nothing to delete.\n\n"
+           << "    } else if (__prev_res) {\n";
+
+        CallUsers(os, QueryView::From(map), case_map, "      ", "false", false);
+
+        os << "    }\n"
+           << "    __kv.Erase(";
+
+        sep = "";
+        for (auto col : bound_cols) {
+          os << sep << "C" << col.UniqueId();
+          sep = ", ";
+        }
+
+        os << ");\n"
+           << "    return;\n"
+           << "  }\n\n";
+      }
+
+    // It's a mapping function.
+    } else {
+      os << "  auto &__prev_gen = __stages[__wid].prev_G" << id << ";\n"
+         << "  __prev_gen.Clear();\n"
+         << "  auto __has_prev = __kv.Get(";
+
+      sep = "\n      ";
+      for (auto col : bound_cols) {
+        os << sep << "C" << col.UniqueId() << CommentOnCol(os, col);
+        sep = ",\n      ";
+      }
+
+      os << sep << "__prev_gen);\n"
+         << "  __prev_gen.Sort();\n"
+         << "  auto __prev_it = __prev_gen.begin();\n"
+         << "  auto __prev_end = __prev_gen.end();\n\n";
+
+      // If we have received a deletion request on an impure functor then we
+      // don't need need to invoke the functor; instead we just need to delete
+      // any prior saved values.
+      if (view.CanReceiveDeletions()) {
+        os << "  // If we're deleting things then go delete all prior records.\n"
+           << "  if constexpr (!__added) {\n"
+           << "    if (!__has_prev) {\n"
+           << "      return;  // Nothing to delete.\n"
+           << "    }\n"
+           << "    __kv.Erase(";
+
+        sep = "";
+        for (auto col : bound_cols) {
+          os << sep << "C" << col.UniqueId();
+          sep = ", ";
+        }
+        os << ");\n"
+           << "    for (auto [";
+
+        sep = "";
+        for (auto col : free_cols) {
+          os << sep << "C" << col.UniqueId();
+          sep = ", ";
+        }
+
+        os << "] : __prev_gen) {\n";
+        CallUsers(os, QueryView::From(map), case_map, "      ", "false", false);
+        os << "    }\n"
+           << "    return;\n"
+           << "  }\n\n";
+      }
+    }
   }
 
-  os << ");\n\n"
-     << "  // Loop for each produced tuple.\n"
-     << "  for (auto [";
+  // This function is going to behave like a filter, i.e. it's going to
+  // tell us whether or not to admit the tuple along.
+  if (map.IsFilterLike()) {
+    os << "  const auto __res = ::hyde::rt::InlineDefinition<"
+       << functor.Name() << '_' << binding_pattern << "_tag>("
+       << functor.Name() << '_' << binding_pattern
+       << ")(\n";
+
+    sep = "      ";
+    for (auto col : bound_cols) {
+      os << sep << col.UniqueId();
+      sep = ", ";
+    }
+
+    os << ");\n\n";
+
+    if (functor.IsPure()) {
+      os << "  if (__res) {\n";
+
+    // Not pure; we need to manage the differentials.
+    } else {
+
+      // We can receive deletions.
+      if (view.CanReceiveDeletions()) {
+        os << "  if constexpr (!__added) {\n"
+           << "    if (!__has_prev || !__prev_res) {\n"
+           << "      return;  // Nothing to remove, or removal would be redundant.\n"
+           << "    }\n"
+           << "  } else ";
+
+      // We can't receive any deletions, so we can detect in advance when
+      // nothing has changed.
+      } else {
+        os << "  ";
+      }
+      os << "if ((!__has_prev && !__res) ||\n"
+         << "      (__has_prev && __prev_res == __res)) {\n"
+         << "    return;  // Nothing to do or change.\n"
+         << "  }\n\n";
+
+      os << "  if (__res) {\n";
+    }
+
+  // Just a normal mapping function.
+  } else {
+    os << "  auto &__gen = __stages[__wid].G" << id << ";\n"
+       << "  __gen.Clear();\n"
+       << "  ::hyde::rt::InlineDefinition<"  << functor.Name() << '_'
+       << binding_pattern << "_tag>(" << functor.Name() << '_' << binding_pattern
+       << ")(\n      __gen";
+
+    for (auto col : bound_cols) {
+      os << ", " << col.UniqueId();
+    }
+
+    os << ");\n"
+       << "  __gen.Sort();\n\n"
+       << "  // Loop for each produced tuple.\n"
+       << "  for (const auto __tuple : __gen) {\n";
+  }
+
+  // If this is an actual mapping function, i.e. it produces many tuples, and
+  // if it's not pure, and if previously produced outputs, then only process
+  // the outputs that
+  if (!map.IsFilterLike() && !functor.IsPure()) {
+    os << '\n'
+       << "    // Don't process any tuples that are shared with the prior execution.\n"
+       << "    while (__prev_it < __prev_end) {\n"
+       << "      const auto __prev_tuple = *__prev_it;\n"
+       << "      if (__prev_tuple == __tuple) {\n"
+       << "        ++__prev_it;\n"
+       << "        goto __next_iter;\n"
+       << "      } else if (__prev_tuple < __tuple) {\n"
+       << "        ++prev_it;\n"
+       << "      } else {\n"
+       << "        goto __process_tuple;\n"
+       << "      }\n"
+       << "    }\n\n"
+       << "  __process_tuple:\n";
+  }
 
   sep = "";
+  os << "    const auto [";
   for (auto col : free_cols) {
-    os << sep << 'C' << col.UniqueId() << CommentOnCol(os, col);
-    sep = ",\n        ";
+    os << sep << 'C' << col.UniqueId();
+    sep = ", ";
   }
+  os << "] = __tuple;\n";
 
-  os << "] : __gen) {\n";
 
   if (view.CanProduceDeletions()) {
     os << "    if constexpr (__added) {\n";
@@ -1669,8 +1900,31 @@ static void DefineMap(OutputStream &os, QueryMap map,
     os << "    static_assert(__added);\n";
     CallUsers(os, QueryView::From(map), case_map, "    ", "true", true);
   }
-  os << "  }\n"
-     << "  return 0u;\n"
+
+  os << "  __next_iter:\n"
+     << "    continue;\n"
+     << "  }\n";
+
+  // We've now processed all additions, now we need to process removals
+  // where the prior values differ. We process them after because they are
+  // pushed onto the back of the work list, and thus will be processed
+  // first.
+  if (!map.IsFilterLike() && !functor.IsPure()) {
+    os << '\n'
+       << "  // Remove tuples that weren't produced by the most recent execution.\n"
+       << "  __prev_gen.Erase(__gen);\n"
+       << "  for (const auto [";
+    sep = "";
+    for (auto col : free_cols) {
+      os << sep << 'C' << col.UniqueId();
+      sep = ", ";
+    }
+    os << "] : __prev_gen) {\n";
+    CallUsers(os, QueryView::From(map), case_map, "    ", "false", false);
+    os << "  }\n";
+  }
+
+  os << "  return 0u;\n"
      << "}\n\n";
 }
 
@@ -1761,10 +2015,17 @@ static void DefineStage(OutputStream &os, Query query) {
 
     if (view.IsMap()) {
       const auto map = QueryMap::From(view);
+      if (map.IsFilterLike()) {
+        return;
+      }
       const auto functor = map.Functor();
       const auto binding_pattern = BindingPattern(functor);
       os << "  " << functor.Name() << '_' << binding_pattern
-         << "_generator G" << view.UniqueId() << ";\n";
+         << "_generator G" << view.UniqueId();
+      if (!functor.IsPure()) {
+        os << ", prev_G" << view.UniqueId();
+      }
+      os << ";\n";
     }
 
     const auto depth = view.Depth();
@@ -1971,9 +2232,9 @@ static void DefineStep(
 void GenerateCode(const ParsedModule &module, const Query &query,
                   OutputStream &os) {
 
-  std::unordered_set<ParsedFunctor> seen_generators;
+  std::unordered_set<uint64_t> seen_generators;
 //  std::set<std::pair<ParsedFunctor, bool>> seen_functors;
-  std::set<std::pair<ParsedFunctor, bool>> seen_aggregators;
+  std::set<std::pair<uint64_t, bool>> seen_aggregators;
 
   os << "struct Stage;\n";
 

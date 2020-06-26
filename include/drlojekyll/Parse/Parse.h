@@ -14,6 +14,7 @@
 
 namespace hyde {
 
+class DisplayManager;
 class Parser;
 class ParserImpl;
 
@@ -43,7 +44,7 @@ class ParsedNode {
     return reinterpret_cast<uintptr_t>(impl);
   }
 
-  inline uintptr_t Hash(void) const {
+  inline uint64_t Hash(void) const {
     return reinterpret_cast<uintptr_t>(impl) >> 3;
   }
 
@@ -489,6 +490,12 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   // Return the declaration associated with a predicate. This is the first
   // parsed declaration, so it could be in a different module.
   static ParsedDeclaration Of(ParsedPredicate pred);
+
+  // A string representing a binding pattern of the parameters. A bound
+  // parameter is `b`, a free one is `f`, mutable is `m`, aggregate is `a`,
+  // and summary is `s`. This returns a string of letters, e.g. `bbf` means
+  // two bound parameters, followed by a free parameter.
+  std::string_view BindingPattern(void) const noexcept;
 
  protected:
   friend class ParserImpl;

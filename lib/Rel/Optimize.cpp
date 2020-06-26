@@ -7,91 +7,6 @@
 namespace hyde {
 namespace {
 
-// Relabel group IDs. This enables us to better optimize SELECTs. Our initial
-// assignment of `group_id`s works well enough to start with, but isn't good
-// enough to help us merge some SELECTs. The key idea is that if a given
-// INSERT reaches two SELECTs, then those SELECTs cannot be merged.
-static void RelabelGroupIDs(QueryImpl *query) {
-
-  // Clear out all `group_id` sets, and reset the depth counters.
-  std::vector<COL *> sorted_cols;
-
-  unsigned i = 0u;
-  query->ForEachView([&] (VIEW *view) {
-    if (view->is_dead) {
-      return;
-    }
-
-    view->depth = 0;
-    view->hash = 0;
-
-    view->group_ids.clear();
-    if (view->AsJoin() || view->AsAggregate() || view->AsKVIndex()) {
-      view->group_ids.push_back(i++);
-
-    } else {
-      for (auto col : view->columns) {
-        sorted_cols.push_back(col);
-      }
-    }
-  });
-
-  query->ForEachView([&] (VIEW *view) {
-    if (view->is_dead) {
-      return;
-    }
-
-    (void) view->Depth();  // Calculate view depth.
-  });
-
-  // Sort it so that we process deeper views (closer to INSERTs) first.
-  std::sort(
-      sorted_cols.begin(), sorted_cols.end(),
-      [] (COL *a, COL *b) {
-        return a->view->Depth() > b->view->Depth();
-      });
-
-  // Propagate the group IDs down through the graph.
-  for (i = 0; i < 2; ++i) {
-    for (auto col : sorted_cols) {
-      const auto view = col->view;
-
-      // Look at the users of this column, e.g. joins, aggregates, tuples,
-      // and copy their view's group ids back to this view.
-      col->ForEachUser([=] (VIEW *user) {
-        view->group_ids.insert(
-            view->group_ids.end(),
-            user->group_ids.begin(),
-            user->group_ids.end());
-      });
-
-      std::sort(view->group_ids.begin(), view->group_ids.end());
-      auto it = std::unique(view->group_ids.begin(), view->group_ids.end());
-      view->group_ids.erase(it, view->group_ids.end());
-    }
-  }
-}
-
-// Remove unused views.
-static bool RemoveUnusedViews(QueryImpl *query) {
-  size_t ret = 0;
-  size_t all_ret = 0;
-  do {
-    ret = query->selects.RemoveUnused() |
-          query->tuples.RemoveUnused() |
-          query->kv_indices.RemoveUnused() |
-          query->joins.RemoveUnused() |
-          query->maps.RemoveUnused() |
-          query->aggregates.RemoveUnused() |
-          query->merges.RemoveUnused() |
-          query->constraints.RemoveUnused() |
-          query->inserts.RemoveUnused();
-    all_ret |= ret;
-  } while (ret);
-
-  return 0 != all_ret;
-}
-
 using CandidateList = std::vector<VIEW *>;
 using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
 
@@ -169,6 +84,110 @@ static void FillViews(T &def_list, CandidateList &views_out) {
 
 }  // namespace
 
+// Relabel group IDs. This enables us to better optimize SELECTs. Our initial
+// assignment of `group_id`s works well enough to start with, but isn't good
+// enough to help us merge some SELECTs. The key idea is that if a given
+// INSERT reaches two SELECTs, then those SELECTs cannot be merged.
+void QueryImpl::RelabelGroupIDs(void) {
+
+  // Clear out all `group_id` sets, and reset the depth counters.
+  std::vector<COL *> sorted_cols;
+
+  unsigned i = 1u;
+  ForEachView([&] (VIEW *view) {
+    if (view->is_dead) {
+      return;
+    }
+
+    view->depth = 0;
+    view->hash = 0;
+    view->group_ids.clear();
+
+    if (view->AsJoin() || view->AsAggregate() || view->AsKVIndex()) {
+      view->group_id = i++;
+      view->group_ids.push_back(view->group_id);
+
+    } else {
+      view->group_id = 0;
+    }
+
+    for (auto col : view->columns) {
+      sorted_cols.push_back(col);
+    }
+  });
+
+  ForEachView([&] (VIEW *view) {
+    if (view->is_dead) {
+      return;
+    }
+
+    (void) view->Depth();  // Calculate view depth.
+  });
+
+  // Sort it so that we process deeper views (closer to INSERTs) first.
+  std::sort(
+      sorted_cols.begin(), sorted_cols.end(),
+      [] (COL *a, COL *b) {
+        return a->view->Depth() > b->view->Depth();
+      });
+
+  // Propagate the group IDs down through the graph.
+  for (auto changed = true; changed; ) {
+    changed = false;
+    for (auto col : sorted_cols) {
+      const auto view = col->view;
+
+      const auto old_size = view->group_ids.size();
+
+      // Look at the users of this column, e.g. joins, aggregates, tuples,
+      // and copy their view's group ids back to this view.
+      col->ForEachUser([=] (VIEW *user) {
+
+        // If the user if a JOIN, AGGREGATE, or KVINDEX, then take its group
+        // ID.
+        if (user->group_id) {
+          view->group_ids.push_back(user->group_id);
+
+        // Otherwise, take its set of group IDs.
+        } else {
+          view->group_ids.insert(
+              view->group_ids.end(),
+              user->group_ids.begin(),
+              user->group_ids.end());
+        }
+      });
+
+      std::sort(view->group_ids.begin(), view->group_ids.end());
+      auto it = std::unique(view->group_ids.begin(), view->group_ids.end());
+      view->group_ids.erase(it, view->group_ids.end());
+
+      if (view->group_ids.size() > old_size) {
+        changed = true;
+      }
+    }
+  }
+}
+
+// Remove unused views.
+bool QueryImpl::RemoveUnusedViews(void) {
+  size_t ret = 0;
+  size_t all_ret = 0;
+  do {
+    ret = selects.RemoveUnused() |
+          tuples.RemoveUnused() |
+          kv_indices.RemoveUnused() |
+          joins.RemoveUnused() |
+          maps.RemoveUnused() |
+          aggregates.RemoveUnused() |
+          merges.RemoveUnused() |
+          constraints.RemoveUnused() |
+          inserts.RemoveUnused();
+    all_ret |= ret;
+  } while (ret);
+
+  return 0 != all_ret;
+}
+
 void QueryImpl::Simplify(void) {
   CandidateList views;
 
@@ -181,17 +200,17 @@ void QueryImpl::Simplify(void) {
 
   // Now canonicalize JOINs, which will eliminate columns of useless joins.
   for (auto join : joins) {
-    join->Canonicalize(this);
+    join->Canonicalize(this, false);
   }
 
   // Some of those useless JOINs are converted into TUPLEs, so canonicalize
   // those.
   for (auto tuple : tuples) {
-    tuple->Canonicalize(this);
+    tuple->Canonicalize(this, false);
   }
 
-  RemoveUnusedViews(this);
-  RelabelGroupIDs(this);
+  RemoveUnusedViews();
+  RelabelGroupIDs();
 }
 
 void QueryImpl::Canonicalize(void) {
@@ -204,12 +223,12 @@ void QueryImpl::Canonicalize(void) {
   for (auto non_local_changes = true; non_local_changes; ) {
     non_local_changes = false;
     this->ForEachView([&] (VIEW *view) {
-      non_local_changes = view->Canonicalize(this) || non_local_changes;
+      non_local_changes = view->Canonicalize(this, true) || non_local_changes;
     });
   }
 
-  RemoveUnusedViews(this);
-  RelabelGroupIDs(this);
+  RemoveUnusedViews();
+  RelabelGroupIDs();
 }
 
 void QueryImpl::Optimize(void) {
@@ -222,8 +241,8 @@ void QueryImpl::Optimize(void) {
     });
 
     while (CSE(views)) {
-      RemoveUnusedViews(this);
-      RelabelGroupIDs(this);
+      RemoveUnusedViews();
+      RelabelGroupIDs();
       views.clear();
       this->ForEachView([&views] (VIEW *view) {
         views.push_back(view);
@@ -231,7 +250,7 @@ void QueryImpl::Optimize(void) {
     }
   };
 
-  RemoveUnusedViews(this);
+  RemoveUnusedViews();
 
   // Apply CSE to all views.
   do_cse();

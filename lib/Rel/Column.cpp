@@ -129,8 +129,19 @@ unsigned Node<QueryColumn>::Index(void) noexcept {
 }
 
 uint64_t Node<QueryColumn>::Hash(void) noexcept {
-  return __builtin_rotateright64(view->Hash(), 3u + Index()) *
-         0xff51afd7ed558ccdull;
+  if (!hash) {
+    hash = __builtin_rotateright64(
+        view->Hash() * 0xff51afd7ed558ccdull,
+        (Index() + static_cast<unsigned>(type.Kind()) + 33u) % 64u);
+  }
+  return hash;
+}
+
+// Return a number that can be used to help sort this node. The idea here
+// is that we often want to try to merge together two different instances
+// of the same underlying node when we can.
+uint64_t Node<QueryColumn>::Sort(void) noexcept {
+  return Hash();
 }
 
 void Node<QueryColumn>::ReplaceAllUsesWith(Node<QueryColumn> *that) {

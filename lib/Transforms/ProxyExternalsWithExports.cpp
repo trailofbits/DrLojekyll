@@ -61,21 +61,21 @@ static void ProxyExternal(
 
 // Transforms `module` so that all queries are rewritten to be messages,
 // possibly pairs of input and output messages.
-ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
-                                       ParsedModule module) {
+std::optional<ParsedModule> ProxyExternalsWithExports(
+    const DisplayManager &display_manager, const ErrorLog &error_log,
+    ParsedModule module) {
+
   std::stringstream ss;
   hyde::OutputStream os(display_manager, ss);
 
   std::unordered_set<ParsedDeclaration> proxied_decls;
 
-  if (module != module.RootModule()) {
-    module = CombineModules(display_manager, module.RootModule());
-  }
-
-  for (auto _ : module.Imports()) {
-    (void) _;
-    module = CombineModules(display_manager, module.RootModule());
-    break;
+  if (auto module_opt = CombineModules(
+          display_manager, error_log, module.RootModule());
+      module_opt) {
+    module = *module_opt;
+  } else {
+    return std::nullopt;
   }
 
   for (auto include : module.Includes()) {
@@ -208,11 +208,8 @@ ParsedModule ProxyExternalsWithExports(DisplayManager &display_manager,
   DisplayConfiguration config;
   config.name = "<proxy-externals>";
 
-  hyde::ErrorLog error_log;
   hyde::Parser parser(display_manager, error_log);
-  auto transformed_module = parser.ParseStream(ss, config);
-  assert(error_log.IsEmpty());
-  return transformed_module;
+  return parser.ParseStream(ss, config);
 }
 
 }  // namespace hyde

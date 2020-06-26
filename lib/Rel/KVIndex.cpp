@@ -41,16 +41,16 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 43) * col->Hash();
   }
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : attached_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 33) * col->Hash();
   }
 
   for (auto functor : merge_functors) {
-    local_hash ^= __builtin_rotateright64(local_hash, 16) ^ functor.Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 23) * functor.Id();
   }
 
   hash = local_hash;
@@ -87,7 +87,7 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
 // Put the KV index into a canonical form. The only real internal optimization
 // that will happen is constant propagation of keys, but NOT values (as we can't
 // predict how the merge functors will affect them).
-bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query) {
+bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query, bool) {
   is_canonical = true;
 
   auto i = 0u;
@@ -100,6 +100,7 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query) {
     // Input is a constant, forward it along.
     if (col->IsConstant()) {
       columns[i]->ReplaceAllUsesWith(col);
+      hash = 0;
       is_canonical = false;
     }
     ++i;
@@ -146,6 +147,7 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query) {
   columns.Swap(new_output_columns);
   input_columns.Swap(new_input_columns);
 
+  hash = 0;
   is_canonical = true;
   return true;
 }

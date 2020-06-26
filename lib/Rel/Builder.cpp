@@ -278,6 +278,9 @@ class QueryBuilderImpl : public SIPSVisitor {
     }
 
     auto join = query->joins.Create();
+    join->joined_views.AddUse(lhs_view);
+    join->joined_views.AddUse(rhs_view);
+
     for (auto i = 0u; i < num_cols; ++i) {
       const auto sel_col = select_cols[i];
       const auto tuple_col = tuple_cols[i];

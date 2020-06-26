@@ -3,6 +3,7 @@
 #include "Query.h"
 
 #include <sstream>
+#include <iostream>
 
 namespace hyde {
 
@@ -63,7 +64,11 @@ const char *Node<QueryAggregate>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryMerge>::KindName(void) const noexcept {
-  return "UNION";
+  if (is_equivalence_class) {
+    return "EQ-CLASS";
+  } else {
+    return "UNION";
+  }
 }
 
 const char *Node<QueryConstraint>::KindName(void) const noexcept {
@@ -161,7 +166,12 @@ std::string Node<QueryView>::DebugString(void) noexcept {
 // is that we often want to try to merge together two different instances
 // of the same underlying node when we can.
 uint64_t Node<QueryView>::Sort(void) noexcept {
-  return Depth();
+  return reinterpret_cast<uintptr_t>(this);
+//
+//  if (!sort) {
+//    sort = HashInit();
+//  }
+//  return sort;
 }
 
 // Returns `true` if this view is being used. This is defined in terms of
@@ -213,14 +223,18 @@ void Node<QueryView>::OrderConditions(void) {
 
 // Check to see if the attached columns are ordered and unique. If they're
 // not unique then we can deduplicate them.
-bool Node<QueryView>::AttachedColumnsAreCanonical(void) const noexcept {
+bool Node<QueryView>::AttachedColumnsAreCanonical(bool sort) const noexcept {
   if (!attached_columns.Empty()) {
     if (attached_columns[0]->IsConstant()) {
       return false;
     }
   }
+
   for (auto i = 1u; i < attached_columns.Size(); ++i) {
-    if (attached_columns[i - 1u] >= attached_columns[i] ||
+    if (sort && attached_columns[i - 1u]->Sort() > attached_columns[i]->Sort()) {
+      return false;
+    }
+    if (attached_columns[i - 1] == attached_columns[i] ||
         attached_columns[i]->IsConstant()) {
       return false;
     }
@@ -229,7 +243,8 @@ bool Node<QueryView>::AttachedColumnsAreCanonical(void) const noexcept {
 }
 
 // Put this view into a canonical form.
-bool Node<QueryView>::Canonicalize(QueryImpl *) {
+bool Node<QueryView>::Canonicalize(QueryImpl *, bool) {
+  is_canonical = true;
   return false;
 }
 
@@ -316,25 +331,25 @@ static const std::hash<const char *> kCStrHasher;
 
 // Initializer for an updated hash value.
 uint64_t Node<QueryView>::HashInit(void) const noexcept {
-  uint64_t hash = kCStrHasher(this->KindName());
-  hash <<= 1u;
-  hash |= can_receive_deletions;
-  hash <<= 1u;
-  hash |= can_produce_deletions;
-  hash = __builtin_rotateright64(hash, 13);
-  hash *= (columns.Size() + 7u);
+  uint64_t init_hash = kCStrHasher(this->KindName());
+  init_hash <<= 1u;
+  init_hash |= can_receive_deletions;
+  init_hash <<= 1u;
+  init_hash |= can_produce_deletions;
+
+  init_hash ^= __builtin_rotateright64(init_hash, 33) * (columns.Size() + 7u);
 
   for (auto positive_cond : this->positive_conditions) {
-    hash = __builtin_rotateright64(hash, 13);
-    hash ^= positive_cond->declaration.UniqueId();
+    init_hash ^= __builtin_rotateright64(init_hash, 33) *
+                 positive_cond->declaration.Id();
   }
 
-  for (auto negative_cond : this->positive_conditions) {
-    hash = __builtin_rotateright64(hash, 13);
-    hash ^= ~negative_cond->declaration.UniqueId();
+  for (auto negative_cond : this->negative_conditions) {
+    init_hash ^= __builtin_rotateright64(init_hash, 33) *
+                 ~negative_cond->declaration.Id();
   }
 
-  return hash;
+  return init_hash;
 }
 
 // Upward facing hash. The idea here is that we sometimes have multiple nodes
@@ -427,6 +442,8 @@ bool Node<QueryView>::ColumnsEq(
     auto b = c2s[i];
     if (a->type.Kind() != b->type.Kind() ||
         !a->view->Equals(eq, b->view)) {
+      std::cerr << i << " " << a->type.Spelling() << ' ' << b->type.Spelling() << " "
+                << std::hex << a->view->Hash() << " " << b->view->Hash() << std::dec << '\n';
       return false;
     }
   }

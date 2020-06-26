@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...)
+#define DEBUG(...) __VA_ARGS__
 
 namespace hyde {
 namespace {
@@ -207,7 +207,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-    os << "<TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>";
+    os << "<TD port=\"p0\">" << input_lhs.Variable()
+       << "</TD><TD port=\"p1\">" << input_rhs.Variable() << "</TD>";
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString() << "</TD>";)
 
@@ -529,8 +530,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << col.Variable() << "</TD>";
     }
     os << "</TR><TR>";
+
     for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\"> </TD>";
+      os << "<TD port=\"p" << i << "\">"
+         << tuple.NthInputColumn(i).Variable() << "</TD>";
     }
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString() << "</TD>";)

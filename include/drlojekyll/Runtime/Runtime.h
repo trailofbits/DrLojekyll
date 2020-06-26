@@ -186,12 +186,21 @@ class Generator {
     *curr_++ = std::make_tuple<Args...>(args...);
   }
 
+  void Sort(void) noexcept {
+    std::sort(begin_, curr_);
+    curr_ = std::unique(begin_, curr_);
+  }
+
+  void Erase(const Generator<Args...> &that) {
+    curr_ = std::set_difference(begin_, curr_, that.begin_, that.curr_, begin_);
+  }
+
   const Tuple *begin(void) const noexcept {
     return begin_;
   }
 
   const Tuple *end(void) const noexcept {
-    return end_;
+    return curr_;
   }
 
  private:
@@ -506,10 +515,21 @@ class Join<NoPivotVars, kNumSources, SourceSetTypes...> {
 };
 
 
+// Set of values. Add-only.
+template <typename... Keys>
+class Set {
+ public:
+
+  // Returns `true` if the entry was added.
+  bool Add(Keys&&... keys) {
+
+  }
+};
+
 // Set. Really this is more like a key/value map, mapping the tuple to `RC`,
 // which is a bitset tracking which sources contributed this value.
 template <typename RC, typename... Keys>
-class Set {
+class DifferentialSet {
  public:
 
   // Returns `true` if the entry was added.
@@ -532,6 +552,14 @@ class Map;
 template <typename...>
 class DifferentialMap;
 
+// Key/value mapping, where we map a single key to many values.
+template <typename...>
+class MultiMap;
+
+// Key/value mapping, where we map a single key to many values.
+template <typename...>
+class DifferentialMultiMap;
+
 struct EmptyKeyVars {};
 
 template <typename... Keys>
@@ -544,7 +572,9 @@ struct ValueVars {};
 template <typename... Keys, typename... Values>
 class Map<KeyVars<Keys...>, ValueVars<Values...>> {
  public:
-  std::tuple<bool, Values...> Get(Keys... keys) const noexcept {
+  using Tuple = std::tuple<Values..., bool>;
+
+  Tuple Get(Keys... keys) const noexcept {
 
   }
 
@@ -555,6 +585,39 @@ class Map<KeyVars<Keys...>, ValueVars<Values...>> {
   inline void Insert(Keys... keys, Values... vals) noexcept {
 
   }
+};
+
+// Really, a glorified global variable.
+template <typename ...Values>
+class Map<EmptyKeyVars, ValueVars<Values...>> {
+ public:
+  using Tuple = std::tuple<Values..., bool>;
+
+  inline Tuple Get(void) const noexcept {
+    return val;
+  }
+
+  inline void Put(Values... vals) noexcept {
+    Tuple(vals..., true).swap(val);
+  }
+
+ private:
+  Tuple val;
+};
+
+// A "proper" key/value mapping.
+template <typename... Keys, typename... Values>
+class DifferentialMap<KeyVars<Keys...>, ValueVars<Values...>> {
+ public:
+  using Tuple = std::tuple<Values..., bool>;
+
+  Tuple Get(Keys... keys) const noexcept {
+
+  }
+
+  inline void Put(Keys... keys, Values... vals) noexcept {
+
+  }
 
   inline void Erase(Keys... keys) noexcept {
 
@@ -563,26 +626,53 @@ class Map<KeyVars<Keys...>, ValueVars<Values...>> {
 
 // Really, a glorified global variable.
 template <typename ...Values>
-class Map<EmptyKeyVars, ValueVars<Values...>> {
+class DifferentialMap<EmptyKeyVars, ValueVars<Values...>> {
  public:
-  inline std::tuple<bool, Values...> Get(void) const noexcept {
+  using Tuple = std::tuple<Values..., bool>;
+
+  inline Tuple Get(void) const noexcept {
     return val;
   }
 
-  inline void Insert(Values... vals) noexcept {
-    std::make_tuple<Values..., bool>(vals..., true).swap(val);
-  }
-
-  inline void Update(Values... vals) noexcept {
-    std::make_tuple<Values..., bool>(vals..., true).swap(val);
+  inline void Put(Values... vals) noexcept {
+    Tuple(vals..., true).swap(val);
   }
 
   inline void Erase(void) noexcept {
-    std::tuple<Values..., bool>().swap(val);
+    Tuple().swap(val);
   }
 
  private:
-  std::tuple<Values..., bool> val;
+  Tuple val;
+};
+
+
+template <typename... Keys, typename... Values>
+class MultiMap<KeyVars<Keys...>, ValueVars<Values...>> {
+ public:
+  bool Get(Keys... keys, Generator<Values...> &vals_gen) const noexcept {
+    return false;
+  }
+
+  inline void Put(Keys... keys, Generator<Values...> &vals_gen) noexcept {
+
+  }
+};
+
+template <typename... Keys, typename... Values>
+class DifferentialMultiMap<KeyVars<Keys...>, ValueVars<Values...>> {
+ public:
+  bool Get(Keys... keys, Generator<Values...> &vals_gen) const noexcept {
+    return false;
+  }
+
+  void Put(Keys... keys, Generator<Values...> &vals_gen) noexcept {
+
+  }
+
+  inline void Erase(Keys... keys) noexcept {
+
+  }
 };
 
 template <typename Tag>

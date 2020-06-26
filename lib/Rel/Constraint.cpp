@@ -23,11 +23,11 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
   auto local_hash = hash;
 
   for (auto col : input_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 53) * col->Hash();
   }
 
   for (auto col : attached_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 43) * col->Hash();
   }
 
   hash = local_hash;
@@ -38,13 +38,13 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
 // replacements easier. If this constraint's operator is unordered, then we
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
-bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
+bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
   if (is_dead) {
     is_canonical = true;
     return false;
   }
 
-  is_canonical = AttachedColumnsAreCanonical();
+  is_canonical = AttachedColumnsAreCanonical(sort);
 
   if (valid == VIEW::kValid &&
       !CheckAllViewsMatch(input_columns, attached_columns)) {
@@ -55,10 +55,25 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   // Check to see if the input columns are ordered correctly. We can reorder
   // them only in the case of (in)equality comparisons.
   const auto is_unordered = ComparisonOperator::kEqual == op ||
-      ComparisonOperator::kNotEqual == op;
+                            ComparisonOperator::kNotEqual == op;
 
-  if ((is_unordered && input_columns[0] > input_columns[1]) ||
-      input_columns[0]->IsConstant() || input_columns[1]->IsConstant()) {
+  const auto lhs_col = input_columns[0];
+  const auto rhs_col = input_columns[1];
+  const auto lhs_sort = sort ? lhs_col->Sort() : lhs_col->Index();
+  const auto rhs_sort = sort ? rhs_col->Sort() : rhs_col->Index();
+
+  // Check if the result is used (ignoring merges).
+  //
+  // NOTE(pag): This should be checked before guarding with a TUPLE, otherwise
+  //            if we end up guarding with a TUPLE then it will definitely look
+  //            used.
+  const auto result_col = columns[0];
+  const auto result_col_is_directly_used = result_col->IsUsedIgnoreMerges();
+
+  if ((is_unordered && lhs_sort > rhs_sort) ||
+      lhs_col->IsConstant() ||
+      rhs_col->IsConstant()) {
+    hash = 0;
     is_canonical = false;
   }
 
@@ -74,7 +89,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   // We need to re-order the input columns, and possibly also the output
   // columns to match the input ordering.
 
-  std::unordered_map<COL *, COL *> in_to_out;
+  in_to_out.clear();
   DefList<COL> new_output_cols(this);
 
   auto i = 2u;
@@ -84,14 +99,9 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   if (ComparisonOperator::kEqual == op) {
     i = 1u;
 
-    input_columns.Sort();
-
-    const auto lhs_col = input_columns[0];
-    const auto rhs_col = input_columns[1];
-
     // This filter is no longer needed.
     if (lhs_col == rhs_col) {
-      columns[0]->ReplaceAllUsesWith(lhs_col);
+      result_col->ReplaceAllUsesWith(lhs_col);
 
       for (auto j = 0u; j < attached_columns.Size(); ++j, ++i) {
         columns[i]->ReplaceAllUsesWith(attached_columns[j]);
@@ -99,106 +109,153 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
 
       input_columns.Clear();  // Remove this as taking inputs.
       attached_columns.Clear();
+      hash = 0;
+      is_dead = true;
+      is_canonical = true;
       return true;
     }
 
-    auto new_out_col = new_output_cols.Create(
-        columns[0]->var, this, columns[0]->id);
-    columns[0]->ReplaceAllUsesWith(new_out_col);
+    // This is a problem; we've found something like `0 = 1`.
+    if (lhs_col->IsConstant() && rhs_col->IsConstant()) {
 
-    in_to_out.emplace(lhs_col, new_output_cols[0]);
-    in_to_out.emplace(rhs_col, new_output_cols[0]);
-
-    // Constant propagation.
-    if (new_out_col->IsUsedIgnoreMerges()) {
-      if (lhs_col->IsConstant()) {
-        assert(!rhs_col->IsConstant());
-        new_out_col->ReplaceAllUsesWith(lhs_col);
+      result_col->ReplaceAllUsesWith(lhs_col);
+      if (result_col_is_directly_used) {
         non_local_changes = true;
+      }
 
-      } else if (rhs_col->IsConstant()) {
-        new_out_col->ReplaceAllUsesWith(rhs_col);
+      // TODO(pag): Create an 'invalid' constant... ? Report an error?
+      assert(false);
+
+    // Something like `0 = A`.
+    } else if (lhs_col->IsConstant()) {
+      result_col->ReplaceAllUsesWith(lhs_col);
+      if (result_col_is_directly_used) {
+        non_local_changes = true;
+      }
+
+    // Something like `A = 1`.
+    } else if (rhs_col->IsConstant()) {
+      result_col->ReplaceAllUsesWith(rhs_col);
+      if (result_col_is_directly_used) {
         non_local_changes = true;
       }
     }
 
+    // Input columns are out of order.
+    if (lhs_sort > rhs_sort) {
+      UseList<COL> new_input_cols(this);
+      new_input_cols.AddUse(rhs_col);
+      new_input_cols.AddUse(lhs_col);
+      input_columns.Swap(new_input_cols);
+    }
+
+    non_local_changes = true;
+
+    auto new_result_col = new_output_cols.Create(
+        result_col->var, this, result_col->id);
+    result_col->ReplaceAllUsesWith(new_result_col);
+    in_to_out.emplace(lhs_col, new_result_col);
+    in_to_out.emplace(rhs_col, new_result_col);
+
   // For inequality, we can re-order the inputs, but must also re-order the
   // outputs.
-  } else if (ComparisonOperator::kNotEqual == op &&
-             input_columns[0] > input_columns[1]) {
+  } else if (ComparisonOperator::kNotEqual == op && lhs_sort > rhs_sort) {
 
-    input_columns.Sort();
-
-    const auto lhs_col = input_columns[0];
-    const auto rhs_col = input_columns[1];
+    const auto old_lhs_out = columns[0];
+    const auto old_rhs_out = columns[1];
 
     // This is kind of bad but totally possible. We've proven that we can't
     // satisfy this particular constraint.
     if (lhs_col == rhs_col) {
+
+      // TODO(pag): Propagate two invalid constants?
+      assert(false);
+
       hash = 0;
       is_canonical = true;
       is_dead = true;
       return non_local_changes;
     }
 
+    // Constant propagation of the LHS col.
+    if (lhs_col->IsConstant() && old_lhs_out->IsUsedIgnoreMerges()) {
+      old_lhs_out->ReplaceAllUsesWith(lhs_col);
+      non_local_changes = true;
+    }
+
+    // Constant propagation of the RHS col.
+    if (rhs_col->IsConstant() && old_rhs_out->IsUsedIgnoreMerges()) {
+      old_rhs_out->ReplaceAllUsesWith(rhs_col);
+      non_local_changes = true;
+    }
+
+    // The input columns were out of order, so put them in the right order.
+    UseList<COL> new_input_cols(this);
+    new_input_cols.AddUse(rhs_col);
+    new_input_cols.AddUse(lhs_col);
+    input_columns.Swap(new_input_cols);
+
+    // Put the output columns into the right order.
     auto new_lhs_out = new_output_cols.Create(
-        columns[1]->var, this, columns[1]->id);
-    columns[1]->ReplaceAllUsesWith(new_lhs_out);
+        old_rhs_out->var, this, old_rhs_out->id);
+    old_rhs_out->ReplaceAllUsesWith(new_lhs_out);
 
     const auto new_rhs_out = new_output_cols.Create(
-        columns[0]->var, this, columns[0]->id);
-    columns[0]->ReplaceAllUsesWith(new_rhs_out);
+        old_lhs_out->var, this, old_lhs_out->id);
+    old_lhs_out->ReplaceAllUsesWith(new_rhs_out);
 
-    in_to_out.emplace(lhs_col, new_output_cols[0]);
-    in_to_out.emplace(rhs_col, new_output_cols[1]);
-
-    // Constant propagation.
-    if (lhs_col->IsConstant() && new_lhs_out->IsUsedIgnoreMerges()) {
-      new_lhs_out->ReplaceAllUsesWith(lhs_col);
-      non_local_changes = true;
-    }
-
-    if (rhs_col->IsConstant() && new_rhs_out->IsUsedIgnoreMerges()) {
-      new_rhs_out->ReplaceAllUsesWith(rhs_col);
-      non_local_changes = true;
-    }
+    in_to_out.emplace(rhs_col, new_lhs_out);
+    in_to_out.emplace(lhs_col, new_rhs_out);
 
   // Preserve the column ordering for the output columns of other
   // comparisons.
   } else {
-    const auto lhs_col = input_columns[0];
-    const auto rhs_col = input_columns[1];
 
     // This is kind of bad but totally possible. We've proven that we can't
     // satisfy this particular constraint.
     if (lhs_col == rhs_col) {
+
+      // TODO(pag): Propagate two invalid constants?
+      assert(false);
+
       hash = 0;
       is_canonical = true;
       is_dead = true;
       return non_local_changes;
     }
 
+    const auto old_lhs_out = columns[0];
+    const auto old_rhs_out = columns[1];
+
+    // Constant propagation of the LHS col.
+    if (lhs_col->IsConstant()) {
+      if (old_lhs_out->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+      old_lhs_out->ReplaceAllUsesWith(lhs_col);
+    }
+
+    // Constant propagation of the RHS col.
+    if (rhs_col->IsConstant()) {
+      if (old_rhs_out->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+      old_rhs_out->ReplaceAllUsesWith(rhs_col);
+    }
+
+    // We don't need to re-order anything, but to be uniform with the rest and
+    // possible sorting of attached columns, we will create a new set of
+    // output columns.
     const auto new_lhs_out = new_output_cols.Create(
-        columns[0]->var, this, columns[0]->id);
-    columns[0]->ReplaceAllUsesWith(new_lhs_out);
+        old_lhs_out->var, this, old_lhs_out->id);
+    old_lhs_out->ReplaceAllUsesWith(new_lhs_out);
 
     const auto new_rhs_out = new_output_cols.Create(
-        columns[1]->var, this, columns[1]->id);
-    columns[1]->ReplaceAllUsesWith(new_rhs_out);
+        old_rhs_out->var, this, old_rhs_out->id);
+    old_rhs_out->ReplaceAllUsesWith(new_rhs_out);
 
-    in_to_out.emplace(lhs_col, new_output_cols[0]);
-    in_to_out.emplace(rhs_col, new_output_cols[1]);
-
-    // Constant propagation.
-    if (lhs_col->IsConstant() && new_lhs_out->IsUsedIgnoreMerges()) {
-      new_lhs_out->ReplaceAllUsesWith(lhs_col);
-      non_local_changes = true;
-    }
-
-    if (rhs_col->IsConstant() && new_rhs_out->IsUsedIgnoreMerges()) {
-      new_rhs_out->ReplaceAllUsesWith(rhs_col);
-      non_local_changes = true;
-    }
+    in_to_out.emplace(lhs_col, new_lhs_out);
+    in_to_out.emplace(rhs_col, new_rhs_out);
   }
 
   const auto num_cols = columns.Size();
@@ -207,8 +264,8 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   UseList<COL> new_attached_cols(this);
 
   for (auto j = 0u; i < num_cols; ++i, ++j) {
-    const auto old_out_col = columns[i];
 
+    const auto old_out_col = columns[i];
     const auto in_col = attached_columns[j];
 
     // If the output column is never used, then get rid of it.
@@ -224,30 +281,55 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
 
     // If the old input column is a constant, then propagate it rather than
     // attach it.
-    if (in_col->IsConstant() && old_out_col->IsUsedIgnoreMerges()) {
+    if (in_col->IsConstant()) {
       old_out_col->ReplaceAllUsesWith(in_col);
-      non_local_changes = true;
-      continue;
+
+      if (old_out_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+
+      // If our view isn't used in a merge, then we can eliminate this
+      // column.
+      if (!old_out_col->IsUsed()) {
+        continue;
+      }
     }
 
     auto &out_col = in_to_out[in_col];
-    if (out_col) {
-      in_col->view->is_canonical = false;
-      non_local_changes = true;  // Shrinking the number of columns.
 
-      if (out_col->NumUses() > old_out_col->NumUses()) {
-        old_out_col->ReplaceAllUsesWith(out_col);
-      } else {
-        out_col->ReplaceAllUsesWith(old_out_col);
-        out_col = old_out_col;
+    // There was at least one other attached column, or perhaps even a column
+    // in the original comparison, that has already been processed, so we
+    // can get rid of it.
+    if (out_col) {
+
+      if (old_out_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
       }
+      old_out_col->ReplaceAllUsesWith(out_col);
+
+      // Even though we've replaced the old output column, it ends up still
+      // being used by a merge, so we need to keep it around.
+      if (old_out_col->IsUsed()) {
+        new_attached_cols.AddUse(in_col);
+
+      // We're removing this input column, which might make the producer of this
+      // column able to remove one of its outputs, so we'll mark it as non-
+      // canonical so it can be updated by another pass.
+      } else {
+        non_local_changes = true;
+        in_col->view->is_canonical = false;
+      }
+
+    // Haven't seen this column yet, keep it around.
     } else {
       out_col = old_out_col;
       new_attached_cols.AddUse(in_col);
     }
   }
 
-  new_attached_cols.Sort();
+  if (sort) {
+    new_attached_cols.Sort();
+  }
 
   for (auto in_col : new_attached_cols) {
     const auto old_out_col = in_to_out[in_col];
@@ -269,7 +351,10 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query) {
   return non_local_changes;
 }
 
-// Equality over constraints is pointer-based.
+// Equality over constraints is structural.
+//
+// NOTE(pag): The two inputs to the comparison being tested aren't always
+//            ordered; however, equality testing here assumes ordering.
 bool Node<QueryConstraint>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
 

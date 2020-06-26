@@ -4,13 +4,18 @@
 
 #include <ostream>
 #include <memory>
-#include <variant>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 #include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Display/DisplayPosition.h>
 
 namespace hyde {
+namespace parse {
+template <typename>
+class ParsedNode;
+}  // namespace parse
 
 class DisplayManager;
 
@@ -68,7 +73,19 @@ class ErrorStream {
     return *this;
   }
 
-  template <typename T>
+  struct node_tag {};
+  struct not_node_tag {};
+
+  static inline constexpr node_tag *kNode = nullptr;
+  static inline constexpr not_node_tag *kNotNode = nullptr;
+
+  template <typename T, typename std::enable_if<std::is_convertible_v<T *, parse::ParsedNode<T> *>, node_tag *>::type=kNode>
+  inline const ErrorStream &operator<<(T node) const {
+    (*this) << node.SpellingRange();
+    return *this;
+  }
+
+  template <typename T, typename std::enable_if<!std::is_convertible_v<T *, parse::ParsedNode<T> *>, not_node_tag *>::type=kNotNode>
   inline const ErrorStream &operator<<(T data) const {
     (*os) << data;
     return *this;
@@ -79,12 +96,12 @@ class ErrorStream {
   friend class Error;
   friend class Note;
 
-  inline explicit ErrorStream(std::ostream *os_, const DisplayManager *dm_)
+  inline explicit ErrorStream(std::ostream *os_, const DisplayManager &dm_)
       : os(os_),
         dm(dm_) {}
 
   std::ostream * const os;
-  const DisplayManager * const dm;
+  const DisplayManager &dm;
 };
 
 // A note is an addendum to an error that adds additional context. It is fully
@@ -112,8 +129,8 @@ class Error {
  public:
   ~Error(void);
 
-  // A basic error message with no file/location information.
-  Error(void);
+  // An error with no position information.
+  explicit Error(const DisplayManager &dm);
 
   // An error message related to a line:column offset.
   Error(const DisplayManager &dm, const DisplayPosition &pos);
@@ -153,22 +170,24 @@ class Error {
   ::hyde::Note Note(void) const;
 
   // Attach a note to the original error.
-  ::hyde::Note Note(const DisplayManager &dm, const DisplayPosition &pos) const;
+  ::hyde::Note Note(const DisplayPosition &pos) const;
 
   // An note related to a highlighted range of tokens.
-  ::hyde::Note Note(const DisplayManager &dm, const DisplayRange &range) const;
+  ::hyde::Note Note(const DisplayRange &range) const;
 
   // A note related to a highlighted range of tokens, with one
   // character in particular being referenced.
-  ::hyde::Note Note(const DisplayManager &dm, const DisplayRange &range,
+  ::hyde::Note Note(const DisplayRange &range,
                     const DisplayPosition &pos_in_range) const;
 
   // An error message related to a highlighted range of tokens, with a sub-range
   // in particular being referenced.
-  ::hyde::Note Note(const DisplayManager &dm, const DisplayRange &range,
+  ::hyde::Note Note(const DisplayRange &range,
                     const DisplayRange &sub_range) const;
 
  private:
+  Error(void) = delete;
+
   ErrorStream Stream(void) const;
 
   std::shared_ptr<ErrorImpl> impl;

@@ -7,23 +7,10 @@
 #include <drlojekyll/Sema/SIPSAnalysis.h>
 #include <drlojekyll/Sema/SIPSScore.h>
 
-#include "Builder.h"
-
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
 
 namespace hyde {
-namespace query {
-
-QueryContext::~QueryContext(void) {
-  for (auto cond : conditions) {
-    cond->setters.ClearWithoutErasure();
-    cond->positive_users.ClearWithoutErasure();
-    cond->negative_users.ClearWithoutErasure();
-  }
-}
-
-}  // namespace query
 
 QueryImpl::~QueryImpl(void) {
   ForEachView([] (VIEW *view) {
@@ -42,6 +29,7 @@ QueryImpl::~QueryImpl(void) {
     for (auto &[out_col, in_cols] : join->out_to_in) {
       in_cols.ClearWithoutErasure();
     }
+    join->joined_views.ClearWithoutErasure();
   }
 
   for (auto agg : aggregates) {
@@ -526,18 +514,12 @@ unsigned QueryJoin::NumPivotColumns(void) const noexcept {
 
 // The number of views joined together.
 unsigned QueryJoin::NumJoinedViews(void) const noexcept {
-  if (impl->pivot_views.empty()) {
-    impl->VerifyPivots();
-  }
-  return static_cast<unsigned>(impl->pivot_views.size());
+  return static_cast<unsigned>(impl->joined_views.Size());
 }
 
 // Return a list of the joined views.
-const std::vector<QueryView> &QueryJoin::JoinedViews(void) const noexcept {
-  if (impl->pivot_views.empty()) {
-    impl->VerifyPivots();
-  }
-  return impl->public_pivot_views;
+UsedNodeRange<QueryView> QueryJoin::JoinedViews(void) const noexcept {
+  return {impl->joined_views.begin(), impl->joined_views.end()};
 }
 
 // Returns the set of pivot columns proposed by the Nth incoming view.
@@ -1068,8 +1050,8 @@ std::string QueryKVIndex::DebugString(void) const noexcept {
 }
 
 DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
-  return {DefinedNodeIterator<QueryCondition>(impl->context->conditions.begin()),
-          DefinedNodeIterator<QueryCondition>(impl->context->conditions.end())};
+  return {DefinedNodeIterator<QueryCondition>(impl->conditions.begin()),
+          DefinedNodeIterator<QueryCondition>(impl->conditions.end())};
 }
 
 DefinedNodeRange<QueryJoin> Query::Joins(void) const {
@@ -1093,23 +1075,23 @@ DefinedNodeRange<QueryKVIndex> Query::KVIndices(void) const {
 }
 
 DefinedNodeRange<QueryRelation> Query::Relations(void) const {
-  return {DefinedNodeIterator<QueryRelation>(impl->context->relations.begin()),
-          DefinedNodeIterator<QueryRelation>(impl->context->relations.end())};
+  return {DefinedNodeIterator<QueryRelation>(impl->relations.begin()),
+          DefinedNodeIterator<QueryRelation>(impl->relations.end())};
 }
 
 DefinedNodeRange<QueryConstant> Query::Constants(void) const {
-  return {DefinedNodeIterator<QueryConstant>(impl->context->constants.begin()),
-          DefinedNodeIterator<QueryConstant>(impl->context->constants.end())};
+  return {DefinedNodeIterator<QueryConstant>(impl->constants.begin()),
+          DefinedNodeIterator<QueryConstant>(impl->constants.end())};
 }
 
 DefinedNodeRange<QueryGenerator> Query::Generators(void) const {
-  return {DefinedNodeIterator<QueryGenerator>(impl->context->generators.begin()),
-          DefinedNodeIterator<QueryGenerator>(impl->context->generators.end())};
+  return {DefinedNodeIterator<QueryGenerator>(impl->generators.begin()),
+          DefinedNodeIterator<QueryGenerator>(impl->generators.end())};
 }
 
 DefinedNodeRange<QueryInput> Query::Inputs(void) const {
-  return {DefinedNodeIterator<QueryInput>(impl->context->inputs.begin()),
-          DefinedNodeIterator<QueryInput>(impl->context->inputs.end())};
+  return {DefinedNodeIterator<QueryInput>(impl->inputs.begin()),
+          DefinedNodeIterator<QueryInput>(impl->inputs.end())};
 }
 
 DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
@@ -1137,22 +1119,22 @@ DefinedNodeRange<QueryConstraint> Query::Constraints(void) const {
           DefinedNodeIterator<QueryConstraint>(impl->constraints.end())};
 }
 
-// Build and return a new query.
-Query Query::Build(const ParsedModule &module) {
-  hyde::QueryBuilder query_builder;
-  for (auto clause : module.Clauses()) {
-    hyde::FastBindingSIPSScorer scorer;
-    hyde::SIPSGenerator generator(clause);
-    query_builder.VisitClause(scorer, generator);
-  }
-  for (auto clause : module.DeletionClauses()) {
-    hyde::FastBindingSIPSScorer scorer;
-    hyde::SIPSGenerator generator(clause);
-    query_builder.VisitClause(scorer, generator);
-  }
-
-  return query_builder.BuildQuery();
-}
+//// Build and return a new query.
+//Query Query::Build(const ParsedModule &module) {
+//  hyde::QueryBuilder query_builder;
+//  for (auto clause : module.Clauses()) {
+//    hyde::FastBindingSIPSScorer scorer;
+//    hyde::SIPSGenerator generator(clause);
+//    query_builder.VisitClause(scorer, generator);
+//  }
+//  for (auto clause : module.DeletionClauses()) {
+//    hyde::FastBindingSIPSScorer scorer;
+//    hyde::SIPSGenerator generator(clause);
+//    query_builder.VisitClause(scorer, generator);
+//  }
+//
+//  return query_builder.BuildQuery();
+//}
 
 Query::~Query(void) {}
 

@@ -30,6 +30,8 @@ bool ParserImpl::ParseAggregatedPredicate(
 
   for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
     const auto lexeme = tok.Lexeme();
+    const auto tok_range = tok.SpellingRange();
+
     switch (state) {
       case 0:
         // An inline predicate; we'll need to invent a declaration and
@@ -39,7 +41,7 @@ bool ParserImpl::ParseAggregatedPredicate(
               module, DeclarationKind::kLocal));
           anon_decl->directive_pos = tok.Position();
           anon_decl->name = Token::Synthetic(
-              Lexeme::kIdentifierUnnamedAtom, tok.SpellingRange());
+              Lexeme::kIdentifierUnnamedAtom, tok_range);
           anon_decl->inline_attribute = Token::Synthetic(
               Lexeme::kKeywordInline, DisplayRange());
           assert(anon_decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom);
@@ -61,11 +63,9 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected an opening parenthesis or atom (predicate name) "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected an opening parenthesis or atom (predicate name) "
               << "here for inline predicate, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
@@ -78,11 +78,9 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected a type name for parameter to inline aggregate "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected a type name for parameter to inline aggregate "
               << "clause, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
@@ -119,11 +117,9 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected variable name here  for parameter to inline "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected variable name here  for parameter to inline "
               << "aggregate clause, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
@@ -143,29 +139,25 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected comma or closing parenthesis here for parameter list"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected comma or closing parenthesis here for parameter list"
               << " to inline aggregate clause, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
       case 4:
         if (Lexeme::kPuncOpenBrace == lexeme) {
           const auto colon = Token::Synthetic(
-              Lexeme::kPuncColon, tok.SpellingRange());
+              Lexeme::kPuncColon, tok_range);
           assert(colon.Lexeme() == Lexeme::kPuncColon);
           anon_clause_toks.push_back(colon);
           state = 5;
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected opening brace here for body of inline aggregate "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected opening brace here for body of inline aggregate "
               << "clause, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
@@ -178,7 +170,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           if (!brace_count) {
             last_pos = tok.NextPosition();
             anon_clause_toks.push_back(
-                Token::Synthetic(Lexeme::kPuncPeriod, tok.SpellingRange()));
+                Token::Synthetic(Lexeme::kPuncPeriod, tok_range));
 
             auto prev_next_sub_tok_index = next_sub_tok_index;
             next_sub_tok_index = 0;
@@ -223,12 +215,10 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected opening parenthesis here to test predicate '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected opening parenthesis here to test predicate '"
               << pred->name << "' used in aggregation, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
@@ -267,12 +257,10 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected variable or literal here as argument to predicate '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected variable or literal here as argument to predicate '"
               << pred->name << "' used in aggregation, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return false;
         }
 
@@ -291,12 +279,10 @@ bool ParserImpl::ParseAggregatedPredicate(
           if (pred_decl.IsFunctor() &&
               ParsedFunctor::From(pred_decl).IsAggregate()) {
 
-            Error err(context->display_manager, SubTokenRange(),
-                      ParsedPredicate(pred.get()).SpellingRange());
-
-            err << "Cannot aggregate an aggregating functor '" << pred->name
+            const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
+            context->error_log.Append(scope_range, err_range)
+                << "Cannot aggregate an aggregating functor '" << pred->name
                 << "', try using inline clauses instead";
-            context->error_log.Append(std::move(err));
             return false;
           }
 
@@ -307,10 +293,8 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected comma or period, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected comma or period, but got '" << tok << "' instead";
           return false;
         }
     }

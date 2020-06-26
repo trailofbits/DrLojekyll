@@ -78,17 +78,17 @@ void ParserImpl::LexAllTokens(Display display) {
 
     // Report lexing errors and fix up the tokens into non-errors.
     if (tok.IsInvalid()) {
-      Error error(context->display_manager,
-                  DisplayRange(line_start_pos, tok.NextPosition()),
-                  tok.SpellingRange(), tok.ErrorPosition());
+      Error err(context->display_manager,
+                DisplayRange(line_start_pos, tok.NextPosition()),
+                tok.SpellingRange(), tok.ErrorPosition());
 
       switch (lexeme) {
         case Lexeme::kInvalid: {
           std::stringstream error_ss;
           if (reader.TryGetErrorMessage(&error_ss)) {
-            error << error_ss.str();
+            err << error_ss.str();
           } else {
-            error << "Unrecognized token in stream";
+            err << "Unrecognized token in stream";
           }
           ignore_line = true;
           break;
@@ -97,56 +97,56 @@ void ParserImpl::LexAllTokens(Display display) {
         case Lexeme::kInvalidStreamOrDisplay: {
           std::stringstream error_ss;
           if (reader.TryGetErrorMessage(&error_ss)) {
-            error << error_ss.str();
+            err << error_ss.str();
           } else {
-            error << "Error reading data from stream";
+            err << "Error reading data from stream";
           }
           tok = Token::FakeEndOfFile(tok.Position());
           break;
         }
 
         case Lexeme::kInvalidDirective:
-          error << "Unrecognized declaration '" << tok << "'";
+          err << "Unrecognized declaration '" << tok << "'";
           ignore_line = true;
           break;
 
         case Lexeme::kInvalidNumber:
-          error << "Invalid number literal '" << tok << "'";
+          err << "Invalid number literal '" << tok << "'";
           tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
           break;
 
         case Lexeme::kInvalidNewLineInString:
-          error << "Invalid new line character in string literal";
+          err << "Invalid new line character in string literal";
           tok = Token::FakeStringLiteral(tok.Position(), tok.SpellingWidth());
           break;
 
         case Lexeme::kInvalidEscapeInString:
-          error << "Invalid escape character '" << tok.InvalidChar()
-                << "' in string literal";
+          err << "Invalid escape character '" << tok.InvalidChar()
+              << "' in string literal";
           tok = Token::FakeStringLiteral(tok.Position(), tok.SpellingWidth());
           break;
 
         case Lexeme::kInvalidTypeName:
-          error << "Invalid type name '" << tok << "'";
+          err << "Invalid type name '" << tok << "'";
           tok = Token::FakeType(tok.Position(), tok.SpellingWidth());
           break;
 
         case Lexeme::kInvalidUnterminatedString:
-          error << "Unterminated string literal";
+          err << "Unterminated string literal";
           ignore_line = true;
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
         case Lexeme::kInvalidUnterminatedCode:
-          error << "Unterminated code literal";
+          err << "Unterminated code literal";
           ignore_line = true;
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
         case Lexeme::kInvalidUnknown:
           if (ignore_line) {
-            error << "Unexpected character sequence '" << tok.InvalidChar()
-                  << "' in stream";
+            err << "Unexpected character sequence '" << tok.InvalidChar()
+                << "' in stream";
             break;
 
           // There's no recovery, but we'll add it into the token list to
@@ -161,14 +161,13 @@ void ParserImpl::LexAllTokens(Display display) {
           break;
       }
 
-      context->error_log.Append(error);
+      context->error_log.Append(std::move(err));
 
       // If we're not skipping the rest of the line, and if we corrected the
       // token, then add it in.
       if (!ignore_line) {
         tokens.push_back(tok);
       }
-
 
     } else if (Lexeme::kEndOfFile == lexeme) {
       tokens.push_back(tok);
@@ -254,10 +253,12 @@ void ParserImpl::ReadLine(void) {
 
   int paren_count = 0;
   DisplayPosition unmatched_paren;
+  scope_range = DisplayRange();
 
   while (ReadNextToken(tok)) {
     switch (tok.Lexeme()) {
       case Lexeme::kEndOfFile:
+        scope_range = SubTokenRange();
         UnreadToken();
         return;
       case Lexeme::kPuncOpenParen:
@@ -277,6 +278,7 @@ void ParserImpl::ReadLine(void) {
           if (paren_count) {
             continue;
           } else {
+            scope_range = SubTokenRange();
             return;
           }
         } else {
@@ -290,11 +292,11 @@ void ParserImpl::ReadLine(void) {
     }
   }
 
+  scope_range = SubTokenRange();
+
   if (unmatched_paren.IsValid()) {
-    Error err(context->display_manager, SubTokenRange(),
-              unmatched_paren);
-    err << "Unmatched parenthesis";
-    context->error_log.Append(std::move(err));
+    context->error_log.Append(scope_range, unmatched_paren)
+        << "Unmatched parenthesis";
   }
 }
 
@@ -304,14 +306,18 @@ void ParserImpl::ReadLine(void) {
 bool ParserImpl::ReadStatement(void) {
   Token tok;
 
+  scope_range = DisplayRange();
+
   while (ReadNextToken(tok)) {
     switch (tok.Lexeme()) {
       case Lexeme::kEndOfFile:
+        scope_range = SubTokenRange();
         UnreadToken();
         return false;
 
       case Lexeme::kPuncPeriod:
         sub_tokens.push_back(tok);
+        scope_range = SubTokenRange();
         return true;
 
       case Lexeme::kWhitespace:
@@ -382,13 +388,13 @@ void ParserImpl::ParseLocalExport(
   DisplayPosition next_pos;
   Token name;
 
-  const auto sub_tok_range = SubTokenRange();
-
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
     const auto lexeme = tok.Lexeme();
+    const auto tok_range = tok.SpellingRange();
+
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
@@ -397,12 +403,10 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected atom here (lower case identifier) for the name of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected atom here (lower case identifier) for the name of "
               << "the " << introducer_tok << " being declared, got '" << tok
               << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
       case 1:
@@ -411,12 +415,10 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected opening parenthesis here to begin parameter list of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected opening parenthesis here to begin parameter list of "
               << introducer_tok << " '" << name << "', but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -424,6 +426,7 @@ void ParserImpl::ParseLocalExport(
         if (!param) {
           param.reset(new Node<ParsedParameter>);
         }
+
         if (tok.IsType()) {
           param->opt_type = tok;
           param->parsed_opt_type = true;
@@ -441,12 +444,11 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected type name or variable name (capitalized identifier) "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected type name (lower case identifier, e.g. u32), "
+              << "'mutable' keyword, or variable name (capitalized identifier) "
               << "for parameter in " << introducer_tok << " '" << name
               << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -457,12 +459,10 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected named variable here (capitalized identifier) as a "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected named variable here (capitalized identifier) as a "
               << "parameter name of " << introducer_tok << " '" << name
               << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -472,11 +472,10 @@ void ParserImpl::ParseLocalExport(
           params.back()->next = param.get();
 
           if (params.size() == kMaxArity) {
-            Error err(context->display_manager, sub_tok_range,
-                      ParsedParameter(param.get()).SpellingRange());
-            err << "Too many parameters to " << introducer_tok << " '" << name
+            const auto err_range = ParsedParameter(param.get()).SpellingRange();
+            context->error_log.Append(scope_range, err_range)
+                << "Too many parameters to " << introducer_tok << " '" << name
                 << "'; the maximum number of parameters is " << kMaxArity;
-            context->error_log.Append(std::move(err));
             return;
           }
         }
@@ -504,11 +503,9 @@ void ParserImpl::ParseLocalExport(
           }
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected either a comma or a closing parenthesis here, "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected either a comma or a closing parenthesis here, "
               << "but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -518,11 +515,9 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected an opening parenthesis here, but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected an opening parenthesis here, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -533,21 +528,17 @@ void ParserImpl::ParseLocalExport(
           interpreter.info.arity = 3;  // Old val, proposed val, new val.
           const auto id = interpreter.flat;
           if (!context->declarations.count(id)) {
-            Error err(context->display_manager, sub_tok_range,
-                      tok.SpellingRange());
-            err << "Expected a functor name here, but got '"
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected a functor name here, but got '"
                 << tok << "' instead; maybe it wasn't declared yet?";
-            context->error_log.Append(std::move(err));
             return;
           }
 
           auto decl = context->declarations[id];
           if (decl->context->kind != DeclarationKind::kFunctor) {
-            Error err(context->display_manager, sub_tok_range,
-                      tok.SpellingRange());
-            err << "Expected a functor name here, but got a "
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected a functor name here, but got a "
                 << decl->KindName() << " name instead";
-            context->error_log.Append(std::move(err));
             return;
           }
 
@@ -565,9 +556,10 @@ void ParserImpl::ParseLocalExport(
             if (param->opt_merge->parameters[p]->opt_type.Kind() !=
                 param->opt_type.Kind()) {
 
-              Error err(context->display_manager,
-                        ParsedFunctor(param->opt_merge).SpellingRange(),
-                        param->opt_merge->parameters[p]->opt_type.SpellingRange());
+              auto err = context->error_log.Append(
+                  ParsedFunctor(param->opt_merge).SpellingRange(),
+                  param->opt_merge->parameters[p]->opt_type.SpellingRange());
+
               err << "Mismatch between parameter type '"
                   << param->opt_merge->parameters[p-1]->opt_type.SpellingRange()
                   << "' for parameter '"
@@ -578,11 +570,8 @@ void ParserImpl::ParseLocalExport(
                   << param->opt_merge->parameters[p]->name
                   << "' of merge functor '" << decl->name << "'";
 
-              auto note = err.Note(context->display_manager, SubTokenRange(),
-                                   tok.SpellingRange());
+              auto note = err.Note(scope_range, tok_range);
               note << "Functor '" << tok << "' specified as merge operator here";
-
-              context->error_log.Append(std::move(err));
               return;
             }
           }
@@ -591,59 +580,48 @@ void ParserImpl::ParseLocalExport(
           // and the last is free.
           if (param->opt_merge->parameters[0]->opt_binding.Lexeme() !=
               Lexeme::kKeywordBound) {
-            Error err(context->display_manager,
-                      ParsedFunctor(param->opt_merge).SpellingRange(),
-                      param->opt_merge->parameters[0]->opt_binding.SpellingRange());
+            auto err = context->error_log.Append(
+                ParsedFunctor(param->opt_merge).SpellingRange(),
+                param->opt_merge->parameters[0]->opt_binding.SpellingRange());
             err << "First parameter of merge functor '" << decl->name
                 << "' must be bound";
 
-            auto note = err.Note(context->display_manager, sub_tok_range,
-                                 tok.SpellingRange());
+            auto note = err.Note(scope_range, tok_range);
             note << "Functor '" << tok << "' specified as merge operator here";
-
-            context->error_log.Append(std::move(err));
             return;
           }
 
           if (param->opt_merge->parameters[1]->opt_binding.Lexeme() !=
               Lexeme::kKeywordBound) {
-            Error err(context->display_manager,
+            auto err = context->error_log.Append(
                       ParsedFunctor(param->opt_merge).SpellingRange(),
                       param->opt_merge->parameters[0]->opt_binding.SpellingRange());
             err << "Second parameter of merge functor '" << decl->name
                 << "' must be bound";
 
-            auto note = err.Note(context->display_manager, sub_tok_range,
-                                 tok.SpellingRange());
-            note << "Functor '" << tok << "' specified as merge operator here";
-
-            context->error_log.Append(std::move(err));
+            err.Note(scope_range, tok_range)
+                << "Functor '" << tok << "' specified as merge operator here";
             return;
           }
 
           if (param->opt_merge->parameters[2]->opt_binding.Lexeme() !=
               Lexeme::kKeywordFree) {
-            Error err(context->display_manager,
+            auto err = context->error_log.Append(
                       ParsedFunctor(param->opt_merge).SpellingRange(),
                       param->opt_merge->parameters[0]->opt_binding.SpellingRange());
             err << "Third parameter of merge functor '" << decl->name
                 << "' must be free";
 
-            auto note = err.Note(context->display_manager, sub_tok_range,
-                                 tok.SpellingRange());
-            note << "Functor '" << tok << "' specified as merge operator here";
-
-            context->error_log.Append(std::move(err));
+            err.Note(scope_range, tok_range)
+                << "Functor '" << tok << "' specified as merge operator here";
             return;
           }
 
           // Make sure that the functor isn't impure.
           if (!param->opt_merge->is_pure) {
-            Error err(context->display_manager, sub_tok_range,
-                      tok.SpellingRange());
-            err << "Value merging functor " << tok << "/3 cannot be used in a "
+            context->error_log.Append(scope_range, tok_range)
+                << "Value merging functor " << tok << "/3 cannot be used in a "
                 << "mutable parameter because it's marked as impure";
-            context->error_log.Append(std::move(err));
             return;
           }
 
@@ -651,11 +629,9 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected a functor name here, but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected a functor name here, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -666,21 +642,17 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected a closing parenthesis here, but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected a closing parenthesis here, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
       case 8:
         if (Lexeme::kKeywordInline == lexeme) {
           if (local->inline_attribute.IsValid()) {
-            Error err(context->display_manager, sub_tok_range,
-                      tok.SpellingRange());
-            err << "Unexpected second 'inline' attribute on "
+            context->error_log.Append(scope_range, tok_range)
+                << "Unexpected second 'inline' attribute on "
                 << introducer_tok << " '" << local->name << "'";
-            context->error_log.Append(std::move(err));
             state = 9;  // Ignore further errors, but add the local in.
             continue;
 
@@ -692,10 +664,9 @@ void ParserImpl::ParseLocalExport(
         } else {
           DisplayRange err_range(
               tok.Position(), sub_tokens.back().NextPosition());
-          Error err(context->display_manager, sub_tok_range, err_range);
-          err << "Unexpected tokens following declaration of the '"
+          context->error_log.Append(scope_range, err_range)
+              << "Unexpected tokens following declaration of the '"
               << local->name << "' local";
-          context->error_log.Append(std::move(err));
           state = 9;  // Ignore further errors, but add the local in.
           continue;
         }
@@ -706,11 +677,10 @@ void ParserImpl::ParseLocalExport(
   }
 
   if (state < 8) {
-    Error err(context->display_manager, sub_tok_range, next_pos);
-    err << "Incomplete " << introducer_tok
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete " << introducer_tok
         << " declaration; the declaration must be "
         << "placed entirely on one line";
-    context->error_log.Append(std::move(err));
     RemoveDecl<NodeType>(std::move(local));
 
   // Add the local to the module.
@@ -727,11 +697,9 @@ bool ParserImpl::TryMatchClauseWithDecl(
       clause->name.Position(), clause->rparen.NextPosition());
 
   if (clause->head_variables.size() > kMaxArity) {
-    Error err(context->display_manager, SubTokenRange(),
-              clause_head_range);
-    err << "Too many parameters in clause '" << clause->name
+    context->error_log.Append(scope_range, clause_head_range)
+        << "Too many parameters in clause '" << clause->name
         << "; maximum number of parameters is " << kMaxArity;
-    context->error_log.Append(std::move(err));
     return false;
   }
 
@@ -757,11 +725,9 @@ bool ParserImpl::TryMatchClauseWithDecl(
   // There are no forward declarations associated with this ID.
   // We'll report an error, then invent one.
   } else if (!context->declarations.count(id)) {
-    Error err(context->display_manager, SubTokenRange(),
-              clause_head_range);
-    err << "Missing declaration for '" << clause->name << "/"
+    context->error_log.Append(scope_range, clause_head_range)
+        << "Missing declaration for '" << clause->name << "/"
         << clause->head_variables.size() << "'";
-    context->error_log.Append(std::move(err));
 
     // Recover by adding a local_decl declaration; this will let us keep
     // parsing.
@@ -794,16 +760,14 @@ bool ParserImpl::TryMatchClauseWithDecl(
 
   // Don't allow us to define clauses for functors.
   if (decl_context->kind == DeclarationKind ::kFunctor) {
-    Error err(context->display_manager, SubTokenRange());
+    auto err = context->error_log.Append(scope_range, clause_head_range);
     err << "Cannot define a clause for the functor '"
         << clause->name << "'; functors are defined by native "
         << "code modules";
 
-    auto note = err.Note(context->display_manager, directive_range);
-    note << "Functor '" << clause->name
-         << "' is first declared here";
-
-    context->error_log.Append(std::move(err));
+    err.Note(directive_range)
+        << "Functor '" << clause->name
+        << "' is first declared here";
     return false;
 
   // Don't allow us to define clauses for predicates exported by
@@ -812,15 +776,13 @@ bool ParserImpl::TryMatchClauseWithDecl(
   // just declare a clause without first declaring
   } else if (decl_context->kind == DeclarationKind ::kExport &&
              module != clause->declaration->module) {
-    Error err(context->display_manager, SubTokenRange());
+    auto err = context->error_log.Append(scope_range, clause_head_range);
     err << "Cannot define a clause '" << clause->name
         << "' for predicate exported by another module";
 
-    auto note = err.Note(context->display_manager,
-                         directive_range);
-    note << "Predicate '" << clause->name << "' is declared here";
+    err.Note(directive_range)
+        << "Predicate '" << clause->name << "' is declared here";
 
-    context->error_log.Append(std::move(err));
     return false;
   }
 
@@ -840,11 +802,9 @@ bool ParserImpl::TryMatchPredicateWithDecl(
       pred->name.Position(), pred->rparen.NextPosition());
 
   if (pred->argument_uses.size() > kMaxArity) {
-    Error err(context->display_manager, SubTokenRange(),
-              pred_head_range);
-    err << "Too many arguments to predicate '" << pred->name
+    context->error_log.Append(scope_range, pred_head_range)
+        << "Too many arguments to predicate '" << pred->name
         << "; maximum number of arguments is " << kMaxArity;
-    context->error_log.Append(std::move(err));
     return false;
   }
 
@@ -863,11 +823,9 @@ bool ParserImpl::TryMatchPredicateWithDecl(
   // There are no forward declarations associated with this ID.
   // We'll report an error and invent one.
   } else if (!context->declarations.count(id)) {
-    Error err(context->display_manager, SubTokenRange(),
-              pred_head_range);
-    err << "Missing declaration for '" << pred->name << "/"
+    context->error_log.Append(scope_range, pred_head_range)
+        << "Missing declaration for '" << pred->name << "/"
         << pred->argument_uses.size() << "'";
-    context->error_log.Append(std::move(err));
 
     // Recover by adding a local declaration; this will let us keep
     // parsing.
@@ -954,14 +912,12 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       case Lexeme::kHashImportModuleStmt:
         ReadLine();
         if (first_non_import.IsValid()) {
-          Error err(context->display_manager, SubTokenRange());
+          auto err = context->error_log.Append(SubTokenRange());
           err << "Cannot have import following a non-import "
               << "declaration/declaration";
 
-          auto note = err.Note(context->display_manager, first_non_import);
-          note << "Import must precede this declaration/declaration";
-
-          context->error_log.Append(std::move(err));
+          err.Note(first_non_import)
+              << "Import must precede this declaration/declaration";
 
         } else {
           ParseImport(module);
@@ -992,10 +948,9 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       //    foo(...) : ..., ... .
       case Lexeme::kIdentifierAtom:
         if (!ReadStatement()) {
-          Error err(context->display_manager, SubTokenRange(),
-                    sub_tokens.back().NextPosition());
-          err << "Expected period at end of declaration/clause";
-          context->error_log.Append(std::move(err));
+          context->error_log.Append(SubTokenRange(),
+                                    sub_tokens.back().NextPosition())
+              << "Expected period at end of declaration/clause";
         } else {
           (void) ParseClause(module);
         }
@@ -1010,17 +965,13 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       //    !foo(...) : message_to_delete_foo(...).
       case Lexeme::kPuncExclaim:
         if (!ReadStatement()) {
-          Error err(context->display_manager, SubTokenRange(),
-                    sub_tokens.back().NextPosition());
-          err << "Expected period here at end of declaration/clause";
-          context->error_log.Append(std::move(err));
+          context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+              << "Expected period here at end of declaration/clause";
 
         } else if (2 > sub_tokens.size()) {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.NextPosition());
-          err << "Expected atom here (lower case identifier) after the '!' "
+          context->error_log.Append(scope_range, tok.NextPosition())
+              << "Expected atom here (lower case identifier) after the '!' "
               << "for the name of the negated clause head being declared";
-          context->error_log.Append(std::move(err));
 
         } else {
           ++next_sub_tok_index;
@@ -1046,11 +997,9 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       // Error, an unexpected top-level token.
       default: {
         ReadLine();
-        Error err(context->display_manager, SubTokenRange(),
-                  tok.SpellingRange());
-        err << "Unexpected top-level token; expected either a "
+        context->error_log.Append(scope_range, tok.SpellingRange())
+            << "Unexpected top-level token; expected either a "
             << "clause definition or a declaration";
-        context->error_log.Append(std::move(err));
         break;
       }
     }
@@ -1069,26 +1018,21 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
         ParsedVariable a_var(a);
         ParsedVariable b_var(b);
 
-        Error err(context->display_manager,
-                  ParsedClause(a->context->clause).SpellingRange(),
-                  a_var.SpellingRange());
+        auto err = context->error_log.Append(
+            ParsedClause(a->context->clause).SpellingRange(),
+            a_var.SpellingRange());
         err << "Type mismatch between variable '" << a_var.Name()
             << "' (type '" << a_var.Type().SpellingRange() << "') and '"
             << b_var.Name() << "' (type '" << b_var.Type().SpellingRange()
             << "')";
-        context->error_log.Append(std::move(err));
 
-        auto note1 = err.Note(context->display_manager,
-                             a_var.Type().SpellingRange());
-        note1 << "Variable '" << a_var.Name() << "' with type '"
-              << a_var.Type().SpellingRange() << "' is from here";
+        err.Note(a_var.Type().SpellingRange())
+            << "Variable '" << a_var.Name() << "' with type '"
+            << a_var.Type().SpellingRange() << "' is from here";
 
-        auto note2 = err.Note(context->display_manager,
-                        b_var.Type().SpellingRange());
-        note2 << "Variable '" << b_var.Name() << "' with type '"
-              << b_var.Type().SpellingRange() << "' is from here";
-
-        context->error_log.Append(std::move(err));
+        err.Note(b_var.Type().SpellingRange())
+            << "Variable '" << b_var.Name() << "' with type '"
+            << b_var.Type().SpellingRange() << "' is from here";
 
         return false;
       };
@@ -1102,26 +1046,21 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
         ParsedVariable a_var(a);
         ParsedParameter b_var(b);
 
-        Error err(context->display_manager,
-                  ParsedClause(a->context->clause).SpellingRange(),
-                  a_var.SpellingRange());
+        auto err = context->error_log.Append(
+            ParsedClause(a->context->clause).SpellingRange(),
+            a_var.SpellingRange());
         err << "Type mismatch between variable '" << a_var.Name()
             << "' (type '" << a_var.Type().SpellingRange()
             << "') and parameter '" << b_var.Name() << "' (type '"
             << b_var.Type().SpellingRange() << "')";
-        context->error_log.Append(std::move(err));
 
-        auto note1 = err.Note(context->display_manager,
-                              a_var.Type().SpellingRange());
-        note1 << "Variable '" << a_var.Name() << "' with type '"
-              << a_var.Type().SpellingRange() << "' is from here";
+        err.Note(a_var.Type().SpellingRange())
+            << "Variable '" << a_var.Name() << "' with type '"
+            << a_var.Type().SpellingRange() << "' is from here";
 
-        auto note2 = err.Note(context->display_manager,
-                              b_var.Type().SpellingRange());
-        note2 << "Parameter '" << b_var.Name() << "' with type '"
-              << b_var.Type().SpellingRange() << "' is from here";
-
-        context->error_log.Append(std::move(err));
+        err.Note(b_var.Type().SpellingRange())
+            << "Parameter '" << b_var.Name() << "' with type '"
+            << b_var.Type().SpellingRange() << "' is from here";
 
         return false;
       };
@@ -1312,12 +1251,11 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
   // discoverable at a later stage, by the SIPSVisitor.
   if (!missing.empty()) {
     for (auto var : missing) {
-      Error err(context->display_manager,
-                ParsedClause(var->context->clause).SpellingRange(),
-                ParsedVariable(var).SpellingRange());
-      err << "Could not infer type of non-range-restricted variable '"
+      context->error_log.Append(
+          ParsedClause(var->context->clause).SpellingRange(),
+          ParsedVariable(var).SpellingRange())
+          << "Could not infer type of non-range-restricted variable '"
           << var->name << "'";
-      context->error_log.Append(std::move(err));
     }
     return false;
   }
@@ -1350,7 +1288,7 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
 //
 // NOTE(pag): Due to display caching, this may return a prior parsed module,
 //            so as to avoid re-parsing a module.
-ParsedModule ParserImpl::ParseDisplay(
+std::optional<ParsedModule> ParserImpl::ParseDisplay(
     Display display, const DisplayConfiguration &config) {
   auto &weak_module = context->parsed_modules[display.Id()];
   auto module = weak_module.lock();
@@ -1358,7 +1296,11 @@ ParsedModule ParserImpl::ParseDisplay(
     return ParsedModule(module);
   }
 
+  const auto prev_num_errors = context->error_log.Size();
   module = std::make_shared<Node<ParsedModule>>(config);
+
+  // Initialize now, even before we know that we have a valid parsed module,
+  // just in case we have recursive imports.
   weak_module = module;
 
   if (!context->root_module) {
@@ -1389,7 +1331,12 @@ ParsedModule ParserImpl::ParseDisplay(
 
   AssignTypes(module.get());
 
-  return ParsedModule(module);
+  if (prev_num_errors == context->error_log.Size()) {
+    return ParsedModule(module);
+
+  } else {
+    return std::nullopt;
+  }
 }
 
 Parser::~Parser(void) {}
@@ -1403,7 +1350,7 @@ Parser::Parser(const DisplayManager &display_manager,
 //
 // NOTE(pag): `data` must remain valid for the lifetime of the parser's
 //            `display_manager`.
-ParsedModule Parser::ParseBuffer(std::string_view data,
+std::optional<ParsedModule> Parser::ParseBuffer(std::string_view data,
                                  const DisplayConfiguration &config) const {
   return impl->ParseDisplay(
       impl->context->display_manager.OpenBuffer(data, config),
@@ -1411,7 +1358,7 @@ ParsedModule Parser::ParseBuffer(std::string_view data,
 }
 
 // Parse a file, specified by its path.
-ParsedModule Parser::ParsePath(
+std::optional<ParsedModule> Parser::ParsePath(
     std::string_view path_, const DisplayConfiguration &config) const {
 
   auto display = impl->context->display_manager.OpenPath(path_, config);
@@ -1433,7 +1380,7 @@ ParsedModule Parser::ParsePath(
 //
 // NOTE(pag): `is` must remain a valid reference for the lifetime of the
 //            parser's `display_manager`.
-ParsedModule Parser::ParseStream(
+std::optional<ParsedModule> Parser::ParseStream(
     std::istream &is, const DisplayConfiguration &config) const {
   return impl->ParseDisplay(
       impl->context->display_manager.OpenStream(is, config),

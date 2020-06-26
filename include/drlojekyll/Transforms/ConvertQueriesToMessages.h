@@ -3,14 +3,17 @@
 #pragma once
 
 #include <drlojekyll/Parse/Parse.h>
+#include <optional>
 
 namespace hyde {
 
 class DisplayManager;
+class ErrorLog;
 
 // Transforms `module` so that all queries are rewritten to be messages,
 // possibly pairs of input and output messages.
-ParsedModule ConvertQueriesToMessages(
-    DisplayManager &display_manager, ParsedModule module);
+std::optional<ParsedModule> ConvertQueriesToMessages(
+    const DisplayManager &display_manager, const ErrorLog &error_log,
+    ParsedModule module);
 
 }  // namespace hyde

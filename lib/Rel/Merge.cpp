@@ -22,21 +22,16 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   // NOTE(pag): We don't include the number of merged views, as there may
   //            be redundancies in them after.
   hash = HashInit();
-
   if (merged_views.Empty()) {
     return hash;
   }
 
   auto merged_hashes = hash;
-
-  // Mix in the hashes of the merged views. Don't double-mix an already seen
-  // hash, otherwise it will remove its effect.
-  for (auto view : merged_views) {
-    merged_hashes = __builtin_rotateleft64(merged_hashes, 16) ^ view->Hash();
+  for (auto merged_view : merged_views) {
+    merged_hashes ^= merged_view->Hash();
   }
 
   hash = merged_hashes;
-
   return hash;
 }
 
@@ -70,107 +65,144 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 // views might be the same.
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
-bool Node<QueryMerge>::Canonicalize(QueryImpl *query) {
+bool Node<QueryMerge>::Canonicalize(QueryImpl *query, bool sort) {
+  if (is_dead) {
+    is_canonical = true;
+    return false;
+  }
+
+  // If one of the columns of the merged views isn't needed, then mark this as
+  // non-canonical.
+  auto has_unused_col = false;
+  for (auto col : columns) {
+    if (!col->IsUsed()) {
+      is_canonical = false;
+      has_unused_col = true;
+    }
+  }
+
   if (is_canonical) {
     return false;
   }
 
   bool non_local_changes = false;
+  is_canonical = true;
 
-  UseList<VIEW> next_merged_views(this);
+  std::vector<VIEW *> unique_merged_views;
+  std::vector<VIEW *> work_list;
 
-  std::vector<VIEW *> seen_merges;
-  seen_merges.insert(seen_merges.end(), this);
+  for (auto i = merged_views.Size(); i; ) {
+    work_list.push_back(merged_views[--i]);
+  }
 
-  merged_views.Sort();
+  while (!work_list.empty()) {
 
-  VIEW *prev_view = nullptr;
-  for (auto view : merged_views) {
-
-    // Already added this view in.
-    if (view == prev_view) {
-      continue;
-    }
-
-    prev_view = view;
+    const auto view = work_list.back();
+    work_list.pop_back();
 
     // Don't let a merge be its own source, and don't double-merge any
     // sub-merges.
-    if (std::find(seen_merges.begin(), seen_merges.end(), view) !=
-        seen_merges.end()) {
+    const auto end = unique_merged_views.end();
+    if (view == this ||
+        std::find(unique_merged_views.begin(), end, view) != end) {
       continue;
     }
 
-    seen_merges.push_back(view);
-
     // If we're merging a merge, then copy the lower merge into this one.
-    if (auto incoming_merge = view->AsMerge()) {
-      incoming_merge->merged_views.Sort();
-      incoming_merge->hash = 0;
-      incoming_merge->is_canonical = false;
+    if (auto incoming_merge = view->AsMerge();
+        incoming_merge && !incoming_merge->is_equivalence_class) {
+      non_local_changes = true;
+      is_canonical = false;
 
-      for (auto sub_view : incoming_merge->merged_views) {
-        if (std::find(seen_merges.begin(), seen_merges.end(), sub_view) ==
-            seen_merges.end()) {
-          next_merged_views.AddUse(sub_view);
-          seen_merges.push_back(sub_view);
+      for (auto i = incoming_merge->merged_views.Size(); i; ) {
+        work_list.push_back(incoming_merge->merged_views[--i]);
+      }
+
+    // This is a unique view we're adding in.
+    } else {
+      unique_merged_views.push_back(view);
+    }
+  }
+
+  // This MERGE isn't needed anymore.
+  if (1 == unique_merged_views.size()) {
+
+    // If this MERGE is conditional then force a guard tuple with the same
+    // conditions.
+    if (!positive_conditions.Empty() ||
+        !negative_conditions.Empty()) {
+      (void) GuardWithTuple(query, true);
+    }
+
+    const auto num_cols = columns.Size();
+    auto source_view = unique_merged_views[0];
+    assert(source_view->columns.Size() == num_cols);
+    for (auto i = 0u; i < num_cols; ++i) {
+      columns[i]->ReplaceAllUsesWith(source_view->columns[i]);
+    }
+
+    ReplaceAllUsesWith(source_view);
+
+    is_dead = true;
+    is_canonical = true;
+    hash = 0;
+    merged_views.Clear();
+
+    return true;  // Definitely made non-local changes.
+  }
+
+  // Nothing to do; it's already canonical.
+  if (is_canonical && !has_unused_col) {
+    if (sort) {
+      merged_views.Sort();
+    }
+
+    is_canonical = true;
+    hash = 0;
+    return non_local_changes;
+  }
+
+  UseList<VIEW> next_merged_views(this);
+
+  // There's an unused column; go and guard the incoming views with TUPLEs that
+  // don't use that column.
+  if (has_unused_col) {
+    non_local_changes = true;
+    const auto num_cols = columns.Size();
+
+    for (auto view : unique_merged_views) {
+      assert(view->columns.Size() == num_cols);
+
+      TUPLE * const guarded_view = query->tuples.Create();
+      guarded_view->is_canonical = false;
+
+      for (auto i = 0u; i < num_cols; ++i) {
+        if (columns[i]->IsUsed()) {
+          auto out_col = guarded_view->columns[i];
+          guarded_view->columns.Create(out_col->var, guarded_view, out_col->id);
+          guarded_view->input_columns.AddUse(out_col);
         }
       }
 
-      // This is a unique view we're adding in.
-    } else {
+      next_merged_views.AddUse(guarded_view);
+    }
+  } else {
+    for (auto view : unique_merged_views) {
       next_merged_views.AddUse(view);
     }
   }
 
   merged_views.Swap(next_merged_views);
-
-  // This merged view only merges other things.
-  if (merged_views.Size() == 1) {
-    const auto merged_view = merged_views[0];
-    const auto num_cols = columns.Size();
-    assert(merged_view->columns.Size() == num_cols);
-
-//    // This merge view requires certain uniqueness properties, so we need
-//    // to go and maintain those, but the incoming view does not respect those
-//    // properties, so go and introduce them.
-//    if (check_group_ids && !merged_view->check_group_ids) {
-//      auto tuple = query->tuples.Create();
-//      tuple->check_group_ids = true;
-//      auto i = 0u;
-//      for (auto input_col : merged_view->columns) {
-//        tuple->input_columns.AddUse(input_col);
-//        const auto output_col = tuple->columns.Create(
-//            input_col->var, tuple, input_col->id);
-//        columns[i++]->ReplaceAllUsesWith(output_col);
-//      }
-//
-//    // Forward the columns directly along.
-//    } else {
-    auto i = 0u;
-    for (auto input_col : merged_view->columns) {
-      columns[i++]->ReplaceAllUsesWith(input_col);
-    }
-//    }
-
-    merged_views.Clear();  // Clear it out.
-    hash = 0;
-    is_canonical = true;
-    is_dead = true;
-    return true;
+  if (sort) {
+    merged_views.Sort();
   }
-
-  // Check to see if any of the output columns are unused. If they are, project
-  // a tuple down to the incoming views to restrict what goes into the merge.
-  //
-  // TODO(pag): Implement this.
 
   hash = 0;
   is_canonical = true;
   return non_local_changes;
 }
 
-// Equality over merge is pointer-based.
+// Equality over merge is structural.
 bool Node<QueryMerge>::Equals(
     EqualitySet &eq, Node<QueryView> *that_) noexcept {
   if (eq.Contains(this, that_)) {

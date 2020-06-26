@@ -3,6 +3,7 @@
 #pragma once
 
 #include <drlojekyll/Parse/Error.h>
+#include <drlojekyll/Display/DisplayManager.h>
 
 #include <cstddef>
 #include <sstream>
@@ -12,13 +13,14 @@
 
 namespace hyde {
 
-class DisplayManager;
-
 class ErrorImpl {
  public:
+  explicit ErrorImpl(const DisplayManager &display_manager_)
+      : display_manager(display_manager_) {}
+
   std::shared_ptr<ErrorImpl> next;
 
-  const DisplayManager *display_manager{nullptr};
+  const DisplayManager display_manager;
   std::string_view path;
   std::stringstream message;
   std::string source;

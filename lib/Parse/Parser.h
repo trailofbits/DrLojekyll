@@ -54,10 +54,10 @@ class SharedParserContext {
   // NOTE(pag): Cyclic module imports are valid.
   std::unordered_map<unsigned, std::weak_ptr<Node<ParsedModule>>> parsed_modules;
 
-  FileManager file_manager;
+  const FileManager file_manager;
   const DisplayManager display_manager;
   const ErrorLog error_log;
-  StringPool string_pool;
+  const StringPool string_pool;
 
   // Keeps track of the global locals. All parsed modules shared this.
   std::unordered_map<uint64_t, Node<ParsedDeclaration> *> declarations;
@@ -82,6 +82,9 @@ class ParserImpl {
   // on what is needed by the context. Used when we need to parse
   // directives/clauses, which terminate at newlines/periods, respectively.
   std::vector<Token> sub_tokens;
+
+  // Range of tokens in `sub_tokens`.
+  DisplayRange scope_range;
 
   // Set of previously named variables in the current clause.
   std::unordered_map<unsigned, Node<ParsedVariable> *> prev_named_var;
@@ -193,7 +196,7 @@ class ParserImpl {
   //
   // NOTE(pag): Due to display caching, this may return a prior parsed module,
   //            so as to avoid re-parsing a module.
-  ParsedModule ParseDisplay(
+  std::optional<ParsedModule> ParseDisplay(
       Display display, const DisplayConfiguration &config);
 };
 
@@ -203,13 +206,12 @@ class ParserImpl {
 template <typename T>
 Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
                              Token name, size_t arity) {
+  const auto scope_range = SubTokenRange();
 
   if (arity > kMaxArity) {
-    Error err(context->display_manager, SubTokenRange(),
-              name.SpellingRange());
-    err << "Too many arguments to predicate '" << name
+    context->error_log.Append(scope_range, name.SpellingRange())
+        << "Too many arguments to predicate '" << name
         << "; maximum number of arguments is " << kMaxArity;
-    context->error_log.Append(std::move(err));
     return nullptr;
   }
 
@@ -235,17 +237,15 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
 
   decl_context = first_decl->context;
   if (decl_context->kind != kind) {
-    Error err(context->display_manager, SubTokenRange(),
-              name.SpellingRange());
+    auto err = context->error_log.Append(scope_range, name.SpellingRange());
     err << "Cannot re-declare '" << first_decl->name
         << "' as a " << first_decl->KindName();
 
     DisplayRange first_decl_range(
         first_decl->directive_pos, first_decl->rparen.NextPosition());
-    auto note = err.Note(context->display_manager, first_decl_range);
-    note << "Original declaration is here";
+    err.Note(first_decl_range)
+        << "Original declaration is here";
 
-    context->error_log.Append(std::move(err));
     return nullptr;
 
   } else {
@@ -282,6 +282,8 @@ template <typename T>
 void ParserImpl::FinalizeDeclAndCheckConsistency(
     std::vector<std::unique_ptr<Node<T>>> &decl_list,
     std::unique_ptr<Node<T>> decl) {
+
+  const auto scope_range = SubTokenRange();
   const auto num_params = decl->parameters.size();
 
   const parse::DeclarationContext *decl_context = decl->context.get();
@@ -295,49 +297,43 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
       const auto prev_param = prev_decl->parameters[i].get();
       const auto curr_param = decl->parameters[i].get();
       if (prev_param->opt_binding.Lexeme() != curr_param->opt_binding.Lexeme()) {
-        Error err(context->display_manager, SubTokenRange(),
-                  curr_param->opt_binding.SpellingRange());
+        auto err = context->error_log.Append(
+            scope_range, curr_param->opt_binding.SpellingRange());
         err << "Parameter binding attribute differs";
 
         auto note = err.Note(
-            context->display_manager,
             T(prev_decl).SpellingRange(),
             prev_param->opt_binding.SpellingRange());
         note << "Previous parameter binding attribute is here";
 
-        context->error_log.Append(std::move(err));
         RemoveDecl(std::move(decl));
         return;
       }
 
       if (prev_param->opt_merge != curr_param->opt_merge) {
-        Error err(context->display_manager, SubTokenRange(),
-                  curr_param->opt_binding.SpellingRange());
+        auto err = context->error_log.Append(
+            scope_range, curr_param->opt_binding.SpellingRange());
         err << "Mutable parameter's merge operator differs";
 
         auto note = err.Note(
-            context->display_manager,
             T(prev_decl).SpellingRange(),
             prev_param->opt_binding.SpellingRange());
         note << "Previous mutable attribute declaration is here";
 
-        context->error_log.Append(std::move(err));
         RemoveDecl(std::move(decl));
         return;
       }
 
       if (prev_param->opt_type.Kind() != curr_param->opt_type.Kind()) {
-        Error err(context->display_manager, SubTokenRange(),
-                  curr_param->opt_type.SpellingRange());
+        auto err = context->error_log.Append(
+            scope_range, curr_param->opt_type.SpellingRange());
         err << "Parameter type specification differs";
 
         auto note = err.Note(
-            context->display_manager,
             T(prev_decl).SpellingRange(),
             prev_param->opt_type.SpellingRange());
         note << "Previous type specification is here";
 
-        context->error_log.Append(std::move(err));
         RemoveDecl(std::move(decl));
         return;
       }
@@ -346,16 +342,14 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     // Make sure this inline attribute matches the prior one.
     if (prev_decl->inline_attribute.Lexeme() !=
         decl->inline_attribute.Lexeme()) {
-      Error err(context->display_manager, SubTokenRange(),
-                decl->inline_attribute.SpellingRange());
+      auto err = context->error_log.Append(
+          scope_range, decl->inline_attribute.SpellingRange());
       err << "Inline attribute differs";
 
       auto note = err.Note(
-          context->display_manager,
           T(prev_decl).SpellingRange(),
           prev_decl->inline_attribute.SpellingRange());
       note << "Previous inline attribute is here";
-      context->error_log.Append(std::move(err));
       RemoveDecl(std::move(decl));
       return;
     }

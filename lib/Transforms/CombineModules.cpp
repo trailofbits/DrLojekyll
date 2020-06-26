@@ -16,8 +16,9 @@ namespace hyde {
 
 // Combines `root_module` and everything it includes into a new module that
 // contains all definitions and declarations.
-ParsedModule CombineModules(
-    DisplayManager &display_manager, ParsedModule root_module) {
+std::optional<ParsedModule> CombineModules(
+    const DisplayManager &display_manager, const ErrorLog &error_log,
+    ParsedModule root_module) {
   auto has_import = false;
   for (auto import : root_module.Imports()) {
     has_import = true;
@@ -39,11 +40,8 @@ ParsedModule CombineModules(
   DisplayConfiguration config;
   config.name = "<amalgamation>";
 
-  hyde::ErrorLog error_log;
   hyde::Parser parser(display_manager, error_log);
-  auto combined_module = parser.ParseStream(ss, config);
-  assert(error_log.IsEmpty());
-  return combined_module;
+  return parser.ParseStream(ss, config);
 }
 
 }  // namespace hyde

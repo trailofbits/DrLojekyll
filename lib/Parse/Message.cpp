@@ -30,13 +30,13 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   DisplayPosition next_pos;
   Token name;
 
-  const auto sub_tok_range = SubTokenRange();
-
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
     const auto lexeme = tok.Lexeme();
+    const auto tok_range = tok.SpellingRange();
+
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
@@ -45,11 +45,9 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected atom here (lower case identifier) for the name of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected atom here (lower case identifier) for the name of "
               << "the #message being declared, got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -59,11 +57,9 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected opening parenthesis here to begin parameter list of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected opening parenthesis here to begin parameter list of "
               << "#message '" << name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -76,11 +72,9 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected type name here for parameter in #message '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected type name here for parameter in #message '"
               << name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -91,12 +85,10 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected named variable here (capitalized identifier) as a "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected named variable here (capitalized identifier) as a "
               << "parameter name of #message '" << name << "', but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -106,11 +98,10 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           params.back()->next = param.get();
 
           if (params.size() == kMaxArity) {
-            Error err(context->display_manager, sub_tok_range,
-                      ParsedParameter(param.get()).SpellingRange());
-            err << "Too many parameters to #query '" << name
+            const auto err_range = ParsedParameter(param.get()).SpellingRange();
+            context->error_log.Append(scope_range, err_range)
+                << "Too many parameters to #query '" << name
                 << "'; the maximum number of parameters is " << kMaxArity;
-            context->error_log.Append(std::move(err));
             return;
           }
         }
@@ -138,21 +129,18 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           }
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected either a comma or a closing parenthesis here, "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected either a comma or a closing parenthesis here, "
               << "but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
       case 5: {
         DisplayRange err_range(
             tok.Position(), sub_tokens.back().NextPosition());
-        Error err(context->display_manager, sub_tok_range, err_range);
-        err << "Unexpected tokens following declaration of the '"
+        context->error_log.Append(scope_range, err_range)
+            << "Unexpected tokens following declaration of the '"
             << message->name << "' message";
-        context->error_log.Append(std::move(err));
         state = 6;  // Ignore further errors, but add the message in.
         continue;
       }
@@ -163,10 +151,9 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   }
 
   if (state < 5) {
-    Error err(context->display_manager, sub_tok_range, next_pos);
-    err << "Incomplete message declaration; the declaration must be "
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete message declaration; the declaration must be "
         << "placed entirely on one line";
-    context->error_log.Append(std::move(err));
 
     RemoveDecl<ParsedMessage>(std::move(message));
 

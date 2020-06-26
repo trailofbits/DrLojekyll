@@ -5,11 +5,10 @@ function(rel source_dir config)
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Format.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Query.h"
       
-        "${source_dir}/Builder.h"  
         "${source_dir}/Query.h"
         
         "${source_dir}/Aggregate.cpp"
-        "${source_dir}/Builder.cpp"
+        "${source_dir}/Build.cpp"
         "${source_dir}/Column.cpp"
         "${source_dir}/Connect.cpp"
         "${source_dir}/Constant.cpp"

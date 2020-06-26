@@ -6,11 +6,14 @@
 #include <drlojekyll/Util/Node.h>
 
 #include <memory>
+#include <optional>
 #include <string>
-#include <vector>
 #include <utility>
 
 namespace hyde {
+
+class ErrorLog;
+
 namespace query {
 
 template <typename T>
@@ -361,7 +364,7 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   unsigned NumJoinedViews(void) const noexcept;
 
   // Return a list of the joined views.
-  const std::vector<QueryView> &JoinedViews(void) const noexcept;
+  UsedNodeRange<QueryView> JoinedViews(void) const noexcept;
 
   // Returns the `nth` pivot output column.
   QueryColumn NthOutputPivotColumn(unsigned n) const noexcept;
@@ -646,7 +649,7 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 class Query {
  public:
   // Build and return a new query.
-  static Query Build(const ParsedModule &module);
+  static std::optional<Query> Build(const ParsedModule &module, const ErrorLog &log);
 
   ~Query(void);
 

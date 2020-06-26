@@ -27,16 +27,23 @@ OutputStream *gOut = nullptr;
 
 }  // namespace hyde
 
-static void CompileModule(hyde::DisplayManager display_manager,
-                          hyde::ParsedModule module) {
+static int CompileModule(hyde::DisplayManager display_manager,
+                         hyde::ErrorLog error_log,
+                         hyde::ParsedModule module) {
 
   hyde::OutputStream os(display_manager, std::cerr);
   hyde::gOut = &os;
 
-  auto query = hyde::Query::Build(module);
-  os << query;
+  if (auto query_opt = hyde::Query::Build(module, error_log);query_opt) {
+    auto query = *query_opt;
+    os << query;
+    return EXIT_SUCCESS;
+    hyde::GenerateCode(module, query, os);
+    return EXIT_SUCCESS;
 
-  hyde::GenerateCode(module, query, os);
+  } else {
+    return EXIT_FAILURE;
+  }
 }
 
 static int ProcessModule(hyde::DisplayManager display_manager,
@@ -44,50 +51,47 @@ static int ProcessModule(hyde::DisplayManager display_manager,
                          hyde::ParsedModule module,
                          const std::string &output_path) {
 
-  if (error_log.IsEmpty()) {
-    CheckForErrors(display_manager, module, error_log);
-  }
-
-  if (!error_log.IsEmpty()) {
-    error_log.Render(std::cerr);
+  if (CheckForErrors(display_manager, module, error_log)) {
     return EXIT_FAILURE;
   }
 
-  module = CombineModules(display_manager, module);
-  module = ProxyExternalsWithExports(display_manager, module);
+//  if (auto proxied_module_opt = ProxyExternalsWithExports(
+//          display_manager, error_log, module);
+//      proxied_module_opt) {
+//    module = *proxied_module_opt;
+//  } else {
+//    return EXIT_FAILURE;
+//  }
 
+  // Round-trip test of the parser.
+#ifndef NDEBUG
   std::stringstream ss;
   do {
     hyde::OutputStream os(display_manager, ss);
     os << module;
   } while (false);
 
-  std::cerr << ss.str();
-
   hyde::Parser parser(display_manager, error_log);
-  auto module2 = parser.ParseStream(ss, hyde::DisplayConfiguration());
-  if (!error_log.IsEmpty()) {
-    error_log.Render(std::cerr);
-    assert(error_log.IsEmpty());
+  auto module2_opt = parser.ParseStream(ss, hyde::DisplayConfiguration());
+  if (!module2_opt) {
     return EXIT_FAILURE;
   }
 
   std::stringstream ss2;
   do {
     hyde::OutputStream os(display_manager, ss2);
-    os << module2;
+    os << *module2_opt;
   } while (false);
 
-  std::cerr << "\n\n" << ss2.str() << "\n\n";
   assert(ss.str() == ss2.str());
+#endif
 
-  CompileModule(display_manager, module);
-  return EXIT_SUCCESS;
+  return CompileModule(display_manager, error_log, module);
 }
 
 int main(int argc, char *argv[]) {
   hyde::DisplayManager display_manager;
-  hyde::ErrorLog error_log;
+  hyde::ErrorLog error_log(display_manager);
   hyde::Parser parser(display_manager, error_log);
 
   std::string input_path;
@@ -104,7 +108,7 @@ int main(int argc, char *argv[]) {
     if (!strcmp(argv[i], "-o")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err;
+        hyde::Error err(display_manager);
         err << "Command-line argument '-o' must be followed by a file path";
         error_log.Append(std::move(err));
       } else {
@@ -118,7 +122,7 @@ int main(int argc, char *argv[]) {
         path = &(argv[i][2]);
       } else {
         if (i >= argc) {
-          hyde::Error err;
+          hyde::Error err(display_manager);
           err << "Command-line argument '-M' must be followed by a directory path";
           error_log.Append(std::move(err));
           continue;
@@ -132,7 +136,7 @@ int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[i], "-isystem")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err;
+        hyde::Error err(display_manager);
         err << "Command-line argument '-isystem' must be followed by a directory path";
         error_log.Append(std::move(err));
 
@@ -147,7 +151,7 @@ int main(int argc, char *argv[]) {
         path = &(argv[i][2]);
       } else {
         if (i >= argc) {
-          hyde::Error err;
+          hyde::Error err(display_manager);
           err << "Command-line argument '-I' must be followed by a directory path";
           error_log.Append(std::move(err));
           continue;
@@ -186,8 +190,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  auto code = EXIT_SUCCESS;
+
   if (!num_input_paths) {
-    hyde::Error err;
+    hyde::Error err(display_manager);
     err << "No input files to parse";
     error_log.Append(std::move(err));
 
@@ -198,8 +204,10 @@ int main(int argc, char *argv[]) {
         2,  // `num_spaces_in_tab`.
         true  // `use_tab_stops`.
     };
-    auto module = parser.ParsePath(input_path, config);
-    return ProcessModule(display_manager, error_log, module, output_path);
+
+    if (auto module_opt = parser.ParsePath(input_path, config); module_opt) {
+      code = ProcessModule(display_manager, error_log, *module_opt, output_path);
+    }
 
   // Parse multiple modules as a single module including each module to
   // be parsed.
@@ -210,7 +218,14 @@ int main(int argc, char *argv[]) {
         true  // `use_tab_stops`.
     };
 
-    auto module = parser.ParseStream(linked_module, config);
-    return ProcessModule(display_manager, error_log, module, output_path);
+    if (auto module_opt = parser.ParseStream(linked_module, config); module_opt) {
+      code = ProcessModule(display_manager, error_log, *module_opt, output_path);
+    }
   }
+
+  if (code) {
+    error_log.Render(std::cerr);
+  }
+
+  return code;
 }

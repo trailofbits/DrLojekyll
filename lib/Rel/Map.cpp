@@ -16,21 +16,27 @@ uint64_t Node<QueryMap>::Sort(void) noexcept {
   return position.Index();
 }
 
+static const std::hash<std::string_view> kStringViewHasher;
+
 uint64_t Node<QueryMap>::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
 
-  hash = HashInit() ^ functor.Id();
+  const auto binding_pattern = ParsedDeclaration(functor).BindingPattern();
+
+  hash ^= __builtin_rotateright64(HashInit(), 43) * functor.Id();
+  hash ^= __builtin_rotateright64(hash, 33) * kStringViewHasher(binding_pattern);
+
   auto local_hash = hash;
 
   // Mix in the hashes of the merged views and columns;
   for (auto input_col : input_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ input_col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 23) * input_col->Hash();
   }
 
   for (auto input_col : attached_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ input_col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 13) * input_col->Hash();
   }
 
   hash = local_hash;
@@ -44,12 +50,12 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 // means that they can be re-ordered during canonicalization for the sake of
 // helping deduplicate common subexpressions. We also need to put the "attached"
 // outputs into the proper order.
-bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
+bool Node<QueryMap>::Canonicalize(QueryImpl *query, bool sort) {
   if (is_canonical) {
     return false;
   }
 
-  is_canonical = AttachedColumnsAreCanonical();
+  is_canonical = AttachedColumnsAreCanonical(sort);
 
   if (valid == VIEW::kValid &&
       !CheckAllViewsMatch(input_columns, attached_columns)) {
@@ -130,10 +136,12 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query) {
         assert(a.can_reorder && b.can_reorder);
         assert(a.input && b.input);
 
-        if (a.input < b.input) {
+        const auto a_sort = a.input->Sort();
+        const auto b_sort = b.input->Sort();
+        if (a_sort < b_sort) {
           return true;
 
-        } else if (a.input > b.input) {
+        } else if (a_sort > b_sort) {
           return false;
 
         } else {
@@ -250,6 +258,8 @@ bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
       columns.Size() != that->columns.Size() ||
       attached_columns.Size() != that->attached_columns.Size() ||
       functor != that->functor ||
+      (ParsedDeclaration(functor).BindingPattern() !=
+       ParsedDeclaration(that->functor).BindingPattern()) ||
       positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions ||
       InsertSetsOverlap(this, that)) {

@@ -759,6 +759,39 @@ bool ParsedDeclaration::IsInline(void) const noexcept {
   return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
 }
 
+std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
+  if (impl->binding_pattern.empty()) {
+    impl->binding_pattern.reserve(impl->parameters.size());
+    for (const auto &param : impl->parameters) {
+      switch (ParsedParameter(param.get()).Binding()) {
+        case ParameterBinding::kImplicit:
+          assert(false);
+          break;
+        case ParameterBinding::kMutable:
+          impl->binding_pattern.push_back('m');
+          break;
+        case ParameterBinding::kFree:
+          impl->binding_pattern.push_back('f');
+          break;
+
+        case ParameterBinding::kBound:
+          impl->binding_pattern.push_back('b');
+          break;
+
+        case ParameterBinding::kSummary:
+          impl->binding_pattern.push_back('s');
+          break;
+
+        case ParameterBinding::kAggregate:
+          impl->binding_pattern.push_back('a');
+          break;
+      }
+    }
+  }
+
+  return impl->binding_pattern;
+}
+
 // Return the declaration associated with a clause. This is the first
 // parsed declaration, so it could be in a different module.
 ParsedDeclaration ParsedDeclaration::Of(ParsedClause clause) {
