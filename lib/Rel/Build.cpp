@@ -548,6 +548,19 @@ static JOIN *CacheJoin(ClauseContext &context, JOIN *join) {
   return join;
 }
 
+// When we used cached JOINs, it might end up being the case that we try to
+// JOIN the same JOIN twice, and so we want to put an intermediate TUPLE view
+// in front of every JOIN so that they look different.
+static TUPLE *CreateIntermediary(QueryImpl *query, VIEW *view) {
+  auto tuple = query->tuples.Create();
+  auto col_index = 0u;
+  for (auto col : view->columns) {
+    tuple->input_columns.AddUse(col);
+    (void) tuple->columns.Create(col->var, tuple, col->id, col_index++);
+  }
+  return tuple;
+}
+
 // Create a JOIN from the pivots in `pivots`.
 static JOIN *CreateJoinFromPivots(
     QueryImpl *query, ParsedClause clause, ClauseContext &context,
@@ -1174,8 +1187,9 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
       // using whatever was at the front of that list. If we always put it at
       // the front then we'd be more likely to have a tall tree of JOINs rather
       // than a wide tree of JOINs.
-      unjoined_views.push_back(CreateJoinFromPivots(
-          query, clause, context, pivots, num_joined_views));
+      auto join = CreateJoinFromPivots(
+          query, clause, context, pivots, num_joined_views);
+      unjoined_views.push_back(CreateIntermediary(query, join));
 
       context.work_list.emplace_back();
       auto &new_work_item = context.work_list.back();
