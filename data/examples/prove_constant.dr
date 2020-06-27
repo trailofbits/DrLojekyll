@@ -5,5 +5,6 @@
 #query proof(free i32 X)
 #local indirect(i32 X)
 
-indirect(1) : something(_).
+has_something : something(_).
+indirect(1) : has_something.
 proof(A) : indirect(A).

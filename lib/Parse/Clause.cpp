@@ -2,7 +2,170 @@
 
 #include "Parser.h"
 
+#include <drlojekyll/Util/DisjointSet.h>
+
 namespace hyde {
+namespace {
+
+// Go through the variables used in the clause and try to identify groups of
+// predicates that should be extracted into boolean conditions (zero-argument
+// clauses). It's simpler to demand that the writer of the code factor out these
+// conditions instead of having us do it automatically.
+static void FindUnrelatedConditions(Node<ParsedClause> *clause,
+                                    const ErrorLog &log) {
+
+  std::vector<std::unique_ptr<DisjointSet>> sets;
+  std::unordered_map<uint64_t, DisjointSet *> var_to_set;
+  std::unordered_map<Node<ParsedPredicate> *, DisjointSet *> pred_to_set;
+
+  auto next_id = 0u;
+  const auto clause_head_id = next_id;
+  const auto clause_set = new DisjointSet(next_id++);
+  sets.emplace_back(clause_set);
+  for (auto &var : clause->head_variables) {
+    var_to_set.emplace(var->Id(), clause_set);
+  }
+
+  auto do_pred = [&] (Node<ParsedPredicate> *pred, DisjointSet *set) {
+
+    // This predicate has zero arguments, i.e. it is a condition already.
+    // Associated it with the clause head set.
+    if (pred->argument_uses.empty()) {
+      if (set) {
+        set = DisjointSet::Union(set, clause_set);
+      } else {
+        set = clause_set;
+      }
+    }
+
+    for (auto &var_use : pred->argument_uses) {
+      Node<ParsedVariable> *var = var_use->used_var;
+      auto &found_set = var_to_set[var->Id()];
+      if (found_set) {
+        if (set) {
+          set = DisjointSet::Union(set, found_set);
+        } else {
+          set = found_set;
+        }
+      } else if (set) {
+        found_set = set;
+
+      } else {
+        set = new DisjointSet(next_id++);
+        sets.emplace_back(set);
+        found_set = set;
+      }
+    }
+
+    pred_to_set.emplace(pred, set);
+  };
+
+  for (const auto &pred : clause->positive_predicates) {
+    do_pred(pred.get(), nullptr);
+  }
+
+  for (const auto &pred : clause->negated_predicates) {
+    do_pred(pred.get(), nullptr);
+  }
+
+  for (const auto &agg : clause->aggregates) {
+    const auto set = new DisjointSet(next_id++);
+    sets.emplace_back(set);
+    do_pred(agg->predicate.get(), set);
+    do_pred(agg->functor.get(), set);
+  }
+
+  for (const auto &assign : clause->assignments) {
+    Node<ParsedVariable> *lhs_var = assign->lhs.used_var;
+    auto &set = var_to_set[lhs_var->Id()];
+    if (!set) {
+      set = new DisjointSet(next_id++);
+      sets.emplace_back(set);
+    }
+  }
+
+  for (const auto &cmp : clause->comparisons) {
+    Node<ParsedVariable> *lhs_var = cmp->lhs.used_var;
+    Node<ParsedVariable> *rhs_var = cmp->rhs.used_var;
+
+    auto &lhs_set = var_to_set[lhs_var->Id()];
+    auto &rhs_set = var_to_set[rhs_var->Id()];
+
+    if (lhs_set && rhs_set) {
+      DisjointSet::Union(lhs_set, rhs_set);
+    } else if (lhs_set) {
+      rhs_set = lhs_set;
+    } else if (rhs_set) {
+      lhs_set = rhs_set;
+    } else {
+      lhs_set = new DisjointSet(next_id++);
+      rhs_set = lhs_set;
+      sets.emplace_back(lhs_set);
+    }
+  }
+
+  std::vector<DisjointSet *> conditions;
+  for (auto &[id, set] : var_to_set) {
+    set = set->Find();
+    if (set->id != clause_head_id) {
+      conditions.push_back(set);
+    }
+  }
+
+  std::sort(conditions.begin(), conditions.end());
+  auto it = std::unique(conditions.begin(), conditions.end());
+  conditions.erase(it, conditions.end());
+
+  // All head variables are related to every predicate/comparison/aggregate.
+  if (conditions.empty()) {
+    return;
+
+  // There are no head variables, and there is only one condition set, i.e.
+  // we are definition a condition variable.
+  } else if (conditions.size() == 1 && clause->head_variables.empty()) {
+    return;
+  }
+
+  const auto clause_range = ParsedClause(clause).SpellingRange();
+  for (auto cond_set : conditions) {
+    auto err = log.Append(clause_range);
+    err << "The following elements in the body of this clause should be "
+        << "factored out into a a zero-argument predicate";
+
+    for (const auto &pred : clause->positive_predicates) {
+      if (pred_to_set[pred.get()]->Find() == cond_set) {
+        err.Note(clause_range, ParsedPredicate(pred.get()).SpellingRange())
+            << "This predicate";
+      }
+    }
+
+    for (const auto &pred : clause->negated_predicates) {
+      if (pred_to_set[pred.get()]->Find() == cond_set) {
+        err.Note(clause_range, ParsedPredicate(pred.get()).SpellingRange())
+            << "This negated predicate";
+      }
+    }
+
+    for (const auto &assign : clause->assignments) {
+      Node<ParsedVariable> *lhs_var = assign->lhs.used_var;
+      if (var_to_set[lhs_var->Id()] == cond_set) {
+        err.Note(clause_range, ParsedAssignment(assign.get()).SpellingRange())
+            << "This assignment";
+      }
+    }
+
+    for (const auto &cmp : clause->comparisons) {
+      Node<ParsedVariable> *lhs_var = cmp->lhs.used_var;
+      if (var_to_set[lhs_var->Id()] == cond_set) {
+        err.Note(clause_range, ParsedComparison(cmp.get()).SpellingRange())
+            << "This comparison";
+      }
+    }
+  }
+
+}
+
+}  // namespace
 
 // Try to parse `sub_range` as a clause.
 void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
@@ -14,7 +177,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   Token tok;
   int state = 0;
 
-  // Approximate state transition diagram for parsing clauses.
+  // Approximate state transition diagram for parsing clauses. It gets a bit
+  // more complicated because we can have literals in the clause head, or
+  // aggregates with inline
   //
   //               .--------<-------.
   //               |                |                      .-> var -->--.
@@ -694,6 +859,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   if (!decl_clause_list->empty()) {
     decl_clause_list->back()->next = clause.get();
   }
+
+  FindUnrelatedConditions(clause.get(), context->error_log);
 
   // Add this clause to its decl context.
   decl_clause_list->emplace_back(std::move(clause));
