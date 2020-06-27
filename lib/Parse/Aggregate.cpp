@@ -3,6 +3,77 @@
 #include "Parser.h"
 
 namespace hyde {
+namespace {
+
+static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
+                                 const ErrorLog &log) {
+  auto next_group_var_ptr = &(impl->first_group_var);
+  auto next_config_var_ptr = &(impl->first_config_var);
+  auto next_aggregate_var_ptr = &(impl->first_aggregate_var);
+
+  for (auto &param_use : impl->predicate->argument_uses) {
+    Node<ParsedVariable> *param_var = param_use->used_var;
+
+    Node<ParsedVariable> *found_as = nullptr;
+    auto arg_num = 0u;
+    for (auto &arg_use : impl->functor->argument_uses) {
+      Node<ParsedVariable> *arg_var = arg_use->used_var;
+      if (param_var->Id() == arg_var->Id()) {
+        found_as = arg_var;
+        break;
+      }
+      ++arg_num;
+    }
+
+    if (!found_as) {
+      *next_group_var_ptr = param_var;
+      next_group_var_ptr = &(param_var->next_group_var);
+
+    } else {
+      auto decl = impl->functor->declaration;
+      auto param = decl->parameters[arg_num].get();
+      switch (param->opt_binding.Lexeme()) {
+        case Lexeme::kKeywordBound:
+          *next_config_var_ptr = param_var;
+          next_config_var_ptr = &(param_var->next_config_var);
+          break;
+
+        case Lexeme::kKeywordAggregate:
+          *next_aggregate_var_ptr = param_var;
+          next_aggregate_var_ptr = &(param_var->next_aggregate_var);
+          break;
+
+        case Lexeme::kKeywordSummary: {
+          auto agg_range = ParsedAggregate(impl).SpellingRange();
+          auto err = log.Append(
+              agg_range,
+              ParsedVariable(param_var).SpellingRange());
+
+          err << "Parameter variable '" << param_var->name
+              << "' to predicate being aggregated shares the same name "
+              << "as a summary variable";
+
+          err.Note(ParsedDeclaration(decl).SpellingRange(),
+                   ParsedParameter(param).SpellingRange())
+              << "Parameter '" << param->name << "' declared as summary here";
+
+          err.Note(agg_range, ParsedVariable(found_as).SpellingRange())
+              << "Variable '" << param_var->name
+              << "' used here as as a summary argument to the aggregating functor '"
+              << impl->functor->name << "/" << impl->functor->argument_uses.size()
+              << "'";
+
+          break;
+        }
+        default:
+          assert(false);
+          break;
+      }
+    }
+  }
+}
+
+}  // namespace
 
 // Try to parse the predicate application following a use of an aggregating
 // functor.
@@ -311,6 +382,9 @@ done:
   if (!clause->aggregates.empty()) {
     clause->aggregates.back()->next = agg.get();
   }
+
+  // Make sure the usage of variables is reasonable.
+  AnalyzeAggregateVars(agg.get(), context->error_log);
 
   clause->aggregates.emplace_back(std::move(agg));
   return true;

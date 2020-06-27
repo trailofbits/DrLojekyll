@@ -190,7 +190,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  auto code = EXIT_SUCCESS;
+  auto code = EXIT_FAILURE;
 
   if (!num_input_paths) {
     hyde::Error err(display_manager);

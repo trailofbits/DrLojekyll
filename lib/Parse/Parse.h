@@ -158,6 +158,11 @@ class Node<ParsedVariable> {
   // if this variable is used in an argument list.
   Node<ParsedVariable> *next_var_in_arg_list{nullptr};
 
+  // Next group variable in an aggregate.
+  Node<ParsedVariable> *next_group_var{nullptr};
+  Node<ParsedVariable> *next_config_var{nullptr};
+  Node<ParsedVariable> *next_aggregate_var{nullptr};
+
   std::shared_ptr<parse::VariableContext> context;
 
   // Whether or not this variable is an parameter to its clause.
@@ -241,6 +246,10 @@ class Node<ParsedAggregate> {
   DisplayRange spelling_range;
   std::unique_ptr<Node<ParsedPredicate>> functor;
   std::unique_ptr<Node<ParsedPredicate>> predicate;
+
+  Node<ParsedVariable> *first_group_var{nullptr};
+  Node<ParsedVariable> *first_config_var{nullptr};
+  Node<ParsedVariable> *first_aggregate_var{nullptr};
 };
 
 template <>

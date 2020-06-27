@@ -150,14 +150,14 @@ bool DisplayImpl::TryGetPosition(uint64_t index, DisplayPosition *pos_out) {
   }
 
   if (pos_out) {
-    auto i = static_cast<unsigned>(index / kWayPointIndex);
-    const auto waypoint = waypoints[i];
+    auto i = index / kWayPointIndex;
+    const DisplayPosition waypoint = waypoints[i];
     if (!waypoint.IsValid()) {
       return false;
     }
     auto line = waypoint.Line();
     auto column = waypoint.Column();
-    for (; i < data.size(); ++i) {
+    for (i = waypoint.Index(); i < data.size() && i < index; ++i) {
       if ('\n' == data[i]) {
         line += 1;
         column = 1;
@@ -166,8 +166,12 @@ bool DisplayImpl::TryGetPosition(uint64_t index, DisplayPosition *pos_out) {
       }
     }
 
-    *pos_out = DisplayPosition(id, index, line, column);
-    return true;
+    if (i == index) {
+      *pos_out = DisplayPosition(id, index, line, column);
+      return true;
+    } else {
+      return false;
+    }
   }
 
   return true;

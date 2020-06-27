@@ -1,8 +1,9 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include "Parse.h"
+
 #include <cstring>
 #include <cassert>
-#include "Parse.h"
 #include <cstring>
 #include <cassert>
 
@@ -422,6 +423,48 @@ ParsedPredicate ParsedAggregate::Predicate(void) const noexcept {
   return ParsedPredicate(impl->predicate.get());
 }
 
+// List of parameters to the predicate that are not paired with anything of
+// the arguments to the aggregating functor.
+NodeRange<ParsedVariable>
+ParsedAggregate::GroupVariablesFromPredicate(void) const {
+  if (impl->first_group_var) {
+    return NodeRange<ParsedVariable>(
+        impl->first_group_var,
+        static_cast<intptr_t>(__builtin_offsetof(
+            Node<ParsedVariable>, next_group_var)));
+  } else {
+    return NodeRange<ParsedVariable>();
+  }
+}
+
+// List of parameters from the predicate that are paired with a `aggregate`-
+// attributed variable in the functor.
+NodeRange<ParsedVariable>
+ParsedAggregate::AggregatedVariablesFromPredicate(void) const {
+  if (impl->first_aggregate_var) {
+    return NodeRange<ParsedVariable>(
+        impl->first_aggregate_var,
+        static_cast<intptr_t>(__builtin_offsetof(
+            Node<ParsedVariable>, next_aggregate_var)));
+  } else {
+    return NodeRange<ParsedVariable>();
+  }
+}
+
+// List of parameters from the predicate that are paired with a `bound`-
+// attributed variables in the functor.
+NodeRange<ParsedVariable>
+ParsedAggregate::ConfigurationVariablesFromPredicate(void) const {
+  if (impl->first_config_var) {
+    return NodeRange<ParsedVariable>(
+        impl->first_config_var,
+        static_cast<intptr_t>(__builtin_offsetof(
+            Node<ParsedVariable>, next_config_var)));
+  } else {
+    return NodeRange<ParsedVariable>();
+  }
+}
+
 DisplayRange ParsedParameter::SpellingRange(void) const noexcept {
   auto begin = impl->name.Position();
   if (impl->opt_binding.IsValid()) {
@@ -488,7 +531,9 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
-    return DisplayRange(impl->name.Position(), impl->rparen.NextPosition());
+    return DisplayRange(
+        impl->directive_pos.IsValid() ? impl->directive_pos : impl->name.Position(),
+        impl->rparen.NextPosition());
   } else {
     return impl->name.SpellingRange();
   }
@@ -765,7 +810,7 @@ std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
     for (const auto &param : impl->parameters) {
       switch (ParsedParameter(param.get()).Binding()) {
         case ParameterBinding::kImplicit:
-          assert(false);
+          impl->binding_pattern.push_back('i');
           break;
         case ParameterBinding::kMutable:
           impl->binding_pattern.push_back('m');

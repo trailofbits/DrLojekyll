@@ -23,6 +23,7 @@ enum class Color : unsigned char {
   kNone,
   kRed,
   kGreen,
+  kGrey,
   kYellow,
   kBlue,
   kPurple,
@@ -40,8 +41,11 @@ struct ErrorColorScheme {
   Color note_category_color;
   Color message_color;
   Color source_line_color;
-  Color highlight_color;
-  Color highlight_background_color;
+  Color disabled_source_line_color;
+  Color error_source_line_color;
+  Color error_background_color;
+  Color note_source_line_color;
+  Color note_background_color;
   Color text_color;
 };
 

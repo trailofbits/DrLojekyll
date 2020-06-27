@@ -23,7 +23,11 @@ class ErrorImpl {
   const DisplayManager display_manager;
   std::string_view path;
   std::stringstream message;
+
+  std::string pre_source;
   std::string source;
+  size_t post_source_start{0};
+  size_t post_source_len{0};
   std::vector<bool> is_error;
   uint64_t hightlight_line{0};
   uint64_t line{0};

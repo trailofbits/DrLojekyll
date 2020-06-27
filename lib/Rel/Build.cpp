@@ -40,7 +40,7 @@ struct VarColumn : DisjointSet {
 
 struct WorkItem {
   std::vector<VIEW *> views;
-  std::vector<ParsedPredicate> aggregates;
+  std::vector<ParsedAggregate> aggregates;
   std::vector<ParsedPredicate> functors;
 };
 
@@ -1216,8 +1216,25 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   if (1 == num_views && !work_item.functors.empty()) {
     for (auto pred : work_item.functors) {
-      log.Append(clause.SpellingRange(), pred.SpellingRange())
-          << "Unable to apply functor";
+      auto decl = ParsedDeclaration::Of(pred);
+      auto err = log.Append(clause.SpellingRange(), pred.SpellingRange());
+      err << "Unable to apply functor '" << decl.Name() << "/" << decl.Arity()
+          << "' with binding pattern '" << decl.BindingPattern()
+          << "' or any of its re-declarations (with different binding patterns)";
+
+      auto i = 0u;
+      for (auto var : pred.Arguments()) {
+        auto param = decl.NthParameter(i++);
+        if (!FindColVarInView(context, work_item.views[0], var) &&
+            param.Binding() != ParameterBinding::kFree) {
+
+          err.Note(decl.SpellingRange(), param.SpellingRange())
+              << "Corresponding parameter is not `free`-attributed";
+
+          err.Note(pred.SpellingRange(), var.SpellingRange())
+              << "Variable '" << var << "' is free here";
+        }
+      }
     }
 
     return;
@@ -1393,13 +1410,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   for (auto pred : clause.PositivePredicates()) {
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
-      auto functor = ParsedFunctor::From(decl);
-      if (functor.IsAggregate()) {
-        work_item.aggregates.push_back(pred);
-      } else {
-        work_item.functors.push_back(pred);
-      }
+      work_item.functors.push_back(pred);
     }
+  }
+
+  for (auto agg : clause.Aggregates()) {
+    work_item.aggregates.push_back(agg);
   }
 
   DEBUG((*gOut) << "\n\nStarting clause:\n" << clause.SpellingRange() << '\n';)
@@ -1486,6 +1502,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   for (auto join : impl->joins) {
     join->is_used = false;
   }
+
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
 

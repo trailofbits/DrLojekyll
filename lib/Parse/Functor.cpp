@@ -338,6 +338,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     }
   }
 
+  const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
+
   if (state != 6 && state != 13) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete functor declaration; the declaration must be "
@@ -371,8 +373,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
   // Aggregating functors aren't meant to be marked as impure. It's more that
   // they are implicitly impure so it's redundant.
-  } else if (!functor->is_pure &&
-             (last_summary.IsValid() || last_aggregate.IsValid())) {
+  } else if (!functor->is_pure && is_aggregate) {
 
     context->error_log.Append(scope_range, impure.SpellingRange())
         << "Marking an aggregating functor as impure is redundant";
@@ -386,8 +387,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   //
   // TODO(pag): Consider making marking generating functors as impure a
   //            requirement, rather than an error.
-  } else if (!num_bound_params &&
-             !(last_summary.IsValid() || last_aggregate.IsValid())) {
+  } else if (!num_bound_params && !is_aggregate) {
     assert(0 < num_free_params);
 
     context->error_log.Append(scope_range)
@@ -402,11 +402,13 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     const auto redecl = functor->context->redeclarations[0];
     auto i = 0u;
 
+    const auto arity = functor->parameters.size();
+
     // Didn't match the purity.
     if (functor->is_pure && !redecl->is_pure) {
       auto err = context->error_log.Append(scope_range, tok.NextPosition());
       err << "Missing 'impure' attribute here to match with prior declaration "
-          << "of functor " << name;
+          << "of functor '" << name << "/" << arity << "'";
 
       err.Note(ParsedDeclaration(redecl).SpellingRange())
           << "Prior declaration of functor was here";
@@ -414,10 +416,10 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
       return;
 
     // Didn't match the purity.
-    } else {
+    } else if (!functor->is_pure && redecl->is_pure) {
       auto err = context->error_log.Append(scope_range, impure.SpellingRange());
       err << "Unexpected 'impure' attribute here doesn't match with prior "
-          << "declaration of functor " << name;
+          << "declaration of functor '" << name << "/" << arity << "'";
 
       err.Note(ParsedDeclaration(redecl).SpellingRange())
           << "Prior declaration of functor was here";
@@ -433,21 +435,17 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
       // We can redeclare bound/free parameters with other variations of
       // bound/free, but the aggregation binding types must be equivalent.
-      if (lexeme != redecl_lexeme &&
-          ((lexeme == Lexeme::kKeywordAggregate ||
-            lexeme == Lexeme::kKeywordSummary) ||
-           (redecl_lexeme == Lexeme::kKeywordAggregate ||
-            redecl_lexeme == Lexeme::kKeywordSummary))) {
+      if (lexeme != redecl_lexeme && is_aggregate) {
 
         auto err = context->error_log.Append(
             scope_range, ParsedParameter(orig_param.get()).SpellingRange());
-        err << "Aggregation functor '" << functor->name
-            << "' cannot be re-declared with different aggregation semantics";
+        err << "Aggregation functor '" << functor->name << "/" << arity
+            << "' cannot be re-declared with different parameter attributes";
 
         auto note = err.Note(
             ParsedDeclaration(redecl).SpellingRange(),
             ParsedParameter(redecl_param.get()).SpellingRange());
-        note << "Conflicting aggregation parameter is specified here";
+        note << "Conflicting parameter is declared here";
 
         RemoveDecl<ParsedFunctor>(std::move(functor));
         return;
@@ -459,7 +457,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     if (num_sets != functor->unordered_sets.size()) {
       auto err = context->error_log.Append(scope_range);
       err << "Mismatch between the number of unordered parameter sets "
-          << "specified for #functor '" << functor->name
+          << "specified for functor '" << name << "/" << arity
           << "' has different number of unordered parameter sets specified";
 
       err.Note(ParsedDeclaration(redecl).SpellingRange())

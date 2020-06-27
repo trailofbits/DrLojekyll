@@ -99,7 +99,7 @@ class AllFailedVisitor : public SIPSVisitor {
                           begin->predicate.SpellingRange());
     err << "Unable to find binding of variables for parameters of '"
         << begin->declaration.Name() << '/' << begin->declaration.Arity()
-        << '/';
+        << '"';
 
     for (auto redecl : begin->declaration.Redeclarations()) {
       err.Note(redecl.SpellingRange())
