@@ -730,6 +730,14 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
   // Applies equality and inequality checks.
   view = GuardViewWithFilter(query, clause, context, view);
 
+  // Proved a zero-argument predicate.
+  //
+  // NOTE(pag): We totally ignore equivalence classes in these cases.
+  if (!clause.Arity()) {
+    context.result = view;
+    return true;
+  }
+
   TUPLE *tuple = query->tuples.Create();
 
   DEBUG(
@@ -1297,7 +1305,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
       unjoined_views.swap(new_work_item.views);
       new_work_item.functors = work_item.functors;
 
-      // NOTE(pag): Comment this if additional JOIN exploration is desirable.
+      // NOTE(pag): Comment this out if additional JOIN exploration is desirable.
       return;
     }
 
@@ -1360,6 +1368,42 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   assert(1u < num_views);
 
   CreateProduct(query, clause, context, log, work_item);
+}
+
+// Make the INSERT conditional on any zero-argument predicates.
+static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
+                                  INSERT *insert) {
+  std::vector<COND *> conds;
+
+  auto add_conds = [&] (NodeRange<ParsedPredicate> range, UseList<COND> &uses) {
+    conds.clear();
+
+    for (auto pred : range) {
+      auto decl = ParsedDeclaration::Of(pred);
+      if (decl.Arity() || !decl.IsExport()) {
+        continue;
+      }
+
+      auto export_ = ParsedExport::From(decl);
+      auto &cond = query->decl_to_condition[export_];
+      if (!cond) {
+        cond = query->conditions.Create(export_);
+      }
+
+      conds.push_back(cond);
+    }
+
+    std::sort(conds.begin(), conds.end());
+    auto it = std::unique(conds.begin(), conds.end());
+    conds.erase(it, conds.end());
+
+    for (auto cond : conds) {
+      uses.AddUse(cond);
+    }
+  };
+
+  add_conds(clause.PositivePredicates(), insert->positive_conditions);
+  add_conds(clause.NegatedPredicates(), insert->negative_conditions);
 }
 
 // The goal of this function is to build multiple equivalent dataflows out of
@@ -1525,6 +1569,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   // Add the views in order as the first work item.
+  //
+  // NOTE(pag): Add in all rotations of `pred_views` or all permutations of
+  //            `pred_views` to enable searching of most of the JOIN space
+  //            and produce equivalence classes.
   context.work_list.emplace_back();
   auto &work_item = context.work_list.back();
   work_item.views.swap(pred_views);
@@ -1539,8 +1587,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   DEBUG((*gOut) << "\n\nStarting clause:\n" << clause.SpellingRange() << '\n';)
 
-  // Process the work list until we find some order of things that
-  while (!context.work_list.empty()) {
+  // Process the work list until we find some order of things that works.
+  //
+  // NOTE(pag): Remove `!context.result` to enable equivalence-class building.
+  while (!context.work_list.empty() && !context.result) {
     auto work_item = std::move(context.work_list.back());
     context.work_list.pop_back();
 
@@ -1591,6 +1641,19 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert->input_columns.AddUse(col);
   }
 
+  AddConditionsToInsert(query, clause, insert);
+
+  // We just proved a zero-argument predicate, i.e. a condition.
+  if (!decl.Arity()) {
+    assert(decl.IsExport());
+    const auto export_decl = ParsedExport::From(decl);
+    auto &cond = query->decl_to_condition[export_decl];
+    if (!cond) {
+      cond = query->conditions.Create(export_decl);
+    }
+    cond->setters.AddUse(insert);
+  }
+
   return true;
 }
 
@@ -1613,9 +1676,12 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   }
 
   for (auto clause : module.DeletionClauses()) {
-    log.Append(clause.SpellingRange())
-        << "TODO: Deletion clauses are not yet supported";
-    return std::nullopt;
+    if (!BuildClause(impl.get(), clause, context, log)) {
+      return std::nullopt;
+    }
+
+    context.Reset();
+    impl->RemoveUnusedViews();
   }
 
   for (auto join : impl->joins) {

@@ -41,6 +41,12 @@ QueryImpl::~QueryImpl(void) {
   for (auto merge : merges) {
     merge->merged_views.ClearWithoutErasure();
   }
+
+  for (auto cond : conditions) {
+    cond->positive_users.ClearWithoutErasure();
+    cond->negative_users.ClearWithoutErasure();
+    cond->setters.ClearWithoutErasure();
+  }
 }
 
 QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
