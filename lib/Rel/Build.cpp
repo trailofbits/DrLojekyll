@@ -40,7 +40,6 @@ struct VarColumn : DisjointSet {
 
 struct WorkItem {
   std::vector<VIEW *> views;
-  std::vector<ParsedAggregate> aggregates;
   std::vector<ParsedPredicate> functors;
 };
 
@@ -175,7 +174,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     auto vc = context.var_id_to_col[var.UniqueId()];
     assert(vc != nullptr);
     assert(!vc->col);
-    vc->col = view->columns.Create(var, view, vc->id, col_index++);
+    vc->col = view->columns.Create(var, view, VarId(context, var), col_index++);
   }
 
   return view;
@@ -957,7 +956,8 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       if (!FindColVarInView(context, map, in_col->var)) {
         map->columns.Create(in_col->var, map, in_col->id, col_index++);
         map->attached_columns.AddUse(in_col);
-        DEBUG((*gOut) << "    Attached variable " << in_col->var << " id=" << in_col->id << '\n';)
+        DEBUG((*gOut) << "    Attached variable " << in_col->var
+                      << " id=" << in_col->id << '\n';)
       }
     }
 
@@ -1107,6 +1107,108 @@ static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
   return updated;
 }
 
+// Create a view from an aggregate.
+static VIEW *ApplyAggregate(QueryImpl *query, ParsedClause clause,
+                            ClauseContext &context, const ErrorLog &log,
+                            ParsedAggregate agg) {
+
+  auto base_view = BuildPredicate(query, context, agg.Predicate(), log);
+  if (!base_view) {
+    return nullptr;
+  }
+
+  auto functor_pred = agg.Functor();
+  auto functor_decl = ParsedFunctor::From(ParsedDeclaration::Of(functor_pred));
+  AGG *view = query->aggregates.Create(functor_decl);
+
+  auto col_index = 0u;
+
+  for (auto var : agg.GroupVariablesFromPredicate()) {
+    auto col = FindColVarInView(context, base_view, var);
+    if (!col) {
+      log.Append(agg.SpellingRange(), var.SpellingRange())
+          << "Could not find grouping variable '" << var << "'";
+      return nullptr;
+    }
+
+    view->group_by_columns.AddUse(col);
+    (void) view->columns.Create(var, view, col->id, col_index++);
+  }
+
+  auto do_param = [&] (auto cb) {
+    auto num_params = functor_decl.Arity();
+    for (auto i = 0u; i < num_params; ++i) {
+      auto param = functor_decl.NthParameter(i);
+      auto var = functor_pred.NthArgument(i);
+      cb(param, var);
+    }
+  };
+
+  auto has_errors = false;
+
+  do_param([&] (ParsedParameter param, ParsedVariable var) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      auto col = FindColVarInView(context, base_view, var);
+      if (!col) {
+        auto err = log.Append(agg.SpellingRange(), var.SpellingRange());
+        err << "Could not find configuration variable '" << var << "'";
+
+        err.Note(functor_decl.SpellingRange(), param.SpellingRange())
+            << "Configuration column declared here";
+
+        has_errors = true;
+      } else {
+        view->config_columns.AddUse(col);
+        (void) view->columns.Create(var, view, col->id, col_index++);
+      }
+    }
+  });
+
+  do_param([&] (ParsedParameter param, ParsedVariable var) {
+    if (param.Binding() == ParameterBinding::kAggregate) {
+      auto col = FindColVarInView(context, base_view, var);
+      if (!col) {
+        auto err = log.Append(agg.SpellingRange(), var.SpellingRange());
+        err << "Could not find aggregated variable '" << var << "'";
+
+        err.Note(functor_decl.SpellingRange(), param.SpellingRange())
+            << "Aggregated column declared here";
+
+        has_errors = true;
+      } else {
+        view->aggregated_columns.AddUse(col);
+      }
+    }
+  });
+
+  do_param([&] (ParsedParameter param, ParsedVariable var) {
+    if (param.Binding() == ParameterBinding::kSummary) {
+      auto col = FindColVarInView(context, base_view, var);
+      if (col) {
+        auto err = log.Append(agg.SpellingRange(), col->var.SpellingRange());
+        err << "Variable '" << var
+            << "' used for summarization cannot also be aggregated over";
+
+        err.Note(functor_decl.SpellingRange(), param.SpellingRange())
+            << "Summary variable declared here";
+
+        err.Note(agg.SpellingRange(), var.SpellingRange())
+            << "Summary variable used here";
+
+        has_errors = true;
+      } else {
+        (void) view->columns.Create(var, view, VarId(context, var), col_index++);
+      }
+    }
+  });
+
+  if (has_errors) {
+    return nullptr;
+  }
+
+  return view;
+}
+
 // Go find join candidates. This takes the first view in `views` and tries to
 // join each of its columns against every other view, then proposes this as
 // a new candidate.
@@ -1120,8 +1222,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   // Nothing left to do but try to publish the view!
   if (num_views == 1u &&
-      work_item.functors.empty() &&
-      work_item.aggregates.empty()) {
+      work_item.functors.empty()) {
     ConvertToClauseHead(query, clause, context, log, views[0]);
     return;
   }
@@ -1195,7 +1296,6 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
       auto &new_work_item = context.work_list.back();
       unjoined_views.swap(new_work_item.views);
       new_work_item.functors = work_item.functors;
-      new_work_item.aggregates = work_item.aggregates;
 
       // NOTE(pag): Comment this if additional JOIN exploration is desirable.
       return;
@@ -1222,7 +1322,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   // opportunities. Our next best bet is to try to apply any of the functors or
   // the aggregates.
 
-  // We applied at least one functor and updated the work list.
+  // We applied at least one functor and updated `work_item` in place.
   if (TryApplyFunctors(query, clause, context, log, work_item)) {
     context.work_list.emplace_back(std::move(work_item));
     return;
@@ -1377,6 +1477,15 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   }
 
+  // Add the aggregates as views.
+  for (auto agg : clause.Aggregates()) {
+    if (auto view = ApplyAggregate(query, clause, context, log, agg); view) {
+      pred_views.push_back(view);
+    } else {
+      return false;
+    }
+  }
+
   // Do a range-restriction check that all variables in the clause head appear
   // somewhere in the clause body. This shouldn't be technically necessary but
   // having a bit of redundancy doesn't hurt.
@@ -1426,10 +1535,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     if (decl.IsFunctor()) {
       work_item.functors.push_back(pred);
     }
-  }
-
-  for (auto agg : clause.Aggregates()) {
-    work_item.aggregates.push_back(agg);
   }
 
   DEBUG((*gOut) << "\n\nStarting clause:\n" << clause.SpellingRange() << '\n';)

@@ -94,10 +94,6 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool operator==(QueryColumn that) const noexcept;
   bool operator!=(QueryColumn that) const noexcept;
 
-  // Returns a unique ID representing the equivalence class of this column.
-  // Two columns with the same equivalence class will have the same values.
-  uint64_t EquivalenceClass(void) const noexcept;
-
   // Number of uses of this column.
   unsigned NumUses(void) const noexcept;
 

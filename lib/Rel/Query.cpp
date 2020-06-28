@@ -344,12 +344,6 @@ bool QueryColumn::IsGenerator(void) const noexcept {
   return impl->IsGenerator();
 }
 
-// Returns a unique ID representing the equivalence class of this column.
-// Two columns with the same equivalence class will have the same values.
-uint64_t QueryColumn::EquivalenceClass(void) const noexcept {
-  return reinterpret_cast<uintptr_t>(impl->Find());
-}
-
 // Number of uses of this column.
 unsigned QueryColumn::NumUses(void) const noexcept {
   return impl->NumUses();

@@ -18,20 +18,22 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  const auto hash_ror = __builtin_rotateright64(hash, 33u);
 
   if (relation) {
-    hash ^= relation->declaration.Id();
+    hash ^= hash_ror * relation->declaration.Id();
 
   } else if (stream) {
     if (auto generator_stream = stream->AsGenerator()) {
-      hash ^= generator_stream->functor.Id();
+      hash ^= hash_ror * generator_stream->functor.Id();
 
     } else if (auto const_stream  = stream->AsConstant()) {
-      hash ^= std::hash<std::string_view>()(
-          const_stream->literal.Spelling());
+      hash ^= hash_ror *
+              std::hash<std::string_view>()(
+                  const_stream->literal.Spelling());
 
     } else if (auto input_stream = stream->AsInput()) {
-      hash ^= input_stream->declaration.Id();
+      hash ^= hash_ror * input_stream->declaration.Id();
     }
   }
   return hash;

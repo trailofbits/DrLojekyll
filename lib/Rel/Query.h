@@ -15,42 +15,6 @@ namespace hyde {
 
 class EqualitySet;
 
-// NOTE(pag): Columns contain a `ColumnSet`, which is used during query
-//            build time to organize them into equivalence classes. Importantly,
-//            the scope of validity of these equivalence classes is per build.
-//            Across separate builds, the equivalence classes are all reset.
-//            After query builds, they must not be depended upon. Consider the
-//            following:
-//
-//                foo(A) : bar(A), A=1.
-//                foo(A) : bar(A), A=2.
-//
-//            On a per-clause basis, `A` and `1` will end up in the same
-//            equivalence class, as will `A` and `2`, but we cannot let those
-//            equivalence classes interfere.
-class ColumnSet : public std::enable_shared_from_this<ColumnSet> {
- public:
-  ColumnSet(Node<QueryColumn> *self) {
-    columns.push_back(self);
-  }
-
-  ColumnSet *Find(void);
-  Node<QueryColumn> *Leader(void);
-  bool Contains(Node<QueryColumn> *col) const;
-
-  std::shared_ptr<ColumnSet> parent;
-  bool is_sorted{true};
-  std::vector<Node<QueryColumn> *> columns;
-
-  auto begin(void) -> decltype(columns.begin()) {
-    return columns.begin();
-  }
-
-  auto end(void) -> decltype(columns.end()) {
-    return columns.end();
-  }
-};
-
 // Represents all values that could inhabit some relation's tuple.
 template <>
 class Node<QueryColumn> : public Def<Node<QueryColumn>> {
@@ -65,14 +29,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
         var(var_),
         type(var.Type()),
         view(view_),
-        equiv_columns(std::make_shared<ColumnSet>(this)),
         id(id_),
         index(index_) {}
 
   void ReplaceAllUsesWith(Node<QueryColumn> *that);
-
-  Node<QueryColumn> *Find(void);
-  static void Union(Node<QueryColumn> *a, Node<QueryColumn> *b);
 
   // Return the index of this column inside of its view.
   unsigned Index(void) noexcept;
@@ -110,9 +70,6 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   // View to which this column belongs.
   Node<QueryView> * const view;
-
-  // Set of columns that are equivalent to this column.
-  std::shared_ptr<ColumnSet> equiv_columns;
 
   // The ID of the column. This roughly corresponds to the smallest
   // `ParsedVariable::Order` value within the clause that was first used to
@@ -651,11 +608,6 @@ class Node<QueryAggregate> : public Node<QueryView> {
   // Columns that are aggregated by this aggregating functor, and will be
   // summarized. These are "in scope" of the aggregation. These are ordered.
   UseList<COL> aggregated_columns;
-
-  // `QueryBuilder::id_to_col`, at the time of building the aggregate, and then
-  // after building, representing the state of `id_to_col` for the "scope" of
-  // the summarization.
-  std::unordered_map<unsigned, std::shared_ptr<ColumnSet>> id_to_col;
 };
 
 using AGG = Node<QueryAggregate>;
