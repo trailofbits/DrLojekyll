@@ -1,9 +1,9 @@
 # Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-function(rel source_dir config)
+function(dataflow source_dir config)
     add_library(rel-${config} STATIC
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Format.h"
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Rel/Query.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Format.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Query.h"
       
         "${source_dir}/Query.h"
         
@@ -31,4 +31,4 @@ function(rel source_dir config)
 
     target_link_libraries(rel-${config} PUBLIC
         sema-${config})
-endfunction(rel)
+endfunction(dataflow)

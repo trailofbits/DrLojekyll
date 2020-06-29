@@ -16,7 +16,7 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Rel/Format.h>
+#include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Sema/SIPSChecker.h>
 #include <drlojekyll/Transforms/CombineModules.h>
 #include <drlojekyll/Transforms/ProxyExternalsWithExports.h>

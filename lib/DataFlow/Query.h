@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Rel/Query.h>
+#include <drlojekyll/DataFlow/Query.h>
 
 #include <string>
 #include <unordered_map>

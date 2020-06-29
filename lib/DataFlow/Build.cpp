@@ -1,7 +1,5 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <memory>
 #include <set>
 #include <sstream>
@@ -16,9 +14,10 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Rel/Query.h>
+#include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
+#include "../DataFlow/Query.h"
 
 #define DEBUG(...)
 
