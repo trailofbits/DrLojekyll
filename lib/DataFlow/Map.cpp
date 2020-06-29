@@ -1,7 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include "Query.h"
+
 #include <drlojekyll/Util/EqualitySet.h>
-#include "../DataFlow/Query.h"
 
 namespace hyde {
 

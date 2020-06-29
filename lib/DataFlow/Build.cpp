@@ -1,5 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include "Query.h"
+
 #include <memory>
 #include <set>
 #include <sstream>
@@ -17,7 +19,6 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
-#include "../DataFlow/Query.h"
 
 #define DEBUG(...)
 
@@ -1047,6 +1048,10 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 
     if (!out_view) {
       out_view = result;
+
+      // NOTE(pag): Remove this `break` if we want to support equivalence
+      //            classes of functor applications.
+      break;
 
     // This is the N >= 3 redeclaration of the functor that is applicable; add
     // it into our equivalence class.

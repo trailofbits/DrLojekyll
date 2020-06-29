@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include "../DataFlow/Query.h"
+#include "Query.h"
 
 #include <cassert>
 

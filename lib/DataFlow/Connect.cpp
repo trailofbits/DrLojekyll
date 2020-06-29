@@ -1,11 +1,8 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include "../DataFlow/Query.h"
+#include "Query.h"
 
 namespace hyde {
-
-// TODO(pag): If a parameter is `mutable`, then the `INSERT` must remain.
-// TODO(pag): If there is a `SELECT` on a query, then maybe force it to remain...
 
 void QueryImpl::ConnectInsertsToSelects(void) {
   std::unordered_map<ParsedDeclaration, std::vector<INSERT *>>
