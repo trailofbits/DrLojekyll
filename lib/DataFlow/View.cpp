@@ -1,8 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <sstream>
+#include "../DataFlow/Query.h"
 
 namespace hyde {
 
