@@ -59,7 +59,6 @@ class QueryBuilderImpl;
 class QueryColumn;
 class QueryConstant;
 class QueryConstraint;
-class QueryGenerator;
 class QueryImpl;
 class QueryInsert;
 class QueryJoin;
@@ -83,10 +82,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
   bool IsAggregate(void) const noexcept;
-  bool IsBoundQueryInput(void) const noexcept;
-
   bool IsConstant(void) const noexcept;
-  bool IsGenerator(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
@@ -170,31 +166,14 @@ class QueryStream : public query::QueryNode<QueryStream> {
   static QueryStream From(const QuerySelect &sel) noexcept;
 
   bool IsConstant(void) const noexcept;
-  bool IsGenerator(void) const noexcept;
   bool IsInput(void) const noexcept;
   bool IsBoundQueryInput(void) const noexcept;
 
  private:
-  friend class QueryGenerator;
   friend class QueryConstant;
   friend class QueryInput;
 
   using query::QueryNode<QueryStream>::QueryNode;
-};
-
-// A functor in the Datalog code, that has only free parameters. This is a form
-// of non-blocking stream. Code wanting blocking functors should use messages
-// instead.
-class QueryGenerator : public query::QueryNode<QueryGenerator> {
- public:
-  const ParsedFunctor &Declaration(void) const noexcept;
-
-  static QueryGenerator &From(QueryStream &table);
-
- private:
-  using query::QueryNode<QueryGenerator>::QueryNode;
-
-  friend class QuerySelect;
 };
 
 // A literal in the Datalog code. A literal is a form of non-blocking stream.
@@ -661,7 +640,6 @@ class Query {
   DefinedNodeRange<QueryMerge> Merges(void) const;
   DefinedNodeRange<QueryConstraint> Constraints(void) const;
   DefinedNodeRange<QueryInput> Inputs(void) const;
-  DefinedNodeRange<QueryGenerator> Generators(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
 
   template <typename T>

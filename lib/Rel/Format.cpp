@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...) __VA_ARGS__
+#define DEBUG(...)
 
 namespace hyde {
 namespace {
@@ -77,18 +77,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "QUERY ";
     }
     os << ParsedDeclarationName(decl) << "</TD>";
-    for (auto i = 0u; i < arity; ++i) {
-      auto param = decl.NthParameter(i);
-      os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
-    }
-    os << kEndTable << ">];\n";
-  }
-
-  for (auto generator : query.Generators()) {
-    const auto decl = generator.Declaration();
-    const auto arity = decl.Arity();
-    os << "t" << generator.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>GENERATOR " << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";

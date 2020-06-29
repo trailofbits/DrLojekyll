@@ -48,9 +48,6 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // Returns `true` if this column is a constant.
   bool IsConstant(void) const noexcept;
 
-  // Returns `true` if this column is the output from a generator.
-  bool IsGenerator(void) const noexcept;
-
   // Returns `true` if this column is being used.
   bool IsUsed(void) const noexcept;
 
@@ -141,7 +138,6 @@ class Node<QueryStream> : public Def<Node<QueryStream>> {
       : Def<Node<QueryStream>>(this) {}
 
   virtual Node<QueryConstant> *AsConstant(void) noexcept;
-  virtual Node<QueryGenerator> *AsGenerator(void) noexcept;
   virtual Node<QueryInput> *AsInput(void) noexcept;
 };
 
@@ -162,22 +158,6 @@ class Node<QueryConstant> final : public Node<QueryStream> {
 };
 
 using CONST = Node<QueryConstant>;
-
-// Call to a functor that has no bound parameters.
-template <>
-class Node<QueryGenerator> final : public Node<QueryStream> {
- public:
-  virtual ~Node(void);
-
-  inline Node(ParsedFunctor functor_)
-      : functor(functor_) {}
-
-  Node<QueryGenerator> *AsGenerator(void) noexcept override;
-
-  const ParsedFunctor functor;
-};
-
-using GEN = Node<QueryGenerator>;
 
 // Input, i.e. a messsage.
 template <>
@@ -732,31 +712,85 @@ class QueryImpl {
 
   template <typename CB>
   void ForEachView(CB do_view) {
+    std::vector<VIEW *> views;
     for (auto view : selects) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : tuples) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : kv_indices) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : joins) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : maps) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : aggregates) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : merges) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : constraints) {
-      do_view(view);
+      views.push_back(view);
     }
     for (auto view : inserts) {
+      views.push_back(view);
+    }
+
+    for (auto view : views) {
+      do_view(view);
+    }
+  }
+
+  template <typename CB>
+  void ForEachViewInDepthOrder(CB do_view) {
+    std::vector<VIEW *> views;
+    for (auto view : selects) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : tuples) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : kv_indices) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : joins) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : maps) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : aggregates) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : merges) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : constraints) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : inserts) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+
+    std::sort(views.begin(), views.end(), [] (VIEW *a, VIEW *b) {
+      return a->Depth() < b->Depth();
+    });
+
+    for (auto view : views) {
       do_view(view);
     }
   }
@@ -771,7 +805,7 @@ class QueryImpl {
   bool RemoveUnusedViews(void);
 
   void Simplify(void);
-  void Canonicalize(void);
+  void Canonicalize(bool sort);
   void Optimize(void);
 
   void ConnectInsertsToSelects(void);
@@ -807,7 +841,6 @@ class QueryImpl {
 
   DefList<Node<QueryRelation>> relations;
   DefList<Node<QueryConstant>> constants;
-  DefList<Node<QueryGenerator>> generators;
   DefList<Node<QueryCondition>> conditions;
 
   DefList<SELECT> selects;

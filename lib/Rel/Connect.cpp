@@ -15,9 +15,7 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       decl_to_selects;
 
   auto can_connect = [] (ParsedDeclaration decl) {
-    return !decl.IsQuery() &&
-           !decl.IsMessage() &&
-           !decl.NumNegatedUses() &&  // Not used in an existence check.
+    return !decl.NumNegatedUses() &&  // Not used in an existence check.
            !decl.NumDeletionClauses() &&  // Not deleted.
            decl.Arity();  // Not a condition.
   };
@@ -29,7 +27,8 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       insert->is_used = false;
       decl_to_inserts[insert->declaration].push_back(insert);
 
-    } else if (!insert->declaration.IsQuery() && !insert->declaration.IsMessage()) {
+    } else if (!insert->declaration.IsQuery() &&
+               !insert->declaration.IsMessage()) {
       if (!insert->declaration.NumUses()) {
         insert->is_used = false;
       }
@@ -53,8 +52,8 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     assert(can_connect(decl));
 
     const auto merge = merges.Create();
-
     Node<QueryView> *view = merge;
+
     for (INSERT *insert : insert_views) {
       const auto ins_tuple = tuples.Create();
 
@@ -117,6 +116,22 @@ void QueryImpl::ConnectInsertsToSelects(void) {
         } else {
           index->input_columns.AddUse(merge_col);
         }
+      }
+    }
+
+    // Create a new outgoing INSERT for the query/message by re-purposing an
+    // old one.
+    //
+    // This lets internal uses of the message/query take their values from
+    // the MERGE or KVINDEX, but then exposes the results of the query/message
+    // back out to the outside world via a single designated INSERT.
+    if (!insert_views.empty() && (decl.IsMessage() || decl.IsQuery())) {
+      auto new_insert = insert_views.back();
+      new_insert->is_used = true;
+      new_insert->input_columns.Clear();
+
+      for (auto col : view->columns) {
+        new_insert->input_columns.AddUse(col);
       }
     }
 

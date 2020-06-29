@@ -212,6 +212,7 @@ bool Node<QueryMerge>::Equals(
   const auto that = that_->AsMerge();
   const auto num_views = merged_views.Size();
   if (!that ||
+      is_equivalence_class != that->is_equivalence_class ||
       columns.Size() != that->columns.Size() ||
       num_views != that->merged_views.Size() ||
       positive_conditions != that->positive_conditions ||

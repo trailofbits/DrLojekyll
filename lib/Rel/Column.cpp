@@ -16,16 +16,6 @@ bool Node<QueryColumn>::IsConstant(void) const noexcept {
   return false;
 }
 
-// Returns `true` if this column is the output from a generator.
-bool Node<QueryColumn>::IsGenerator(void) const noexcept {
-  if (auto sel = view->AsSelect()) {
-    if (sel->stream && sel->stream->AsGenerator()) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // Returns `true` if this view is being used.
 //
 // NOTE(pag): Even if the column doesn't look used, it might be used indirectly

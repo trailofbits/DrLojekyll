@@ -105,7 +105,16 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
 
   VIEW *last_view = nullptr;
 
-  //  bool all_from_same_view = true;
+  // TODO(pag): Come up with a better variant of this, perhaps by putting all
+  //            VIEWs leading into INSERTs into a use list, kind of like with
+  //            MERGEs.
+  //
+  //            The issue comes up in `prove_constant.dr` example, where a
+  //            CONDitioned TUPLE with only constant values flows into an
+  //            INSERT, and then the TUPLE self-eliminates. The CONDitions on
+  //            the TUPLE are thus lost.
+  auto can_constprop = positive_conditions.Empty() &&
+                       negative_conditions.Empty();
 
   const auto max_i = columns.Size();
   for (auto i = 0u; i < max_i; ++i) {
@@ -113,19 +122,18 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
     const auto out_col = columns[i];
 
     if (in_col->IsConstant()) {
-      if (out_col->IsUsedIgnoreMerges()) {
-        non_local_changes = true;
-      }
-      out_col->ReplaceAllUsesWith(in_col);
-
-      if (!out_col->IsUsed()) {
-        is_canonical = false;
-        continue;  // Removing tis column.
+      if (can_constprop) {
+        if (out_col->IsUsedIgnoreMerges()) {
+          non_local_changes = true;
+        }
+        out_col->ReplaceAllUsesWith(in_col);
       }
 
+    // Make sure all non-constant inputs come from the same VIEW.
     } else if (last_view) {
       assert(last_view == in_col->view);
 
+    // Find the incoming VIEW.
     } else {
       last_view = in_col->view;
     }
@@ -213,8 +221,6 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
   for (auto col : input_columns) {
     if (auto out_col = in_to_out[col]; out_col) {
       new_input_cols.AddUse(col);
-    } else {
-      assert(false);
     }
   }
 

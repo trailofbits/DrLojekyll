@@ -4,9 +4,6 @@
 
 #include <cassert>
 
-#include <drlojekyll/Sema/SIPSAnalysis.h>
-#include <drlojekyll/Sema/SIPSScore.h>
-
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
 
@@ -57,10 +54,6 @@ QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
 
 bool QueryStream::IsConstant(void) const noexcept {
   return impl->AsConstant() != nullptr;
-}
-
-bool QueryStream::IsGenerator(void) const noexcept {
-  return impl->AsGenerator() != nullptr;
 }
 
 bool QueryStream::IsInput(void) const noexcept {
@@ -334,20 +327,8 @@ bool QueryColumn::IsConstraint(void) const noexcept {
   return impl->view->AsConstraint() != nullptr;
 }
 
-bool QueryColumn::IsBoundQueryInput(void) const noexcept {
-  const auto sel = impl->view->AsSelect();
-  if (!sel || !sel->stream) {
-    return false;
-  }
-  return QueryStream(sel->stream.get()).IsBoundQueryInput();
-}
-
 bool QueryColumn::IsConstant(void) const noexcept {
   return impl->IsConstant();
-}
-
-bool QueryColumn::IsGenerator(void) const noexcept {
-  return impl->IsGenerator();
 }
 
 // Number of uses of this column.
@@ -447,17 +428,8 @@ QueryInput &QueryInput::From(QueryStream &stream) {
   return reinterpret_cast<QueryInput &>(stream);
 }
 
-QueryGenerator &QueryGenerator::From(QueryStream &stream) {
-  assert(stream.IsGenerator());
-  return reinterpret_cast<QueryGenerator &>(stream);
-}
-
 const ParsedDeclaration &QueryInput::Declaration(void) const noexcept {
   return impl->declaration;
-}
-
-const ParsedFunctor &QueryGenerator::Declaration(void) const noexcept {
-  return impl->functor;
 }
 
 QueryRelation QueryRelation::From(const QuerySelect &sel) noexcept {
@@ -1084,11 +1056,6 @@ DefinedNodeRange<QueryConstant> Query::Constants(void) const {
           DefinedNodeIterator<QueryConstant>(impl->constants.end())};
 }
 
-DefinedNodeRange<QueryGenerator> Query::Generators(void) const {
-  return {DefinedNodeIterator<QueryGenerator>(impl->generators.begin()),
-          DefinedNodeIterator<QueryGenerator>(impl->generators.end())};
-}
-
 DefinedNodeRange<QueryInput> Query::Inputs(void) const {
   return {DefinedNodeIterator<QueryInput>(impl->inputs.begin()),
           DefinedNodeIterator<QueryInput>(impl->inputs.end())};
@@ -1118,23 +1085,6 @@ DefinedNodeRange<QueryConstraint> Query::Constraints(void) const {
   return {DefinedNodeIterator<QueryConstraint>(impl->constraints.begin()),
           DefinedNodeIterator<QueryConstraint>(impl->constraints.end())};
 }
-
-//// Build and return a new query.
-//Query Query::Build(const ParsedModule &module) {
-//  hyde::QueryBuilder query_builder;
-//  for (auto clause : module.Clauses()) {
-//    hyde::FastBindingSIPSScorer scorer;
-//    hyde::SIPSGenerator generator(clause);
-//    query_builder.VisitClause(scorer, generator);
-//  }
-//  for (auto clause : module.DeletionClauses()) {
-//    hyde::FastBindingSIPSScorer scorer;
-//    hyde::SIPSGenerator generator(clause);
-//    query_builder.VisitClause(scorer, generator);
-//  }
-//
-//  return query_builder.BuildQuery();
-//}
 
 Query::~Query(void) {}
 

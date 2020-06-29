@@ -42,7 +42,7 @@ class RangeRestrictionReporter : public SIPSVisitor {
                               ParsedVariable var) override {
     log.Append(clause.SpellingRange(), var.SpellingRange())
         << "Variable '" << var.SpellingRange()
-        << "' is not range-restricted in this clause";
+        << "' is not range-restricted";
     reported = true;
   }
 
@@ -131,7 +131,7 @@ bool CheckForErrors(const DisplayManager &dm, const ParsedModule &root_module,
       } else if (rr_visitor.reported) {
         break;
       }
-    } while (rr_generator.Advance());
+    } while (rr_generator.Advance() && !any_passed);
 
     if (!any_passed) {
       AllFailedVisitor af_visitor(dm, log);

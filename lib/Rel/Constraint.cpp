@@ -84,7 +84,8 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-  bool non_local_changes = !!GuardWithTuple(query);
+//  (void) GuardWithTuple(query);
+  auto non_local_changes = false;
 
   // We need to re-order the input columns, and possibly also the output
   // columns to match the input ordering.
@@ -115,16 +116,14 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
       return true;
     }
 
-    // This is a problem; we've found something like `0 = 1`.
+    // This may or may not be a problem; we've found something like `0 = 1`, or
+    // possibly something like `1 = 0x1`.
     if (lhs_col->IsConstant() && rhs_col->IsConstant()) {
 
       result_col->ReplaceAllUsesWith(lhs_col);
       if (result_col_is_directly_used) {
         non_local_changes = true;
       }
-
-      // TODO(pag): Create an 'invalid' constant... ? Report an error?
-      assert(false);
 
     // Something like `0 = A`.
     } else if (lhs_col->IsConstant()) {
@@ -133,7 +132,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
         non_local_changes = true;
       }
 
-    // Something like `A = 1`.
+    // Something like `A = 0`.
     } else if (rhs_col->IsConstant()) {
       result_col->ReplaceAllUsesWith(rhs_col);
       if (result_col_is_directly_used) {
@@ -142,14 +141,12 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     }
 
     // Input columns are out of order.
-    if (lhs_sort > rhs_sort) {
+    if (sort && lhs_sort > rhs_sort) {
       UseList<COL> new_input_cols(this);
       new_input_cols.AddUse(rhs_col);
       new_input_cols.AddUse(lhs_col);
       input_columns.Swap(new_input_cols);
     }
-
-    non_local_changes = true;
 
     auto new_result_col = new_output_cols.Create(
         result_col->var, this, result_col->id);

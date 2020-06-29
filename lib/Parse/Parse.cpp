@@ -639,41 +639,6 @@ bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
   return false;
 }
 
-// Does this declaration have a clause that directly depends on a `#functor`
-// that only have `free`-attributed parameters? These are basically
-// "generators" (they can be used to make unique IDs, random numbers,
-// etc.) and so those values need to get saved.
-bool ParsedDeclaration::HasDirectGeneratorDependency(void) const noexcept {
-  auto context = impl->context.get();
-  if (context->checked_generates_value) {
-    return context->generates_value;
-  }
-
-  context->checked_generates_value = true;
-  for (const auto &clause : context->clauses) {
-    for (const auto &pred : clause->positive_predicates) {
-      const auto decl = ParsedDeclaration(pred->declaration);
-      if (!decl.IsFunctor()) {
-        continue;
-      }
-      const auto functor = ParsedFunctor::From(decl);
-      auto all_free = true;
-      for (auto param : functor.Parameters()) {
-        if (param.Binding() != ParameterBinding::kFree) {
-          all_free = false;
-          break;
-        }
-      }
-      if (all_free) {
-        context->generates_value = true;
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 // The kind of this declaration.
 DeclarationKind ParsedDeclaration::Kind(void) const noexcept {
   return impl->context->kind;

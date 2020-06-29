@@ -381,12 +381,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
   // A functor with no bound parameters cannot reasonably be supported.
   //
-  // TODO(pag): I had considered supporting it before as the concept of a
+  // NOTE(pag): I had considered supporting it before as the concept of a
   //            "generator", e.g. for producing random values, but fitting
   //            it into a differential dataflow made no sense after all.
-  //
-  // TODO(pag): Consider making marking generating functors as impure a
-  //            requirement, rather than an error.
   } else if (!num_bound_params && !is_aggregate) {
     assert(0 < num_free_params);
 

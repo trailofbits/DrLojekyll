@@ -17,6 +17,10 @@ static bool CSE(CandidateList &all_views) {
   EqualitySet eq;
   CandidateLists candidate_groups;
 
+  // NOTE(pag): We group by `HashInit` rather than `Hash` as `Hash` will force
+  //            us to miss opportunities due to cycles in the dataflow graph.
+  //            `HashInit` ends up being a good enough filter to restrict us to
+  //            plausibly similar things.
   for (auto view : all_views) {
     candidate_groups[view->HashInit()].push_back(view);
   }
@@ -25,7 +29,7 @@ static bool CSE(CandidateList &all_views) {
 
   std::vector<std::pair<VIEW *, VIEW *>> to_replace;
   std::unordered_map<VIEW *, VIEW *> top_map;
-  auto resolve = [&] (VIEW *a) {
+  auto resolve = [&] (VIEW *a) -> VIEW * {
     while (top_map.count(a)) {
       a = top_map[a];
     }
@@ -213,17 +217,18 @@ void QueryImpl::Simplify(void) {
   RelabelGroupIDs();
 }
 
-void QueryImpl::Canonicalize(void) {
-  this->ForEachView([&] (VIEW *view) {
+void QueryImpl::Canonicalize(bool sort) {
+  ForEachView([&] (VIEW *view) {
     view->is_canonical = false;
-    view->depth = 0;
   });
 
   // Canonicalize all views.
   for (auto non_local_changes = true; non_local_changes; ) {
     non_local_changes = false;
-    this->ForEachView([&] (VIEW *view) {
-      non_local_changes = view->Canonicalize(this, true) || non_local_changes;
+    ForEachViewInDepthOrder([&] (VIEW *view) {
+      if (view->Canonicalize(this, sort)) {
+        non_local_changes = true;
+      }
     });
   }
 
@@ -255,12 +260,12 @@ void QueryImpl::Optimize(void) {
   // Apply CSE to all views.
   do_cse();
 
-  Canonicalize();
+  Canonicalize(false);
 
   // Apply CSE to all canonical views.
   do_cse();
 
-  Canonicalize();
+  Canonicalize(true);
 }
 
 }  // namespace hyde

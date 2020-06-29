@@ -44,9 +44,8 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 }
 
 // Put this map into a canonical form, which will make comparisons and
-// replacements easier. Maps correspond to functors with inputs, whereas
-// functors without inputs are called generators. If the functor has inputs,
-// then some of them might be specified to belong to an `unordered` set, which
+// replacements easier. Maps correspond to functors with inputs. Some of a
+// functor's inputs might be specified to belong to an `unordered` set, which
 // means that they can be re-ordered during canonicalization for the sake of
 // helping deduplicate common subexpressions. We also need to put the "attached"
 // outputs into the proper order.

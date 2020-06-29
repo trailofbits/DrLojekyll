@@ -185,11 +185,11 @@ enum class Lexeme : uint8_t {
   // and `RHS` parameters.
   kKeywordUnordered,
 
-  // Used with non-generator functors to tell the compiler that the outputs
-  // (free variables) of the functor, which in this case is like a map, are
-  // not pure with respect to the bound parameters. For example, a directory
-  // listng functor should be marked as impure, as the file system might have
-  // changed since the last invocation of the listing.
+  // Used with functors to tell the compiler that the outputs (free variables)
+  // of the functor, which in this case is like a map, are not pure with respect
+  // to the bound parameters. For example, a directory listng functor should be
+  // marked as impure, as the file system might have changed since the last
+  // invocation of the listing.
   //
   //    #functor foo(...) impure
   //

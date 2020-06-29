@@ -3,7 +3,6 @@
 #include "Query.h"
 
 #include <sstream>
-#include <iostream>
 
 namespace hyde {
 
@@ -15,8 +14,6 @@ const char *Node<QuerySelect>::KindName(void) const noexcept {
   } else if (auto s = stream.get(); s) {
     if (s->AsConstant()) {
       return "CONST";
-    } else if (s->AsGenerator()) {
-      return "GENERATE";
     } else if (s->AsInput()) {
       return "INPUT";
     } else {
@@ -166,12 +163,7 @@ std::string Node<QueryView>::DebugString(void) noexcept {
 // is that we often want to try to merge together two different instances
 // of the same underlying node when we can.
 uint64_t Node<QueryView>::Sort(void) noexcept {
-  return reinterpret_cast<uintptr_t>(this);
-//
-//  if (!sort) {
-//    sort = HashInit();
-//  }
-//  return sort;
+  return Hash();
 }
 
 // Returns `true` if this view is being used. This is defined in terms of
@@ -383,7 +375,9 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 // If this view is used by a merge then we're not allowed to re-order the
 // columns. Instead, what we can do is create a tuple that will maintain
 // the ordering, and the canonicalize the join order below that tuple.
-Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) {
+Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
+    QueryImpl *query, bool force) {
+
   if (!force && !this->Def<Node<QueryView>>::IsUsed()) {
     return nullptr;
   }
@@ -442,8 +436,6 @@ bool Node<QueryView>::ColumnsEq(
     auto b = c2s[i];
     if (a->type.Kind() != b->type.Kind() ||
         !a->view->Equals(eq, b->view)) {
-      std::cerr << i << " " << a->type.Spelling() << ' ' << b->type.Spelling() << " "
-                << std::hex << a->view->Hash() << " " << b->view->Hash() << std::dec << '\n';
       return false;
     }
   }
@@ -455,7 +447,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
   VIEW *prev_view = nullptr;
 
   for (auto col : cols1) {
-    if (!col->IsConstant() && !col->IsGenerator()) {
+    if (!col->IsConstant()) {
       if (prev_view) {
         if (prev_view != col->view) {
           return false;
@@ -479,7 +471,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
 
   auto do_cols = [&prev_view] (const auto &cols) -> bool {
     for (auto col : cols) {
-      if (!col->IsConstant() && !col->IsGenerator()) {
+      if (!col->IsConstant()) {
         if (prev_view) {
           if (prev_view != col->view) {
             return false;

@@ -20,7 +20,7 @@
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
-#define DEBUG(...) __VA_ARGS__
+#define DEBUG(...)
 
 namespace hyde {
 
@@ -1690,6 +1690,11 @@ std::optional<Query> Query::Build(const ParsedModule &module,
 
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
+  impl->TrackDifferentialUpdates();
+  impl->Simplify();
+  impl->ConnectInsertsToSelects();
+  impl->Optimize();
+  impl->TrackDifferentialUpdates();
 
   return Query(std::move(impl));
 }

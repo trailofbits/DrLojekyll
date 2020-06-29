@@ -151,9 +151,12 @@ void Node<QueryJoin>::VerifyPivots(void) {
 bool Node<QueryJoin>::Canonicalize(QueryImpl *query, bool sort) {
   (void) query;
   (void) sort;
-  is_canonical = true;
-  return false;
-#if 0
+
+  if (!sort) {
+    is_canonical = true;
+    return false;
+  }
+
   if (is_canonical) {
     VerifyPivots();
     return false;
@@ -165,63 +168,11 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query, bool sort) {
     return false;
   }
 
-  auto non_local_changes = false;
   is_canonical = true;
 
   assert(num_pivots <= columns.Size());
   assert(out_to_in.size() == columns.Size());
 
-restart_after_guarding_input:
-  in_to_out.clear();
-
-  for (const auto &[out_col_, in_cols_] : out_to_in) {
-    COL * const out_col = out_col_;
-    const UseList<COL> &in_cols = in_cols_;
-
-    assert(!in_cols.Empty());
-
-    const auto is_pivot = 1u < in_cols.Size();
-
-    // Go see if any of the inputs are constants. In theory we might have
-    // the same logical constant, but with a different spelling, reach into
-    // these, and so we want to permit them.
-    COL *const_col = nullptr;
-    for (COL *in_col : in_cols) {
-
-      if (in_col->IsConstant()) {
-        if (!const_col) {
-          const_col = in_col;
-          if (out_col->IsUsedIgnoreMerges()) {
-            non_local_changes = true;
-          }
-          out_col->ReplaceAllUsesWith(in_col);
-
-        // TODO(pag): Handle this: we've got more than one constants flowing
-        //            into the
-        } else if (const_col != in_col) {
-          assert(is_pivot);
-          assert(false);
-        }
-      }
-
-    }
-
-    for (COL *in_col : in_cols) {
-      auto &prev_out_col = in_to_out[in_col];
-
-      // Need to guard this
-      if (is_pivot && const_col && const_col != in_col) {
-
-      }
-    }
-
-
-    if (!is_pivot && !out_col->IsUsed()) {
-
-    }
-  }
-
-#if 0
   // Maps incoming VIEWs to the pairs of `(out_col, in_col)`, where `out_col`
   // is the output column associated with `in_col`, and `in_col` belongs to
   // the mapped VIEW.
@@ -518,6 +469,9 @@ skip_remove:
     const auto a_size = a_cols->second.Size();
     const auto b_size = b_cols->second.Size();
 
+    const auto a_view_sort = a->view->Sort();
+    const auto b_view_sort = b->view->Sort();
+
     if (a_size > b_size) {
       return true;
     } else if (a_size < b_size) {
@@ -527,13 +481,9 @@ skip_remove:
     // them together, and put them in order of their views, then in order
     // of their appearance within their views.
     } else if (a_size == 1) {
-      auto a_order = std::make_pair(a->view->Sort(), a->Index());
-      auto b_order = std::make_pair(a->view->Sort(), a->Index());
+      auto a_order = std::make_pair(a_view_sort, a->Index());
+      auto b_order = std::make_pair(b_view_sort, b->Index());
       return a_order < b_order;
-
-      // TODO: Modify relabel group ids to handle the JOIN into a JOIN case, so
-      //       that the lowe join gets the upper JOIN's group IDs, but doesn't
-      //       propagate them down.
     }
 
     // Pivot sets are same size. Order the pivot output columns by the
@@ -541,16 +491,12 @@ skip_remove:
     for (auto i = 0u; i < a_size; ++i) {
       auto a_col = a_cols->second[i];
       auto b_col = b_cols->second[i];
-      auto a_order = std::make_pair(a->view->Sort(), a->Index());
-      auto b_order = std::make_pair(a->view->Sort(), a->Index());
-      const auto a_sort = a_cols->second[i]->Sort();
-      const auto b_sort = b_cols->second[i]->Sort();
-      // TODO: make same as above
+      auto a_order = std::make_pair(a_view_sort, a_col->Index());
+      auto b_order = std::make_pair(b_view_sort, b_col->Index());
 
-
-      if (a_sort < b_sort) {
+      if (a_order < b_order) {
         return true;
-      } else if (a_sort > b_sort) {
+      } else if (a_order > b_order) {
         return false;
       } else {
         continue;
@@ -583,8 +529,6 @@ skip_remove:
   is_canonical = true;
   VerifyPivots();
   return non_local_changes;
-#endif
-#endif
 }
 
 // Equality over joins is pointer-based.

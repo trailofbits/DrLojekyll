@@ -471,10 +471,7 @@ static void CallUsers(OutputStream &os, QueryView view,
     for (auto in_col : input_cols) {
       os << sep << '\n' << indent  << "    ";
       if (in_col.IsConstant()) {
-        os << "/* TODO constant */";  // TODO(pag): Handle constants/generators!
-
-      } else if (in_col.IsGenerator()) {
-        os << "/* TODO generator */";  // TODO(pag): Handle this!
+        os << "/* TODO constant */";  // TODO(pag): Handle constants!
 
       } else if (QueryView::Containing(in_col) == view) {
         os << "C" << in_col.UniqueId();

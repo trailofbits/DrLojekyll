@@ -473,12 +473,6 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   // Does this declaration have a clause that directly depends on a `#message`?
   bool HasDirectInputDependency(void) const noexcept;
 
-  // Does this declaration have a clause that directly depends on a `#functor`
-  // that only have `free`-attributed parameters? These are basically
-  // "generators" (they can be used to make unique IDs, random numbers,
-  // etc.) and so those values need to get saved.
-  bool HasDirectGeneratorDependency(void) const noexcept;
-
   // The kind of this declaration.
   DeclarationKind Kind(void) const noexcept;
 
