@@ -1363,7 +1363,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   // We're basically done: we need to form the cross-product of all views and
   // propose that to the clause head.
-  (*gOut) << "num_views=" << num_views << " functors=" << work_item.functors.size() << '\n';
+  DEBUG((*gOut) << "num_views=" << num_views << " functors=" << work_item.functors.size() << '\n';)
   assert(1u < num_views);
 
   CreateProduct(query, clause, context, log, work_item);

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -10,20 +11,21 @@
 #include <unordered_map>
 
 #include <drlojekyll/CodeGen/BAM.h>
+#include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Sema/SIPSChecker.h>
-#include <drlojekyll/Transforms/CombineModules.h>
-#include <drlojekyll/Transforms/ProxyExternalsWithExports.h>
 
 namespace hyde {
 
 OutputStream *gOut = nullptr;
+
+hyde::OutputStream *gDOTStream = nullptr;
+hyde::OutputStream *gCodeStream = nullptr;
 
 }  // namespace hyde
 
@@ -31,14 +33,17 @@ static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log,
                          hyde::ParsedModule module) {
 
-  hyde::OutputStream os(display_manager, std::cerr);
-  hyde::gOut = &os;
+  if (auto query_opt = hyde::Query::Build(module, error_log); query_opt) {
+    if (hyde::gDOTStream) {
+      (*hyde::gDOTStream) << *query_opt;
+      hyde::gDOTStream->Flush();
+    }
 
-  if (auto query_opt = hyde::Query::Build(module, error_log);query_opt) {
-    auto query = *query_opt;
-    os << query;
-    return EXIT_SUCCESS;
-    hyde::GenerateCode(module, query, os);
+    if (hyde::gCodeStream) {
+      hyde::GenerateCode(module, *query_opt, *hyde::gCodeStream);
+      hyde::gCodeStream->Flush();
+    }
+
     return EXIT_SUCCESS;
 
   } else {
@@ -48,20 +53,11 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
 static int ProcessModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log,
-                         hyde::ParsedModule module,
-                         const std::string &output_path) {
+                         hyde::ParsedModule module) {
 
   if (CheckForErrors(display_manager, module, error_log)) {
     return EXIT_FAILURE;
   }
-
-//  if (auto proxied_module_opt = ProxyExternalsWithExports(
-//          display_manager, error_log, module);
-//      proxied_module_opt) {
-//    module = *proxied_module_opt;
-//  } else {
-//    return EXIT_FAILURE;
-//  }
 
   // Round-trip test of the parser.
 #ifndef NDEBUG
@@ -89,17 +85,33 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   return CompileModule(display_manager, error_log, module);
 }
 
+struct FileStream {
+  FileStream(hyde::DisplayManager &dm_, const char *path_)
+      : fs(path_),
+        os(dm_, fs) {}
+
+  std::ofstream fs;
+  hyde::OutputStream os;
+};
+
 int main(int argc, char *argv[]) {
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log(display_manager);
   hyde::Parser parser(display_manager, error_log);
 
   std::string input_path;
-  std::string output_path = "/dev/null";
+
   std::string file_path;
   auto num_input_paths = 0;
 
+
   std::stringstream linked_module;
+
+  hyde::OutputStream os(display_manager, std::cerr);
+
+  std::unique_ptr<FileStream> dot_out;
+  std::unique_ptr<FileStream> cpp_out;
+  hyde::gOut = &os;
 
   // Parse the command-line arguments.
   for (auto i = 1; i < argc; ++i) {
@@ -109,10 +121,25 @@ int main(int argc, char *argv[]) {
       ++i;
       if (i >= argc) {
         hyde::Error err(display_manager);
-        err << "Command-line argument '-o' must be followed by a file path";
+        err << "Command-line argument '-o' must be followed by a file path for "
+            << "C++ code output";
         error_log.Append(std::move(err));
       } else {
-        output_path = argv[i];
+        cpp_out.reset(new FileStream(display_manager, argv[i]));
+        hyde::gCodeStream = &(cpp_out->os);
+      }
+
+    } else if (!strcmp(argv[i], "--dot") ||
+               !strcmp(argv[i], "-dot")) {
+      ++i;
+      if (i >= argc) {
+        hyde::Error err(display_manager);
+        err << "Command-line argument '-o' must be followed by a file path for "
+            << "GraphViz DOT digraph output";
+        error_log.Append(std::move(err));
+      } else {
+        dot_out.reset(new FileStream(display_manager, argv[i]));
+        hyde::gDOTStream = &(dot_out->os);
       }
 
     // Datalog module file search path.
@@ -206,7 +233,7 @@ int main(int argc, char *argv[]) {
     };
 
     if (auto module_opt = parser.ParsePath(input_path, config); module_opt) {
-      code = ProcessModule(display_manager, error_log, *module_opt, output_path);
+      code = ProcessModule(display_manager, error_log, *module_opt);
     }
 
   // Parse multiple modules as a single module including each module to
@@ -219,7 +246,7 @@ int main(int argc, char *argv[]) {
     };
 
     if (auto module_opt = parser.ParseStream(linked_module, config); module_opt) {
-      code = ProcessModule(display_manager, error_log, *module_opt, output_path);
+      code = ProcessModule(display_manager, error_log, *module_opt);
     }
   }
 

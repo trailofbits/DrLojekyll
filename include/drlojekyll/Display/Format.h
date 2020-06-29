@@ -45,6 +45,10 @@ class OutputStream {
     return rename_locals;
   }
 
+  inline void Flush(void) {
+    os.flush();
+  }
+
  private:
   const DisplayManager &display_manager;
   std::ostream &os;
