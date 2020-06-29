@@ -20,26 +20,24 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
   // Base case for recursion.
   hash = HashInit() ^ functor.Id();
 
+  auto local_hash = hash;
+
   // Mix in the hashes of the group by columns.
-  uint64_t group_hash = 0;
   for (auto col : group_by_columns) {
-    group_hash = __builtin_rotateright64(group_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 33) * col->Hash();
   }
 
   // Mix in the hashes of the configuration columns.
-  uint64_t bound_hash = 0;
   for (auto col : config_columns) {
-    bound_hash = __builtin_rotateright64(bound_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 23) * col->Hash();
   }
 
   // Mix in the hashes of the summarized columns.
-  uint64_t summary_hash = 0;
   for (auto col : aggregated_columns) {
-    summary_hash = __builtin_rotateright64(summary_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 13) * col->Hash();
   }
 
-  hash ^= group_hash ^ bound_hash ^ summary_hash;
-
+  hash = local_hash;
   return hash;
 }
 
@@ -67,104 +65,111 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
+bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
   if (is_canonical) {
     return false;
   }
 
+  assert(!aggregated_columns.Empty());
+
   if (valid == VIEW::kValid &&
-      !CheckAllViewsMatch(input_columns, attached_columns)) {
+      (!CheckAllViewsMatch(group_by_columns, aggregated_columns) ||
+       !CheckAllViewsMatch(config_columns, aggregated_columns))) {
     valid = VIEW::kInvalidBeforeCanonicalize;
+    is_canonical = true;
     return false;
   }
 
   assert(attached_columns.Empty());
 
-  const auto guard_tuple = GuardWithTuple(query);
+  auto guard_tuple = GuardWithTuple(query);
   bool non_local_changes = guard_tuple != nullptr;
   is_canonical = true;
 
-  std::unordered_map<COL *, COL *> in_to_out;
+  in_to_out.clear();
+
   auto i = 0u;
-  COL *prev_col = nullptr;
+
   for (auto col : group_by_columns) {
-    if (col <= prev_col) {
-      is_canonical = false;  // Out of order, or there's a duplicate.
-    }
-    const auto out_col = columns[i++];
+    auto &prev_out_col = in_to_out[col];
+    const auto out_col = columns[i];
+    ++i;
 
-    // TODO(pag): Think about this, i.e. what it means to remove a group by
-    //            column from an aggregate.
-    if (!out_col->IsUsed()) {
-      is_canonical = false;
+    // Constants won't change the arity of the GROUP, so propagate and try to
+    // remove them.
+    if (col->IsConstant()) {
+
+      if (out_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+      out_col->ReplaceAllUsesWith(col);
+
+      // Constant column that isn't used, including by merges. This won't
+      // change the aggregate so we can remove it.
+      if (!out_col->IsUsed()) {
+        is_canonical = false;
+
+      // Constant, and it's used directly or indirectly, e.g. by a MERGE, so
+      // we'll force a guard tuple so that we can forward the constant and
+      // eliminate it from the GROUP BY.
+      } else if (!guard_tuple) {
+        non_local_changes = true;
+        guard_tuple = GuardWithTuple(query, true);
+        out_col->ReplaceAllUsesWith(col);  // Should replace one use.
+      }
+
+    // Similar to the above case, we can remove duplicate columns from GROUP BYs
+    // as they won't change the arity of the grouped set.
+    } else if (prev_out_col) {
+
+      if (out_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+      out_col->ReplaceAllUsesWith(prev_out_col);
+
+      // Previously used column that isn't used, including by merges. This won't
+      // change the aggregate so we can remove it.
+      if (!out_col->IsUsed()) {
+        is_canonical = false;
+        col->view->is_canonical = false;
+
+      // Previously used, and it's used directly or indirectly, e.g. by a
+      // MERGE, so we'll force a guard tuple so that we can forward the prior
+      // used column and eliminate it from the GROUP BY.
+      } else if (!guard_tuple) {
+        non_local_changes = true;
+        guard_tuple = GuardWithTuple(query, true);
+        out_col->ReplaceAllUsesWith(prev_out_col);  // Should replace one use.
+      }
+
     } else {
-      in_to_out.emplace(col, out_col);
-      prev_col = col;
+      prev_out_col = out_col;
     }
   }
 
-  // There's a duplicate.
-  if (in_to_out.size() != group_by_columns.Size()) {
-    is_canonical = false;
-  }
-
-  // The group by columns are in order and unique.
-  if (is_canonical) {
+  // Nothing to do, all GROUP BY columns are unique and/or needed.
+  if (is_canonical && in_to_out.size() == group_by_columns.Size()) {
     return non_local_changes;
   }
 
-  group_by_columns.Sort();
+  hash = 0;
 
   DefList<COL> new_output_cols(this);
   UseList<COL> new_group_by_columns(this);
 
+  assert(i == group_by_columns.Size());
   for (auto j = 0u; j < i; ++j) {
     const auto in_col = group_by_columns[j];
-    const auto old_out_col = columns[j];
-
-    // If the output column is never used, then get rid of it.
-    //
-    // NOTE(pag): `IsUsed` on a column checks to see if its view is used
-    //            in a merge, which would not show up in a normal def-use
-    //            list.
-    if (!old_out_col->IsUsed()) {
-      in_col->view->is_canonical = false;
-      non_local_changes = true;  // Shrinking the number of columns.
-      continue;
-    }
-
-    // Constant propagation.
-    //
-    // TODO(pag): What does it mean to group by a constant?? Probably it means
-    //            that all sources have already FILTERed by that constant, and
-    //            so this constant node can be omitted from the group as all
-    //            sources will have done the right thing.
-    if (in_col->IsConstant() && old_out_col->IsUsedIgnoreMerges()) {
-      old_out_col->ReplaceAllUsesWith(in_col);
-      non_local_changes = true;
-      continue;
-    }
-
-    auto &out_col = in_to_out[in_col];
-    if (out_col) {
-      in_col->view->is_canonical = false;
-      non_local_changes = true;  // Shrinking the number of columns.
-
-      if (out_col->NumUses() > old_out_col->NumUses()) {
-        old_out_col->ReplaceAllUsesWith(out_col);
-      } else {
-        out_col->ReplaceAllUsesWith(old_out_col);
-        out_col = old_out_col;
-      }
-    } else {
-      out_col = old_out_col;
+    if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
       new_group_by_columns.AddUse(in_col);
     }
   }
 
-  new_group_by_columns.Sort();
+  if (sort) {
+    new_group_by_columns.Sort();
+  }
 
-  // Add in the new grouped columns, which are in order, deduped, and used
+  // Add in the new grouped columns, which may be in order, deduped, and used
   // by later flows.
   for (auto in_col : new_group_by_columns) {
     const auto old_out_col = in_to_out[in_col];
@@ -173,7 +178,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     old_out_col->ReplaceAllUsesWith(new_out_col);
   }
 
-  // Add back in the bound and summarized columns.
+  // Add back in the bound (configuration) and summarized columns.
   const auto num_cols = columns.Size();
   for (auto j = i; j < num_cols; ++j) {
     const auto old_out_col = columns[j];
@@ -182,11 +187,16 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query) {
     old_out_col->ReplaceAllUsesWith(new_out_col);
   }
 
+  group_by_columns.Swap(new_group_by_columns);
   columns.Swap(new_output_cols);
 
-  assert(CheckAllViewsMatch(input_columns, attached_columns));
+  if (!CheckAllViewsMatch(group_by_columns, aggregated_columns) ||
+      !CheckAllViewsMatch(config_columns, aggregated_columns)) {
+    valid = VIEW::kInvalidAfterCanonicalize;
+  }
+
   is_canonical = true;
-  return true;
+  return non_local_changes;
 }
 
 // Equality over aggregates is structural.

@@ -2,7 +2,170 @@
 
 #include "Parser.h"
 
+#include <drlojekyll/Util/DisjointSet.h>
+
 namespace hyde {
+namespace {
+
+// Go through the variables used in the clause and try to identify groups of
+// predicates that should be extracted into boolean conditions (zero-argument
+// clauses). It's simpler to demand that the writer of the code factor out these
+// conditions instead of having us do it automatically.
+static void FindUnrelatedConditions(Node<ParsedClause> *clause,
+                                    const ErrorLog &log) {
+
+  std::vector<std::unique_ptr<DisjointSet>> sets;
+  std::unordered_map<uint64_t, DisjointSet *> var_to_set;
+  std::unordered_map<Node<ParsedPredicate> *, DisjointSet *> pred_to_set;
+
+  auto next_id = 0u;
+  const auto clause_head_id = next_id;
+  const auto clause_set = new DisjointSet(next_id++);
+  sets.emplace_back(clause_set);
+  for (auto &var : clause->head_variables) {
+    var_to_set.emplace(var->Id(), clause_set);
+  }
+
+  auto do_pred = [&] (Node<ParsedPredicate> *pred, DisjointSet *set) {
+
+    // This predicate has zero arguments, i.e. it is a condition already.
+    // Associated it with the clause head set.
+    if (pred->argument_uses.empty()) {
+      if (set) {
+        set = DisjointSet::Union(set, clause_set);
+      } else {
+        set = clause_set;
+      }
+    }
+
+    for (auto &var_use : pred->argument_uses) {
+      Node<ParsedVariable> *var = var_use->used_var;
+      auto &found_set = var_to_set[var->Id()];
+      if (found_set) {
+        if (set) {
+          set = DisjointSet::Union(set, found_set);
+        } else {
+          set = found_set;
+        }
+      } else if (set) {
+        found_set = set;
+
+      } else {
+        set = new DisjointSet(next_id++);
+        sets.emplace_back(set);
+        found_set = set;
+      }
+    }
+
+    pred_to_set.emplace(pred, set);
+  };
+
+  for (const auto &pred : clause->positive_predicates) {
+    do_pred(pred.get(), nullptr);
+  }
+
+  for (const auto &pred : clause->negated_predicates) {
+    do_pred(pred.get(), nullptr);
+  }
+
+  for (const auto &agg : clause->aggregates) {
+    const auto set = new DisjointSet(next_id++);
+    sets.emplace_back(set);
+    do_pred(agg->predicate.get(), set);
+    do_pred(agg->functor.get(), set);
+  }
+
+  for (const auto &assign : clause->assignments) {
+    Node<ParsedVariable> *lhs_var = assign->lhs.used_var;
+    auto &set = var_to_set[lhs_var->Id()];
+    if (!set) {
+      set = new DisjointSet(next_id++);
+      sets.emplace_back(set);
+    }
+  }
+
+  for (const auto &cmp : clause->comparisons) {
+    Node<ParsedVariable> *lhs_var = cmp->lhs.used_var;
+    Node<ParsedVariable> *rhs_var = cmp->rhs.used_var;
+
+    auto &lhs_set = var_to_set[lhs_var->Id()];
+    auto &rhs_set = var_to_set[rhs_var->Id()];
+
+    if (lhs_set && rhs_set) {
+      DisjointSet::Union(lhs_set, rhs_set);
+    } else if (lhs_set) {
+      rhs_set = lhs_set;
+    } else if (rhs_set) {
+      lhs_set = rhs_set;
+    } else {
+      lhs_set = new DisjointSet(next_id++);
+      rhs_set = lhs_set;
+      sets.emplace_back(lhs_set);
+    }
+  }
+
+  std::vector<DisjointSet *> conditions;
+  for (auto &[id, set] : var_to_set) {
+    set = set->Find();
+    if (set->id != clause_head_id) {
+      conditions.push_back(set);
+    }
+  }
+
+  std::sort(conditions.begin(), conditions.end());
+  auto it = std::unique(conditions.begin(), conditions.end());
+  conditions.erase(it, conditions.end());
+
+  // All head variables are related to every predicate/comparison/aggregate.
+  if (conditions.empty()) {
+    return;
+
+  // There are no head variables, and there is only one condition set, i.e.
+  // we are definition a condition variable.
+  } else if (conditions.size() == 1 && clause->head_variables.empty()) {
+    return;
+  }
+
+  const auto clause_range = ParsedClause(clause).SpellingRange();
+  for (auto cond_set : conditions) {
+    auto err = log.Append(clause_range);
+    err << "The following elements in the body of this clause should be "
+        << "factored out into a a zero-argument predicate";
+
+    for (const auto &pred : clause->positive_predicates) {
+      if (pred_to_set[pred.get()]->Find() == cond_set) {
+        err.Note(clause_range, ParsedPredicate(pred.get()).SpellingRange())
+            << "This predicate";
+      }
+    }
+
+    for (const auto &pred : clause->negated_predicates) {
+      if (pred_to_set[pred.get()]->Find() == cond_set) {
+        err.Note(clause_range, ParsedPredicate(pred.get()).SpellingRange())
+            << "This negated predicate";
+      }
+    }
+
+    for (const auto &assign : clause->assignments) {
+      Node<ParsedVariable> *lhs_var = assign->lhs.used_var;
+      if (var_to_set[lhs_var->Id()] == cond_set) {
+        err.Note(clause_range, ParsedAssignment(assign.get()).SpellingRange())
+            << "This assignment";
+      }
+    }
+
+    for (const auto &cmp : clause->comparisons) {
+      Node<ParsedVariable> *lhs_var = cmp->lhs.used_var;
+      if (var_to_set[lhs_var->Id()] == cond_set) {
+        err.Note(clause_range, ParsedComparison(cmp.get()).SpellingRange())
+            << "This comparison";
+      }
+    }
+  }
+
+}
+
+}  // namespace
 
 // Try to parse `sub_range` as a clause.
 void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
@@ -14,7 +177,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   Token tok;
   int state = 0;
 
-  // Approximate state transition diagram for parsing clauses.
+  // Approximate state transition diagram for parsing clauses. It gets a bit
+  // more complicated because we can have literals in the clause head, or
+  // aggregates with inline
   //
   //               .--------<-------.
   //               |                |                      .-> var -->--.
@@ -37,7 +202,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   Node<ParsedVariable> *rhs = nullptr;
   Token compare_op;
   std::unique_ptr<Node<ParsedPredicate>> pred;
-  bool equates_parameters = false;
 
   // Link `pred` into `clause`.
   auto link_pred = [&] (void) {
@@ -59,6 +223,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
        next_pos = tok.NextPosition()) {
 
     const auto lexeme = tok.Lexeme();
+    const auto tok_range = tok.SpellingRange();
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme ||
@@ -68,11 +233,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected atom here (lower case identifier) for the name of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected atom here (lower case identifier) for the name of "
               << "the clause head being declared, got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -98,64 +261,17 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         //            turn on/off options.
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected opening parenthesis here to begin parameter list of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected opening parenthesis here to begin parameter list of "
               << "clause head '" << clause->name << "', or a colon for a zero-"
               << "arity predicate, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
       case 2:
         if (Lexeme::kIdentifierVariable == lexeme) {
+          (void) CreateVariable(clause.get(), tok, true, false);
 
-          // Check to see if the same variable comes up as another parameter.
-          Node<ParsedVariable> *prev_var = nullptr;
-          for (const auto &head_var : clause->head_variables) {
-            if (head_var->name.IdentifierId() == tok.IdentifierId()) {
-              prev_var = head_var.get();
-              break;
-            }
-          }
-
-          if (!prev_var) {
-            (void) CreateVariable(clause.get(), tok, true, false);
-
-          // Something like `foo(A, A)`, which we want to translate into
-          // `foo(A, V123) : A=V123, ...`.
-          } else {
-            equates_parameters = true;
-
-            const auto new_tok = Token::Synthetic(
-                Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange());
-            const auto dup_var = CreateVariable(
-                clause.get(), new_tok, true, false);
-
-            const auto compare = new Node<ParsedComparison>(
-                prev_var, dup_var,
-                Token::Synthetic(Lexeme::kPuncEqual, tok.SpellingRange()));
-
-            // Add to the LHS variable's comparison use list.
-            auto &lhs_comparison_uses = prev_var->context->comparison_uses;
-            if (!lhs_comparison_uses.empty()) {
-              lhs_comparison_uses.back()->next = &(compare->lhs);
-            }
-            lhs_comparison_uses.push_back(&(compare->lhs));
-
-            // Add to the RHS variable's comparison use list.
-            auto &rhs_comparison_uses = dup_var->context->comparison_uses;
-            if (!rhs_comparison_uses.empty()) {
-              rhs_comparison_uses.back()->next = &(compare->rhs);
-            }
-            rhs_comparison_uses.push_back(&(compare->rhs));
-
-            // Add to the clause's comparison list.
-            if (!clause->comparisons.empty()) {
-              clause->comparisons.back()->next = compare;
-            }
-            clause->comparisons.emplace_back(compare);
-          }
           state = 3;
           continue;
 
@@ -169,12 +285,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected variable name (capitalized identifier) for "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected variable name (capitalized identifier) for "
               << "parameter in clause '" << clause->name << "', but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -201,12 +315,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           }
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected comma (to continue parameter list) or closing "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected comma (to continue parameter list) or closing "
               << "parenthesis (to end paramater list) for clause head '"
               << clause->name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -221,12 +333,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected colon to denote the beginning of the body "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected colon to denote the beginning of the body "
               << "of the clause '" << clause->name << "', but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -254,11 +364,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected variable name, atom, or exclamation point, but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected variable name, atom, or exclamation point, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -272,11 +380,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected comparison operator, but got '" << tok
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected comparison operator, but got '" << tok
               << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -295,7 +401,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             assign->rhs.literal = tok;
             assign->rhs.assigned_to = lhs;
             std::string_view data;
-            if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
+            if (context->display_manager.TryReadData(tok_range, &data)) {
               assert(!data.empty());
               assign->rhs.data = data;
             } else {
@@ -327,12 +433,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           // simplifies later checks, and makes sure that iteration over the
           // comparisons containing a given variable are well-founded.
           if (ParsedVariable(lhs).Id() == ParsedVariable(rhs).Id()) {
-            Error err(context->display_manager, SubTokenRange(),
-                      DisplayRange(lhs->name.Position(),
-                                   rhs->name.NextPosition()));
-            err << "Variable '" << lhs->name
+            const DisplayRange assign_range(lhs->name.Position(),
+                                            rhs->name.NextPosition());
+            context->error_log.Append(scope_range, assign_range)
+                << "Variable '" << lhs->name
                 << "' cannot appear on both sides of a comparison";
-            context->error_log.Append(std::move(err));
             return;
           }
 
@@ -363,11 +468,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected variable name or number/string literal, but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected variable name or number/string literal, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -383,19 +486,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected comma or period, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected comma or period, but got '" << tok << "' instead";
           return;
         }
 
       case 9: {
         DisplayRange err_range(
             tok.Position(), sub_tokens.back().NextPosition());
-        Error err(context->display_manager, SubTokenRange(), err_range);
-        err << "Unexpected tokens following clause '" << clause->name << "'";
-        context->error_log.Append(std::move(err));
+        context->error_log.Append(scope_range, err_range)
+            << "Unexpected tokens following clause '" << clause->name << "'";
         state = 10;  // Ignore further errors, but add the local in.
         continue;
       }
@@ -414,11 +514,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected atom here for negated predicate, but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected atom here for negated predicate, but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -446,12 +544,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected an opening parenthesis, comma, or period here to"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected an opening parenthesis, comma, or period here to"
               << "test predicate '" << pred->name << "', but got '" << tok
               << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -490,11 +586,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected variable or literal here as argument to predicate '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected variable or literal here as argument to predicate '"
               << pred->name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -510,19 +604,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           // backed by actual relations.
           if (pred->negation_pos.IsValid() &&
               pred->declaration->inline_attribute.IsValid()) {
-            Error err(context->display_manager, SubTokenRange(),
-                      ParsedPredicate(pred.get()).SpellingRange());
+            const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
+            auto err = context->error_log.Append(scope_range, err_range);
             err << "Cannot negate " << pred->declaration->KindName()
                 << " '" << pred->name
                 << "' because it has been marked as inline";
 
             auto note = err.Note(
-                context->display_manager,
                 ParsedDeclaration(pred->declaration).SpellingRange(),
                 pred->declaration->inline_attribute.SpellingRange());
             note << "Marked as inline here";
-
-            context->error_log.Append(std::move(err));
             return;
           }
 
@@ -533,10 +624,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               ParsedFunctor::From(pred_decl).IsAggregate()) {
 
             if (pred->negation_pos.IsValid()) {
-              Error err(context->display_manager, SubTokenRange(),
-                        ParsedPredicate(pred.get()).SpellingRange());
-              err << "Cannot negate aggregating functor '" << pred->name << "'";
-              context->error_log.Append(std::move(err));
+              const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
+              context->error_log.Append(scope_range, err_range)
+                  << "Cannot negate aggregating functor '" << pred->name << "'";
               return;
             }
 
@@ -558,11 +648,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             // externally via later source-to-source transforms.
             if (kind == DeclarationKind::kFunctor ||
                 kind == DeclarationKind::kMessage) {
-              Error err(context->display_manager, SubTokenRange(),
-                        ParsedPredicate(pred.get()).SpellingRange());
-              err << "Cannot negate " << pred->declaration->KindName()
+              const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
+              context->error_log.Append(scope_range, err_range)
+                  << "Cannot negate " << pred->declaration->KindName()
                   << " '" << pred->name << "'";
-              context->error_log.Append(std::move(err));
               return;
             }
           }
@@ -576,10 +665,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected comma or period, but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected comma or period, but got '" << tok << "' instead";
           return;
         }
 
@@ -595,20 +682,17 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           }
 
         } else {
-          Error err(context->display_manager, SubTokenRange(),
-                    tok.SpellingRange());
-          err << "Expected 'over' after usage of aggregate functor '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected 'over' after usage of aggregate functor '"
               << pred->name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
     }
   }
 
   if (state != 9 && state != 10) {
-    Error err(context->display_manager, SubTokenRange(), next_pos);
-    err << "Incomplete clause definition";
-    context->error_log.Append(std::move(err));
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete clause definition";
     return;
   }
 
@@ -616,14 +700,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
                                clause->declaration->context->kind;
   const auto is_message_clause = DeclarationKind::kMessage ==
                                  clause->declaration->context->kind;
-
-  // TODO(pag): Consider doing some kind of basic range restriction check and
-  //            transformation. For example, if we have `foo(A,A).` then is
-  //            it legal to translate that to `foo(A0, A0) : foo(A0, _).` and
-  //            `foo(A1, A1) : foo(_, A1).`?
-  if (equates_parameters) {
-
-  }
 
   // Go make sure we don't have two messages inside of a given clause. In our
   // bottom-up execution model, the "inputs" to the system are messages, which
@@ -641,15 +717,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       continue;
     }
     if (prev_message) {
-      Error err(context->display_manager, SubTokenRange(),
-                ParsedPredicate(used_pred.get()).SpellingRange());
+      const auto err_range = ParsedPredicate(used_pred.get()).SpellingRange();
+      auto err = context->error_log.Append(scope_range, err_range);
+
       err << "Cannot have direct dependency on more than one messages";
 
-      auto note = err.Note(context->display_manager, SubTokenRange(),
+      auto note = err.Note(scope_range,
                            ParsedPredicate(prev_message).SpellingRange());
       note << "Previous message use is here";
-
-      context->error_log.Append(std::move(err));
       return;
 
     } else {
@@ -664,22 +739,21 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     //            by queries to be proxied by locals. Do that then remove this
     //            issue.
     if (is_query_clause) {
-      Error err(context->display_manager, SubTokenRange(),
-                ParsedPredicate(used_pred.get()).SpellingRange());
-      err << "Queries cannot depend directly on messages";
-      context->error_log.Append(std::move(err));
+      const auto err_range = ParsedPredicate(used_pred.get()).SpellingRange();
+      context->error_log.Append(scope_range, err_range)
+          << "Queries cannot depend directly on messages";
       return;
     }
   }
 
   if (negation_tok.IsValid()) {
+    const auto negation_tok_range = negation_tok.SpellingRange();
+
     // We don't let deletion clauses be specified on queries because a query
     // gives us point-in-time results according to some request.
     if (is_query_clause) {
-      Error err(context->display_manager, SubTokenRange(),
-                negation_tok.SpellingRange());
-      err << "Deletion clauses cannot be specified on queries";
-      context->error_log.Append(std::move(err));
+      context->error_log.Append(scope_range, negation_tok_range)
+          << "Deletion clauses cannot be specified on queries";
       return;
 
     // We also don't support negations of messages, as it's a message isn't
@@ -689,10 +763,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     // received a corresponding "equivalent" message, then we never really
     // stored it to begin with.
     } else if (is_message_clause) {
-      Error err(context->display_manager, SubTokenRange(),
-                negation_tok.SpellingRange());
-      err << "Deletion clauses cannot be specified on messages";
-      context->error_log.Append(std::move(err));
+      context->error_log.Append(scope_range, negation_tok_range)
+          << "Deletion clauses cannot be specified on messages";
       return;
 
     // Negation (i.e. removal) clauses must have a direct dependency on a
@@ -700,11 +772,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     // that, absent external messages, the system won't get into trivial cycles
     // that preven fixpoints.
     } else if (!prev_message) {
-      Error err(context->display_manager, SubTokenRange(),
-                negation_tok.SpellingRange().From());
-      err << "The explicit deletion clause for " << decl->name << '/'
+      context->error_log.Append(scope_range, negation_tok_range)
+          << "The explicit deletion clause for " << decl->name << '/'
           << decl->parameters.size() << " must directly depend on a message";
-      context->error_log.Append(std::move(err));
       return;
     }
 
@@ -717,16 +787,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     auto has_errors = false;
     for (const auto &clause : decl->context->clauses) {
       if (!clause->depends_on_messages) {
-        Error err(context->display_manager, SubTokenRange(),
-                  negation_tok.SpellingRange().From());
+        auto err = context->error_log.Append(scope_range, negation_tok.Position());
         err << "All positive clauses of " << decl->name << '/'
             << decl->parameters.size() << " must directly depend on a message "
             << "because of the presence of a deletion clause";
 
-        auto note = err.Note(context->display_manager,
-                             ParsedClause(clause.get()).SpellingRange());
+        auto note = err.Note(ParsedClause(clause.get()).SpellingRange());
         note << "Clause without a direct message dependency is here";
-        context->error_log.Append(std::move(err));
       }
     }
     if (has_errors) {
@@ -734,17 +801,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     }
 
   } else if (!prev_message && !decl->context->deletion_clauses.empty()) {
-    Error err(context->display_manager, SubTokenRange(),
-              negation_tok.SpellingRange().From());
+    auto err = context->error_log.Append(scope_range, negation_tok.Position());
     err << "All positive clauses of " << decl->name << '/'
         << decl->parameters.size() << " must directly depend on a message "
         << "because of the presence of a deletion clause";
 
     auto del_clause = decl->context->deletion_clauses.front().get();
-    auto note = err.Note(context->display_manager,
-                         ParsedClause(del_clause).SpellingRange());
+    auto note = err.Note(ParsedClause(del_clause).SpellingRange());
     note << "First deletion clause is here";
-    context->error_log.Append(std::move(err));
   }
 
   // Keep track of whether or not any clause for this decl uses messages.
@@ -795,6 +859,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   if (!decl_clause_list->empty()) {
     decl_clause_list->back()->next = clause.get();
   }
+
+  FindUnrelatedConditions(clause.get(), context->error_log);
 
   // Add this clause to its decl context.
   decl_clause_list->emplace_back(std::move(clause));

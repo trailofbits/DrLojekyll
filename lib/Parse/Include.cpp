@@ -15,11 +15,12 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
 
   auto after_directive = tok.NextPosition();
   if (!ReadNextSubToken(tok)) {
-    Error err(context->display_manager, SubTokenRange(), after_directive);
-    err << "Expected string literal of file path here for include statement";
-    context->error_log.Append(std::move(err));
+    context->error_log.Append(scope_range, after_directive)
+        << "Expected string literal of file path here for include statement";
     return;
   }
+
+  const auto tok_range = tok.SpellingRange();
 
   std::string_view path_str;
   DisplayRange path_range;
@@ -32,11 +33,10 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
     path_range = DisplayRange(tok.Position(), sub_tokens.back().NextPosition());
     DisplayRange str(tok.NextPosition(), sub_tokens.back().Position());
 
-    if (!context->display_manager.TryReadData(str,  &path_str) ||
+    if (!context->display_manager.TryReadData(str, &path_str) ||
         path_str.empty()) {
-      Error err(context->display_manager, SubTokenRange(), path_range);
-      err << "Empty or invalid angled string literal in include statement";
-      context->error_log.Append(std::move(err));
+      context->error_log.Append(scope_range, path_range)
+          << "Empty or invalid angled string literal in include statement";
       return;
     }
 
@@ -46,23 +46,20 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {
     const auto path_id = tok.StringId();
     const auto path_len = tok.StringLength();
-    path_range = tok.SpellingRange();
+    path_range = tok_range;
     if (!context->string_pool.TryReadString(path_id, path_len, &path_str) ||
         !path_len) {
-      Error err(context->display_manager, SubTokenRange(), path_range);
-      err << "Empty or invalid string literal in include statement";
-      context->error_log.Append(std::move(err));
+      context->error_log.Append(scope_range, path_range)
+          << "Empty or invalid string literal in include statement";
       return;
     }
 
   } else {
-    Error err(context->display_manager, SubTokenRange(),
-              tok.SpellingRange());
-    err << "Expected string or angled string literal of file path here for "
+    context->error_log.Append(scope_range, tok_range)
+        << "Expected string or angled string literal of file path here for "
         << "include statement, got '"
         << DisplayRange(tok.Position(), sub_tokens.back().NextPosition())
         << "' instead";
-    context->error_log.Append(std::move(err));
     return;
   }
 
@@ -97,15 +94,14 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
   }
 
   if (ec || full_path.empty()) {
-    Error err(context->display_manager, SubTokenRange(), path_range);
-    err << "Unable to locate file '" << path_str
+    context->error_log.Append(scope_range, path_range)
+        << "Unable to locate file '" << path_str
         << "' requested by include statement";
-    context->error_log.Append(std::move(err));
     return;
   }
 
   const auto include = new Node<ParsedInclude>(
-      SubTokenRange(), full_path, is_angled);
+      scope_range, full_path, is_angled);
   if (!module->includes.empty()) {
     module->includes.back()->next = include;
   }

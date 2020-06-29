@@ -19,22 +19,21 @@ namespace hyde {
 
 // Transforms `module` so that all queries are rewritten to be messages,
 // possibly pairs of input and output messages.
-ParsedModule ConvertQueriesToMessages(DisplayManager &display_manager,
-                                      ParsedModule module) {
+std::optional<ParsedModule> ConvertQueriesToMessages(
+    const DisplayManager &display_manager, const ErrorLog &error_log,
+    ParsedModule module) {
   std::stringstream ss;
   hyde::OutputStream os(display_manager, ss);
 
   std::vector<std::pair<unsigned, ParsedParameter>> bound_params;
   std::vector<std::pair<unsigned, ParsedParameter>> free_params;
 
-  if (module != module.RootModule()) {
-    module = CombineModules(display_manager, module.RootModule());
-  }
-
-  for (auto _ : module.Imports()) {
-    (void) _;
-    module = CombineModules(display_manager, module.RootModule());
-    break;
+  if (auto module_opt = CombineModules(
+          display_manager, error_log, module.RootModule());
+      module_opt) {
+    module = *module_opt;
+  } else {
+    return std::nullopt;
   }
 
   for (auto include : module.Includes()) {
@@ -99,7 +98,7 @@ ParsedModule ConvertQueriesToMessages(DisplayManager &display_manager,
         os << comma << param.second.Type() << " " << param.second.Name();
         comma = ", ";
       }
-      os << comma << "@uuid _RequestID)\n";
+      os << comma << "uuid _RequestID)\n";
 
 
       // TODO(pag): Have a message that can remove a request. Parser support
@@ -113,7 +112,7 @@ ParsedModule ConvertQueriesToMessages(DisplayManager &display_manager,
         comma = ", ";
       }
 
-      os << comma << "@uuid _RequestID)\n";
+      os << comma << "uuid _RequestID)\n";
 
       // Define the clause for `requested_<name>` to simply persist the
       // data associated with `request_<name>` for the query `<name>`.
@@ -185,11 +184,8 @@ ParsedModule ConvertQueriesToMessages(DisplayManager &display_manager,
   DisplayConfiguration config;
   config.name = "<remove-query>";
 
-  hyde::ErrorLog error_log;
   hyde::Parser parser(display_manager, error_log);
-  auto transformed_module = parser.ParseStream(ss, config);
-  assert(error_log.IsEmpty());
-  return transformed_module;
+  return parser.ParseStream(ss, config);
 }
 
 }  // namespace hyde

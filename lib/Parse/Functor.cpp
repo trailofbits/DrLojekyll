@@ -43,13 +43,13 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   unsigned num_bound_params = 0;
   unsigned num_free_params = 0;
 
-  const auto sub_tok_range = SubTokenRange();
-
   for (next_pos = tok.NextPosition();
        ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
     const auto lexeme = tok.Lexeme();
+    const auto tok_range = tok.SpellingRange();
+
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
@@ -58,11 +58,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected atom here (lower case identifier) for the name of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected atom here (lower case identifier) for the name of "
               << "the functor being declared, got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
       case 1:
@@ -70,11 +68,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           state = 2;
           continue;
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected opening parenthesis here to begin parameter list of "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected opening parenthesis here to begin parameter list of "
               << "functor '" << name << "', but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -109,13 +105,11 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected binding specifier ('bound', 'free', 'aggregate', "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected binding specifier ('bound', 'free', 'aggregate', "
               << "or 'summary') in parameter "
               << "declaration of functor '" << name << "', " << "but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -127,12 +121,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected type name here for parameter in functor '"
-              << name << "', but got '"
-              << tok << "' instead";
-          context->error_log.Append(std::move(err));
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected type name here for parameter in functor '"
+              << name << "', but got '" << tok << "' instead";
           return;
         }
 
@@ -143,12 +134,10 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected named variable here (capitalized identifier) as a "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected named variable here (capitalized identifier) as a "
               << "parameter name of functor '" << name << "', but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -158,11 +147,10 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           params.back()->next = param.get();
 
           if (params.size() == kMaxArity) {
-            Error err(context->display_manager, sub_tok_range,
-                      ParsedParameter(param.get()).SpellingRange());
+            auto err = context->error_log.Append(
+                scope_range, ParsedParameter(param.get()).SpellingRange());
             err << "Too many parameters to #functor '" << name
                 << "'; the maximum number of parameters is " << kMaxArity;
-            context->error_log.Append(std::move(err));
             return;
           }
         }
@@ -192,11 +180,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           }
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected either a comma or a closing parenthesis here, "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected either a comma or a closing parenthesis here, "
               << "but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           return;
         }
 
@@ -217,26 +203,21 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
             continue;
 
           } else {
-            Error err(context->display_manager, sub_tok_range,
-                      tok.SpellingRange());
+            auto err = context->error_log.Append(scope_range, tok_range);
             err << "Unexpected 'impure' attribute here; functor "
                 << name << " was already marked as impure";
 
-            auto note = err.Note(context->display_manager,
-                                 sub_tok_range, impure.SpellingRange());
-            note << "Previous 'impure' attribute was here";
+            err.Note(scope_range, impure.SpellingRange())
+                << "Previous 'impure' attribute was here";
 
-            context->error_log.Append(std::move(err));
             RemoveDecl<ParsedFunctor>(std::move(functor));
             return;
           }
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected 'unordered' attribute here, "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected 'unordered' attribute here, "
               << "but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
@@ -251,11 +232,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected an opening parenthesis here to begin 'unordered' set"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected an opening parenthesis here to begin 'unordered' set"
               << " but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
@@ -272,27 +251,22 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
             }
 
             if (func_param->opt_binding.Lexeme() != Lexeme::kKeywordBound) {
-              Error err(context->display_manager, sub_tok_range,
-                        tok.SpellingRange());
-              err << "Variable '" << tok
+              context->error_log.Append(scope_range, tok_range)
+                  << "Variable '" << tok
                   << "' specified in unordered set is not a 'bound'-attributed "
                   << "parameter of this #functor";
-              context->error_log.Append(std::move(err));
               RemoveDecl<ParsedFunctor>(std::move(functor));
               return;
             }
 
             if (func_param->opt_unordered_name.IsValid()) {
-              Error err(context->display_manager, sub_tok_range,
-                        tok.SpellingRange());
+              auto err = context->error_log.Append(scope_range, tok_range);
               err << "Parameter variable '" << tok
                   << "' cannot belong to more than one unordered sets";
 
-              auto note = err.Note(context->display_manager, sub_tok_range,
-                                   func_param->opt_unordered_name.SpellingRange());
-              note << "Previous use in an unordered set was here";
+              err.Note(scope_range, func_param->opt_unordered_name.SpellingRange())
+                  << "Previous use in an unordered set was here";
 
-              context->error_log.Append(std::move(err));
               RemoveDecl<ParsedFunctor>(std::move(functor));
               return;
             }
@@ -308,12 +282,10 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           }
 
           if (!found) {
-            Error err(context->display_manager, sub_tok_range,
-                      tok.SpellingRange());
-            err << "Variable '" << tok
+            context->error_log.Append(scope_range, tok_range)
+                << "Variable '" << tok
                 << "' specified in unordered set is not a parameter "
                 << "variable of this #functor";
-            context->error_log.Append(std::move(err));
             RemoveDecl<ParsedFunctor>(std::move(functor));
             return;
 
@@ -323,11 +295,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           }
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected a parameter variable name here but got '"
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected a parameter variable name here but got '"
               << tok << "' instead";
-          context->error_log.Append(std::move(err));
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
@@ -346,11 +316,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           uset.end = tok;
 
           if (2 > uset.params.size()) {
-            Error err(context->display_manager, sub_tok_range,
-                      uset.SpellingRange());
-            err << "Unordered set specification must list at least two "
+            context->error_log.Append(scope_range, uset.SpellingRange())
+                << "Unordered set specification must list at least two "
                 << "parameter variables";
-            context->error_log.Append(std::move(err));
             RemoveDecl<ParsedFunctor>(std::move(functor));
             return;
           }
@@ -360,78 +328,67 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           continue;
 
         } else {
-          Error err(context->display_manager, sub_tok_range,
-                    tok.SpellingRange());
-          err << "Expected either a comma (to continue unordered set) or a "
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected either a comma (to continue unordered set) or a "
               << "closing parenthesis (to end undordered set) here, "
               << "but got '" << tok << "' instead";
-          context->error_log.Append(std::move(err));
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
     }
   }
 
+  const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
+
   if (state != 6 && state != 13) {
-    Error err(context->display_manager, sub_tok_range, next_pos);
-    err << "Incomplete functor declaration; the declaration must be "
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete functor declaration; the declaration must be "
         << "placed entirely on one line";
-    context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
   // If we have a summary argument, then require us to have an aggregate
   // argument.
   } else if (last_summary.IsValid() && !last_aggregate.IsValid()) {
-    Error err(context->display_manager, sub_tok_range,
-              last_summary.SpellingRange());
-    err << "Functor '" << functor->name << "' produces a summary value without "
+    context->error_log.Append(scope_range, last_summary.SpellingRange())
+        << "Functor '" << functor->name << "' produces a summary value without "
         << "any corresponding aggregate inputs";
-    context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
   } else if (last_aggregate.IsValid() && !last_summary.IsValid()) {
-    Error err(context->display_manager, sub_tok_range,
-              last_aggregate.SpellingRange());
-    err << "Functor '" << functor->name << "' aggregates values without "
+    context->error_log.Append(scope_range, last_aggregate.SpellingRange())
+        << "Functor '" << functor->name << "' aggregates values without "
         << "producing any corresponding summary outputs";
-    context->error_log.Append(std::move(err));
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
   // Don't let us have both summary and free variables.
   //
   // NOTE(pag): We permit `bound` arguments to be used along with aggregates.
   } else if (last_summary.IsValid() && last_free.IsValid()) {
-    Error err(context->display_manager, sub_tok_range,
-              last_summary.SpellingRange());
+    auto err = context->error_log.Append(
+        scope_range, last_summary.SpellingRange());
     err << "Functor cannot bind both summary and free variables";
-    auto note = err.Note(context->display_manager, sub_tok_range,
-                         last_free.SpellingRange());
-    note << "Free variable is here";
-    context->error_log.Append(std::move(err));
+    err.Note(last_free.SpellingRange())
+        << "Free variable is here";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
   // Aggregating functors aren't meant to be marked as impure. It's more that
   // they are implicitly impure so it's redundant.
-  } else if (!functor->is_pure &&
-             (last_summary.IsValid() || last_aggregate.IsValid())) {
+  } else if (!functor->is_pure && is_aggregate) {
 
-    Error err(context->display_manager, sub_tok_range,
-              impure.SpellingRange());
-    err << "Marking an aggregating functor as impure is redundant";
-    context->error_log.Append(std::move(err));
+    context->error_log.Append(scope_range, impure.SpellingRange())
+        << "Marking an aggregating functor as impure is redundant";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  // A functor with no bound parameters is just a generator. They are by default
-  // treated as impure.
+  // A functor with no bound parameters cannot reasonably be supported.
   //
-  // TODO(pag): Consider making marking generating functors as impure a
-  //            requirement, rather than an error.
-  } else if (!functor->is_pure && !num_bound_params) {
+  // NOTE(pag): I had considered supporting it before as the concept of a
+  //            "generator", e.g. for producing random values, but fitting
+  //            it into a differential dataflow made no sense after all.
+  } else if (!num_bound_params && !is_aggregate) {
+    assert(0 < num_free_params);
 
-    Error err(context->display_manager, sub_tok_range,
-              impure.SpellingRange());
-    err << "Marking a functor with no bound parameters as impure is redundant";
-    context->error_log.Append(std::move(err));
+    context->error_log.Append(scope_range)
+        << "Functors that only have free-attributed parameters are not allowed";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
   // If this is a redeclaration, check it for consistency against prior
@@ -442,31 +399,27 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     const auto redecl = functor->context->redeclarations[0];
     auto i = 0u;
 
+    const auto arity = functor->parameters.size();
+
     // Didn't match the purity.
     if (functor->is_pure && !redecl->is_pure) {
-      Error err(context->display_manager, sub_tok_range,
-                tok.NextPosition());
+      auto err = context->error_log.Append(scope_range, tok.NextPosition());
       err << "Missing 'impure' attribute here to match with prior declaration "
-          << "of functor " << name;
+          << "of functor '" << name << "/" << arity << "'";
 
-      auto note = err.Note(context->display_manager,
-                           ParsedDeclaration(redecl).SpellingRange());
-      note << "Prior declaration of functor was here";
-      context->error_log.Append(std::move(err));
+      err.Note(ParsedDeclaration(redecl).SpellingRange())
+          << "Prior declaration of functor was here";
       RemoveDecl<ParsedFunctor>(std::move(functor));
       return;
 
     // Didn't match the purity.
-    } else {
-      Error err(context->display_manager, sub_tok_range,
-                impure.SpellingRange());
+    } else if (!functor->is_pure && redecl->is_pure) {
+      auto err = context->error_log.Append(scope_range, impure.SpellingRange());
       err << "Unexpected 'impure' attribute here doesn't match with prior "
-          << "declaration of functor " << name;
+          << "declaration of functor '" << name << "/" << arity << "'";
 
-      auto note = err.Note(context->display_manager,
-                           ParsedDeclaration(redecl).SpellingRange());
-      note << "Prior declaration of functor was here";
-      context->error_log.Append(std::move(err));
+      err.Note(ParsedDeclaration(redecl).SpellingRange())
+          << "Prior declaration of functor was here";
       RemoveDecl<ParsedFunctor>(std::move(functor));
       return;
     }
@@ -479,24 +432,18 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
       // We can redeclare bound/free parameters with other variations of
       // bound/free, but the aggregation binding types must be equivalent.
-      if (lexeme != redecl_lexeme &&
-          ((lexeme == Lexeme::kKeywordAggregate ||
-            lexeme == Lexeme::kKeywordSummary) ||
-           (redecl_lexeme == Lexeme::kKeywordAggregate ||
-            redecl_lexeme == Lexeme::kKeywordSummary))) {
+      if (lexeme != redecl_lexeme && is_aggregate) {
 
-        Error err(context->display_manager, sub_tok_range,
-                  ParsedParameter(orig_param.get()).SpellingRange());
-        err << "Aggregation functor '" << functor->name
-            << "' cannot be re-declared with different aggregation semantics";
+        auto err = context->error_log.Append(
+            scope_range, ParsedParameter(orig_param.get()).SpellingRange());
+        err << "Aggregation functor '" << functor->name << "/" << arity
+            << "' cannot be re-declared with different parameter attributes";
 
         auto note = err.Note(
-            context->display_manager,
             ParsedDeclaration(redecl).SpellingRange(),
             ParsedParameter(redecl_param.get()).SpellingRange());
-        note << "Conflicting aggregation parameter is specified here";
+        note << "Conflicting parameter is declared here";
 
-        context->error_log.Append(std::move(err));
         RemoveDecl<ParsedFunctor>(std::move(functor));
         return;
       }
@@ -505,17 +452,14 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     // Make sure both have the same number of unordered sets.
     const auto num_sets = redecl->unordered_sets.size();
     if (num_sets != functor->unordered_sets.size()) {
-      Error err(context->display_manager, sub_tok_range);
+      auto err = context->error_log.Append(scope_range);
       err << "Mismatch between the number of unordered parameter sets "
-          << "specified for #functor '" << functor->name
+          << "specified for functor '" << name << "/" << arity
           << "' has different number of unordered parameter sets specified";
 
-      auto note = err.Note(
-          context->display_manager,
-          ParsedDeclaration(redecl).SpellingRange());
-      note << "Conflicting functor declaration is here";
+      err.Note(ParsedDeclaration(redecl).SpellingRange())
+          << "Conflicting functor declaration is here";
 
-      context->error_log.Append(std::move(err));
       RemoveDecl<ParsedFunctor>(std::move(functor));
       return;
     }
@@ -528,19 +472,15 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         continue;
       }
 
-      Error err(context->display_manager, sub_tok_range,
-                uset.SpellingRange());
+      auto err = context->error_log.Append(scope_range, uset.SpellingRange());
       err << "Parameter variables covered by this unordered set doesn't "
           << "match the corresponding unordered set specification in the "
           << "first declaration of this #functor";
 
-      auto note1 = err.Note(
-          context->display_manager,
-          ParsedDeclaration(redecl).SpellingRange(),
-          redecl_uset.SpellingRange());
-      note1 << "Corresponding unordered set specification is here";
+      err.Note(ParsedDeclaration(redecl).SpellingRange(),
+               redecl_uset.SpellingRange())
+          << "Corresponding unordered set specification is here";
 
-      context->error_log.Append(std::move(err));
       RemoveDecl<ParsedFunctor>(std::move(functor));
       return;
     }

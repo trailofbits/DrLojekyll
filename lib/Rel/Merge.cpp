@@ -200,3 +200,4 @@ bool Node<QueryMerge>::Equals(
 }
 
 }  // namespace hyde
+

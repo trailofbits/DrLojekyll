@@ -14,8 +14,6 @@ const char *Node<QuerySelect>::KindName(void) const noexcept {
   } else if (auto s = stream.get(); s) {
     if (s->AsConstant()) {
       return "CONST";
-    } else if (s->AsGenerator()) {
-      return "GENERATE";
     } else if (s->AsInput()) {
       return "INPUT";
     } else {
@@ -63,7 +61,11 @@ const char *Node<QueryAggregate>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryMerge>::KindName(void) const noexcept {
-  return "UNION";
+  if (is_equivalence_class) {
+    return "EQ-CLASS";
+  } else {
+    return "UNION";
+  }
 }
 
 const char *Node<QueryConstraint>::KindName(void) const noexcept {
@@ -161,7 +163,7 @@ std::string Node<QueryView>::DebugString(void) noexcept {
 // is that we often want to try to merge together two different instances
 // of the same underlying node when we can.
 uint64_t Node<QueryView>::Sort(void) noexcept {
-  return Depth();
+  return Hash();
 }
 
 // Returns `true` if this view is being used. This is defined in terms of
@@ -213,14 +215,18 @@ void Node<QueryView>::OrderConditions(void) {
 
 // Check to see if the attached columns are ordered and unique. If they're
 // not unique then we can deduplicate them.
-bool Node<QueryView>::AttachedColumnsAreCanonical(void) const noexcept {
+bool Node<QueryView>::AttachedColumnsAreCanonical(bool sort) const noexcept {
   if (!attached_columns.Empty()) {
     if (attached_columns[0]->IsConstant()) {
       return false;
     }
   }
+
   for (auto i = 1u; i < attached_columns.Size(); ++i) {
-    if (attached_columns[i - 1u] >= attached_columns[i] ||
+    if (sort && attached_columns[i - 1u]->Sort() > attached_columns[i]->Sort()) {
+      return false;
+    }
+    if (attached_columns[i - 1] == attached_columns[i] ||
         attached_columns[i]->IsConstant()) {
       return false;
     }
@@ -229,7 +235,8 @@ bool Node<QueryView>::AttachedColumnsAreCanonical(void) const noexcept {
 }
 
 // Put this view into a canonical form.
-bool Node<QueryView>::Canonicalize(QueryImpl *) {
+bool Node<QueryView>::Canonicalize(QueryImpl *, bool) {
+  is_canonical = true;
   return false;
 }
 
@@ -316,25 +323,25 @@ static const std::hash<const char *> kCStrHasher;
 
 // Initializer for an updated hash value.
 uint64_t Node<QueryView>::HashInit(void) const noexcept {
-  uint64_t hash = kCStrHasher(this->KindName());
-  hash <<= 1u;
-  hash |= can_receive_deletions;
-  hash <<= 1u;
-  hash |= can_produce_deletions;
-  hash = __builtin_rotateright64(hash, 13);
-  hash *= (columns.Size() + 7u);
+  uint64_t init_hash = kCStrHasher(this->KindName());
+  init_hash <<= 1u;
+  init_hash |= can_receive_deletions;
+  init_hash <<= 1u;
+  init_hash |= can_produce_deletions;
+
+  init_hash ^= __builtin_rotateright64(init_hash, 33) * (columns.Size() + 7u);
 
   for (auto positive_cond : this->positive_conditions) {
-    hash = __builtin_rotateright64(hash, 13);
-    hash ^= positive_cond->declaration.UniqueId();
+    init_hash ^= __builtin_rotateright64(init_hash, 33) *
+                 positive_cond->declaration.Id();
   }
 
-  for (auto negative_cond : this->positive_conditions) {
-    hash = __builtin_rotateright64(hash, 13);
-    hash ^= ~negative_cond->declaration.UniqueId();
+  for (auto negative_cond : this->negative_conditions) {
+    init_hash ^= __builtin_rotateright64(init_hash, 33) *
+                 ~negative_cond->declaration.Id();
   }
 
-  return hash;
+  return init_hash;
 }
 
 // Upward facing hash. The idea here is that we sometimes have multiple nodes
@@ -368,7 +375,9 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 // If this view is used by a merge then we're not allowed to re-order the
 // columns. Instead, what we can do is create a tuple that will maintain
 // the ordering, and the canonicalize the join order below that tuple.
-Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) {
+Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
+    QueryImpl *query, bool force) {
+
   if (!force && !this->Def<Node<QueryView>>::IsUsed()) {
     return nullptr;
   }
@@ -438,7 +447,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
   VIEW *prev_view = nullptr;
 
   for (auto col : cols1) {
-    if (!col->IsConstant() && !col->IsGenerator()) {
+    if (!col->IsConstant()) {
       if (prev_view) {
         if (prev_view != col->view) {
           return false;
@@ -462,7 +471,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
 
   auto do_cols = [&prev_view] (const auto &cols) -> bool {
     for (auto col : cols) {
-      if (!col->IsConstant() && !col->IsGenerator()) {
+      if (!col->IsConstant()) {
         if (prev_view) {
           if (prev_view != col->view) {
             return false;

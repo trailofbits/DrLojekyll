@@ -14,6 +14,7 @@
 
 namespace hyde {
 
+class DisplayManager;
 class Parser;
 class ParserImpl;
 
@@ -43,7 +44,7 @@ class ParsedNode {
     return reinterpret_cast<uintptr_t>(impl);
   }
 
-  inline uintptr_t Hash(void) const {
+  inline uint64_t Hash(void) const {
     return reinterpret_cast<uintptr_t>(impl) >> 3;
   }
 
@@ -297,6 +298,33 @@ class ParsedAggregate : public parse::ParsedNode<ParsedAggregate> {
   ParsedPredicate Functor(void) const noexcept;
   ParsedPredicate Predicate(void) const noexcept;
 
+  // List of parameters from the predicate that are not paired with anything of
+  // the arguments to the aggregating functor.
+  //
+  // This corresponds with `A` in the following:
+  //
+  //    count_grouped_As(A, NumXs)
+  //      : count(X, NumXs) over (@i32 A, @i32 X) { blah(X). }.
+  //
+  // This pattern is interpreted like a "group by `A`". Another way of thinking
+  // of it is that we want to have a distinct aggregation object per unique `A`.
+  //
+  // To the rest of the clause body, these are treated as free variables which
+  // are bound by the aggregate.
+  NodeRange<ParsedVariable> GroupVariablesFromPredicate(void) const;
+
+  // List of parameters from the predicate that are paired with a `aggregate`-
+  // attributed variable in the functor.
+  NodeRange<ParsedVariable> AggregatedVariablesFromPredicate(void) const;
+
+  // List of parameters from the predicate that are paired with a `bound`-
+  // attributed variables in the functor. These behave in a similar way to group
+  // variables, in that they do end up grouping the results; however, the
+  // difference is that these are passed into the aggregating functor when its
+  // aggregation state is initialized, and thus they act as configuration or
+  // initialization values for the functor's state.
+  NodeRange<ParsedVariable> ConfigurationVariablesFromPredicate(void) const;
+
  protected:
   friend class ParsedClause;
   using parse::ParsedNode<ParsedAggregate>::ParsedNode;
@@ -445,12 +473,6 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   // Does this declaration have a clause that directly depends on a `#message`?
   bool HasDirectInputDependency(void) const noexcept;
 
-  // Does this declaration have a clause that directly depends on a `#functor`
-  // that only have `free`-attributed parameters? These are basically
-  // "generators" (they can be used to make unique IDs, random numbers,
-  // etc.) and so those values need to get saved.
-  bool HasDirectGeneratorDependency(void) const noexcept;
-
   // The kind of this declaration.
   DeclarationKind Kind(void) const noexcept;
 
@@ -489,6 +511,12 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   // Return the declaration associated with a predicate. This is the first
   // parsed declaration, so it could be in a different module.
   static ParsedDeclaration Of(ParsedPredicate pred);
+
+  // A string representing a binding pattern of the parameters. A bound
+  // parameter is `b`, a free one is `f`, mutable is `m`, aggregate is `a`,
+  // and summary is `s`. This returns a string of letters, e.g. `bbf` means
+  // two bound parameters, followed by a free parameter.
+  std::string_view BindingPattern(void) const noexcept;
 
  protected:
   friend class ParserImpl;

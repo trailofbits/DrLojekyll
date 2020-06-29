@@ -10,11 +10,8 @@ Node<QueryConstant> *Node<QueryStream>::AsConstant(void) noexcept {
   return nullptr;
 }
 
-Node<QueryGenerator> *Node<QueryStream>::AsGenerator(void) noexcept {
-  return nullptr;
-}
-
 Node<QueryInput> *Node<QueryStream>::AsInput(void) noexcept {
   return nullptr;
 }
+
 }  // namespace hyde

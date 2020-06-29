@@ -84,18 +84,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
   }
 
-  for (auto generator : query.Generators()) {
-    const auto decl = generator.Declaration();
-    const auto arity = decl.Arity();
-    os << "t" << generator.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD>GENERATOR " << ParsedDeclarationName(decl) << "</TD>";
-    for (auto i = 0u; i < arity; ++i) {
-      auto param = decl.NthParameter(i);
-      os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
-    }
-    os << kEndTable << ">];\n";
-  }
-
   for (auto constant : query.Constants()) {
     os << "t" << constant.UniqueId() << " [ label=<" << kBeginTable
        << "<TD port=\"p0\">" << constant.Literal() << "</TD>" << kEndTable
@@ -207,7 +195,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-    os << "<TD port=\"p0\"> </TD><TD port=\"p1\"> </TD>";
+    os << "<TD port=\"p0\">" << input_lhs.Variable()
+       << "</TD><TD port=\"p1\">" << input_rhs.Variable() << "</TD>";
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString() << "</TD>";)
 
@@ -529,8 +518,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << col.Variable() << "</TD>";
     }
     os << "</TR><TR>";
+
     for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\"> </TD>";
+      os << "<TD port=\"p" << i << "\">"
+         << tuple.NthInputColumn(i).Variable() << "</TD>";
     }
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString() << "</TD>";)

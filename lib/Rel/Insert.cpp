@@ -24,14 +24,15 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
 
   // Mix in the hashes of the input by columns; these are ordered.
   for (auto col : input_columns) {
-    local_hash = __builtin_rotateright64(local_hash, 16) ^ col->Hash();
+    local_hash ^= __builtin_rotateright64(local_hash, 33) * col->Hash();
   }
 
   hash = local_hash;
   return local_hash;
 }
 
-bool Node<QueryInsert>::Canonicalize(QueryImpl *) {
+bool Node<QueryInsert>::Canonicalize(QueryImpl *, bool) {
+  is_canonical = true;
   if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
   }

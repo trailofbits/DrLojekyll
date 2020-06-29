@@ -28,17 +28,31 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   auto local_hash = hash;
 
   assert(input_columns.Size() == 0);
+//
+//  for (auto col : columns) {
+//    auto in_set = out_to_in.find(col);
+//    assert(in_set != out_to_in.end());
+//    uint64_t pivot_hash = 0xC4CEB9FE1A85EC53ull;
+//    for (auto in_col : in_set->second) {
+//      pivot_hash ^= in_col->Hash();
+//    }
+//    local_hash ^= __builtin_rotateright64(local_hash, 13) * pivot_hash;
+//  }
 
-  for (auto col : columns) {
-    auto in_set = out_to_in.find(col);
-    assert(in_set != out_to_in.end());
-    uint64_t col_set_hash = 0;
-    for (auto in_col : in_set->second) {
-      col_set_hash = __builtin_rotateright64(col_set_hash, 16) ^
-                     in_col->Hash();
-    }
-    local_hash = __builtin_rotateleft64(local_hash, 13) ^ col_set_hash;
+  for (auto joined_view : joined_views) {
+    local_hash ^= joined_view->Hash();
   }
+
+  if (num_pivots) {
+    local_hash ^= __builtin_rotateright64(local_hash, (num_pivots + 53u) % 64u) *
+                  local_hash;
+  }
+
+  local_hash ^= __builtin_rotateright64(local_hash, (columns.Size() + 43u) % 64u) *
+                local_hash;
+
+  local_hash ^= __builtin_rotateright64(local_hash, (joined_views.Size() + 33u) % 64u) *
+                local_hash;
 
   hash = local_hash;
   return local_hash;
@@ -75,6 +89,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 //
 // TODO(pag): Re-implement to work in the case of constant propagations.
 void Node<QueryJoin>::VerifyPivots(void) {
+#if 0
   if (!num_pivots) {
     return;
   }
@@ -121,6 +136,7 @@ void Node<QueryJoin>::VerifyPivots(void) {
       assert(pivot_views[j] == next_pivot_views[j]);
     }
   }
+#endif
 }
 
 // Put this join into a canonical form, which will make comparisons and
@@ -132,16 +148,27 @@ void Node<QueryJoin>::VerifyPivots(void) {
 //
 // TODO(pag): If we make the above transform, then a join could devolve into
 //            a merge.
-bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
+bool Node<QueryJoin>::Canonicalize(QueryImpl *query, bool sort) {
+  (void) query;
+  (void) sort;
+
+  if (!sort) {
+    is_canonical = true;
+    return false;
+  }
+
   if (is_canonical) {
     VerifyPivots();
     return false;
   }
 
-  if (out_to_in.empty()) {
+  if (is_dead || out_to_in.empty()) {
+    is_dead = true;
     is_canonical = true;
     return false;
   }
+
+  is_canonical = true;
 
   assert(num_pivots <= columns.Size());
   assert(out_to_in.size() == columns.Size());
@@ -174,7 +201,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query) {
   const auto guard_tuple = GuardWithTuple(query, !out_to_constant_in.empty());
   bool non_local_changes = !!guard_tuple;
 
-  std::unordered_map<COL *, COL *> in_to_out;
+  in_to_out.clear();
 
   VIEW *incoming_view = nullptr;
   auto joins_at_least_two_views = false;
@@ -442,17 +469,34 @@ skip_remove:
     const auto a_size = a_cols->second.Size();
     const auto b_size = b_cols->second.Size();
 
+    const auto a_view_sort = a->view->Sort();
+    const auto b_view_sort = b->view->Sort();
+
     if (a_size > b_size) {
       return true;
     } else if (a_size < b_size) {
       return false;
+
+    // This isn't a pivot column, it's a regular column. We want to order
+    // them together, and put them in order of their views, then in order
+    // of their appearance within their views.
+    } else if (a_size == 1) {
+      auto a_order = std::make_pair(a_view_sort, a->Index());
+      auto b_order = std::make_pair(b_view_sort, b->Index());
+      return a_order < b_order;
     }
 
-    // Pivot sets are same size. Lexicographically order them.
+    // Pivot sets are same size. Order the pivot output columns by the
+    // lexicographic order of the columns in the pivot set.
     for (auto i = 0u; i < a_size; ++i) {
-      if (a_cols->second[i] < b_cols->second[i]) {
+      auto a_col = a_cols->second[i];
+      auto b_col = b_cols->second[i];
+      auto a_order = std::make_pair(a_view_sort, a_col->Index());
+      auto b_order = std::make_pair(b_view_sort, b_col->Index());
+
+      if (a_order < b_order) {
         return true;
-      } else if (a_cols->second[i] > b_cols->second[i]) {
+      } else if (a_order > b_order) {
         return false;
       } else {
         continue;
@@ -463,7 +507,7 @@ skip_remove:
     // matters.
     //
     // TODO(pag): Remove duplicate pivot set?
-    return a < b;
+    return a->Sort() < b->Sort();
   };
 
   columns.Sort(cmp);
@@ -498,6 +542,7 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
       columns.Size() != that->columns.Size() ||
       num_pivots != that->num_pivots ||
       out_to_in.size() != that->out_to_in.size() ||
+      joined_views.Size() != that->joined_views.Size() ||
       positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions ||
       InsertSetsOverlap(this, that)) {
@@ -506,7 +551,18 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
 
   eq.Insert(this, that);
 
+  // Check that we've joined together the right views.
+  const auto num_joined_views = joined_views.Size();
   auto i = 0u;
+  for (; i < num_joined_views; ++i) {
+    if (!joined_views[i]->Equals(eq, that->joined_views[i])) {
+      eq.Remove(this, that);
+      return false;
+    }
+  }
+
+  // Check that the columns are joined together in the same way.
+  i = 0u;
   for (const auto j1_out_col : columns) {
     assert(j1_out_col->index == i);
 

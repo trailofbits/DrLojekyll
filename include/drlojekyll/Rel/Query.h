@@ -6,11 +6,14 @@
 #include <drlojekyll/Util/Node.h>
 
 #include <memory>
+#include <optional>
 #include <string>
-#include <vector>
 #include <utility>
 
 namespace hyde {
+
+class ErrorLog;
+
 namespace query {
 
 template <typename T>
@@ -56,7 +59,6 @@ class QueryBuilderImpl;
 class QueryColumn;
 class QueryConstant;
 class QueryConstraint;
-class QueryGenerator;
 class QueryImpl;
 class QueryInsert;
 class QueryJoin;
@@ -80,20 +82,13 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
   bool IsAggregate(void) const noexcept;
-  bool IsBoundQueryInput(void) const noexcept;
-
   bool IsConstant(void) const noexcept;
-  bool IsGenerator(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
 
   bool operator==(QueryColumn that) const noexcept;
   bool operator!=(QueryColumn that) const noexcept;
-
-  // Returns a unique ID representing the equivalence class of this column.
-  // Two columns with the same equivalence class will have the same values.
-  uint64_t EquivalenceClass(void) const noexcept;
 
   // Number of uses of this column.
   unsigned NumUses(void) const noexcept;
@@ -171,31 +166,14 @@ class QueryStream : public query::QueryNode<QueryStream> {
   static QueryStream From(const QuerySelect &sel) noexcept;
 
   bool IsConstant(void) const noexcept;
-  bool IsGenerator(void) const noexcept;
   bool IsInput(void) const noexcept;
   bool IsBoundQueryInput(void) const noexcept;
 
  private:
-  friend class QueryGenerator;
   friend class QueryConstant;
   friend class QueryInput;
 
   using query::QueryNode<QueryStream>::QueryNode;
-};
-
-// A functor in the Datalog code, that has only free parameters. This is a form
-// of non-blocking stream. Code wanting blocking functors should use messages
-// instead.
-class QueryGenerator : public query::QueryNode<QueryGenerator> {
- public:
-  const ParsedFunctor &Declaration(void) const noexcept;
-
-  static QueryGenerator &From(QueryStream &table);
-
- private:
-  using query::QueryNode<QueryGenerator>::QueryNode;
-
-  friend class QuerySelect;
 };
 
 // A literal in the Datalog code. A literal is a form of non-blocking stream.
@@ -361,7 +339,7 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   unsigned NumJoinedViews(void) const noexcept;
 
   // Return a list of the joined views.
-  const std::vector<QueryView> &JoinedViews(void) const noexcept;
+  UsedNodeRange<QueryView> JoinedViews(void) const noexcept;
 
   // Returns the `nth` pivot output column.
   QueryColumn NthOutputPivotColumn(unsigned n) const noexcept;
@@ -646,7 +624,7 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 class Query {
  public:
   // Build and return a new query.
-  static Query Build(const ParsedModule &module);
+  static std::optional<Query> Build(const ParsedModule &module, const ErrorLog &log);
 
   ~Query(void);
 
@@ -662,7 +640,6 @@ class Query {
   DefinedNodeRange<QueryMerge> Merges(void) const;
   DefinedNodeRange<QueryConstraint> Constraints(void) const;
   DefinedNodeRange<QueryInput> Inputs(void) const;
-  DefinedNodeRange<QueryGenerator> Generators(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
 
   template <typename T>

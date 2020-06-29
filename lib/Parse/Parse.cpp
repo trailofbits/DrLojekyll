@@ -1,8 +1,9 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include "Parse.h"
+
 #include <cstring>
 #include <cassert>
-#include "Parse.h"
 #include <cstring>
 #include <cassert>
 
@@ -422,6 +423,48 @@ ParsedPredicate ParsedAggregate::Predicate(void) const noexcept {
   return ParsedPredicate(impl->predicate.get());
 }
 
+// List of parameters to the predicate that are not paired with anything of
+// the arguments to the aggregating functor.
+NodeRange<ParsedVariable>
+ParsedAggregate::GroupVariablesFromPredicate(void) const {
+  if (impl->first_group_var) {
+    return NodeRange<ParsedVariable>(
+        impl->first_group_var,
+        static_cast<intptr_t>(__builtin_offsetof(
+            Node<ParsedVariable>, next_group_var)));
+  } else {
+    return NodeRange<ParsedVariable>();
+  }
+}
+
+// List of parameters from the predicate that are paired with a `aggregate`-
+// attributed variable in the functor.
+NodeRange<ParsedVariable>
+ParsedAggregate::AggregatedVariablesFromPredicate(void) const {
+  if (impl->first_aggregate_var) {
+    return NodeRange<ParsedVariable>(
+        impl->first_aggregate_var,
+        static_cast<intptr_t>(__builtin_offsetof(
+            Node<ParsedVariable>, next_aggregate_var)));
+  } else {
+    return NodeRange<ParsedVariable>();
+  }
+}
+
+// List of parameters from the predicate that are paired with a `bound`-
+// attributed variables in the functor.
+NodeRange<ParsedVariable>
+ParsedAggregate::ConfigurationVariablesFromPredicate(void) const {
+  if (impl->first_config_var) {
+    return NodeRange<ParsedVariable>(
+        impl->first_config_var,
+        static_cast<intptr_t>(__builtin_offsetof(
+            Node<ParsedVariable>, next_config_var)));
+  } else {
+    return NodeRange<ParsedVariable>();
+  }
+}
+
 DisplayRange ParsedParameter::SpellingRange(void) const noexcept {
   auto begin = impl->name.Position();
   if (impl->opt_binding.IsValid()) {
@@ -488,7 +531,9 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
-    return DisplayRange(impl->name.Position(), impl->rparen.NextPosition());
+    return DisplayRange(
+        impl->directive_pos.IsValid() ? impl->directive_pos : impl->name.Position(),
+        impl->rparen.NextPosition());
   } else {
     return impl->name.SpellingRange();
   }
@@ -586,41 +631,6 @@ bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
     for (const auto &pred : clause->positive_predicates) {
       if (ParsedDeclaration(pred->declaration).IsMessage()) {
         context->takes_input = true;
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-// Does this declaration have a clause that directly depends on a `#functor`
-// that only have `free`-attributed parameters? These are basically
-// "generators" (they can be used to make unique IDs, random numbers,
-// etc.) and so those values need to get saved.
-bool ParsedDeclaration::HasDirectGeneratorDependency(void) const noexcept {
-  auto context = impl->context.get();
-  if (context->checked_generates_value) {
-    return context->generates_value;
-  }
-
-  context->checked_generates_value = true;
-  for (const auto &clause : context->clauses) {
-    for (const auto &pred : clause->positive_predicates) {
-      const auto decl = ParsedDeclaration(pred->declaration);
-      if (!decl.IsFunctor()) {
-        continue;
-      }
-      const auto functor = ParsedFunctor::From(decl);
-      auto all_free = true;
-      for (auto param : functor.Parameters()) {
-        if (param.Binding() != ParameterBinding::kFree) {
-          all_free = false;
-          break;
-        }
-      }
-      if (all_free) {
-        context->generates_value = true;
         return true;
       }
     }
@@ -757,6 +767,39 @@ unsigned ParsedDeclaration::NumDeletionClauses(void) const noexcept {
 
 bool ParsedDeclaration::IsInline(void) const noexcept {
   return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
+}
+
+std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
+  if (impl->binding_pattern.empty()) {
+    impl->binding_pattern.reserve(impl->parameters.size());
+    for (const auto &param : impl->parameters) {
+      switch (ParsedParameter(param.get()).Binding()) {
+        case ParameterBinding::kImplicit:
+          impl->binding_pattern.push_back('i');
+          break;
+        case ParameterBinding::kMutable:
+          impl->binding_pattern.push_back('m');
+          break;
+        case ParameterBinding::kFree:
+          impl->binding_pattern.push_back('f');
+          break;
+
+        case ParameterBinding::kBound:
+          impl->binding_pattern.push_back('b');
+          break;
+
+        case ParameterBinding::kSummary:
+          impl->binding_pattern.push_back('s');
+          break;
+
+        case ParameterBinding::kAggregate:
+          impl->binding_pattern.push_back('a');
+          break;
+      }
+    }
+  }
+
+  return impl->binding_pattern;
 }
 
 // Return the declaration associated with a clause. This is the first

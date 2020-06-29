@@ -29,10 +29,9 @@ class RangeRestrictionReporter : public SIPSVisitor {
   // used in the comparison `compare` not being range-restricted.
   void CancelRangeRestriction(ParsedComparison compare,
                               ParsedVariable var) override {
-    Error err(dm, compare.SpellingRange(), var.SpellingRange());
-    err << "Variable '" << var.SpellingRange()
+    log.Append(compare.SpellingRange(), var.SpellingRange())
+        << "Variable '" << var.SpellingRange()
         << "' is not range-restricted in this comparison";
-    log.Append(std::move(err));
     reported = true;
   }
 
@@ -41,10 +40,9 @@ class RangeRestrictionReporter : public SIPSVisitor {
   // having a definite value by the end of the clause body.
   void CancelRangeRestriction(ParsedClause clause,
                               ParsedVariable var) override {
-    Error err(dm, clause.SpellingRange(), var.SpellingRange());
-    err << "Variable '" << var.SpellingRange()
-        << "' is not range-restricted in this clause";
-    log.Append(std::move(err));
+    log.Append(clause.SpellingRange(), var.SpellingRange())
+        << "Variable '" << var.SpellingRange()
+        << "' is not range-restricted";
     reported = true;
   }
 
@@ -68,15 +66,13 @@ class AllFailedVisitor : public SIPSVisitor {
                            ParsedPredicate false_pred) override {
     auto true_clause = ParsedClause::Containing(true_pred);
     auto pred_name = ParsedDeclaration::Of(true_pred).Name();
-    Error err(dm, true_clause.SpellingRange(), true_pred.SpellingRange());
+    auto err = log.Append(true_clause.SpellingRange(), true_pred.SpellingRange());
     err << "Used of predicate '" << pred_name
         << "/0' contradicts another negated use";
 
     auto false_clause = ParsedClause::Containing(false_pred);
-    auto note = err.Note(dm, false_clause.SpellingRange(),
-                         false_pred.SpellingRange());
-    note << "Negated use of '" << pred_name << "/0' is here";
-    log.Append(std::move(err));
+    err.Note(false_clause.SpellingRange(), false_pred.SpellingRange())
+        << "Negated use of '" << pred_name << "/0' is here";
   }
 
   // Notify the visitor that visiting cannot complete/continue due to an
@@ -86,10 +82,9 @@ class AllFailedVisitor : public SIPSVisitor {
       ParsedComparison compare, unsigned, unsigned) override {
 
     auto clause = ParsedClause::Containing(compare);
-    Error err(dm, clause.SpellingRange(), compare.SpellingRange());
-    err << "Unsatisfiable in/equality between " << compare.LHS().SpellingRange()
+    log.Append(clause.SpellingRange(), compare.SpellingRange())
+        << "Unsatisfiable in/equality between " << compare.LHS().SpellingRange()
         << " and " << compare.RHS().SpellingRange();
-    log.Append(std::move(err));
   }
 
   // Notify the visitor that visiting cannot complete due to binding
@@ -100,18 +95,17 @@ class AllFailedVisitor : public SIPSVisitor {
     assert(begin < end);
 
     auto clause = ParsedClause::Containing(begin->predicate);
-    Error err(dm, clause.SpellingRange(), begin->predicate.SpellingRange());
+    auto err = log.Append(clause.SpellingRange(),
+                          begin->predicate.SpellingRange());
     err << "Unable to find binding of variables for parameters of '"
         << begin->declaration.Name() << '/' << begin->declaration.Arity()
-        << '/';
+        << '"';
 
     for (auto redecl : begin->declaration.Redeclarations()) {
-      auto note = err.Note(dm, redecl.SpellingRange());
-      note << "Declaration of '" << redecl.Name() << '/' << redecl.Arity()
-           << "' is here";
+      err.Note(redecl.SpellingRange())
+          << "Declaration of '" << redecl.Name() << '/' << redecl.Arity()
+          << "' is here";
     }
-
-    log.Append(std::move(err));
   }
 
  private:
@@ -123,8 +117,8 @@ class AllFailedVisitor : public SIPSVisitor {
 }  // namespace
 
 // Ensures that all variables used in the heads of clauses are used in their
-// bodies.
-void CheckForErrors(const DisplayManager &dm, const ParsedModule &root_module,
+// bodies. Returns `true` if any errors are found.
+bool CheckForErrors(const DisplayManager &dm, const ParsedModule &root_module,
                     const ErrorLog &log) {
 
   auto do_clause = [&] (ParsedClause clause) {
@@ -137,7 +131,7 @@ void CheckForErrors(const DisplayManager &dm, const ParsedModule &root_module,
       } else if (rr_visitor.reported) {
         break;
       }
-    } while (rr_generator.Advance());
+    } while (rr_generator.Advance() && !any_passed);
 
     if (!any_passed) {
       AllFailedVisitor af_visitor(dm, log);
@@ -145,6 +139,8 @@ void CheckForErrors(const DisplayManager &dm, const ParsedModule &root_module,
       af_generator.Visit(af_visitor);
     }
   };
+
+  auto prev_num_errors = log.Size();
 
   for (auto module : ParsedModuleIterator(root_module)) {
     for (auto clause : module.Clauses()) {
@@ -154,6 +150,8 @@ void CheckForErrors(const DisplayManager &dm, const ParsedModule &root_module,
       do_clause(clause);
     }
   }
+
+  return prev_num_errors < log.Size();
 }
 
 }  // namespace hyde

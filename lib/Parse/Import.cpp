@@ -23,18 +23,17 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   imp->directive_pos = tok.Position();
 
   if (!ReadNextSubToken(tok)) {
-    Error err(context->display_manager, SubTokenRange(), imp->directive_pos);
-    err << "Expected string literal of file path here for import statement";
-    context->error_log.Append(std::move(err));
+    context->error_log.Append(scope_range, imp->directive_pos)
+        << "Expected string literal of file path here for import statement";
     return;
   }
 
+  const auto tok_range = tok.SpellingRange();
+
   if (Lexeme::kLiteralString != tok.Lexeme()) {
-    Error err(context->display_manager, SubTokenRange(),
-              tok.SpellingRange());
-    err << "Expected string literal of file path here for import "
+    context->error_log.Append(scope_range, tok_range)
+        << "Expected string literal of file path here for import "
         << "statement, got '" << tok << "' instead";
-    context->error_log.Append(std::move(err));
     return;
   }
 
@@ -45,11 +44,9 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   if (!context->string_pool.TryReadString(tok.StringId(), tok.StringLength(),
                                           &path_str) ||
       path_str.empty()) {
-    Error err(context->display_manager, SubTokenRange(),
-              tok.SpellingRange());
-    err << "Unknown error when trying to read data associatd with import "
+    context->error_log.Append(scope_range, tok_range)
+        << "Unknown error when trying to read data associatd with import "
         << "path '" << tok << "'";
-    context->error_log.Append(std::move(err));
     return;
   }
 
@@ -77,10 +74,9 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   }
 
   if (ec || full_path.empty()) {
-    Error err(context->display_manager, SubTokenRange());
-    err << "Unable to locate module '" << tok
+    context->error_log.Append(scope_range, tok_range)
+        << "Unable to locate module '" << tok
         << "' requested by import statement";
-    context->error_log.Append(std::move(err));
     return;
   }
 
@@ -95,20 +91,27 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
   // Go and parse the module.
   ParserImpl sub_impl(context);
-  auto sub_mod = sub_impl.ParseDisplay(
+  auto sub_mod_opt = sub_impl.ParseDisplay(
       context->display_manager.OpenPath(full_path, sub_config),
       sub_config);
 
   // Restore the old first search path.
   context->import_search_paths[0] = prev_search0;
 
-  imp->imported_module = sub_mod.impl.get();
+  if (sub_mod_opt) {
+    imp->imported_module = sub_mod_opt->impl.get();
 
-  if (!module->imports.empty()) {
-    module->imports.back()->next = imp.get();
+    if (!module->imports.empty()) {
+      module->imports.back()->next = imp.get();
+    }
+
+    module->imports.push_back(std::move(imp));
+
+  } else {
+    context->error_log.Append(scope_range, tok_range)
+        << "Failed to parse '" << full_path
+        << "' requested by import statement";
   }
-
-  module->imports.push_back(std::move(imp));
 }
 
 }  // namespace hyde
