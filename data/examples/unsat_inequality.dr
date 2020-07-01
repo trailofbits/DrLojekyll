@@ -1,0 +1,10 @@
+; This should produce an error.
+
+#message add(i32 A)
+
+#local foo(A, B)
+#query bar(free i32 A, free i32 B)
+
+foo(A, A) : add(A).
+
+bar(A, B) : foo(A, B), A != B.

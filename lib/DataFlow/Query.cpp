@@ -99,39 +99,39 @@ QueryView::QueryView(const QueryConstraint &view)
 QueryView::QueryView(const QueryInsert &view)
     : QueryView(view.impl) {}
 
-QueryView &QueryView::From(QuerySelect &view) noexcept {
+QueryView QueryView::From(QuerySelect &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryTuple &view) noexcept {
+QueryView QueryView::From(QueryTuple &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryKVIndex &view) noexcept {
+QueryView QueryView::From(QueryKVIndex &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryJoin &view) noexcept {
+QueryView QueryView::From(QueryJoin &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryMap &view) noexcept {
+QueryView QueryView::From(QueryMap &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryAggregate &view) noexcept {
+QueryView QueryView::From(QueryAggregate &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryMerge &view) noexcept {
+QueryView QueryView::From(QueryMerge &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryConstraint &view) noexcept {
+QueryView QueryView::From(QueryConstraint &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView &QueryView::From(QueryInsert &view) noexcept {
+QueryView QueryView::From(QueryInsert &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
@@ -328,6 +328,14 @@ bool QueryColumn::IsConstraint(void) const noexcept {
 }
 
 bool QueryColumn::IsConstant(void) const noexcept {
+  return impl->IsConstant();
+}
+
+bool QueryColumn::IsConstantRef(void) const noexcept {
+  return impl->IsConstantRef();
+}
+
+bool QueryColumn::IsConstantOrConstantRef(void) const noexcept {
   return impl->IsConstantOrConstantRef();
 }
 
@@ -418,12 +426,18 @@ const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
   return impl->literal;
 }
 
-QueryConstant &QueryConstant::From(QueryStream &stream) {
+QueryConstant QueryConstant::From(QueryStream &stream) {
   assert(stream.IsConstant());
   return reinterpret_cast<QueryConstant &>(stream);
 }
 
-QueryInput &QueryInput::From(QueryStream &stream) {
+QueryConstant QueryConstant::From(QueryColumn col) {
+  assert(col.IsConstantOrConstantRef());
+  return QueryConstant(
+      col.impl->AsConstant()->view->AsSelect()->stream->AsConstant());
+}
+
+QueryInput QueryInput::From(QueryStream &stream) {
   assert(stream.IsInput());
   return reinterpret_cast<QueryInput &>(stream);
 }
@@ -442,7 +456,7 @@ const ParsedDeclaration &QueryRelation::Declaration(void) const noexcept {
   return impl->declaration;
 }
 
-QuerySelect &QuerySelect::From(QueryView &view) {
+QuerySelect QuerySelect::From(QueryView view) {
   assert(view.IsSelect());
   return reinterpret_cast<QuerySelect &>(view);
 }
@@ -469,7 +483,7 @@ OutputStream &QuerySelect::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryJoin &QueryJoin::From(QueryView &view) {
+QueryJoin QueryJoin::From(QueryView view) {
   assert(view.IsJoin());
   return reinterpret_cast<QueryJoin &>(view);
 }
@@ -529,7 +543,7 @@ OutputStream &QueryJoin::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryMap &QueryMap::From(QueryView &view) {
+QueryMap QueryMap::From(QueryView view) {
   assert(view.IsMap());
   return reinterpret_cast<QueryMap &>(view);
 }
@@ -622,7 +636,7 @@ OutputStream &QueryMap::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryAggregate &QueryAggregate::From(QueryView &view) {
+QueryAggregate QueryAggregate::From(QueryView view) {
   assert(view.IsAggregate());
   return reinterpret_cast<QueryAggregate &>(view);
 }
@@ -757,7 +771,7 @@ OutputStream &QueryAggregate::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryMerge &QueryMerge::From(QueryView &view) {
+QueryMerge QueryMerge::From(QueryView view) {
   assert(view.IsMerge());
   return reinterpret_cast<QueryMerge &>(view);
 }
@@ -804,7 +818,7 @@ ComparisonOperator QueryConstraint::Operator(void) const {
   return impl->op;
 }
 
-QueryConstraint &QueryConstraint::From(QueryView &view) {
+QueryConstraint QueryConstraint::From(QueryView view) {
   assert(view.IsConstraint());
   return reinterpret_cast<QueryConstraint &>(view);
 }
@@ -859,7 +873,7 @@ OutputStream &QueryConstraint::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryInsert &QueryInsert::From(QueryView &view) {
+QueryInsert QueryInsert::From(QueryView view) {
   assert(view.IsInsert());
   return reinterpret_cast<QueryInsert &>(view);
 }
@@ -910,7 +924,7 @@ OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryTuple &QueryTuple::From(QueryView &view) {
+QueryTuple QueryTuple::From(QueryView view) {
   assert(view.IsTuple());
   return reinterpret_cast<QueryTuple &>(view);
 }
@@ -948,7 +962,7 @@ OutputStream &QueryTuple::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-QueryKVIndex &QueryKVIndex::From(QueryView &view) {
+QueryKVIndex QueryKVIndex::From(QueryView view) {
   assert(view.IsTuple());
   return reinterpret_cast<QueryKVIndex &>(view);
 }

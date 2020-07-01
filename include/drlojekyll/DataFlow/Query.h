@@ -86,6 +86,8 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsConstraint(void) const noexcept;
   bool IsAggregate(void) const noexcept;
   bool IsConstant(void) const noexcept;
+  bool IsConstantRef(void) const noexcept;
+  bool IsConstantOrConstantRef(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
@@ -107,6 +109,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
  private:
   using query::QueryNode<QueryColumn>::QueryNode;
 
+  friend class QueryConstant;
   friend class QueryConstraint;
   friend class QueryInsert;
   friend class QueryJoin;
@@ -184,7 +187,8 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
  public:
   const ParsedLiteral &Literal(void) const noexcept;
 
-  static QueryConstant &From(QueryStream &table);
+  static QueryConstant From(QueryStream &table);
+  static QueryConstant From(QueryColumn col);
 
  private:
   using query::QueryNode<QueryConstant>::QueryNode;
@@ -198,7 +202,7 @@ class QueryInput : public query::QueryNode<QueryInput> {
  public:
   const ParsedDeclaration &Declaration(void) const noexcept;
 
-  static QueryInput &From(QueryStream &stream);
+  static QueryInput From(QueryStream &stream);
 
   QueryRelation Relation(void) const noexcept;
 
@@ -233,19 +237,19 @@ class QueryView : public query::QueryNode<QueryView> {
   explicit QueryView(const QueryConstraint &view);
   explicit QueryView(const QueryInsert &view);
 
-  inline static QueryView &From(QueryView &view) noexcept {
+  inline static QueryView From(QueryView view) noexcept {
     return view;
   }
 
-  static QueryView &From(QuerySelect &view) noexcept;
-  static QueryView &From(QueryTuple &view) noexcept;
-  static QueryView &From(QueryKVIndex &view) noexcept;
-  static QueryView &From(QueryJoin &view) noexcept;
-  static QueryView &From(QueryMap &view) noexcept;
-  static QueryView &From(QueryAggregate &view) noexcept;
-  static QueryView &From(QueryMerge &view) noexcept;
-  static QueryView &From(QueryConstraint &view) noexcept;
-  static QueryView &From(QueryInsert &view) noexcept;
+  static QueryView From(QuerySelect &view) noexcept;
+  static QueryView From(QueryTuple &view) noexcept;
+  static QueryView From(QueryKVIndex &view) noexcept;
+  static QueryView From(QueryJoin &view) noexcept;
+  static QueryView From(QueryMap &view) noexcept;
+  static QueryView From(QueryAggregate &view) noexcept;
+  static QueryView From(QueryMerge &view) noexcept;
+  static QueryView From(QueryConstraint &view) noexcept;
+  static QueryView From(QueryInsert &view) noexcept;
 
   const char *KindName(void) const noexcept;
 
@@ -329,7 +333,7 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
   // The selected columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
-  static QuerySelect &From(QueryView &view);
+  static QuerySelect From(QueryView view);
 
   bool IsRelation(void) const noexcept;
   bool IsStream(void) const noexcept;
@@ -350,7 +354,7 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
 // A join of two or more tables on one or more columns.
 class QueryJoin : public query::QueryNode<QueryJoin> {
  public:
-  static QueryJoin &From(QueryView &view);
+  static QueryJoin From(QueryView view);
 
   // The resulting joined columns. This includes pivots and non-pivots. Pivots
   // are ordered first.
@@ -401,7 +405,7 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
 // functors with at least
 class QueryMap : public query::QueryNode<QueryMap> {
  public:
-  static QueryMap &From(QueryView &view);
+  static QueryMap From(QueryView view);
 
   unsigned NumInputColumns(void) const noexcept;
   QueryColumn NthInputColumn(unsigned n) const noexcept;
@@ -451,7 +455,7 @@ class QueryMap : public query::QueryNode<QueryMap> {
 // An aggregate operation.
 class QueryAggregate : public query::QueryNode<QueryAggregate> {
  public:
-  static QueryAggregate &From(QueryView &view);
+  static QueryAggregate From(QueryView view);
 
   // The resulting mapped columns.
   DefinedNodeRange<QueryColumn> Columns(void) const noexcept;
@@ -513,7 +517,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
 // the same types.
 class QueryMerge : public query::QueryNode<QueryMerge> {
  public:
-  static QueryMerge &From(QueryView &view);
+  static QueryMerge From(QueryView view);
 
   // The resulting mapped columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
@@ -546,7 +550,7 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 // also passes through the other columns from the view.
 class QueryConstraint : public query::QueryNode<QueryConstraint> {
  public:
-  static QueryConstraint &From(QueryView &view);
+  static QueryConstraint From(QueryView view);
 
   ComparisonOperator Operator(void) const;
   QueryColumn LHS(void) const;
@@ -572,7 +576,7 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
 // An insert of one or more columns into a relation.
 class QueryInsert : public query::QueryNode<QueryInsert> {
  public:
-  static QueryInsert &From(QueryView &view);
+  static QueryInsert From(QueryView view);
 
   ParsedDeclaration Declaration(void) const noexcept;
 
@@ -599,7 +603,7 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 // convenience.
 class QueryTuple : public query::QueryNode<QueryTuple> {
  public:
-  static QueryTuple &From(QueryView &view);
+  static QueryTuple From(QueryView view);
 
   // The resulting mapped columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
@@ -623,7 +627,7 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
 // are mutable.
 class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
  public:
-  static QueryKVIndex &From(QueryView &view);
+  static QueryKVIndex From(QueryView view);
 
   // The resulting mapped columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;

@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...) __VA_ARGS__
+#define DEBUG(...)
 
 namespace hyde {
 namespace {
@@ -50,6 +50,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto cond : neg_conds) {
       os << "<TD rowspan=\"" << row_span << "\">!" << cond.Predicate().Name() << "</TD>";
     }
+  };
+
+  auto do_col = [&] (QueryColumn col) -> OutputStream & {
+    if (col.IsConstant()) {
+      os << "<B>" << QueryConstant::From(col).Literal() << "</B>";
+    } else if (col.IsConstantRef()) {
+      os << QueryConstant::From(col).Literal();
+    } else {
+      os << col.Variable();
+    }
+    return os;
   };
 
   for (auto relation : query.Relations()) {
@@ -111,7 +122,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     auto i = 0u;
     for (auto col : select.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << col.Variable() << "</TD>";
+         << do_col(col) << "</TD>";
       ++i;
     }
 
@@ -150,7 +161,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (!out_copied_cols.empty()) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : out_copied_cols) {
-        os << "<TD port=\"c" << col.UniqueId() << "\">" << col.Variable()
+        os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col)
            << "</TD>";
       }
     }
@@ -179,10 +190,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     if (lhs == rhs) {
       os << "</TD><TD port=\"c" << lhs.UniqueId() << "\" colspan=\"2\">"
-         << lhs.Variable();
+         << do_col(lhs);
     } else {
-      os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << lhs.Variable()
-         << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << rhs.Variable();
+      os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << do_col(lhs)
+         << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << do_col(rhs);
     }
 
     os << "</TD></TR><TR>";
@@ -190,13 +201,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (!in_copied_cols.empty()) {
       auto i = 0u;
       for (auto col : in_copied_cols) {
-        os << "<TD port=\"g" << i << "\">" << col.Variable() << "</TD>";
+        os << "<TD port=\"g" << i << "\">" << do_col(col) << "</TD>";
         ++i;
       }
     }
 
-    os << "<TD port=\"p0\">" << input_lhs.Variable()
-       << "</TD><TD port=\"p1\">" << input_rhs.Variable() << "</TD>";
+    os << "<TD port=\"p0\">" << do_col(input_lhs)
+       << "</TD><TD port=\"p1\">" << do_col(input_rhs) << "</TD>";
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString(os) << "</TD>";)
 
@@ -221,22 +232,22 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, kv);
     os << "<TD rowspan=\"2\">KEYS</TD>";
     for (auto col : kv.KeyColumns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
     os << "<TD rowspan=\"2\">VALS</TD>";
     auto i = 0u;
     for (auto col : kv.ValueColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << kv.NthValueMergeFunctor(i).Name() << "(" << col.Variable()
+         << kv.NthValueMergeFunctor(i).Name() << "(" << do_col(col)
          << ")</TD>";
     }
     os << "</TR><TR>";
     i = 0u;
     for (auto col : kv.InputKeyColumns()) {
-      os << "<TD port=\"g" << (i++) << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"g" << (i++) << "\">" << do_col(col) << "</TD>";
     }
     for (auto col : kv.InputValueColumns()) {
-      os << "<TD port=\"g" << (i++) << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"g" << (i++) << "\">" << do_col(col) << "</TD>";
     }
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << kv.DebugString(os) << "</TD>";)
 
@@ -282,7 +293,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto color = kColors[i];
       os << "<TD port=\"c" << col.UniqueId() << "\" colspan=\""
          << pivot_set_size << "\" bgcolor=\""
-         << color << "\">" << col.Variable() << "</TD>";
+         << color << "\">" << do_col(col) << "</TD>";
     }
 
     os << "<TD rowspan=\"2\">" << QueryView(join).KindName() << "</TD>";
@@ -290,7 +301,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (i = 0u; i < num_outputs; ++i) {
       const auto col = join.NthOutputMergedColumn(i);
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << col.Variable() << "</TD>";
+         << do_col(col) << "</TD>";
     }
 
     os << "</TR><TR>";
@@ -300,14 +311,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto color = kColors[i];
       for (auto col : join.NthInputPivotSet(i)) {
         os << "<TD bgcolor=\"" << color << "\" port=\"p" << j << "\">"
-           << col.Variable() << "</TD>";
+           << do_col(col) << "</TD>";
         j++;
       }
     }
 
     for (i = 0u; i < num_outputs; ++i) {
       const auto col = join.NthInputMergedColumn(i);
-      os << "<TD port=\"p" << j << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"p" << j << "\">" << do_col(col) << "</TD>";
       j++;
     }
 
@@ -348,7 +359,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : map.CopiedColumns()) {
         os << "<TD port=\"c" << col.UniqueId() << "\">"
-           << col.Variable() << "</TD>";
+           << do_col(col) << "</TD>";
       }
     }
 
@@ -356,7 +367,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.MappedColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << col.Variable() << "</TD>";
+         << do_col(col) << "</TD>";
     }
 
     const auto num_inputs = map.NumInputColumns();
@@ -365,12 +376,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
       for (auto i = 0u; i < num_group; ++i) {
         const auto col = map.NthInputCopiedColumn(i);
-        os << "<TD port=\"g" << i << "\">" << col.Variable() << "</TD>";
+        os << "<TD port=\"g" << i << "\">" << do_col(col) << "</TD>";
       }
 
       for (auto i = 0u; i < num_inputs; ++i) {
         const auto col = map.NthInputColumn(i);
-        os << "<TD port=\"p" << i << "\">" << col.Variable() << "</TD>";
+        os << "<TD port=\"p" << i << "\">" << do_col(col) << "</TD>";
       }
     }
 
@@ -408,7 +419,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << col.Variable() << "</TD>";
+         << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
     auto num_group = agg.NumGroupColumns();
@@ -426,15 +437,15 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "</TR><TR>";
     for (auto i = 0u; i < num_group; ++i) {
       auto col = agg.NthInputGroupColumn(i);
-      os << "<TD port=\"g1_" << i << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"g1_" << i << "\">" << do_col(col) << "</TD>";
     }
     for (auto i = 0u; i < num_config; ++i) {
       auto col = agg.NthInputConfigurationColumn(i);
-      os << "<TD port=\"g2_" << i << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"g2_" << i << "\">" << do_col(col) << "</TD>";
     }
     for (auto i = 0u; i < num_summ; ++i) {
       auto col = agg.NthInputAggregateColumn(i);
-      os << "<TD port=\"s" << i << "\">" << col.Variable() << "</TD>";
+      os << "<TD port=\"s" << i << "\">" << do_col(col) << "</TD>";
     }
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << agg.DebugString(os) << "</TD>";)
@@ -473,7 +484,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     for (auto i = 0u, max_i = insert.NumInputColumns(); i < max_i; ++i) {
       os << "<TD port=\"c" << i << "\">"
-         << insert.NthInputColumn(i).Variable() << "</TD>";
+         << do_col(insert.NthInputColumn(i)) << "</TD>";
     }
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString(os) << "</TD>";)
@@ -515,13 +526,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "<TD rowspan=\"2\">" << QueryView(tuple).KindName() << "</TD>";
     for (auto col : tuple.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << col.Variable() << "</TD>";
+         << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
 
     for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
       os << "<TD port=\"p" << i << "\">"
-         << tuple.NthInputColumn(i).Variable() << "</TD>";
+         << do_col(tuple.NthInputColumn(i)) << "</TD>";
     }
 
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString(os) << "</TD>";)
@@ -545,7 +556,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "<TD rowspan=\"2\">" << QueryView(merge).KindName() << "</TD>";
     for (auto col : merge.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << col.Variable() << "</TD>";
+         << do_col(col) << "</TD>";
     }
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString(os) << "</TD>";)
     os << kEndTable << ">];\n";

@@ -405,12 +405,9 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
 // eliminate that pivot set and instead propagate CMP nodes to all pivot
 // sources.
 void Node<QueryJoin>::PropagateConstAcrossPivotSet(
-    QueryImpl *query, COL *const_like_col, UseList<COL> &pivot_cols) {
+    QueryImpl *query, COL *const_col, UseList<COL> &pivot_cols) {
 
   is_canonical = false;
-
-  const auto const_col = const_like_col->AsConstant();
-  assert(const_col->IsConstant());
 
   std::vector<COL *> cols;
   std::vector<VIEW *> views;
@@ -471,8 +468,8 @@ void Node<QueryJoin>::PropagateConstAcrossPivotSet(
 // TODO(pag): If *all* incoming columns for a pivot column are the same, then
 //            it no longer needs to be a pivot column.
 //
-// TODO(pag): If we make the above transform, then a join could devolve into
-//            a merge.
+// TODO(pag): If we make the above transform, then a JOIN could devolve into
+//            a cross-product.
 bool Node<QueryJoin>::Canonicalize(
     QueryImpl *query, bool sort, const ErrorLog &log) {
   (void) query;
@@ -496,15 +493,16 @@ bool Node<QueryJoin>::Canonicalize(
   for (auto &[out_col, in_cols] : out_to_in) {
     assert(!in_cols.Empty());
     COL *same_col = in_cols[0];
-//    COL *same_const = same_col->AsConstant();
+    COL *same_const = same_col->IsConstant() ? same_col : nullptr;
+    COL *same_const_ref = same_col->AsConstant();
 
     // TODO(pag): Next up: look to see if all incoming joins are references
     //            to the same constant, even if some are constant and some
     //            are constant refs. If so, then eliminate the JOIN pivot,
     //            guarding as necessary.
 
-    COL *seen_const = nullptr;
-    COL *seen_const_ref = nullptr;
+    COL *first_const = nullptr;
+    COL *first_const_ref = nullptr;
 
     const auto is_pivot = in_cols.Size() > 1u;
     const auto out_is_const_ref = out_col->IsConstantRef();
@@ -515,9 +513,23 @@ bool Node<QueryJoin>::Canonicalize(
       }
 
       if (in_col->IsConstant()) {
-        if (!seen_const) {
-          seen_const = in_col;
-          out_col->CopyConstant(seen_const);
+        if (!first_const) {
+          first_const = in_col;
+          out_col->CopyConstant(first_const);
+        }
+
+        // If we've found a different constant, then set `same_const` to
+        // `nullptr` to say that all columns have different constant values.
+        if (in_col != same_const) {
+          same_const = nullptr;
+        }
+
+        // If this is a constant, and we're tracking if all pivot entries
+        // are the same constant ref, and if this constant differs from the
+        // referred constant, then mark it so that not all pivots share the
+        // same constant ref.
+        if (in_col != same_const_ref) {
+          same_const_ref = nullptr;
         }
 
         // If this isn't a pivot then do const propagation now, otherwise we'll
@@ -526,28 +538,72 @@ bool Node<QueryJoin>::Canonicalize(
           if (out_col->IsUsedIgnoreMerges()) {
             non_local_changes = true;
           }
-          out_col->ReplaceAllUsesWith(seen_const);
+          out_col->ReplaceAllUsesWith(first_const);
         }
 
       } else if (in_col->IsConstantRef()) {
-        if (!seen_const_ref) {
-          seen_const_ref = in_col;
-          out_col->CopyConstant(seen_const_ref);
+        same_const = nullptr;  // Not all columns are constant.
+
+        if (!first_const_ref) {
+          first_const_ref = in_col;
+          out_col->CopyConstant(first_const_ref);
         }
+
+        // Two of the pivots refer to different constants.
+        if (same_const_ref && in_col->AsConstant() != same_const_ref) {
+          same_const_ref = nullptr;
+        }
+
+      } else {
+        // Not all columns are constant.
+        same_const = nullptr;
+
+        // Not all columns are constants or constant refs.
+        same_const_ref = nullptr;
       }
     }
 
-    if (seen_const_ref) {
+    // All incoming pivot values are the same constant. We can eliminate this
+    // pivot.
+    if (same_const) {
+      ReplacePivotWithConstant(query, out_col, same_const);
+      Canonicalize(query, sort, log);
+      return true;
+
+    // All incoming pivot values are either constant, or constant refs, and
+    // they all refer to the same constant. We need to keep this pivot around
+    // to enforce a data dependency, but we can do constant propagation on the
+    // output, thus "breaking" the control dependency.
+    } else if (same_const_ref) {
+
+      if (!out_is_const_ref || out_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+
+      same_const_ref->ReplaceAllUsesWith(same_const_ref);
+
+    // At least one of the pivots is a reference to a constant; we will inject
+    // comparisons across all incominging pivots to ensure that they match this
+    // constant.
+    } else if (first_const_ref) {
       if (!out_is_const_ref) {
-        PropagateConstAcrossPivotSet(query, seen_const_ref, in_cols);
+        PropagateConstAcrossPivotSet(query, first_const_ref->AsConstant(), in_cols);
         Canonicalize(query, sort, log);
         return true;
       }
 
-    } else if (seen_const) {
-      ReplacePivotWithConstant(query, out_col, seen_const->AsConstant());
-      Canonicalize(query, sort, log);
-      return true;
+    // At least one of the pivots is a constant, and none of them are constant
+    // references (otherwise we would have been in the prior case). It is
+    // possible that after more optimization, we will discover that some of the
+    // other pivots are constants or constant refs. Thus, we cannot eagerly
+    // eliminate this pivot until we know that *all* incoming values are
+    // the same constant.
+    } else if (first_const) {
+      if (!out_is_const_ref) {
+        PropagateConstAcrossPivotSet(query, first_const, in_cols);
+        Canonicalize(query, sort, log);
+        return true;
+      }
     }
   }
 
