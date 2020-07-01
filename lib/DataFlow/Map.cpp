@@ -49,31 +49,41 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 // means that they can be re-ordered during canonicalization for the sake of
 // helping deduplicate common subexpressions. We also need to put the "attached"
 // outputs into the proper order.
-bool Node<QueryMap>::Canonicalize(QueryImpl *query, bool sort) {
+bool Node<QueryMap>::Canonicalize(
+    QueryImpl *query, bool sort, const ErrorLog &) {
   if (is_canonical) {
     return false;
   }
 
-  is_canonical = AttachedColumnsAreCanonical(sort);
+  if (is_dead || valid != VIEW::kValid) {
+    is_canonical = true;
+    return false;
+  }
 
   if (valid == VIEW::kValid &&
       !CheckAllViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
+    is_canonical = true;
+    return false;
   }
+
+  auto i = columns.Size() - attached_columns.Size();
+  assert(i == functor.Arity());
 
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
   bool non_local_changes = GuardWithTuple(query);
 
+  auto [is_canonical_, non_local_changes_] = AttachedColumnsAreCanonical(i, sort);
+  is_canonical = is_canonical_;
+  non_local_changes = non_local_changes || non_local_changes_;
+
   // We need to re-order the input columns, and possibly also the output
   // columns to match the input ordering.
 
   std::unordered_map<COL *, COL *> in_to_out;
   DefList<COL> new_output_cols(this);
-
-  auto i = columns.Size() - attached_columns.Size();
-  assert(i == functor.Arity());
 
   struct Param {
     COL *output;
@@ -154,6 +164,7 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query, bool sort) {
     auto new_out_col = new_output_cols.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
+    new_out_col->CopyConstant(old_out_col);
   }
 
   UseList<COL> new_input_cols(this);
@@ -172,9 +183,19 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query, bool sort) {
     in_to_out.emplace(input_col, new_output_col);
 
     // Constant propagation on the bound columns.
-    if (input_col->IsConstant() && new_output_col->IsUsedIgnoreMerges()) {
+    if (input_col->IsConstant()) {
+      if (new_output_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+
+      new_output_col->CopyConstant(input_col);
       new_output_col->ReplaceAllUsesWith(input_col);
-      non_local_changes = true;
+
+    } else if (input_col->IsConstantRef()) {
+      if (!new_output_col->IsConstantRef()) {
+        new_output_col->CopyConstant(input_col);
+        non_local_changes = true;
+      }
     }
 
     new_input_cols.AddUse(input_col);
@@ -201,36 +222,45 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query, bool sort) {
     }
 
     // Constant propagation.
-    if (in_col->IsConstant() && old_out_col->IsUsedIgnoreMerges()) {
+    if (in_col->IsConstant()) {
+      if (old_out_col->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+      old_out_col->CopyConstant(in_col);
       old_out_col->ReplaceAllUsesWith(in_col);
-      non_local_changes = true;
-      continue;
+      if (!old_out_col->IsUsed()) {
+        continue;
+      }
+
+    } else if (in_col->IsConstantRef()) {
+      if (!old_out_col->IsConstantRef()) {
+        non_local_changes = true;
+      }
+      old_out_col->CopyConstant(in_col);
     }
 
     auto &out_col = in_to_out[in_col];
     if (out_col) {
       in_col->view->is_canonical = false;
       non_local_changes = true;  // Shrinking the number of columns.
+      old_out_col->ReplaceAllUsesWith(out_col);
 
-      if (out_col->NumUses() > old_out_col->NumUses()) {
-        old_out_col->ReplaceAllUsesWith(out_col);
-      } else {
-        out_col->ReplaceAllUsesWith(old_out_col);
-        out_col = old_out_col;
-      }
     } else {
       out_col = old_out_col;
       new_attached_cols.AddUse(in_col);
     }
   }
 
-  new_attached_cols.Sort();
+  if (sort) {
+    new_attached_cols.Sort();
+  }
 
   for (auto in_col : new_attached_cols) {
     const auto old_out_col = in_to_out[in_col];
     const auto new_out_col = new_output_cols.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
+    new_out_col->CopyConstant(old_out_col);
   }
 
   input_columns.Swap(new_input_cols);

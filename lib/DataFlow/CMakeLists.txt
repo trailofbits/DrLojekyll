@@ -9,6 +9,7 @@ function(dataflow source_dir config)
         
         "${source_dir}/Aggregate.cpp"
         "${source_dir}/Build.cpp"
+        "${source_dir}/Condition.cpp"
         "${source_dir}/Column.cpp"
         "${source_dir}/Connect.cpp"
         "${source_dir}/Constant.cpp"

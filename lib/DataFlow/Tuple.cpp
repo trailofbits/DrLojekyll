@@ -33,8 +33,9 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 // replacements easier. Because comparisons are mostly pointer-based, the
 // canonical form of this tuple is one where all input columns are sorted,
 // deduplicated, and where all output columns are guaranteed to be used.
-bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
-  if (is_dead) {
+bool Node<QueryTuple>::Canonicalize(
+    QueryImpl *query, bool sort, const ErrorLog &) {
+  if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -51,6 +52,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
 
   assert(attached_columns.Empty());
 
+  is_canonical = true;
   const auto used_in_merge = this->Def<Node<QueryView>>::IsUsed();
 
   // If this tuple is not used in a MERGE, then try to figure out if we can
@@ -123,10 +125,18 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
 
     if (in_col->IsConstant()) {
       if (can_constprop) {
-        if (out_col->IsUsedIgnoreMerges()) {
+        if (out_col->IsUsedIgnoreMerges() &&
+            !out_col->IsConstantRef()) {
           non_local_changes = true;
         }
+        out_col->CopyConstant(in_col);
         out_col->ReplaceAllUsesWith(in_col);
+
+      } else {
+        if (!out_col->IsConstantRef()) {
+          non_local_changes = true;
+        }
+        out_col->CopyConstant(in_col);
       }
 
     // Make sure all non-constant inputs come from the same VIEW.
@@ -138,11 +148,6 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
       last_view = in_col->view;
     }
 
-    if (!out_col->IsUsed()) {
-      is_canonical = false;
-      continue;  // We can remove this column.
-    }
-
     auto &prev_out_col = in_to_out[in_col];
     if (prev_out_col) {
       if (out_col->IsUsedIgnoreMerges()) {
@@ -150,13 +155,21 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
       }
       out_col->ReplaceAllUsesWith(prev_out_col);
 
-      if (!out_col->IsUsed()) {
-        is_canonical = false;
-        continue;  // Removing this column.
-      }
-
     } else {
       prev_out_col = out_col;
+
+      // If it's a ref to a constant then propagate it along.
+      if (in_col->IsConstantRef()) {
+        if (!out_col->IsConstantRef()) {
+          non_local_changes = true;
+        }
+        out_col->CopyConstant(in_col);
+      }
+    }
+
+    if (!out_col->IsUsed()) {
+      is_canonical = false;
+      continue;  // We can remove this column.
     }
   }
 
@@ -176,37 +189,37 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
     all_from_same_view = false;
   }
 
-  // We can "merge" with the source tuple. Because it only has one use, i.e.
-  // this TUPLE, we can give our conditions to it.
-  if (all_from_same_view) {
-    if (!positive_conditions.Empty()) {
-      for (auto cond : positive_conditions) {
-        last_view->positive_conditions.AddUse(cond);
-      }
-    }
-
-    if (!negative_conditions.Empty()) {
-      for (auto cond : negative_conditions) {
-        last_view->negative_conditions.AddUse(cond);
-      }
-    }
-
-    last_view->OrderConditions();
-
-    non_local_changes = true;
-    for (auto [in_col, out_col] : in_to_out) {
-      out_col->ReplaceAllUsesWith(in_col);
-    }
-
-    if (last_view->columns.Size() == columns.Size()) {
-      this->Def<Node<QueryView>>::ReplaceAllUsesWith(last_view);
-    }
-
-    is_dead = true;
-    is_canonical = true;
-    hash = 0;
-    return true;  // We made changes, i.e. we deleted ourself.
-  }
+//  // We can "merge" with the source tuple. Because it only has one use, i.e.
+//  // this TUPLE, we can give our conditions to it.
+//  if (all_from_same_view) {
+//    if (!positive_conditions.Empty()) {
+//      for (auto cond : positive_conditions) {
+//        last_view->positive_conditions.AddUse(cond);
+//      }
+//    }
+//
+//    if (!negative_conditions.Empty()) {
+//      for (auto cond : negative_conditions) {
+//        last_view->negative_conditions.AddUse(cond);
+//      }
+//    }
+//
+//    last_view->OrderConditions();
+//
+//    non_local_changes = true;
+//    for (auto [in_col, out_col] : in_to_out) {
+//      out_col->ReplaceAllUsesWith(in_col);
+//    }
+//
+//    if (last_view->columns.Size() == columns.Size()) {
+//      this->Def<Node<QueryView>>::ReplaceAllUsesWith(last_view);
+//    }
+//
+//    is_dead = true;
+//    is_canonical = true;
+//    hash = 0;
+//    return true;  // We made changes, i.e. we deleted ourselves.
+//  }
 
   // This is used by a MERGE, leave it as-is.
   if (used_in_merge || in_to_out.size() == columns.Size()) {
@@ -233,6 +246,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query, bool sort) {
     auto new_out_col = new_output_cols.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
+    new_out_col->CopyConstant(old_out_col);
   }
 
   input_columns.Swap(new_input_cols);

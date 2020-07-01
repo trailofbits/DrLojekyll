@@ -14,6 +14,7 @@
 namespace hyde {
 
 class EqualitySet;
+class ErrorLog;
 
 // Represents all values that could inhabit some relation's tuple.
 template <>
@@ -32,6 +33,8 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
         id(id_),
         index(index_) {}
 
+  void CopyConstant(Node<QueryColumn> *maybe_const_col);
+
   void ReplaceAllUsesWith(Node<QueryColumn> *that);
 
   // Return the index of this column inside of its view.
@@ -45,7 +48,18 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // of the same underlying node when we can.
   uint64_t Sort(void) noexcept;
 
-  // Returns `true` if this column is a constant.
+  // Returns the real constant associated with this column if this column is
+  // a constant or constant reference. Otherwise it returns `nullptr`.
+  Node<QueryColumn> *AsConstant(void) noexcept;
+
+  // Returns `true` if will have a constant value at runtime.
+  bool IsConstantRef(void) const noexcept;
+
+  // Returns `true` if this column is a constant or a reference to a constant.
+  bool IsConstantOrConstantRef(void) const noexcept;
+
+  // Returns `true` if this column is definitely a constant and not just a
+  // reference to one.
   bool IsConstant(void) const noexcept;
 
   // Returns `true` if this column is being used.
@@ -68,6 +82,14 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // View to which this column belongs.
   Node<QueryView> * const view;
 
+  // Reference to a use of a real constant. We need this indirection because
+  // we depend on dataflow to sometimes encode control dependencies, but if we
+  // just blindly propagated constants around, then there are situations where
+  // we could actually lose the control aspects needed by the data dependencies.
+  // The `conflicting_constants.dr` example is an example that requires data
+  // and control dependencies to forced together.
+  UseRef<Node<QueryColumn>> referenced_constant;
+
   // The ID of the column. This roughly corresponds to the smallest
   // `ParsedVariable::Order` value within the clause that was first used to
   // produce this this column. This isn't meaningful except when constructing
@@ -89,6 +111,8 @@ using COL = Node<QueryColumn>;
 template <>
 class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
  public:
+  ~Node(void);
+
   inline explicit Node(ParsedExport decl_)
       : User(this),
         Def<Node<QueryCondition>>(this),
@@ -98,7 +122,7 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
         setters(this) {}
 
   inline uint64_t Sort(void) const noexcept {
-    return reinterpret_cast<uintptr_t>(this);
+    return declaration.Id();
   }
 
   // The declaration of the `ParsedExport` that is associated with this
@@ -196,9 +220,16 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
 
+  void ReplaceAllUsesWith(Node<QueryView> *that);
+
   // Returns `true` if we had to "guard" this view with a tuple so that we
   // can put it into canonical form.
   Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force=false);
+
+  // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
+  // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
+  Node<QueryTuple> *ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
+                                        COL *lhs_col, COL *rhs_col);
 
   // Returns `true` if this view is being used.
   bool IsUsed(void) const noexcept;
@@ -212,11 +243,12 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   // Check to see if the attached columns are ordered and unique. If they're
   // not unique then we can deduplicate them.
-  bool AttachedColumnsAreCanonical(bool sort) const noexcept;
+  std::pair<bool, bool> AttachedColumnsAreCanonical(
+      unsigned i, bool sort) const noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
-  virtual bool Canonicalize(QueryImpl *query, bool sort);
+  virtual bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &);
 
   virtual Node<QuerySelect> *AsSelect(void) noexcept;
   virtual Node<QueryTuple> *AsTuple(void) noexcept;
@@ -229,7 +261,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
   // Useful for communicating low-level debug info back to the formatter.
-  virtual std::string DebugString(void) noexcept;
+  virtual OutputStream &DebugString(OutputStream &os) noexcept;
 
   // Return a number that can be used to help sort this node. The idea here
   // is that we often want to try to merge together two different instances
@@ -349,21 +381,24 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   std::string producer;
 
-  // Does this ode break an invariant?
+  // Does this code break an invariant?
   enum {
     kValid,
     kInvalidBeforeCanonicalize,
     kInvalidAfterCanonicalize
   } valid{kValid};
 
+  // If we broke an invariant, then highlight the variable name of the column
+  // for which we broke the invariant.
+  std::optional<ParsedVariable> invalid_var;
+
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
   //            columns in both of the lists independently reference the same
   //            view.
-  static bool CheckAllViewsMatch(const UseList<COL> &cols1);
-  static bool CheckAllViewsMatch(const UseList<COL> &cols1,
-                                 const UseList<COL> &cols2);
+  bool CheckAllViewsMatch(const UseList<COL> &cols1);
+  bool CheckAllViewsMatch(const UseList<COL> &cols1, const UseList<COL> &cols2);
 
  protected:
   // Utilities for depth calculation.
@@ -441,7 +476,7 @@ class Node<QueryTuple> final : public Node<QueryView> {
   // replacements easier. Because comparisons are mostly pointer-based, the
   // canonical form of this tuple is one where all columns are sorted by
   // their pointer values.
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 };
 
 using TUPLE = Node<QueryTuple>;
@@ -467,7 +502,7 @@ class Node<QueryKVIndex> final : public Node<QueryView> {
   // Put the KV index into a canonical form. The only real internal optimization
   // that will happen is constant propagation of keys, but NOT values (as we can't
   // predict how the merge functors will affect them).
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 
   // Functors that get called to merge old and new values.
   std::vector<ParsedFunctor> merge_functors;
@@ -492,7 +527,21 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+
+  // If we have a constant feeding into one of the pivot sets, then we want to
+  // eliminate that pivot set and instead propagate CMP nodes to all pivot
+  // sources.
+  void PropagateConstAcrossPivotSet(QueryImpl *query, COL *col,
+                                    UseList<COL> &pivot_cols);
+
+  // Replace the pivot column `pivot_col` with `const_col`.
+  void ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
+                                COL *const_col);
+
+  // Replace `view`, which should be a member of `joined_views` with
+  // `replacement_view` in this JOIN.
+  void ReplaceViewInJoin(VIEW *view, VIEW *replacement_view);
 
   void VerifyPivots(void);
 
@@ -501,6 +550,9 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // List of views merged by this JOIN. Columns in pivot sets in `out_to_in` are
   // in the same order as they appear in `pivot_views`.
+  //
+  // TODO(pag): I don't think the ordering invariant is maintained through
+  //            canonicalization.
   UseList<VIEW> joined_views;
 
   // Number of pivot columns. If this value is zero then this is actuall a
@@ -525,7 +577,7 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   // Put this map into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 
   inline explicit Node(ParsedFunctor functor_, DisplayRange range)
       : position(range.From()),
@@ -570,7 +622,7 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   // Put this aggregate into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 
   // Functor that does the aggregation.
   const ParsedFunctor functor;
@@ -610,7 +662,7 @@ class Node<QueryMerge> : public Node<QueryView> {
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 
   UseList<VIEW> merged_views;
 
@@ -638,9 +690,12 @@ class Node<QueryConstraint> : public Node<QueryView> {
   // Put this constraint into a canonical form, which will make comparisons and
   // replacements easier. If this constraint's operator is unordered, then we
   // sort the inputs to make comparisons trivial.
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 
   const ComparisonOperator op;
+
+  // Spelling range of the comparison that produced this. May not be valid.
+  DisplayRange spelling_range;
 };
 
 using CMP = Node<QueryConstraint>;
@@ -683,7 +738,7 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
-  bool Canonicalize(QueryImpl *query, bool sort) override;
+  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
 
   const UseRef<REL> relation;
   const UseRef<STREAM> stream;
@@ -747,7 +802,39 @@ class QueryImpl {
   }
 
   template <typename CB>
-  void ForEachViewInDepthOrder(CB do_view) {
+  void ForEachView(CB do_view) const {
+    std::vector<VIEW *> views;
+    for (auto view : selects) {
+      do_view(view);
+    }
+    for (auto view : tuples) {
+      do_view(view);
+    }
+    for (auto view : kv_indices) {
+      do_view(view);
+    }
+    for (auto view : joins) {
+      do_view(view);
+    }
+    for (auto view : maps) {
+      do_view(view);
+    }
+    for (auto view : aggregates) {
+      do_view(view);
+    }
+    for (auto view : merges) {
+      do_view(view);
+    }
+    for (auto view : constraints) {
+      do_view(view);
+    }
+    for (auto view : inserts) {
+      do_view(view);
+    }
+  }
+
+  template <typename CB>
+  void ForEachViewInDepthOrder(CB do_view) const {
     std::vector<VIEW *> views;
     for (auto view : selects) {
       view->depth = 0;
@@ -804,13 +891,12 @@ class QueryImpl {
   // Remove unused views.
   bool RemoveUnusedViews(void);
 
-  void Simplify(void);
-  void Canonicalize(bool sort);
-  void Optimize(void);
-
+  void Simplify(const ErrorLog &);
+  void Canonicalize(bool sort, const ErrorLog &);
+  void Optimize(const ErrorLog &);
   void ConnectInsertsToSelects(void);
-
-  void TrackDifferentialUpdates(void);
+  void TrackDifferentialUpdates(void) const;
+  void SinkConditions(void) const;
 
   // The streams associated with input relations to queries.
   std::unordered_map<ParsedDeclaration, Node<QueryInput> *>

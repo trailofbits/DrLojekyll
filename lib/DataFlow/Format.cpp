@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...)
+#define DEBUG(...) __VA_ARGS__
 
 namespace hyde {
 namespace {
@@ -115,7 +115,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       ++i;
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << select.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << select.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -198,7 +198,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "<TD port=\"p0\">" << input_lhs.Variable()
        << "</TD><TD port=\"p1\">" << input_rhs.Variable() << "</TD>";
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString(os) << "</TD>";)
 
     auto color = QueryView::From(constraint).CanReceiveDeletions() ? " [color=purple]" : "";
 
@@ -238,7 +238,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto col : kv.InputValueColumns()) {
       os << "<TD port=\"g" << (i++) << "\">" << col.Variable() << "</TD>";
     }
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << kv.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << kv.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -311,7 +311,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       j++;
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -379,7 +379,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 //      os << "<TD colspan=\"" << diff << "\"></TD>";
 //    }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -437,7 +437,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"s" << i << "\">" << col.Variable() << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << agg.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << agg.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -476,7 +476,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << insert.NthInputColumn(i).Variable() << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -524,7 +524,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << tuple.NthInputColumn(i).Variable() << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -547,7 +547,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
          << col.Variable() << "</TD>";
     }
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString() << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString(os) << "</TD>";)
     os << kEndTable << ">];\n";
 
     for (auto view : merge.MergedViews()) {

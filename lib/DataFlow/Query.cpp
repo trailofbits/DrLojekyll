@@ -216,8 +216,8 @@ unsigned QueryView::Depth(void) const noexcept {
 }
 
 // Returns a useful string of internal metadata about this view.
-std::string QueryView::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryView::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 // Get a hash of this view.
@@ -328,7 +328,7 @@ bool QueryColumn::IsConstraint(void) const noexcept {
 }
 
 bool QueryColumn::IsConstant(void) const noexcept {
-  return impl->IsConstant();
+  return impl->IsConstantOrConstantRef();
 }
 
 // Number of uses of this column.
@@ -465,8 +465,8 @@ QueryStream QuerySelect::Stream(void) const noexcept {
   return QueryStream(impl->stream.get());
 }
 
-std::string QuerySelect::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QuerySelect::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryJoin &QueryJoin::From(QueryView &view) {
@@ -525,8 +525,8 @@ QueryColumn QueryJoin::NthOutputPivotColumn(unsigned n) const noexcept {
   return QueryColumn(impl->columns[n]);
 }
 
-std::string QueryJoin::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryJoin::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryMap &QueryMap::From(QueryView &view) {
@@ -618,8 +618,8 @@ QueryColumn QueryMap::NthInputCopiedColumn(unsigned n) const noexcept {
   return QueryColumn(impl->attached_columns[n]);
 }
 
-std::string QueryMap::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryMap::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryAggregate &QueryAggregate::From(QueryView &view) {
@@ -753,8 +753,8 @@ const ParsedFunctor &QueryAggregate::Functor(void) const noexcept {
   return impl->functor;
 }
 
-std::string QueryAggregate::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryAggregate::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryMerge &QueryMerge::From(QueryView &view) {
@@ -796,8 +796,8 @@ UsedNodeRange<QueryView> QueryMerge::MergedViews(void) const {
           UsedNodeIterator<QueryView>(impl->merged_views.end())};
 }
 
-std::string QueryMerge::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryMerge::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 ComparisonOperator QueryConstraint::Operator(void) const {
@@ -855,8 +855,8 @@ UsedNodeRange<QueryColumn> QueryConstraint::InputCopiedColumns(void) const {
   return {impl->attached_columns.begin(), impl->attached_columns.end()};
 }
 
-std::string QueryConstraint::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryConstraint::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryInsert &QueryInsert::From(QueryView &view) {
@@ -906,8 +906,8 @@ UsedNodeRange<QueryColumn> QueryInsert::InputColumns(void) const noexcept {
           UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
 }
 
-std::string QueryInsert::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryTuple &QueryTuple::From(QueryView &view) {
@@ -944,8 +944,8 @@ UsedNodeRange<QueryColumn> QueryTuple::InputColumns(void) const noexcept {
           UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
 }
 
-std::string QueryTuple::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryTuple::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 QueryKVIndex &QueryKVIndex::From(QueryView &view) {
@@ -1017,8 +1017,8 @@ const ParsedFunctor &QueryKVIndex::NthValueMergeFunctor(unsigned n) const noexce
   return impl->merge_functors[n];
 }
 
-std::string QueryKVIndex::DebugString(void) const noexcept {
-  return impl->DebugString();
+OutputStream &QueryKVIndex::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
 }
 
 DefinedNodeRange<QueryCondition> Query::Conditions(void) const {

@@ -18,6 +18,7 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Sema/ModuleIterator.h>
 #include <drlojekyll/Sema/SIPSChecker.h>
 
 namespace hyde {
@@ -25,6 +26,7 @@ namespace hyde {
 OutputStream *gOut = nullptr;
 
 hyde::OutputStream *gDOTStream = nullptr;
+hyde::OutputStream *gDRStream = nullptr;
 hyde::OutputStream *gCodeStream = nullptr;
 
 }  // namespace hyde
@@ -57,6 +59,16 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   if (CheckForErrors(display_manager, module, error_log)) {
     return EXIT_FAILURE;
+  }
+
+  // Output the amalgamation of all files.
+  if (hyde::gDRStream) {
+    hyde::gDRStream->SetKeepImports(false);
+    hyde::gDRStream->SetRenameLocals(true);
+    for (auto module : hyde::ParsedModuleIterator(module)) {
+      (*hyde::gDRStream) << module;
+    }
+    hyde::gDRStream->Flush();
   }
 
   // Round-trip test of the parser.
@@ -107,16 +119,17 @@ int main(int argc, char *argv[]) {
 
   std::stringstream linked_module;
 
-  hyde::OutputStream os(display_manager, std::cerr);
+  hyde::OutputStream os(display_manager, std::cout);
+  hyde::gOut = &os;
 
   std::unique_ptr<FileStream> dot_out;
   std::unique_ptr<FileStream> cpp_out;
-  hyde::gOut = &os;
+  std::unique_ptr<FileStream> dr_out;
 
   // Parse the command-line arguments.
   for (auto i = 1; i < argc; ++i) {
 
-    // Output file of compiled datalog.
+    // C++ output file of the transpiled from the Dr. Lojekyll source code.
     if (!strcmp(argv[i], "-o")) {
       ++i;
       if (i >= argc) {
@@ -129,12 +142,30 @@ int main(int argc, char *argv[]) {
         hyde::gCodeStream = &(cpp_out->os);
       }
 
+    // Option to output a single Dr. Lojekyll Datalog file that is equivalent
+    // to the amalagamation of all input files, and transitively imported files.
+    } else if (!strcmp(argv[i], "--amalgamation") ||
+               !strcmp(argv[i], "-amalgamation")) {
+      ++i;
+      if (i >= argc) {
+        hyde::Error err(display_manager);
+        err << "Command-line argument '" << argv[i-1]
+            << "' must be followed by a file path for "
+            << "alamgamated Datalog output";
+        error_log.Append(std::move(err));
+      } else {
+        dr_out.reset(new FileStream(display_manager, argv[i]));
+        hyde::gDRStream = &(dr_out->os);
+      }
+
+    // GraphViz DOT digraph output, which is useful for debugging the data flow.
     } else if (!strcmp(argv[i], "--dot") ||
                !strcmp(argv[i], "-dot")) {
       ++i;
       if (i >= argc) {
         hyde::Error err(display_manager);
-        err << "Command-line argument '-o' must be followed by a file path for "
+        err << "Command-line argument '" << argv[i-1]
+            << "' must be followed by a file path for "
             << "GraphViz DOT digraph output";
         error_log.Append(std::move(err));
       } else {

@@ -26,8 +26,6 @@
 namespace hyde {
 namespace {
 
-static constexpr size_t kMaxArity = 63;
-
 // Information shared by multiple parsers.
 class SharedParserContext {
  public:

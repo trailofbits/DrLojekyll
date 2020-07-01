@@ -6,7 +6,7 @@ namespace hyde {
 
 // Go through and mark all views that can receive and produce differential
 // updates.
-void QueryImpl::TrackDifferentialUpdates(void) {
+void QueryImpl::TrackDifferentialUpdates(void) const {
 
   std::unordered_map<ParsedDeclaration, std::vector<SELECT *>>
       decl_to_selects;
@@ -52,7 +52,7 @@ void QueryImpl::TrackDifferentialUpdates(void) {
         return;
       }
 
-      for (auto col : view->columns) {
+      for (COL *col : view->columns) {
         col->ForEachUser([&] (VIEW *user_view) {
           if (!user_view->can_receive_deletions) {
             user_view->can_receive_deletions = true;

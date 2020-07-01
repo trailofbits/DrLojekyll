@@ -14,8 +14,7 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
     }
-    var->appearance = static_cast<unsigned>(
-        clause->head_variables.size());
+    var->appearance = static_cast<unsigned>(clause->head_variables.size());
     clause->head_variables.emplace_back(var);
 
   } else {
@@ -23,8 +22,7 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(
       clause->body_variables.back()->next = var;
     }
     var->appearance = static_cast<unsigned>(
-        clause->body_variables.size() +
-        clause->head_variables.size());
+        clause->body_variables.size() + kMaxArity);
     clause->body_variables.emplace_back(var);
   }
 
@@ -105,7 +103,7 @@ Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
       clause->body_variables.back()->next = var;
     }
     var->appearance = static_cast<unsigned>(
-        clause->body_variables.size() + clause->declaration->parameters.size());
+        clause->body_variables.size() + kMaxArity);
     clause->body_variables.emplace_back(var);
   }
 

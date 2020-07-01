@@ -65,7 +65,8 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 // views might be the same.
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
-bool Node<QueryMerge>::Canonicalize(QueryImpl *query, bool sort) {
+bool Node<QueryMerge>::Canonicalize(
+    QueryImpl *query, bool sort, const ErrorLog &) {
   if (is_dead) {
     is_canonical = true;
     return false;
@@ -110,7 +111,8 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query, bool sort) {
 
     // If we're merging a merge, then copy the lower merge into this one.
     if (auto incoming_merge = view->AsMerge();
-        incoming_merge && !incoming_merge->is_equivalence_class) {
+        incoming_merge &&
+        is_equivalence_class == incoming_merge->is_equivalence_class) {
       non_local_changes = true;
       is_canonical = false;
 
@@ -137,9 +139,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query, bool sort) {
     const auto num_cols = columns.Size();
     auto source_view = unique_merged_views[0];
     assert(source_view->columns.Size() == num_cols);
-    for (auto i = 0u; i < num_cols; ++i) {
-      columns[i]->ReplaceAllUsesWith(source_view->columns[i]);
-    }
+    (void) num_cols;
 
     ReplaceAllUsesWith(source_view);
 
@@ -179,8 +179,10 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query, bool sort) {
       for (auto i = 0u; i < num_cols; ++i) {
         if (columns[i]->IsUsed()) {
           auto out_col = guarded_view->columns[i];
-          guarded_view->columns.Create(out_col->var, guarded_view, out_col->id);
+          auto guard_out_col = guarded_view->columns.Create(
+              out_col->var, guarded_view, out_col->id);
           guarded_view->input_columns.AddUse(out_col);
+          guard_out_col->CopyConstant(out_col);
         }
       }
 

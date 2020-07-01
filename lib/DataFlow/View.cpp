@@ -2,7 +2,11 @@
 
 #include "Query.h"
 
+#include <iomanip>
 #include <sstream>
+
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Parse/Format.h>
 
 namespace hyde {
 
@@ -129,9 +133,7 @@ Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
 }
 
 // Useful for communicating low-level debug info back to the formatter.
-std::string Node<QueryView>::DebugString(void) noexcept {
-  std::stringstream ss;
-
+OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
   if (!group_ids.empty()) {
     auto sep = "group-ids(";
     for (auto group_id : group_ids) {
@@ -143,20 +145,30 @@ std::string Node<QueryView>::DebugString(void) noexcept {
 
   ss << "depth=" << Depth();
   ss << " used=" << is_used;
-  ss << " hash=" << std::hex << this->Hash();
+  ss << " hash=" << std::hex << this->Hash() << std::dec;
   switch (valid) {
     case kValid: break;
     case kInvalidBeforeCanonicalize:
-      ss << "<B><FONT COLOR=\"RED\">BEFORE</FONT></B>";
+      ss << "<B><FONT COLOR=\"RED\">BEFORE";
+      if (invalid_var) {
+        assert(false);
+        ss << ' ' << invalid_var->SpellingRange();
+      }
+      ss << "</FONT></B>";
       break;
     case kInvalidAfterCanonicalize:
-      ss << "<B><FONT COLOR=\"RED\">AFTER</FONT></B>";
+      ss << "<B><FONT COLOR=\"RED\">AFTER";
+      if (invalid_var) {
+        assert(false);
+        ss << ' ' << invalid_var->SpellingRange();
+      }
+      ss << "</FONT></B>";
       break;
   }
   if (!producer.empty()) {
     ss << ' ' << producer;
   }
-  return ss.str();
+  return ss;
 }
 
 // Return a number that can be used to help sort this node. The idea here
@@ -215,27 +227,60 @@ void Node<QueryView>::OrderConditions(void) {
 
 // Check to see if the attached columns are ordered and unique. If they're
 // not unique then we can deduplicate them.
-bool Node<QueryView>::AttachedColumnsAreCanonical(bool sort) const noexcept {
-  if (!attached_columns.Empty()) {
-    if (attached_columns[0]->IsConstant()) {
-      return false;
+std::pair<bool, bool> Node<QueryView>::AttachedColumnsAreCanonical(
+    unsigned first_output, bool sort) const noexcept {
+
+  auto i = first_output;
+  auto is_canonical = true;
+  auto non_local_changes = false;
+  for (auto max_i = columns.Size(), j = 0u; i < max_i; ++i, ++j) {
+    if (!columns[i]->IsUsed()) {
+      is_canonical = false;
+
+    } else if (attached_columns[j]->IsConstant()) {
+      is_canonical = false;
+      if (columns[i]->IsUsedIgnoreMerges()) {
+        non_local_changes = true;
+      }
+      columns[i]->CopyConstant(attached_columns[j]);
+      columns[i]->ReplaceAllUsesWith(attached_columns[j]);
+
+    } else if (attached_columns[j]->IsConstantRef()) {
+      if (!columns[i]->IsConstantRef()) {
+        non_local_changes = true;
+      }
+      columns[i]->CopyConstant(attached_columns[j]);
     }
   }
 
-  for (auto i = 1u; i < attached_columns.Size(); ++i) {
-    if (sort && attached_columns[i - 1u]->Sort() > attached_columns[i]->Sort()) {
-      return false;
-    }
-    if (attached_columns[i - 1] == attached_columns[i] ||
-        attached_columns[i]->IsConstant()) {
-      return false;
+  // Look for equivalent attached columns and try to eliminate them.
+  const auto num_attached_cols = attached_columns.Size();
+  for (auto j = 0u; j < num_attached_cols; ++j) {
+    for (auto k = j + 1u; k < num_attached_cols; ++k) {
+      if (attached_columns[j] == attached_columns[k]) {
+        is_canonical = false;
+        if (columns[k + first_output]->IsUsedIgnoreMerges()) {
+          columns[k + first_output]->ReplaceAllUsesWith(columns[j + first_output]);
+          non_local_changes = true;
+        }
+      }
     }
   }
-  return true;
+
+  if (sort) {
+    for (auto j = 1u; j < num_attached_cols; ++j) {
+      if (attached_columns[j - 1u]->Sort() > attached_columns[j]->Sort()) {
+        is_canonical = false;
+        break;
+      }
+    }
+  }
+
+  return {is_canonical, non_local_changes};
 }
 
 // Put this view into a canonical form.
-bool Node<QueryView>::Canonicalize(QueryImpl *, bool) {
+bool Node<QueryView>::Canonicalize(QueryImpl *, bool, const ErrorLog &) {
   is_canonical = true;
   return false;
 }
@@ -369,6 +414,14 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   return up_hash;
 }
 
+void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
+  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+  unsigned i = 0u;
+  for (auto col : columns) {
+    col->ReplaceAllUsesWith(that->columns[i++]);
+  }
+}
+
 // Returns `true` if we had to "guard" this view with a tuple so that we
 // can put it into canonical form.
 //
@@ -397,13 +450,13 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
     tuple->can_produce_deletions = true;
   }
 
+  for (auto col : columns) {
+    auto out_col = tuple->columns.Create(col->var, tuple, col->id);
+    out_col->CopyConstant(col);
+  }
+
   // Make any merges use the tuple.
   ReplaceAllUsesWith(tuple);
-
-  for (auto col : columns) {
-    const auto out_col = tuple->columns.Create(col->var, tuple, col->id);
-    col->ReplaceAllUsesWith(out_col);
-  }
 
   for (auto col : columns) {
     tuple->input_columns.AddUse(col);
@@ -413,6 +466,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
     tuple->valid = VIEW::kInvalidBeforeCanonicalize;
   }
 
+#ifndef NDEBUG
   std::stringstream ss;
   ss << "GUARD(" << KindName();
   if (!producer.empty()) {
@@ -420,6 +474,79 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
   }
   ss << ')';
   tuple->producer = ss.str();
+#endif
+
+  return tuple;
+}
+
+// Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
+// `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
+Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
+    QueryImpl *query, ComparisonOperator op, COL *lhs_col, COL *rhs_col) {
+
+  // Prefer to have the constant first.
+  if ((ComparisonOperator::kEqual == op || ComparisonOperator::kNotEqual == op) &&
+      rhs_col->IsConstant() && !lhs_col->IsConstant()) {
+    return ProxyWithComparison(query, op, rhs_col, lhs_col);
+  }
+
+  // Now fill in the tuple to use a CMP that takes its input from `this`.
+
+  in_to_out.clear();
+
+  auto col_index = 0u;
+  CMP *cmp = query->constraints.Create(op);
+
+  cmp->input_columns.AddUse(lhs_col);
+  auto lhs_out_col = cmp->columns.Create(
+      lhs_col->var, cmp, lhs_col->id, col_index++);
+
+  lhs_out_col->CopyConstant(lhs_col);
+  in_to_out.emplace(lhs_col, lhs_out_col);
+
+  cmp->input_columns.AddUse(rhs_col);
+  if (ComparisonOperator::kEqual == op) {
+    in_to_out.emplace(rhs_col, lhs_out_col);
+
+  } else {
+    auto rhs_out_col = cmp->columns.Create(
+        rhs_col->var, cmp, rhs_col->id, col_index++);
+    rhs_out_col->CopyConstant(rhs_col);
+    in_to_out.emplace(rhs_col, rhs_out_col);
+  }
+
+  assert(cmp->input_columns.Size() == 2);
+
+  // Add in the other columns.
+  for (auto col : columns) {
+    if (col != lhs_col && col != rhs_col) {
+      cmp->attached_columns.AddUse(col);
+      const auto attached_col = cmp->columns.Create(
+          col->var, cmp, col->id, col_index++);
+      attached_col->CopyConstant(col);
+      in_to_out.emplace(col, attached_col);
+    }
+  }
+
+  // Create a tuple that re-orders the output of the CMP to preserve it.
+  TUPLE *tuple = query->tuples.Create();
+
+  col_index = 0u;
+  for (auto col : columns) {
+    auto out_col = tuple->columns.Create(col->var, tuple, col->id, col_index++);
+    tuple->input_columns.AddUse(in_to_out[col]);
+    out_col->CopyConstant(col);
+  }
+
+#ifndef NDEBUG
+  std::stringstream ss;
+  ss << "PROXY(" << KindName();
+  if (!producer.empty()) {
+    ss << ": " << producer;
+  }
+  ss << ')';
+  cmp->producer = ss.str();
+#endif
 
   return tuple;
 }
@@ -450,6 +577,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
     if (!col->IsConstant()) {
       if (prev_view) {
         if (prev_view != col->view) {
+          invalid_var = col->var;
           return false;
         }
       } else {
@@ -469,11 +597,12 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
                                          const UseList<COL> &cols2) {
   VIEW *prev_view = nullptr;
 
-  auto do_cols = [&prev_view] (const auto &cols) -> bool {
+  auto do_cols = [=, &prev_view] (const auto &cols) -> bool {
     for (auto col : cols) {
       if (!col->IsConstant()) {
         if (prev_view) {
           if (prev_view != col->view) {
+            this->invalid_var = col->var;
             return false;
           }
         } else {

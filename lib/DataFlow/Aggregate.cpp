@@ -65,8 +65,14 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
+bool Node<QueryAggregate>::Canonicalize(
+    QueryImpl *query, bool sort, const ErrorLog &) {
   if (is_canonical) {
+    return false;
+  }
+
+  if (is_dead || valid != VIEW::kValid) {
+    is_canonical = true;
     return false;
   }
 
@@ -98,11 +104,13 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
     // Constants won't change the arity of the GROUP, so propagate and try to
     // remove them.
     if (col->IsConstant()) {
+      const auto const_col = col->AsConstant();
 
       if (out_col->IsUsedIgnoreMerges()) {
         non_local_changes = true;
       }
-      out_col->ReplaceAllUsesWith(col);
+      out_col->ReplaceAllUsesWith(const_col);
+      out_col->CopyConstant(const_col);
 
       // Constant column that isn't used, including by merges. This won't
       // change the aggregate so we can remove it.
@@ -115,16 +123,26 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
       } else if (!guard_tuple) {
         non_local_changes = true;
         guard_tuple = GuardWithTuple(query, true);
-        out_col->ReplaceAllUsesWith(col);  // Should replace one use.
+        non_local_changes = true;
+        out_col->ReplaceAllUsesWith(const_col);  // Should replace one use.
       }
 
     // Similar to the above case, we can remove duplicate columns from GROUP BYs
     // as they won't change the arity of the grouped set.
     } else if (prev_out_col) {
 
+      if (col->IsConstantRef()) {
+        assert(prev_out_col->IsConstantRef());
+        if (!out_col->IsConstantRef()) {
+          non_local_changes = true;
+        }
+        out_col->CopyConstant(col);
+      }
+
       if (out_col->IsUsedIgnoreMerges()) {
         non_local_changes = true;
       }
+
       out_col->ReplaceAllUsesWith(prev_out_col);
 
       // Previously used column that isn't used, including by merges. This won't
@@ -143,6 +161,13 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
       }
 
     } else {
+      if (col->IsConstantRef()) {
+        if (!out_col->IsConstantRef()) {
+          out_col->CopyConstant(col);
+        }
+        out_col->CopyConstant(col);
+      }
+
       prev_out_col = out_col;
     }
   }
@@ -176,6 +201,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
     const auto new_out_col = new_output_cols.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
+    new_out_col->CopyConstant(old_out_col);
   }
 
   // Add back in the bound (configuration) and summarized columns.
@@ -185,6 +211,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query, bool sort) {
     const auto new_out_col = new_output_cols.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
+    new_out_col->CopyConstant(old_out_col);
   }
 
   group_by_columns.Swap(new_group_by_columns);
