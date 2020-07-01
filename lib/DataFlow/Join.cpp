@@ -497,6 +497,12 @@ bool Node<QueryJoin>::Canonicalize(
     assert(!in_cols.Empty());
     COL *same_col = in_cols[0];
 //    COL *same_const = same_col->AsConstant();
+
+    // TODO(pag): Next up: look to see if all incoming joins are references
+    //            to the same constant, even if some are constant and some
+    //            are constant refs. If so, then eliminate the JOIN pivot,
+    //            guarding as necessary.
+
     COL *seen_const = nullptr;
     COL *seen_const_ref = nullptr;
 

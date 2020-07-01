@@ -5,7 +5,6 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
-#include <iostream>
 namespace hyde {
 
 Node<QueryConstraint>::~Node(void) {}
@@ -61,10 +60,6 @@ bool Node<QueryConstraint>::Canonicalize(
   auto [is_canonical_, non_local_changes] = AttachedColumnsAreCanonical(
       (is_equality ? 1u : 2u), sort);
   is_canonical = is_canonical_;
-
-  if (non_local_changes) {
-    std::cerr << "!";
-  }
 
   const auto lhs_col = input_columns[0];
   const auto rhs_col = input_columns[1];
@@ -142,7 +137,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // constants, lest the comparison actually fail.
     if (lhs_is_const && rhs_is_const) {
       if (!result_col->IsConstantRef()) {
-        std::cerr << "A";
         non_local_changes = true;
       }
       result_col->CopyConstant(lhs_col);
@@ -150,7 +144,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // Something like `0 = A`.
     } else if (lhs_is_const) {
       if (!result_col->IsConstantRef()) {
-        std::cerr << "C";
         non_local_changes = true;
       }
       result_col->CopyConstant(lhs_col);
@@ -158,7 +151,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // Something like `A = 0`.
     } else if (rhs_is_const) {
       if (!result_col->IsConstantRef()) {
-        std::cerr << "E";
         non_local_changes = true;
       }
       result_col->CopyConstant(rhs_col);
@@ -214,7 +206,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // Constant propagation of the LHS col.
     if (lhs_col->IsConstantOrConstantRef()) {
       if (!old_lhs_out->IsConstantRef()) {
-        std::cerr << "G";
         non_local_changes = true;
       }
       old_lhs_out->CopyConstant(lhs_col);
@@ -223,7 +214,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // Constant propagation of the RHS col.
     if (rhs_col->IsConstantOrConstantRef()) {
       if (!old_rhs_out->IsConstantRef()) {
-        std::cerr << "H";
         non_local_changes = true;
       }
       old_rhs_out->CopyConstant(rhs_col);
@@ -283,7 +273,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // Constant propagation of the LHS col.
     if (lhs_col->IsConstantOrConstantRef()) {
       if (!old_lhs_out->IsConstantRef()) {
-        std::cerr << "I";
         non_local_changes = true;
       }
       old_lhs_out->CopyConstant(lhs_col);
@@ -292,7 +281,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // Constant propagation of the RHS col.
     if (rhs_col->IsConstantOrConstantRef()) {
       if (!old_rhs_out->IsConstantRef()) {
-        std::cerr << "J";
         non_local_changes = true;
       }
       old_rhs_out->CopyConstant(rhs_col);
@@ -332,7 +320,6 @@ bool Node<QueryConstraint>::Canonicalize(
     //            in a merge, which would not show up in a normal def-use
     //            list.
     if (!old_out_col->IsUsed()) {
-      std::cerr << "K";
       non_local_changes = true;
       in_col->view->is_canonical = false;
       continue;
@@ -346,7 +333,6 @@ bool Node<QueryConstraint>::Canonicalize(
       old_out_col->ReplaceAllUsesWith(in_col);
 
       if (old_out_col->IsUsedIgnoreMerges()) {
-        std::cerr << "L";
         non_local_changes = true;
       }
 
@@ -358,7 +344,6 @@ bool Node<QueryConstraint>::Canonicalize(
 
     } else if (in_col->IsConstantRef()) {
       if (!old_out_col->IsConstantRef()) {
-        std::cerr << "M";
         non_local_changes = true;
       }
       old_out_col->CopyConstant(in_col);
@@ -372,7 +357,6 @@ bool Node<QueryConstraint>::Canonicalize(
     if (out_col) {
 
       if (old_out_col->IsUsedIgnoreMerges()) {
-        std::cerr << "N";
         non_local_changes = true;
       }
       old_out_col->ReplaceAllUsesWith(out_col);
@@ -387,7 +371,6 @@ bool Node<QueryConstraint>::Canonicalize(
       // column able to remove one of its outputs, so we'll mark it as non-
       // canonical so it can be updated by another pass.
       } else {
-        std::cerr << "O";
         non_local_changes = true;
         in_col->view->is_canonical = false;
       }

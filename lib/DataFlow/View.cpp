@@ -151,7 +151,6 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
     case kInvalidBeforeCanonicalize:
       ss << "<B><FONT COLOR=\"RED\">BEFORE";
       if (invalid_var) {
-        assert(false);
         ss << ' ' << invalid_var->SpellingRange();
       }
       ss << "</FONT></B>";
@@ -159,7 +158,6 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
     case kInvalidAfterCanonicalize:
       ss << "<B><FONT COLOR=\"RED\">AFTER";
       if (invalid_var) {
-        assert(false);
         ss << ' ' << invalid_var->SpellingRange();
       }
       ss << "</FONT></B>";
@@ -462,10 +460,6 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
     tuple->input_columns.AddUse(col);
   }
 
-  if (!CheckAllViewsMatch(tuple->input_columns, attached_columns)) {
-    tuple->valid = VIEW::kInvalidBeforeCanonicalize;
-  }
-
 #ifndef NDEBUG
   std::stringstream ss;
   ss << "GUARD(" << KindName();
@@ -540,7 +534,7 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
 
 #ifndef NDEBUG
   std::stringstream ss;
-  ss << "PROXY(" << KindName();
+  ss << "PROXY-CMP(" << KindName();
   if (!producer.empty()) {
     ss << ": " << producer;
   }
@@ -597,7 +591,7 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
                                          const UseList<COL> &cols2) {
   VIEW *prev_view = nullptr;
 
-  auto do_cols = [=, &prev_view] (const auto &cols) -> bool {
+  auto do_cols = [this, &prev_view] (const auto &cols) -> bool {
     for (auto col : cols) {
       if (!col->IsConstant()) {
         if (prev_view) {
