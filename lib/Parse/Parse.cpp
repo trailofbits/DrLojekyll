@@ -213,7 +213,12 @@ uint64_t ParsedVariable::Id(void) const noexcept {
 
 // A number corresponding to the order of appearance of this variable.
 unsigned ParsedVariable::Order(void) const noexcept {
-  return impl->appearance;
+  if (impl->appearance >= kMaxArity) {
+    return (impl->appearance - kMaxArity) +
+           static_cast<unsigned>(impl->context->clause->head_variables.size());
+  } else {
+    return impl->appearance;
+  }
 }
 
 // Iterate over each use of this variable.

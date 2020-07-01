@@ -192,7 +192,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
   return 0 != all_ret;
 }
 
-void QueryImpl::Simplify(void) {
+void QueryImpl::Simplify(const ErrorLog &log) {
   CandidateList views;
 
   // Start by applying CSE to the SELECTs only. This will improve
@@ -204,20 +204,20 @@ void QueryImpl::Simplify(void) {
 
   // Now canonicalize JOINs, which will eliminate columns of useless joins.
   for (auto join : joins) {
-    join->Canonicalize(this, false);
+    join->Canonicalize(this, false, log);
   }
 
   // Some of those useless JOINs are converted into TUPLEs, so canonicalize
   // those.
   for (auto tuple : tuples) {
-    tuple->Canonicalize(this, false);
+    tuple->Canonicalize(this, false, log);
   }
 
   RemoveUnusedViews();
   RelabelGroupIDs();
 }
 
-void QueryImpl::Canonicalize(bool sort) {
+void QueryImpl::Canonicalize(bool sort, const ErrorLog &log) {
   ForEachView([&] (VIEW *view) {
     view->is_canonical = false;
   });
@@ -226,7 +226,7 @@ void QueryImpl::Canonicalize(bool sort) {
   for (auto non_local_changes = true; non_local_changes; ) {
     non_local_changes = false;
     ForEachViewInDepthOrder([&] (VIEW *view) {
-      if (view->Canonicalize(this, sort)) {
+      if (view->Canonicalize(this, sort, log)) {
         non_local_changes = true;
       }
     });
@@ -236,7 +236,7 @@ void QueryImpl::Canonicalize(bool sort) {
   RelabelGroupIDs();
 }
 
-void QueryImpl::Optimize(void) {
+void QueryImpl::Optimize(const ErrorLog &log) {
   CandidateList views;
 
   auto do_cse = [&] (void) {
@@ -260,12 +260,15 @@ void QueryImpl::Optimize(void) {
   // Apply CSE to all views.
   do_cse();
 
-  Canonicalize(false);
+  Canonicalize(false, log);
 
   // Apply CSE to all canonical views.
   do_cse();
 
-  Canonicalize(true);
+  Canonicalize(true, log);
+  Canonicalize(true, log);
+
+  RemoveUnusedViews();
 }
 
 }  // namespace hyde

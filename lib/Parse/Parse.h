@@ -3,7 +3,6 @@
 #pragma once
 
 #include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Parse/ErrorLog.h>
 
 #include <memory>
 #include <unordered_map>
@@ -12,8 +11,12 @@
 #include <drlojekyll/Display/Display.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Lex/Token.h>
+#include <drlojekyll/Parse/ErrorLog.h>
 
 namespace hyde {
+
+static constexpr size_t kMaxArity = 63;
+
 namespace parse {
 
 union IdInterpreter {
@@ -143,7 +146,13 @@ class Node<ParsedVariable> {
   Token name;
   TypeLoc type;
 
-  // What was the order of appearance of this variable?
+  // What was the order of appearance of this variable? The head variables,
+  // even invented ones, have appearance values in the range `[0, N)` if there
+  // are `N` head variables, and the body variables have appearance values in
+  // the range `[kMaxArity, kMaxArity+M)` if there are `M` body variables.
+  //
+  // The function `ParsedVariable::Order` normalizes this value such that if
+  // `N < kMaxArity`, then the order numbers range from `[0, N+M)`.
   unsigned appearance{0};
 
   // Next variable used in `clause`, which may be a logically different

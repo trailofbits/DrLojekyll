@@ -127,6 +127,10 @@
 //    TODO:
 //      Custom zero-arg specialization of a generator that increments a number
 //      for yielding. I.e. `__gen.Emit()` increments the loop count.
+//
+//    TODO:
+//      Code generation that has a notion of "regions" and uses C++ templates
+//      and lambdas to recover nested for loop iteration.
 namespace hyde {
 extern OutputStream *gOut;
 
@@ -280,41 +284,6 @@ static void FillContainerFromRange(T &container, Range range) {
   container.insert(container.end(), range.begin(), range.end());
 }
 
-// Apply a callback `cb` to each view targeted (i.e. that uses one or more of
-// the columns produced) by `view`.
-template <typename T>
-void ForEachUser(QueryView view, T cb) {
-  std::unordered_set<QueryView> target_views;
-  for (QueryColumn col : view.Columns()) {
-    col.ForEachUser([&target_views] (QueryView user_view) {
-      target_views.insert(user_view);
-    });
-  }
-
-  // Sort the views by depth. We want a consistent topological ordering of the
-  // nodes, so that we always send new information to the shallowest node
-  // first.
-  std::vector<QueryView> ordered_views;
-  ordered_views.reserve(target_views.size());
-  ordered_views.insert(ordered_views.end(), target_views.begin(),
-                       target_views.end());
-
-  std::sort(ordered_views.begin(), ordered_views.end(),
-            [] (QueryView a, QueryView b) {
-              if (a.Depth() < b.Depth()) {
-                return true;
-              } else if (a.Depth() > b.Depth()) {
-                return false;
-              } else {
-                return a.UniqueId() < b.UniqueId();  // A bit arbitrary :-(
-              }
-            });
-
-  for (auto target_view : ordered_views) {
-    cb(target_view);
-  }
-}
-
 // We keep track of a bitset of 0/1 reference counters for each view, so that
 // we can know for each (source, dest) pairing, if source produced a given tuple
 // to dest.
@@ -322,7 +291,7 @@ static void DefineMergeSources(OutputStream &os, Query query) {
   std::unordered_map<QueryView, std::vector<QueryView>> to_from;
 
   query.ForEachView([&] (QueryView view) {
-    ForEachUser(view, [&] (QueryView target_view) {
+    view.ForEachUser([&] (QueryView target_view) {
       to_from[target_view].push_back(view);
     });
   });
@@ -455,7 +424,7 @@ static void CallUsers(OutputStream &os, QueryView view,
     assert(view.CanProduceDeletions());
   }
 
-  ForEachUser(view, [&] (QueryView target_view) {
+  view.ForEachUser([&] (QueryView target_view) {
 
     auto case_key = std::make_tuple(view.UniqueId(), target_view.UniqueId(),
                                     is_add);
@@ -2195,7 +2164,7 @@ static void DefineStep(
 
     auto next_depth = depth;
     for (auto view : views) {
-      ForEachUser(view, [&] (QueryView target_view) {
+      view.ForEachUser([&] (QueryView target_view) {
         next_depth = std::min<unsigned>(target_view.Depth(), next_depth);
       });
     }

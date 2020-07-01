@@ -36,6 +36,9 @@ template <typename T>
 class UseRef;
 
 template <typename T>
+class WeakUseRef;
+
+template <typename T>
 class Def;
 
 template <typename T>
@@ -62,6 +65,9 @@ class Use {
  private:
   template <typename>
   friend class UseRef;
+
+  template <typename>
+  friend class WeakUseRef;
 
   template <typename>
   friend class UseList;
@@ -438,6 +444,9 @@ class Def {
   friend class UseRef;
 
   template <typename>
+  friend class WeakUseRef;
+
+  template <typename>
   friend class UseList;
 
   template <typename>
@@ -535,6 +544,10 @@ class UseRef {
   UseRef(Use<T> *use_)
       : use(use_) {}
 
+  void Swap(UseRef<T> &that) {
+    std::swap(use, that.use);
+  }
+
   UseRef(void) = default;
 
   ~UseRef(void) {
@@ -570,6 +583,56 @@ class UseRef {
   UseRef(UseRef<T> &&) noexcept = delete;
   UseRef<T> &operator=(const UseRef<T> &) = delete;
   UseRef<T> &operator=(UseRef<T> &&) noexcept = delete;
+
+  Use<T> *use{nullptr};
+};
+
+template <typename T>
+class WeakUseRef {
+ public:
+  WeakUseRef(Use<T> *use_)
+      : use(use_) {}
+
+  void Swap(WeakUseRef<T> &that) {
+    std::swap(use, that.use);
+  }
+
+  WeakUseRef(void) = default;
+
+  ~WeakUseRef(void) {
+    if (use) {
+      const auto use_copy = use;
+      use = nullptr;
+      use_copy->def_being_used->EraseWeakUse(use_copy);
+      delete use_copy;
+    }
+  }
+
+  T *operator->(void) const noexcept {
+    return use->def_being_used;
+  }
+
+  T &operator*(void) const noexcept {
+    return *(use->def_being_used);
+  }
+
+  T *get(void) const noexcept {
+    return use ? use->def_being_used : nullptr;
+  }
+
+  operator bool(void) const noexcept {
+    return !!use;
+  }
+
+  void ClearWithoutErasure(void) {
+    use = nullptr;
+  }
+
+ private:
+  WeakUseRef(const WeakUseRef<T> &) = delete;
+  WeakUseRef(WeakUseRef<T> &&) noexcept = delete;
+  WeakUseRef<T> &operator=(const WeakUseRef<T> &) = delete;
+  WeakUseRef<T> &operator=(WeakUseRef<T> &&) noexcept = delete;
 
   Use<T> *use{nullptr};
 };

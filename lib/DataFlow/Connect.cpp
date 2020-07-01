@@ -68,8 +68,9 @@ void QueryImpl::ConnectInsertsToSelects(void) {
           (void) merge->columns.Create(in_col->var, merge, in_col->id);
         }
 
-        (void) ins_tuple->columns.Create(in_col->var, ins_tuple, in_col->id);
+        auto out_col = ins_tuple->columns.Create(in_col->var, ins_tuple, in_col->id);
         ins_tuple->input_columns.AddUse(in_col);
+        out_col->CopyConstant(in_col);
       }
 
       merge->merged_views.AddUse(ins_tuple);

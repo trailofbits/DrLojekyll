@@ -96,7 +96,10 @@ static unsigned VarId(ClauseContext &context, ParsedVariable var) {
 
   // If this var is a clause parameter.
   if (auto vc = context.var_to_col[var]; vc) {
-    return vc->FindAs<VarColumn>()->id;
+    const auto ret_id = vc->FindAs<VarColumn>()->id;
+    DEBUG((*gOut) << "Looking for clause param " << var << " (id=" << vc->id
+                  << ") got id=" << ret_id << '\n';)
+    return ret_id;
   }
 
   assert(false);
@@ -114,12 +117,17 @@ static void CreateVarId(ClauseContext &context, ParsedVariable var) {
   std::unique_ptr<VarColumn> vc(vc_ptr);
   context.vars[order].swap(vc);
   assert(!vc);
+  assert(!context.var_id_to_col.count(var.UniqueId()));
   context.var_id_to_col.emplace(var.UniqueId(), vc_ptr);
 
   auto &prev_vc = context.var_to_col[var];
   if (!prev_vc) {
+    DEBUG((*gOut) << "INIT: " << vc_ptr->var << " (id=" << vc_ptr->id << ")\n";)
     prev_vc = vc_ptr;
   } else {
+    DEBUG((*gOut) << "INIT: Unioning " << vc_ptr->var << " (id=" << vc_ptr->id
+                  << ") with " << prev_vc->var << " (id=" << prev_vc->id
+                  << ")\n";)
     DisjointSet::UnionInto(vc_ptr, prev_vc);
   }
 }
@@ -257,6 +265,7 @@ static VIEW *GuardWithWithInequality(QueryImpl *query, ParsedClause clause,
     }
 
     CMP *filter = query->constraints.Create(cmp.Operator());
+    filter->spelling_range = cmp.SpellingRange();
     filter->input_columns.AddUse(lhs_col);
     filter->input_columns.AddUse(rhs_col);
 
@@ -709,6 +718,7 @@ static COL *FindColVarInView(ClauseContext &context, VIEW *view,
   // Try to find the column as a constant.
   auto const_col = context.col_id_to_constant[id];
   if (prefer_constant && const_col) {
+    DEBUG((*gOut) << "Found constant " << const_col->var << " id=" << id << " for var " << var << '\n'; )
     return const_col;
   }
 
@@ -1445,7 +1455,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   }
 
-  context.col_id_to_constant.resize(context.vars.size());
+  context.col_id_to_constant.resize(context.vars.size(), nullptr);
 
   const auto clause_range = clause.SpellingRange();
 
@@ -1461,6 +1471,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     const auto key = ss.str();
 
     auto vc = context.var_id_to_col[var.UniqueId()];
+    if (!vc) {
+      log.Append(clause_range, var.SpellingRange())
+          << "Internal error: Could not find column for variable '" << var << "'";
+      continue;
+    }
+
     auto &const_col = context.spelling_to_col[key];
     auto col_id = vc->FindAs<VarColumn>()->id;
 
@@ -1506,6 +1522,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
 
     if (cmp.Operator() == ComparisonOperator::kEqual) {
+      DEBUG((*gOut) << "CMP: Unioning " << lhs_vc->var << " (id=" << lhs_vc->id
+                    << ") with " << rhs_vc->var << " (id=" << rhs_vc->id
+                    << ")\n";)
       DisjointSet::Union(lhs_vc, rhs_vc);
     }
   }
@@ -1550,7 +1569,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   // We have no relations, so lets create a single view that has all of the
-  // constants.
+  // constants. It's possible that we have functors or comparisons that need
+  // to operate on these constants, so this is why be bring them in here.
   if (pred_views.empty()) {
     TUPLE *tuple = query->tuples.Create();
     auto col_index = 0u;
@@ -1670,21 +1690,21 @@ std::optional<Query> Query::Build(const ParsedModule &module,
 
   ClauseContext context;
 
+  auto num_errors = log.Size();
+
   for (auto clause : module.Clauses()) {
+    context.Reset();
     if (!BuildClause(impl.get(), clause, context, log)) {
       return std::nullopt;
     }
-
-    context.Reset();
     impl->RemoveUnusedViews();
   }
 
   for (auto clause : module.DeletionClauses()) {
+    context.Reset();
     if (!BuildClause(impl.get(), clause, context, log)) {
       return std::nullopt;
     }
-
-    context.Reset();
     impl->RemoveUnusedViews();
   }
 
@@ -1695,9 +1715,14 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
   impl->TrackDifferentialUpdates();
-  impl->Simplify();
+  impl->Simplify(log);
   impl->ConnectInsertsToSelects();
-  impl->Optimize();
+  impl->Optimize(log);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
+  impl->SinkConditions();
   impl->TrackDifferentialUpdates();
 
   return Query(std::move(impl));

@@ -7,12 +7,13 @@
 
 #include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 
 namespace hyde {
 
 class ErrorLog;
+class QueryImpl;
+class OutputStream;
 
 namespace query {
 
@@ -39,6 +40,8 @@ class QueryNode {
   }
 
  protected:
+  friend class ::hyde::QueryImpl;
+
   Node<T> *impl;
 };
 
@@ -268,7 +271,7 @@ class QueryView : public query::QueryNode<QueryView> {
   unsigned Depth(void) const noexcept;
 
   // Returns a useful string of internal metadata about this view.
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
   // Get a hash of this view.
   uint64_t Hash(void) const noexcept;
@@ -282,6 +285,38 @@ class QueryView : public query::QueryNode<QueryView> {
   // two views have different arities, column types, or are from different
   // queries.
   bool ReplaceAllUsesWith(EqualitySet &eq, QueryView that) const noexcept;
+
+  // Apply a callback `cb` to each view that uses the columns of this view.
+  template <typename CB>
+  void ForEachUser(CB cb) {
+    std::vector<QueryView> target_views;
+    for (QueryColumn col : Columns()) {
+      col.ForEachUser([&target_views] (QueryView user_view) {
+        target_views.push_back(user_view);
+      });
+    }
+
+    // Sort the views by depth. We want a consistent topological ordering of the
+    // nodes, so that we always send new information to the shallowest node
+    // first.
+    std::sort(
+        target_views.begin(), target_views.end(),
+        [] (QueryView a, QueryView b) { return a.UniqueId() < b.UniqueId(); });
+
+    auto it = std::unique(
+        target_views.begin(), target_views.end(),
+        [] (QueryView a, QueryView b) { return a.UniqueId() == b.UniqueId(); });
+
+    target_views.erase(it, target_views.end());
+
+    std::sort(
+        target_views.begin(), target_views.end(),
+        [] (QueryView a, QueryView b) { return a.Depth() < b.Depth(); });
+
+    for (auto target_view : target_views) {
+      cb(target_view);
+    }
+  }
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -302,7 +337,7 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
   QueryRelation Relation(void) const noexcept;
   QueryStream Stream(void) const noexcept;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   friend class QueryRelation;
@@ -354,7 +389,7 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // this input column is not itself assocated with a pivot set.
   QueryColumn NthInputMergedColumn(unsigned n) const noexcept;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
@@ -405,7 +440,7 @@ class QueryMap : public query::QueryNode<QueryMap> {
   // The range of input group columns.
   UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryMap>::QueryNode;
@@ -466,7 +501,7 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
   // The functor doing the aggregating.
   const ParsedFunctor &Functor(void) const noexcept;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryAggregate>::QueryNode;
@@ -498,7 +533,7 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   // Range of views unioned together by this MERGE.
   UsedNodeRange<QueryView> MergedViews(void) const;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryMerge>::QueryNode;
@@ -526,7 +561,7 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
   UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryConstraint>::QueryNode;
@@ -552,7 +587,7 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
   QueryColumn NthInputColumn(unsigned n) const noexcept;
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryInsert>::QueryNode;
@@ -576,7 +611,7 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
   QueryColumn NthInputColumn(unsigned n) const noexcept;
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryTuple>::QueryNode;
@@ -612,7 +647,7 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 
   const ParsedFunctor &NthValueMergeFunctor(unsigned n) const noexcept;
 
-  std::string DebugString(void) const noexcept;
+  OutputStream &DebugString(OutputStream &) const noexcept;
 
  private:
   using query::QueryNode<QueryKVIndex>::QueryNode;

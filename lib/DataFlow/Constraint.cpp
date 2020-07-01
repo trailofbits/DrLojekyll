@@ -2,6 +2,7 @@
 
 #include "Query.h"
 
+#include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
 namespace hyde {
@@ -38,13 +39,12 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
 // replacements easier. If this constraint's operator is unordered, then we
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
-bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
-  if (is_dead) {
+bool Node<QueryConstraint>::Canonicalize(
+    QueryImpl *query, bool sort, const ErrorLog &log) {
+  if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
-
-  is_canonical = AttachedColumnsAreCanonical(sort);
 
   if (valid == VIEW::kValid &&
       !CheckAllViewsMatch(input_columns, attached_columns)) {
@@ -54,8 +54,12 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
 
   // Check to see if the input columns are ordered correctly. We can reorder
   // them only in the case of (in)equality comparisons.
-  const auto is_unordered = ComparisonOperator::kEqual == op ||
-                            ComparisonOperator::kNotEqual == op;
+  const auto is_equality = ComparisonOperator::kEqual == op;
+  const auto is_unordered = is_equality || ComparisonOperator::kNotEqual == op;
+
+  auto [is_canonical_, non_local_changes] = AttachedColumnsAreCanonical(
+      (is_equality ? 1u : 2u), sort);
+  is_canonical = is_canonical_;
 
   const auto lhs_col = input_columns[0];
   const auto rhs_col = input_columns[1];
@@ -68,24 +72,25 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
   //            if we end up guarding with a TUPLE then it will definitely look
   //            used.
   const auto result_col = columns[0];
-  const auto result_col_is_directly_used = result_col->IsUsedIgnoreMerges();
 
-  if ((is_unordered && lhs_sort > rhs_sort) ||
-      lhs_col->IsConstant() ||
-      rhs_col->IsConstant()) {
+  const auto lhs_is_const = lhs_col->IsConstantOrConstantRef();
+  const auto rhs_is_const = rhs_col->IsConstantOrConstantRef();
+
+  if ((is_unordered && sort && lhs_sort > rhs_sort) ||
+      (lhs_col == rhs_col) ||
+      (is_equality && (lhs_is_const != rhs_is_const))) {
     hash = 0;
     is_canonical = false;
   }
 
   if (is_canonical) {
-    return false;
+    return non_local_changes;
   }
 
   // If this view is used by a merge then we're not allowed to re-order the
   // columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
 //  (void) GuardWithTuple(query);
-  auto non_local_changes = false;
 
   // We need to re-order the input columns, and possibly also the output
   // columns to match the input ordering.
@@ -102,42 +107,53 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
 
     // This filter is no longer needed.
     if (lhs_col == rhs_col) {
-      result_col->ReplaceAllUsesWith(lhs_col);
+
+      auto tuple = query->tuples.Create();
+      for (auto col : columns) {
+        tuple->columns.Create(col->var, tuple, col->id);
+      }
+
+      ReplaceAllUsesWith(tuple);
+
+      tuple->input_columns.AddUse(lhs_col);
+      tuple->columns[0]->CopyConstant(lhs_col);
 
       for (auto j = 0u; j < attached_columns.Size(); ++j, ++i) {
-        columns[i]->ReplaceAllUsesWith(attached_columns[j]);
+        tuple->input_columns.AddUse(attached_columns[j]);
+        tuple->columns[i]->CopyConstant(attached_columns[j]);
       }
 
       input_columns.Clear();  // Remove this as taking inputs.
       attached_columns.Clear();
       hash = 0;
+      is_used = false;
       is_dead = true;
       is_canonical = true;
       return true;
     }
 
     // This may or may not be a problem; we've found something like `0 = 1`, or
-    // possibly something like `1 = 0x1`.
-    if (lhs_col->IsConstant() && rhs_col->IsConstant()) {
-
-      result_col->ReplaceAllUsesWith(lhs_col);
-      if (result_col_is_directly_used) {
+    // possibly something like `1 = 0x1`. This means that we can't propagate the
+    // constants, lest the comparison actually fail.
+    if (lhs_is_const && rhs_is_const) {
+      if (!result_col->IsConstantRef()) {
         non_local_changes = true;
       }
+      result_col->CopyConstant(lhs_col);
 
     // Something like `0 = A`.
-    } else if (lhs_col->IsConstant()) {
-      result_col->ReplaceAllUsesWith(lhs_col);
-      if (result_col_is_directly_used) {
+    } else if (lhs_is_const) {
+      if (!result_col->IsConstantRef()) {
         non_local_changes = true;
       }
+      result_col->CopyConstant(lhs_col);
 
     // Something like `A = 0`.
-    } else if (rhs_col->IsConstant()) {
-      result_col->ReplaceAllUsesWith(rhs_col);
-      if (result_col_is_directly_used) {
+    } else if (rhs_is_const) {
+      if (!result_col->IsConstantRef()) {
         non_local_changes = true;
       }
+      result_col->CopyConstant(rhs_col);
     }
 
     // Input columns are out of order.
@@ -154,6 +170,8 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     in_to_out.emplace(lhs_col, new_result_col);
     in_to_out.emplace(rhs_col, new_result_col);
 
+    new_result_col->CopyConstant(result_col);
+
   // For inequality, we can re-order the inputs, but must also re-order the
   // outputs.
   } else if (ComparisonOperator::kNotEqual == op && lhs_sort > rhs_sort) {
@@ -165,8 +183,19 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     // satisfy this particular constraint.
     if (lhs_col == rhs_col) {
 
-      // TODO(pag): Propagate two invalid constants?
-      assert(false);
+      auto outer_range = spelling_range;
+      if (outer_range.IsInvalid()) {
+        outer_range = DisplayRange(columns[0]->var.SpellingRange().From(),
+                                   columns[0]->var.SpellingRange().To());
+      }
+
+      auto err = log.Append(outer_range);
+      err << "Unsatisfiable inequality between '" << columns[0]->var
+          << "' and '" << columns[1]->var
+          << "' ends up comparing the same values";
+
+      err.Note(lhs_col->var.SpellingRange(), lhs_col->var.SpellingRange())
+          << "Value comes from here";
 
       hash = 0;
       is_canonical = true;
@@ -175,15 +204,19 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     }
 
     // Constant propagation of the LHS col.
-    if (lhs_col->IsConstant() && old_lhs_out->IsUsedIgnoreMerges()) {
-      old_lhs_out->ReplaceAllUsesWith(lhs_col);
-      non_local_changes = true;
+    if (lhs_col->IsConstantOrConstantRef()) {
+      if (!old_lhs_out->IsConstantRef()) {
+        non_local_changes = true;
+      }
+      old_lhs_out->CopyConstant(lhs_col);
     }
 
     // Constant propagation of the RHS col.
-    if (rhs_col->IsConstant() && old_rhs_out->IsUsedIgnoreMerges()) {
-      old_rhs_out->ReplaceAllUsesWith(rhs_col);
-      non_local_changes = true;
+    if (rhs_col->IsConstantOrConstantRef()) {
+      if (!old_rhs_out->IsConstantRef()) {
+        non_local_changes = true;
+      }
+      old_rhs_out->CopyConstant(rhs_col);
     }
 
     // The input columns were out of order, so put them in the right order.
@@ -201,6 +234,9 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
         old_lhs_out->var, this, old_lhs_out->id);
     old_lhs_out->ReplaceAllUsesWith(new_rhs_out);
 
+    new_lhs_out->CopyConstant(old_rhs_out);
+    new_rhs_out->CopyConstant(old_lhs_out);
+
     in_to_out.emplace(rhs_col, new_lhs_out);
     in_to_out.emplace(lhs_col, new_rhs_out);
 
@@ -211,9 +247,19 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     // This is kind of bad but totally possible. We've proven that we can't
     // satisfy this particular constraint.
     if (lhs_col == rhs_col) {
+      auto outer_range = spelling_range;
+      if (outer_range.IsInvalid()) {
+        outer_range = DisplayRange(columns[0]->var.SpellingRange().From(),
+                                   columns[0]->var.SpellingRange().To());
+      }
 
-      // TODO(pag): Propagate two invalid constants?
-      assert(false);
+      auto err = log.Append(outer_range);
+      err << "Unsatisfiable inequality between '" << columns[0]->var
+          << "' and '" << columns[1]->var
+          << "' ends up comparing the same values";
+
+      err.Note(lhs_col->var.SpellingRange(), lhs_col->var.SpellingRange())
+          << "Value comes from here";
 
       hash = 0;
       is_canonical = true;
@@ -225,19 +271,19 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     const auto old_rhs_out = columns[1];
 
     // Constant propagation of the LHS col.
-    if (lhs_col->IsConstant()) {
-      if (old_lhs_out->IsUsedIgnoreMerges()) {
+    if (lhs_col->IsConstantOrConstantRef()) {
+      if (!old_lhs_out->IsConstantRef()) {
         non_local_changes = true;
       }
-      old_lhs_out->ReplaceAllUsesWith(lhs_col);
+      old_lhs_out->CopyConstant(lhs_col);
     }
 
     // Constant propagation of the RHS col.
-    if (rhs_col->IsConstant()) {
-      if (old_rhs_out->IsUsedIgnoreMerges()) {
+    if (rhs_col->IsConstantOrConstantRef()) {
+      if (!old_rhs_out->IsConstantRef()) {
         non_local_changes = true;
       }
-      old_rhs_out->ReplaceAllUsesWith(rhs_col);
+      old_rhs_out->CopyConstant(rhs_col);
     }
 
     // We don't need to re-order anything, but to be uniform with the rest and
@@ -250,6 +296,9 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     const auto new_rhs_out = new_output_cols.Create(
         old_rhs_out->var, this, old_rhs_out->id);
     old_rhs_out->ReplaceAllUsesWith(new_rhs_out);
+
+    new_lhs_out->CopyConstant(old_lhs_out);
+    new_rhs_out->CopyConstant(old_rhs_out);
 
     in_to_out.emplace(lhs_col, new_lhs_out);
     in_to_out.emplace(rhs_col, new_rhs_out);
@@ -279,6 +328,8 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     // If the old input column is a constant, then propagate it rather than
     // attach it.
     if (in_col->IsConstant()) {
+
+      old_out_col->CopyConstant(in_col);
       old_out_col->ReplaceAllUsesWith(in_col);
 
       if (old_out_col->IsUsedIgnoreMerges()) {
@@ -290,6 +341,12 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
       if (!old_out_col->IsUsed()) {
         continue;
       }
+
+    } else if (in_col->IsConstantRef()) {
+      if (!old_out_col->IsConstantRef()) {
+        non_local_changes = true;
+      }
+      old_out_col->CopyConstant(in_col);
     }
 
     auto &out_col = in_to_out[in_col];
@@ -303,6 +360,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
         non_local_changes = true;
       }
       old_out_col->ReplaceAllUsesWith(out_col);
+      out_col->CopyConstant(old_out_col);
 
       // Even though we've replaced the old output column, it ends up still
       // being used by a merge, so we need to keep it around.
@@ -333,6 +391,7 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query, bool sort) {
     const auto new_out_col = new_output_cols.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
+    new_out_col->CopyConstant(old_out_col);
   }
 
   attached_columns.Swap(new_attached_cols);
