@@ -232,9 +232,10 @@ class UseList {
 
     if (!is_weak) {
       if (owner && that.owner) {
-        owner->Update(User::gNextTimestamp++);
+        const auto t = User::gNextTimestamp++;
+        owner->Update(t);
         if (owner != that.owner) {
-          that.owner->Update(User::gNextTimestamp++);
+          that.owner->Update(t);
         }
       } else if (owner) {
         owner->Update(User::gNextTimestamp++);

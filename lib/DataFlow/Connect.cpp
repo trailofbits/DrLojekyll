@@ -54,6 +54,10 @@ void QueryImpl::ConnectInsertsToSelects(void) {
     for (INSERT *insert : insert_views) {
       const auto ins_tuple = tuples.Create();
 
+#ifndef NDEBUG
+      ins_tuple->producer = "INSERT";
+#endif
+
       for (auto cond : insert->positive_conditions) {
         ins_tuple->positive_conditions.AddUse(cond);
       }
@@ -138,6 +142,10 @@ void QueryImpl::ConnectInsertsToSelects(void) {
       // Create a TUPLE and MERGE that will read in a tuple of all incoming
       // data to the INSERTs, thus letting us remove the INSERTs.
       const auto sel_tuple = tuples.Create();
+
+#ifndef NDEBUG
+      sel_tuple->producer = "SELECT";
+#endif
 
       for (auto cond : select->positive_conditions) {
         sel_tuple->positive_conditions.AddUse(cond);

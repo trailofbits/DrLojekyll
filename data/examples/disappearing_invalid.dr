@@ -1,0 +1,11 @@
+; This example exists to try to create a join that is infeasible due to one side being infeasable, but where
+; optimization nonetheless permits it to work.
+
+#message output(i32 A)
+#message input(i32 A)
+#local impossible(A, B)
+#local one(i32 A)
+
+one(1).
+impossible(1, B) : input(B), one(B), B=2.
+output(A) : impossible(A, B).

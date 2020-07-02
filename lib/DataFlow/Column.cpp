@@ -95,7 +95,15 @@ uint64_t Node<QueryColumn>::Sort(void) noexcept {
 }
 
 void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
-  if (auto const_col = maybe_const_col->AsConstant(); const_col) {
+  if (auto const_col = maybe_const_col->AsConstant();
+      const_col && !referenced_constant) {
+
+    // We've done a kind of constant propagation, so mark the using views
+    // as non-canonical.
+    this->ForEachUse<VIEW>([] (VIEW *view, COL *) {
+      view->is_canonical = false;
+    });
+
     UseRef<COL> new_real_constant(const_col->CreateUse(this->view));
     referenced_constant.Swap(new_real_constant);
   }

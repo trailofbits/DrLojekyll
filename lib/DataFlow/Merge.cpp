@@ -174,6 +174,10 @@ bool Node<QueryMerge>::Canonicalize(
       assert(view->columns.Size() == num_cols);
 
       TUPLE * const guarded_view = query->tuples.Create();
+#ifndef NDEBUG
+      guarded_view->producer = "MERGE-GUARD";
+#endif
+
       guarded_view->is_canonical = false;
 
       for (auto i = 0u; i < num_cols; ++i) {

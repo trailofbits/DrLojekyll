@@ -1712,7 +1712,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     join->is_used = false;
   }
 
-  impl->RemoveUnusedViews();
+//  impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
   impl->TrackDifferentialUpdates();
   impl->Simplify(log);

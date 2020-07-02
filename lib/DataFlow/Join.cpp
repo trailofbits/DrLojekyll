@@ -7,6 +7,7 @@
 #include <drlojekyll/Util/EqualitySet.h>
 
 #include <sstream>
+#include <iostream>
 
 namespace hyde {
 
@@ -472,12 +473,6 @@ void Node<QueryJoin>::PropagateConstAcrossPivotSet(
 //            a cross-product.
 bool Node<QueryJoin>::Canonicalize(
     QueryImpl *query, bool sort, const ErrorLog &log) {
-  (void) query;
-
-  if (is_canonical) {
-    VerifyPivots();
-    return false;
-  }
 
   if (is_dead || out_to_in.empty()) {
     is_dead = true;
@@ -489,18 +484,14 @@ bool Node<QueryJoin>::Canonicalize(
   assert(out_to_in.size() == columns.Size());
 
   auto non_local_changes = false;
+  auto need_remove_non_pivots = false;
+  auto all_pivots_are_const_or_constref = true;
 
   for (auto &[out_col, in_cols] : out_to_in) {
     assert(!in_cols.Empty());
     COL *same_col = in_cols[0];
     COL *same_const = same_col->IsConstant() ? same_col : nullptr;
     COL *same_const_ref = same_col->AsConstant();
-
-    // TODO(pag): Next up: look to see if all incoming joins are references
-    //            to the same constant, even if some are constant and some
-    //            are constant refs. If so, then eliminate the JOIN pivot,
-    //            guarding as necessary.
-
     COL *first_const = nullptr;
     COL *first_const_ref = nullptr;
 
@@ -535,9 +526,10 @@ bool Node<QueryJoin>::Canonicalize(
         // If this isn't a pivot then do const propagation now, otherwise we'll
         // defer to below for that.
         if (!is_pivot) {
-          if (out_col->IsUsedIgnoreMerges()) {
+          if (!out_is_const_ref || out_col->IsUsedIgnoreMerges()) {
             non_local_changes = true;
           }
+          out_col->CopyConstant(first_const);
           out_col->ReplaceAllUsesWith(first_const);
         }
 
@@ -560,6 +552,9 @@ bool Node<QueryJoin>::Canonicalize(
 
         // Not all columns are constants or constant refs.
         same_const_ref = nullptr;
+
+        // Not all pivots are constants or constant refs.
+        all_pivots_are_const_or_constref = false;
       }
     }
 
@@ -568,19 +563,31 @@ bool Node<QueryJoin>::Canonicalize(
     if (same_const) {
       ReplacePivotWithConstant(query, out_col, same_const);
       Canonicalize(query, sort, log);
+      std::cerr << "A";
       return true;
 
     // All incoming pivot values are either constant, or constant refs, and
     // they all refer to the same constant. We need to keep this pivot around
     // to enforce a data dependency, but we can do constant propagation on the
     // output, thus "breaking" the control dependency.
+    //
+    // TODO(pag): This is disabled for now, as it's too aggressive / myopic. The
+    //            issue comes up in `disappearing_invalid.dr`, where over-
+    //            aggressive constant propagation will turn the following
+    //            program:
+    //
+    //                one(1).
+    //                impossible(1, B) : one(B), B=2.
+    //                output(A) : input(A), impossible(A, B).
+    //
+    //            into one that behaves as if it contained only `output(1).`.
     } else if (same_const_ref) {
-
-      if (!out_is_const_ref || out_col->IsUsedIgnoreMerges()) {
-        non_local_changes = true;
-      }
-
-      same_const_ref->ReplaceAllUsesWith(same_const_ref);
+//      if (!out_is_const_ref || out_col->IsUsedIgnoreMerges()) {
+//        std::cerr << "B";
+//        non_local_changes = true;
+//      }
+//
+//      out_col->ReplaceAllUsesWith(same_const_ref);
 
     // At least one of the pivots is a reference to a constant; we will inject
     // comparisons across all incominging pivots to ensure that they match this
@@ -589,6 +596,7 @@ bool Node<QueryJoin>::Canonicalize(
       if (!out_is_const_ref) {
         PropagateConstAcrossPivotSet(query, first_const_ref->AsConstant(), in_cols);
         Canonicalize(query, sort, log);
+        std::cerr << "C";
         return true;
       }
 
@@ -602,9 +610,57 @@ bool Node<QueryJoin>::Canonicalize(
       if (!out_is_const_ref) {
         PropagateConstAcrossPivotSet(query, first_const, in_cols);
         Canonicalize(query, sort, log);
+        std::cerr << "D";
         return true;
       }
     }
+
+    // Check to see if we should try to remove non-pivot output columns
+    // (because they aren't used).
+    if (!need_remove_non_pivots && in_cols.Size() == 1 && !out_col->IsUsed()) {
+      is_canonical = false;
+      need_remove_non_pivots = true;
+    }
+  }
+
+  if (!non_local_changes && is_canonical) {
+    return false;
+  }
+
+  // There is at least one output column that isn't needed; go remove it.
+  if (need_remove_non_pivots) {
+    DefList<COL> new_columns(this);
+    std::unordered_map<COL *, UseList<COL>> new_out_to_in;
+
+    auto col_index = 0u;
+    for (auto &[out_col, in_cols] : out_to_in) {
+      if (in_cols.Size() != 1u || out_col->IsUsed()) {
+        auto new_out_col = new_columns.Create(
+            out_col->var, this, out_col->id, col_index++);
+        new_out_to_in.emplace(new_out_col, this);
+        new_out_col->CopyConstant(out_col);
+        out_col->ReplaceAllUsesWith(new_out_col);
+      }
+    }
+
+    col_index = 0u;
+    for (auto &[out_col, in_cols] : out_to_in) {
+      if (in_cols.Size() != 1u || out_col->IsUsed()) {
+        auto in_cols_it = new_out_to_in.find(new_columns[col_index++]);
+        in_cols_it->second.Swap(in_cols);
+      }
+
+//      // We have to keep this constant ref alive because otherwise we might
+//      // risk turning some bad programs into good programs.
+//      } else if (in_cols[0]->IsConstantRef()) {
+//        attached_columns.AddUse(in_cols[0]);
+//      }
+    }
+
+    columns.Swap(new_columns);
+    out_to_in.swap(new_out_to_in);
+    non_local_changes = true;
+    std::cerr << "X";
   }
 
   std::vector<VIEW *> seen_views;
@@ -622,6 +678,7 @@ bool Node<QueryJoin>::Canonicalize(
 
   if (seen_views.size() < joined_views.Size()) {
     non_local_changes = true;
+    std::cerr << "E";
 
     UseList<VIEW> new_joined_views(this);
     for (auto view : seen_views) {
@@ -629,6 +686,43 @@ bool Node<QueryJoin>::Canonicalize(
     }
 
     joined_views.Swap(new_joined_views);
+  }
+
+  // This JOIN isn't needed. If all incoming things are constant then by the
+  // time we get down here, we should have sunk conditions down to all the
+  // source views
+  if (joined_views.Empty() ||
+      (all_pivots_are_const_or_constref && joined_views.Size() == 1)) {
+    TUPLE *tuple = query->tuples.Create();
+
+    for (auto &[out_col, in_cols] : out_to_in) {
+      COL *new_out_col = tuple->columns.Create(out_col->var, tuple, out_col->id);
+      COL *new_in_col = in_cols[0];
+      for (auto in_col : in_cols) {
+        if (in_col->IsConstantRef()) {
+          new_in_col = in_col;
+          break;
+        }
+      }
+
+      tuple->input_columns.AddUse(new_in_col);
+      new_out_col->CopyConstant(new_in_col);
+    }
+
+#ifndef NDEBUG
+    std::stringstream ss;
+    ss << "JOIN-ELIM-CONSTREF(" << producer << ")";
+    tuple->producer = ss.str();
+#endif
+
+    ReplaceAllUsesWith(tuple);
+
+    is_canonical = true;
+    is_dead = true;
+    out_to_in.clear();
+
+    std::cerr << "F";
+    return true;
   }
 
   is_canonical = true;

@@ -195,8 +195,16 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
 
 // Invoked any time time that any of the columns used by this view are
 // modified.
-void Node<QueryView>::Update(uint64_t /* next_timestamp */) {
-//  is_canonical = false;
+void Node<QueryView>::Update(uint64_t next_timestamp) {
+  if (is_canonical) {
+    is_canonical = false;
+    for (auto col : columns) {
+      col->ForEachUse<VIEW>([=] (VIEW *user, COL *) {
+        user->is_canonical = false;
+      });
+    }
+  }
+
 //  if (timestamp >= next_timestamp) {
 //    return;
 //  }
@@ -205,11 +213,7 @@ void Node<QueryView>::Update(uint64_t /* next_timestamp */) {
 //  hash = 0;
 //  depth = 0;
 //
-//  for (auto col : columns) {
-//    col->ForEachUse<VIEW>([=] (VIEW *user, COL *) {
-//      user->Update(next_timestamp);
-//    });
-//  }
+
 //
 //  // Update merges.
 //  ForEachUse<VIEW>([=] (VIEW *user, VIEW *) {

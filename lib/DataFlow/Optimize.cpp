@@ -3,7 +3,7 @@
 #include "Query.h"
 
 #include <drlojekyll/Util/EqualitySet.h>
-
+#include <iostream>
 namespace hyde {
 namespace {
 
@@ -227,6 +227,7 @@ void QueryImpl::Canonicalize(bool sort, const ErrorLog &log) {
     non_local_changes = false;
     ForEachViewInDepthOrder([&] (VIEW *view) {
       if (view->Canonicalize(this, sort, log)) {
+        std::cerr << view->KindName() << '\n';
         non_local_changes = true;
       }
     });
@@ -265,7 +266,6 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   // Apply CSE to all canonical views.
   do_cse();
 
-  Canonicalize(true, log);
   Canonicalize(true, log);
 
   RemoveUnusedViews();

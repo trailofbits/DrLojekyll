@@ -109,6 +109,11 @@ bool Node<QueryConstraint>::Canonicalize(
     if (lhs_col == rhs_col) {
 
       auto tuple = query->tuples.Create();
+
+#ifndef NDEBUG
+      tuple->producer = "DEAD-CMP(" + producer + ")";
+#endif
+
       for (auto col : columns) {
         tuple->columns.Create(col->var, tuple, col->id);
       }
