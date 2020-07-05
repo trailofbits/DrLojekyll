@@ -131,6 +131,17 @@
 //    TODO:
 //      Code generation that has a notion of "regions" and uses C++ templates
 //      and lambdas to recover nested for loop iteration.
+//
+//    TODO!!!??
+//      If a JOIN is conditional on something then should it store up results
+//      until the condition becomes true, then "release" all previously
+//      unpublished tuples????
+//
+//      What actually is the right way of handling conditions... Should things
+//      be put into wait lists? Are the conditions properly differential?
+//
+//      Can we sink them all the way down to messages, then remove the non-
+//      message ones, so that we can put only the "key" things into a waitlist?
 namespace hyde {
 extern OutputStream *gOut;
 

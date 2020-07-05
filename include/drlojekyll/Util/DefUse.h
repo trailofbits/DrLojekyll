@@ -218,11 +218,10 @@ class UseList {
 
   void ClearWithoutErasure(void) {
     if (is_weak) {
-      for (auto use : uses) {
-        delete use;
-      }
+      Clear();
+    } else {
+      uses.clear();
     }
-    uses.clear();
   }
 
   void Swap(UseList<T> &that) {

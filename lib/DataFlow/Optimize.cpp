@@ -3,7 +3,9 @@
 #include "Query.h"
 
 #include <drlojekyll/Util/EqualitySet.h>
-#include <iostream>
+
+#include "Optimize.h"
+
 namespace hyde {
 namespace {
 
@@ -202,22 +204,24 @@ void QueryImpl::Simplify(const ErrorLog &log) {
 
   views.clear();
 
+  OptimizationContext opt(log);
+
   // Now canonicalize JOINs, which will eliminate columns of useless joins.
   for (auto join : joins) {
-    join->Canonicalize(this, false, log);
+    join->Canonicalize(this, opt);
   }
 
   // Some of those useless JOINs are converted into TUPLEs, so canonicalize
   // those.
   for (auto tuple : tuples) {
-    tuple->Canonicalize(this, false, log);
+    tuple->Canonicalize(this, opt);
   }
 
   RemoveUnusedViews();
   RelabelGroupIDs();
 }
 
-void QueryImpl::Canonicalize(bool sort, const ErrorLog &log) {
+void QueryImpl::Canonicalize(const OptimizationContext &opt) {
   ForEachView([&] (VIEW *view) {
     view->is_canonical = false;
   });
@@ -226,8 +230,7 @@ void QueryImpl::Canonicalize(bool sort, const ErrorLog &log) {
   for (auto non_local_changes = true; non_local_changes; ) {
     non_local_changes = false;
     ForEachViewInDepthOrder([&] (VIEW *view) {
-      if (view->Canonicalize(this, sort, log)) {
-        std::cerr << view->KindName() << '\n';
+      if (view->Canonicalize(this, opt)) {
         non_local_changes = true;
       }
     });
@@ -261,12 +264,14 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   // Apply CSE to all views.
   do_cse();
 
-  Canonicalize(false, log);
+  OptimizationContext opt(log);
+
+  Canonicalize(opt);
 
   // Apply CSE to all canonical views.
   do_cse();
 
-  Canonicalize(true, log);
+  Canonicalize(opt);
 
   RemoveUnusedViews();
 }

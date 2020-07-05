@@ -4,6 +4,8 @@
 
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include "Optimize.h"
+
 namespace hyde {
 
 Node<QueryAggregate>::~Node(void) {}
@@ -66,7 +68,7 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
 bool Node<QueryAggregate>::Canonicalize(
-    QueryImpl *query, bool sort, const ErrorLog &) {
+    QueryImpl *query, const OptimizationContext &opt) {
   if (is_canonical) {
     return false;
   }
@@ -77,6 +79,7 @@ bool Node<QueryAggregate>::Canonicalize(
   }
 
   assert(!aggregated_columns.Empty());
+  assert(attached_columns.Empty());
 
   if (valid == VIEW::kValid &&
       (!CheckAllViewsMatch(group_by_columns, aggregated_columns) ||
@@ -86,136 +89,88 @@ bool Node<QueryAggregate>::Canonicalize(
     return false;
   }
 
-  assert(attached_columns.Empty());
-
-  auto guard_tuple = GuardWithTuple(query);
-  bool non_local_changes = guard_tuple != nullptr;
+  VIEW *guard_tuple = nullptr;
+  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  auto non_local_changes = false;
   is_canonical = true;
 
   in_to_out.clear();
 
   auto i = 0u;
 
-  for (auto col : group_by_columns) {
-    auto &prev_out_col = in_to_out[col];
+  for (auto in_col : group_by_columns) {
+    auto &prev_out_col = in_to_out[in_col];
     const auto out_col = columns[i];
+    const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
+                                 in_col->IsConstant();
     ++i;
 
-    // Constants won't change the arity of the GROUP, so propagate and try to
-    // remove them.
-    if (col->IsConstant()) {
-      const auto const_col = col->AsConstant();
+    const auto [changed, can_remove] = CanonicalizeColumnPair(
+        in_col, out_col, opt, false  /* update_in_to_out */);
+    (void) can_remove;
 
-      if (out_col->IsUsedIgnoreMerges()) {
-        non_local_changes = true;
-      }
-      out_col->ReplaceAllUsesWith(const_col);
-      out_col->CopyConstant(const_col);
-
-      // Constant column that isn't used, including by merges. This won't
-      // change the aggregate so we can remove it.
-      if (!out_col->IsUsed()) {
-        is_canonical = false;
-
-      // Constant, and it's used directly or indirectly, e.g. by a MERGE, so
-      // we'll force a guard tuple so that we can forward the constant and
-      // eliminate it from the GROUP BY.
-      } else if (!guard_tuple) {
-        non_local_changes = true;
-        guard_tuple = GuardWithTuple(query, true);
-        non_local_changes = true;
-        out_col->ReplaceAllUsesWith(const_col);  // Should replace one use.
-      }
-
-    // Similar to the above case, we can remove duplicate columns from GROUP BYs
-    // as they won't change the arity of the grouped set.
-    } else if (prev_out_col) {
-
-      if (col->IsConstantRef()) {
-        assert(prev_out_col->IsConstantRef());
-        if (!out_col->IsConstantRef()) {
-          non_local_changes = true;
-        }
-        out_col->CopyConstant(col);
-      }
-
-      if (out_col->IsUsedIgnoreMerges()) {
-        non_local_changes = true;
-      }
-
-      out_col->ReplaceAllUsesWith(prev_out_col);
-
-      // Previously used column that isn't used, including by merges. This won't
-      // change the aggregate so we can remove it.
-      if (!out_col->IsUsed()) {
-        is_canonical = false;
-        col->view->is_canonical = false;
-
-      // Previously used, and it's used directly or indirectly, e.g. by a
-      // MERGE, so we'll force a guard tuple so that we can forward the prior
-      // used column and eliminate it from the GROUP BY.
-      } else if (!guard_tuple) {
-        non_local_changes = true;
-        guard_tuple = GuardWithTuple(query, true);
-        out_col->ReplaceAllUsesWith(prev_out_col);  // Should replace one use.
-      }
-
-    } else {
-      if (col->IsConstantRef()) {
-        if (!out_col->IsConstantRef()) {
-          out_col->CopyConstant(col);
-        }
-        out_col->CopyConstant(col);
-      }
-
-      prev_out_col = out_col;
+    if (changed) {
+      non_local_changes = true;
     }
+
+    // Constants won't change the arity of the GROUP, so propagate and try to
+    // remove them. Also, the same non-constant input column appearing multiple
+    // times to a GROUP will also not change the arity, nor will its removal
+    // affect control dependencies, so we can remove it too.
+    if (in_col_is_const || prev_out_col) {
+      if (is_used_in_merge && !guard_tuple) {
+        guard_tuple = GuardWithTuple(query, true  /* force */);
+        non_local_changes = true;
+      }
+
+      if (in_col_is_const) {
+        out_col->ReplaceAllUsesWith(in_col);
+      } else {
+        out_col->ReplaceAllUsesWith(prev_out_col);
+      }
+
+      is_canonical = false;
+      continue;
+    }
+
+    prev_out_col = out_col;
   }
 
-  // Nothing to do, all GROUP BY columns are unique and/or needed.
-  if (is_canonical && in_to_out.size() == group_by_columns.Size()) {
+  assert(i == group_by_columns.Size());
+
+  // Nothing to do, all GROUP columns are unique and/or needed.
+  if (is_canonical) {
     return non_local_changes;
   }
 
   hash = 0;
 
-  DefList<COL> new_output_cols(this);
+  DefList<COL> new_columns(this);
   UseList<COL> new_group_by_columns(this);
 
-  assert(i == group_by_columns.Size());
   for (auto j = 0u; j < i; ++j) {
     const auto in_col = group_by_columns[j];
     if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
       new_group_by_columns.AddUse(in_col);
+      const auto new_out_col = new_columns.Create(
+          old_out_col->var, this, old_out_col->id);
+      old_out_col->ReplaceAllUsesWith(new_out_col);
+      new_out_col->CopyConstant(old_out_col);
     }
-  }
-
-  if (sort) {
-    new_group_by_columns.Sort();
-  }
-
-  // Add in the new grouped columns, which may be in order, deduped, and used
-  // by later flows.
-  for (auto in_col : new_group_by_columns) {
-    const auto old_out_col = in_to_out[in_col];
-    const auto new_out_col = new_output_cols.Create(
-        old_out_col->var, this, old_out_col->id);
-    old_out_col->ReplaceAllUsesWith(new_out_col);
-    new_out_col->CopyConstant(old_out_col);
   }
 
   // Add back in the bound (configuration) and summarized columns.
   const auto num_cols = columns.Size();
   for (auto j = i; j < num_cols; ++j) {
     const auto old_out_col = columns[j];
-    const auto new_out_col = new_output_cols.Create(
+    const auto new_out_col = new_columns.Create(
         old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
     new_out_col->CopyConstant(old_out_col);
   }
 
   group_by_columns.Swap(new_group_by_columns);
-  columns.Swap(new_output_cols);
+  columns.Swap(new_columns);
 
   if (!CheckAllViewsMatch(group_by_columns, aggregated_columns) ||
       !CheckAllViewsMatch(config_columns, aggregated_columns)) {

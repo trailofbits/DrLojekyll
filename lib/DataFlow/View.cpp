@@ -8,6 +8,8 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
+#include "Optimize.h"
+
 namespace hyde {
 
 Node<QueryView>::~Node(void) {}
@@ -227,32 +229,86 @@ void Node<QueryView>::OrderConditions(void) {
   negative_conditions.Unique();
 }
 
+// Canonicalizes an input/output column pair. Returns `true` in the first
+// element if non-local changes are made, and `true` in the second element
+// if the column pair can be removed.
+std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
+    COL *in_col, COL *out_col, const OptimizationContext &opt,
+    bool update_in_to_out) noexcept {
+
+  const auto out_col_is_constref = out_col->IsConstantRef();
+  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
+  auto non_local_changes = false;
+
+  if (in_col->IsConstant()) {
+    if (opt.can_replace_outputs_with_constants &&
+        !IntroducesControlDependency()) {
+      if (!out_col_is_constref || out_col_is_directly_used) {
+        non_local_changes = true;
+      }
+      out_col->CopyConstant(in_col);
+      out_col->ReplaceAllUsesWith(in_col);
+
+    } else {
+      if (!out_col_is_constref) {
+        non_local_changes = true;
+        out_col->CopyConstant(in_col);
+      }
+    }
+  } else if (in_col->IsConstantRef()) {
+    if (!out_col_is_constref) {
+      non_local_changes = true;
+      out_col->CopyConstant(in_col);
+    }
+  }
+
+  auto can_remove = false;
+
+  if (update_in_to_out) {
+    COL *&prev_out_col = in_to_out[in_col];
+    if (prev_out_col) {
+      if (out_col_is_directly_used) {
+        non_local_changes = true;
+      }
+
+      out_col->ReplaceAllUsesWith(prev_out_col);
+
+      // If the input column is represented more than once, then we can remove
+      // any secondary representations safely.
+      if (!out_col->IsUsed()) {
+        can_remove = true;
+      }
+
+    } else {
+      prev_out_col = out_col;
+    }
+  }
+
+  if (opt.can_remove_unused_columns && !can_remove && !out_col->IsUsed()) {
+    can_remove = true;
+  }
+
+  return {non_local_changes, can_remove};
+}
+
 // Check to see if the attached columns are ordered and unique. If they're
 // not unique then we can deduplicate them.
-std::pair<bool, bool> Node<QueryView>::AttachedColumnsAreCanonical(
-    unsigned first_output, bool sort) const noexcept {
+std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
+    unsigned first_output, const OptimizationContext &opt) noexcept {
 
   auto i = first_output;
-  auto is_canonical = true;
+  auto attached_are_canonical = true;
   auto non_local_changes = false;
+
   for (auto max_i = columns.Size(), j = 0u; i < max_i; ++i, ++j) {
-    if (!columns[i]->IsUsed()) {
-      is_canonical = false;
+    auto in_col = attached_columns[j];
+    auto out_col = columns[i];
 
-    } else if (attached_columns[j]->IsConstant()) {
-      is_canonical = false;
-      if (columns[i]->IsUsedIgnoreMerges()) {
-        non_local_changes = true;
-      }
-      columns[i]->CopyConstant(attached_columns[j]);
-      columns[i]->ReplaceAllUsesWith(attached_columns[j]);
+    auto [changed, can_remove] = CanonicalizeColumnPair(
+        in_col, out_col, opt, false  /* update_in_to_out */);
 
-    } else if (attached_columns[j]->IsConstantRef()) {
-      if (!columns[i]->IsConstantRef()) {
-        non_local_changes = true;
-      }
-      columns[i]->CopyConstant(attached_columns[j]);
-    }
+    non_local_changes = non_local_changes || changed;
+    attached_are_canonical = attached_are_canonical && !can_remove;
   }
 
   // Look for equivalent attached columns and try to eliminate them.
@@ -260,29 +316,34 @@ std::pair<bool, bool> Node<QueryView>::AttachedColumnsAreCanonical(
   for (auto j = 0u; j < num_attached_cols; ++j) {
     for (auto k = j + 1u; k < num_attached_cols; ++k) {
       if (attached_columns[j] == attached_columns[k]) {
-        is_canonical = false;
-        if (columns[k + first_output]->IsUsedIgnoreMerges()) {
-          columns[k + first_output]->ReplaceAllUsesWith(columns[j + first_output]);
+        auto k_out_col = columns[k + first_output];
+        auto j_out_col = columns[j + first_output];
+        if (k_out_col->IsUsedIgnoreMerges()) {
+          k_out_col->ReplaceAllUsesWith(j_out_col);
           non_local_changes = true;
+
+          if (opt.can_remove_unused_columns && !k_out_col->IsUsed()) {
+            attached_are_canonical = false;
+          }
         }
       }
     }
   }
 
-  if (sort) {
-    for (auto j = 1u; j < num_attached_cols; ++j) {
-      if (attached_columns[j - 1u]->Sort() > attached_columns[j]->Sort()) {
-        is_canonical = false;
-        break;
-      }
-    }
-  }
+//  if (sort) {
+//    for (auto j = 1u; j < num_attached_cols; ++j) {
+//      if (attached_columns[j - 1u]->Sort() > attached_columns[j]->Sort()) {
+//        is_canonical = false;
+//        break;
+//      }
+//    }
+//  }
 
-  return {is_canonical, non_local_changes};
+  return {attached_are_canonical, non_local_changes};
 }
 
 // Put this view into a canonical form.
-bool Node<QueryView>::Canonicalize(QueryImpl *, bool, const ErrorLog &) {
+bool Node<QueryView>::Canonicalize(QueryImpl *, const OptimizationContext &) {
   is_canonical = true;
   return false;
 }
@@ -416,12 +477,49 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   return up_hash;
 }
 
+// Copy all positive and negative conditions from `that` into `this`.
+void Node<QueryView>::CopyConditions(Node<QueryView> *that) {
+  for (auto cond : that->positive_conditions) {
+    positive_conditions.AddUse(cond);
+    cond->positive_users.AddUse(this);
+  }
+
+  for (auto cond : that->negative_conditions) {
+    negative_conditions.AddUse(cond);
+    cond->negative_users.AddUse(this);
+  }
+}
+
+// Replace all uses of `this` with `that`.
 void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
   this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
   unsigned i = 0u;
   for (auto col : columns) {
     col->ReplaceAllUsesWith(that->columns[i++]);
   }
+}
+
+// Does this view introduce a control dependency? If a node introduces a
+// control dependency then it generally needs to be kept around.
+bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
+  return !positive_conditions.Empty() ||
+         !negative_conditions.Empty() ||
+         nullptr != const_cast<VIEW *>(this)->AsConstraint();
+}
+
+// Returns `true` if all output columns are used.
+bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
+  if (this->Def<Node<QueryView>>::IsUsed()) {
+    return true;  // Used in a MERGE.
+  }
+
+  for (auto col : columns) {
+    if (!col->IsUsedIgnoreMerges()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // Returns `true` if we had to "guard" this view with a tuple so that we
@@ -438,12 +536,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
   }
 
   const auto tuple = query->tuples.Create();
-  for (auto cond : positive_conditions) {
-    tuple->positive_conditions.AddUse(cond);
-  }
-  for (auto cond : negative_conditions) {
-    tuple->negative_conditions.AddUse(cond);
-  }
+  tuple->CopyConditions(this);
 
   tuple->group_ids = group_ids;
 

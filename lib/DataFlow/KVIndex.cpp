@@ -4,6 +4,8 @@
 
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include "Optimize.h"
+
 namespace hyde {
 namespace {
 
@@ -88,7 +90,7 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
 // that will happen is constant propagation of keys, but NOT values (as we can't
 // predict how the merge functors will affect them).
 bool Node<QueryKVIndex>::Canonicalize(
-    QueryImpl *query, bool, const ErrorLog &) {
+    QueryImpl *query, const OptimizationContext &opt) {
 
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
@@ -102,64 +104,150 @@ bool Node<QueryKVIndex>::Canonicalize(
   }
 
   is_canonical = true;
+  auto non_local_changes = false;
+
+  // NOTE(pag): We can't do the default canonicalization of attached columns
+  //            here because they are our value columns, and we cannot eliminate
+  //            them or we'll lose the association with the mutable functors.
 
   auto i = 0u;
+
+  in_to_out.clear();
 
   // Check if the keys are canonical. What matters here is that they aren't
   // constants. If they aren't used then we still need to keep them, as they
   // might distinguish two values.
-  for (auto col : input_columns) {
+  for (auto in_col : input_columns) {
+    const auto out_col = columns[i++];
+    const auto [changed, can_remove] = CanonicalizeColumnPair(
+        in_col, out_col, opt, false  /* update_in_to_out */);
 
-    // Input is a constant, forward it along.
-    if (col->IsConstant()) {
-      columns[i]->ReplaceAllUsesWith(col);
-      hash = 0;
+    auto &prev_out_col = in_to_out[in_col];
+    const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
+                                 in_col->IsConstant();
+
+    non_local_changes = non_local_changes || changed;
+    (void) can_remove;
+
+    // A key is constant, or it is reused, so we will remove it.
+    if (in_col_is_const || prev_out_col) {
       is_canonical = false;
-
-    } else if (col->IsConstantRef()) {
-      columns[i]->CopyConstant(col);
     }
-    ++i;
+
+    prev_out_col = out_col;
+  }
+
+  // Make sure at least one value column is used. If none of the value columns
+  // are used, then we can eliminate this K/V index.
+  const auto num_cols = columns.Size();
+  bool any_values_are_used = false;
+  for (auto j = i; j < num_cols; ++j) {
+    if (columns[j]->IsUsed()) {
+      any_values_are_used = true;
+      break;
+    }
+  }
+
+  if (!any_values_are_used) {
+    is_canonical = false;
   }
 
   if (is_canonical) {
-    return false;
+    return non_local_changes;
   }
 
-  (void) GuardWithTuple(query);
+  // If none of the value columns are used then replace this K/V index with a
+  // tuple.
+  if (!any_values_are_used) {
+    auto tuple = query->tuples.Create();
+    tuple->CopyConditions(this);
+
+#ifndef NDEBUG
+    tuple->producer = "KVINDEX-UNUSED-VALS(" + producer + ")";
+#endif
+
+    for (auto col : columns) {
+      tuple->columns.Create(col->var, tuple, col->id);
+    }
+
+    ReplaceAllUsesWith(tuple);
+    auto j = 0u;
+    for (auto key_col : input_columns) {
+      columns[j++]->CopyConstant(key_col);
+      tuple->input_columns.AddUse(key_col);
+    }
+
+    for (auto val_col : attached_columns) {
+      tuple->input_columns.AddUse(val_col);
+    }
+
+    is_dead = true;
+    is_canonical = true;
+    return true;
+  }
+
+  TUPLE *guard_tuple = nullptr;
+  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
 
   UseList<COL> new_input_columns(this);
   DefList<COL> new_output_columns(this);
 
+  in_to_out.clear();
+
   // Make the new output columns for the keys that we're keeping.
   i = 0u;
-  for (auto col : input_columns) {
-    const auto old_out_col = columns[i];
-    if (!col->IsConstant()) {
-      const auto new_out_col = new_output_columns.Create(
-          old_out_col->var, this, old_out_col->id);
-      old_out_col->ReplaceAllUsesWith(new_out_col);
-      new_out_col->CopyConstant(old_out_col);
+  for (auto in_col : input_columns) {
+    const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
+                                 in_col->IsConstant();
+    const auto out_col = columns[i++];
+    auto &prev_out_col = in_to_out[in_col];
+
+    // A constant key isn't going to affect the arity of the grouping needed
+    // to implement this K/V Index. Similarly, a previously used input column
+    // also won't affect the arity.
+    //
+    // NOTE(pag): We also know that if we're down here, then at least one of
+    //            the values is used and so removing keys won't disappear the
+    //            K/V index.
+    if (in_col_is_const || prev_out_col) {
+      if (is_used_in_merge && !guard_tuple) {
+        non_local_changes = true;
+        guard_tuple = GuardWithTuple(query, true);
+      }
+
+      if (in_col_is_const) {
+        out_col->ReplaceAllUsesWith(in_col);
+      } else {
+        out_col->ReplaceAllUsesWith(prev_out_col);
+      }
+
+      continue;  // Remove the column.
     }
+
+    const auto new_out_col = new_output_columns.Create(
+        out_col->var, this, out_col->id);
+    new_out_col->CopyConstant(out_col);
+    out_col->ReplaceAllUsesWith(new_out_col);
+
+    new_input_columns.AddUse(in_col);
+    prev_out_col = new_out_col;
   }
 
   // Make the new output columns for the attached (mutable) columns. These
   // are all preserved.
-  for (auto col : attached_columns) {
-    (void) col;
+  //
+  // NOTE(pag): We cannot do constant propagation across these columns, and thus
+  //            cannot invoke `CopyConstant` between old/new output attached
+  //            columns because we don't actually know what value the merge
+  //            functor applying the update will produce when combinging the old
+  //            and proposed values.
+  for (auto in_col : attached_columns) {
+    (void) in_col;
     const auto old_out_col = columns[i++];
     const auto new_out_col = new_output_columns.Create(
         old_out_col->var, this, old_out_col->id);
+    assert(!old_out_col->IsConstantRef());
     old_out_col->ReplaceAllUsesWith(new_out_col);
-    new_out_col->CopyConstant(old_out_col);
-  }
-
-  // Add uses for the new input columns.
-  i = 0u;
-  for (auto col : input_columns) {
-    if (!col->IsConstant()) {
-      new_input_columns.AddUse(col);
-    }
   }
 
   columns.Swap(new_output_columns);

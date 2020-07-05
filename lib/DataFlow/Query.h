@@ -15,6 +15,7 @@ namespace hyde {
 
 class EqualitySet;
 class ErrorLog;
+class OptimizationContext;
 
 // Represents all values that could inhabit some relation's tuple.
 template <>
@@ -220,7 +221,18 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
 
+  // Copy all positive and negative conditions from `that` into `this`.
+  void CopyConditions(Node<QueryView> *that);
+
+  // Replace all uses of `this` with `that`.
   void ReplaceAllUsesWith(Node<QueryView> *that);
+
+  // Does this view introduce a control dependency? If a node introduces a
+  // control dependency then it generally needs to be kept around.
+  bool IntroducesControlDependency(void) const noexcept;
+
+  // Returns `true` if all output columns are used.
+  bool AllColumnsAreUsed(void) const noexcept;
 
   // Returns `true` if we had to "guard" this view with a tuple so that we
   // can put it into canonical form.
@@ -243,12 +255,19 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   // Check to see if the attached columns are ordered and unique. If they're
   // not unique then we can deduplicate them.
-  std::pair<bool, bool> AttachedColumnsAreCanonical(
-      unsigned i, bool sort) const noexcept;
+  std::pair<bool, bool> CanonicalizeAttachedColumns(
+      unsigned i, const OptimizationContext &opt) noexcept;
+
+  // Canonicalizes an input/output column pair. Returns `true` in the first
+  // element if non-local changes are made, and `true` in the second element
+  // if the column pair can be removed.
+  std::pair<bool, bool> CanonicalizeColumnPair(
+      COL *in_col, COL *out_col, const OptimizationContext &opt,
+      bool update_in_to_out) noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
-  virtual bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &);
+  virtual bool Canonicalize(QueryImpl *query, const OptimizationContext &opt);
 
   virtual Node<QuerySelect> *AsSelect(void) noexcept;
   virtual Node<QueryTuple> *AsTuple(void) noexcept;
@@ -476,7 +495,7 @@ class Node<QueryTuple> final : public Node<QueryView> {
   // replacements easier. Because comparisons are mostly pointer-based, the
   // canonical form of this tuple is one where all columns are sorted by
   // their pointer values.
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 };
 
 using TUPLE = Node<QueryTuple>;
@@ -502,7 +521,7 @@ class Node<QueryKVIndex> final : public Node<QueryView> {
   // Put the KV index into a canonical form. The only real internal optimization
   // that will happen is constant propagation of keys, but NOT values (as we can't
   // predict how the merge functors will affect them).
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   // Functors that get called to merge old and new values.
   std::vector<ParsedFunctor> merge_functors;
@@ -516,7 +535,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   virtual ~Node(void);
 
   Node(void)
-      : joined_views(this) {}
+      : joined_views(this, true  /* is_weak */) {}
 
   const char *KindName(void) const noexcept override;
   Node<QueryJoin> *AsJoin(void) noexcept override;
@@ -527,7 +546,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   // If we have a constant feeding into one of the pivot sets, then we want to
   // eliminate that pivot set and instead propagate CMP nodes to all pivot
@@ -577,7 +596,7 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   // Put this map into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   inline explicit Node(ParsedFunctor functor_, DisplayRange range)
       : position(range.From()),
@@ -622,7 +641,7 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   // Put this aggregate into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   // Functor that does the aggregation.
   const ParsedFunctor functor;
@@ -662,7 +681,7 @@ class Node<QueryMerge> : public Node<QueryView> {
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   UseList<VIEW> merged_views;
 
@@ -690,7 +709,7 @@ class Node<QueryConstraint> : public Node<QueryView> {
   // Put this constraint into a canonical form, which will make comparisons and
   // replacements easier. If this constraint's operator is unordered, then we
   // sort the inputs to make comparisons trivial.
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   const ComparisonOperator op;
 
@@ -738,7 +757,7 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
-  bool Canonicalize(QueryImpl *query, bool sort, const ErrorLog &) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
   const UseRef<REL> relation;
   const UseRef<STREAM> stream;
@@ -892,7 +911,7 @@ class QueryImpl {
   bool RemoveUnusedViews(void);
 
   void Simplify(const ErrorLog &);
-  void Canonicalize(bool sort, const ErrorLog &);
+  void Canonicalize(const OptimizationContext &opt);
   void Optimize(const ErrorLog &);
   void ConnectInsertsToSelects(void);
   void TrackDifferentialUpdates(void) const;

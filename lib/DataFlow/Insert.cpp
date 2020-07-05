@@ -31,7 +31,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryInsert>::Canonicalize(QueryImpl *, bool, const ErrorLog &) {
+bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &) {
   is_canonical = true;
   if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;

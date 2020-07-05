@@ -712,15 +712,8 @@ static VIEW *FindConstantClauseHead(QueryImpl *query, ParsedClause clause,
 
 // Find `var` in the output columns of `view`, or as a constant.
 static COL *FindColVarInView(ClauseContext &context, VIEW *view,
-                             ParsedVariable var, bool prefer_constant=false) {
+                             ParsedVariable var) {
   const auto id = VarId(context, var);
-
-  // Try to find the column as a constant.
-  auto const_col = context.col_id_to_constant[id];
-  if (prefer_constant && const_col) {
-    DEBUG((*gOut) << "Found constant " << const_col->var << " id=" << id << " for var " << var << '\n'; )
-    return const_col;
-  }
 
   // Try to find the column in `view`.
   for (auto in_col : view->columns) {
@@ -729,7 +722,8 @@ static COL *FindColVarInView(ClauseContext &context, VIEW *view,
     }
   }
 
-  return const_col;
+  // Try to find the column as a constant.
+  return context.col_id_to_constant[id];
 }
 
 // Propose `view` as being a source of data for the clause head. This means
@@ -763,7 +757,7 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
     const auto id = VarId(context, var);
     (void) tuple->columns.Create(var, tuple, id, col_index++);
 
-    if (auto in_col = FindColVarInView(context, view, var, true); in_col) {
+    if (auto in_col = FindColVarInView(context, view, var); in_col) {
       tuple->input_columns.AddUse(in_col);
 
     // TODO(pag): This comes up intermittently for some tests, but sometimes
@@ -1712,7 +1706,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     join->is_used = false;
   }
 
-//  impl->RemoveUnusedViews();
+  impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
   impl->TrackDifferentialUpdates();
   impl->Simplify(log);

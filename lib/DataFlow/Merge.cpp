@@ -4,6 +4,8 @@
 
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include "Optimize.h"
+
 namespace hyde {
 
 Node<QueryMerge>::~Node(void) {}
@@ -66,7 +68,7 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
 bool Node<QueryMerge>::Canonicalize(
-    QueryImpl *query, bool sort, const ErrorLog &) {
+    QueryImpl *query, const OptimizationContext &opt) {
   if (is_dead) {
     is_canonical = true;
     return false;
@@ -76,7 +78,7 @@ bool Node<QueryMerge>::Canonicalize(
   // non-canonical.
   auto has_unused_col = false;
   for (auto col : columns) {
-    if (!col->IsUsed()) {
+    if (!col->IsUsed() && opt.can_remove_unused_columns) {
       is_canonical = false;
       has_unused_col = true;
     }
@@ -131,9 +133,8 @@ bool Node<QueryMerge>::Canonicalize(
 
     // If this MERGE is conditional then force a guard tuple with the same
     // conditions.
-    if (!positive_conditions.Empty() ||
-        !negative_conditions.Empty()) {
-      (void) GuardWithTuple(query, true);
+    if (IntroducesControlDependency()) {
+      (void) GuardWithTuple(query, true  /* force */);
     }
 
     const auto num_cols = columns.Size();
@@ -153,21 +154,16 @@ bool Node<QueryMerge>::Canonicalize(
 
   // Nothing to do; it's already canonical.
   if (is_canonical && !has_unused_col) {
-    if (sort) {
-      merged_views.Sort();
-    }
-
     is_canonical = true;
     hash = 0;
     return non_local_changes;
   }
 
-  UseList<VIEW> next_merged_views(this);
-
   // There's an unused column; go and guard the incoming views with TUPLEs that
   // don't use that column.
-  if (has_unused_col) {
-    non_local_changes = true;
+  if (has_unused_col && opt.can_remove_unused_columns) {
+    UseList<VIEW> new_merged_views(this);
+
     const auto num_cols = columns.Size();
 
     for (auto view : unique_merged_views) {
@@ -190,17 +186,11 @@ bool Node<QueryMerge>::Canonicalize(
         }
       }
 
-      next_merged_views.AddUse(guarded_view);
+      new_merged_views.AddUse(guarded_view);
     }
-  } else {
-    for (auto view : unique_merged_views) {
-      next_merged_views.AddUse(view);
-    }
-  }
 
-  merged_views.Swap(next_merged_views);
-  if (sort) {
-    merged_views.Sort();
+    merged_views.Swap(new_merged_views);
+    non_local_changes = true;
   }
 
   hash = 0;

@@ -6,7 +6,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...) __VA_ARGS__
+#define DEBUG(...)
 
 namespace hyde {
 namespace {

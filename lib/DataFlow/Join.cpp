@@ -7,7 +7,8 @@
 #include <drlojekyll/Util/EqualitySet.h>
 
 #include <sstream>
-#include <iostream>
+
+#include "Optimize.h"
 
 namespace hyde {
 
@@ -147,12 +148,14 @@ void Node<QueryJoin>::VerifyPivots(void) {
 void Node<QueryJoin>::ReplaceViewInJoin(VIEW *view, VIEW *replacement_view) {
   is_canonical = false;
 
-  UseList<VIEW> new_joined_views(this);
+  UseList<VIEW> new_joined_views(this, true  /* is_weak */);
   for (auto joined_view : joined_views) {
-    if (joined_view == view) {
-      new_joined_views.AddUse(replacement_view);
-    } else {
-      new_joined_views.AddUse(joined_view);
+    if (joined_view) {
+      if (joined_view == view) {
+        new_joined_views.AddUse(replacement_view);
+      } else {
+        new_joined_views.AddUse(joined_view);
+      }
     }
   }
 
@@ -240,6 +243,14 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
   }
 
   std::vector<VIEW *> views;
+  unsigned num_joined_views = 0u;
+  for (auto view : joined_views) {
+    if (view) {  // It's a weak use list, so some might be `nullptr`s.
+      ++num_joined_views;
+    }
+  }
+
+  (void) num_joined_views;
 
   for (auto col : columns) {
     if (col == pivot_col) {
@@ -257,7 +268,7 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
     // If this is a pivot set then use its size as our estimate of how many
     // views to join.
     if (1u < old_size) {
-      assert(old_size == joined_views.Size());
+      assert(old_size == num_joined_views);
       if (views.empty()) {
         views.resize(old_size);
       } else {
@@ -472,7 +483,7 @@ void Node<QueryJoin>::PropagateConstAcrossPivotSet(
 // TODO(pag): If we make the above transform, then a JOIN could devolve into
 //            a cross-product.
 bool Node<QueryJoin>::Canonicalize(
-    QueryImpl *query, bool sort, const ErrorLog &log) {
+    QueryImpl *query, const OptimizationContext &opt) {
 
   if (is_dead || out_to_in.empty()) {
     is_dead = true;
@@ -562,8 +573,7 @@ bool Node<QueryJoin>::Canonicalize(
     // pivot.
     if (same_const) {
       ReplacePivotWithConstant(query, out_col, same_const);
-      Canonicalize(query, sort, log);
-      std::cerr << "A";
+      Canonicalize(query, opt);
       return true;
 
     // All incoming pivot values are either constant, or constant refs, and
@@ -583,7 +593,6 @@ bool Node<QueryJoin>::Canonicalize(
     //            into one that behaves as if it contained only `output(1).`.
     } else if (same_const_ref) {
 //      if (!out_is_const_ref || out_col->IsUsedIgnoreMerges()) {
-//        std::cerr << "B";
 //        non_local_changes = true;
 //      }
 //
@@ -595,8 +604,7 @@ bool Node<QueryJoin>::Canonicalize(
     } else if (first_const_ref) {
       if (!out_is_const_ref) {
         PropagateConstAcrossPivotSet(query, first_const_ref->AsConstant(), in_cols);
-        Canonicalize(query, sort, log);
-        std::cerr << "C";
+        Canonicalize(query, opt);
         return true;
       }
 
@@ -609,17 +617,26 @@ bool Node<QueryJoin>::Canonicalize(
     } else if (first_const) {
       if (!out_is_const_ref) {
         PropagateConstAcrossPivotSet(query, first_const, in_cols);
-        Canonicalize(query, sort, log);
-        std::cerr << "D";
+        Canonicalize(query, opt);
         return true;
       }
     }
 
     // Check to see if we should try to remove non-pivot output columns
     // (because they aren't used).
-    if (!need_remove_non_pivots && in_cols.Size() == 1 && !out_col->IsUsed()) {
+    if (opt.can_remove_unused_columns && !need_remove_non_pivots &&
+        in_cols.Size() == 1 && !out_col->IsUsed()) {
       is_canonical = false;
       need_remove_non_pivots = true;
+    }
+  }
+
+  // The `joined_views` list is a list of weak uses, so some might get nulled
+  // out over time. If any are null, then make sure we recompute them.
+  for (auto joined_view : joined_views) {
+    if (!joined_view) {
+      is_canonical = false;
+      break;
     }
   }
 
@@ -628,18 +645,20 @@ bool Node<QueryJoin>::Canonicalize(
   }
 
   // There is at least one output column that isn't needed; go remove it.
-  if (need_remove_non_pivots) {
+  if (opt.can_remove_unused_columns && need_remove_non_pivots) {
     DefList<COL> new_columns(this);
     std::unordered_map<COL *, UseList<COL>> new_out_to_in;
 
     auto col_index = 0u;
     for (auto &[out_col, in_cols] : out_to_in) {
-      if (in_cols.Size() != 1u || out_col->IsUsed()) {
+      const auto is_pivot_col = in_cols.Size() != 1u;
+      if (is_pivot_col || out_col->IsUsed()) {
         auto new_out_col = new_columns.Create(
             out_col->var, this, out_col->id, col_index++);
         new_out_to_in.emplace(new_out_col, this);
         new_out_col->CopyConstant(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
+
       }
     }
 
@@ -648,6 +667,10 @@ bool Node<QueryJoin>::Canonicalize(
       if (in_cols.Size() != 1u || out_col->IsUsed()) {
         auto in_cols_it = new_out_to_in.find(new_columns[col_index++]);
         in_cols_it->second.Swap(in_cols);
+
+      } else {
+        assert(in_cols.Size() == 1u);
+        in_cols[0]->view->is_canonical = false;
       }
 
 //      // We have to keep this constant ref alive because otherwise we might
@@ -660,7 +683,6 @@ bool Node<QueryJoin>::Canonicalize(
     columns.Swap(new_columns);
     out_to_in.swap(new_out_to_in);
     non_local_changes = true;
-    std::cerr << "X";
   }
 
   std::vector<VIEW *> seen_views;
@@ -678,9 +700,8 @@ bool Node<QueryJoin>::Canonicalize(
 
   if (seen_views.size() < joined_views.Size()) {
     non_local_changes = true;
-    std::cerr << "E";
 
-    UseList<VIEW> new_joined_views(this);
+    UseList<VIEW> new_joined_views(this,  true /* is_weak */);
     for (auto view : seen_views) {
       new_joined_views.AddUse(view);
     }
@@ -721,7 +742,6 @@ bool Node<QueryJoin>::Canonicalize(
     is_dead = true;
     out_to_in.clear();
 
-    std::cerr << "F";
     return true;
   }
 
