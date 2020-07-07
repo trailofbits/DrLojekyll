@@ -70,7 +70,8 @@ static bool CSE(CandidateList &all_views) {
       if (v1 != v2 &&
           v1->IsUsed() &&
           v2->IsUsed() &&
-          QueryView(v1).ReplaceAllUsesWith(eq, QueryView(v2))) {
+          eq.Contains(v1, v2)) {
+        v1->ReplaceAllUsesWith(v2);
         changed = true;
       }
     }
@@ -229,15 +230,121 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt) {
   // Canonicalize all views.
   for (auto non_local_changes = true; non_local_changes; ) {
     non_local_changes = false;
-    ForEachViewInDepthOrder([&] (VIEW *view) {
-      if (view->Canonicalize(this, opt)) {
-        non_local_changes = true;
-      }
-    });
+    if (opt.bottom_up) {
+      ForEachViewInDepthOrder([&] (VIEW *view) {
+        if (view->Canonicalize(this, opt)) {
+          non_local_changes = true;
+        }
+      });
+    } else {
+      ForEachViewInReverseDepthOrder([&] (VIEW *view) {
+        if (view->Canonicalize(this, opt)) {
+          non_local_changes = true;
+        }
+      });
+    }
   }
 
   RemoveUnusedViews();
   RelabelGroupIDs();
+}
+
+bool QueryImpl::ShrinkConditions(void) {
+  std::vector<COND *> conds;
+  ForEachView([&] (VIEW *view) {
+    view->depth = 0;
+  });
+
+  for (auto cond : conditions) {
+    conds.push_back(cond);
+  }
+
+  std::sort(conds.begin(), conds.end(),
+            [] (COND *a, COND *b) {
+              return QueryCondition(a).Depth() < QueryCondition(b).Depth();
+            });
+
+  for (auto cond : conds) {
+    if (cond->setters.Size() != 1u) {
+      continue;
+    }
+
+    VIEW * const setter = cond->setters[0];
+    assert(setter->sets_condition.get() == cond);
+    bool all_constant = true;
+    for (auto in_col : setter->input_columns) {
+      if (!in_col->IsConstant()) {
+        all_constant = false;
+        break;
+      }
+    }
+
+    for (auto in_col : setter->attached_columns) {
+      if (!in_col->IsConstant()) {
+        all_constant = false;
+        break;
+      }
+    }
+
+    if (!all_constant) {
+      continue;
+    }
+
+    if (TUPLE *tuple = setter->AsTuple(); tuple) {
+
+      // Keep positive conditions the same
+      for (auto pos_dep_cond : setter->positive_conditions) {
+        for (auto user_view : cond->positive_users) {
+          if (user_view) {
+            user_view->positive_conditions.AddUse(pos_dep_cond);
+            pos_dep_cond->positive_users.AddUse(user_view);
+          }
+        }
+        for (auto user_view : cond->negative_users) {
+          if (user_view) {
+            user_view->negative_conditions.AddUse(pos_dep_cond);
+            pos_dep_cond->negative_users.AddUse(user_view);
+          }
+        }
+      }
+
+      // Invert the negated conditions.
+      for (auto neg_dep_cond : setter->negative_conditions) {
+        for (auto user_view : cond->positive_users) {
+          if (user_view) {
+            user_view->negative_conditions.AddUse(neg_dep_cond);
+            neg_dep_cond->negative_users.AddUse(user_view);
+          }
+        }
+        for (auto user_view : cond->negative_users) {
+          if (user_view) {
+            user_view->positive_conditions.AddUse(neg_dep_cond);
+            neg_dep_cond->positive_users.AddUse(user_view);
+          }
+        }
+      }
+
+      do {
+        WeakUseRef<COND>().Swap(tuple->sets_condition);
+      } while (false);
+
+      cond->setters.Clear();
+      cond->positive_users.Clear();
+      cond->negative_users.Clear();
+
+    } else if (CMP *cmp = setter->AsConstraint(); cmp) {
+      (void) cmp;
+    }
+  }
+
+  ForEachView([&] (VIEW *view) {
+    view->depth = 0;
+    view->OrderConditions();
+  });
+
+  return conditions.RemoveIf([] (COND *cond) {
+    return cond->setters.Empty();
+  });
 }
 
 void QueryImpl::Optimize(const ErrorLog &log) {
@@ -261,17 +368,20 @@ void QueryImpl::Optimize(const ErrorLog &log) {
 
   RemoveUnusedViews();
 
-  // Apply CSE to all views.
-  do_cse();
-
+  do_cse();  // Apply CSE to all views before most canonicalization.
   OptimizationContext opt(log);
+  Canonicalize(opt);
+  do_cse();  // Apply CSE to all canonical views.
 
+  // Now do a stronger form of canonicalization.
+  opt.can_remove_unused_columns = true;
+  opt.can_replace_inputs_with_constants = true;
+  opt.bottom_up = false;
   Canonicalize(opt);
 
-  // Apply CSE to all canonical views.
-  do_cse();
-
-  Canonicalize(opt);
+  if (ShrinkConditions()) {
+    Canonicalize(opt);
+  }
 
   RemoveUnusedViews();
 }

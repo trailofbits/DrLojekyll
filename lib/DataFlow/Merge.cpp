@@ -131,24 +131,18 @@ bool Node<QueryMerge>::Canonicalize(
   // This MERGE isn't needed anymore.
   if (1 == unique_merged_views.size()) {
 
-    // If this MERGE is conditional then force a guard tuple with the same
-    // conditions.
-    if (IntroducesControlDependency()) {
-      (void) GuardWithTuple(query, true  /* force */);
+    // Create a forwarding tuple.
+    const auto tuple = query->tuples.Create();
+    const auto source_view = unique_merged_views[0];
+    auto i = 0u;
+    for (auto out_col : columns) {
+      (void) tuple->columns.Create(out_col->var, tuple, out_col->id);
+      tuple->input_columns.AddUse(source_view->columns[i++]);
     }
 
-    const auto num_cols = columns.Size();
-    auto source_view = unique_merged_views[0];
-    assert(source_view->columns.Size() == num_cols);
-    (void) num_cols;
+    assert(source_view->columns.Size() == i);
 
-    ReplaceAllUsesWith(source_view);
-
-    is_dead = true;
-    is_canonical = true;
-    hash = 0;
-    merged_views.Clear();
-
+    ReplaceAllUsesWith(tuple);
     return true;  // Definitely made non-local changes.
   }
 

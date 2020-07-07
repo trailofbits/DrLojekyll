@@ -668,6 +668,13 @@ static JOIN *CreateJoinFromPivots(
     }
   }
 
+#ifndef NDEBUG
+  for (auto &[out, in_cols] : join->out_to_in) {
+    assert(!in_cols.Empty());
+    (void) out;
+  }
+#endif
+
   return CacheJoin(context, join);
 }
 
@@ -866,6 +873,13 @@ static void CreateProduct(QueryImpl *query, ParsedClause clause,
     auto pivot_set_it = join->out_to_in.find(out_col);
     pivot_set_it->second.AddUse(in_col);
   }
+
+#ifndef NDEBUG
+  for (auto &[out, in_cols] : join->out_to_in) {
+    assert(!in_cols.Empty());
+    (void) out;
+  }
+#endif
 
   join = CacheJoin(context, join);
 
@@ -1669,6 +1683,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     if (!cond) {
       cond = query->conditions.Create(export_decl);
     }
+    WeakUseRef<COND>(insert, cond).Swap(insert->sets_condition);
     cond->setters.AddUse(insert);
   }
 

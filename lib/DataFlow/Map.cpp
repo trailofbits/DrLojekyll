@@ -63,7 +63,7 @@ bool Node<QueryMap>::Canonicalize(
   }
 
   if (valid == VIEW::kValid &&
-      !CheckAllViewsMatch(input_columns, attached_columns)) {
+      !CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
@@ -84,7 +84,7 @@ bool Node<QueryMap>::Canonicalize(
     const auto out_col = columns[i];
     const auto in_col = input_columns[j++];
     const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt, false  /* update_in_to_out */);
+        in_col, out_col, opt);
 
     non_local_changes = non_local_changes || changed;
     (void) can_remove;  // Can't remove these.
@@ -153,7 +153,7 @@ bool Node<QueryMap>::Canonicalize(
     non_local_changes = true;
   }
 
-  if (!CheckAllViewsMatch(input_columns, attached_columns)) {
+  if (!CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 

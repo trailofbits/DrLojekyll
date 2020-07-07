@@ -43,17 +43,32 @@ bool Node<QueryTuple>::Canonicalize(
     return false;
   }
 
+  bool has_replaceable_constref_inputs = false;
+  if (is_canonical && opt.can_replace_inputs_with_constants) {
+
+    for (auto in_col : input_columns) {
+      if (in_col->IsConstantRef()) {
+        is_canonical = false;
+        has_replaceable_constref_inputs = true;
+        break;
+      }
+    }
+  }
+
   if (is_canonical) {
     return false;
   }
 
-  if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
+  if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
   }
 
   assert(attached_columns.Empty());
+
+  const auto used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  const auto incoming_view = GetIncomingView(input_columns);
 
   // If this tuple is not used in a MERGE, then try to figure out if we can
   // eliminate this tuple altogether by seeing who uses it. If none of the
@@ -72,9 +87,13 @@ bool Node<QueryTuple>::Canonicalize(
   //            critical input column whose condition might decode whether
   //            or not anything will ever actually flow. Thus, we can only
   //            eliminate this TUPLE if all of its outputs are used.
-  const auto used_in_merge = this->Def<Node<QueryView>>::IsUsed();
-  if (!used_in_merge && !IntroducesControlDependency() && AllColumnsAreUsed()) {
+  if (incoming_view &&
+      !used_in_merge &&
+      !sets_condition &&
+      !IntroducesControlDependency() &&
+      AllColumnsAreUsed() && false) {
 
+    assert(!force_is_canonical);
     auto any_user_is_join = false;
     for (auto col : columns) {
       col->ForEachUse<VIEW>([&] (VIEW *user, COL *) {
@@ -108,23 +127,41 @@ bool Node<QueryTuple>::Canonicalize(
   bool non_local_changes = false;
   bool has_unused_columns = false;
 
-  in_to_out.clear();
-
-  VIEW *incoming_view = nullptr;
-
   const auto max_i = columns.Size();
+
+  in_to_out.clear();
   for (auto i = 0u; i < max_i; ++i) {
     const auto in_col = input_columns[i];
     const auto out_col = columns[i];
+    const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
+    auto &prev_out_col = in_to_out[in_col];
+
+    if (prev_out_col) {
+      if (out_col_is_directly_used) {
+        non_local_changes = true;
+      }
+
+      out_col->ReplaceAllUsesWith(prev_out_col);
+
+      // If the input column is represented more than once, then we can remove
+      // any secondary representations safely.
+      if (opt.can_remove_unused_columns && !out_col->IsUsed()) {
+        has_unused_columns = true;
+      }
+
+    } else {
+      prev_out_col = out_col;
+    }
+
     const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt, true  /* update_in_to_out */);
+        in_col, out_col, opt);
+
+    if (opt.can_replace_inputs_with_constants && in_col->IsConstantRef()) {
+      has_replaceable_constref_inputs = true;
+    }
 
     non_local_changes = non_local_changes || changed;
     has_unused_columns = has_unused_columns || can_remove;
-
-    if (!in_col->IsConstant()) {
-      incoming_view = in_col->view;
-    }
   }
 
   // We can replace the view with `incoming_view` if `incoming_view` only has
@@ -132,8 +169,8 @@ bool Node<QueryTuple>::Canonicalize(
   // columns are preserved.
   if (incoming_view &&
       incoming_view->NumUses() == 1 &&
-      (opt.can_remove_unused_columns ||
-       incoming_view->columns.Size() == columns.Size())) {
+      incoming_view->columns.Size() == columns.Size() &&
+      !sets_condition) {
 
     assert(incoming_view != this);
 
@@ -153,10 +190,6 @@ bool Node<QueryTuple>::Canonicalize(
         }
 
         if (all_in_order) {
-          input_columns.Clear();
-          incoming_view->CopyConditions(this);
-          incoming_view->OrderConditions();
-          incoming_view->OrderConditions();
           ReplaceAllUsesWith(incoming_view);
           is_dead = true;
           return true;
@@ -166,9 +199,7 @@ bool Node<QueryTuple>::Canonicalize(
     // `this` is not used in a MERGE, so there are no ordering constraints
     // on `incoming_view`.
     } else {
-      input_columns.Clear();
       incoming_view->CopyConditions(this);
-      incoming_view->OrderConditions();
       incoming_view->OrderConditions();
 
       for (auto [in_col, out_col] : in_to_out) {
@@ -176,17 +207,17 @@ bool Node<QueryTuple>::Canonicalize(
       }
 
       // NOTE(pag): There might be weak uses of `this`, i.e. in a JOIN.
-      ReplaceAllUsesWith(incoming_view);
+      this->Def<Node<QueryView>>::ReplaceAllUsesWith(incoming_view);
 
       is_dead = true;
       return true;
     }
   }
 
-  if (has_unused_columns) {
+  if (has_unused_columns || has_replaceable_constref_inputs) {
 
-    DefList<COL> new_output_cols(this);
-    UseList<COL> new_input_cols(this);
+    DefList<COL> new_columns(this);
+    UseList<COL> new_input_columns(this);
 
     in_to_out.clear();
 
@@ -208,47 +239,47 @@ bool Node<QueryTuple>::Canonicalize(
         continue;
       }
 
-      auto new_out_col = new_output_cols.Create(out_col->var, this, out_col->id);
+      auto new_out_col = new_columns.Create(out_col->var, this, out_col->id);
       out_col->ReplaceAllUsesWith(new_out_col);
       new_out_col->CopyConstant(out_col);
-      new_input_cols.AddUse(in_col);
+
+      if (opt.can_replace_inputs_with_constants &&
+          in_col->IsConstantRef()) {
+
+        new_input_columns.AddUse(in_col->AsConstant());
+        in_col->view->is_canonical = false;
+        non_local_changes = true;
+
+      } else {
+        new_input_columns.AddUse(in_col);
+      }
 
       if (!prev_out_col) {
         prev_out_col = new_out_col;
       }
     }
 
-    input_columns.Swap(new_input_cols);
-    columns.Swap(new_output_cols);
+    input_columns.Swap(new_input_columns);
+    columns.Swap(new_columns);
+
+    if (auto new_incoming_view = GetIncomingView(input_columns);
+        new_incoming_view != incoming_view) {
+      assert(incoming_view);
+      assert(!new_incoming_view);
+      COND *condition = CreateOrInheritConditionOnView(
+          query, incoming_view, std::move(new_input_columns));
+      positive_conditions.AddUse(condition);
+      condition->positive_users.AddUse(this);
+    }
   }
 
-  if (!CheckAllViewsMatch(input_columns)) {
+  if (!CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 
   hash = 0;
   is_canonical = true;
   return non_local_changes;
-
-
-
-
-
-//  // If this tuple is forwarding the values of something else along, and if it
-//  // is the only user of that other thing, then forward those values along,
-//  // otherwise we'll depend on CSE to try to merge this tuple with any other
-//  // equivalent tuples.
-//  //
-//  // The check for the number of uses on the last view helps us avoid the
-//  // situation where we have the following triangle dataflow pattern leading
-//  // into a JOIN.
-//  auto all_from_same_view = last_view && 1 == last_view->NumUses();
-//
-//  // All inputs are constants, or their corresponding outputs are not used,
-//  // or both.
-//  if (!last_view) {
-//    all_from_same_view = false;
-//  }
 }
 
 // Equality over tuples is structural.

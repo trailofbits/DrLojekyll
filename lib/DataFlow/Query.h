@@ -114,6 +114,17 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
  public:
   ~Node(void);
 
+  // An anonymous, not-user-defined condition that is instead inferred based
+  // off of optmizations.
+  inline Node(void)
+      : User(this),
+        Def<Node<QueryCondition>>(this),
+        positive_users(this, true  /* is_weak */),
+        negative_users(this, true  /* is_weak */),
+        setters(this) {}
+
+  // An explicit, user-defined condition. Usually associated with there-exists
+  // checks or configuration options.
   inline explicit Node(ParsedExport decl_)
       : User(this),
         Def<Node<QueryCondition>>(this),
@@ -123,12 +134,12 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
         setters(this) {}
 
   inline uint64_t Sort(void) const noexcept {
-    return declaration.Id();
+    return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
   }
 
   // The declaration of the `ParsedExport` that is associated with this
   // zero-argument predicate.
-  const ParsedDeclaration declaration;
+  const std::optional<ParsedDeclaration> declaration;
 
   // *WEAK* use list of views using this condition.
   UseList<Node<QueryView>> positive_users;
@@ -224,7 +235,12 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // Copy all positive and negative conditions from `that` into `this`.
   void CopyConditions(Node<QueryView> *that);
 
-  // Replace all uses of `this` with `that`.
+  // Replace all uses of `this` with `that`. The semantic here is that `this`
+  // remains valid and used.
+  void SubstituteAllUsesWith(Node<QueryView> *that);
+
+  // Replace all uses of `this` with `that`. The semantic here is that `this`
+  // is completely subsumed/replaced by `that`.
   void ReplaceAllUsesWith(Node<QueryView> *that);
 
   // Does this view introduce a control dependency? If a node introduces a
@@ -262,8 +278,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   // element if non-local changes are made, and `true` in the second element
   // if the column pair can be removed.
   std::pair<bool, bool> CanonicalizeColumnPair(
-      COL *in_col, COL *out_col, const OptimizationContext &opt,
-      bool update_in_to_out) noexcept;
+      COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
@@ -342,6 +357,9 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   UseList<COND> positive_conditions;
   UseList<COND> negative_conditions;
 
+  // If this VIEW sets a CONDition, then keep track of that here.
+  WeakUseRef<COND> sets_condition;
+
   // Used during canonicalization. Mostly just convenient to have around for
   // re-use of memory.
   std::unordered_map<COL *, COL *> in_to_out;
@@ -368,19 +386,29 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   std::vector<unsigned> group_ids;
 
   // The group ID of this node that it will push forward to its dependencies.
-  unsigned group_id{0};
+  unsigned group_id{0u};
 
   // Hash of this node, and its dependencies. A zero value implies that the
-  // hash is invalid. Final hashes always have their low 3 bits as a non-zero
-  // identifier of the type of the node.
-  uint64_t hash{0};
+  // hash is invalid. We use this for JOIN merging during early dataflow
+  // building. This is a good hint for CSE when the data flow is acyclic.
+  uint64_t hash{0u};
 
   // Depth from the input node. A zero value is invalid.
   unsigned depth{0U};
 
   // Is this view in a canonical form? Canonical forms help with doing equality
-  // checks and replacements.
+  // checks and replacements. In practice, "canonical form" lost its meaning
+  // over time as it used to be based on pointer ordering of columns, which
+  // was fine when the CSE optimization was pointer comparison-based, but
+  // eventually lost its original meaning when CSE switched to structural
+  // equivalence, and early/aggressive constant propagation and dead column
+  // elimination was scaled back. Now it mostly acts as a marker for whether or
+  // not this node may have changed and needs to be re-inspected.
   bool is_canonical{false};
+
+  // Should be force this node to be assumed to be canonical? This is a way of
+  // preventing further optimization of this node.
+  bool force_is_canonical{false};
 
   // A different way of tracking usage. Initially, when creating queries,
   // nothing atually uses inserts, and so they will look trivially dead.
@@ -398,6 +426,7 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   bool can_receive_deletions{false};
   bool can_produce_deletions{false};
 
+  // Debug string roughly tracking how or why this node was created.
   std::string producer;
 
   // Does this code break an invariant?
@@ -409,15 +438,25 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
 
   // If we broke an invariant, then highlight the variable name of the column
   // for which we broke the invariant.
-  std::optional<ParsedVariable> invalid_var;
+  mutable std::optional<ParsedVariable> invalid_var;
 
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
   //            columns in both of the lists independently reference the same
   //            view.
-  bool CheckAllViewsMatch(const UseList<COL> &cols1);
-  bool CheckAllViewsMatch(const UseList<COL> &cols1, const UseList<COL> &cols2);
+  bool CheckIncomingViewsMatch(const UseList<COL> &cols1) const;
+  bool CheckIncomingViewsMatch(const UseList<COL> &cols1,
+                                const UseList<COL> &cols2) const;
+
+  // Figure out what the incoming view to `cols1` is.
+  static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
+  static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
+                                          const UseList<COL> &cols2);
+
+  // Create or inherit a condition created on `view`.
+  static COND *CreateOrInheritConditionOnView(
+      QueryImpl *query, Node<QueryView> *view, UseList<COL> cols);
 
  protected:
   // Utilities for depth calculation.
@@ -544,6 +583,9 @@ class Node<QueryJoin> final : public Node<QueryView> {
   unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
+  // Update the set of joined views.
+  void UpdateJoinedViews(QueryImpl *query);
+
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
@@ -562,10 +604,13 @@ class Node<QueryJoin> final : public Node<QueryView> {
   // `replacement_view` in this JOIN.
   void ReplaceViewInJoin(VIEW *view, VIEW *replacement_view);
 
-  void VerifyPivots(void);
-
   // Maps output columns to input columns.
   std::unordered_map<COL *, UseList<COL>> out_to_in;
+
+  // List of all inputs before the main canonicalization code runs. Used to keep
+  // track of which columns are optimized away, so that we can find them again
+  // if we end up being able to discard a JOINed view.
+  std::vector<COL *> prev_input_columns;
 
   // List of views merged by this JOIN. Columns in pivot sets in `out_to_in` are
   // in the same order as they appear in `pivot_views`.
@@ -901,6 +946,55 @@ class QueryImpl {
     }
   }
 
+  template <typename CB>
+  void ForEachViewInReverseDepthOrder(CB do_view) const {
+    std::vector<VIEW *> views;
+    for (auto view : selects) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : tuples) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : kv_indices) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : joins) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : maps) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : aggregates) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : merges) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : constraints) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : inserts) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+
+    std::sort(views.begin(), views.end(), [] (VIEW *a, VIEW *b) {
+      return a->Depth() > b->Depth();
+    });
+
+    for (auto view : views) {
+      do_view(view);
+    }
+  }
+
   // Relabel group IDs. This enables us to better optimize SELECTs. Our initial
   // assignment of `group_id`s works well enough to start with, but isn't good
   // enough to help us merge some SELECTs. The key idea is that if a given
@@ -912,6 +1006,7 @@ class QueryImpl {
 
   void Simplify(const ErrorLog &);
   void Canonicalize(const OptimizationContext &opt);
+  bool ShrinkConditions(void);
   void Optimize(const ErrorLog &);
   void ConnectInsertsToSelects(void);
   void TrackDifferentialUpdates(void) const;

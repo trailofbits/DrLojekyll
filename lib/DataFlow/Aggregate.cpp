@@ -82,8 +82,8 @@ bool Node<QueryAggregate>::Canonicalize(
   assert(attached_columns.Empty());
 
   if (valid == VIEW::kValid &&
-      (!CheckAllViewsMatch(group_by_columns, aggregated_columns) ||
-       !CheckAllViewsMatch(config_columns, aggregated_columns))) {
+      (!CheckIncomingViewsMatch(group_by_columns, aggregated_columns) ||
+       !CheckIncomingViewsMatch(config_columns, aggregated_columns))) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
@@ -106,7 +106,7 @@ bool Node<QueryAggregate>::Canonicalize(
     ++i;
 
     const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt, false  /* update_in_to_out */);
+        in_col, out_col, opt);
     (void) can_remove;
 
     if (changed) {
@@ -172,8 +172,8 @@ bool Node<QueryAggregate>::Canonicalize(
   group_by_columns.Swap(new_group_by_columns);
   columns.Swap(new_columns);
 
-  if (!CheckAllViewsMatch(group_by_columns, aggregated_columns) ||
-      !CheckAllViewsMatch(config_columns, aggregated_columns)) {
+  if (!CheckIncomingViewsMatch(group_by_columns, aggregated_columns) ||
+      !CheckIncomingViewsMatch(config_columns, aggregated_columns)) {
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 

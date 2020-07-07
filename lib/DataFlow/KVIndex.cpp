@@ -97,7 +97,7 @@ bool Node<QueryKVIndex>::Canonicalize(
     return false;
   }
 
-  if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
+  if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
@@ -120,7 +120,7 @@ bool Node<QueryKVIndex>::Canonicalize(
   for (auto in_col : input_columns) {
     const auto out_col = columns[i++];
     const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt, false  /* update_in_to_out */);
+        in_col, out_col, opt);
 
     auto &prev_out_col = in_to_out[in_col];
     const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
@@ -159,8 +159,7 @@ bool Node<QueryKVIndex>::Canonicalize(
   // If none of the value columns are used then replace this K/V index with a
   // tuple.
   if (!any_values_are_used) {
-    auto tuple = query->tuples.Create();
-    tuple->CopyConditions(this);
+    const auto tuple = query->tuples.Create();
 
 #ifndef NDEBUG
     tuple->producer = "KVINDEX-UNUSED-VALS(" + producer + ")";
@@ -170,19 +169,19 @@ bool Node<QueryKVIndex>::Canonicalize(
       tuple->columns.Create(col->var, tuple, col->id);
     }
 
-    ReplaceAllUsesWith(tuple);
     auto j = 0u;
     for (auto key_col : input_columns) {
       columns[j++]->CopyConstant(key_col);
       tuple->input_columns.AddUse(key_col);
     }
 
+    // Forward them along, ignoring the mutable merge functors. They will get
+    // eliminated by the tuple canonicalization.
     for (auto val_col : attached_columns) {
       tuple->input_columns.AddUse(val_col);
     }
 
-    is_dead = true;
-    is_canonical = true;
+    ReplaceAllUsesWith(tuple);
     return true;
   }
 
@@ -253,7 +252,7 @@ bool Node<QueryKVIndex>::Canonicalize(
   columns.Swap(new_output_columns);
   input_columns.Swap(new_input_columns);
 
-  if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
+  if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 

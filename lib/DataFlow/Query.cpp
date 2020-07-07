@@ -26,6 +26,7 @@ QueryImpl::~QueryImpl(void) {
     for (auto &[out_col, in_cols] : join->out_to_in) {
       in_cols.ClearWithoutErasure();
     }
+    join->out_to_in.clear();
     join->joined_views.ClearWithoutErasure();
   }
 
@@ -235,70 +236,6 @@ UsedNodeRange<QueryCondition> QueryView::NegativeConditions(void) const noexcept
   return {impl->negative_conditions.begin(), impl->negative_conditions.end()};
 }
 
-// Replace all uses of this view with `that` view.
-bool QueryView::ReplaceAllUsesWith(
-    EqualitySet &eq, QueryView that) const noexcept {
-  if (impl == that.impl) {
-    return true;
-
-  } else if (!impl->Equals(eq, that.impl)) {
-    return false;
-  }
-
-  // TODO(pag): Think about relaxing these constraints? Relaxing means fewer
-  //            unions but more differential tracking.
-  assert(impl->can_receive_deletions == that.impl->can_receive_deletions);
-  assert(impl->can_produce_deletions == that.impl->can_produce_deletions);
-
-  const auto num_cols = impl->columns.Size();
-  assert(num_cols == that.impl->columns.Size());
-
-  // Maintain the set of group IDs, to prevent over-merging.
-  that.impl->group_ids.insert(
-      that.impl->group_ids.end(),
-      impl->group_ids.begin(),
-      impl->group_ids.end());
-  std::sort(that.impl->group_ids.begin(), that.impl->group_ids.end());
-
-  if (const auto this_join = impl->AsJoin()) {
-    (void) this_join;
-  }
-
-  for (auto i = 0u; i < num_cols; ++i) {
-    const auto col = impl->columns[i];
-    assert(col->view == impl);
-
-    const auto that_col = that.impl->columns[i];
-    assert(that_col->view == that.impl);
-
-    assert(col->var.Type() == that_col->var.Type());
-
-    col->ReplaceAllUsesWith(that_col);
-  }
-
-  impl->ReplaceAllUsesWith(that.impl);
-  impl->positive_conditions.Clear();
-  impl->negative_conditions.Clear();
-  impl->input_columns.Clear();
-  impl->attached_columns.Clear();
-  impl->is_used = false;
-
-  if (const auto as_merge = impl->AsMerge()) {
-    as_merge->merged_views.Clear();
-
-  } else if (const auto as_join = impl->AsJoin()) {
-    as_join->out_to_in.clear();
-    as_join->num_pivots = 0;
-
-  } else if (const auto as_agg = impl->AsAggregate()) {
-    as_agg->group_by_columns.Clear();
-    as_agg->config_columns.Clear();
-    as_agg->aggregated_columns.Clear();
-  }
-
-  return true;
-}
-
 DefinedNodeRange<QueryColumn> QuerySelect::Columns(void) const {
   return QueryView(impl).Columns();
 }
@@ -385,7 +322,7 @@ bool QueryColumn::operator!=(QueryColumn that) const noexcept {
 }
 
 // The declaration of the
-const ParsedDeclaration &QueryCondition::Predicate(void) const noexcept {
+const std::optional<ParsedDeclaration> &QueryCondition::Predicate(void) const noexcept {
   return impl->declaration;
 }
 
@@ -410,7 +347,11 @@ UsedNodeRange<QueryView> QueryCondition::Setters(void) const {
 
 // Can this condition be deleted?
 bool QueryCondition::CanBeDeleted(void) const noexcept {
-  return 0 < impl->declaration.NumDeletionClauses();
+  if (impl->declaration) {
+    return 0 < impl->declaration->NumDeletionClauses();
+  } else {
+    return false;
+  }
 }
 
 // Depth of this node.

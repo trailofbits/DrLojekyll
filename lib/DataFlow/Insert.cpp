@@ -33,7 +33,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
 
 bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &) {
   is_canonical = true;
-  if (valid == VIEW::kValid && !CheckAllViewsMatch(input_columns)) {
+  if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
   }
   assert(attached_columns.Empty());

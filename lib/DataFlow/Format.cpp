@@ -43,12 +43,22 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       return;
     }
 
+    auto do_cond = [&] (const char *prefix, QueryCondition cond) {
+      os << "<TD rowspan=\"" << row_span << "\">" << prefix;
+      if (auto maybe_pred = cond.Predicate(); maybe_pred) {
+        os << maybe_pred->Name();
+      } else {
+        os << cond.UniqueId();
+      }
+      os << "</TD>";
+    };
+
     os << "<TD rowspan=\"" << row_span << "\">COND</TD>";
     for (auto cond : pos_conds) {
-      os << "<TD rowspan=\"" << row_span << "\">" << cond.Predicate().Name() << "</TD>";
+      do_cond("", cond);
     }
     for (auto cond : neg_conds) {
-      os << "<TD rowspan=\"" << row_span << "\">!" << cond.Predicate().Name() << "</TD>";
+      do_cond("!", cond);
     }
   };
 
@@ -102,8 +112,15 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto cond : query.Conditions()) {
+
     os << "c" << cond.UniqueId() << " [ label=<" << kBeginTable
-       << "<TD port=\"p0\">" << cond.Predicate().Name() << "</TD>";
+       << "<TD port=\"p0\">";
+    if (auto maybe_pred = cond.Predicate(); maybe_pred) {
+      os << maybe_pred->Name();
+    } else {
+      os << cond.UniqueId();
+    }
+    os << "</TD>";
     if (DEBUG(1 + ) 0) {
       os << "</TR><TR><TD>depth=" << cond.Depth() << "</TD>";
     }

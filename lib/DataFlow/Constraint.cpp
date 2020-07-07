@@ -49,7 +49,7 @@ bool Node<QueryConstraint>::Canonicalize(
   }
 
   if (valid == VIEW::kValid &&
-      !CheckAllViewsMatch(input_columns, attached_columns)) {
+      !CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     return false;
   }
@@ -76,11 +76,11 @@ bool Node<QueryConstraint>::Canonicalize(
   const auto lhs_is_const = lhs_col->IsConstantOrConstantRef();
   const auto rhs_is_const = rhs_col->IsConstantOrConstantRef();
 
-  //(is_unordered && sort && lhs_sort > rhs_sort) ||
   if ((lhs_col == rhs_col) ||
       (is_equality && lhs_out_is_const != (lhs_is_const || rhs_is_const)) ||
       (!is_equality && (lhs_out_is_const != lhs_is_const ||
-                        rhs_out_is_const != rhs_is_const)) ) {
+                        rhs_out_is_const != rhs_is_const)) ||
+      (opt.can_replace_inputs_with_constants && (lhs_is_const || rhs_is_const))) {
     hash = 0;
     is_canonical = false;
   }
@@ -92,14 +92,14 @@ bool Node<QueryConstraint>::Canonicalize(
   // If this view is used by a merge then we're not allowed to re-order/remove
   // the columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-  (void) GuardWithTuple(query);
+//  (void) GuardWithTuple(query);
 
   in_to_out.clear();
   auto [changed_lhs, can_remove_lhs] = CanonicalizeColumnPair(
-      lhs_col, lhs_out_col, opt, false  /* update_in_to_out */);
+      lhs_col, lhs_out_col, opt);
 
   auto [changed_rhs, can_remove_rhs] = CanonicalizeColumnPair(
-      rhs_col, rhs_out_col, opt, false  /* update_in_to_out */);
+      rhs_col, rhs_out_col, opt);
 
   (void) can_remove_lhs;  // Can't remove these.
   (void) can_remove_rhs;
@@ -109,7 +109,6 @@ bool Node<QueryConstraint>::Canonicalize(
   }
 
   DefList<COL> new_columns(this);
-  UseList<COL> new_attached_columns(this);
 
   auto i = 2u;
 
@@ -121,8 +120,6 @@ bool Node<QueryConstraint>::Canonicalize(
     // This comparison is no longer needed.
     if (lhs_col == rhs_col) {
       auto tuple = query->tuples.Create();
-      tuple->CopyConditions(this);
-
 #ifndef NDEBUG
       tuple->producer = "DEAD-CMP(" + producer + ")";
 #endif
@@ -131,8 +128,8 @@ bool Node<QueryConstraint>::Canonicalize(
         tuple->columns.Create(col->var, tuple, col->id);
       }
 
-      ReplaceAllUsesWith(tuple);
-
+      // NOTE(pag): Don't apply `input_col` to `lhs_col`; we'll let the tuple
+      //            canonicalization do any simplification for us.
       tuple->input_columns.AddUse(lhs_col);
       tuple->columns[0]->CopyConstant(lhs_col);
 
@@ -141,12 +138,7 @@ bool Node<QueryConstraint>::Canonicalize(
         tuple->columns[i]->CopyConstant(attached_columns[j]);
       }
 
-      input_columns.Clear();  // Remove this as taking inputs.
-      attached_columns.Clear();
-      hash = 0;
-      is_used = false;
-      is_dead = true;
-      is_canonical = true;
+      ReplaceAllUsesWith(tuple);
       return true;
     }
 
@@ -182,6 +174,7 @@ bool Node<QueryConstraint>::Canonicalize(
       hash = 0;
       is_canonical = true;
       is_dead = true;
+
       return non_local_changes;
     }
 
@@ -207,7 +200,28 @@ bool Node<QueryConstraint>::Canonicalize(
   assert(i == 1u || i == 2u);
   assert((num_cols - i) == attached_columns.Size());
 
-  UseList<COL> new_attached_cols(this);
+  // Little functor that gets us the normal input column, or the constant
+  // propagated one.
+  auto did_constprop = false;
+  auto constprop_col = [&] (COL *in_col) -> COL * {
+    if (auto as_const = in_col->AsConstant();
+        as_const && opt.can_replace_inputs_with_constants) {
+      if (!in_col->IsConstant()) {
+        did_constprop = true;
+        non_local_changes = true;
+        in_col->view->is_canonical = false;
+      }
+      return as_const;
+    } else {
+      return in_col;
+    }
+  };
+
+  UseList<COL> new_input_columns(this);
+  UseList<COL> new_attached_columns(this);
+
+  new_input_columns.AddUse(constprop_col(lhs_col));
+  new_input_columns.AddUse(constprop_col(rhs_col));
 
   for (auto j = 0u; i < num_cols; ++i, ++j) {
 
@@ -258,15 +272,63 @@ bool Node<QueryConstraint>::Canonicalize(
       prev_out_col = new_out_col;
     }
 
-    new_attached_cols.AddUse(in_col);
+    new_attached_columns.AddUse(constprop_col(in_col));
   }
 
-  attached_columns.Swap(new_attached_cols);
+  input_columns.Swap(new_input_columns);
+  attached_columns.Swap(new_attached_columns);
   columns.Swap(new_columns);
+
+  // We may have just broken a dependency.
+  if (did_constprop) {
+    auto prev_incoming_view = GetIncomingView(
+        new_input_columns, new_attached_columns);
+    auto curr_incoming_view = GetIncomingView(input_columns, attached_columns);
+
+    if (prev_incoming_view != curr_incoming_view) {
+      assert(prev_incoming_view != nullptr);
+      assert(!curr_incoming_view);
+
+      COND *cond = nullptr;
+
+      // Preferentially use only the old input columns (in `new_input_columns`)
+      // for the condtion.
+      if (new_attached_columns.Empty() ||
+          prev_incoming_view == GetIncomingView(new_input_columns)) {
+        cond = CreateOrInheritConditionOnView(
+            query, prev_incoming_view, std::move(new_input_columns));
+
+      // Otherwise use the attached columns.
+      } else if (new_input_columns.Empty() ||
+                 prev_incoming_view == GetIncomingView(new_attached_columns)) {
+        cond = CreateOrInheritConditionOnView(
+            query, prev_incoming_view, std::move(new_attached_columns));
+
+      // Oof, maybe both are needed :-(
+      } else {
+        UseList<COL> combined_cols(this);
+        for (auto col : new_input_columns) {
+          if (!col->IsConstant()) {
+            combined_cols.AddUse(col);
+          }
+        }
+        assert(!combined_cols.Empty());
+        cond = CreateOrInheritConditionOnView(
+            query, prev_incoming_view, std::move(combined_cols));
+      }
+
+      positive_conditions.AddUse(cond);
+      cond->positive_users.AddUse(this);
+
+      is_canonical = false;
+      return Canonicalize(query, opt);  // Recursively apply.
+    }
+  }
+
   hash = 0;
   is_canonical = true;
 
-  if (!CheckAllViewsMatch(input_columns, attached_columns)) {
+  if (!CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 

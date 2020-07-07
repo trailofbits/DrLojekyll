@@ -48,7 +48,6 @@ class QueryNode {
 }  // namespace query
 
 enum class ComparisonOperator : int;
-class EqualitySet;
 class ParsedDeclaration;
 class ParsedFunctor;
 class ParsedLiteral;
@@ -128,8 +127,8 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 // A condition related to a zero-argument predicate that must be tested.
 class QueryCondition : public query::QueryNode<QueryCondition> {
  public:
-  // The declaration of the
-  const ParsedDeclaration &Predicate(void) const noexcept;
+  // The declaration associated with this condition.
+  const std::optional<ParsedDeclaration> &Predicate(void) const noexcept;
 
   // The list of views that produce nodes iff this condition is true.
   UsedNodeRange<QueryView> PositiveUsers(void) const;
@@ -284,11 +283,6 @@ class QueryView : public query::QueryNode<QueryView> {
   // for tuples to be accepted into this node.
   UsedNodeRange<QueryCondition> PositiveConditions(void) const noexcept;
   UsedNodeRange<QueryCondition> NegativeConditions(void) const noexcept;
-
-  // Replace all uses of this view with `that` view. Returns `false` if the
-  // two views have different arities, column types, or are from different
-  // queries.
-  bool ReplaceAllUsesWith(EqualitySet &eq, QueryView that) const noexcept;
 
   // Apply a callback `cb` to each view that uses the columns of this view.
   template <typename CB>

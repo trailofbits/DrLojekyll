@@ -225,6 +225,12 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
 
 // Sort the `positive_conditions` and `negative_conditions`.
 void Node<QueryView>::OrderConditions(void) {
+  auto cb = [] (COND *cond) {
+    return !cond || cond->setters.Empty();
+  };
+  positive_conditions.RemoveIf(cb);
+  negative_conditions.RemoveIf(cb);
+
   positive_conditions.Unique();
   negative_conditions.Unique();
 }
@@ -233,8 +239,7 @@ void Node<QueryView>::OrderConditions(void) {
 // element if non-local changes are made, and `true` in the second element
 // if the column pair can be removed.
 std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
-    COL *in_col, COL *out_col, const OptimizationContext &opt,
-    bool update_in_to_out) noexcept {
+    COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept {
 
   const auto out_col_is_constref = out_col->IsConstantRef();
   const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
@@ -259,32 +264,14 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
     if (!out_col_is_constref) {
       non_local_changes = true;
       out_col->CopyConstant(in_col);
+
+    } else if (opt.can_replace_inputs_with_constants) {
+      non_local_changes = true;
     }
   }
 
   auto can_remove = false;
-
-  if (update_in_to_out) {
-    COL *&prev_out_col = in_to_out[in_col];
-    if (prev_out_col) {
-      if (out_col_is_directly_used) {
-        non_local_changes = true;
-      }
-
-      out_col->ReplaceAllUsesWith(prev_out_col);
-
-      // If the input column is represented more than once, then we can remove
-      // any secondary representations safely.
-      if (!out_col->IsUsed()) {
-        can_remove = true;
-      }
-
-    } else {
-      prev_out_col = out_col;
-    }
-  }
-
-  if (opt.can_remove_unused_columns && !can_remove && !out_col->IsUsed()) {
+  if (opt.can_remove_unused_columns && !out_col->IsUsed()) {
     can_remove = true;
   }
 
@@ -305,7 +292,7 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
     auto out_col = columns[i];
 
     auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt, false  /* update_in_to_out */);
+        in_col, out_col, opt);
 
     non_local_changes = non_local_changes || changed;
     attached_are_canonical = attached_are_canonical && !can_remove;
@@ -329,15 +316,6 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
       }
     }
   }
-
-//  if (sort) {
-//    for (auto j = 1u; j < num_attached_cols; ++j) {
-//      if (attached_columns[j - 1u]->Sort() > attached_columns[j]->Sort()) {
-//        is_canonical = false;
-//        break;
-//      }
-//    }
-//  }
 
   return {attached_are_canonical, non_local_changes};
 }
@@ -441,12 +419,12 @@ uint64_t Node<QueryView>::HashInit(void) const noexcept {
 
   for (auto positive_cond : this->positive_conditions) {
     init_hash ^= __builtin_rotateright64(init_hash, 33) *
-                 positive_cond->declaration.Id();
+                 reinterpret_cast<uintptr_t>(positive_cond);
   }
 
   for (auto negative_cond : this->negative_conditions) {
     init_hash ^= __builtin_rotateright64(init_hash, 33) *
-                 ~negative_cond->declaration.Id();
+                 ~reinterpret_cast<uintptr_t>(negative_cond);
   }
 
   return init_hash;
@@ -490,13 +468,81 @@ void Node<QueryView>::CopyConditions(Node<QueryView> *that) {
   }
 }
 
-// Replace all uses of `this` with `that`.
-void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
-  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+// Replace all uses of `this` with `that`. The semantic here is that `this`
+// remains valid and used.
+void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   unsigned i = 0u;
   for (auto col : columns) {
     col->ReplaceAllUsesWith(that->columns[i++]);
   }
+  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+
+  that->group_ids = group_ids;
+  if (can_produce_deletions) {
+    that->can_receive_deletions = true;
+    that->can_produce_deletions = true;
+  }
+  if (sets_condition) {
+    assert(!that->sets_condition ||
+           that->sets_condition.get() == sets_condition.get());
+    that->sets_condition.Swap(sets_condition);
+  }
+}
+
+// Replace all uses of `this` with `that`. The semantic here is that `this`
+// is completely subsumed/replaced by `that`.
+void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
+  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+
+  unsigned i = 0u;
+  for (auto col : columns) {
+    col->ReplaceAllUsesWith(that->columns[i++]);
+  }
+
+  // Maintain the set of group IDs, to prevent over-merging.
+  that->group_ids.insert(that->group_ids.end(), group_ids.begin(),
+                         group_ids.end());
+  std::sort(that->group_ids.begin(), that->group_ids.end());
+
+  if (can_receive_deletions) {
+    that->can_receive_deletions = true;
+  }
+
+  if (can_produce_deletions) {
+    that->can_produce_deletions = true;
+  }
+
+  that->CopyConditions(this);
+
+  if (sets_condition) {
+    assert(!that->sets_condition ||
+           that->sets_condition.get() == sets_condition.get());
+    that->sets_condition.Swap(sets_condition);
+  }
+
+  positive_conditions.Clear();
+  negative_conditions.Clear();
+  input_columns.Clear();
+  attached_columns.Clear();
+
+  if (const auto as_merge = AsMerge()) {
+    as_merge->merged_views.Clear();
+
+  } else if (const auto as_join = AsJoin()) {
+    as_join->out_to_in.clear();
+    as_join->joined_views.Clear();
+    as_join->num_pivots = 0;
+
+  } else if (const auto as_agg = AsAggregate()) {
+    as_agg->group_by_columns.Clear();
+    as_agg->config_columns.Clear();
+    as_agg->aggregated_columns.Clear();
+  }
+
+  hash = 0;
+  is_canonical = true;
+  is_used = false;
+  is_dead = true;
 }
 
 // Does this view introduce a control dependency? If a node introduces a
@@ -536,14 +582,6 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
   }
 
   const auto tuple = query->tuples.Create();
-  tuple->CopyConditions(this);
-
-  tuple->group_ids = group_ids;
-
-  if (can_produce_deletions) {
-    tuple->can_receive_deletions = true;
-    tuple->can_produce_deletions = true;
-  }
 
   for (auto col : columns) {
     auto out_col = tuple->columns.Create(col->var, tuple, col->id);
@@ -551,7 +589,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
   }
 
   // Make any merges use the tuple.
-  ReplaceAllUsesWith(tuple);
+  SubstituteAllUsesWith(tuple);
 
   for (auto col : columns) {
     tuple->input_columns.AddUse(col);
@@ -597,6 +635,7 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
 
   cmp->input_columns.AddUse(rhs_col);
   if (ComparisonOperator::kEqual == op) {
+    lhs_out_col->CopyConstant(rhs_col);
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
@@ -623,10 +662,12 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
   TUPLE *tuple = query->tuples.Create();
 
   col_index = 0u;
-  for (auto col : columns) {
-    auto out_col = tuple->columns.Create(col->var, tuple, col->id, col_index++);
-    tuple->input_columns.AddUse(in_to_out[col]);
-    out_col->CopyConstant(col);
+  for (auto orig_col : columns) {
+    const auto in_col = in_to_out[orig_col];
+    auto out_col = tuple->columns.Create(
+        orig_col->var, tuple, orig_col->id, col_index++);
+    tuple->input_columns.AddUse(in_col);
+    out_col->CopyConstant(in_col);
   }
 
 #ifndef NDEBUG
@@ -660,10 +701,63 @@ bool Node<QueryView>::ColumnsEq(
   return true;
 }
 
-// Check that all non-constant views in `cols1` match.
-bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
-  VIEW *prev_view = nullptr;
+// Figure out what the incoming view to `cols1` is.
+VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1) {
+  for (auto col : cols1) {
+    if (!col->IsConstant()) {
+      return col->view;
+    }
+  }
+  return nullptr;
+}
 
+VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
+                                       const UseList<COL> &cols2) {
+  for (auto col : cols1) {
+    if (!col->IsConstant()) {
+      return col->view;
+    }
+  }
+  for (auto col : cols2) {
+    if (!col->IsConstant()) {
+      return col->view;
+    }
+  }
+  return nullptr;
+}
+
+// Create or inherit a condition created on `view`.
+COND *Node<QueryView>::CreateOrInheritConditionOnView(
+    QueryImpl *query, Node<QueryView> *view, UseList<COL> cols) {
+  COND *condition = nullptr;
+
+  // Inherit the condition proven by `incoming_view`.
+  if (auto incoming_cond = view->sets_condition.get();
+      incoming_cond && incoming_cond->setters.Size() == 1u) {
+    condition = incoming_cond;
+
+  // Invent a new condition for `incoming_view`.
+  } else {
+    condition = query->conditions.Create();
+//    if (view->IsUsed()) {
+//      view = query->tuples.Create();
+//      view->force_is_canonical = true;
+//      view->input_columns.Swap(cols);
+//    }
+
+    assert(!view->sets_condition);
+    WeakUseRef<COND>(view, condition).Swap(view->sets_condition);
+
+    condition->setters.AddUse(view);
+  }
+
+  return condition;
+}
+
+// Check that all non-constant views in `cols1` match.
+bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1) const {
+#ifndef NDEBUG
+  VIEW *prev_view = nullptr;
   for (auto col : cols1) {
     if (!col->IsConstant()) {
       if (prev_view) {
@@ -676,6 +770,9 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
       }
     }
   }
+#else
+  (void) cols1;
+#endif
   return true;
 }
 
@@ -684,8 +781,9 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1) {
 // NOTE(pag): This isn't a pairwise matching; instead it checks that all
 //            columns in both of the lists independently reference the same
 //            view.
-bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
-                                         const UseList<COL> &cols2) {
+bool Node<QueryView>::CheckIncomingViewsMatch(
+    const UseList<COL> &cols1, const UseList<COL> &cols2) const {
+#ifndef NDEBUG
   VIEW *prev_view = nullptr;
 
   auto do_cols = [this, &prev_view] (const auto &cols) -> bool {
@@ -704,6 +802,11 @@ bool Node<QueryView>::CheckAllViewsMatch(const UseList<COL> &cols1,
     return true;
   };
   return do_cols(cols1) && do_cols(cols2);
+#else
+  (void) cols1;
+  (void) cols2;
+  return true;
+#endif
 }
 
 // Check if the `group_ids` of two views have any overlaps.

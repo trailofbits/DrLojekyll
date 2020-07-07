@@ -177,8 +177,6 @@ void QueryImpl::ConnectInsertsToSelects(void) {
 
       // Replace all merges using the SELECT with ones that use the TUPLE.
       select->ReplaceAllUsesWith(sel_tuple);
-
-      select->is_used = false;
     }
   }
 }
