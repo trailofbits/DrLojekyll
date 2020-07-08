@@ -1,0 +1,23 @@
+; This example uses recursion in stupid ways.
+
+#query output(free i32 A)
+
+#message input(i32 A)
+#local one(i32 A)
+#local direct_const(A)
+#local direct_input(A)
+
+#local direct_only(A)
+
+one(1).
+direct_const(A) : direct_const(A).
+direct_const(A) : one(A).
+
+direct_input(A) : direct_input(A).
+direct_input(A) : input(A).
+
+direct_only(A) : direct_only(A).
+
+output(A) : direct_const(A).
+output(A) : direct_input(A).
+output(A) : direct_only(A).

@@ -35,6 +35,20 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   os << "digraph {\n"
      << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
+  auto link_conds = [&] (auto view_) {
+    auto view = QueryView::From(view_);
+    auto do_cond = [&] (const char *port, QueryCondition cond) {
+      os << "v" << view.UniqueId() << ":cc" << port << cond.UniqueId()
+         << " -> c" << cond.UniqueId()  << ";\n";
+    };
+    for (auto cond : view.PositiveConditions()) {
+      do_cond("p", cond);
+    }
+    for (auto cond : view.NegativeConditions()) {
+      do_cond("n", cond);
+    }
+  };
+
   auto do_conds = [&] (int row_span, auto view_) {
     auto view = QueryView::From(view_);
     const auto pos_conds = view.PositiveConditions();
@@ -43,8 +57,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       return;
     }
 
-    auto do_cond = [&] (const char *prefix, QueryCondition cond) {
-      os << "<TD rowspan=\"" << row_span << "\">" << prefix;
+    auto do_cond = [&] (const char *prefix, const char *port, QueryCondition cond) {
+      os << "<TD rowspan=\"" << row_span << "\" port=\"cc" << port
+         << cond.UniqueId() << "\">" << prefix;
       if (auto maybe_pred = cond.Predicate(); maybe_pred) {
         os << maybe_pred->Name();
       } else {
@@ -55,10 +70,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "<TD rowspan=\"" << row_span << "\">COND</TD>";
     for (auto cond : pos_conds) {
-      do_cond("", cond);
+      do_cond("", "p", cond);
     }
     for (auto cond : neg_conds) {
-      do_cond("!", cond);
+      do_cond("!", "n", cond);
     }
   };
 
@@ -167,6 +182,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << target_id << ":p" << i << color << ";\n";
       ++i;
     }
+
+    link_conds(select);
   }
 
   for (auto constraint : query.Constraints()) {
@@ -242,6 +259,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << constraint.UniqueId() << ":g" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
+
+    link_conds(constraint);
   }
 
   for (auto kv : query.KVIndices()) {
@@ -283,6 +302,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
+    link_conds(kv);
   }
 
   for (auto join : query.Joins()) {
@@ -365,6 +385,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
       j++;
     }
+
+    link_conds(join);
   }
 
   for (auto map : query.Maps()) {
@@ -427,6 +449,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << map.UniqueId() << ":p" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
+
+    link_conds(map);
   }
 
   for (auto agg : query.Aggregates()) {
@@ -489,6 +513,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << agg.UniqueId() << ":s" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
+
+    link_conds(agg);
   }
 
   for (auto insert : query.Inserts()) {
@@ -535,6 +561,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
         }
       }
     }
+
+    link_conds(insert);
   }
 
   for (auto tuple : query.Tuples()) {
@@ -565,6 +593,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << tuple.UniqueId() << ":p" << i << " -> v"
          << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
+
+    link_conds(tuple);
   }
 
   for (auto merge : query.Merges()) {
@@ -582,6 +612,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto color = view.CanProduceDeletions() ? " [color=purple]" : "";
       os << "v" << merge.UniqueId() << " -> v" << view.UniqueId() << color << ";\n";
     }
+
+    link_conds(merge);
   }
 
   os << "}\n";

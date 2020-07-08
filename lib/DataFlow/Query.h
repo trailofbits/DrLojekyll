@@ -121,7 +121,7 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
         Def<Node<QueryCondition>>(this),
         positive_users(this, true  /* is_weak */),
         negative_users(this, true  /* is_weak */),
-        setters(this) {}
+        setters(this, true  /* is_weak */) {}
 
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
@@ -131,7 +131,7 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
         declaration(decl_),
         positive_users(this, true  /* is_weak */),
         negative_users(this, true  /* is_weak */),
-        setters(this) {}
+        setters(this, true  /* is_weak */) {}
 
   inline uint64_t Sort(void) const noexcept {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
@@ -233,7 +233,10 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   virtual const char *KindName(void) const noexcept = 0;
 
   // Copy all positive and negative conditions from `that` into `this`.
-  void CopyConditions(Node<QueryView> *that);
+  void CopyTestedConditionsFrom(Node<QueryView> *that);
+
+  // If `sets_condition` is non-null, then transfer the setter to `that`.
+  void TransferSetConditionTo(Node<QueryView> *that);
 
   // Replace all uses of `this` with `that`. The semantic here is that `this`
   // remains valid and used.
@@ -453,6 +456,10 @@ class Node<QueryView> : public User, public Def<Node<QueryView>> {
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
                                           const UseList<COL> &cols2);
+
+  // Returns a pointer to the only user of this node, or nullptr if there are
+  // zero users, or more than one users.
+  Node<QueryView> *OnlyUser(void) const noexcept;
 
   // Create or inherit a condition created on `view`.
   static COND *CreateOrInheritConditionOnView(
@@ -728,6 +735,7 @@ class Node<QueryMerge> : public Node<QueryView> {
   // views might be the same.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
+  // The views that are being merged together.
   UseList<VIEW> merged_views;
 
   // Should all the incoming merged views be treated as an equivalence class?

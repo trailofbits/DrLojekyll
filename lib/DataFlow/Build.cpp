@@ -1731,7 +1731,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     return std::nullopt;
   }
 
-  impl->SinkConditions();
+//  impl->SinkConditions();
   impl->TrackDifferentialUpdates();
 
   return Query(std::move(impl));

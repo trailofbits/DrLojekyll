@@ -260,7 +260,7 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
   // just eliminated the last incoming column, we also reduced the number of
   // joined views, but replaced that deficit with a CONDition, which was added
   // to the JOIN. Go and add any such conditions onto the just-created TUPLE.
-  tuple->CopyConditions(this);
+  tuple->CopyTestedConditionsFrom(this);
 }
 
 // If we have a constant feeding into one of the pivot sets, then we want to
@@ -452,6 +452,9 @@ bool Node<QueryJoin>::Canonicalize(
   auto need_remove_non_pivots = false;
   auto all_pivots_are_const_or_constref = true;
 
+  VIEW *first_joined_view = nullptr;
+  bool joins_at_least_two_views = false;
+
   for (auto &[out_col, in_cols] : out_to_in) {
     assert(!in_cols.Empty());
     COL *same_col = in_cols[0];
@@ -499,6 +502,12 @@ bool Node<QueryJoin>::Canonicalize(
         }
 
       } else if (in_col->IsConstantRef()) {
+        if (!first_joined_view) {
+          first_joined_view = in_col->view;
+        } else if (in_col->view != first_joined_view) {
+          joins_at_least_two_views = true;
+        }
+
         same_const = nullptr;  // Not all columns are constant.
 
         if (!first_const_ref) {
@@ -512,6 +521,12 @@ bool Node<QueryJoin>::Canonicalize(
         }
 
       } else {
+        if (!first_joined_view) {
+          first_joined_view = in_col->view;
+        } else if (in_col->view != first_joined_view) {
+          joins_at_least_two_views = true;
+        }
+
         // Not all columns are constant.
         same_const = nullptr;
 
@@ -606,7 +621,7 @@ bool Node<QueryJoin>::Canonicalize(
     }
   }
 
-  if (!non_local_changes && is_canonical) {
+  if (!non_local_changes && is_canonical && joins_at_least_two_views) {
     return false;
   }
 
@@ -665,8 +680,7 @@ bool Node<QueryJoin>::Canonicalize(
   // This JOIN isn't needed. If all incoming things are constant then by the
   // time we get down here, we should have sunk conditions down to all the
   // source views
-  if (joined_views.Empty() ||
-      (all_pivots_are_const_or_constref && joined_views.Size() == 1)) {
+  if (1u >= joined_views.Size()) {
 
     TUPLE *tuple = query->tuples.Create();
 

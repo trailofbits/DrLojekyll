@@ -1,0 +1,10 @@
+; This example reports an error because the user should extract out the fizz(B), buzz(B) part
+; as a zero-argument predicate.
+
+#query foo(free i32 A)
+#export bar(A)
+#export baz(A)
+#export fizz(B)
+#export buzz(B)
+
+foo(A) : bar(A), baz(A), fizz(B), buzz(B).

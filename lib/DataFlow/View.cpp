@@ -182,7 +182,7 @@ uint64_t Node<QueryView>::Sort(void) noexcept {
 // whether or not the view is used in a merge, or whether or not any of its
 // columns are used.
 bool Node<QueryView>::IsUsed(void) const noexcept {
-  if (is_used || this->Def<Node<QueryView>>::IsUsed()) {
+  if (is_used || sets_condition || this->Def<Node<QueryView>>::IsUsed()) {
     return true;
   }
 
@@ -456,7 +456,7 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 }
 
 // Copy all positive and negative conditions from `that` into `this`.
-void Node<QueryView>::CopyConditions(Node<QueryView> *that) {
+void Node<QueryView>::CopyTestedConditionsFrom(Node<QueryView> *that) {
   for (auto cond : that->positive_conditions) {
     positive_conditions.AddUse(cond);
     cond->positive_users.AddUse(this);
@@ -465,6 +465,24 @@ void Node<QueryView>::CopyConditions(Node<QueryView> *that) {
   for (auto cond : that->negative_conditions) {
     negative_conditions.AddUse(cond);
     cond->negative_users.AddUse(this);
+  }
+}
+
+// If `sets_condition` is non-null, then transfer the setter to `that`.
+void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
+  if (auto cond = sets_condition.get(); cond) {
+    if (!that->sets_condition) {
+      that->sets_condition.Swap(sets_condition);
+
+    } else if (that->sets_condition.get() == cond) {
+      WeakUseRef<COND>().Swap(sets_condition);
+
+    } else {
+      cond->ReplaceAllUsesWith(that->sets_condition.get());
+    }
+
+    cond->setters.RemoveIf([=] (VIEW *v) { return v == this || v == that; });
+    cond->setters.AddUse(that);
   }
 }
 
@@ -482,11 +500,8 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
     that->can_receive_deletions = true;
     that->can_produce_deletions = true;
   }
-  if (sets_condition) {
-    assert(!that->sets_condition ||
-           that->sets_condition.get() == sets_condition.get());
-    that->sets_condition.Swap(sets_condition);
-  }
+
+  TransferSetConditionTo(that);
 }
 
 // Replace all uses of `this` with `that`. The semantic here is that `this`
@@ -512,13 +527,8 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
     that->can_produce_deletions = true;
   }
 
-  that->CopyConditions(this);
-
-  if (sets_condition) {
-    assert(!that->sets_condition ||
-           that->sets_condition.get() == sets_condition.get());
-    that->sets_condition.Swap(sets_condition);
-  }
+  that->CopyTestedConditionsFrom(this);
+  TransferSetConditionTo(that);
 
   positive_conditions.Clear();
   negative_conditions.Clear();
@@ -724,6 +734,34 @@ VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
     }
   }
   return nullptr;
+}
+
+// Returns a pointer to the only user of this node, or nullptr if there are
+// zero users, or more than one users.
+Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
+  VIEW *only_user = nullptr;
+  bool fail = false;
+  for (auto col : columns) {
+    col->ForEachUser([&] (VIEW *user) {
+      if (!only_user) {
+        only_user = user;
+      } else if (only_user != user) {
+        fail = true;
+      }
+    });
+    if (fail) {
+      return nullptr;
+    }
+  }
+  this->ForEachUse<VIEW>([&] (VIEW *user, VIEW *) {
+    if (!only_user) {
+      only_user = user;
+    } else if (only_user != user) {
+      fail = true;
+    }
+  });
+
+  return fail ? nullptr : only_user;
 }
 
 // Create or inherit a condition created on `view`.

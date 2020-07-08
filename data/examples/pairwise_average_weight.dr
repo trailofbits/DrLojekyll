@@ -12,10 +12,9 @@ edge(From, To) : add_edge(From, To, _).
 edge_weight(From, To, Weight) : add_edge(From, To, Weight).
 
 pairwise_average_weight(X, Avg)
-  : edge(A, X)
-  , edge(B, X)
-  , edge_weight(A, X, AX_Weight)
+  : edge_weight(A, X, AX_Weight)
   , edge_weight(B, X, BX_Weight)
+  , A != B
   , add_i32(AX_Weight, BX_Weight, Sum)
   , div_i32(Sum, 2, Avg).
 

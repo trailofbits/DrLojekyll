@@ -55,79 +55,50 @@ bool Node<QueryTuple>::Canonicalize(
     }
   }
 
-  if (is_canonical) {
-    return false;
-  }
-
+  assert(attached_columns.Empty());
   if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
   }
 
-  assert(attached_columns.Empty());
-
-  const auto used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
   const auto incoming_view = GetIncomingView(input_columns);
+  const auto introduces_control_dep = IntroducesControlDependency();
+  const auto max_i = columns.Size();
 
-  // If this tuple is not used in a MERGE, then try to figure out if we can
-  // eliminate this tuple altogether by seeing who uses it. If none of the
-  // users are a JOIN, then we can eliminate this tuple.
-  //
-  // The check for JOINs is important because if we eliminated the TUPLE, then
-  // the INPUT would flow into the same JOIN pivot columns multiple times, and
-  // then the JOIN would be canonicalized away into nothing.
-  //
-  //                 |
-  //         .-<-- INPUT -->--.
-  //        /                 |
-  //    JOIN --<-- TUPLE --<--'
-  //
-  // NOTE(pag): It's possible that an unused output column holds onto a
-  //            critical input column whose condition might decode whether
-  //            or not anything will ever actually flow. Thus, we can only
-  //            eliminate this TUPLE if all of its outputs are used.
-  if (incoming_view &&
-      !used_in_merge &&
+  // This tuple forwards all its data to something else; merge upward. The one
+  // case where we can't forward our data along is when the outgoing view is
+  // a JOIN, because otherwise we might have a diamond pattern where there the
+  // tuples exist to introduce two separate flows into a JOIN, e.g. as in
+  // `transitive_closure.dr`.
+  if (!is_used_in_merge &&
+      !introduces_control_dep &&
       !sets_condition &&
-      !IntroducesControlDependency() &&
-      AllColumnsAreUsed() && false) {
+      AllColumnsAreUsed()) {
+    if (auto outgoing_view = OnlyUser();
+        outgoing_view && !outgoing_view->AsJoin()) {
+      assert(!outgoing_view->AsMerge());
 
-    assert(!force_is_canonical);
-    auto any_user_is_join = false;
-    for (auto col : columns) {
-      col->ForEachUse<VIEW>([&] (VIEW *user, COL *) {
-        if (user->AsJoin()) {
-          any_user_is_join = true;
-        }
-      });
-
-      if (any_user_is_join) {
-        break;
-      }
-    }
-
-    // We can eliminate this tuple as none of the users are JOINs, and this
-    // tuple doesn't feed into a MERGE.
-    if (!any_user_is_join) {
-      for (auto i = 0u, max_i = columns.Size(); i < max_i; ++i) {
-        columns[i]->ReplaceAllUsesWith(input_columns[i]);
-        input_columns[i]->view->is_canonical = false;
+      for (auto i = 0u; i < max_i; ++i) {
+        const auto in_col = input_columns[i];
+        const auto out_col = columns[i];
+        out_col->ReplaceAllUsesWith(in_col);
+        in_col->view->is_canonical = false;
       }
 
-      hash = 0;
-      is_canonical = true;
-      is_used = false;
-      is_dead = true;
       input_columns.Clear();
-      return true;  // Non-local changes.
+      is_dead = true;
+      return true;
     }
+  }
+
+  if (is_canonical) {
+    return false;
   }
 
   bool non_local_changes = false;
   bool has_unused_columns = false;
-
-  const auto max_i = columns.Size();
 
   in_to_out.clear();
   for (auto i = 0u; i < max_i; ++i) {
@@ -170,13 +141,13 @@ bool Node<QueryTuple>::Canonicalize(
   if (incoming_view &&
       incoming_view->NumUses() == 1 &&
       incoming_view->columns.Size() == columns.Size() &&
-      !sets_condition) {
+      !introduces_control_dep) {
 
     assert(incoming_view != this);
 
     // If this view is used in a MERGE then it's only safe to replace it with
     // `incoming_view` if the columns are in the same order.
-    if (this->Def<Node<QueryView>>::IsUsed()) {
+    if (is_used_in_merge) {
       if (incoming_view->columns.Size() == columns.Size()) {
 
         auto i = 0u;
@@ -199,8 +170,9 @@ bool Node<QueryTuple>::Canonicalize(
     // `this` is not used in a MERGE, so there are no ordering constraints
     // on `incoming_view`.
     } else {
-      incoming_view->CopyConditions(this);
+      incoming_view->CopyTestedConditionsFrom(this);
       incoming_view->OrderConditions();
+      TransferSetConditionTo(incoming_view);
 
       for (auto [in_col, out_col] : in_to_out) {
         out_col->ReplaceAllUsesWith(in_col);
