@@ -17,17 +17,32 @@ void QueryImpl::ConnectInsertsToSelects(void) {
            decl.Arity();  // Not a condition.
   };
 
+  auto unlink_insert = [] (INSERT *insert) {
+    if (auto stream = insert->stream.get(); stream) {
+      if (auto io = stream->AsIO(); io) {
+        io->inserts.RemoveIf([=] (VIEW *v) { return v == insert; });
+      } else {
+        assert(false);
+      }
+    } else if (auto rel = insert->relation.get(); rel) {
+      rel->inserts.RemoveIf([=] (VIEW *v) { return v == insert; });
+    }
+
+    insert->is_used = false;
+    insert->is_dead = true;
+  };
+
   // Go figure out what INSERTs can be connected to SELECTs, and also try
   // to mark some INSERTs as no longer needed.
   for (auto insert : inserts) {
     if (can_connect(insert->declaration)) {
-      insert->is_used = false;
+      unlink_insert(insert);
       decl_to_inserts[insert->declaration].push_back(insert);
 
     } else if (!insert->declaration.IsQuery() &&
                !insert->declaration.IsMessage()) {
       if (!insert->declaration.NumUses()) {
-        insert->is_used = false;
+        unlink_insert(insert);
       }
     }
   }

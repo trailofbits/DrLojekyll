@@ -10,7 +10,7 @@ Node<QueryConstant> *Node<QueryStream>::AsConstant(void) noexcept {
   return nullptr;
 }
 
-Node<QueryInput> *Node<QueryStream>::AsInput(void) noexcept {
+Node<QueryIO> *Node<QueryStream>::AsIO(void) noexcept {
   return nullptr;
 }
 

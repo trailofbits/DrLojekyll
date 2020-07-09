@@ -18,7 +18,7 @@ void QueryImpl::TrackDifferentialUpdates(void) const {
     if (auto rel = select->relation.get(); rel) {
       decl_to_selects[rel->declaration].push_back(select);
     } else if (auto stream = select->stream.get(); stream) {
-      if (auto input = stream->AsInput(); input) {
+      if (auto input = stream->AsIO(); input) {
         decl_to_selects[input->declaration].push_back(select);
       }
     }

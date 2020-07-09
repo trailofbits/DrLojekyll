@@ -29,7 +29,8 @@ static bool CSE(CandidateList &all_views) {
 
   auto changed = false;
 
-  std::vector<std::pair<VIEW *, VIEW *>> to_replace;
+  using CandidatePair = std::tuple<uint64_t, VIEW *, uint64_t, VIEW *>;
+  std::vector<CandidatePair> to_replace;
   std::unordered_map<VIEW *, VIEW *> top_map;
   auto resolve = [&] (VIEW *a) -> VIEW * {
     while (top_map.count(a)) {
@@ -46,25 +47,48 @@ static bool CSE(CandidateList &all_views) {
       auto v1 = candidates[i];
       for (auto j = i + 1u; j < candidates.size(); ++j) {
         auto v2 = candidates[j];
+        assert(v1 != v2);
 
         eq.Clear();
         if (v1->Equals(eq, v2)) {
-          to_replace.emplace_back(v1, v2);
+          to_replace.emplace_back(v1->UpHash(1), v1, v2->UpHash(1), v2);
           top_map.emplace(v1, v2);
         }
       }
     }
 
     std::sort(to_replace.begin(), to_replace.end(),
-              [] (std::pair<VIEW *, VIEW *> a, std::pair<VIEW *, VIEW *> b) {
-      return std::min(a.first->Depth(), a.second->Depth()) <
-             std::min(b.first->Depth(), b.second->Depth());
+              [] (CandidatePair a, CandidatePair b) {
+      const auto a_v1_uphash = std::get<0>(a);
+      const auto a_v2_uphash = std::get<2>(a);
+
+      const auto b_v1_uphash = std::get<0>(b);
+      const auto b_v2_uphash = std::get<2>(b);
+
+      int a_bad = a_v1_uphash != a_v2_uphash;
+      int b_bad = b_v1_uphash != b_v2_uphash;
+
+      if (a_bad != b_bad) {
+        return a_bad < b_bad;
+      }
+
+      const auto a_v1 = std::get<1>(a);
+      const auto a_v2 = std::get<3>(a);
+
+      const auto b_v1 = std::get<1>(b);
+      const auto b_v2 = std::get<3>(b);
+
+      return std::min(a_v1->Depth(), a_v2->Depth()) <
+             std::min(b_v1->Depth(), b_v2->Depth());
     });
 
     while (!to_replace.empty()) {
-      auto [v1, v2] = to_replace.back();
+      auto [v1_uphash, v1, v2_uphash, v2] = to_replace.back();
       to_replace.pop_back();
       v2 = resolve(v2);
+
+      (void) v1_uphash;
+      (void) v2_uphash;
 
       eq.Clear();
       if (v1 != v2 &&
@@ -365,8 +389,6 @@ void QueryImpl::Optimize(const ErrorLog &log) {
       });
     }
   };
-
-  RemoveUnusedViews();
 
   do_cse();  // Apply CSE to all views before most canonicalization.
   OptimizationContext opt(log);

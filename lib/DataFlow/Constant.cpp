@@ -10,4 +10,8 @@ Node<QueryConstant> *Node<QueryConstant>::AsConstant(void) noexcept {
   return this;
 }
 
+const char *Node<QueryConstant>::KindName(void) const noexcept {
+  return "CONST";
+}
+
 }  // namespace hyde

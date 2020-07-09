@@ -29,7 +29,7 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
               std::hash<std::string_view>()(
                   const_stream->literal.Spelling());
 
-    } else if (auto input_stream = stream->AsInput()) {
+    } else if (auto input_stream = stream->AsIO()) {
       hash ^= hash_ror * input_stream->declaration.Id();
 
     } else {
@@ -61,6 +61,10 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
   real = GetDepth(negative_conditions, real);
   depth = real + 1u;
 
+  if (relation) {
+
+  }
+
   return depth;
 }
 
@@ -83,7 +87,7 @@ bool Node<QuerySelect>::Equals(
       return false;
     }
 
-    if (stream->AsInput() || stream->AsConstant()) {
+    if (stream->AsIO() || stream->AsConstant()) {
       return true;
 
     } else {

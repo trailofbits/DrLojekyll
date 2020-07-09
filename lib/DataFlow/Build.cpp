@@ -24,7 +24,7 @@
 
 namespace hyde {
 
-extern OutputStream *gOut;
+DEBUG(extern OutputStream *gOut;)
 
 namespace {
 
@@ -142,7 +142,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
 
     auto &input = query->decl_to_input[decl];
     if (!input) {
-      input = query->inputs.Create(decl);
+      input = query->ios.Create(decl);
     }
 
     view = query->selects.Create(input, pred.SpellingRange());
@@ -1657,9 +1657,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   if (decl.IsMessage()) {
     auto &stream = query->decl_to_input[decl];
     if (!stream) {
-      stream = query->inputs.Create(decl);
+      stream = query->ios.Create(decl);
     }
     insert = query->inserts.Create(stream, decl, !clause.IsDeletion());
+    stream->inserts.AddUse(insert);
 
   } else {
     auto &rel = query->decl_to_pos_relation[decl];
@@ -1667,6 +1668,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       rel = query->relations.Create(decl);
     }
     insert = query->inserts.Create(rel, decl, !clause.IsDeletion());
+    rel->inserts.AddUse(insert);
   }
 
   for (auto col : context.result->columns) {
@@ -1725,7 +1727,12 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   impl->RelabelGroupIDs();
   impl->TrackDifferentialUpdates();
   impl->Simplify(log);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
   impl->ConnectInsertsToSelects();
+  impl->RemoveUnusedViews();
   impl->Optimize(log);
   if (num_errors != log.Size()) {
     return std::nullopt;

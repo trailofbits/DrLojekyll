@@ -20,9 +20,10 @@ const char *Node<QuerySelect>::KindName(void) const noexcept {
   } else if (auto s = stream.get(); s) {
     if (s->AsConstant()) {
       return "CONST";
-    } else if (s->AsInput()) {
-      return "INPUT";
+    } else if (s->AsIO()) {
+      return "RECV";
     } else {
+      assert(false);
       return "STREAM";
     }
   } else {
@@ -80,15 +81,18 @@ const char *Node<QueryConstraint>::KindName(void) const noexcept {
 
 const char *Node<QueryInsert>::KindName(void) const noexcept {
   if (declaration.Kind() == DeclarationKind::kQuery) {
-    return "RESPOND";
+    return "MATERIALIZE";
+
   } else if (declaration.Kind() == DeclarationKind::kMessage) {
     return "SEND";
+
   } else if (is_insert) {
     if (declaration.Arity()) {
       return "INSERT";
     } else {
       return "INCREMENT";
     }
+
   } else {
     if (declaration.Arity()) {
       return "DELETE";
@@ -446,8 +450,8 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   unsigned i = 0u;
   for (auto col : columns) {
     col->ForEachUse<VIEW>([=, &up_hash] (VIEW *user, COL *) {
-      up_hash = __builtin_rotateright64(up_hash, i + 7u);
-      up_hash ^= user->UpHash(depth - 1u);
+      up_hash ^= __builtin_rotateright64(up_hash, (i + 7u) % 64u) *
+                 user->UpHash(depth - 1u);
     });
     ++i;
   }

@@ -110,15 +110,15 @@ using COL = Node<QueryColumn>;
 // A condition to be tested in order to admit tuples into a relation or
 // produce tuples.
 template <>
-class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
+class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
  public:
   ~Node(void);
 
   // An anonymous, not-user-defined condition that is instead inferred based
   // off of optmizations.
   inline Node(void)
-      : User(this),
-        Def<Node<QueryCondition>>(this),
+      : Def<Node<QueryCondition>>(this),
+        User(this),
         positive_users(this, true  /* is_weak */),
         negative_users(this, true  /* is_weak */),
         setters(this, true  /* is_weak */) {}
@@ -126,8 +126,8 @@ class Node<QueryCondition> : public User, public Def<Node<QueryCondition>> {
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
   inline explicit Node(ParsedExport decl_)
-      : User(this),
-        Def<Node<QueryCondition>>(this),
+      : Def<Node<QueryCondition>>(this),
+        User(this),
         declaration(decl_),
         positive_users(this, true  /* is_weak */),
         negative_users(this, true  /* is_weak */),
@@ -153,13 +153,16 @@ using COND = Node<QueryCondition>;
 
 // A "table" of data.
 template <>
-class Node<QueryRelation> : public Def<Node<QueryRelation>> {
+class Node<QueryRelation> : public Def<Node<QueryRelation>>, public User {
  public:
   inline explicit Node(ParsedDeclaration decl_)
       : Def<Node<QueryRelation>>(this),
-        declaration(decl_) {}
+        User(this),
+        declaration(decl_),
+        inserts(this, true) {}
 
   const ParsedDeclaration declaration;
+  UseList<Node<QueryView>> inserts;
 };
 
 using REL = Node<QueryRelation>;
@@ -174,7 +177,8 @@ class Node<QueryStream> : public Def<Node<QueryStream>> {
       : Def<Node<QueryStream>>(this) {}
 
   virtual Node<QueryConstant> *AsConstant(void) noexcept;
-  virtual Node<QueryInput> *AsInput(void) noexcept;
+  virtual Node<QueryIO> *AsIO(void) noexcept;
+  virtual const char *KindName(void) const noexcept = 0;
 };
 
 using STREAM = Node<QueryStream>;
@@ -189,6 +193,7 @@ class Node<QueryConstant> final : public Node<QueryStream> {
       : literal(literal_) {}
 
   Node<QueryConstant> *AsConstant(void) noexcept override;
+  const char *KindName(void) const noexcept override;
 
   const ParsedLiteral literal;
 };
@@ -197,29 +202,33 @@ using CONST = Node<QueryConstant>;
 
 // Input, i.e. a messsage.
 template <>
-class Node<QueryInput> final : public Node<QueryStream> {
+class Node<QueryIO> final : public Node<QueryStream>, public User{
  public:
   virtual ~Node(void);
 
   inline Node(ParsedDeclaration declaration_)
-      : declaration(declaration_) {}
+      : User(this),
+        declaration(declaration_),
+        inserts(this, true) {}
 
-  Node<QueryInput> *AsInput(void) noexcept override;
+  Node<QueryIO> *AsIO(void) noexcept override;
+  const char *KindName(void) const noexcept override;
 
   const ParsedDeclaration declaration;
+  UseList<Node<QueryView>> inserts;
 };
 
-using INPUT = Node<QueryInput>;
+using IO = Node<QueryIO>;
 
 // A view "owns" its the columns pointed to by `columns`.
 template <>
-class Node<QueryView> : public User, public Def<Node<QueryView>> {
+class Node<QueryView> : public Def<Node<QueryView>>, public User {
  public:
   virtual ~Node(void);
 
   Node(void)
-      : User(this),
-        Def<Node<QueryView>>(this),
+      : Def<Node<QueryView>>(this),
+        User(this),
         columns(this),
         input_columns(this),
         attached_columns(this),
@@ -497,7 +506,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
       : position(range.From()),
         stream(stream_->CreateUse(this)),
         inserts(this) {
-    if (auto input_stream = stream->AsInput(); input_stream) {
+    if (auto input_stream = stream->AsIO(); input_stream) {
       this->can_receive_deletions = 0u < input_stream->declaration.NumDeletionClauses();
       this->can_produce_deletions = this->can_receive_deletions;
     }
@@ -1016,12 +1025,13 @@ class QueryImpl {
   void Canonicalize(const OptimizationContext &opt);
   bool ShrinkConditions(void);
   void Optimize(const ErrorLog &);
+  void BreakCycles(const ErrorLog &);
   void ConnectInsertsToSelects(void);
   void TrackDifferentialUpdates(void) const;
   void SinkConditions(void) const;
 
   // The streams associated with input relations to queries.
-  std::unordered_map<ParsedDeclaration, Node<QueryInput> *>
+  std::unordered_map<ParsedDeclaration, Node<QueryIO> *>
       decl_to_input;
 
   // The tables available within any query sharing this context.
@@ -1045,7 +1055,7 @@ class QueryImpl {
   unsigned select_group_id{0};
 
   // The streams associated with messages and other concrete inputs.
-  DefList<Node<QueryInput>> inputs;
+  DefList<Node<QueryIO>> ios;
 
   DefList<Node<QueryRelation>> relations;
   DefList<Node<QueryConstant>> constants;

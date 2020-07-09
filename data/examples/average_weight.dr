@@ -21,15 +21,12 @@ node(From) : edge(From, _).
 node(To) : edge(_, To).
 
 average_incoming_weight(X, Avg)
-  : node(X)
-  , sum_i32(AX_Weight, Sum)
+  : sum_i32(AX_Weight, Sum)
       over (i32 X, i32 AX_Weight) {
-        edge(A, X),
         edge_weight(A, X, AX_Weight)
       }
   , count_i32(BX_Weight, Count)
       over (i32 X, i32 BX_Weight) {
-        edge(B, X),
         edge_weight(B, X, BX_Weight)
       }
   , div_i32(Sum, Count, Avg).

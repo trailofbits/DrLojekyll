@@ -63,6 +63,7 @@ class QueryConstant;
 class QueryConstraint;
 class QueryImpl;
 class QueryInsert;
+class QueryIO;
 class QueryJoin;
 class QueryMerge;
 class QueryRelation;
@@ -162,21 +163,22 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
   friend class QuerySelect;
 };
 
-// A stream of inputs into the system. This represents messsages, functors
-// that take no inputs and produce outputs, and constants. The latter two are
-// considered non-blocking, and messages are considered to be blocking streams.
-// The blocking vs. non-blocking is in relation to pull semantics.
+// A stream of inputs into the system, or outputs from the system.
 class QueryStream : public query::QueryNode<QueryStream> {
  public:
   static QueryStream From(const QuerySelect &sel) noexcept;
 
+  QueryStream(const QueryIO &io) noexcept;
+  QueryStream(const QueryConstant &const_) noexcept;
+
+  const char *KindName(void) const noexcept;
+
   bool IsConstant(void) const noexcept;
-  bool IsInput(void) const noexcept;
-  bool IsBoundQueryInput(void) const noexcept;
+  bool IsIO(void) const noexcept;
 
  private:
   friend class QueryConstant;
-  friend class QueryInput;
+  friend class QueryIO;
 
   using query::QueryNode<QueryStream>::QueryNode;
 };
@@ -193,22 +195,22 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
   using query::QueryNode<QueryConstant>::QueryNode;
 
   friend class QuerySelect;
+  friend class QueryStream;
   friend class QueryView;
 };
 
 // A set of concrete inputs to a query.
-class QueryInput : public query::QueryNode<QueryInput> {
+class QueryIO : public query::QueryNode<QueryIO> {
  public:
   const ParsedDeclaration &Declaration(void) const noexcept;
 
-  static QueryInput From(QueryStream &stream);
-
-  QueryRelation Relation(void) const noexcept;
+  static QueryIO From(QueryStream &stream);
 
  private:
-  using query::QueryNode<QueryInput>::QueryNode;
+  using query::QueryNode<QueryIO>::QueryNode;
 
   friend class QuerySelect;
+  friend class QueryStream;
 };
 
 class ParsedExport;
@@ -672,7 +674,7 @@ class Query {
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
   DefinedNodeRange<QueryMerge> Merges(void) const;
   DefinedNodeRange<QueryConstraint> Constraints(void) const;
-  DefinedNodeRange<QueryInput> Inputs(void) const;
+  DefinedNodeRange<QueryIO> IOs(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
 
   template <typename T>

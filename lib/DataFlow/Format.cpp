@@ -103,16 +103,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
   }
 
-  for (auto input : query.Inputs()) {
+  for (auto input : query.IOs()) {
     const auto decl = input.Declaration();
     const auto arity = decl.Arity();
-    os << "t" << input.UniqueId() << " [ label=<" << kBeginTable << "<TD>";
-    if (decl.IsMessage()) {
-      os << "RECV ";
-    } else if (decl.IsQuery()) {
-      os << "QUERY ";
-    }
-    os << ParsedDeclarationName(decl) << "</TD>";
+    os << "t" << input.UniqueId() << " [ label=<" << kBeginTable << "<TD>"
+       << QueryStream(input).KindName() << ' ' << ParsedDeclarationName(decl)
+       << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
@@ -169,8 +165,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (select.IsRelation()) {
       target_id = select.Relation().UniqueId();
 
-    } else if (select.IsStream()){
+    } else if (select.IsStream()) {
       target_id = select.Stream().UniqueId();
+
     } else {
       assert(false);
     }

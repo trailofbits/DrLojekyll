@@ -10,6 +10,15 @@
 namespace hyde {
 
 QueryImpl::~QueryImpl(void) {
+
+  for (auto rel : relations) {
+    rel->inserts.ClearWithoutErasure();
+  }
+
+  for (auto io : ios) {
+    io->inserts.ClearWithoutErasure();
+  }
+
   ForEachView([] (VIEW *view) {
     view->input_columns.ClearWithoutErasure();
     view->attached_columns.ClearWithoutErasure();
@@ -53,20 +62,22 @@ QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
   return QueryStream(stream);
 }
 
+QueryStream::QueryStream(const QueryIO &io) noexcept
+    : query::QueryNode<QueryStream>(io.impl) {}
+
+QueryStream::QueryStream(const QueryConstant &const_) noexcept
+    : query::QueryNode<QueryStream>(const_.impl) {}
+
+const char *QueryStream::KindName(void) const noexcept {
+  return impl->KindName();
+}
+
 bool QueryStream::IsConstant(void) const noexcept {
   return impl->AsConstant() != nullptr;
 }
 
-bool QueryStream::IsInput(void) const noexcept {
-  return impl->AsInput() != nullptr;
-}
-
-bool QueryStream::IsBoundQueryInput(void) const noexcept {
-  const auto input = impl->AsInput();
-  if (!input) {
-    return false;
-  }
-  return input->declaration.IsQuery();
+bool QueryStream::IsIO(void) const noexcept {
+  return impl->AsIO() != nullptr;
 }
 
 QueryView QueryView::Containing(QueryColumn col) {
@@ -378,12 +389,12 @@ QueryConstant QueryConstant::From(QueryColumn col) {
       col.impl->AsConstant()->view->AsSelect()->stream->AsConstant());
 }
 
-QueryInput QueryInput::From(QueryStream &stream) {
-  assert(stream.IsInput());
-  return reinterpret_cast<QueryInput &>(stream);
+QueryIO QueryIO::From(QueryStream &stream) {
+  assert(stream.IsIO());
+  return reinterpret_cast<QueryIO &>(stream);
 }
 
-const ParsedDeclaration &QueryInput::Declaration(void) const noexcept {
+const ParsedDeclaration &QueryIO::Declaration(void) const noexcept {
   return impl->declaration;
 }
 
@@ -1011,9 +1022,9 @@ DefinedNodeRange<QueryConstant> Query::Constants(void) const {
           DefinedNodeIterator<QueryConstant>(impl->constants.end())};
 }
 
-DefinedNodeRange<QueryInput> Query::Inputs(void) const {
-  return {DefinedNodeIterator<QueryInput>(impl->inputs.begin()),
-          DefinedNodeIterator<QueryInput>(impl->inputs.end())};
+DefinedNodeRange<QueryIO> Query::IOs(void) const {
+  return {DefinedNodeIterator<QueryIO>(impl->ios.begin()),
+          DefinedNodeIterator<QueryIO>(impl->ios.end())};
 }
 
 DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
