@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(cxx_settings INTERFACE)
 target_include_directories(cxx_settings INTERFACE
-        "${CMAKE_CURRENT_LIST_DIR}/include")
+    "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_compile_options(cxx_settings INTERFACE
    -Werror -Wall -pedantic -Wconversion)
@@ -75,7 +75,7 @@ function(fuzzer config)
     add_executable(fuzzer-${config}
         Fuzzer.cpp)
     target_link_libraries(fuzzer-${config}
-		parser-${config})
+        parser-${config})
 endfunction(fuzzer)
 
 # Build everything in the `lib` dir using the `dbg`, `asan`, and `libfuzzer`
@@ -92,4 +92,3 @@ if (NOT APPLE)
     lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
     fuzzer(libfuzzer)
  endif(NOT APPLE)
- 
