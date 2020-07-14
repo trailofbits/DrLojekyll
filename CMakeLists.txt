@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(cxx_settings INTERFACE)
 target_include_directories(cxx_settings INTERFACE
-        "${CMAKE_CURRENT_LIST_DIR}/include")
+    "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_compile_options(cxx_settings INTERFACE
    -Werror -Wall -pedantic -Wconversion)
@@ -29,19 +29,19 @@ target_compile_options(dbg INTERFACE
 target_link_libraries(dbg INTERFACE
     cxx_settings)
 
-# asan ---------------------------------------
-add_library(asan INTERFACE)
-target_compile_options(asan INTERFACE
+# sanitizer ----------------------------------
+add_library(sanitizer INTERFACE)
+target_compile_options(sanitizer INTERFACE
     -fsanitize=address,undefined
     -fsanitize-address-use-after-scope
     -fno-omit-frame-pointer
     -fno-optimize-sibling-calls)
 
-target_link_options(asan INTERFACE
+target_link_options(sanitizer INTERFACE
     -fsanitize=address,undefined
     -Wl,-undefined,dynamic_lookup)
 
-target_link_libraries(asan INTERFACE
+target_link_libraries(sanitizer INTERFACE
     cxx_settings)
 
 # libfuzzer ---------------------------------
@@ -75,21 +75,15 @@ function(fuzzer config)
     add_executable(fuzzer-${config}
         Fuzzer.cpp)
     target_link_libraries(fuzzer-${config}
-		parser-${config})
+        parser-${config})
 endfunction(fuzzer)
 
-# Build everything in the `lib` dir using the `dbg`, `asan`, and `libfuzzer`
-# configurations.
+# build what we need ------------------------
 lib("${CMAKE_CURRENT_LIST_DIR}/lib" dbg)
-lib("${CMAKE_CURRENT_LIST_DIR}/lib" asan)
-
-# Build the main program against the `dbg` and `asan` configurations.
 main(dbg)
-main(asan)
 
-# Build the fuzz harness.
-if (NOT APPLE)
-    lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
-    fuzzer(libfuzzer)
- endif(NOT APPLE)
- 
+lib("${CMAKE_CURRENT_LIST_DIR}/lib" sanitizer)
+main(sanitizer)
+
+lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+fuzzer(libfuzzer)
