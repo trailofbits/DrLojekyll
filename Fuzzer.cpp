@@ -16,7 +16,7 @@
 
 void ParseAndVerify(std::string_view data) {
   hyde::DisplayManager display_manager;
-  hyde::ErrorLog error_log;
+  hyde::ErrorLog error_log(display_manager);
   hyde::Parser parser(display_manager, error_log);
   const std::string target_name = "harness_module";
   hyde::DisplayConfiguration config = {
@@ -29,18 +29,18 @@ void ParseAndVerify(std::string_view data) {
   if (error_log.IsEmpty()) {
     config.name = "verified_harness_module";
     hyde::DisplayManager v_display_manager;
-    hyde::ErrorLog v_error_log;
+    hyde::ErrorLog v_error_log(display_manager);
     hyde::Parser v_parser(v_display_manager, v_error_log);
     std::stringstream format_stream;
     std::stringstream verify_stream;
     hyde::OutputStream os(display_manager, format_stream);
-    os << module;
+    if (module) os << *module;
     const auto format_stream_string = format_stream.str();
     std::cerr << format_stream_string;
     auto module2 = v_parser.ParseBuffer(format_stream_string, config);
 
     hyde::OutputStream os2(v_display_manager, verify_stream);
-    os2 << module2;
+    if (module2) os2 << *module2;
 
     v_error_log.Render(std::cerr);
     assert(v_error_log.IsEmpty());
