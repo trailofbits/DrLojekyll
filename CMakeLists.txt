@@ -6,6 +6,8 @@ project(DrLojekyll)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_FUZZING "Enable generation of libFuzzer targets" OFF)
+
 add_library(cxx_settings INTERFACE)
 target_include_directories(cxx_settings INTERFACE
     "${CMAKE_CURRENT_LIST_DIR}/include")
@@ -85,5 +87,7 @@ main(dbg)
 lib("${CMAKE_CURRENT_LIST_DIR}/lib" sanitizer)
 main(sanitizer)
 
-lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
-fuzzer(libfuzzer)
+if (ENABLE_FUZZING)
+    lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+    fuzzer(libfuzzer)
+endif(ENABLE_FUZZING)
