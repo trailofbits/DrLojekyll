@@ -8,27 +8,6 @@ namespace hyde {
 
 class OutputStream;
 
-class ParsedDeclarationName {
- public:
-  inline explicit ParsedDeclarationName(ParsedDeclaration decl_)
-      : decl(decl_) {}
-  const ParsedDeclaration decl;
-};
-
-class ParsedClauseHead {
- public:
-  inline explicit ParsedClauseHead(ParsedClause clause_)
-      : clause(clause_) {}
-  const ParsedClause clause;
-};
-
-class ParsedClauseBody {
- public:
-  inline explicit ParsedClauseBody(ParsedClause clause_)
-      : clause(clause_) {}
-  const ParsedClause clause;
-};
-
 OutputStream &operator<<(OutputStream &os, TypeKind type);
 OutputStream &operator<<(OutputStream &os, TypeLoc type);
 OutputStream &operator<<(OutputStream &os, ParsedLiteral val);

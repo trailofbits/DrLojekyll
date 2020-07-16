@@ -13,10 +13,12 @@ QueryImpl::~QueryImpl(void) {
 
   for (auto rel : relations) {
     rel->inserts.ClearWithoutErasure();
+    rel->selects.ClearWithoutErasure();
   }
 
   for (auto io : ios) {
-    io->inserts.ClearWithoutErasure();
+    io->sends.ClearWithoutErasure();
+    io->receives.ClearWithoutErasure();
   }
 
   ForEachView([] (VIEW *view) {
@@ -25,11 +27,6 @@ QueryImpl::~QueryImpl(void) {
     view->positive_conditions.ClearWithoutErasure();
     view->negative_conditions.ClearWithoutErasure();
   });
-
-  for (auto select : selects) {
-    select->relation.ClearWithoutErasure();
-    select->stream.ClearWithoutErasure();
-  }
 
   for (auto join : joins) {
     for (auto &[out_col, in_cols] : join->out_to_in) {
@@ -53,6 +50,10 @@ QueryImpl::~QueryImpl(void) {
     cond->positive_users.ClearWithoutErasure();
     cond->negative_users.ClearWithoutErasure();
     cond->setters.ClearWithoutErasure();
+  }
+
+  for (auto select : selects) {
+    select->inserts.ClearWithoutErasure();
   }
 }
 
@@ -398,6 +399,16 @@ const ParsedDeclaration &QueryIO::Declaration(void) const noexcept {
   return impl->declaration;
 }
 
+// The list of sends to this I/O.
+UsedNodeRange<QueryView> QueryIO::Sends(void) const {
+  return {impl->sends.begin(), impl->sends.end()};
+}
+
+// The list of receives of this I/O.
+UsedNodeRange<QueryView> QueryIO::Receives(void) const {
+  return {impl->receives.begin(), impl->receives.end()};
+}
+
 QueryRelation QueryRelation::From(const QuerySelect &sel) noexcept {
   const auto rel = sel.impl->relation.get();
   assert(rel != nullptr);
@@ -406,6 +417,16 @@ QueryRelation QueryRelation::From(const QuerySelect &sel) noexcept {
 
 const ParsedDeclaration &QueryRelation::Declaration(void) const noexcept {
   return impl->declaration;
+}
+
+// The list of inserts into this relation.
+UsedNodeRange<QueryView> QueryRelation::Inserts(void) const {
+  return {impl->inserts.begin(), impl->inserts.end()};
+}
+
+// The list of SELECTs from this relation.
+UsedNodeRange<QueryView> QueryRelation::Selects(void) const {
+  return {impl->selects.begin(), impl->selects.end()};
 }
 
 QuerySelect QuerySelect::From(QueryView view) {

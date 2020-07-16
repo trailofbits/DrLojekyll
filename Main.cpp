@@ -18,8 +18,7 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Sema/ModuleIterator.h>
-#include <drlojekyll/Sema/SIPSChecker.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 
 namespace hyde {
 
@@ -57,10 +56,6 @@ static int ProcessModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log,
                          hyde::ParsedModule module) {
 
-  if (CheckForErrors(display_manager, module, error_log)) {
-    return EXIT_FAILURE;
-  }
-
   // Output the amalgamation of all files.
   if (hyde::gDRStream) {
     hyde::gDRStream->SetKeepImports(false);
@@ -95,6 +90,24 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 #endif
 
   return CompileModule(display_manager, error_log, module);
+}
+
+static int HelpMessage(char *argv[]) {
+  std::cout
+      << "OVERVIEW: Dr. Lojekyll compiler" << std::endl << std::endl
+      << "USAGE: " << argv[0] << " [options] file..." << std::endl << std::endl
+      << "OPTIONS:" << std::endl
+      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++." << std::endl
+      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively." << std::endl
+      << "                        imported modules amalgamated into a single Datalog module." << std::endl
+      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph" << std::endl
+      << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
+      << "  -isystem <PATH>       Directory where system C++ include files can be found." << std::endl
+      << "  -I <PATH>             Directory where user C++ include files can be found." << std::endl
+      << "  <PATH>                Path to an input Datalog module to parse and transpile." << std::endl
+      << std::endl;
+
+  return EXIT_SUCCESS;
 }
 
 struct FileStream {
@@ -218,6 +231,20 @@ int main(int argc, char *argv[]) {
       }
 
       parser.AddIncludeSearchPath(path, hyde::Parser::kUserInclude);
+
+    // Help message :-)
+    } else if (!strcmp(argv[i], "--help") ||
+               !strcmp(argv[i], "-help") ||
+               !strcmp(argv[i], "-h")) {
+      return HelpMessage(argv);
+
+    // Does this look like a command-line option?
+    } else if (strstr(argv[i], "--") == argv[i] ||
+               strchr(argv[i], '-') == argv[i]) {
+      hyde::Error err(display_manager);
+      err << "Unrecognized command-line argument '" << argv[i] << "'";
+      error_log.Append(std::move(err));
+      continue;
 
     // Input datalog file, add it to the list of paths to parse.
     } else {

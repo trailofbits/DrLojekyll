@@ -101,19 +101,43 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     os << kEndTable << ">];\n";
+
+    for (auto select : relation.Selects()) {
+      auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=purple]" : "";
+      os << "v" << select.UniqueId() << " -> t" << relation.UniqueId()
+         << color << ";\n";
+    }
+
+    for (auto insert : relation.Inserts()) {
+      auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
+      os << "t" << relation.UniqueId() << " -> v" << insert.UniqueId()
+         << color << ";\n";
+    }
   }
 
-  for (auto input : query.IOs()) {
-    const auto decl = input.Declaration();
+  for (auto io : query.IOs()) {
+    const auto decl = io.Declaration();
     const auto arity = decl.Arity();
-    os << "t" << input.UniqueId() << " [ label=<" << kBeginTable << "<TD>"
-       << QueryStream(input).KindName() << ' ' << ParsedDeclarationName(decl)
+    os << "t" << io.UniqueId() << " [ label=<" << kBeginTable << "<TD>"
+       << QueryStream(io).KindName() << ' ' << ParsedDeclarationName(decl)
        << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
     }
     os << kEndTable << ">];\n";
+
+    for (auto select : io.Receives()) {
+      auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=purple]" : "";
+      os << "v" << select.UniqueId() << " -> t" << io.UniqueId()
+         << color << ";\n";
+    }
+
+    for (auto insert : io.Sends()) {
+      auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
+      os << "t" << io.UniqueId() << " -> v" << insert.UniqueId()
+         << color << ";\n";
+    }
   }
 
   for (auto constant : query.Constants()) {
@@ -157,28 +181,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << select.DebugString(os) << "</TD>";)
 
     os << kEndTable << ">];\n";
-
-    // Link the joined columns to their sources.
-    i = 0u;
-    uint64_t target_id = 0;
-
-    if (select.IsRelation()) {
-      target_id = select.Relation().UniqueId();
-
-    } else if (select.IsStream()) {
-      target_id = select.Stream().UniqueId();
-
-    } else {
-      assert(false);
-    }
-
-    auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=purple]" : "";
-
-    for (auto col : select.Columns()) {
-      os << "v" << select.UniqueId() << ":c" << col.UniqueId() << " -> t"
-         << target_id << ":p" << i << color << ";\n";
-      ++i;
-    }
 
     link_conds(select);
   }
@@ -538,25 +540,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto view = QueryView::Containing(col);
       os << "v" << insert.UniqueId() << ":c" << i << " -> "
          << "v" << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
-    }
-
-    for (auto select : query.Selects()) {
-
-      auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=pink]" : " [color=grey]";
-
-      if (select.IsRelation() && insert.IsRelation()) {
-        if (select.Relation() == insert.Relation()) {
-          os << "t" << insert.Relation().UniqueId()
-             << " -> v" << insert.UniqueId()
-             << color << ";\n";
-        }
-      } else if (select.IsStream() && insert.IsStream()) {
-        if (select.Stream() == insert.Stream()) {
-          os << "t" << insert.Stream().UniqueId()
-             << " -> v" << insert.UniqueId()
-             << color << ";\n";
-        }
-      }
     }
 
     link_conds(insert);

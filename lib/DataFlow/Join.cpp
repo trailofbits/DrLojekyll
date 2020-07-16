@@ -260,7 +260,7 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
   // just eliminated the last incoming column, we also reduced the number of
   // joined views, but replaced that deficit with a CONDition, which was added
   // to the JOIN. Go and add any such conditions onto the just-created TUPLE.
-  tuple->CopyTestedConditionsFrom(this);
+  CopyTestedConditionsTo(tuple);
 }
 
 // If we have a constant feeding into one of the pivot sets, then we want to
@@ -407,13 +407,12 @@ void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
 bool Node<QueryJoin>::Canonicalize(
     QueryImpl *query, const OptimizationContext &opt) {
 
-  if (is_dead || out_to_in.empty()) {
-    is_dead = true;
-    is_canonical = true;
+  if (out_to_in.empty()) {
+    PrepareToDelete();
     return false;
   }
 
-  if (valid != kValid) {
+  if (is_dead || valid != kValid) {
     is_canonical = true;
     return false;
   }

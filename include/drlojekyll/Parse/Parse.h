@@ -370,6 +370,9 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
   using parse::ParsedNode<ParsedParameter>::ParsedNode;
 };
 
+class ParsedClauseHead;
+class ParsedClauseBody;
+
 // Represents a parsed clause, which defines either an internal or exported
 // predicate.
 class ParsedClause : public parse::ParsedNode<ParsedClause> {
@@ -423,9 +426,31 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
   bool IsDeletion(void) const noexcept;
 
  protected:
+  friend class ParsedClauseHead;
+  friend class ParsedClauseBody;
   friend class ParsedDeclaration;
 
   using parse::ParsedNode<ParsedClause>::ParsedNode;
+};
+
+class ParsedClauseHead {
+ public:
+  inline explicit ParsedClauseHead(ParsedClause clause_)
+      : clause(clause_) {}
+
+  DisplayRange SpellingRange(void) const noexcept;
+
+  const ParsedClause clause;
+};
+
+class ParsedClauseBody {
+ public:
+  inline explicit ParsedClauseBody(ParsedClause clause_)
+      : clause(clause_) {}
+
+  DisplayRange SpellingRange(void) const noexcept;
+
+  const ParsedClause clause;
 };
 
 enum class DeclarationKind {
@@ -521,6 +546,13 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
  protected:
   friend class ParserImpl;
   using parse::ParsedNode<ParsedDeclaration>::ParsedNode;
+};
+
+class ParsedDeclarationName {
+ public:
+  inline explicit ParsedDeclarationName(ParsedDeclaration decl_)
+      : decl(decl_) {}
+  const ParsedDeclaration decl;
 };
 
 // Represents a rule that has been exported to the user for querying the
@@ -758,6 +790,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 class ParsedImport;
 class ParsedInclude;
 class ParsedInline;
+class ParsedModuleIterator;
 
 // Represents a module parsed from a display.
 class ParsedModule {
@@ -798,6 +831,7 @@ class ParsedModule {
 
  protected:
   friend class ParsedImport;
+  friend class ParsedModuleIterator;
   friend class Parser;
   friend class ParserImpl;
 

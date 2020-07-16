@@ -341,6 +341,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 5:
+        if (clause->first_body_token.IsInvalid()) {
+          clause->first_body_token = tok;
+        }
+
         if (Lexeme::kIdentifierVariable == lexeme) {
           lhs = CreateVariable(clause.get(), tok, false, false);
           state = 6;
@@ -529,8 +533,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           if (!TryMatchPredicateWithDecl(module, pred.get())) {
             return;
           }
-          state = 9;
           clause->dot = tok;
+          state = 9;
           link_pred();
 
           continue;
@@ -776,6 +780,21 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           << "The explicit deletion clause for " << decl->name << '/'
           << decl->parameters.size() << " must directly depend on a message";
       return;
+
+    // We're not allowed to directly delete things from k/v stores, as we can't
+    // reasonably match up the values supplied for the values, and the keys of
+    // the current value associated with the same keys.
+    } else if (ParsedDeclaration(clause->declaration).HasMutableParameter()) {
+      auto err = context->error_log.Append(scope_range, negation_tok_range);
+      err << "Deletion clauses cannot be specified on declarations with "
+          << "mutable paramaters";
+
+      for (const auto &param_ : clause->declaration->parameters) {
+        ParsedParameter param(param_.get());
+        err.Note(param.SpellingRange(), param.Type().SpellingRange())
+            << "Mutable parameter is here";
+      }
+      return;
     }
 
     // Check that all other insertions depend on messages? The key here is to
@@ -798,6 +817,20 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     }
     if (has_errors) {
       return;
+    }
+
+  // Don't let us send out any messages if we have any uses of this message.
+  } else if (is_message_clause && !decl->context->positive_uses.empty()) {
+    auto err = context->error_log.Append(scope_range);
+    err << "Cannot send output in message " << decl->name << '/'
+        << decl->parameters.size()
+        << "; the message is already used for receiving data";
+
+    for (auto pred_ : decl->context->positive_uses) {
+      auto pred = ParsedPredicate(pred_);
+      auto clause = ParsedClause::Containing(pred);
+      err.Note(clause.SpellingRange(), pred.SpellingRange())
+          << "Message receipt is here";
     }
 
   } else if (!prev_message && !decl->context->deletion_clauses.empty()) {

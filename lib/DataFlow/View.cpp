@@ -150,7 +150,9 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
   }
 
   ss << "depth=" << Depth();
-  ss << " used=" << is_used;
+  if (is_dead) {
+    ss << " dead=1";
+  }
   ss << " hash=" << std::hex << this->Hash() << std::dec;
   switch (valid) {
     case kValid: break;
@@ -186,12 +188,34 @@ uint64_t Node<QueryView>::Sort(void) noexcept {
 // whether or not the view is used in a merge, or whether or not any of its
 // columns are used.
 bool Node<QueryView>::IsUsed(void) const noexcept {
-  if (is_used || sets_condition || this->Def<Node<QueryView>>::IsUsed()) {
+  if (sets_condition) {
+    assert(!is_dead);
     return true;
+
+  } else if (this->Def<Node<QueryView>>::IsUsed()) {
+    if (is_dead) {
+#ifndef NDEBUG
+      ForEachUse<VIEW>([] (VIEW *user_view, VIEW *) {
+        assert(user_view->is_dead || user_view->AsMerge());
+      });
+#endif
+      return false;
+
+    } else {
+      return true;
+    }
   }
 
   for (auto col : columns) {
     if (col->Def<Node<QueryColumn>>::IsUsed()) {
+      if (is_dead) {
+#ifndef NDEBUG
+        col->ForEachUse<VIEW>([] (VIEW *user_view, COL *) {
+          assert(user_view->is_dead);
+        });
+#endif
+        continue;
+      }
       return true;
     }
   }
@@ -230,8 +254,9 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
 // Sort the `positive_conditions` and `negative_conditions`.
 void Node<QueryView>::OrderConditions(void) {
   auto cb = [] (COND *cond) {
-    return !cond || cond->setters.Empty();
+    return cond->setters.Empty();
   };
+
   positive_conditions.RemoveIf(cb);
   negative_conditions.RemoveIf(cb);
 
@@ -459,17 +484,96 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   return up_hash;
 }
 
-// Copy all positive and negative conditions from `that` into `this`.
-void Node<QueryView>::CopyTestedConditionsFrom(Node<QueryView> *that) {
-  for (auto cond : that->positive_conditions) {
-    positive_conditions.AddUse(cond);
-    cond->positive_users.AddUse(this);
+// Prepare to delete this node. This tries to drop all dependencies and
+// unlink this node from the dataflow graph. It returns `true` if successful
+// and `false` if it has already been performed.
+bool Node<QueryView>::PrepareToDelete(void) {
+  if (is_dead) {
+    return false;
   }
 
-  for (auto cond : that->negative_conditions) {
-    negative_conditions.AddUse(cond);
-    cond->negative_users.AddUse(this);
+  hash = 0;
+  is_canonical = true;
+  is_dead = true;
+
+  input_columns.Clear();
+  attached_columns.Clear();
+
+  const auto is_this_view = [this] (VIEW *v) { return v == this; };
+
+  for (auto cond : positive_conditions) {
+    cond->positive_users.RemoveIf(is_this_view);
   }
+  for (auto cond : negative_conditions) {
+    cond->negative_users.RemoveIf(is_this_view);
+  }
+
+  positive_conditions.Clear();
+  negative_conditions.Clear();
+
+  if (auto cond = sets_condition.get(); cond) {
+    WeakUseRef<COND>().Swap(sets_condition);
+    cond->setters.RemoveIf(is_this_view);
+  }
+
+  if (auto merge = AsMerge(); merge) {
+    merge->merged_views.Clear();
+
+  } else if (auto agg = AsAggregate(); agg) {
+    agg->group_by_columns.Clear();
+    agg->config_columns.Clear();
+    agg->aggregated_columns.Clear();
+
+  } else if (auto join = AsJoin(); join) {
+    join->out_to_in.clear();
+    join->joined_views.Clear();
+    join->num_pivots = 0u;
+
+  } else if (auto select = AsSelect(); select) {
+    if (auto stream = select->stream.get(); stream) {
+      WeakUseRef<STREAM>().Swap(select->stream);
+      if (auto io = stream->AsIO(); io) {
+        io->receives.RemoveIf(is_this_view);
+      } else {
+        assert(stream->AsConstant());
+      }
+
+    } else if (auto rel = select->relation.get(); rel) {
+      WeakUseRef<REL>().Swap(select->relation);
+      rel->selects.RemoveIf(is_this_view);
+    }
+
+  } else if (auto insert = AsInsert(); insert) {
+    if (auto stream = insert->stream.get(); stream) {
+      WeakUseRef<STREAM>().Swap(insert->stream);
+      if (auto io = stream->AsIO(); io) {
+        io->sends.RemoveIf(is_this_view);
+      } else {
+        assert(false);
+      }
+
+    } else if (auto rel = insert->relation.get(); rel) {
+      WeakUseRef<REL>().Swap(insert->relation);
+      rel->inserts.RemoveIf(is_this_view);
+    }
+  }
+
+  return true;
+}
+
+// Copy all positive and negative conditions from `this` into `that`.
+void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
+  for (auto cond : positive_conditions) {
+    that->positive_conditions.AddUse(cond);
+    cond->positive_users.AddUse(that);
+  }
+
+  for (auto cond : negative_conditions) {
+    that->negative_conditions.AddUse(cond);
+    cond->negative_users.AddUse(that);
+  }
+
+  that->OrderConditions();
 }
 
 // If `sets_condition` is non-null, then transfer the setter to `that`.
@@ -499,25 +603,6 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   }
   this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
 
-  that->group_ids = group_ids;
-  if (can_produce_deletions) {
-    that->can_receive_deletions = true;
-    that->can_produce_deletions = true;
-  }
-
-  TransferSetConditionTo(that);
-}
-
-// Replace all uses of `this` with `that`. The semantic here is that `this`
-// is completely subsumed/replaced by `that`.
-void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
-  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
-
-  unsigned i = 0u;
-  for (auto col : columns) {
-    col->ReplaceAllUsesWith(that->columns[i++]);
-  }
-
   // Maintain the set of group IDs, to prevent over-merging.
   that->group_ids.insert(that->group_ids.end(), group_ids.begin(),
                          group_ids.end());
@@ -531,32 +616,15 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
     that->can_produce_deletions = true;
   }
 
-  that->CopyTestedConditionsFrom(this);
   TransferSetConditionTo(that);
+}
 
-  positive_conditions.Clear();
-  negative_conditions.Clear();
-  input_columns.Clear();
-  attached_columns.Clear();
-
-  if (const auto as_merge = AsMerge()) {
-    as_merge->merged_views.Clear();
-
-  } else if (const auto as_join = AsJoin()) {
-    as_join->out_to_in.clear();
-    as_join->joined_views.Clear();
-    as_join->num_pivots = 0;
-
-  } else if (const auto as_agg = AsAggregate()) {
-    as_agg->group_by_columns.Clear();
-    as_agg->config_columns.Clear();
-    as_agg->aggregated_columns.Clear();
-  }
-
-  hash = 0;
-  is_canonical = true;
-  is_used = false;
-  is_dead = true;
+// Replace all uses of `this` with `that`. The semantic here is that `this`
+// is completely subsumed/replaced by `that`.
+void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
+  SubstituteAllUsesWith(that);
+  CopyTestedConditionsTo(that);
+  PrepareToDelete();
 }
 
 // Does this view introduce a control dependency? If a node introduces a

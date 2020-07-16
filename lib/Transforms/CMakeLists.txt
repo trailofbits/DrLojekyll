@@ -10,5 +10,5 @@ function(transforms source_dir config)
         "${source_dir}/ProxyExternalsWithExports.cpp")
 
     target_link_libraries(transforms-${config} PUBLIC
-        sema-${config})
+        parser-${config})
 endfunction(transforms)

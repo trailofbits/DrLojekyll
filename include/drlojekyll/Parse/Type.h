@@ -37,6 +37,7 @@ const char *Spelling(TypeKind kind) noexcept;
 class TypeLoc {
  public:
   TypeLoc(const Token &tok);
+  TypeLoc(TypeKind kind_, const DisplayRange &range_);
   TypeLoc &operator=(const Token &tok) noexcept;
 
   inline TypeKind Kind(void) const noexcept {

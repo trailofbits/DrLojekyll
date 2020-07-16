@@ -962,6 +962,16 @@ NodeRange<ParsedAggregate> ParsedClause::Aggregates(void) const {
   }
 }
 
+DisplayRange ParsedClauseHead::SpellingRange(void) const noexcept {
+  return DisplayRange(clause.impl->name.Position(),
+                      clause.impl->rparen.NextPosition());
+}
+
+DisplayRange ParsedClauseBody::SpellingRange(void) const noexcept {
+  return DisplayRange(clause.impl->first_body_token.Position(),
+                      clause.impl->dot.NextPosition());
+}
+
 const ParsedQuery &ParsedQuery::From(const ParsedDeclaration &decl) {
   assert(decl.IsQuery());
   return reinterpret_cast<const ParsedQuery &>(decl);

@@ -70,6 +70,10 @@ TypeLoc::TypeLoc(const Token &tok)
     : kind(TokToTypeKind(tok)),
       range(tok.SpellingRange()) {}
 
+TypeLoc::TypeLoc(TypeKind kind_, const DisplayRange &range_)
+    : kind(kind_),
+      range(range_) {}
+
 TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
   kind = TokToTypeKind(tok);
   range = tok.SpellingRange();

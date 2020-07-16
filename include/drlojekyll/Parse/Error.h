@@ -53,7 +53,7 @@ class Error;
 class ErrorImpl;
 class Note;
 class Token;
-class SpellingRange;
+class DisplayRange;
 
 // Used to stream in error information. This is a thing wrapper around a
 // `std::ostream`, with support to taking in tokens and getting their spellings

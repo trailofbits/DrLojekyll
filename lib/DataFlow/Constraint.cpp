@@ -171,10 +171,8 @@ bool Node<QueryConstraint>::Canonicalize(
       err.Note(lhs_col->var.SpellingRange(), lhs_col->var.SpellingRange())
           << "Value comes from here";
 
-      hash = 0;
-      is_canonical = true;
-      is_dead = true;
-
+      valid = VIEW::kInvalidBeforeCanonicalize;
+      invalid_var = lhs_col->var;
       return non_local_changes;
     }
 

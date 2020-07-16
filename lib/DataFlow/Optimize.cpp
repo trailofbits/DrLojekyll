@@ -203,18 +203,59 @@ void QueryImpl::RelabelGroupIDs(void) {
 bool QueryImpl::RemoveUnusedViews(void) {
   size_t ret = 0;
   size_t all_ret = 0;
+
+  std::vector<VIEW *> views;
+
+  ForEachViewInReverseDepthOrder([&] (VIEW *view) {
+    views.push_back(view);
+  });
+
+  for (auto changed = true; changed; ) {
+    changed = false;
+    for (auto view : views) {
+      if (!view->IsUsed()) {
+        if (view->PrepareToDelete()) {
+          changed = true;
+        }
+      }
+    }
+  }
+
   do {
-    ret = selects.RemoveUnused() |
-          tuples.RemoveUnused() |
-          kv_indices.RemoveUnused() |
-          joins.RemoveUnused() |
-          maps.RemoveUnused() |
-          aggregates.RemoveUnused() |
-          merges.RemoveUnused() |
-          constraints.RemoveUnused() |
-          inserts.RemoveUnused();
+//    for (auto rel : relations) {
+//      if (rel->IsUsed()) {
+//        rel->ForEachUse<VIEW>([] (VIEW *v, REL *) {
+//          assert(!v->is_dead);
+//        });
+//      }
+//      rel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
+//    }
+
+    ret = 0u;
+
+//    for (auto sel : selects) {
+//      sel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
+//    }
+
+    ret |= selects.RemoveUnused() |
+           tuples.RemoveUnused() |
+           kv_indices.RemoveUnused() |
+           joins.RemoveUnused() |
+           maps.RemoveUnused() |
+           aggregates.RemoveUnused() |
+           merges.RemoveUnused() |
+           constraints.RemoveUnused() |
+           inserts.RemoveUnused();
     all_ret |= ret;
   } while (ret);
+
+  all_ret |= relations.RemoveIf([] (REL *rel) {
+    return rel->inserts.Empty() && rel->selects.Empty();
+  });
+
+  all_ret |= ios.RemoveIf([] (IO *io) {
+    return io->receives.Empty() && io->sends.Empty();
+  });
 
   return 0 != all_ret;
 }
@@ -273,6 +314,10 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt) {
   RelabelGroupIDs();
 }
 
+// Sometimes we have a bunch of dumb condition patterns, roughly looking like
+// a chain of constant input tuples, conditioned on the next one in the chain,
+// and so we want to eliminate all the unnecessary intermediary tuples and
+// conditions and shrink down to a more minimal form.
 bool QueryImpl::ShrinkConditions(void) {
   std::vector<COND *> conds;
   ForEachView([&] (VIEW *view) {
@@ -395,15 +440,20 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   Canonicalize(opt);
   do_cse();  // Apply CSE to all canonical views.
 
-  // Now do a stronger form of canonicalization.
-  opt.can_remove_unused_columns = true;
-  opt.can_replace_inputs_with_constants = true;
-  opt.bottom_up = false;
-  Canonicalize(opt);
-
-  if (ShrinkConditions()) {
+  do {
+    // Now do a stronger form of canonicalization.
+    opt.can_remove_unused_columns = true;
+    opt.can_replace_inputs_with_constants = true;
+    opt.bottom_up = false;
     Canonicalize(opt);
-  }
+
+    if (ShrinkConditions()) {
+      Canonicalize(opt);
+    }
+
+    RemoveUnusedViews();
+
+  } while (EliminateDeadFlows());
 
   RemoveUnusedViews();
 }

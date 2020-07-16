@@ -545,7 +545,10 @@ void ParserImpl::ParseLocalExport(
           param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
           assert(param->opt_merge->parameters.size() == 3);
 
-          param->opt_type = param->opt_merge->parameters[0]->opt_type;
+          param->opt_type = TypeLoc(
+              param->opt_merge->parameters[0]->opt_type.Kind(),
+              param->opt_mutable_range);
+
           // NOTE(pag): We don't mark `param->parsed_opt_type` as `true` because
           //            it's coming from the functor, and thus would result in
           //            an unusual spelling range.
@@ -637,6 +640,8 @@ void ParserImpl::ParseLocalExport(
 
       case 7:
         if (Lexeme::kPuncCloseParen == lexeme) {
+          param->opt_mutable_range = DisplayRange(param->opt_binding.Position(),
+                                                  tok.NextPosition());
           state = 3;  // Go parse the variable name; we can infer the type
                       // name from the functor.
           continue;
@@ -850,6 +855,24 @@ bool ParserImpl::TryMatchPredicateWithDecl(
   }
 
   pred->declaration = context->declarations[id];
+
+  // Don't let us receive this message if we have any sends of this message.
+  if (pred->declaration->context->kind == DeclarationKind::kMessage &&
+      !pred->declaration->context->clauses.empty()) {
+
+      auto err = context->error_log.Append(scope_range, pred_head_range);
+      err << "Cannot receive input from message " << pred->name << '/'
+          << pred->argument_uses.size()
+          << "; the message is already used for sending data";
+
+      for (auto &clause_ : pred->declaration->context->clauses) {
+        auto clause = ParsedClause(clause_.get());
+        err.Note(clause.SpellingRange(),
+                 ParsedClauseHead(clause).SpellingRange())
+            << "Message send is here";
+      }
+  }
+
   return true;
 }
 
@@ -1284,6 +1307,46 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
   return true;
 }
 
+// Checks that all locals and exports are defined.
+static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
+                                      const ErrorLog &log) {
+
+  auto do_decl = [&] (ParsedDeclaration decl) {
+    for (ParsedClause clause : decl.Clauses()) {
+      if (!clause.IsDeletion()) {
+        return;
+      }
+    }
+
+    auto err = log.Append(decl.SpellingRange());
+    err << "Declaration is declared but never defined (by a clause)";
+
+    for (ParsedPredicate pred : decl.PositiveUses()) {
+      err.Note(ParsedClause::Containing(pred).SpellingRange(),
+               pred.SpellingRange())
+         << "Undefined declaration is used here";
+    }
+
+    for (ParsedPredicate pred : decl.NegativeUses()) {
+      err.Note(ParsedClause::Containing(pred).SpellingRange(),
+               pred.SpellingRange())
+         << "Use of never-defined declaration is trivially true here";
+    }
+  };
+
+  const auto prev_num_errors = log.Size();
+  for (auto module : root_module->all_modules) {
+    for (auto &decl : module->locals) {
+      do_decl(ParsedDeclaration(decl.get()));
+    }
+    for (auto &decl : module->exports) {
+      do_decl(ParsedDeclaration(decl.get()));
+    }
+  }
+
+  return prev_num_errors == log.Size();
+}
+
 // Parse a display, returning the parsed module.
 //
 // NOTE(pag): Due to display caching, this may return a prior parsed module,
@@ -1300,7 +1363,7 @@ std::optional<ParsedModule> ParserImpl::ParseDisplay(
   module = std::make_shared<Node<ParsedModule>>(config);
 
   // Initialize now, even before we know that we have a valid parsed module,
-  // just in case we have recursive imports.
+  // just in case we have recursive/cyclic imports.
   weak_module = module;
 
   if (!context->root_module) {
@@ -1310,6 +1373,8 @@ std::optional<ParsedModule> ParserImpl::ParseDisplay(
     context->root_module->non_root_modules.emplace_back(module);
     module->root_module = context->root_module;
   }
+
+  module->root_module->all_modules.push_back(module.get());
 
   LexAllTokens(display);
   module->first = tokens.front();
@@ -1329,7 +1394,13 @@ std::optional<ParsedModule> ParserImpl::ParseDisplay(
     context->declarations.erase(local_id);
   }
 
-  AssignTypes(module.get());
+  // Only do usage and type checking when we're done parsing the root module.
+  if (module->root_module == module.get()) {
+    if (!AllDeclarationsAreDefined(module.get(), context->error_log) ||
+        !AssignTypes(module.get())) {
+      return std::nullopt;
+    }
+  }
 
   if (prev_num_errors == context->error_log.Size()) {
     return ParsedModule(module);

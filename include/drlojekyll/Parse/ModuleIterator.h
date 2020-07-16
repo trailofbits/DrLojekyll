@@ -4,9 +4,9 @@
 
 #include <memory>
 
-namespace hyde {
+#include <drlojekyll/Parse/Parse.h>
 
-class ParsedModule;
+namespace hyde {
 
 // An iterator for iterating over all transitively imported modules. This
 // iterates in the order of which module declarations are resolved, i.e. from
@@ -24,15 +24,15 @@ class ParsedModuleIterator {
  private:
   ParsedModuleIterator(void) = delete;
 
-  const std::shared_ptr<Impl> impl;
+  const ParsedModule impl;
 };
 
 class ParsedModuleIterator::Iterator {
  public:
-  const ParsedModule &operator*(void) const;
+  ParsedModule operator*(void) const;
 
   inline bool operator!=(const Iterator &that) const {
-    return impl.get() != that.impl.get() || index != that.index;
+    return index != that.index;
   }
 
   inline Iterator &operator++(void) {
@@ -49,13 +49,13 @@ class ParsedModuleIterator::Iterator {
  private:
   friend class ParsedModuleIterator;
 
-  inline Iterator(const std::shared_ptr<Impl> &impl_, unsigned index_)
+  inline Iterator(const ParsedModule &impl_, unsigned index_)
       : impl(impl_),
         index(index_) {}
 
   Iterator(void) = delete;
 
-  std::shared_ptr<Impl> impl;
+  const ParsedModule impl;
   unsigned index;
 };
 

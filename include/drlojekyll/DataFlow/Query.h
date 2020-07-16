@@ -157,6 +157,12 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
 
   const ParsedDeclaration &Declaration(void) const noexcept;
 
+  // The list of inserts into this relation.
+  UsedNodeRange<QueryView> Inserts(void) const;
+
+  // The list of SELECTs from this relation.
+  UsedNodeRange<QueryView> Selects(void) const;
+
  private:
   using query::QueryNode<QueryRelation>::QueryNode;
 
@@ -205,6 +211,12 @@ class QueryIO : public query::QueryNode<QueryIO> {
   const ParsedDeclaration &Declaration(void) const noexcept;
 
   static QueryIO From(QueryStream &stream);
+
+  // The list of sends to this I/O.
+  UsedNodeRange<QueryView> Sends(void) const;
+
+  // The list of receives of this I/O.
+  UsedNodeRange<QueryView> Receives(void) const;
 
  private:
   using query::QueryNode<QueryIO>::QueryNode;

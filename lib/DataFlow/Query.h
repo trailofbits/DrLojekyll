@@ -145,7 +145,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   UseList<Node<QueryView>> positive_users;
   UseList<Node<QueryView>> negative_users;
 
-  // Views that produce values for this condition.
+  // *WEAK* use list of views that produce values for this condition.
+  //
+  // TODO(pag): Consider making this not be a weak use list.
   UseList<Node<QueryView>> setters;
 };
 
@@ -159,10 +161,16 @@ class Node<QueryRelation> : public Def<Node<QueryRelation>>, public User {
       : Def<Node<QueryRelation>>(this),
         User(this),
         declaration(decl_),
-        inserts(this, true) {}
+        inserts(this),
+        selects(this) {}
 
   const ParsedDeclaration declaration;
+
+  // List of nodes that insert data into this relation.
   UseList<Node<QueryView>> inserts;
+
+  // List of nodes that select data from this relation.
+  UseList<Node<QueryView>> selects;
 };
 
 using REL = Node<QueryRelation>;
@@ -209,13 +217,19 @@ class Node<QueryIO> final : public Node<QueryStream>, public User{
   inline Node(ParsedDeclaration declaration_)
       : User(this),
         declaration(declaration_),
-        inserts(this, true) {}
+        sends(this),
+        receives(this) {}
 
   Node<QueryIO> *AsIO(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
   const ParsedDeclaration declaration;
-  UseList<Node<QueryView>> inserts;
+
+  // List of nodes that send data to this I/O operation.
+  UseList<Node<QueryView>> sends;
+
+  // List of nodes that receive data from this I/O operation.
+  UseList<Node<QueryView>> receives;
 };
 
 using IO = Node<QueryIO>;
@@ -241,8 +255,13 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
 
-  // Copy all positive and negative conditions from `that` into `this`.
-  void CopyTestedConditionsFrom(Node<QueryView> *that);
+  // Prepare to delete this node. This tries to drop all dependencies and
+  // unlink this node from the dataflow graph. It returns `true` if successful
+  // and `false` if it has already been performed.
+  bool PrepareToDelete(void);
+
+  // Copy all positive and negative conditions from `this` into `that`.
+  void CopyTestedConditionsTo(Node<QueryView> *that);
 
   // If `sets_condition` is non-null, then transfer the setter to `that`.
   void TransferSetConditionTo(Node<QueryView> *that);
@@ -418,16 +437,6 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // not this node may have changed and needs to be re-inspected.
   bool is_canonical{false};
 
-  // Should be force this node to be assumed to be canonical? This is a way of
-  // preventing further optimization of this node.
-  bool force_is_canonical{false};
-
-  // A different way of tracking usage. Initially, when creating queries,
-  // nothing atually uses inserts, and so they will look trivially dead.
-  // This exists to make them seem alive, while still allowing CSE to merge
-  // INSERTs and mark the old old one as dead.
-  bool is_used{false};
-
   // Is this node dead?
   bool is_dead{false};
 
@@ -496,16 +505,16 @@ class Node<QuerySelect> final : public Node<QueryView> {
  public:
   inline Node(Node<QueryRelation> *relation_, DisplayRange range)
       : position(range.From()),
-        relation(relation_->CreateUse(this)),
-        inserts(this) {
+        relation(this, relation_),
+        inserts(this, true  /* is_weak */) {
     this->can_receive_deletions = 0u < relation->declaration.NumDeletionClauses();
     this->can_produce_deletions = this->can_receive_deletions;
   }
 
   inline Node(Node<QueryStream> *stream_, DisplayRange range)
       : position(range.From()),
-        stream(stream_->CreateUse(this)),
-        inserts(this) {
+        stream(this, stream_),
+        inserts(this, true  /* is_weak */) {
     if (auto input_stream = stream->AsIO(); input_stream) {
       this->can_receive_deletions = 0u < input_stream->declaration.NumDeletionClauses();
       this->can_produce_deletions = this->can_receive_deletions;
@@ -522,14 +531,18 @@ class Node<QuerySelect> final : public Node<QueryView> {
   unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
+  // Put this view into a canonical form. Returns `true` if changes were made
+  // beyond the scope of this view.
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+
   // The instance of the predicate from which we are selecting.
   DisplayPosition position;
 
   // The table from which this select takes its columns.
-  UseRef<REL> relation;
-  UseRef<STREAM> stream;
+  WeakUseRef<REL> relation;
+  WeakUseRef<STREAM> stream;
 
-  // Inserts that might feed this SELECT.
+  // *WEAK* list that might feed this SELECT.
   UseList<Node<QueryView>> inserts;
 };
 
@@ -790,24 +803,20 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_,
               bool is_insert_=true)
-      : relation(relation_->CreateUse(this)),
+      : relation(this, relation_),
         declaration(decl_),
         is_insert(is_insert_) {
 
-    // Make all INSERTs initially look used. Replacing one with another will
-    // make it go unused.
-    is_used = true;
+    if (!is_insert) {
+      this->can_produce_deletions = true;
+    }
   }
 
   inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_,
               bool is_insert_=true)
-      : stream(stream_->CreateUse(this)),
+      : stream(this, stream_),
         declaration(decl_),
         is_insert(is_insert_) {
-
-    // Make all INSERTs initially look used. Replacing one with another will
-    // make it go unused.
-    is_used = true;
 
     if (!is_insert) {
       this->can_produce_deletions = true;
@@ -821,10 +830,10 @@ class Node<QueryInsert> : public Node<QueryView> {
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
-  const UseRef<REL> relation;
-  const UseRef<STREAM> stream;
+  WeakUseRef<REL> relation;
+  WeakUseRef<STREAM> stream;
   const ParsedDeclaration declaration;
-  const bool is_insert;
+  bool is_insert;
 };
 
 using INSERT = Node<QueryInsert>;
@@ -1025,8 +1034,8 @@ class QueryImpl {
   void Canonicalize(const OptimizationContext &opt);
   bool ShrinkConditions(void);
   void Optimize(const ErrorLog &);
-  void BreakCycles(const ErrorLog &);
-  void ConnectInsertsToSelects(void);
+  bool EliminateDeadFlows(void);
+  bool ConnectInsertsToSelects(const ErrorLog &log);
   void TrackDifferentialUpdates(void) const;
   void SinkConditions(void) const;
 
@@ -1036,12 +1045,7 @@ class QueryImpl {
 
   // The tables available within any query sharing this context.
   std::unordered_map<ParsedDeclaration, Node<QueryRelation> *>
-      decl_to_pos_relation;
-
-  // Negative tables, these are basically "opposites" of normal tables.
-  // Selections from negative tables must be involved in a "full" join.
-  std::unordered_map<ParsedDeclaration, Node<QueryRelation> *>
-      decl_to_neg_relation;
+      decl_to_relation;
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.

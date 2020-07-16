@@ -33,8 +33,10 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
       hash ^= hash_ror * input_stream->declaration.Id();
 
     } else {
-      assert(false);
+      assert(is_dead);
     }
+  } else {
+    assert(is_dead);
   }
   return hash;
 }
@@ -59,13 +61,50 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
   auto real = GetDepth(input_columns, 0u);
   real = GetDepth(positive_conditions, real);
   real = GetDepth(negative_conditions, real);
-  depth = real + 1u;
 
   if (relation) {
-
+    for (auto insert : relation->inserts) {
+      real = std::max(real, insert->Depth());
+    }
   }
 
+  depth = real + 1u;
+
   return depth;
+}
+
+// Put this view into a canonical form. Returns `true` if changes were made
+// beyond the scope of this view.
+//
+// TODO(pag): This really shouldn't be needed. We probably have a bug in
+//            `connect` or somethng like that. If we disable this function
+//            then there's an orphaned SELECT in `average_weight.dr`. This
+//            is because the RELation or IO holds onto a use of the SELECT
+//            and so the SELECT always looks used.
+bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
+                                     const OptimizationContext &opt) {
+  if (is_dead || sets_condition) {
+    return false;
+  }
+
+  for (auto col : columns) {
+    if (col->IsUsedIgnoreMerges()) {
+      return false;
+    }
+  }
+
+  auto is_really_used = false;
+  ForEachUse<VIEW>([&is_really_used] (VIEW *, VIEW *) {
+    is_really_used = true;
+  });
+
+  if (!is_really_used) {
+    PrepareToDelete();
+    return true;
+
+  } else {
+    return false;
+  }
 }
 
 // Equality over SELECTs is a mix of structural and pointer-based.
@@ -113,7 +152,7 @@ bool Node<QuerySelect>::Equals(
     return true;
 
   } else {
-    assert(false);
+    assert(is_dead);
     return false;
   }
 }

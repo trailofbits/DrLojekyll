@@ -23,9 +23,6 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/DataFlow/Format.h>
-#include <drlojekyll/Sema/BottomUpAnalysis.h>
-#include <drlojekyll/Sema/SIPSAnalysis.h>
-#include <drlojekyll/Sema/SIPSScore.h>
 #include <drlojekyll/Transforms/CombineModules.h>
 #include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Util/Node.h>

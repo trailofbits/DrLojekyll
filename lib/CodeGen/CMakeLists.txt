@@ -6,5 +6,5 @@ function(codegen source_dir config)
         "${source_dir}/BAM.cpp")
 
     target_link_libraries(codegen-${config} PUBLIC
-        transforms-${config})
+        rel-${config})
 endfunction(codegen)

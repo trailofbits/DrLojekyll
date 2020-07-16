@@ -14,7 +14,7 @@ function(dataflow source_dir config)
         "${source_dir}/Connect.cpp"
         "${source_dir}/Constant.cpp"
         "${source_dir}/Constraint.cpp"
-        "${source_dir}/Cycle.cpp"
+        "${source_dir}/DeadFlowElimination.cpp"
         "${source_dir}/Differential.cpp"
         "${source_dir}/Format.cpp"
         "${source_dir}/Insert.cpp"
@@ -32,5 +32,5 @@ function(dataflow source_dir config)
         "${source_dir}/View.cpp")
 
     target_link_libraries(rel-${config} PUBLIC
-        sema-${config})
+        parser-${config})
 endfunction(dataflow)

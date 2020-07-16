@@ -20,11 +20,7 @@
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
-#define DEBUG(...)
-
 namespace hyde {
-
-DEBUG(extern OutputStream *gOut;)
 
 namespace {
 
@@ -97,8 +93,6 @@ static unsigned VarId(ClauseContext &context, ParsedVariable var) {
   // If this var is a clause parameter.
   if (auto vc = context.var_to_col[var]; vc) {
     const auto ret_id = vc->FindAs<VarColumn>()->id;
-    DEBUG((*gOut) << "Looking for clause param " << var << " (id=" << vc->id
-                  << ") got id=" << ret_id << '\n';)
     return ret_id;
   }
 
@@ -122,12 +116,8 @@ static void CreateVarId(ClauseContext &context, ParsedVariable var) {
 
   auto &prev_vc = context.var_to_col[var];
   if (!prev_vc) {
-    DEBUG((*gOut) << "INIT: " << vc_ptr->var << " (id=" << vc_ptr->id << ")\n";)
     prev_vc = vc_ptr;
   } else {
-    DEBUG((*gOut) << "INIT: Unioning " << vc_ptr->var << " (id=" << vc_ptr->id
-                  << ") with " << prev_vc->var << " (id=" << prev_vc->id
-                  << ")\n";)
     DisjointSet::UnionInto(vc_ptr, prev_vc);
   }
 }
@@ -146,6 +136,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     }
 
     view = query->selects.Create(input, pred.SpellingRange());
+    input->receives.AddUse(view);
 
   } else if (decl.IsFunctor()) {
     view = query->maps.Create(ParsedFunctor::From(decl), pred.SpellingRange());
@@ -154,7 +145,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     Node<QueryRelation> *input = nullptr;
 
     if (pred.IsPositive()) {
-      auto &rel = query->decl_to_pos_relation[decl];
+      auto &rel = query->decl_to_relation[decl];
       if (!rel) {
         rel = query->relations.Create(decl);
       }
@@ -168,6 +159,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     }
 
     view = query->selects.Create(input, pred.SpellingRange());
+    input->selects.AddUse(view);
 
   } else {
     log.Append(ParsedClause::Containing(pred).SpellingRange(),
@@ -524,11 +516,8 @@ static JOIN *CacheJoin(ClauseContext &context, JOIN *join) {
   EqualitySet eq_set;
   for (auto cached_join : cached_joins) {
     if (!join->Equals(eq_set, cached_join)) {
-      DEBUG((*gOut) << "Hit and a miss?!\n";)
       continue;
     }
-
-    DEBUG((*gOut) << "Pivot-to-join cache matched!!!\n";)
 
     // It could be that we're taking this cached join from a totally
     // different clause, so we need to update the column variables and IDs
@@ -538,20 +527,15 @@ static JOIN *CacheJoin(ClauseContext &context, JOIN *join) {
       const auto curr_col = join->columns[i++];
       assert(col->Hash() == curr_col->Hash());
       assert(col->type.Kind() == curr_col->type.Kind());
-      DEBUG((*gOut) << "  Renaming " << col->var << " to " << curr_col->var << '\n';)
       col->var = curr_col->var;
       col->id = curr_col->id;
     }
 
-    join->is_dead = true;
+    join->PrepareToDelete();
     return cached_join;
   }
 
-  DEBUG((*gOut) << "Pivot-to-join cache missed :-(\n";)
   cached_joins.push_back(join);
-
-  // Force this join to look used.
-  join->is_used = true;
 
   return join;
 }
@@ -583,17 +567,10 @@ static JOIN *CreateJoinFromPivots(
 
   auto join = query->joins.Create();
 
-  DEBUG((*gOut) << "JOINING:\n";)
   for (auto i = 0u; i < num_joined_views; ++i) {
     assert(!i || pivots[i]->id == pivots[i - 1u]->id);
     assert(!i || pivots[i]->view != pivots[i - 1u]->view);
     join->joined_views.AddUse(pivots[i]->view);
-
-    DEBUG(
-        (*gOut) << "  " << pivots[i]->view->KindName() << '\n';
-        for (auto col : pivots[i]->view->columns) {
-          (*gOut) << "    " << col->var << "  id=" << col->id << '\n';
-        })
   }
 
   // Expand the pivot set.
@@ -631,8 +608,6 @@ static JOIN *CreateJoinFromPivots(
 
   for (auto [leader_col, i] : pivot_cols) {
 
-    DEBUG((*gOut) << "  PIVOT: " << leader_col->var << " id=" << leader_col->id << '\n';)
-
     // Add an output column for this pivot leader, and all columns into the
     // pivot set.
     auto out_col = join->columns.Create(
@@ -654,7 +629,6 @@ static JOIN *CreateJoinFromPivots(
     auto pivot_view = pivots[i]->view;
     FindUniqueColumns(pivot_view, unique_cols);
 
-    DEBUG((*gOut) << "  CONTRIBUTING:\n";)
     for (auto in_col : unique_cols) {
       if (!PivotSetIncludes(pivots, num_joined_views, in_col->id)) {
         auto out_col = join->columns.Create(
@@ -662,8 +636,6 @@ static JOIN *CreateJoinFromPivots(
         join->out_to_in.emplace(out_col, join);
         auto pivot_set_it = join->out_to_in.find(out_col);
         pivot_set_it->second.AddUse(in_col);
-
-        DEBUG((*gOut) << "    OUTPUT: " << in_col->var << " id=" << in_col->id << '\n';)
       }
     }
   }
@@ -751,12 +723,6 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
   TUPLE *tuple = query->tuples.Create();
 
-  DEBUG(
-      (*gOut) << "PUBLISHING " << view->KindName() << ":\n";
-      for (auto col : view->columns) {
-        (*gOut) << "  " << col->var << " id=" << col->id << '\n';
-      })
-
   auto col_index = 0u;
 
   // Go find each clause head variable in the columns of `view`.
@@ -785,8 +751,6 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
       err << "Internal error: could not match variable '" << var
           << "' against any columns";
 
-      DEBUG((*gOut) << "Failed on var " << var << " id=" << id << '\n';)
-
       for (auto in_col : view->columns) {
         err.Note(clause_range, in_col->var.SpellingRange())
             << "Failed to match against '" << in_col->var << "'";
@@ -802,7 +766,6 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
     context.result = tuple;
 
   } else if (tuple_hash == context.result->Hash()) {
-    DEBUG((*gOut) << "Ignoring equivalence in EQ-CLASS merge\n";)
 
   } else if (auto other_tuple = context.result->AsTuple(); other_tuple) {
     MERGE *merge = query->merges.Create();
@@ -825,7 +788,6 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
     // equivalent anyway.
     for (auto incoming_view : merge->merged_views) {
       if (incoming_view->Hash() == tuple_hash) {
-        DEBUG((*gOut) << "Ignoring equivalence in EQ-CLASS merge\n";)
         return true;
       }
     }
@@ -844,13 +806,10 @@ static void CreateProduct(QueryImpl *query, ParsedClause clause,
                           ClauseContext &context, const ErrorLog &log,
                           WorkItem &work_item) {
   auto &views = work_item.views;
-  DEBUG((*gOut) << "PRODUCT of " << views.size() << " views:\n";)
 
   std::vector<COL *> unique_cols;
   for (auto view : views) {
-    DEBUG((*gOut) << "  " << view->KindName() << ":\n";)
     for (auto col : view->columns) {
-      DEBUG((*gOut) << "    " << col->var << " id=" << col->id << "\n";)
       unique_cols.push_back(col);
     }
   }
@@ -946,8 +905,6 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
     VIEW *result = map;
     auto col_index = 0u;
 
-    DEBUG((*gOut) << "  Applying functor " << redecl.Name() << " with binding " << binding << "\n";)
-
     for (auto &var_col_or_var : inouts) {
 
       COL *out_col = nullptr;
@@ -956,7 +913,6 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       if (var_col_or_var.index()) {
         const auto var = std::get<1>(var_col_or_var);
         const auto id = VarId(context, var);
-        DEBUG((*gOut) << "    Output variable " << var << " id=" << id << '\n';)
         out_col = map->columns.Create(var, map, id, col_index);
 
       // It's a variable and a COLumn, i.e. it's an input that we'll forward
@@ -964,7 +920,6 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       } else {
         const auto [var, col] = std::get<0>(var_col_or_var);
         const auto id = VarId(context, var);
-        DEBUG((*gOut) << "    Input/output variable " << var << " id=" << id << '\n';)
         out_col = map->columns.Create(var, map, id, col_index);
         map->input_columns.AddUse(col);
       }
@@ -982,8 +937,6 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       if (!FindColVarInView(context, map, in_col->var)) {
         map->columns.Create(in_col->var, map, in_col->id, col_index++);
         map->attached_columns.AddUse(in_col);
-        DEBUG((*gOut) << "    Attached variable " << in_col->var
-                      << " id=" << in_col->id << '\n';)
       }
     }
 
@@ -1248,8 +1201,6 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   auto &views = work_item.views;
   const auto num_views = views.size();
 
-  DEBUG((*gOut) << "Down to num_views=" << num_views << '\n';)
-
   // Nothing left to do but try to publish the view!
   if (num_views == 1u &&
       work_item.functors.empty()) {
@@ -1339,7 +1290,6 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     // We might have failed to find a pivot in `views[0]`, but there still might
     // be joinable stuff in `views[1:]`, so re-run on the tail, moving `views[0]`
     // to the end of the list.
-    DEBUG((*gOut) << "ROTATING!\n";)
     unjoined_views.clear();
     for (auto i = 1u; i < num_views; ++i) {
       unjoined_views.push_back(views[i]);
@@ -1386,7 +1336,6 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   // We're basically done: we need to form the cross-product of all views and
   // propose that to the clause head.
-  DEBUG((*gOut) << "num_views=" << num_views << " functors=" << work_item.functors.size() << '\n';)
   assert(1u < num_views);
 
   CreateProduct(query, clause, context, log, work_item);
@@ -1530,9 +1479,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
 
     if (cmp.Operator() == ComparisonOperator::kEqual) {
-      DEBUG((*gOut) << "CMP: Unioning " << lhs_vc->var << " (id=" << lhs_vc->id
-                    << ") with " << rhs_vc->var << " (id=" << rhs_vc->id
-                    << ")\n";)
       DisjointSet::Union(lhs_vc, rhs_vc);
     }
   }
@@ -1617,8 +1563,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   }
 
-  DEBUG((*gOut) << "\n\nStarting clause:\n" << clause.SpellingRange() << '\n';)
-
   // Process the work list until we find some order of things that works.
   //
   // NOTE(pag): Remove `!context.result` to enable equivalence-class building.
@@ -1660,10 +1604,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       stream = query->ios.Create(decl);
     }
     insert = query->inserts.Create(stream, decl, !clause.IsDeletion());
-    stream->inserts.AddUse(insert);
+    stream->sends.AddUse(insert);
 
   } else {
-    auto &rel = query->decl_to_pos_relation[decl];
+    auto &rel = query->decl_to_relation[decl];
     if (!rel) {
       rel = query->relations.Create(decl);
     }
@@ -1708,7 +1652,6 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     if (!BuildClause(impl.get(), clause, context, log)) {
       return std::nullopt;
     }
-    impl->RemoveUnusedViews();
   }
 
   for (auto clause : module.DeletionClauses()) {
@@ -1716,11 +1659,6 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     if (!BuildClause(impl.get(), clause, context, log)) {
       return std::nullopt;
     }
-    impl->RemoveUnusedViews();
-  }
-
-  for (auto join : impl->joins) {
-    join->is_used = false;
   }
 
   impl->RemoveUnusedViews();
@@ -1731,7 +1669,10 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     return std::nullopt;
   }
 
-  impl->ConnectInsertsToSelects();
+  if (!impl->ConnectInsertsToSelects(log)) {
+    return std::nullopt;
+  }
+
   impl->RemoveUnusedViews();
   impl->Optimize(log);
   if (num_errors != log.Size()) {

@@ -50,7 +50,6 @@ bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   const auto that = that_->AsInsert();
   if (!that ||
       is_insert != that->is_insert ||
-      is_used != that->is_used ||
       can_produce_deletions != that->can_produce_deletions ||
       declaration.Id() != that->declaration.Id() ||
       columns.Size() != that->columns.Size() ||

@@ -1,4 +1,4 @@
-// Copyright 2019, Trail of Bits, Inc. All rights reserved.
+// Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Transforms/CombineModules.h>
 
@@ -9,8 +9,8 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
-#include <drlojekyll/Sema/ModuleIterator.h>
 
 namespace hyde {
 

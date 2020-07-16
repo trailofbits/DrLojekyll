@@ -274,9 +274,19 @@ class Node<ParsedParameter> {
   // associated with `func`.
   Node<ParsedFunctor> *opt_merge{nullptr};
 
+  // This can be `bound`, `free`, `aggregate`, `summary`, `mutable`, or empty.
   Token opt_binding;
+
+  // Spelling range of this mutable parameter.
+  DisplayRange opt_mutable_range;
+
+  // The parameter name.
   Token name;
-  Token opt_unordered_name;  // Use in an unordered set.
+
+  // Last use of the same-named parameter in an unordered set.
+  Token opt_unordered_name;
+
+  // Optional type.
   TypeLoc opt_type;
 
   unsigned index{~0u};
@@ -309,6 +319,7 @@ class Node<ParsedClause> {
   Token negation;
   Token name;
   Token rparen;
+  Token first_body_token;
   Token dot;
 
   // Variables used in this clause.
@@ -502,6 +513,11 @@ class Node<ParsedModule>
   Token last;
 
   Node<ParsedModule> *root_module{nullptr};
+
+  // If this is the root module, then `all_modules` contains a list of all
+  // modules, starting with the root module itself.
+  std::vector<Node<ParsedModule> *> all_modules;
+
   std::vector<std::shared_ptr<Node<ParsedModule>>> non_root_modules;
 
   std::vector<std::unique_ptr<Node<ParsedImport>>> imports;

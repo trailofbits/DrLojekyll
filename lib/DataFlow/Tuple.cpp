@@ -87,8 +87,7 @@ bool Node<QueryTuple>::Canonicalize(
         in_col->view->is_canonical = false;
       }
 
-      input_columns.Clear();
-      is_dead = true;
+      PrepareToDelete();
       return true;
     }
   }
@@ -162,7 +161,6 @@ bool Node<QueryTuple>::Canonicalize(
 
         if (all_in_order) {
           ReplaceAllUsesWith(incoming_view);
-          is_dead = true;
           return true;
         }
       }
@@ -170,8 +168,7 @@ bool Node<QueryTuple>::Canonicalize(
     // `this` is not used in a MERGE, so there are no ordering constraints
     // on `incoming_view`.
     } else {
-      incoming_view->CopyTestedConditionsFrom(this);
-      incoming_view->OrderConditions();
+      CopyTestedConditionsTo(incoming_view);
       TransferSetConditionTo(incoming_view);
 
       for (auto [in_col, out_col] : in_to_out) {
@@ -180,8 +177,7 @@ bool Node<QueryTuple>::Canonicalize(
 
       // NOTE(pag): There might be weak uses of `this`, i.e. in a JOIN.
       this->Def<Node<QueryView>>::ReplaceAllUsesWith(incoming_view);
-
-      is_dead = true;
+      PrepareToDelete();
       return true;
     }
   }
