@@ -579,18 +579,56 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
 // If `sets_condition` is non-null, then transfer the setter to `that`.
 void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
   if (auto cond = sets_condition.get(); cond) {
+
+    auto is_this_or_that = [=] (VIEW *v) { return v == this || v == that; };
+
+    // Simple case: transfer "settership" of the condition.
     if (!that->sets_condition) {
       that->sets_condition.Swap(sets_condition);
+      cond->setters.RemoveIf(is_this_or_that);
+      cond->setters.AddUse(that);
 
-    } else if (that->sets_condition.get() == cond) {
+    } else if (auto that_cond = that->sets_condition.get()) {
+
+      // Next simplest case: `that` is also setting the same condition, so we'll
+      // just unlink `this` from `cond`s setter list.
+      if (that_cond == cond) {
+        cond->setters.RemoveIf(is_this_or_that);
+        cond->setters.AddUse(that);
+
+      } else {
+
+        // If `cond` is only set by `this`, and `that` already has its own
+        // condition, then we'll let that other condition take over this condition.
+        //
+        // TODO(pag): It's totally possible for `that_cond` to be stronger / more
+        //            constrained than `cond`, which could be problematic.
+        if (cond->setters.Size() == 1u) {
+
+          for (auto view : cond->positive_users) {
+            that_cond->positive_users.AddUse(view);
+          }
+          for (auto view : cond->negative_users) {
+            that_cond->negative_users.AddUse(view);
+          }
+
+          cond->ReplaceAllUsesWith(that_cond);
+          cond->setters.Clear();
+          cond->positive_users.Clear();
+          cond->negative_users.Clear();
+
+        // Our condition is set by multiple different VIEWs. We'll constrain
+        // `that_cond` by adding `cond` as a tested condition to `that`.
+        } else {
+          cond->setters.RemoveIf([=] (VIEW *v) { return v == this; });
+          cond->positive_users.AddUse(that);
+          that->positive_conditions.AddUse(cond);
+        }
+        that->is_canonical = false;
+      }
+
       WeakUseRef<COND>().Swap(sets_condition);
-
-    } else {
-      cond->ReplaceAllUsesWith(that->sets_condition.get());
     }
-
-    cond->setters.RemoveIf([=] (VIEW *v) { return v == this || v == that; });
-    cond->setters.AddUse(that);
   }
 }
 

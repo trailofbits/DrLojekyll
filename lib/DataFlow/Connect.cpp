@@ -13,7 +13,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
   auto can_connect = [] (ParsedDeclaration decl) {
     return !decl.NumNegatedUses() &&  // Not used in an existence check.
-           !decl.NumDeletionClauses() &&  // Not deleted.
            !decl.IsMessage() &&
            0u < decl.Arity();  // Not a condition.
   };

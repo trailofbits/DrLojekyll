@@ -304,7 +304,7 @@ class ParsedAggregate : public parse::ParsedNode<ParsedAggregate> {
   // This corresponds with `A` in the following:
   //
   //    count_grouped_As(A, NumXs)
-  //      : count(X, NumXs) over (@i32 A, @i32 X) { blah(X). }.
+  //      : count(X, NumXs) over (i32 A, i32 X) { blah(X). }.
   //
   // This pattern is interpreted like a "group by `A`". Another way of thinking
   // of it is that we want to have a distinct aggregation object per unique `A`.
@@ -565,9 +565,9 @@ class ParsedDeclarationName {
 // same logical rule can have multiple exports, so long as they all have
 // different rule binding types.
 //
-// Specifying what is bound is a proxy for indexing. If iteration over the
-// entire set of facts is permissible, then an `#extern` declaration marking
-// all parameters as free is required.
+// Specifying what is bound is a proxy for indexing. That is, you can think of
+// the set of `bound`-attributed parameters of a `#query` as being an index
+// on an SQL table.
 //
 // Query declarations and defined clauses can be defined in any module.
 class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
@@ -603,8 +603,10 @@ class ParsedQuery : public parse::ParsedNode<ParsedQuery> {
 //    #export rule(type Var, type Var)
 //
 // Exports must correspond with clauses defined within the current module, and
-// only the current module. The same extern cannot be defined in multiple
+// only the current module. The same export cannot be defined in multiple
 // modules. If that functionality is desired, then messages should be used.
+//
+// Type names on parameters in `#export` declarations are optional.
 class ParsedExport : public parse::ParsedNode<ParsedExport> {
  public:
   static const ParsedExport &From(const ParsedDeclaration &decl);
@@ -641,13 +643,14 @@ class ParsedExport : public parse::ParsedNode<ParsedExport> {
 };
 
 // Represents a rule that is specific to this module. Across modules, there
-// can be several locals with different names/prototypes, and they will not
+// can be several locals with the same names/prototypes, and they will not
 // be treated as referencing the same things. For example:
 //
 //    #local rule(type Var, type Var)
 //
 // Locals must correspond with clauses defined within the current module, and
-// only the current module.
+// only the current module. Type names on parameters in `#local` declarations
+// are optional.
 class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
  public:
   static const ParsedLocal &From(const ParsedDeclaration &decl);
@@ -749,11 +752,15 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 // Parsed messages are all extern by default, and so must follow all the same
 // rules as exports. The one key difference between messages and exports is
 // that all parameters are implicitly bound, and only a single message can be
-// used in the dynamic extent of a clause body. Thus binding of parameter
-// body_variables doesn't need to be specified.
+// used in a clause body. Thus binding of parameter body variables doesn't need
+// to be specified.
 //
 // The same message (albeit with different associated clause bodies) can be
 // (re)defined in any module.
+//
+// Messages are either receive-only, or send-only, never both. Thus, a given
+// message must only appear either always as a clause head (send), or always in
+// clause bodies (receive).
 class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
  public:
   static const ParsedMessage &From(const ParsedDeclaration &decl);

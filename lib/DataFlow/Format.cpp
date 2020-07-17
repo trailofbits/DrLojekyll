@@ -91,6 +91,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto relation : query.Relations()) {
     const auto decl = relation.Declaration();
     const auto arity = decl.Arity();
+    if (!arity) {
+      continue;  // This relation will be modeled by a CONDition.
+    }
     os << "t" << relation.UniqueId() << " [ label=<" << kBeginTable
        << "<TD>RELATION ";
 
@@ -109,6 +112,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (auto insert : relation.Inserts()) {
+      if (insert.IsInsert() && QueryInsert::From(insert).IsDelete()) {
+        continue;
+      }
       auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
       os << "t" << relation.UniqueId() << " -> v" << insert.UniqueId()
          << color << ";\n";
