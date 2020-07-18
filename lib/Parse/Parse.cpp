@@ -132,6 +132,8 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
     return id.flat;
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
   const auto clause = context->clause;
   id.flat = clause->Id();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
@@ -147,6 +149,7 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
   }
 
   assert(0 < id.info.var_id);
+#pragma GCC diagnostic pop
 
   return id.flat;
 }
@@ -1199,12 +1202,15 @@ DisplayRange ParsedModule::SpellingRange(void) const noexcept {
 
 // Return the ID of this module. Returns `~0u` if not valid.
 uint64_t ParsedModule::Id(void) const noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
   parse::IdInterpreter interpreter = {};
   interpreter.info.module_id = impl->first.DisplayId();
   interpreter.info.atom_name_id = ~0u;
   interpreter.info.var_id = ~0u;
   interpreter.info.arity = ~0u;
   return interpreter.flat;
+#pragma GCC diagnostic pop
 }
 
 NodeRange<ParsedQuery> ParsedModule::Queries(void) const {

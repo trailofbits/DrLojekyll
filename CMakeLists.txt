@@ -19,7 +19,7 @@ target_compile_options(settings INTERFACE
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(settings INTERFACE
-       -Wno-error=unknown-pragmas)
+       -Wno-unknown-pragmas)
 endif()
 
 # release ------------------------------------
