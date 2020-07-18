@@ -4,8 +4,8 @@
 
 #include <drlojekyll/Parse/Parser.h>
 
-#include <cstring>
 #include <cassert>
+#include <cstring>
 #include <sstream>
 #include <unordered_map>
 #include <vector>

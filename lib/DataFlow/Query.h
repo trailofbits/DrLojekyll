@@ -4,6 +4,7 @@
 
 #include <drlojekyll/DataFlow/Query.h>
 
+#include <cassert>
 #include <string>
 #include <unordered_map>
 #include <vector>

@@ -4,6 +4,7 @@
 
 #include <drlojekyll/Parse/Parse.h>
 
+#include <cassert>
 #include <memory>
 #include <unordered_map>
 #include <vector>
