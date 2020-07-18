@@ -77,16 +77,16 @@ function(main config)
         codegen-${config})
 endfunction(main)
 
-function(fuzzer config)
-    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
-    add_executable(fuzzer-${config}
+function(fuzzer)
+    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+    add_executable(fuzzer
         Fuzzer.cpp)
-    target_link_libraries(fuzzer-${config}
-        settings-${config}
-        util-${config}
-        display-${config}
-        lex-${config}
-        parse-${config})
+    target_link_libraries(fuzzer
+        settings-libfuzzer
+        util-libfuzzer
+        display-libfuzzer
+        lex-libfuzzer
+        parse-libfuzzer)
 endfunction(fuzzer)
 
 # build what we need -------------------------
@@ -94,5 +94,5 @@ main(debug)
 main(sanitizer)
 
 if(ENABLE_FUZZING)
-    fuzzer(libfuzzer)
+    fuzzer()
 endif(ENABLE_FUZZING)
