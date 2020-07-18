@@ -23,7 +23,6 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/DataFlow/Format.h>
-#include <drlojekyll/Transforms/CombineModules.h>
 #include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Util/Node.h>
 

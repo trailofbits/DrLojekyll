@@ -1,4 +1,4 @@
-// Copyright 2019, Trail of Bits. All rights reserved.
+// Copyright 2020, Trail of Bits. All rights reserved.
 
 #pragma once
 

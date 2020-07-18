@@ -1,10 +1,14 @@
-# Copyright 2019, Trail of Bits, Inc. All rights reserved.
+# Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-function(dataflow source_dir config)
-    add_library(rel-${config} STATIC
+function(add_dataflow_library source_dir config)
+    add_library(dataflow-${config}-headers INTERFACE)
+    target_sources(dataflow-${config}-headers INTERFACE
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Format.h"
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Query.h"
-      
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Query.h")
+    target_link_libraries(parse-${config}-headers INTERFACE
+        parse-${config}-headers)
+
+    add_library(dataflow-${config} STATIC
         "${source_dir}/Query.h"
         
         "${source_dir}/Aggregate.cpp"
@@ -31,6 +35,9 @@ function(dataflow source_dir config)
         "${source_dir}/Tuple.cpp"
         "${source_dir}/View.cpp")
 
-    target_link_libraries(rel-${config} PUBLIC
-        parser-${config})
-endfunction(dataflow)
+    target_link_libraries(dataflow-${config}
+        PUBLIC
+            settings-${config}
+        INTERFACE
+            dataflow-${config}-headers)
+endfunction(add_dataflow_library)

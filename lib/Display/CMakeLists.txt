@@ -1,6 +1,15 @@
-# Copyright 2019, Trail of Bits, Inc. All rights reserved.
+# Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-function(display source_dir config)
+function(add_display_library source_dir config)
+    add_library(display-${config}-headers INTERFACE)
+    target_sources(display-${config}-headers INTERFACE
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Display.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayConfiguration.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayManager.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayPosition.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayReader.h"
+        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Format.h")
+    
     add_library(display-${config} STATIC
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Display.h"
         "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayConfiguration.h"
@@ -18,6 +27,9 @@ function(display source_dir config)
         "${source_dir}/DataStream.h"
         "${source_dir}/Format.cpp")
 
-    target_link_libraries(display-${config} PUBLIC
-        ${config})
-endfunction(display)
+    target_link_libraries(display-${config}
+        PUBLIC
+            settings-${config}
+        INTERFACE
+            display-${config}-headers)
+endfunction(add_display_library)

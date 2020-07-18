@@ -1,93 +1,98 @@
-# Copyright 2019, Trail of Bits, Inc. All rights reserved.
+# Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 cmake_minimum_required(VERSION 3.14)
 project(DrLojekyll)
+
+include(cmake/utils.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_FUZZING "Enable generation of libFuzzer targets" OFF)
 
-add_library(cxx_settings INTERFACE)
-target_include_directories(cxx_settings INTERFACE
+add_library(settings INTERFACE)
+target_include_directories(settings INTERFACE
     "${CMAKE_CURRENT_LIST_DIR}/include")
 
-target_compile_options(cxx_settings INTERFACE
+target_compile_options(settings INTERFACE
    -Werror -Wall -pedantic -Wconversion)
 
 # release ------------------------------------
-add_library(rel INTERFACE)
-target_compile_options(rel INTERFACE
+add_library(settings-release INTERFACE)
+target_compile_options(settings-release INTERFACE
     -O3 -gline-tables-only)
 
-target_link_libraries(rel INTERFACE
-    cxx_settings)
+target_link_libraries(settings-release INTERFACE
+    settings)
 
 # debug --------------------------------------
-add_library(dbg INTERFACE)
-target_compile_options(dbg INTERFACE
+add_library(settings-debug INTERFACE)
+target_compile_options(settings-debug INTERFACE
     -O0 -g3)
 
-target_link_libraries(dbg INTERFACE
-    cxx_settings)
+target_link_libraries(settings-debug INTERFACE
+    settings)
 
 # sanitizer ----------------------------------
-add_library(sanitizer INTERFACE)
-target_compile_options(sanitizer INTERFACE
-    -fsanitize=address,undefined
-    -fsanitize-address-use-after-scope
-    -fno-omit-frame-pointer
-    -fno-optimize-sibling-calls)
 
-target_link_options(sanitizer INTERFACE
-    -fsanitize=address,undefined
-    -Wl,-undefined,dynamic_lookup)
+add_sanitizer(settings-sanitizer
+    SANITIZERS
+        address
+        undefined
+    OPTIONS
+        -fsanitize-address-use-after-scope)
 
-target_link_libraries(sanitizer INTERFACE
-    cxx_settings)
+target_link_libraries(settings-sanitizer INTERFACE
+    settings)
 
-# libfuzzer ---------------------------------
-add_library(libfuzzer INTERFACE)
+# libfuzzer ----------------------------------
 
-target_compile_options(libfuzzer INTERFACE
-    -Werror -Wall -pedantic -Wconversion -g
-    -fsanitize=fuzzer,address,undefined
-    -fsanitize-address-use-after-scope
-    -fno-omit-frame-pointer
-    -fno-optimize-sibling-calls)
+add_sanitizer(settings-libfuzzer
+    SANITIZERS
+        fuzzer
+        address
+        undefined
+    OPTIONS
+        -fsanitize-address-use-after-scope
+        -g)
 
-target_link_options(libfuzzer INTERFACE
-    -fsanitize=address,fuzzer,undefined
-    -Wl,-undefined,dynamic_lookup)
+target_link_libraries(settings-libfuzzer INTERFACE
+    settings)
 
-target_link_libraries(libfuzzer INTERFACE
-    cxx_settings)
+# targets ------------------------------------
 
 add_subdirectory(lib)
 
 function(main config)
+    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
     add_executable(test-${config}
         Main.cpp)
     target_link_libraries(test-${config}
-        rel-${config}
+        settings-${config}
+        util-${config}
+        display-${config}
+        lex-${config}
+        parse-${config}
+        dataflow-${config}
         codegen-${config})
 endfunction(main)
 
 function(fuzzer config)
+    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
     add_executable(fuzzer-${config}
         Fuzzer.cpp)
     target_link_libraries(fuzzer-${config}
-        parser-${config})
+        settings-${config}
+        util-${config}
+        display-${config}
+        lex-${config}
+        parse-${config})
 endfunction(fuzzer)
 
-# build what we need ------------------------
-lib("${CMAKE_CURRENT_LIST_DIR}/lib" dbg)
-main(dbg)
-
-lib("${CMAKE_CURRENT_LIST_DIR}/lib" sanitizer)
+# build what we need -------------------------
+main(debug)
 main(sanitizer)
 
-if (ENABLE_FUZZING)
-    lib("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+if(ENABLE_FUZZING)
     fuzzer(libfuzzer)
 endif(ENABLE_FUZZING)
