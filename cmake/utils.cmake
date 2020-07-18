@@ -5,7 +5,7 @@ function(add_sanitizer target_name)
     cmake_parse_arguments(PARSE_ARGV 1 SAN
         ""
         ""
-        "SANITIZERS OPTIONS")
+        "SANITIZERS;OPTIONS")
     
     string(REPLACE ";" "," SANITIZER_LIST "${SAN_SANITIZERS}")
 
