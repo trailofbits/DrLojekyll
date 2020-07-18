@@ -526,7 +526,7 @@ class Set {
 
   // Returns `true` if the entry was added.
   bool Add(Keys&&... keys) {
-
+    return true;  // TODO(pag): Implement me.
   }
 };
 
@@ -538,12 +538,12 @@ class DifferentialSet {
 
   // Returns `true` if the entry was added.
   bool Add(Keys&&... keys, RC insert) {
-
+    return true;  // TODO(pag): Implement me.
   }
 
   // Returns `true` if the entry was deleted.
   bool Remove(Keys&&... keys, RC clear) {
-
+    return true;  // TODO(pag): Implement me.
   }
 
 };

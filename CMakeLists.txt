@@ -17,6 +17,11 @@ target_include_directories(settings INTERFACE
 target_compile_options(settings INTERFACE
    -Werror -Wall -pedantic -Wconversion)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(settings INTERFACE
+       -Wno-error=unknown-pragmas)
+endif()
+
 # release ------------------------------------
 add_library(settings-release INTERFACE)
 target_compile_options(settings-release INTERFACE
