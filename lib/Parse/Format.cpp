@@ -1,6 +1,8 @@
-// Copyright 2019, Trail of Bits, Inc. All rights reserved.
+// Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Parse/Format.h>
+
+#include <cassert>
 
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
