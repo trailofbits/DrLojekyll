@@ -5,7 +5,7 @@ function(add_sanitizer target_name)
     cmake_parse_arguments(PARSE_ARGV 1 SAN
         ""
         ""
-        "SANITIZERS OPTIONS")
+        "SANITIZERS;OPTIONS")
     
     string(REPLACE ";" "," SANITIZER_LIST "${SAN_SANITIZERS}")
 
@@ -21,16 +21,12 @@ function(add_sanitizer target_name)
     endforeach()
     
     target_link_options(${target_name} INTERFACE
-        -fsanitize=${SANITIZER_LIST}
-        -ffunction-sections -fdata-sections)
+        -fsanitize=${SANITIZER_LIST})
     
     if(APPLE)
         target_link_options(${target_name} INTERFACE
+            -ffunction-sections -fdata-sections
             -Wl,-dead_strip
             -Wl,-undefined,dynamic_lookup)
-    else()
-        target_link_options(${target_name} INTERFACE
-            -Wl,--gc-sections
-            -Wl,--allow-multiple-definition)
     endif()
 endfunction()

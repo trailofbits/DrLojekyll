@@ -26,11 +26,11 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
   auto local_hash = hash;
 
   for (auto col : input_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 53) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 53) * col->Hash();
   }
 
   for (auto col : attached_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 43) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 43) * col->Hash();
   }
 
   hash = local_hash;

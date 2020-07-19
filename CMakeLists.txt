@@ -17,6 +17,11 @@ target_include_directories(settings INTERFACE
 target_compile_options(settings INTERFACE
    -Werror -Wall -pedantic -Wconversion)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(settings INTERFACE
+       -Wno-unknown-pragmas)
+endif()
+
 # release ------------------------------------
 add_library(settings-release INTERFACE)
 target_compile_options(settings-release INTERFACE
@@ -67,7 +72,7 @@ function(main config)
     add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
     add_executable(test-${config}
         Main.cpp)
-    target_link_libraries(test-${config}
+    target_link_libraries(test-${config} PRIVATE
         settings-${config}
         util-${config}
         display-${config}
@@ -77,16 +82,16 @@ function(main config)
         codegen-${config})
 endfunction(main)
 
-function(fuzzer config)
-    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
-    add_executable(fuzzer-${config}
+function(fuzzer)
+    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+    add_executable(fuzzer
         Fuzzer.cpp)
-    target_link_libraries(fuzzer-${config}
-        settings-${config}
-        util-${config}
-        display-${config}
-        lex-${config}
-        parse-${config})
+    target_link_libraries(fuzzer PRIVATE
+        settings-libfuzzer
+        util-libfuzzer
+        display-libfuzzer
+        lex-libfuzzer
+        parse-libfuzzer)
 endfunction(fuzzer)
 
 # build what we need -------------------------
@@ -94,5 +99,5 @@ main(debug)
 main(sanitizer)
 
 if(ENABLE_FUZZING)
-    fuzzer(libfuzzer)
+    fuzzer()
 endif(ENABLE_FUZZING)

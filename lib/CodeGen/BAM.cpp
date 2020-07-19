@@ -3,6 +3,7 @@
 #include <drlojekyll/CodeGen/BAM.h>
 
 #include <bitset>
+#include <cassert>
 #include <functional>
 #include <map>
 #include <memory>

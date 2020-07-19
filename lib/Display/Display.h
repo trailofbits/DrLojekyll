@@ -4,6 +4,7 @@
 
 #include <drlojekyll/Display/Display.h>
 
+#include <cassert>
 #include <memory>
 #include <string>
 #include <vector>

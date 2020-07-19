@@ -4,8 +4,8 @@
 
 #include <cassert>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Winvalid-offsetof"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
 
 namespace hyde {
 
@@ -30,6 +30,7 @@ QueryImpl::~QueryImpl(void) {
 
   for (auto join : joins) {
     for (auto &[out_col, in_cols] : join->out_to_in) {
+      (void) out_col;
       in_cols.ClearWithoutErasure();
     }
     join->out_to_in.clear();
@@ -1077,4 +1078,4 @@ Query::~Query(void) {}
 
 }  // namespace hyde
 
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop

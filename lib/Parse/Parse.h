@@ -4,6 +4,7 @@
 
 #include <drlojekyll/Parse/Parse.h>
 
+#include <cassert>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -15,7 +16,7 @@
 
 namespace hyde {
 
-static constexpr size_t kMaxArity = 63;
+static constexpr unsigned kMaxArity = 63u;
 
 namespace parse {
 

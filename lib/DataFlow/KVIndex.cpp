@@ -43,16 +43,16 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 43) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 43) * col->Hash();
   }
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : attached_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 33) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 33) * col->Hash();
   }
 
   for (auto functor : merge_functors) {
-    local_hash ^= __builtin_rotateright64(local_hash, 23) * functor.Id();
+    local_hash ^= RotateRight64(local_hash, 23) * functor.Id();
   }
 
   hash = local_hash;

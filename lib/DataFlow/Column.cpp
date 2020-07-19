@@ -80,7 +80,7 @@ unsigned Node<QueryColumn>::Index(void) noexcept {
 uint64_t Node<QueryColumn>::Hash(void) noexcept {
   if (!hash) {
     const auto view_hash = view->Hash();
-    hash = view_hash ^ __builtin_rotateright64(
+    hash = view_hash ^ RotateRight64(
         view_hash * 0xff51afd7ed558ccdull,
         (Index() + static_cast<unsigned>(type.Kind()) + 33u) % 64u);
   }

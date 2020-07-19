@@ -4,10 +4,12 @@
 
 #include <drlojekyll/DataFlow/Query.h>
 
+#include <cassert>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <drlojekyll/Util/BitManipulation.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
 

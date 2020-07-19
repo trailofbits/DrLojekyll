@@ -13,6 +13,9 @@
 
 #include "Token.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+
 namespace hyde {
 namespace {
 
@@ -879,5 +882,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       return true;
   }
 }
+
+#pragma GCC diagnostic pop
 
 }  // namespace hyde

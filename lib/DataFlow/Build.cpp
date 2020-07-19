@@ -295,8 +295,8 @@ static VIEW *GuardWithWithInequality(QueryImpl *query, ParsedClause clause,
 //       CMP[A=B, C]
 //           \   /
 //        CMP[A=C]
-//           _|__
-//          /  \ \
+//           _|____
+//          /  |   |
 //    TUPLE[A, B, C]       <-- `view` after execution
 static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
                                  ClauseContext &context, VIEW *view) {
@@ -585,7 +585,7 @@ static JOIN *CreateJoinFromPivots(
   std::vector<std::pair<COL *, unsigned>> pivot_cols;
 
   auto col_index = 0u;
-  for (auto i = 0u; i < num_pivots; i += num_joined_views) {
+  for (size_t i = 0u; i < num_pivots; i += num_joined_views) {
 
     // Try to choose a leader column for this join pivot in a way that is
     // consistent across duplicated clause bodies.
@@ -1216,7 +1216,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   // Try to find a join candidate. If we fail, then we will rotate
   // `views`.
-  for (auto num_rotations = 0;
+  for (auto num_rotations = 0u;
        1u < num_views && num_rotations < num_views;
        ++num_rotations) {
 

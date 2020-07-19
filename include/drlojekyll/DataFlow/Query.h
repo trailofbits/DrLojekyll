@@ -5,6 +5,7 @@
 #include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/Node.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <utility>

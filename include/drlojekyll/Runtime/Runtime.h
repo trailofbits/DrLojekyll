@@ -2,11 +2,15 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 #if defined(__clang__) || defined(__GNUC__)
 # define DR_INLINE [[gnu::always_inline]] inline
@@ -522,7 +526,7 @@ class Set {
 
   // Returns `true` if the entry was added.
   bool Add(Keys&&... keys) {
-
+    return true;  // TODO(pag): Implement me.
   }
 };
 
@@ -534,12 +538,12 @@ class DifferentialSet {
 
   // Returns `true` if the entry was added.
   bool Add(Keys&&... keys, RC insert) {
-
+    return true;  // TODO(pag): Implement me.
   }
 
   // Returns `true` if the entry was deleted.
   bool Remove(Keys&&... keys, RC clear) {
-
+    return true;  // TODO(pag): Implement me.
   }
 
 };

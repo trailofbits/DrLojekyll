@@ -26,17 +26,17 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
 
   // Mix in the hashes of the group by columns.
   for (auto col : group_by_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 33) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 33) * col->Hash();
   }
 
   // Mix in the hashes of the configuration columns.
   for (auto col : config_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 23) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 23) * col->Hash();
   }
 
   // Mix in the hashes of the summarized columns.
   for (auto col : aggregated_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 13) * col->Hash();
+    local_hash ^= RotateRight64(local_hash, 13) * col->Hash();
   }
 
   hash = local_hash;

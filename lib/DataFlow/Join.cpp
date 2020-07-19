@@ -40,7 +40,7 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
 //    for (auto in_col : in_set->second) {
 //      pivot_hash ^= in_col->Hash();
 //    }
-//    local_hash ^= __builtin_rotateright64(local_hash, 13) * pivot_hash;
+//    local_hash ^= RotateRight64(local_hash, 13) * pivot_hash;
 //  }
 
   for (auto joined_view : joined_views) {
@@ -48,14 +48,14 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   }
 
   if (num_pivots) {
-    local_hash ^= __builtin_rotateright64(local_hash, (num_pivots + 53u) % 64u) *
+    local_hash ^= RotateRight64(local_hash, (num_pivots + 53u) % 64u) *
                   local_hash;
   }
 
-  local_hash ^= __builtin_rotateright64(local_hash, (columns.Size() + 43u) % 64u) *
+  local_hash ^= RotateRight64(local_hash, (columns.Size() + 43u) % 64u) *
                 local_hash;
 
-  local_hash ^= __builtin_rotateright64(local_hash, (joined_views.Size() + 33u) % 64u) *
+  local_hash ^= RotateRight64(local_hash, (joined_views.Size() + 33u) % 64u) *
                 local_hash;
 
   hash = local_hash;
@@ -70,6 +70,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
   auto estimate = EstimateDepth(positive_conditions, 1u);
   estimate = EstimateDepth(negative_conditions, estimate);
   for (const auto &[out_col, in_cols] : out_to_in) {
+    (void) out_col;
     for (COL *in_col : in_cols) {
       estimate = std::max(estimate, in_col->view->depth);
     }
@@ -79,6 +80,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 
   auto real = 1u;
   for (const auto &[out_col, in_cols] : out_to_in) {
+    (void) out_col;
     real = GetDepth(in_cols, real);
   }
 
@@ -338,6 +340,7 @@ void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
   }
 
   for (const auto &[out_col, in_cols] : out_to_in) {
+    (void) out_col;
     for (auto in_col : in_cols) {
       if (!in_col->IsConstant()) {
         new_views.push_back(in_col->view);
@@ -449,7 +452,6 @@ bool Node<QueryJoin>::Canonicalize(
 
   auto non_local_changes = false;
   auto need_remove_non_pivots = false;
-  auto all_pivots_are_const_or_constref = true;
 
   VIEW *first_joined_view = nullptr;
   bool joins_at_least_two_views = false;
@@ -531,9 +533,6 @@ bool Node<QueryJoin>::Canonicalize(
 
         // Not all columns are constants or constant refs.
         same_const_ref = nullptr;
-
-        // Not all pivots are constants or constant refs.
-        all_pivots_are_const_or_constref = false;
       }
     }
 

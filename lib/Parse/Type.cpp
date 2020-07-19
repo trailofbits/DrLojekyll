@@ -47,23 +47,24 @@ unsigned SizeInBits(TypeKind kind) noexcept {
 
 unsigned SizeInBytes(TypeKind kind) noexcept {
   switch (kind) {
-    case TypeKind::kInvalid: return 0;
-    case TypeKind::kSigned8: return 1;
-    case TypeKind::kSigned16: return 2;
-    case TypeKind::kSigned32: return 4;
-    case TypeKind::kSigned64: return 8;
-    case TypeKind::kUnsigned8: return 1;
-    case TypeKind::kUnsigned16: return 2;
-    case TypeKind::kUnsigned32: return 4;
-    case TypeKind::kUnsigned64: return 8;
-    case TypeKind::kFloat: return 4;
-    case TypeKind::kDouble: return 8;
+    case TypeKind::kInvalid: break;
+    case TypeKind::kSigned8: return 1u;
+    case TypeKind::kSigned16: return 2u;
+    case TypeKind::kSigned32: return 4u;
+    case TypeKind::kSigned64: return 8u;
+    case TypeKind::kUnsigned8: return 1u;
+    case TypeKind::kUnsigned16: return 2u;
+    case TypeKind::kUnsigned32: return 4u;
+    case TypeKind::kUnsigned64: return 8u;
+    case TypeKind::kFloat: return 4u;
+    case TypeKind::kDouble: return 8u;
     case TypeKind::kBytes:
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID:
-      return 16;
+      return 16u;
   }
+  return 0u;
 }
 
 TypeLoc::TypeLoc(const Token &tok)
@@ -82,7 +83,7 @@ TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
 
 const char *Spelling(TypeKind kind) noexcept {
   switch (kind) {
-    case TypeKind::kInvalid: return "<invalid>";
+    case TypeKind::kInvalid: break;
     case TypeKind::kSigned8: return "i8";
     case TypeKind::kSigned16: return "i16";
     case TypeKind::kSigned32: return "i32";
@@ -98,6 +99,7 @@ const char *Spelling(TypeKind kind) noexcept {
     case TypeKind::kUTF8: return "utf8";
     case TypeKind::kUUID: return "uuid";
   }
+  return "<invalid>";
 }
 
 }  // namespace hyde

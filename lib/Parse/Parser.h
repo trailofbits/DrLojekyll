@@ -4,8 +4,8 @@
 
 #include <drlojekyll/Parse/Parser.h>
 
-#include <cstring>
 #include <cassert>
+#include <cstring>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -24,7 +24,6 @@
 #include "Parse.h"
 
 namespace hyde {
-namespace {
 
 // Information shared by multiple parsers.
 class SharedParserContext {
@@ -60,8 +59,6 @@ class SharedParserContext {
   // Keeps track of the global locals. All parsed modules shared this.
   std::unordered_map<uint64_t, Node<ParsedDeclaration> *> declarations;
 };
-
-}  // namespace
 
 class ParserImpl {
  public:
@@ -198,6 +195,8 @@ class ParserImpl {
       Display display, const DisplayConfiguration &config);
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
 
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
@@ -273,6 +272,8 @@ void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
     context->declarations.erase(id);
   }
 }
+
+#pragma GCC diagnostic pop
 
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.

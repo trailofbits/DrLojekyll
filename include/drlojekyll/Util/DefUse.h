@@ -1,9 +1,11 @@
-// Copyright 2019, Trail of Bits. All rights reserved.
+// Copyright 2020, Trail of Bits. All rights reserved.
 
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace hyde {
