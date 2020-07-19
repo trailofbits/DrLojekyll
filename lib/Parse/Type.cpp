@@ -83,7 +83,7 @@ TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
 
 const char *Spelling(TypeKind kind) noexcept {
   switch (kind) {
-    case TypeKind::kInvalid: return "<invalid>";
+    case TypeKind::kInvalid: break;
     case TypeKind::kSigned8: return "i8";
     case TypeKind::kSigned16: return "i16";
     case TypeKind::kSigned32: return "i32";
@@ -99,6 +99,7 @@ const char *Spelling(TypeKind kind) noexcept {
     case TypeKind::kUTF8: return "utf8";
     case TypeKind::kUUID: return "uuid";
   }
+  return "<invalid>";
 }
 
 }  // namespace hyde
