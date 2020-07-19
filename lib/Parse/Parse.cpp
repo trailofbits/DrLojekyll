@@ -7,8 +7,8 @@
 #include <cstring>
 #include <cassert>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Winvalid-offsetof"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
 
 namespace hyde {
 namespace parse {
@@ -1340,4 +1340,4 @@ std::string_view ParsedInline::CodeToInline(void) const noexcept {
 
 }  // namespace hyde
 
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop

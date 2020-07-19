@@ -70,6 +70,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
   auto estimate = EstimateDepth(positive_conditions, 1u);
   estimate = EstimateDepth(negative_conditions, estimate);
   for (const auto &[out_col, in_cols] : out_to_in) {
+    (void) out_col;
     for (COL *in_col : in_cols) {
       estimate = std::max(estimate, in_col->view->depth);
     }
@@ -79,6 +80,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 
   auto real = 1u;
   for (const auto &[out_col, in_cols] : out_to_in) {
+    (void) out_col;
     real = GetDepth(in_cols, real);
   }
 
@@ -449,7 +451,6 @@ bool Node<QueryJoin>::Canonicalize(
 
   auto non_local_changes = false;
   auto need_remove_non_pivots = false;
-  auto all_pivots_are_const_or_constref = true;
 
   VIEW *first_joined_view = nullptr;
   bool joins_at_least_two_views = false;
@@ -531,9 +532,6 @@ bool Node<QueryJoin>::Canonicalize(
 
         // Not all columns are constants or constant refs.
         same_const_ref = nullptr;
-
-        // Not all pivots are constants or constant refs.
-        all_pivots_are_const_or_constref = false;
       }
     }
 

@@ -523,9 +523,13 @@ void ParserImpl::ParseLocalExport(
 
       case 6:
         if (Lexeme::kIdentifierAtom == lexeme) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
           parse::IdInterpreter interpreter = {};
           interpreter.info.atom_name_id = tok.IdentifierId();
           interpreter.info.arity = 3;  // Old val, proposed val, new val.
+#pragma GCC diagnostic pop
+
           const auto id = interpreter.flat;
           if (!context->declarations.count(id)) {
             context->error_log.Append(scope_range, tok_range)
@@ -552,6 +556,10 @@ void ParserImpl::ParseLocalExport(
           // NOTE(pag): We don't mark `param->parsed_opt_type` as `true` because
           //            it's coming from the functor, and thus would result in
           //            an unusual spelling range.
+          //
+          // TODO(pag): Does the above setting of `opt_type`, to get it to use
+          //            the spelling range of the `mutable(...)` conflict with
+          //            the below error reporting?
 
           // Make sure all parameters of the functor being used as a merge
           // operator have matching types.
@@ -708,9 +716,13 @@ bool ParserImpl::TryMatchClauseWithDecl(
     return false;
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
   interpreter.info.arity = clause->head_variables.size();
+#pragma GCC diagnostic pop
+
   const auto id = interpreter.flat;
 
   DisplayRange directive_range;
@@ -798,9 +810,13 @@ bool ParserImpl::TryMatchClauseWithDecl(
 bool ParserImpl::TryMatchPredicateWithDecl(
     Node<ParsedModule> *module, Node<ParsedPredicate> *pred) {
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
   interpreter.info.arity = pred->argument_uses.size();
+#pragma GCC diagnostic pop
+
   const auto id = interpreter.flat;
 
   DisplayRange pred_head_range(
