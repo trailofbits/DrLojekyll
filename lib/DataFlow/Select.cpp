@@ -18,7 +18,7 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
   }
 
   hash = HashInit();
-  const auto hash_ror = __builtin_rotateright64(hash, 33u);
+  const auto hash_ror = RotateRight64(hash, 33u);
 
   if (relation) {
     hash ^= hash_ror * relation->declaration.Id();

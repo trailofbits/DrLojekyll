@@ -444,15 +444,15 @@ uint64_t Node<QueryView>::HashInit(void) const noexcept {
   init_hash <<= 1u;
   init_hash |= can_produce_deletions;
 
-  init_hash ^= __builtin_rotateright64(init_hash, 33) * (columns.Size() + 7u);
+  init_hash ^= RotateRight64(init_hash, 33) * (columns.Size() + 7u);
 
   for (auto positive_cond : this->positive_conditions) {
-    init_hash ^= __builtin_rotateright64(init_hash, 33) *
+    init_hash ^= RotateRight64(init_hash, 33) *
                  reinterpret_cast<uintptr_t>(positive_cond);
   }
 
   for (auto negative_cond : this->negative_conditions) {
-    init_hash ^= __builtin_rotateright64(init_hash, 33) *
+    init_hash ^= RotateRight64(init_hash, 33) *
                  ~reinterpret_cast<uintptr_t>(negative_cond);
   }
 
@@ -475,7 +475,7 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   unsigned i = 0u;
   for (auto col : columns) {
     col->ForEachUse<VIEW>([=, &up_hash] (VIEW *user, COL *) {
-      up_hash ^= __builtin_rotateright64(up_hash, (i + 7u) % 64u) *
+      up_hash ^= RotateRight64(up_hash, (i + 7u) % 64u) *
                  user->UpHash(depth - 1u);
     });
     ++i;

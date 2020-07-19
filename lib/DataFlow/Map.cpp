@@ -27,18 +27,18 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 
   const auto binding_pattern = ParsedDeclaration(functor).BindingPattern();
 
-  hash ^= __builtin_rotateright64(HashInit(), 43) * functor.Id();
-  hash ^= __builtin_rotateright64(hash, 33) * kStringViewHasher(binding_pattern);
+  hash ^= RotateRight64(HashInit(), 43) * functor.Id();
+  hash ^= RotateRight64(hash, 33) * kStringViewHasher(binding_pattern);
 
   auto local_hash = hash;
 
   // Mix in the hashes of the merged views and columns;
   for (auto input_col : input_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 23) * input_col->Hash();
+    local_hash ^= RotateRight64(local_hash, 23) * input_col->Hash();
   }
 
   for (auto input_col : attached_columns) {
-    local_hash ^= __builtin_rotateright64(local_hash, 13) * input_col->Hash();
+    local_hash ^= RotateRight64(local_hash, 13) * input_col->Hash();
   }
 
   hash = local_hash;

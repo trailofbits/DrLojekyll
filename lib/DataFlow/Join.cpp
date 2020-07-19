@@ -40,7 +40,7 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
 //    for (auto in_col : in_set->second) {
 //      pivot_hash ^= in_col->Hash();
 //    }
-//    local_hash ^= __builtin_rotateright64(local_hash, 13) * pivot_hash;
+//    local_hash ^= RotateRight64(local_hash, 13) * pivot_hash;
 //  }
 
   for (auto joined_view : joined_views) {
@@ -48,14 +48,14 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   }
 
   if (num_pivots) {
-    local_hash ^= __builtin_rotateright64(local_hash, (num_pivots + 53u) % 64u) *
+    local_hash ^= RotateRight64(local_hash, (num_pivots + 53u) % 64u) *
                   local_hash;
   }
 
-  local_hash ^= __builtin_rotateright64(local_hash, (columns.Size() + 43u) % 64u) *
+  local_hash ^= RotateRight64(local_hash, (columns.Size() + 43u) % 64u) *
                 local_hash;
 
-  local_hash ^= __builtin_rotateright64(local_hash, (joined_views.Size() + 33u) % 64u) *
+  local_hash ^= RotateRight64(local_hash, (joined_views.Size() + 33u) % 64u) *
                 local_hash;
 
   hash = local_hash;
