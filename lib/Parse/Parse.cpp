@@ -41,6 +41,7 @@ const void *UseAccessor::GetUser(void *impl_) {
       return &(impl->user);
     }
   }
+  return nullptr;
 }
 
 }  // namespace parse
@@ -53,10 +54,12 @@ const char *Node<ParsedDeclaration>::KindName(void) const {
     case DeclarationKind::kExport: return "export";
     case DeclarationKind::kLocal: return "local";
   }
+  return "";
 }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Woverflow"
 
 // Compute a unique identifier for this declaration.
 uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
@@ -1208,6 +1211,7 @@ DisplayRange ParsedModule::SpellingRange(void) const noexcept {
 uint64_t ParsedModule::Id(void) const noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Woverflow"
   parse::IdInterpreter interpreter = {};
   interpreter.info.module_id = impl->first.DisplayId();
   interpreter.info.atom_name_id = ~0u;

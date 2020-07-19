@@ -340,6 +340,7 @@ void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
   }
 
   for (const auto &[out_col, in_cols] : out_to_in) {
+    (void) out_col;
     for (auto in_col : in_cols) {
       if (!in_col->IsConstant()) {
         new_views.push_back(in_col->view);
