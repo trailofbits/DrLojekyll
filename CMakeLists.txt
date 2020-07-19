@@ -72,7 +72,7 @@ function(main config)
     add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
     add_executable(test-${config}
         Main.cpp)
-    target_link_libraries(test-${config}
+    target_link_libraries(test-${config} PRIVATE
         settings-${config}
         util-${config}
         display-${config}
@@ -86,7 +86,7 @@ function(fuzzer)
     add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
     add_executable(fuzzer
         Fuzzer.cpp)
-    target_link_libraries(fuzzer
+    target_link_libraries(fuzzer PRIVATE
         settings-libfuzzer
         util-libfuzzer
         display-libfuzzer
