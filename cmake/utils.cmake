@@ -13,7 +13,9 @@ function(add_sanitizer target_name)
     target_compile_options(${target_name} INTERFACE
         -fsanitize=${SANITIZER_LIST}
         -fno-omit-frame-pointer
-        -fno-optimize-sibling-calls)
+        -fno-optimize-sibling-calls
+        -ffunction-sections
+        -fdata-sections)
     
     foreach(SAN_OPTION ${SAN_OPTIONS})
         target_compile_options(${target_name} INTERFACE
@@ -25,8 +27,11 @@ function(add_sanitizer target_name)
     
     if(APPLE)
         target_link_options(${target_name} INTERFACE
-            -ffunction-sections -fdata-sections
             -Wl,-dead_strip
             -Wl,-undefined,dynamic_lookup)
+    else()
+        target_link_options(${target_name} INTERFACE
+            -Wl,--gc-sections
+            -Wl,--allow-multiple-definition)
     endif()
 endfunction()
