@@ -1216,7 +1216,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   // Try to find a join candidate. If we fail, then we will rotate
   // `views`.
-  for (auto num_rotations = 0;
+  for (auto num_rotations = 0u;
        1u < num_views && num_rotations < num_views;
        ++num_rotations) {
 

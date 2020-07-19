@@ -106,6 +106,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
 
   std::vector<DisjointSet *> conditions;
   for (auto &[id, set] : var_to_set) {
+    (void) id;
     set = set->Find();
     if (set->id != clause_head_id) {
       conditions.push_back(set);

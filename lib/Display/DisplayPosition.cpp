@@ -77,6 +77,9 @@ uint64_t DisplayPosition::Column(void) const {
   }
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+
 DisplayPosition::DisplayPosition(
     uint64_t display_id, uint64_t index, uint64_t line, uint64_t column) {
   display::PositionInterpreter interpreter = {};
@@ -110,6 +113,8 @@ DisplayPosition::DisplayPosition(
 
   opaque_data = interpreter.flat;
 }
+
+#pragma GCC diagnostic pop
 
 // Tries to compute the distance between two positions.
 bool DisplayPosition::TryComputeDistanceTo(

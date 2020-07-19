@@ -1,6 +1,4 @@
-/*
- * Copyright (c) 2019 Trail of Bits, Inc.
- */
+// Copyright 2020, Trail of Bits. All rights reserved.
 
 #pragma once
 
@@ -18,4 +16,11 @@
 # endif
 #else
 # define HYDE_FALLTHROUGH [[fallthrough]]
+#endif
+
+#if !__has_builtin(__builtin_rotateright64)
+# include <cstdint>
+inline static uint64_t __builtin_rotateright64(uint64_t val, unsigned rot) {
+  return (val >> rot) | (val << (64u - (rot % 64u)));
+}
 #endif

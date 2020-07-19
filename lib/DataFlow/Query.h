@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
 
