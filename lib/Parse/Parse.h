@@ -16,7 +16,7 @@
 
 namespace hyde {
 
-static constexpr size_t kMaxArity = 63;
+static constexpr unsigned kMaxArity = 63u;
 
 namespace parse {
 

@@ -55,6 +55,9 @@ const char *Node<ParsedDeclaration>::KindName(void) const {
   }
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+
 // Compute a unique identifier for this declaration.
 uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
   auto &id = context->id;
@@ -80,6 +83,7 @@ uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
   id.info.arity = parameters.size();
   return id.flat;
 }
+#pragma GCC diagnostic pop
 
 // Return a list of clauses associated with this declaration.
 NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
