@@ -93,10 +93,11 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // and control dependencies to forced together.
   UseRef<Node<QueryColumn>> referenced_constant;
 
-  // The ID of the column. This roughly corresponds to the smallest
-  // `ParsedVariable::Order` value within the clause that was first used to
-  // produce this this column. This isn't meaningful except when constructing
-  // the query-relational form.
+  // The ID of the column. During building of a dataflow, this roughly
+  // corresponds to the smallest `ParsedVariable::Order` value within the
+  // clause that was first used to produce this this column.
+  //
+  // After optimizing a dataflow, we replace all ID values
   unsigned id;
 
   // The index of this column within its view. This will have a value of
@@ -1032,14 +1033,45 @@ class QueryImpl {
   // Remove unused views.
   bool RemoveUnusedViews(void);
 
+  // Performs a limited amount of optimization before linking together
+  // INSERTs and SELECTs.
   void Simplify(const ErrorLog &);
-  void Canonicalize(const OptimizationContext &opt);
-  bool ShrinkConditions(void);
-  void Optimize(const ErrorLog &);
-  bool EliminateDeadFlows(void);
+
+  // Connect INSERT nodes to SELECT nodes when the "full state" of the relation
+  // does not need to be visible for point queries.
   bool ConnectInsertsToSelects(const ErrorLog &log);
+
+  // Canonicalize the dataflow. This tries to put each node into its current
+  // "most optimal" form. Previously it was more about re-arranging columns
+  // to encourange better CSE results.
+  void Canonicalize(const OptimizationContext &opt);
+
+  // Sometimes we have a bunch of dumb condition patterns, roughly looking like
+  // a chain of constant input tuples, conditioned on the next one in the chain,
+  // and so we want to eliminate all the unnecessary intermediary tuples and
+  // conditions and shrink down to a more minimal form.
+  bool ShrinkConditions(void);
+
+  // Eliminate dead flows. This uses a taint-based approach and identifies a
+  // VIEW as dead if it is not derived directly or indirectly from input
+  // messages.
+  bool EliminateDeadFlows(void);
+
+  // Apply common subexpression elimination (CSE) to the dataflow, canonicalize
+  // the dataflow, minimize/shrink conditions, and eliminate dead flows.
+  void Optimize(const ErrorLog &);
+
+  // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(void) const;
+
+  // After the query is built, we want to push down any condition annotations
+  // on nodes.
   void SinkConditions(void) const;
+
+  // Finalize column ID values. Column ID values relate to lexical scope, to
+  // some extent. Two columns with the same ID can be said to have the same
+  // value at runtime.
+  void FinalizeColumnIDs(void) const;
 
   // The streams associated with input relations to queries.
   std::unordered_map<ParsedDeclaration, Node<QueryIO> *>
@@ -1055,10 +1087,6 @@ class QueryImpl {
 
   // Mapping between export conditions and actual condition nodes.
   std::unordered_map<ParsedExport, Node<QueryCondition> *> decl_to_condition;
-
-  // Selects within the same group cannot be merged. A group comes from
-  // importing a clause, given an assumption.
-  unsigned select_group_id{0};
 
   // The streams associated with messages and other concrete inputs.
   DefList<Node<QueryIO>> ios;
@@ -1076,8 +1104,6 @@ class QueryImpl {
   DefList<MERGE> merges;
   DefList<CMP> constraints;
   DefList<INSERT> inserts;
-
-  std::vector<AGG *> pending_aggregates;
 };
 
 }  // namespace hyde

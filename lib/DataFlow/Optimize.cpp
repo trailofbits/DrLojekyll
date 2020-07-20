@@ -287,6 +287,9 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   RelabelGroupIDs();
 }
 
+// Canonicalize the dataflow. This tries to put each node into its current
+// "most optimal" form. Previously it was more about re-arranging columns
+// to encourange better CSE results.
 void QueryImpl::Canonicalize(const OptimizationContext &opt) {
   ForEachView([&] (VIEW *view) {
     view->is_canonical = false;
@@ -416,6 +419,7 @@ bool QueryImpl::ShrinkConditions(void) {
   });
 }
 
+// Apply common subexpression elimination (CSE) to the dataflow.
 void QueryImpl::Optimize(const ErrorLog &log) {
   CandidateList views;
 

@@ -1681,6 +1681,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
 
 //  impl->SinkConditions();
   impl->TrackDifferentialUpdates();
+  impl->FinalizeColumnIDs();
 
   return Query(std::move(impl));
 }

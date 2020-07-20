@@ -4,8 +4,7 @@
 
 namespace hyde {
 
-// Go through and mark all views that can receive and produce differential
-// updates.
+// Identify which data flows can receive and produce deletions.
 void QueryImpl::TrackDifferentialUpdates(void) const {
 
   std::unordered_map<ParsedDeclaration, std::vector<SELECT *>>

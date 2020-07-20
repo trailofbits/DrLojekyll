@@ -6,6 +6,9 @@
 
 namespace hyde {
 
+// Eliminate dead flows. This uses a taint-based approach and identifies a
+// VIEW as dead if it is not derived directly or indirectly from input
+// messages.
 bool QueryImpl::EliminateDeadFlows(void) {
   auto any_changed = false;
   auto outer_changed = true;

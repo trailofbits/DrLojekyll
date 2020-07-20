@@ -6,6 +6,8 @@
 
 namespace hyde {
 
+// Connect INSERT nodes to SELECT nodes when the "full state" of the relation
+// does not need to be visible for point queries.
 bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
   std::unordered_map<ParsedDeclaration,
                      std::pair<std::vector<INSERT *>, std::vector<SELECT *>>>

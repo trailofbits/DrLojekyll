@@ -15,6 +15,8 @@ class OptimizationContext {
 
   // Are we allowed to replace output columns with constants when the inputs
   // are "true" constants, and not constant refs?
+  //
+  // NOTE(pag): This is not currently used.
   bool can_replace_outputs_with_constants{false};
 
   // Are we allowed to replace input columns, marked as constant refs, with
