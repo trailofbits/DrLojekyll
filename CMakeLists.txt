@@ -66,7 +66,7 @@ target_link_libraries(settings-libfuzzer INTERFACE
 
 # targets ------------------------------------
 
-add_subdirectory(lib)
+add_subdirectory(lib)  # note: defines `add_libraries` function
 
 function(main config)
     add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
@@ -85,7 +85,7 @@ endfunction(main)
 function(fuzzer)
     add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
     add_executable(fuzzer
-        Fuzzer.cpp)
+        fuzz/Fuzzer.cpp)
     target_link_libraries(fuzzer PRIVATE
         settings-libfuzzer
         util-libfuzzer
