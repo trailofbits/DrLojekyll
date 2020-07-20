@@ -1,5 +1,15 @@
 # Token-related stuff; see lib/Lex/Lexer.cpp
 
+# Note, most of the tokens defined here include a space at the end.
+# This is intentional, and results in a dictionary-based mutational fuzzer
+# producing interesting inputs with much higher probability than if these
+# tokens didn't include the trailing space.  (Without the space, the tokens
+# would frequently be glommed together, creating some invalid token for
+# Dr. Lojekyll. With the space, they get combined as two distinct tokens.)
+#
+# FIXME(blarsen): It would be nice to be able to auto-generate a suitable
+#                 dictionary from the tokens that the lexer actually accepts.
+
 # comments
 "; "
 
