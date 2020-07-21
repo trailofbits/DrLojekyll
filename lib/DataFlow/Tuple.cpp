@@ -245,42 +245,6 @@ bool Node<QueryTuple>::Canonicalize(
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 
-  // **** Eliminate trivial cycles on unions ****
-  if (auto onlyUser = this->OnlyUser();
-      // There is an incoming view (not all inputs are constant)
-      incoming_view &&
-      // There is only a single user view, which is the same as the incoming
-      // view
-      onlyUser && onlyUser == incoming_view &&
-      // The number of columns in the incoming view matches the number of
-      // columns in the tuple
-      incoming_view->columns.Size() == this->columns.Size()) {
-    // The order of the input columns matches the output column order
-    // for all columns
-    bool ordered_cols = true;
-    for (auto i = 0u; i < max_i; ++i) {
-      auto *in_col = incoming_view->columns[i];
-      auto *out_col = this->columns[i];
-      if (in_col->Index() != out_col->Index()) {
-        ordered_cols = false;
-        break;
-      }
-    }
-    if (ordered_cols) {
-      CopyTestedConditionsTo(incoming_view);
-      TransferSetConditionTo(incoming_view);
-
-      for (auto [in_col, out_col] : in_to_out) {
-        out_col->ReplaceAllUsesWith(in_col);
-      }
-
-      // NOTE(pag): There might be weak uses of `this`, i.e. in a JOIN.
-      this->Def<Node<QueryView>>::ReplaceAllUsesWith(incoming_view);
-      this->PrepareToDelete();
-      return true;
-    }
-  }
-
   hash = 0;
   is_canonical = true;
   return non_local_changes;

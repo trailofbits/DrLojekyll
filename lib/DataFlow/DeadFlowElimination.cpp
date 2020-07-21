@@ -6,6 +6,8 @@
 
 namespace hyde {
 
+bool IsTrivialCycle(TUPLE *tuple);
+
 // Eliminate dead flows. This uses a taint-based approach and identifies a
 // VIEW as dead if it is not derived directly or indirectly from input
 // messages.
@@ -125,7 +127,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       });
     }
 
-    ForEachView([&] (VIEW *view) {
+    ForEachView([&](VIEW *view) {
       if (!derived_from_input.count(view)) {
         kill_view(view);
 
@@ -133,6 +135,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
         merge->merged_views.RemoveIf([&] (VIEW *merged_view) {
           return !derived_from_input.count(merged_view);
         });
+      } else if (auto tuple = view->AsTuple(); tuple && IsTrivialCycle(tuple)) {
+        kill_view(tuple);
       }
     });
 
@@ -192,6 +196,42 @@ bool QueryImpl::EliminateDeadFlows(void) {
   } else {
     return false;
   }
+}
+
+// Eliminate trivial cycles on unions
+bool IsTrivialCycle(TUPLE *tuple) {
+  if (!tuple) {
+    return false;
+  }
+
+  auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
+  auto max_i = tuple->columns.Size();
+
+  if (auto onlyUser = tuple->OnlyUser();
+      // There is an incoming view (not all inputs are constant)
+      incoming_view &&
+      // There is only a single user view, which is the same as the incoming
+      // view
+      onlyUser && onlyUser == incoming_view &&
+      // The number of columns in the incoming view matches the number of
+      // columns in the tuple
+      incoming_view->columns.Size() == tuple->columns.Size()) {
+    // The order of the input columns matches the output column order
+    // for all columns
+    bool ordered_cols = true;
+    for (auto i = 0u; i < max_i; ++i) {
+      auto *in_col = incoming_view->columns[i];
+      auto *out_col = tuple->columns[i];
+      if (in_col->Index() != out_col->Index()) {
+        ordered_cols = false;
+        break;
+      }
+    }
+    if (ordered_cols) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace hyde
