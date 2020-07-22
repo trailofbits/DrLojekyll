@@ -84,7 +84,7 @@ jobs:
           -DENABLE_SANITIZERS=1
           .
       - name: Build
-        run: cmake --build build -j --config Debug
+        run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
 
   build5:
     name: Windows Server 2019 / Debug
@@ -99,4 +99,4 @@ jobs:
           -DENABLE_SANITIZERS=1
           .
       - name: Build
-        run: cmake --build build -j --config Debug
+        run: cmake --build build --config Debug -j
