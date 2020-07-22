@@ -1,21 +1,20 @@
 # C++ coding style of Dr. Lojekyll
 
-- [C++ coding style of Dr. Lojekyll](#c---coding-style-of-dr-lojekyll)
-  * [Naming scheme](#naming-scheme)
-  * [Comments and comment placement](#comments-and-comment-placement)
-    + [To-dos and Notes](#to-dos-and-notes)
-  * [Line splitting](#line-splitting)
-    + [Function parameters and arguments](#function-parameters-and-arguments)
-      - [Approach 1](#approach-1)
-      - [Approach 2](#approach-2)
-    + [Conditionals](#conditionals)
-  * [Indentation, spacing, and braces.](#indentation--spacing--and-braces)
-    + [C++ constructor initializer lists](#c---constructor-initializer-lists)
-    + [Spacing around statements](#spacing-around-statements)
-  * [C++ Namespaces](#c---namespaces)
-    + [Declaring namespaces](#declaring-namespaces)
-    + [Using namespaces](#using-namespaces)
-  * [C preprocessor use](#c-preprocessor-use)
+- [Naming scheme](#naming-scheme)
+- [Comments and comment placement](#comments-and-comment-placement)
+  * [To-dos and Notes](#to-dos-and-notes)
+- [Line splitting](#line-splitting)
+  * [Function parameters and arguments](#function-parameters-and-arguments)
+    + [Approach 1](#approach-1)
+    + [Approach 2](#approach-2)
+  * [Conditionals](#conditionals)
+- [Indentation, spacing, and braces.](#indentation--spacing--and-braces)
+  * [C++ constructor initializer lists](#c---constructor-initializer-lists)
+  * [Spacing around statements](#spacing-around-statements)
+  * [Switch statements](#switch-statements)
+  * [Goto labels](#goto-labels)
+  * [Using namespaces](#using-namespaces)
+- [C preprocessor use](#c-preprocessor-use)
 
 ## Naming scheme
 
@@ -62,17 +61,17 @@ comment placement.
 // This is a comment about the function below.
 void Function(void) {
   
-  // When a comment is the only thing on a line, then the prior line should be either empty, or if non-empty, contain a
-  // single `}`. Notice how there is an empty line between this comment and the prototype of the function above. Comments
-  // on a line should always be describe what is below them.
+  // When a comment is the only thing on a line, then the prior line should be either empty, or if non-empty, contain
+  // a single `}`. Notice how there is an empty line between this comment and the prototype of the function above.
+  // Comments on a line should always be describe what is below them.
   
   int var;  // Comments after code on a line should be placed two spaces after what they are commenting.
 
   Foo(true  /* Embedded comment, usually to highlight the use of an optional parameter. */);
   
-  // This comment documents the conditions being tested in the following `if` statement. This comment should describe the "why"
-  // of the conditions being tested, not the "what". For example, if there is a special case that must be checked, describe the
-  // special case and how it relates to things.
+  // This comment documents the conditions being tested in the following `if` statement. This comment should describe
+  // the "why" of the conditions being tested, not the "what". For example, if there is a special case that must be
+  // checked, describe the special case and how it relates to things.
   if (gFoo) {
   
   // This commnt documents the conditions being tested in the following `else if` statement.
@@ -218,6 +217,67 @@ for (;;) {
 
 for (int i = 0; i < 10; ++i) {
 
+}
+```
+
+### Switch statements
+
+Switch cases are indented two spaces, and then case bodies are further indented by two spaces.
+
+```c++
+switch (...) {
+  case 0:
+    break;
+  case 1:
+  default:
+    break;
+}
+```
+
+### Goto labels
+
+You may use `goto` statements, although please use them sparingly. When using a `goto` statement,
+indent the label in line with the nearest enclosing `}`. For example:
+
+```void Foo(void) {
+  goto bar;
+
+bar:
+  ...
+}
+
+void Bar(void) {
+  if (...) {
+    goto foo;
+    
+  foo:
+    ...
+  }
+}
+
+### Brace usage
+
+All block statements must use braces. The above code sample is a good example of brace usage.
+
+
+#### Switch statements
+
+Switch cases are an example where the cases themselves do not need to use braces, unless they
+introduce variables. If possible, use scoped initializers of `if` statements to introduce braces into a
+case statement. Below are some examples of brace uses with switch cases.
+
+```
+switch (...) {
+  case 0:
+    if (auto var = ...; var) {
+      ...
+    }
+    break;
+  case 1: {
+    auto var = ...;
+    ...
+    break;
+  }
 }
 ```
 
