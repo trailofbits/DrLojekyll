@@ -1,5 +1,22 @@
 # C++ coding style of Dr. Lojekyll
 
+- [C++ coding style of Dr. Lojekyll](#c---coding-style-of-dr-lojekyll)
+  * [Naming scheme](#naming-scheme)
+  * [Comments and comment placement](#comments-and-comment-placement)
+    + [To-dos and Notes](#to-dos-and-notes)
+  * [Line splitting](#line-splitting)
+    + [Function parameters and arguments](#function-parameters-and-arguments)
+      - [Approach 1](#approach-1)
+      - [Approach 2](#approach-2)
+    + [Conditionals](#conditionals)
+  * [Indentation, spacing, and braces.](#indentation--spacing--and-braces)
+    + [C++ constructor initializer lists](#c---constructor-initializer-lists)
+    + [Spacing around statements](#spacing-around-statements)
+  * [C++ Namespaces](#c---namespaces)
+    + [Declaring namespaces](#declaring-namespaces)
+    + [Using namespaces](#using-namespaces)
+  * [C preprocessor use](#c-preprocessor-use)
+
 ## Naming scheme
 
 The following code sample shows various naming conventions used. Almost all symbols that would
