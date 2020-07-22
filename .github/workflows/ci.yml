@@ -100,7 +100,6 @@ jobs:
           cmake
           -B build
           -G "Visual Studio 16 2019"
-          -DENABLE_SANITIZERS=1
           .
       - name: Build
         run: cmake --build build --config Debug -j
