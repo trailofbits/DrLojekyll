@@ -1,0 +1,102 @@
+# Token-related stuff; see lib/Lex/Lexer.cpp
+
+# Note, most of the tokens defined here include a space at the end.
+# This is intentional, and results in a dictionary-based mutational fuzzer
+# producing interesting inputs with much higher probability than if these
+# tokens didn't include the trailing space.  (Without the space, the tokens
+# would frequently be glommed together, creating some invalid token for
+# Dr. Lojekyll. With the space, they get combined as two distinct tokens.)
+#
+# FIXME(blarsen): It would be nice to be able to auto-generate a suitable
+#                 dictionary from the tokens that the lexer actually accepts.
+
+# comments
+"; "
+
+# scoping / exports / imports
+"#local "
+"#export "
+"#import "
+"#include "
+
+# string-like types
+"ascii "
+"bytes "
+"utf8 "
+"uuid "
+
+# unsigned integer types
+"u8 "
+"u16 "
+"u32 "
+"u64 "
+
+# signed integer types
+"i8 "
+"i16 "
+"i32 "
+"i64 "
+
+# floating point types
+"f32 "
+"f64 "
+
+# inline C++
+"#inline "
+"<! "
+"!> "
+
+# other directives
+"#query "
+"#message "
+"#functor "
+
+# keywords
+"aggregate "
+"bound "
+"free "
+"impure "
+"inline "
+"mutable "
+"over "
+"summary "
+"type "
+"unordered "
+
+
+"( "
+") "
+"{ "
+"} "
+". "
+", "
+": "
+"= "
+"! "
+"< "
+"> "
+"_ "
+
+
+
+# literals
+"\""
+"\\"
+" 0x"
+" 0b"
+
+"0"
+"1"
+"2"
+"3"
+"4"
+"5"
+"6"
+"7"
+"8"
+"9"
+
+# identifiers
+"foo "
+"bar "
+"baz "

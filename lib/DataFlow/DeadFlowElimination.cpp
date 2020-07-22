@@ -6,6 +6,8 @@
 
 namespace hyde {
 
+static bool IsTrivialCycle(TUPLE *tuple);
+
 // Eliminate dead flows. This uses a taint-based approach and identifies a
 // VIEW as dead if it is not derived directly or indirectly from input
 // messages.
@@ -125,7 +127,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       });
     }
 
-    ForEachView([&] (VIEW *view) {
+    ForEachView([&](VIEW *view) {
       if (!derived_from_input.count(view)) {
         kill_view(view);
 
@@ -133,6 +135,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
         merge->merged_views.RemoveIf([&] (VIEW *merged_view) {
           return !derived_from_input.count(merged_view);
         });
+      } else if (auto tuple = view->AsTuple(); tuple && IsTrivialCycle(tuple)) {
+        kill_view(tuple);
       }
     });
 
@@ -192,6 +196,58 @@ bool QueryImpl::EliminateDeadFlows(void) {
   } else {
     return false;
   }
+}
+
+// Eliminate trivial cycles on unions
+bool IsTrivialCycle(TUPLE *tuple) {
+  if (!tuple) {
+    return false;
+  }
+
+  auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
+
+  // There is an incoming view and not all inputs are constant
+  // There is only a single user view, which is the same as the incoming
+  // view, meaning it's a cycle
+  if (auto only_user = tuple->OnlyUser();
+      only_user &&
+      incoming_view &&
+      only_user == incoming_view &&
+      incoming_view->columns.Size() == tuple->columns.Size()) {
+    for (auto i = 0u; i < tuple->columns.Size(); ++i) {
+      auto *in_col = incoming_view->columns[i];
+      auto *out_col = tuple->columns[i];
+      if (in_col->Index() != out_col->Index()) {
+        return false;
+      }
+    }
+
+    // This TUPLE operates on a restriction of the set of nodes in the MERGE.
+    // If the conditions are satisfied, then we set a separate condition, and
+    // contribute back the record to the MERGE. Contributing back the data to
+    // the MERGE is a no-op; however, setting the condition is not. Thus, we
+    // can break the cyclic dependency between the TUPLE and the MERGE whilst
+    // maintaining the TUPLE and its condition setting behavior. 
+    if (tuple->sets_condition && tuple->IntroducesControlDependency()) {
+      if (auto merge = incoming_view->AsMerge(); merge) {
+        merge->merged_views.RemoveIf([=] (VIEW *v) { return v == tuple; });
+      }
+
+      return false;
+
+    } else if (tuple->sets_condition) {
+      tuple->TransferSetConditionTo(incoming_view);
+      return true;
+
+    // This TUPLE may or may not test any conditions. Any conditions tested are
+    // irrelevant because they just send a subset of the MERGE's own data data
+    // back into itself, which is a no-op.
+    } else if (incoming_view->AsMerge()) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 }  // namespace hyde

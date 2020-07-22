@@ -3,13 +3,18 @@
 cmake_minimum_required(VERSION 3.14)
 project(DrLojekyll)
 
+# --------------------------------------------
+# build-time options -------------------------
+# --------------------------------------------
+option(ENABLE_LIBFUZZER "Build libFuzzer fuzz targets" OFF)
+option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
+
 include(cmake/utils.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(ENABLE_FUZZING "Enable generation of libFuzzer targets" OFF)
-
+# settings -----------------------------------
 add_library(settings INTERFACE)
 target_include_directories(settings INTERFACE
     "${CMAKE_CURRENT_LIST_DIR}/include")
@@ -39,37 +44,40 @@ target_link_libraries(settings-debug INTERFACE
     settings)
 
 # sanitizer ----------------------------------
+if(ENABLE_SANITIZERS)
+    add_sanitizer_settings(settings-sanitizer
+        SANITIZERS
+            address
+            undefined
+        OPTIONS
+            -fsanitize-address-use-after-scope)
 
-add_sanitizer(settings-sanitizer
-    SANITIZERS
-        address
-        undefined
-    OPTIONS
-        -fsanitize-address-use-after-scope)
-
-target_link_libraries(settings-sanitizer INTERFACE
-    settings)
+    target_link_libraries(settings-sanitizer INTERFACE
+        settings)
+endif()
 
 # libfuzzer ----------------------------------
+if(ENABLE_LIBFUZZER)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR "You must use Clang to use ENABLE_LIBFUZZER")
+    endif()
 
-add_sanitizer(settings-libfuzzer
-    SANITIZERS
-        fuzzer
-        address
-        undefined
-    OPTIONS
-        -fsanitize-address-use-after-scope
-        -g)
+    add_sanitizer_settings(settings-libfuzzer
+        SANITIZERS
+            fuzzer
+        OPTIONS
+            -g)
 
-target_link_libraries(settings-libfuzzer INTERFACE
-    settings)
+    target_link_libraries(settings-libfuzzer INTERFACE
+        settings)
+endif()
 
 # targets ------------------------------------
 
 add_subdirectory(lib)
 
-function(main config)
-    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
+function(add_test_target config)
+    add_doctor_lojekyll_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" ${config})
     add_executable(test-${config}
         Main.cpp)
     target_link_libraries(test-${config} PRIVATE
@@ -80,24 +88,31 @@ function(main config)
         parse-${config}
         dataflow-${config}
         codegen-${config})
-endfunction(main)
+endfunction()
 
-function(fuzzer)
-    add_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
-    add_executable(fuzzer
-        Fuzzer.cpp)
-    target_link_libraries(fuzzer PRIVATE
-        settings-libfuzzer
-        util-libfuzzer
-        display-libfuzzer
-        lex-libfuzzer
-        parse-libfuzzer)
-endfunction(fuzzer)
+if(ENABLE_LIBFUZZER)
+    function(add_fuzzers)
+        add_doctor_lojekyll_libraries("${CMAKE_CURRENT_LIST_DIR}/lib" libfuzzer)
+        add_executable(fuzzer
+            fuzz/Fuzzer.cpp)
+        target_link_libraries(fuzzer PRIVATE
+            settings-libfuzzer
+            util-libfuzzer
+            display-libfuzzer
+            lex-libfuzzer
+            parse-libfuzzer)
+    endfunction()
+endif()
 
+# --------------------------------------------
 # build what we need -------------------------
-main(debug)
-main(sanitizer)
+# --------------------------------------------
+add_test_target(debug)
 
-if(ENABLE_FUZZING)
-    fuzzer()
-endif(ENABLE_FUZZING)
+if(ENABLE_SANITIZERS)
+    add_test_target(sanitizer)
+endif()
+
+if(ENABLE_LIBFUZZER)
+    add_fuzzers()
+endif()
