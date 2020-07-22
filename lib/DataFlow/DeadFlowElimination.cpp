@@ -206,17 +206,13 @@ bool IsTrivialCycle(TUPLE *tuple) {
 
   auto tests_condition = !tuple->positive_conditions.Empty() ||
                          !tuple->negative_conditions.Empty();
-  if (tests_condition) {
-    // If this tuple tests a condition, leave it be
+  if (tuple->sets_condition && tests_condition) {
+    // If this tuple tests and sets a condition, let it remain
     return false;
   }
 
   auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
   auto max_i = tuple->columns.Size();
-
-  if (tuple->sets_condition) {
-    tuple->Node<QueryView>::TransferSetConditionTo(incoming_view);
-  }
 
   if (auto onlyUser = tuple->OnlyUser();
       // There is an incoming view (not all inputs are constant)
@@ -239,6 +235,12 @@ bool IsTrivialCycle(TUPLE *tuple) {
       }
     }
     if (ordered_cols) {
+      // Handle conditionals
+      if (tuple->sets_condition) {
+        tuple->Node<QueryView>::TransferSetConditionTo(incoming_view);
+      } else if (tests_condition) {
+        tuple->Node<QueryView>::CopyTestedConditionsTo(incoming_view);
+      }
       return true;
     }
   }
