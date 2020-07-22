@@ -1,5 +1,10 @@
 name: Continuous Integration
-on: [push, pull_request]
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
 
 
 # A full build matrix would vary at least the following:
