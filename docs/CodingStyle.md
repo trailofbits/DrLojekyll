@@ -13,6 +13,10 @@
   * [Spacing around statements](#spacing-around-statements)
   * [Switch statements](#switch-statements)
   * [Goto labels](#goto-labels)
+  * [Brace usage](#brace-usage)
+    + [Switch statements](#switch-statements-1)
+- [C++ Namespaces](#c---namespaces)
+  * [Declaring namespaces](#declaring-namespaces)
   * [Using namespaces](#using-namespaces)
 - [C preprocessor use](#c-preprocessor-use)
 
@@ -254,6 +258,7 @@ void Bar(void) {
     ...
   }
 }
+```
 
 ### Brace usage
 
