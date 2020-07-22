@@ -24,25 +24,24 @@ namespace hyde {
 
 OutputStream *gOut = nullptr;
 
-hyde::OutputStream *gDOTStream = nullptr;
-hyde::OutputStream *gDRStream = nullptr;
-hyde::OutputStream *gCodeStream = nullptr;
+namespace {
 
-}  // namespace hyde
+OutputStream *gDOTStream = nullptr;
+OutputStream *gDRStream = nullptr;
+OutputStream *gCodeStream = nullptr;
 
-static int CompileModule(hyde::DisplayManager display_manager,
-                         hyde::ErrorLog error_log,
-                         hyde::ParsedModule module) {
+static int CompileModule(DisplayManager display_manager,
+                         ErrorLog error_log, ParsedModule module) {
 
-  if (auto query_opt = hyde::Query::Build(module, error_log); query_opt) {
-    if (hyde::gDOTStream) {
-      (*hyde::gDOTStream) << *query_opt;
-      hyde::gDOTStream->Flush();
+  if (auto query_opt = Query::Build(module, error_log); query_opt) {
+    if (gDOTStream) {
+      (*gDOTStream) << *query_opt;
+      gDOTStream->Flush();
     }
 
-    if (hyde::gCodeStream) {
-      hyde::GenerateCode(module, *query_opt, *hyde::gCodeStream);
-      hyde::gCodeStream->Flush();
+    if (gCodeStream) {
+      GenerateCode(module, *query_opt, *gCodeStream);
+      gCodeStream->Flush();
     }
 
     return EXIT_SUCCESS;
@@ -52,29 +51,29 @@ static int CompileModule(hyde::DisplayManager display_manager,
   }
 }
 
-static int ProcessModule(hyde::DisplayManager display_manager,
-                         hyde::ErrorLog error_log,
-                         hyde::ParsedModule module) {
+static int ProcessModule(DisplayManager display_manager,
+                         ErrorLog error_log,
+                         ParsedModule module) {
 
   // Output the amalgamation of all files.
-  if (hyde::gDRStream) {
-    hyde::gDRStream->SetKeepImports(false);
-    hyde::gDRStream->SetRenameLocals(true);
-    for (auto module : hyde::ParsedModuleIterator(module)) {
-      (*hyde::gDRStream) << module;
+  if (gDRStream) {
+    gDRStream->SetKeepImports(false);
+    gDRStream->SetRenameLocals(true);
+    for (auto module : ParsedModuleIterator(module)) {
+      (*gDRStream) << module;
     }
-    hyde::gDRStream->Flush();
+    gDRStream->Flush();
   }
 
   // Round-trip test of the parser.
 #ifndef NDEBUG
   std::stringstream ss;
   do {
-    hyde::OutputStream os(display_manager, ss);
+    OutputStream os(display_manager, ss);
     os << module;
   } while (false);
 
-  hyde::Parser parser(display_manager, error_log);
+  Parser parser(display_manager, error_log);
   auto module2_opt = parser.ParseStream(ss, hyde::DisplayConfiguration());
   if (!module2_opt) {
     return EXIT_FAILURE;
@@ -82,7 +81,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   std::stringstream ss2;
   do {
-    hyde::OutputStream os(display_manager, ss2);
+    OutputStream os(display_manager, ss2);
     os << *module2_opt;
   } while (false);
 
@@ -119,7 +118,10 @@ struct FileStream {
   hyde::OutputStream os;
 };
 
-int main(int argc, char *argv[]) {
+}  // namespace
+}  // namespace hyde
+
+extern "C" int main(int argc, char *argv[]) {
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log(display_manager);
   hyde::Parser parser(display_manager, error_log);
@@ -129,15 +131,14 @@ int main(int argc, char *argv[]) {
   std::string file_path;
   auto num_input_paths = 0;
 
-
   std::stringstream linked_module;
 
   hyde::OutputStream os(display_manager, std::cout);
   hyde::gOut = &os;
 
-  std::unique_ptr<FileStream> dot_out;
-  std::unique_ptr<FileStream> cpp_out;
-  std::unique_ptr<FileStream> dr_out;
+  std::unique_ptr<hyde::FileStream> dot_out;
+  std::unique_ptr<hyde::FileStream> cpp_out;
+  std::unique_ptr<hyde::FileStream> dr_out;
 
   // Parse the command-line arguments.
   for (auto i = 1; i < argc; ++i) {
@@ -151,7 +152,7 @@ int main(int argc, char *argv[]) {
             << "C++ code output";
         error_log.Append(std::move(err));
       } else {
-        cpp_out.reset(new FileStream(display_manager, argv[i]));
+        cpp_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gCodeStream = &(cpp_out->os);
       }
 
@@ -167,7 +168,7 @@ int main(int argc, char *argv[]) {
             << "alamgamated Datalog output";
         error_log.Append(std::move(err));
       } else {
-        dr_out.reset(new FileStream(display_manager, argv[i]));
+        dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDRStream = &(dr_out->os);
       }
 
@@ -182,7 +183,7 @@ int main(int argc, char *argv[]) {
             << "GraphViz DOT digraph output";
         error_log.Append(std::move(err));
       } else {
-        dot_out.reset(new FileStream(display_manager, argv[i]));
+        dot_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDOTStream = &(dot_out->os);
       }
 
@@ -236,7 +237,7 @@ int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[i], "--help") ||
                !strcmp(argv[i], "-help") ||
                !strcmp(argv[i], "-h")) {
-      return HelpMessage(argv);
+      return hyde::HelpMessage(argv);
 
     // Does this look like a command-line option?
     } else if (strstr(argv[i], "--") == argv[i] ||
@@ -291,7 +292,7 @@ int main(int argc, char *argv[]) {
     };
 
     if (auto module_opt = parser.ParsePath(input_path, config); module_opt) {
-      code = ProcessModule(display_manager, error_log, *module_opt);
+      code = hyde::ProcessModule(display_manager, error_log, *module_opt);
     }
 
   // Parse multiple modules as a single module including each module to
@@ -304,7 +305,7 @@ int main(int argc, char *argv[]) {
     };
 
     if (auto module_opt = parser.ParseStream(linked_module, config); module_opt) {
-      code = ProcessModule(display_manager, error_log, *module_opt);
+      code = hyde::ProcessModule(display_manager, error_log, *module_opt);
     }
   }
 

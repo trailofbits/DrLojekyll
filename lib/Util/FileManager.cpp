@@ -116,7 +116,7 @@ namespace {
 
 static constexpr size_t kPathBuffSize = PATH_MAX * 2;
 
-static thread_local std::unique_ptr<std::string> kEmptyStrPtr;
+static thread_local std::unique_ptr<std::string> tEmptyStrPtr;
 static constexpr std::hash<std::string_view> kHasher = {};
 
 }  // namespace
@@ -232,10 +232,10 @@ void Path::Reset(std::string_view path) {
 // Return the last component of the path as a `std::string`.
 std::string_view Path::BaseName(void) const {
   if (entry == entry->parent) {
-    if (!kEmptyStrPtr) {
-      kEmptyStrPtr.reset(new std::string);
+    if (!tEmptyStrPtr) {
+      tEmptyStrPtr.reset(new std::string);
     }
-    return *kEmptyStrPtr;
+    return *tEmptyStrPtr;
 
   } else {
     return entry->name;
