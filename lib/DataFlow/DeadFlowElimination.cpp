@@ -206,8 +206,9 @@ bool IsTrivialCycle(TUPLE *tuple) {
 
   auto tests_condition = !tuple->positive_conditions.Empty() ||
                          !tuple->negative_conditions.Empty();
+
+  // If this tuple tests and sets a condition, let it remain
   if (tuple->sets_condition && tests_condition) {
-    // If this tuple tests and sets a condition, let it remain
     return false;
   }
 
