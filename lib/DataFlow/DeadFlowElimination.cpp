@@ -207,7 +207,8 @@ bool IsTrivialCycle(TUPLE *tuple) {
   auto tests_condition = !tuple->positive_conditions.Empty() ||
                          !tuple->negative_conditions.Empty();
 
-  // If this tuple tests and sets a condition, let it remain
+  // Keep the tuple around because it's contains important information about
+  // conditionals
   if (tuple->sets_condition && tests_condition) {
     return false;
   }
@@ -216,16 +217,12 @@ bool IsTrivialCycle(TUPLE *tuple) {
   auto max_i = tuple->columns.Size();
 
   if (auto onlyUser = tuple->OnlyUser();
-      // There is an incoming view (not all inputs are constant)
+      // There is an incoming view and not all inputs are constant
       incoming_view &&
       // There is only a single user view, which is the same as the incoming
-      // view
+      // view, meaning it's a cycle
       onlyUser && onlyUser == incoming_view &&
-      // The number of columns in the incoming view matches the number of
-      // columns in the tuple
       incoming_view->columns.Size() == tuple->columns.Size()) {
-    // The order of the input columns matches the output column order
-    // for all columns
     bool ordered_cols = true;
     for (auto i = 0u; i < max_i; ++i) {
       auto *in_col = incoming_view->columns[i];
@@ -237,7 +234,7 @@ bool IsTrivialCycle(TUPLE *tuple) {
     }
 
     if (ordered_cols) {
-      // Handle conditionals
+      // Handle forwarding of conditional properties before deletion
       if (tuple->sets_condition) {
         tuple->Node<QueryView>::TransferSetConditionTo(incoming_view);
       } else if (tests_condition) {
