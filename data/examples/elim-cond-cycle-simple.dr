@@ -8,7 +8,7 @@ cond_res : cond_func(A).
 
 one(1).
 
-direct_const(A) : direct_const(A).
+direct_const(A) : direct_const(A), cond_res.
 direct_const(A) : one(A).
 
-output(A) : direct_const(A), cond_res.
+output(A) : direct_const(A).
