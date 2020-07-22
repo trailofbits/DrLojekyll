@@ -66,7 +66,6 @@ if(ENABLE_LIBFUZZER)
         SANITIZERS
             fuzzer
         OPTIONS
-            -fsanitize-address-use-after-scope
             -g)
 
     target_link_libraries(settings-libfuzzer INTERFACE
