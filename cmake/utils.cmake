@@ -1,7 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 # Create an interface library that enables a sanitizer.
-function(add_sanitizer target_name)
+function(add_sanitizer_settings target_name)
     cmake_parse_arguments(PARSE_ARGV 1 SAN
         ""
         ""

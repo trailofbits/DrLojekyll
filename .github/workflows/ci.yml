@@ -1,0 +1,107 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+
+# A full build matrix would vary at least the following:
+#
+#     - Sanitizers: enabled or disabled
+#     - Build mode: debug or release
+#     - Fuzzing: enabled or disabled
+#     - macOS / several LTS versions of ubuntu / windows
+#     - gcc 7 / clang 6.0 / clang 9 / gcc 9
+#     - ninja / makefiles / visual studio solution / xcode
+#
+# This would be hundreds of configurations, and it would be silly to test all
+# of them.  Instead, we pick a few notable points from this matrix, to try to
+# maximize problem detection ability with a minimal number of configurations.
+jobs:
+  build1:
+    name: Ubuntu 18.04 / GCC 7.5 / Debug
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure
+        run: >
+          cmake
+          -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=gcc-7
+          -DCMAKE_CXX_COMPILER=g++-7
+          .
+      - name: Build
+        run: make -C build -j "$(nproc)"
+
+  build2:
+    name: Ubuntu 18.04 / Clang 6.0 / Release
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_COMPILER=clang-6.0
+          -DCMAKE_CXX_COMPILER=clang++-6.0
+          .
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+  build3:
+    name: Ubuntu 20.04 / Clang 10 / Debug / Fuzz / Sanitizers
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Dependencies
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo apt-get install ninja-build clang-10
+      - name: Configure
+        run: >
+          cmake -B build
+          -G 'Ninja Multi-Config'
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang-10
+          -DCMAKE_CXX_COMPILER=clang++-10
+          -DENABLE_SANITIZERS=1
+          -DENABLE_LIBFUZZER=1
+          .
+      - name: Build
+        run: ninja -C build
+
+  build4:
+    name: macOS 10.15 / Debug / Sanitizers
+    runs-on: macos-10.15
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure
+        run: >
+          cmake
+          -B build
+          -G Xcode
+          -DENABLE_SANITIZERS=1
+          .
+      - name: Build
+        run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
+
+  build5:
+    name: Windows Server 2019 / Debug
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure
+        run: >
+          cmake
+          -B build
+          -G "Visual Studio 16 2019"
+          -DENABLE_SANITIZERS=1
+          .
+      - name: Build
+        run: cmake --build build --config Debug -j
+        continue-on-error: true  # see Issue #37

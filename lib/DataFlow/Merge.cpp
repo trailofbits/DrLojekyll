@@ -172,7 +172,7 @@ bool Node<QueryMerge>::Canonicalize(
 
       for (auto i = 0u; i < num_cols; ++i) {
         if (columns[i]->IsUsed()) {
-          auto out_col = guarded_view->columns[i];
+          auto out_col = view->columns[i];
           auto guard_out_col = guarded_view->columns.Create(
               out_col->var, guarded_view, out_col->id);
           guarded_view->input_columns.AddUse(out_col);

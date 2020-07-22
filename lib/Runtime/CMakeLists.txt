@@ -2,10 +2,11 @@
 
 function(add_runtime_library source_dir config)
     add_library(runtime-${config} STATIC
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
-        "${source_dir}/Runtime.cpp")
+        "${source_dir}/Runtime.cpp"
+    )
 
     target_link_libraries(runtime-${config}
         PUBLIC
-            settings-${config})
+            settings-${config}
+    )
 endfunction(add_runtime_library)
