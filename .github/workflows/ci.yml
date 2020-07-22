@@ -7,8 +7,6 @@ on:
   pull_request:
 
 
-continue-on-error: build5   # see Issue #37
-
 # A full build matrix would vary at least the following:
 #
 #     - Sanitizers: enabled or disabled
@@ -21,7 +19,6 @@ continue-on-error: build5   # see Issue #37
 # This would be hundreds of configurations, and it would be silly to test all
 # of them.  Instead, we pick a few notable points from this matrix, to try to
 # maximize problem detection ability with a minimal number of configurations.
-
 jobs:
   build1:
     name: Ubuntu 18.04 / GCC 7.5 / Debug
@@ -107,3 +104,4 @@ jobs:
           .
       - name: Build
         run: cmake --build build --config Debug -j
+        continue-on-error: true  # see Issue #37
