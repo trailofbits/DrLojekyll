@@ -7,6 +7,8 @@ on:
   pull_request:
 
 
+continue-on-error: build5   # see Issue #37
+
 # A full build matrix would vary at least the following:
 #
 #     - Sanitizers: enabled or disabled
