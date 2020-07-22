@@ -6,7 +6,7 @@
 
 namespace hyde {
 
-bool IsTrivialCycle(TUPLE *tuple);
+static bool IsTrivialCycle(TUPLE *tuple);
 
 // Eliminate dead flows. This uses a taint-based approach and identifies a
 // VIEW as dead if it is not derived directly or indirectly from input
@@ -199,47 +199,52 @@ bool QueryImpl::EliminateDeadFlows(void) {
 }
 
 // Eliminate trivial cycles on unions
-bool IsTrivialCycle(TUPLE *tuple) {
+static bool IsTrivialCycle(TUPLE *tuple) {
   if (!tuple) {
     return false;
   }
 
-  auto tests_condition = !tuple->positive_conditions.Empty() ||
-                         !tuple->negative_conditions.Empty();
-
-  // Keep the tuple around because it's contains important information about
-  // conditionals
-  if (tuple->sets_condition && tests_condition) {
-    return false;
-  }
-
   auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
-  auto max_i = tuple->columns.Size();
 
-  if (auto onlyUser = tuple->OnlyUser();
+  if (auto only_user = tuple->OnlyUser();
+      only_user &&
       // There is an incoming view and not all inputs are constant
       incoming_view &&
       // There is only a single user view, which is the same as the incoming
       // view, meaning it's a cycle
-      onlyUser && onlyUser == incoming_view &&
+      only_user == incoming_view &&
       incoming_view->columns.Size() == tuple->columns.Size()) {
-    bool ordered_cols = true;
-    for (auto i = 0u; i < max_i; ++i) {
+    for (auto i = 0u; i < tuple->columns.Size(); ++i) {
       auto *in_col = incoming_view->columns[i];
       auto *out_col = tuple->columns[i];
       if (in_col->Index() != out_col->Index()) {
-        ordered_cols = false;
-        break;
+        return false;
       }
     }
 
-    if (ordered_cols) {
-      // Handle forwarding of conditional properties before deletion
-      if (tuple->sets_condition) {
-        tuple->Node<QueryView>::TransferSetConditionTo(incoming_view);
-      } else if (tests_condition) {
-        tuple->Node<QueryView>::CopyTestedConditionsTo(incoming_view);
+    auto tests_condition = tuple->IntroducesControlDependency();
+
+    // This TUPLE operates on a restriction of the set of nodes in the MERGE.
+    // If the conditions are satisfied, then we set a separate condition, and
+    // contribute back the record to the MERGE. Contributing back the data to
+    // the MERGE is a no-op; however, setting the condition is not. Thus, we
+    // can break the cyclic dependency between the TUPLE and the MERGE whilst
+    // maintaining the TUPLE and its condition setting behavior. 
+    if (tuple->sets_condition && tests_condition) {
+      if (auto merge = incoming_view->AsMerge(); merge) {
+        merge->merged_views.RemoveIf([=] (VIEW *v) { return v == tuple; });
       }
+
+      return false;
+
+    } else if (tuple->sets_condition) {
+      tuple->TransferSetConditionTo(incoming_view);
+      return true;
+
+    // This TUPLE may or may not test any conditions. Any conditions tested are
+    // irrelevant because they just send a subset of the MERGE's own data data
+    // back into itself, which is a no-op.
+    } else if (incoming_view->AsMerge()) {
       return true;
     }
   }
