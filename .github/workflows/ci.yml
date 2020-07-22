@@ -59,8 +59,8 @@ jobs:
         run: |
           set -eux
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install ninja-build clang-10
+          sudo apt-get update
+          sudo apt-get install ninja-build clang-10
       - name: Configure
         run: |
           set -eux
