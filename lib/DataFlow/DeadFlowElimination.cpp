@@ -235,6 +235,7 @@ bool IsTrivialCycle(TUPLE *tuple) {
         break;
       }
     }
+
     if (ordered_cols) {
       // Handle conditionals
       if (tuple->sets_condition) {
@@ -245,6 +246,7 @@ bool IsTrivialCycle(TUPLE *tuple) {
       return true;
     }
   }
+  
   return false;
 }
 
