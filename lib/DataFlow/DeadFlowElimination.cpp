@@ -199,19 +199,19 @@ bool QueryImpl::EliminateDeadFlows(void) {
 }
 
 // Eliminate trivial cycles on unions
-static bool IsTrivialCycle(TUPLE *tuple) {
+bool IsTrivialCycle(TUPLE *tuple) {
   if (!tuple) {
     return false;
   }
 
   auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
 
+  // There is an incoming view and not all inputs are constant
+  // There is only a single user view, which is the same as the incoming
+  // view, meaning it's a cycle
   if (auto only_user = tuple->OnlyUser();
       only_user &&
-      // There is an incoming view and not all inputs are constant
       incoming_view &&
-      // There is only a single user view, which is the same as the incoming
-      // view, meaning it's a cycle
       only_user == incoming_view &&
       incoming_view->columns.Size() == tuple->columns.Size()) {
     for (auto i = 0u; i < tuple->columns.Size(); ++i) {
@@ -222,15 +222,13 @@ static bool IsTrivialCycle(TUPLE *tuple) {
       }
     }
 
-    auto tests_condition = tuple->IntroducesControlDependency();
-
     // This TUPLE operates on a restriction of the set of nodes in the MERGE.
     // If the conditions are satisfied, then we set a separate condition, and
     // contribute back the record to the MERGE. Contributing back the data to
     // the MERGE is a no-op; however, setting the condition is not. Thus, we
     // can break the cyclic dependency between the TUPLE and the MERGE whilst
     // maintaining the TUPLE and its condition setting behavior. 
-    if (tuple->sets_condition && tests_condition) {
+    if (tuple->sets_condition && tuple->IntroducesControlDependency()) {
       if (auto merge = incoming_view->AsMerge(); merge) {
         merge->merged_views.RemoveIf([=] (VIEW *v) { return v == tuple; });
       }
