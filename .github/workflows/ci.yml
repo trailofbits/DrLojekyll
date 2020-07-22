@@ -22,14 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Configure
-        run: |
-          set -eux
-          mkdir build
-          cmake -B build \
-                -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_C_COMPILER=gcc-7 \
-                -DCMAKE_CXX_COMPILER=g++-7 \
-                .
+        run: >
+          cmake
+          -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=gcc-7
+          -DCMAKE_CXX_COMPILER=g++-7
+          .
       - name: Build
         run: make -C build -j "$(nproc)"
 
@@ -39,14 +38,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Configure
-        run: |
-          set -eux
-          mkdir build
-          cmake -B build \
-                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-                -DCMAKE_C_COMPILER=clang-6.0 \
-                -DCMAKE_CXX_COMPILER=clang++-6.0 \
-                .
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_COMPILER=clang-6.0
+          -DCMAKE_CXX_COMPILER=clang++-6.0
+          .
       - name: Build
         run: cmake --build build -j "$(nproc)"
 
@@ -62,17 +59,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install ninja-build clang-10
       - name: Configure
-        run: |
-          set -eux
-          mkdir build
-          cmake -B build \
-                -G 'Ninja Multi-Config' \
-                -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_C_COMPILER=clang-10 \
-                -DCMAKE_CXX_COMPILER=clang++-10 \
-                -DENABLE_SANITIZERS=1 \
-                -DENABLE_LIBFUZZER=1 \
-                .
+        run: >
+          cmake -B build
+          -G 'Ninja Multi-Config'
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang-10
+          -DCMAKE_CXX_COMPILER=clang++-10
+          -DENABLE_SANITIZERS=1
+          -DENABLE_LIBFUZZER=1
+          .
       - name: Build
         run: ninja -C build
 
@@ -82,15 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Configure
-        run: |
-          set -eux
-          mkdir build
-          cmake -B build \
-                -G Xcode \
-                -DENABLE_SANITIZERS=1 \
-                .
+        run: >
+          cmake
+          -B build
+          -G Xcode
+          -DENABLE_SANITIZERS=1
+          .
       - name: Build
-        run: cmake --build build -j "$(nproc)" --config Debug
+        run: cmake --build build -j --config Debug
 
   build5:
     name: Windows Server 2019 / Debug
@@ -98,11 +92,11 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Configure
-        run: |
-          mkdir build
-          cmake -B build \
-                -G 'Visual Studio 16 2019' \
-                -DENABLE_SANITIZERS=1 \
-                .
+        run: >
+          cmake
+          -B build
+          -G "Visual Studio 16 2019"
+          -DENABLE_SANITIZERS=1
+          .
       - name: Build
-        run: cmake --build build -j "$(nproc)" --config Debug
+        run: cmake --build build -j --config Debug
