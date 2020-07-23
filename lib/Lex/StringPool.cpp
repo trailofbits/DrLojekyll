@@ -21,8 +21,7 @@ class StringPool::Impl {
 
 StringPool::~StringPool(void) {}
 
-StringPool::StringPool(void)
-    : impl(std::make_shared<Impl>()) {}
+StringPool::StringPool(void) : impl(std::make_shared<Impl>()) {}
 
 // Intern a code block into the pool, returning its ID.
 unsigned StringPool::InternCode(std::string_view code) const {
@@ -61,8 +60,8 @@ unsigned StringPool::InternString(std::string_view data, bool force) const {
           (pos + data.size()) >= impl->pool.size()) {
         break;
 
-      // Make sure we match on a trailing NUL.
-      } else if (!impl->pool[pos+data.size()]) {
+        // Make sure we match on a trailing NUL.
+      } else if (!impl->pool[pos + data.size()]) {
         return static_cast<unsigned>(pos);
 
       } else {
@@ -78,8 +77,8 @@ unsigned StringPool::InternString(std::string_view data, bool force) const {
 }
 
 // Read out some string given its index and length.
-bool StringPool::TryReadString(
-    unsigned index, unsigned len, std::string_view *data_out) const {
+bool StringPool::TryReadString(unsigned index, unsigned len,
+                               std::string_view *data_out) const {
   if (!index || impl->pool.size() < (index + len)) {
     return false;
   } else if (data_out) {

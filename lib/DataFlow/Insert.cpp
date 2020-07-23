@@ -42,14 +42,12 @@ bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &) {
 
 // Equality over inserts is structural.
 bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
-
   if (eq.Contains(this, that_)) {
     return true;
   }
 
   const auto that = that_->AsInsert();
-  if (!that ||
-      is_insert != that->is_insert ||
+  if (!that || is_insert != that->is_insert ||
       can_produce_deletions != that->can_produce_deletions ||
       declaration.Id() != that->declaration.Id() ||
       columns.Size() != that->columns.Size() ||

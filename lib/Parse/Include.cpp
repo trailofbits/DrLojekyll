@@ -29,7 +29,6 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
   // Parse out an angled string literal, e.g. `#include <...>`.
   if (Lexeme::kPuncLess == tok.Lexeme() &&
       sub_tokens.back().Lexeme() == Lexeme::kPuncGreater) {
-
     path_range = DisplayRange(tok.Position(), sub_tokens.back().NextPosition());
     DisplayRange str(tok.NextPosition(), sub_tokens.back().Position());
 
@@ -42,7 +41,7 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
 
     is_angled = true;
 
-  // Parse out a string literal, e.g. `#include "..."`.
+    // Parse out a string literal, e.g. `#include "..."`.
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {
     const auto path_id = tok.StringId();
     const auto path_len = tok.StringLength();
@@ -100,12 +99,12 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
     return;
   }
 
-  const auto include = new Node<ParsedInclude>(
-      scope_range, full_path, is_angled);
+  const auto include =
+      new Node<ParsedInclude>(scope_range, full_path, is_angled);
   if (!module->includes.empty()) {
     module->includes.back()->next = include;
   }
   module->includes.emplace_back(include);
 }
 
-}  // namesace hyde
+}  // namespace hyde

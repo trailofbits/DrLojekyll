@@ -77,7 +77,8 @@ enum class Lexeme : uint8_t {
   //    #message is_function(bound u64 EA)
   //    #local has_symbol_name(u64 EA, ascii Name).
   //    #export entrypoint_function(u64 EA)
-  //    entrypoint_function(EA) : is_function(EA), has_symbol_name(EA, "_start").
+  //    entrypoint_function(EA) : is_function(EA), has_symbol_name(EA,
+  //    "_start").
   //
   // Any time a `is_function` message is published, we attempt to prove the
   // `entrypoint_function` rule.

@@ -50,8 +50,7 @@ class ParsedModuleIterator::Iterator {
   friend class ParsedModuleIterator;
 
   inline Iterator(const ParsedModule &impl_, unsigned index_)
-      : impl(impl_),
-        index(index_) {}
+      : impl(impl_), index(index_) {}
 
   Iterator(void) = delete;
 

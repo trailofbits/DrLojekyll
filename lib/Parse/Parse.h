@@ -23,10 +23,10 @@ namespace parse {
 union IdInterpreter {
   uint64_t flat{0};
   struct {
-    uint64_t module_id:10;
-    uint64_t arity:6;
-    uint64_t atom_name_id:24;
-    uint64_t var_id:24;
+    uint64_t module_id : 10;
+    uint64_t arity : 6;
+    uint64_t atom_name_id : 24;
+    uint64_t var_id : 24;
   } info;
 };
 
@@ -41,11 +41,10 @@ class VariableContext {
  public:
   inline explicit VariableContext(Node<ParsedClause> *clause_,
                                   Node<ParsedVariable> *first_use_)
-      : clause(clause_),
-        first_use(first_use_) {}
+      : clause(clause_), first_use(first_use_) {}
 
   // Clause containing this variable.
-  Node<ParsedClause> * const clause;
+  Node<ParsedClause> *const clause;
 
   // First use of this variable in `clause`.
   Node<ParsedVariable> *first_use;
@@ -69,8 +68,7 @@ class VariableContext {
 // Contextual information relevant to all redeclarations.
 class DeclarationContext {
  public:
-  inline DeclarationContext(const DeclarationKind kind_)
-      : kind(kind_) {}
+  inline DeclarationContext(const DeclarationKind kind_) : kind(kind_) {}
 
   // Cached ID of this declaration.
   parse::IdInterpreter id;
@@ -117,21 +115,18 @@ class Node<ParsedLiteral> {
 class UseBase {
  public:
   inline UseBase(UseKind use_kind_, Node<ParsedVariable> *used_var_)
-      : use_kind(use_kind_),
-        used_var(used_var_) {}
+      : use_kind(use_kind_), used_var(used_var_) {}
 
   const UseKind use_kind;
   Node<ParsedVariable> *used_var;
 };
 
-template<typename T>
+template <typename T>
 class Node<ParsedUse<T>> : public UseBase {
  public:
-  inline Node(UseKind use_kind_,
-              Node<ParsedVariable> *used_var_,
+  inline Node(UseKind use_kind_, Node<ParsedVariable> *used_var_,
               Node<T> *user_)
-      : UseBase(use_kind_, used_var_),
-        user(user_) {}
+      : UseBase(use_kind_, used_var_), user(user_) {}
 
   const T user;
   Node<ParsedUse<T>> *next{nullptr};
@@ -140,7 +135,6 @@ class Node<ParsedUse<T>> : public UseBase {
 template <>
 class Node<ParsedVariable> {
  public:
-
   // Compute the unique identifier for this variable.
   uint64_t Id(void) noexcept;
 
@@ -187,9 +181,9 @@ class Node<ParsedComparison> {
  public:
   inline Node(Node<ParsedVariable> *lhs_, Node<ParsedVariable> *rhs_,
               Token compare_op_)
-      : lhs(UseKind::kComparisonLHS, lhs_, this),
-        rhs(UseKind::kComparisonRHS, rhs_, this),
-        compare_op(compare_op_) {}
+      : lhs(UseKind::kComparisonLHS, lhs_, this)
+      , rhs(UseKind::kComparisonRHS, rhs_, this)
+      , compare_op(compare_op_) {}
 
   // Next in the clause body.
   Node<ParsedComparison> *next{nullptr};
@@ -216,17 +210,16 @@ template <>
 class Node<ParsedPredicate> {
  public:
   inline Node(Node<ParsedModule> *module_, Node<ParsedClause> *clause_)
-      : module(module_),
-        clause(clause_) {}
+      : module(module_), clause(clause_) {}
 
   // Compute the identifier for this predicate.
   uint64_t Id(void) const noexcept;
 
   // Module in which this predicate application exists.
-  Node<ParsedModule> * const module;
+  Node<ParsedModule> *const module;
 
   // The clause containing this predicate.
-  Node<ParsedClause> * const clause;
+  Node<ParsedClause> *const clause;
 
   // The declaration associated with this predicate.
   Node<ParsedDeclaration> *declaration{nullptr};
@@ -300,13 +293,12 @@ class Node<ParsedParameter> {
 template <>
 class Node<ParsedClause> {
  public:
-  inline Node(Node<ParsedModule> *module_)
-      : module(module_) {}
+  inline Node(Node<ParsedModule> *module_) : module(module_) {}
 
   mutable parse::IdInterpreter id;
 
   // The module containing this clause.
-  Node<ParsedModule> * const module;
+  Node<ParsedModule> *const module;
 
   // The next clause associated with this `declaration`.
   Node<ParsedClause> *next{nullptr};
@@ -363,17 +355,15 @@ struct UnorderedParameterSet {
 template <>
 class Node<ParsedDeclaration> {
  public:
-  inline Node(Node<ParsedModule> *module_,
-              const DeclarationKind kind_)
-      : module(module_),
-        context(std::make_shared<parse::DeclarationContext>(kind_)) {
+  inline Node(Node<ParsedModule> *module_, const DeclarationKind kind_)
+      : module(module_)
+      , context(std::make_shared<parse::DeclarationContext>(kind_)) {
     context->redeclarations.push_back(this);
   }
 
   inline Node(Node<ParsedModule> *module_,
               const std::shared_ptr<parse::DeclarationContext> &context_)
-      : module(module_),
-        context(context_) {
+      : module(module_), context(context_) {
     assert(!context->redeclarations.empty());
     context->redeclarations.back()->next_redecl = this;
     context->redeclarations.push_back(this);
@@ -397,7 +387,7 @@ class Node<ParsedDeclaration> {
   NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   // The module containing this declaration.
-  Node<ParsedModule> * const module;
+  Node<ParsedModule> *const module;
 
   // The next declaration in this module, possibly unrelated to this one.
   Node<ParsedDeclaration> *next{nullptr};
@@ -469,9 +459,7 @@ template <>
 class Node<ParsedInclude> {
  public:
   inline Node(DisplayRange range_, std::string_view path_, bool is_angled_)
-      : range(range_),
-        path(path_),
-        is_angled(is_angled_) {}
+      : range(range_), path(path_), is_angled(is_angled_) {}
 
   // Next include in this module.
   Node<ParsedInclude> *next{nullptr};
@@ -485,8 +473,7 @@ template <>
 class Node<ParsedInline> {
  public:
   inline Node(DisplayRange range_, std::string_view code_)
-      : range(range_),
-        code(code_) {}
+      : range(range_), code(code_) {}
 
   // Next inline in this module.
   Node<ParsedInline> *next{nullptr};
@@ -497,10 +484,9 @@ class Node<ParsedInline> {
 
 template <>
 class Node<ParsedModule>
-     : public std::enable_shared_from_this<Node<ParsedModule>> {
+    : public std::enable_shared_from_this<Node<ParsedModule>> {
  public:
-  Node(const DisplayConfiguration &config_)
-      : config(config_) {}
+  Node(const DisplayConfiguration &config_) : config(config_) {}
 
   const DisplayConfiguration config;
 

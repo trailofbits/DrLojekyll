@@ -58,8 +58,7 @@ DisplayPosition Token::NextPosition(void) const {
       return position;
 
     case ::hyde::Lexeme::kWhitespace:
-      index +=
-          token_interpreter.whitespace.spelling_width;
+      index += token_interpreter.whitespace.spelling_width;
 
       if (token_interpreter.whitespace.num_leading_newlines) {
         line += token_interpreter.whitespace.num_leading_newlines;
@@ -112,8 +111,8 @@ unsigned Token::SpellingWidth(void) const {
     case ::hyde::Lexeme::kLiteralCode: {
       int num_lines = 0;
       int num_cols = 0;
-      if (Position().TryComputeDistanceTo(NextPosition(), nullptr,
-                                          &num_lines, &num_cols) &&
+      if (Position().TryComputeDistanceTo(NextPosition(), nullptr, &num_lines,
+                                          &num_cols) &&
           !num_lines && 0 < num_cols) {
         return static_cast<unsigned>(num_cols);
       }
@@ -297,8 +296,8 @@ Token Token::Synthetic(::hyde::Lexeme lexeme, DisplayRange range) {
   interpreter.basic.lexeme = static_cast<uint8_t>(lexeme);
   int num_lines = 0;
   int num_cols = 0;
-  if (range.TryComputeDistance(nullptr, &num_lines, &num_cols) &&
-      !num_lines && 0 < num_cols) {
+  if (range.TryComputeDistance(nullptr, &num_lines, &num_cols) && !num_lines &&
+      0 < num_cols) {
     interpreter.basic.spelling_width = static_cast<uint16_t>(num_cols);
   }
 

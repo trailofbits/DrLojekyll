@@ -43,10 +43,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   unsigned num_bound_params = 0;
   unsigned num_free_params = 0;
 
-  for (next_pos = tok.NextPosition();
-       ReadNextSubToken(tok);
+  for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
-
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
 
@@ -108,8 +106,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           context->error_log.Append(scope_range, tok_range)
               << "Expected binding specifier ('bound', 'free', 'aggregate', "
               << "or 'summary') in parameter "
-              << "declaration of functor '" << name << "', " << "but got '"
-              << tok << "' instead";
+              << "declaration of functor '" << name << "', "
+              << "but got '" << tok << "' instead";
           return;
         }
 
@@ -122,8 +120,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected type name here for parameter in functor '"
-              << name << "', but got '" << tok << "' instead";
+              << "Expected type name here for parameter in functor '" << name
+              << "', but got '" << tok << "' instead";
           return;
         }
 
@@ -136,8 +134,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of functor '" << name << "', but got '"
-              << tok << "' instead";
+              << "parameter name of functor '" << name << "', but got '" << tok
+              << "' instead";
           return;
         }
 
@@ -169,8 +167,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           if (!functor) {
             return;
           } else {
-            functor->is_aggregate = last_aggregate.IsValid() ||
-                                    last_summary.IsValid();
+            functor->is_aggregate =
+                last_aggregate.IsValid() || last_summary.IsValid();
             functor->rparen = tok;
             functor->directive_pos = sub_tokens.front().Position();
             functor->name = name;
@@ -204,8 +202,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
           } else {
             auto err = context->error_log.Append(scope_range, tok_range);
-            err << "Unexpected 'impure' attribute here; functor "
-                << name << " was already marked as impure";
+            err << "Unexpected 'impure' attribute here; functor " << name
+                << " was already marked as impure";
 
             err.Note(scope_range, impure.SpellingRange())
                 << "Previous 'impure' attribute was here";
@@ -264,7 +262,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
               err << "Parameter variable '" << tok
                   << "' cannot belong to more than one unordered sets";
 
-              err.Note(scope_range, func_param->opt_unordered_name.SpellingRange())
+              err.Note(scope_range,
+                       func_param->opt_unordered_name.SpellingRange())
                   << "Previous use in an unordered set was here";
 
               RemoveDecl<ParsedFunctor>(std::move(functor));
@@ -296,8 +295,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected a parameter variable name here but got '"
-              << tok << "' instead";
+              << "Expected a parameter variable name here but got '" << tok
+              << "' instead";
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
@@ -346,8 +345,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         << "placed entirely on one line";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  // If we have a summary argument, then require us to have an aggregate
-  // argument.
+    // If we have a summary argument, then require us to have an aggregate
+    // argument.
   } else if (last_summary.IsValid() && !last_aggregate.IsValid()) {
     context->error_log.Append(scope_range, last_summary.SpellingRange())
         << "Functor '" << functor->name << "' produces a summary value without "
@@ -360,30 +359,28 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         << "producing any corresponding summary outputs";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  // Don't let us have both summary and free variables.
-  //
-  // NOTE(pag): We permit `bound` arguments to be used along with aggregates.
+    // Don't let us have both summary and free variables.
+    //
+    // NOTE(pag): We permit `bound` arguments to be used along with aggregates.
   } else if (last_summary.IsValid() && last_free.IsValid()) {
-    auto err = context->error_log.Append(
-        scope_range, last_summary.SpellingRange());
+    auto err =
+        context->error_log.Append(scope_range, last_summary.SpellingRange());
     err << "Functor cannot bind both summary and free variables";
-    err.Note(last_free.SpellingRange())
-        << "Free variable is here";
+    err.Note(last_free.SpellingRange()) << "Free variable is here";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  // Aggregating functors aren't meant to be marked as impure. It's more that
-  // they are implicitly impure so it's redundant.
+    // Aggregating functors aren't meant to be marked as impure. It's more that
+    // they are implicitly impure so it's redundant.
   } else if (!functor->is_pure && is_aggregate) {
-
     context->error_log.Append(scope_range, impure.SpellingRange())
         << "Marking an aggregating functor as impure is redundant";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  // A functor with no bound parameters cannot reasonably be supported.
-  //
-  // NOTE(pag): I had considered supporting it before as the concept of a
-  //            "generator", e.g. for producing random values, but fitting
-  //            it into a differential dataflow made no sense after all.
+    // A functor with no bound parameters cannot reasonably be supported.
+    //
+    // NOTE(pag): I had considered supporting it before as the concept of a
+    //            "generator", e.g. for producing random values, but fitting
+    //            it into a differential dataflow made no sense after all.
   } else if (!num_bound_params && !is_aggregate) {
     assert(0 < num_free_params);
 
@@ -391,11 +388,10 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         << "Functors that only have free-attributed parameters are not allowed";
     RemoveDecl<ParsedFunctor>(std::move(functor));
 
-  // If this is a redeclaration, check it for consistency against prior
-  // declarations. Functors require special handling for things like aggregate/
-  // summary parameters.
+    // If this is a redeclaration, check it for consistency against prior
+    // declarations. Functors require special handling for things like
+    // aggregate/ summary parameters.
   } else if (1 < functor->context->redeclarations.size()) {
-
     const auto redecl = functor->context->redeclarations[0];
     auto i = 0u;
 
@@ -412,7 +408,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
       RemoveDecl<ParsedFunctor>(std::move(functor));
       return;
 
-    // Didn't match the purity.
+      // Didn't match the purity.
     } else if (!functor->is_pure && redecl->is_pure) {
       auto err = context->error_log.Append(scope_range, impure.SpellingRange());
       err << "Unexpected 'impure' attribute here doesn't match with prior "
@@ -433,15 +429,14 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
       // We can redeclare bound/free parameters with other variations of
       // bound/free, but the aggregation binding types must be equivalent.
       if (lexeme != redecl_lexeme && is_aggregate) {
-
         auto err = context->error_log.Append(
             scope_range, ParsedParameter(orig_param.get()).SpellingRange());
         err << "Aggregation functor '" << functor->name << "/" << arity
             << "' cannot be re-declared with different parameter attributes";
 
-        auto note = err.Note(
-            ParsedDeclaration(redecl).SpellingRange(),
-            ParsedParameter(redecl_param.get()).SpellingRange());
+        auto note =
+            err.Note(ParsedDeclaration(redecl).SpellingRange(),
+                     ParsedParameter(redecl_param.get()).SpellingRange());
         note << "Conflicting parameter is declared here";
 
         RemoveDecl<ParsedFunctor>(std::move(functor));
@@ -486,8 +481,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     }
 
     // Do generic consistency checking.
-    FinalizeDeclAndCheckConsistency<ParsedFunctor>(
-        module->functors, std::move(functor));
+    FinalizeDeclAndCheckConsistency<ParsedFunctor>(module->functors,
+                                                   std::move(functor));
 
   } else {
     if (!module->functors.empty()) {
@@ -496,6 +491,5 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     module->functors.emplace_back(std::move(functor));
   }
 }
-
 
 }  // namespace hyde

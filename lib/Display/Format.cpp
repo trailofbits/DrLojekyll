@@ -10,7 +10,7 @@ OutputStream::~OutputStream(void) {
 
 OutputStream &OutputStream::operator<<(DisplayRange range) {
   std::string_view data;
-  (void) display_manager.TryReadData(range, &data);
+  (void)display_manager.TryReadData(range, &data);
   os << data;
   return *this;
 }

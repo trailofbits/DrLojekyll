@@ -22,8 +22,7 @@ class DisplayManager;
 // Implementation of `Display`.
 class DisplayImpl {
  public:
-  explicit DisplayImpl(unsigned id_,
-                       const DisplayConfiguration &config_,
+  explicit DisplayImpl(unsigned id_, const DisplayConfiguration &config_,
                        display::DataStream *stream_);
 
   ~DisplayImpl(void);

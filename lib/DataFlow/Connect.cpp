@@ -13,10 +13,9 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
                      std::pair<std::vector<INSERT *>, std::vector<SELECT *>>>
       decl_to_views;
 
-  auto can_connect = [] (ParsedDeclaration decl) {
+  auto can_connect = [](ParsedDeclaration decl) {
     return !decl.NumNegatedUses() &&  // Not used in an existence check.
-           !decl.IsMessage() &&
-           0u < decl.Arity();  // Not a condition.
+           !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
   };
 
   // Collect a list of declarations mapping to their inserts and selects.
@@ -86,21 +85,21 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
           insert->CopyTestedConditionsTo(ins_proxy);
 
           for (auto in_col : insert->input_columns) {
-            auto out_col = ins_proxy->columns.Create(
-                in_col->var, ins_proxy, in_col->id);
+            auto out_col =
+                ins_proxy->columns.Create(in_col->var, ins_proxy, in_col->id);
             ins_proxy->input_columns.AddUse(in_col);
             out_col->CopyConstant(in_col);
           }
 
-        // It's a DELETE, so maintain it, which will mean the MERGE will have
-        // to handle differential updates.
+          // It's a DELETE, so maintain it, which will mean the MERGE will have
+          // to handle differential updates.
         } else {
           merge->can_receive_deletions = true;
         }
 
         for (auto in_col : ins_proxy->input_columns) {
           if (is_first_merge) {
-            (void) merge->columns.Create(in_col->var, merge, in_col->id);
+            (void)merge->columns.Create(in_col->var, merge, in_col->id);
           }
         }
 
@@ -116,7 +115,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         // Create a guard tuple that enforces order of columns, so that we can
         // make the columns of the KVINDEX in the order of keys followed by
         // values, which might not match the normal column order.
-        view = view->GuardWithTuple(this, true  /* force */);
+        view = view->GuardWithTuple(this, true /* force */);
 
         const auto index = kv_indices.Create();
 
@@ -125,8 +124,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         for (ParsedParameter param : decl.Parameters()) {
           const auto merge_col = merge->columns[i++];
           if (param.Binding() != ParameterBinding::kMutable) {
-            const auto key_col = index->columns.Create(
-                merge_col->var, index, merge_col->id);
+            const auto key_col =
+                index->columns.Create(merge_col->var, index, merge_col->id);
             merge_col->ReplaceAllUsesWith(key_col);
           }
         }
@@ -136,8 +135,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         for (ParsedParameter param : decl.Parameters()) {
           const auto merge_col = merge->columns[i++];
           if (param.Binding() == ParameterBinding::kMutable) {
-            const auto val_col = index->columns.Create(
-                merge_col->var, index, merge_col->id);
+            const auto val_col =
+                index->columns.Create(merge_col->var, index, merge_col->id);
             merge_col->ReplaceAllUsesWith(val_col);
           }
         }
@@ -147,7 +146,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         for (ParsedParameter param : decl.Parameters()) {
           const auto merge_col = merge->columns[i++];
           if (param.Binding() == ParameterBinding::kMutable) {
-            index->merge_functors.push_back(ParsedFunctor::MergeOperatorOf(param));
+            index->merge_functors.push_back(
+                ParsedFunctor::MergeOperatorOf(param));
             index->attached_columns.AddUse(merge_col);
           } else {
             index->input_columns.AddUse(merge_col);
@@ -163,10 +163,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       // In the case of QUERY nodes, we want to MATERIALIZE the data via an
       // INSERT.
       if (view && (!can_connect_decl || decl.IsQuery())) {
-
         if (auto io_it = decl_to_input.find(decl);
             io_it != decl_to_input.end()) {
-
           single_insert = inserts.Create(io_it->second, decl);
           io_it->second->sends.AddUse(single_insert);
 
@@ -192,7 +190,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       }
 
       if (!can_connect_decl) {
-        for (auto select: select_views) {
+        for (auto select : select_views) {
           select->inserts.AddUse(single_insert);
         }
       }
@@ -201,7 +199,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
     // Replace all uses of any of the SELECTs with TUPLEs that take the place
     // of the INSERTs.
     if (view && can_connect_decl) {
-
       REL *rel = nullptr;
       IO *io = nullptr;
 

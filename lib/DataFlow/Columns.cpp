@@ -14,7 +14,7 @@ void QueryImpl::FinalizeColumnIDs(void) const {
 
   auto next_col_id = 1u;
 
-  ForEachViewInDepthOrder([&] (VIEW *v) {
+  ForEachViewInDepthOrder([&](VIEW *v) {
     auto i = 0u;
     // SELECTs and MERGEs introduce new column IDs.
     if (v->AsMerge() || v->AsSelect()) {
@@ -23,7 +23,7 @@ void QueryImpl::FinalizeColumnIDs(void) const {
         col->index = i++;
       }
 
-    // Other VIEWs mostly take their column IDs from their inputs.
+      // Other VIEWs mostly take their column IDs from their inputs.
     } else {
       for (auto col : v->columns) {
         col->id = 0u;
@@ -34,14 +34,14 @@ void QueryImpl::FinalizeColumnIDs(void) const {
   });
 
   auto changed = true;
-  auto copy_col_id = [&changed] (COL *from_col, COL *to_col) {
+  auto copy_col_id = [&changed](COL *from_col, COL *to_col) {
     if (from_col->id && from_col->id != to_col->id) {
       changed = true;
       to_col->id = from_col->id;
     }
   };
 
-  for (; changed; ) {
+  for (; changed;) {
     changed = false;
     for (auto v : views) {
       const auto num_cols = v->columns.Size();
@@ -53,8 +53,8 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           copy_col_id(v->input_columns[out_col->index], out_col);
         }
 
-      // JOINs pass through the column IDs of non-pivot columns, but then they
-      // invent new IDs for the pivot columns.
+        // JOINs pass through the column IDs of non-pivot columns, but then they
+        // invent new IDs for the pivot columns.
       } else if (auto join = v->AsJoin(); join) {
         for (const auto &[out_col, in_cols] : join->out_to_in) {
           if (in_cols.Size() == 1) {
@@ -66,9 +66,9 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           }
         }
 
-      // Maintain IDs of input-to-output columns in MAPs, but make sure the
-      // columns associated with `free`-attributed parameters are given fresh
-      // IDs.
+        // Maintain IDs of input-to-output columns in MAPs, but make sure the
+        // columns associated with `free`-attributed parameters are given fresh
+        // IDs.
       } else if (auto map = v->AsMap(); map) {
         auto i = 0u;
         auto arity = map->functor.Arity();
@@ -76,14 +76,15 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           const auto out_col = map->columns[i];
 
           // It's an output column.
-          if (map->functor.NthParameter(i).Binding() == ParameterBinding::kFree) {
+          if (map->functor.NthParameter(i).Binding() ==
+              ParameterBinding::kFree) {
             if (!out_col->id) {
               out_col->id = next_col_id++;
               changed = true;
             }
             continue;
 
-          // Input column.
+            // Input column.
           } else {
             copy_col_id(map->input_columns[j++], out_col);
           }
@@ -92,8 +93,8 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           copy_col_id(in_col, map->columns[i++]);
         }
 
-      // Comparisons pass-through all column IDs, except in the case of an
-      // equality comparison.
+        // Comparisons pass-through all column IDs, except in the case of an
+        // equality comparison.
       } else if (auto cmp = v->AsConstraint(); cmp) {
         auto i = 0u;
         if (ComparisonOperator::kEqual == cmp->op) {
@@ -112,8 +113,8 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           copy_col_id(cmp->attached_columns[j], cmp->columns[i]);
         }
 
-      // Aggregates pass through group and configuration column IDs, but
-      // invent new IDs for the summary columns.
+        // Aggregates pass through group and configuration column IDs, but
+        // invent new IDs for the summary columns.
       } else if (auto agg = v->AsAggregate(); agg) {
         auto i = 0u;
         for (auto in_col : agg->group_by_columns) {
@@ -129,9 +130,9 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           }
         }
 
-      // KVINDEXes pass through the key column IDs, but not the value
-      // column IDs (as the values are possibly mutated by the merge functors),
-      // and thus might not match the input values.
+        // KVINDEXes pass through the key column IDs, but not the value
+        // column IDs (as the values are possibly mutated by the merge
+        // functors), and thus might not match the input values.
       } else if (auto kv = v->AsKVIndex(); kv) {
         auto i = 0u;
         for (; i < num_input_cols; ++i) {

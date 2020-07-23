@@ -42,9 +42,8 @@ class DisplayPosition {
   bool HasData(void) const;
 
   // Tries to compute the distance between two positions.
-  bool TryComputeDistanceTo(
-      DisplayPosition that, int *num_bytes, int *num_lines,
-      int *num_cols) const;
+  bool TryComputeDistanceTo(DisplayPosition that, int *num_bytes,
+                            int *num_lines, int *num_cols) const;
 
   inline bool IsInvalid(void) const {
     return !IsValid();
@@ -66,8 +65,8 @@ class DisplayPosition {
   friend class DisplayReader;
   friend class Token;
 
-  explicit  DisplayPosition(
-      uint64_t display_id, uint64_t index, uint64_t line, uint64_t column);
+  explicit DisplayPosition(uint64_t display_id, uint64_t index, uint64_t line,
+                           uint64_t column);
 
   // Private constructor for use by tokens and such.
   inline explicit DisplayPosition(uint64_t opaque_data_)
@@ -88,8 +87,7 @@ class DisplayRange {
   }
 
   inline explicit DisplayRange(DisplayPosition from_, DisplayPosition to_)
-      : from(from_),
-        to(to_) {}
+      : from(from_), to(to_) {}
 
   inline DisplayPosition From(void) const {
     return from;

@@ -8,8 +8,8 @@
 #include <map>
 #include <memory>
 #include <ostream>
-#include <sstream>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -19,11 +19,11 @@
 
 #include <iostream>
 
+#include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Util/Node.h>
 
@@ -69,7 +69,8 @@
 //    mutability as a requirement to decide where tuple DIFFs are even possible.
 //
 //    Analyze the how `bound` columns in queries relate to other columns, and
-//    figure out what JOINs need to be eager, and which ones can be demand-based.
+//    figure out what JOINs need to be eager, and which ones can be
+//    demand-based.
 //
 //    Analyze how columns that are outputted from a join are used, and for each
 //    user, possibly create an index that gives them easy query-based access if
@@ -78,9 +79,9 @@
 //    Have a way of marking some queries as `materialized` or `populate`, to
 //    say that we should eagerly fill them up.
 //
-//    Taint nodes in terms of whether or not they can produce removals. Propagate
-//    this taint. Use this to make the tuple processor more state-machine like
-//    rather than going and redoing all the things.
+//    Taint nodes in terms of whether or not they can produce removals.
+//    Propagate this taint. Use this to make the tuple processor more
+//    state-machine like rather than going and redoing all the things.
 //
 //    For things like MAPs, FILTERs, and AGGREGATEs, we may want a column-
 //    oriented input representation.
@@ -103,9 +104,9 @@
 //      Consider breaking some of the control-flow in the MAPs, KVINDEXs,
 //      AGGREGATEs to operate in batches. E.g. first run through a batch that is
 //      approximately cache-sized and make sure every aggregate is initialized,
-//      then re-go over the batch and do the aggregating. Goal is to minimize the
-//      amount of branching in the inner loop by breaking it out into multiple
-//      loops, eaach doing part of the control flow.
+//      then re-go over the batch and do the aggregating. Goal is to minimize
+//      the amount of branching in the inner loop by breaking it out into
+//      multiple loops, eaach doing part of the control flow.
 //
 //    Check:
 //      Is it possible have a deletion be received before its corresponding
@@ -149,7 +150,7 @@ using ViewCaseMap = std::map<std::tuple<uint64_t, uint64_t, bool>, unsigned>;
 // For aggregates and k/v indices, to assign them to a worker.
 static unsigned gNextUnhomedInbox = 1;
 
-//static unsigned TypeSize(TypeLoc loc) {
+// static unsigned TypeSize(TypeLoc loc) {
 //  switch (loc.Kind()) {
 //    case TypeKind::kSigned8:
 //    case TypeKind::kUnsigned8:
@@ -177,7 +178,7 @@ static unsigned gNextUnhomedInbox = 1;
 //
 //// Should this view use an inbox? Inboxes let us accumulate pending tuples to
 //// apply in bulk. They also permit us to share tuples across threads.
-//static bool UseInbox(QueryView view) {
+// static bool UseInbox(QueryView view) {
 //  return view.IsAggregate() ||
 //         view.IsKVIndex() ||
 //         view.IsMap() ||
@@ -261,30 +262,28 @@ static std::string BindingPattern(ParsedFunctor decl) {
 template <typename... Vecs>
 static std::pair<std::unordered_map<QueryColumn, unsigned>,
                  std::unordered_map<unsigned, QueryColumn>>
-ArgumentList(OutputStream &os, Vecs&...vecs) {
+ArgumentList(OutputStream &os, Vecs &... vecs) {
   auto i = 0u;
   std::unordered_map<QueryColumn, unsigned> col_to_index;
   std::unordered_map<unsigned, QueryColumn> index_to_col;
 
   auto sep = "\n    ";
-  auto do_arg_list = [&] (std::vector<QueryColumn> &cols) -> void {
+  auto do_arg_list = [&](std::vector<QueryColumn> &cols) -> void {
     for (auto col : cols) {
       col_to_index.emplace(col, i);
       index_to_col.emplace(i, col);
 
-      os << sep << TypeName(col) << " I" << i
-         << CommentOnCol(os, col);
+      os << sep << TypeName(col) << " I" << i << CommentOnCol(os, col);
       sep = ",\n    ";
       ++i;
     }
   };
 
   int force[] = {(do_arg_list(vecs), 0)...};
-  (void) force;
+  (void)force;
 
   return {col_to_index, index_to_col};
 }
-
 
 // Fill up a container, e.g. a vector of columns, given a range of elements.
 template <typename T, typename Range>
@@ -298,10 +297,9 @@ static void FillContainerFromRange(T &container, Range range) {
 static void DefineMergeSources(OutputStream &os, Query query) {
   std::unordered_map<QueryView, std::vector<QueryView>> to_from;
 
-  query.ForEachView([&] (QueryView view) {
-    view.ForEachUser([&] (QueryView target_view) {
-      to_from[target_view].push_back(view);
-    });
+  query.ForEachView([&](QueryView view) {
+    view.ForEachUser(
+        [&](QueryView target_view) { to_from[target_view].push_back(view); });
   });
 
   for (const auto &[to_view, from_views] : to_from) {
@@ -319,14 +317,14 @@ static void DefineMergeSources(OutputStream &os, Query query) {
     // The refcount that `from_view` will contribute to `to_view`.
     for (auto from_view : from_views) {
       const auto from_id = from_view.UniqueId();
-      os << "static constexpr auto SOURCE_" << from_id << "_" << id
-         << " = RC" << id << ".set(" << (i++) << ");\n";
+      os << "static constexpr auto SOURCE_" << from_id << "_" << id << " = RC"
+         << id << ".set(" << (i++) << ");\n";
     }
   }
   os << "\n";
 }
 
-//static void AddTuple(OutputStream &os, QueryView view, const char *indent,
+// static void AddTuple(OutputStream &os, QueryView view, const char *indent,
 //                     const char *stage, const char *wid="__wid") {
 //  os << indent << "__stages[" << wid << " + " << stage << "]."
 //     << view.UniqueId()
@@ -361,13 +359,12 @@ static std::vector<QueryColumn> InputColumnSpec(QueryView source_view,
 
     assert(!input_cols.empty());
 
-  // Pass down the columns to a join.
+    // Pass down the columns to a join.
   } else if (target_view.IsJoin()) {
     auto target_join = QueryJoin::From(target_view);
 
     std::vector<unsigned> join_col_to_view_col;
     join_col_to_view_col.resize(target_view.Columns().size());
-
 
     // Filter out the pivot columns.
     for (auto i = 0u; i < target_join.NumPivotColumns(); ++i) {
@@ -389,26 +386,26 @@ static std::vector<QueryColumn> InputColumnSpec(QueryView source_view,
       }
     }
 
-  // Tuple, mostly just passes things along.
+    // Tuple, mostly just passes things along.
   } else if (target_view.IsTuple()) {
     auto target_tuple = QueryTuple::From(target_view);
     FillContainerFromRange(input_cols, target_tuple.InputColumns());
 
-  // Filter / constraints.
+    // Filter / constraints.
   } else if (target_view.IsConstraint()) {
     auto target_filter = QueryConstraint::From(target_view);
     input_cols.push_back(target_filter.InputLHS());
     input_cols.push_back(target_filter.InputRHS());
     FillContainerFromRange(input_cols, target_filter.InputCopiedColumns());
 
-  // Mapping function.
+    // Mapping function.
   } else if (target_view.IsMap()) {
     auto target_map = QueryMap::From(target_view);
 
     FillContainerFromRange(input_cols, target_map.InputColumns());
     FillContainerFromRange(input_cols, target_map.InputCopiedColumns());
 
-  // Aggregate function.
+    // Aggregate function.
   } else if (target_view.IsAggregate()) {
     auto target_agg = QueryAggregate::From(target_view);
 
@@ -424,18 +421,15 @@ static std::vector<QueryColumn> InputColumnSpec(QueryView source_view,
 }
 
 // Send the output columns in `view` to all users.
-static void CallUsers(OutputStream &os, QueryView view,
-                      ViewCaseMap &case_map, const char *indent,
-                      const char *added, bool is_add) {
-
+static void CallUsers(OutputStream &os, QueryView view, ViewCaseMap &case_map,
+                      const char *indent, const char *added, bool is_add) {
   if (!is_add) {
     assert(view.CanProduceDeletions());
   }
 
-  view.ForEachUser([&] (QueryView target_view) {
-
-    auto case_key = std::make_tuple(view.UniqueId(), target_view.UniqueId(),
-                                    is_add);
+  view.ForEachUser([&](QueryView target_view) {
+    auto case_key =
+        std::make_tuple(view.UniqueId(), target_view.UniqueId(), is_add);
     assert(case_map.count(case_key));
     auto case_id = case_map[case_key];
 
@@ -446,7 +440,7 @@ static void CallUsers(OutputStream &os, QueryView view,
 
     auto sep = "";
     for (auto in_col : input_cols) {
-      os << sep << '\n' << indent  << "    ";
+      os << sep << '\n' << indent << "    ";
       if (in_col.IsConstant()) {
         os << "/* TODO constant */";  // TODO(pag): Handle constants!
 
@@ -466,7 +460,6 @@ static void CallUsers(OutputStream &os, QueryView view,
 static void DeclareAggregate(
     OutputStream &os, QueryAggregate agg,
     std::set<std::pair<uint64_t, bool>> &seen_functors) {
-
   const auto functor = agg.Functor();
   const std::pair<uint64_t, bool> key(
       functor.UniqueId(), QueryView::From(agg).CanReceiveDeletions());
@@ -479,15 +472,16 @@ static void DeclareAggregate(
   const auto binding_pattern = BindingPattern(functor);
 
   os << "#indef AGGREGATOR_" << functor.Name() << '_' << binding_pattern << '\n'
-     << "#define AGGREGATOR_" << functor.Name() << '_' << binding_pattern << '\n'
+     << "#define AGGREGATOR_" << functor.Name() << '_' << binding_pattern
+     << '\n'
      << "// Aggregator object (will collect results). This is a default\n"
      << "// implementation that should really be replaced via specialization\n"
      << "// via user code.\n"
      << "struct " << functor.Name() << '_' << binding_pattern << "_config {\n";
 
   for (auto param : functor.Parameters()) {
-    os << "  " << TypeName(param.Type()) << ' ' << param.Name()
-       << ';' << CommentOnParam(os, param) << '\n';
+    os << "  " << TypeName(param.Type()) << ' ' << param.Name() << ';'
+       << CommentOnParam(os, param) << '\n';
   }
 
   os << "};\n\n"
@@ -523,7 +517,6 @@ static void DeclareAggregate(
 // Generate code associated with an aggregate.
 static void DefineAggregate(OutputStream &os, QueryAggregate agg,
                             ViewCaseMap case_map) {
-
   const auto view = QueryView::From(agg);
   assert(view.CanProduceDeletions());
 
@@ -591,7 +584,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
     switch (param.Binding()) {
       case ParameterBinding::kBound:
       case ParameterBinding::kAggregate:
-        os << ", " << TypeName(param.Type()) ;
+        os << ", " << TypeName(param.Type());
         break;
       default:
         break;
@@ -610,7 +603,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
       switch (param.Binding()) {
         case ParameterBinding::kBound:
         case ParameterBinding::kAggregate:
-          os << ", " << TypeName(param.Type()) ;
+          os << ", " << TypeName(param.Type());
           break;
         default:
           break;
@@ -666,7 +659,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   auto sep = "";
   auto i = 0u;
   for (auto col : agg.GroupColumns()) {
-    (void) col;
+    (void)col;
     os << 'G' << (i++);
     sep = ", ";
   }
@@ -694,14 +687,14 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
 
   i = 0u;
   for (auto col : agg.GroupColumns()) {
-    os << "  const auto C" << col.UniqueId() << " = G" << (i++)
-       << ';' << CommentOnCol(os, col) << '\n';
+    os << "  const auto C" << col.UniqueId() << " = G" << (i++) << ';'
+       << CommentOnCol(os, col) << '\n';
   }
 
   i = 0u;
   for (auto col : agg.ConfigurationColumns()) {
-    os << "  const auto C" << col.UniqueId() << " = C" << (i++)
-       << ';' << CommentOnCol(os, col) << '\n';
+    os << "  const auto C" << col.UniqueId() << " = C" << (i++) << ';'
+       << CommentOnCol(os, col) << '\n';
   }
 
   sep = "";
@@ -724,41 +717,40 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   i = 0u;
   sep = "";
   for (auto col : agg.GroupColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'G' << (i++);
     sep = ", ";
   }
 
   i = 0u;
   for (auto col : agg.ConfigurationColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'C' << (i++);
     sep = ", ";
   }
 
   os << ");\n"
      << "    if (auto __owid = __hash & __wm; __owid != __wid) {\n"
-     << "      __stages[__owid].depth_" << view.Depth()
-     << ".EmplaceBack(";
+     << "      __stages[__owid].depth_" << view.Depth() << ".EmplaceBack(";
 
   i = 0u;
   sep = "";
   for (auto col : agg.GroupColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'G' << (i++);
     sep = ", ";
   }
 
   i = 0u;
   for (auto col : agg.ConfigurationColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'C' << (i++);
     sep = ", ";
   }
 
   i = 0u;
   for (auto col : agg.InputAggregatedColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'A' << (i++);
     sep = ", ";
   }
@@ -769,7 +761,8 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   if (view.CanReceiveDeletions()) {
     assert(case_map.count(std::make_tuple(id, id, false)));
     auto rem_case_id = case_map[std::make_tuple(id, id, false)];
-    os << sep << "(__added ? " << add_case_id << " : " << rem_case_id << "));\n";
+    os << sep << "(__added ? " << add_case_id << " : " << rem_case_id
+       << "));\n";
   } else {
     os << sep << "add_case_id);\n";
   }
@@ -781,30 +774,32 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   sep = "";
   i = 0u;
   for (auto col : agg.GroupColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'G' << (i++);
     sep = ", ";
   }
 
   i = 0u;
   for (auto col : agg.ConfigurationColumns()) {
-    (void) col;
+    (void)col;
     os << sep << 'C' << (i++);
     sep = ", ";
   }
 
   os << ");\n\n"
-     << "  // If the aggregate isn't initialize it then this will be the first\n"
+     << "  // If the aggregate isn't initialize it then this will be the "
+        "first\n"
      << "  // result that it produces.\n"
      << "  if (!__agg->IsInitialized()) {\n"
      << "    if constexpr (!__added) {\n"
      << "      return 0u;  // Can't remove from an uninitialized aggregate.\n"
      << "    } else {\n"
-     << "      " << summarizer.Name() << '_' << binding_pattern << "_init(__agg";
+     << "      " << summarizer.Name() << '_' << binding_pattern
+     << "_init(__agg";
 
   i = 0u;
   for (auto col : agg.ConfigurationColumns()) {
-    (void) col;
+    (void)col;
     os << ", C" << (i++);
   }
 
@@ -814,7 +809,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   i = 0u;
   sep = "";
   for (auto col : agg.SummaryColumns()) {
-    (void) col;
+    (void)col;
     os << sep << "S" << (i++);
     sep = ", ";
   }
@@ -831,15 +826,17 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
 
   os << "    }\n\n"
      << "  // This aggregate has been initialized, so we need to get the old\n"
-     << "  // summaries, then update the aggregate's state, then see if we need\n"
-     << "  // to retract the old summary before sending the new summary values.\n"
+     << "  // summaries, then update the aggregate's state, then see if we "
+        "need\n"
+     << "  // to retract the old summary before sending the new summary "
+        "values.\n"
      << "  } else {\n"
      << "    const auto [";
 
   i = 0u;
   sep = "";
   for (auto col : agg.SummaryColumns()) {
-    (void) col;
+    (void)col;
     os << sep << "prev_S" << (i++);
     sep = ", ";
   }
@@ -847,8 +844,8 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   os << "] = __agg->Summarize();\n";
 
   if (view.CanReceiveDeletions()) {
-    os << "    constexpr auto __update = __added ? "
-       << summarizer.Name() << '_' << binding_pattern << "_add"
+    os << "    constexpr auto __update = __added ? " << summarizer.Name() << '_'
+       << binding_pattern << "_add"
        << " : " << summarizer.Name() << '_' << binding_pattern << "_remove;\n"
        << "    __update(*__agg";
   } else {
@@ -878,7 +875,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   i = 0u;
   sep = "";
   for (auto col : agg.SummaryColumns()) {
-    (void) col;
+    (void)col;
     os << sep << "S" << (i++);
     sep = ", ";
   }
@@ -889,7 +886,7 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   i = 0u;
   sep = "";
   for (auto col : agg.SummaryColumns()) {
-    (void) col;
+    (void)col;
     os << sep << "prev_S" << i << " == S" << i;
     sep = " && ";
     ++i;
@@ -898,7 +895,6 @@ static void DefineAggregate(OutputStream &os, QueryAggregate agg,
   os << ") {\n"
      << "      return 0u;  // No change in the summary value.\n"
      << "    }\n\n";
-
 
   i = 0u;
   for (auto col : agg.SummaryColumns()) {
@@ -942,7 +938,6 @@ static void DeclareView(OutputStream &os, QueryView view) {
 
 static void DefineTuple(OutputStream &os, QueryTuple tuple,
                         ViewCaseMap &case_map) {
-
   const auto view = QueryView::From(tuple);
 
   os << "/* Tuple; just forwards stuff to users. */\n"
@@ -989,8 +984,8 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "    if (const auto __owid = " << (gNextUnhomedInbox++)
      << "u & __wm; __owid != __wid) {\n"
      << "      auto &__vec = __stage.V" << id << "_inbox;\n"
-     << "      auto &__ovec = __stages[(__owid * 2) + __added].V"
-     << id << "_inbox;\n"
+     << "      auto &__ovec = __stages[(__owid * 2) + __added].V" << id
+     << "_inbox;\n"
      << "      if (__ovec.empty()) {\n"
      << "        __ovec.swap(__vec);\n"
      << "      } else {\n"
@@ -1018,8 +1013,7 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
     os << "  auto prev_C" << col.UniqueId() << " = old_C" << col.UniqueId()
        << ';' << CommentOnCol(os, col) << '\n';
   }
-  os << '\n'
-     << "  for (auto [";
+  os << '\n' << "  for (auto [";
   sep = "";
   for (auto col : view.ValueColumns()) {
     os << sep << "proposed_C" << col.UniqueId();
@@ -1108,8 +1102,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
   os << ">> KV" << id << ";\n\n"
      << "/* Key/value mapping. */\n"
      << "template <bool __added>\n"
-     << "static void V" << id
-     << "(\n    Stage *__stages"
+     << "static void V" << id << "(\n    Stage *__stages"
      << ",\n    unsigned __wid"
      << ",\n    unsigned __wm) noexcept {\n";
 
@@ -1130,7 +1123,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 
   i = 0u;
   for (auto col : kv.KeyColumns()) {
-    (void) col;
+    (void)col;
     os << sep << "std::get<" << (i++) << ">(__lhs)";
     sep = ", ";
   }
@@ -1141,7 +1134,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 
   i = 0u;
   for (auto col : kv.KeyColumns()) {
-    (void) col;
+    (void)col;
     os << sep << "std::get<" << (i++) << ">(__rhs)";
     sep = ", ";
   }
@@ -1150,8 +1143,8 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
      << "  };\n\n";
 
   for (auto col : kv.Columns()) {
-    os << "  " << TypeName(col) << " prev_" << col.UniqueId()
-       << ", first_C" << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
+    os << "  " << TypeName(col) << " prev_" << col.UniqueId() << ", first_C"
+       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n';
   }
 
   os << '\n'
@@ -1168,9 +1161,11 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
   }
 
   os << '\n'
-     << "        // We have a prior value for this tuple, so add a removal entry\n"
+     << "        // We have a prior value for this tuple, so add a removal "
+        "entry\n"
      << "        if (!__is_first) {\n"
-     << "          __stages[(__wid * 2) + false].V" << id << "_inbox.emplace_back(";
+     << "          __stages[(__wid * 2) + false].V" << id
+     << "_inbox.emplace_back(";
 
   sep = "\n              ";
   for (auto col : kv.Columns()) {
@@ -1201,7 +1196,8 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
      << "    // Can't remove a tuple that doesn't exist.\n"
      << "    } else if (__is_first) {\n"
      << "      return;\n\n"
-     << "    // Remove the tuple if the requests value for deletion matches the\n"
+     << "    // Remove the tuple if the requests value for deletion matches "
+        "the\n"
      << "    // present value of the tuple.\n"
      << "    } else if (";
 
@@ -1274,7 +1270,8 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 
   sep = "";
   for (auto col : kv.KeyColumns()) {
-    os << sep << "prev_C" << col.UniqueId() << " != proposed_C" << col.UniqueId();
+    os << sep << "prev_C" << col.UniqueId() << " != proposed_C"
+       << col.UniqueId();
     sep = " || ";
   }
   os << ") {\n"
@@ -1287,15 +1284,16 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
   for (auto col : kv.ValueColumns()) {
     os << "        prev_C" << col.UniqueId() << " = "
        << kv.NthValueMergeFunctor(i++).Name() << "_merge(\n"
-       << "            prev_C"
-       << col.UniqueId() << ", proposed_C" << col.UniqueId() << ");\n";
+       << "            prev_C" << col.UniqueId() << ", proposed_C"
+       << col.UniqueId() << ");\n";
   }
 
   // TODO(pag): Think about whether k/v removal should remove by key matching
   //            alone (the usual semantics, or by key+value matching (what we
   //            do here).
   os << "        continue;\n\n"
-     << "      // We're trying to remove the K/V mapping. We only process removals\n"
+     << "      // We're trying to remove the K/V mapping. We only process "
+        "removals\n"
      << "      // where the values match with the first values.\n"
      << "      } else if (__is_first || (";
 
@@ -1332,8 +1330,8 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 
   i = 0u;
   for (auto col : kv.ValueColumns()) {
-    os << "        first_C" << col.UniqueId() << " = curr_C"
-       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n'
+    os << "        first_C" << col.UniqueId() << " = curr_C" << col.UniqueId()
+       << ';' << CommentOnCol(os, col) << '\n'
        << "        prev_C" << col.UniqueId() << " = "
        << kv.NthValueMergeFunctor(i++).Name() << "_merge(curr_C"
        << col.UniqueId() << ", proposed_C" << col.UniqueId() << ");\n";
@@ -1349,10 +1347,10 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
   os << "      }\n"
      << "    } else {\n";
   for (auto col : kv.ValueColumns()) {
-    os << "      first_C" << col.UniqueId() << " = proposed_C"
-       << col.UniqueId() << ';' << CommentOnCol(os, col) << '\n'
-       << "      prev_C" << col.UniqueId() << " = proposed_C"
-       << col.UniqueId() << ";\n";
+    os << "      first_C" << col.UniqueId() << " = proposed_C" << col.UniqueId()
+       << ';' << CommentOnCol(os, col) << '\n'
+       << "      prev_C" << col.UniqueId() << " = proposed_C" << col.UniqueId()
+       << ";\n";
   }
 
   os << "    }\n"
@@ -1364,97 +1362,96 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 }
 
 static void DefineMerge(OutputStream &os, QueryMerge view) {
-  (void) os;
-  (void) view;
-//
-//  const auto id = view.UniqueId();
-//
-//  os << "// Set for tracking unique elements in the merge.\n"
-//     << "static ::hyde::rt::Set<RC" << id;
-//
-//  for (const auto col : view.Columns()) {
-//    os << ",\n                       " << TypeName(col)
-//       << CommentOnCol(os, col);
-//  }
-//
-//  os << "> S" << id << ";\n\n"
-//     << "/* Merge; forwards unique tuples to users, and reference counts\n"
-//     << " * tuples in terms of their source. */\n"
-//     << "template <bool __added>\n"
-//     << "static void V" << view.UniqueId() << '(';
-//
-//  std::vector<QueryColumn> cols;
-//  FillContainerFromRange(cols, view.Columns());
-//
-//  auto [col_to_id, id_to_col] = ArgumentList(os, cols);
-//
-//  os << ",\n    Stage *__stages"
-//     << ",\n    unsigned __wid"
-//     << ",\n    unsigned __wm) noexcept {\n";
-//
-//  auto sep = "\n    ";
-//  for (auto col : view.Columns()) {
-//    os << sep << TypeName(col) << " C" << col.UniqueId()
-//       << CommentOnCol(os, col);
-//    sep = ",\n    ";
-//  }
-//
-//  os << sep << "RC" << id << " __source"
-//     << "\n, Stage *__stages"
-//     << ",\n    unsigned __wid"
-//     << ",\n    unsigned __wm) noexcept {\n"
-//     << "  if (1 < __wm) {\n"
-//     << "    const auto __hash = Hash<";
-//
-//  sep = "";
-//  for (auto col : view.Columns()) {
-//    os << sep << TypeName(col);
-//    sep = ", ";
-//  }
-//
-//  os << ">::Update(";
-//  sep = "\n        ";
-//  for (auto col : view.Columns()) {
-//    os << sep << 'C' << col.UniqueId() << CommentOnCol(os, col);
-//    sep = ",\n        ";
-//  }
-//
-//  os << ");\n"
-//     << "    // Send this tuple to another worker.\n"
-//     << "    if (const auto __owid = __hash & __wm; __owid != __wid) {\n";
-//
-//  AddTuple(os, QueryView::From(view), "      ", "__added", "__owid");
-//
-//  os << "      return;\n"
-//     << "    }\n"
-//     << "  }\n"
-//     << "  if constexpr (__added) {\n"
-//     << "    if (!S" << id << ".Add(";
-//
-//  sep = "";
-//  for (auto col : view.Columns()) {
-//    os << sep << 'C' << col.UniqueId();
-//    sep = ", ";
-//  }
-//
-//  os << sep << "__source)) {\n"
-//     << "      return;  // Already added.\n"
-//     << "    }\n"
-//     << "  } else {\n"
-//     << "    if (!S" << id << ".Remove(";
-//  sep = "";
-//  for (auto col : view.Columns()) {
-//    os << sep << 'C' << col.UniqueId();
-//    sep = ", ";
-//  }
-//  os << sep << "__source)) {\n"
-//     << "      return;  // Not fully removed.\n"
-//     << "    }\n"
-//     << "  }\n";
-//  AddTuple(os, QueryView::From(view), "  ", "__added");
-//  os << "}\n\n";
+  (void)os;
+  (void)view;
+  //
+  //  const auto id = view.UniqueId();
+  //
+  //  os << "// Set for tracking unique elements in the merge.\n"
+  //     << "static ::hyde::rt::Set<RC" << id;
+  //
+  //  for (const auto col : view.Columns()) {
+  //    os << ",\n                       " << TypeName(col)
+  //       << CommentOnCol(os, col);
+  //  }
+  //
+  //  os << "> S" << id << ";\n\n"
+  //     << "/* Merge; forwards unique tuples to users, and reference counts\n"
+  //     << " * tuples in terms of their source. */\n"
+  //     << "template <bool __added>\n"
+  //     << "static void V" << view.UniqueId() << '(';
+  //
+  //  std::vector<QueryColumn> cols;
+  //  FillContainerFromRange(cols, view.Columns());
+  //
+  //  auto [col_to_id, id_to_col] = ArgumentList(os, cols);
+  //
+  //  os << ",\n    Stage *__stages"
+  //     << ",\n    unsigned __wid"
+  //     << ",\n    unsigned __wm) noexcept {\n";
+  //
+  //  auto sep = "\n    ";
+  //  for (auto col : view.Columns()) {
+  //    os << sep << TypeName(col) << " C" << col.UniqueId()
+  //       << CommentOnCol(os, col);
+  //    sep = ",\n    ";
+  //  }
+  //
+  //  os << sep << "RC" << id << " __source"
+  //     << "\n, Stage *__stages"
+  //     << ",\n    unsigned __wid"
+  //     << ",\n    unsigned __wm) noexcept {\n"
+  //     << "  if (1 < __wm) {\n"
+  //     << "    const auto __hash = Hash<";
+  //
+  //  sep = "";
+  //  for (auto col : view.Columns()) {
+  //    os << sep << TypeName(col);
+  //    sep = ", ";
+  //  }
+  //
+  //  os << ">::Update(";
+  //  sep = "\n        ";
+  //  for (auto col : view.Columns()) {
+  //    os << sep << 'C' << col.UniqueId() << CommentOnCol(os, col);
+  //    sep = ",\n        ";
+  //  }
+  //
+  //  os << ");\n"
+  //     << "    // Send this tuple to another worker.\n"
+  //     << "    if (const auto __owid = __hash & __wm; __owid != __wid) {\n";
+  //
+  //  AddTuple(os, QueryView::From(view), "      ", "__added", "__owid");
+  //
+  //  os << "      return;\n"
+  //     << "    }\n"
+  //     << "  }\n"
+  //     << "  if constexpr (__added) {\n"
+  //     << "    if (!S" << id << ".Add(";
+  //
+  //  sep = "";
+  //  for (auto col : view.Columns()) {
+  //    os << sep << 'C' << col.UniqueId();
+  //    sep = ", ";
+  //  }
+  //
+  //  os << sep << "__source)) {\n"
+  //     << "      return;  // Already added.\n"
+  //     << "    }\n"
+  //     << "  } else {\n"
+  //     << "    if (!S" << id << ".Remove(";
+  //  sep = "";
+  //  for (auto col : view.Columns()) {
+  //    os << sep << 'C' << col.UniqueId();
+  //    sep = ", ";
+  //  }
+  //  os << sep << "__source)) {\n"
+  //     << "      return;  // Not fully removed.\n"
+  //     << "    }\n"
+  //     << "  }\n";
+  //  AddTuple(os, QueryView::From(view), "  ", "__added");
+  //  os << "}\n\n";
 }
-
 
 static void DeclareGenerator(OutputStream &os, QueryMap map,
                              std::unordered_set<uint64_t> &seen_functors) {
@@ -1507,14 +1504,12 @@ static void DeclareGenerator(OutputStream &os, QueryMap map,
   } else {
     os << "void ";
   }
-  os << functor.Name() << '_' << binding_pattern
-     << "(";
+  os << functor.Name() << '_' << binding_pattern << "(";
 
   auto sep = "\n    ";
 
   if (!map.IsFilterLike()) {
-    os << sep << functor.Name() << '_' << binding_pattern
-       << "_generator &";
+    os << sep << functor.Name() << '_' << binding_pattern << "_generator &";
   }
 
   for (auto param : functor.Parameters()) {
@@ -1528,8 +1523,7 @@ static void DeclareGenerator(OutputStream &os, QueryMap map,
      << "#endif\n\n";
 }
 
-static void DefineMap(OutputStream &os, QueryMap map,
-                      ViewCaseMap &case_map) {
+static void DefineMap(OutputStream &os, QueryMap map, ViewCaseMap &case_map) {
   const auto view = QueryView::From(map);
   const auto id = map.UniqueId();
   const auto functor = map.Functor();
@@ -1552,8 +1546,10 @@ static void DefineMap(OutputStream &os, QueryMap map,
   os << " */\n\n";
 
   if (!functor.IsPure()) {
-    os << "#ifndef FUNCTOR_KV_" << functor.Name() << '_' << binding_pattern << '\n'
-       << "#define FUNCTOR_KV_" << functor.Name() << '_' << binding_pattern << '\n';
+    os << "#ifndef FUNCTOR_KV_" << functor.Name() << '_' << binding_pattern
+       << '\n'
+       << "#define FUNCTOR_KV_" << functor.Name() << '_' << binding_pattern
+       << '\n';
     if (map.IsFilterLike()) {
       os << "// The functor isn't pure, and it has no free parameters, so it\n"
          << "// behaves like a filter\n";
@@ -1657,21 +1653,20 @@ static void DefineMap(OutputStream &os, QueryMap map,
   os << "] = __tuple;\n";
 
   for (auto [out_col, in_col] : out_to_in) {
-    os << "  const auto C" << out_col.UniqueId() << " = I"
-       << col_to_id[in_col] << ';' << CommentOnCol(os, out_col) << '\n';
+    os << "  const auto C" << out_col.UniqueId() << " = I" << col_to_id[in_col]
+       << ';' << CommentOnCol(os, out_col) << '\n';
   }
 
-  // If this function isn't pure then that means that we can produce differential
-  // updates that revoke prior results.
+  // If this function isn't pure then that means that we can produce
+  // differential updates that revoke prior results.
   if (!functor.IsPure()) {
-
     os << '\n'
-       << "  auto &__kv = KV_" << functor.Name() << '_'
-       << binding_pattern << ";\n";
+       << "  auto &__kv = KV_" << functor.Name() << '_' << binding_pattern
+       << ";\n";
 
     // It's a predicate that isn't pure.
     if (map.IsFilterLike()) {
-      sep= "";
+      sep = "";
       os << "  const auto [";
 
       if (map.IsFilterLike()) {
@@ -1723,7 +1718,7 @@ static void DefineMap(OutputStream &os, QueryMap map,
            << "  }\n\n";
       }
 
-    // It's a mapping function.
+      // It's a mapping function.
     } else {
       os << "  auto &__prev_gen = __stages[__wid].prev_G" << id << ";\n"
          << "  __prev_gen.Clear();\n"
@@ -1744,7 +1739,8 @@ static void DefineMap(OutputStream &os, QueryMap map,
       // don't need need to invoke the functor; instead we just need to delete
       // any prior saved values.
       if (view.CanReceiveDeletions()) {
-        os << "  // If we're deleting things then go delete all prior records.\n"
+        os << "  // If we're deleting things then go delete all prior "
+              "records.\n"
            << "  if constexpr (!__added) {\n"
            << "    if (!__has_prev) {\n"
            << "      return;  // Nothing to delete.\n"
@@ -1777,10 +1773,9 @@ static void DefineMap(OutputStream &os, QueryMap map,
   // This function is going to behave like a filter, i.e. it's going to
   // tell us whether or not to admit the tuple along.
   if (map.IsFilterLike()) {
-    os << "  const auto __res = ::hyde::rt::InlineDefinition<"
-       << functor.Name() << '_' << binding_pattern << "_tag>("
-       << functor.Name() << '_' << binding_pattern
-       << ")(\n";
+    os << "  const auto __res = ::hyde::rt::InlineDefinition<" << functor.Name()
+       << '_' << binding_pattern << "_tag>(" << functor.Name() << '_'
+       << binding_pattern << ")(\n";
 
     sep = "      ";
     for (auto col : bound_cols) {
@@ -1793,19 +1788,19 @@ static void DefineMap(OutputStream &os, QueryMap map,
     if (functor.IsPure()) {
       os << "  if (__res) {\n";
 
-    // Not pure; we need to manage the differentials.
+      // Not pure; we need to manage the differentials.
     } else {
-
       // We can receive deletions.
       if (view.CanReceiveDeletions()) {
         os << "  if constexpr (!__added) {\n"
            << "    if (!__has_prev || !__prev_res) {\n"
-           << "      return;  // Nothing to remove, or removal would be redundant.\n"
+           << "      return;  // Nothing to remove, or removal would be "
+              "redundant.\n"
            << "    }\n"
            << "  } else ";
 
-      // We can't receive any deletions, so we can detect in advance when
-      // nothing has changed.
+        // We can't receive any deletions, so we can detect in advance when
+        // nothing has changed.
       } else {
         os << "  ";
       }
@@ -1817,13 +1812,13 @@ static void DefineMap(OutputStream &os, QueryMap map,
       os << "  if (__res) {\n";
     }
 
-  // Just a normal mapping function.
+    // Just a normal mapping function.
   } else {
     os << "  auto &__gen = __stages[__wid].G" << id << ";\n"
        << "  __gen.Clear();\n"
-       << "  ::hyde::rt::InlineDefinition<"  << functor.Name() << '_'
-       << binding_pattern << "_tag>(" << functor.Name() << '_' << binding_pattern
-       << ")(\n      __gen";
+       << "  ::hyde::rt::InlineDefinition<" << functor.Name() << '_'
+       << binding_pattern << "_tag>(" << functor.Name() << '_'
+       << binding_pattern << ")(\n      __gen";
 
     for (auto col : bound_cols) {
       os << ", " << col.UniqueId();
@@ -1840,7 +1835,8 @@ static void DefineMap(OutputStream &os, QueryMap map,
   // the outputs that
   if (!map.IsFilterLike() && !functor.IsPure()) {
     os << '\n'
-       << "    // Don't process any tuples that are shared with the prior execution.\n"
+       << "    // Don't process any tuples that are shared with the prior "
+          "execution.\n"
        << "    while (__prev_it < __prev_end) {\n"
        << "      const auto __prev_tuple = *__prev_it;\n"
        << "      if (__prev_tuple == __tuple) {\n"
@@ -1863,7 +1859,6 @@ static void DefineMap(OutputStream &os, QueryMap map,
   }
   os << "] = __tuple;\n";
 
-
   if (view.CanProduceDeletions()) {
     os << "    if constexpr (__added) {\n";
     CallUsers(os, QueryView::From(map), case_map, "      ", "true", true);
@@ -1885,7 +1880,8 @@ static void DefineMap(OutputStream &os, QueryMap map,
   // first.
   if (!map.IsFilterLike() && !functor.IsPure()) {
     os << '\n'
-       << "  // Remove tuples that weren't produced by the most recent execution.\n"
+       << "  // Remove tuples that weren't produced by the most recent "
+          "execution.\n"
        << "  __prev_gen.Erase(__gen);\n"
        << "  for (const auto [";
     sep = "";
@@ -1960,18 +1956,16 @@ static void DefineConstraint(OutputStream &os, QueryConstraint filter,
 }
 
 static void DeclareEquiJoin(OutputStream &os, QueryView from_view,
-                            QueryJoin join) {
-
-}
+                            QueryJoin join) {}
 
 static void DeclareJoin(OutputStream &os, QueryJoin join) {
-//  const auto id = join.UniqueId();
+  //  const auto id = join.UniqueId();
 
   // Cross-product.
   if (!join.NumPivotColumns()) {
     assert(false && "TODO: Cross-products.");
 
-  // Equi-join.
+    // Equi-join.
   } else {
     for (const auto col : join.NthInputPivotSet(0)) {
       DeclareEquiJoin(os, QueryView::Containing(col), join);
@@ -1980,13 +1974,13 @@ static void DeclareJoin(OutputStream &os, QueryJoin join) {
 }
 
 static void DefineStage(OutputStream &os, Query query) {
-  os << "// State associated with a stage of execution. We track one work list\n"
+  os << "// State associated with a stage of execution. We track one work "
+        "list\n"
      << "// for each depth of node in the dataflow graph.\n"
      << "struct Stage {\n";
 
   std::vector<unsigned> num_cases_at_depth;
-  query.ForEachView([&] (QueryView view) {
-
+  query.ForEachView([&](QueryView view) {
     if (view.IsMap()) {
       const auto map = QueryMap::From(view);
       if (map.IsFilterLike()) {
@@ -1994,8 +1988,8 @@ static void DefineStage(OutputStream &os, Query query) {
       }
       const auto functor = map.Functor();
       const auto binding_pattern = BindingPattern(functor);
-      os << "  " << functor.Name() << '_' << binding_pattern
-         << "_generator G" << view.UniqueId();
+      os << "  " << functor.Name() << '_' << binding_pattern << "_generator G"
+         << view.UniqueId();
       if (!functor.IsPure()) {
         os << ", prev_G" << view.UniqueId();
       }
@@ -2027,11 +2021,10 @@ static void DefineStage(OutputStream &os, Query query) {
   os << "};\n\n";
 }
 
-static void DefineStep(
-    OutputStream &os, Query query, ViewCaseMap &case_map) {
+static void DefineStep(OutputStream &os, Query query, ViewCaseMap &case_map) {
   std::vector<std::vector<QueryView>> views_by_depth;
 
-  query.ForEachView([&] (QueryView view) {
+  query.ForEachView([&](QueryView view) {
     const auto depth = view.Depth();
     views_by_depth.resize(std::max(views_by_depth.size(), depth + 1ul));
     views_by_depth[depth].push_back(view);
@@ -2040,7 +2033,7 @@ static void DefineStep(
   // Topological sort of the views. On a given level, it orders merges/joins
   // latest, and before those, aggregates/kvindices.
   for (auto &views : views_by_depth) {
-    std::sort(views.begin(), views.end(), [] (QueryView a, QueryView b) {
+    std::sort(views.begin(), views.end(), [](QueryView a, QueryView b) {
       const auto a_is_merge = a.IsMerge() || a.IsJoin();
       const auto b_is_merge = b.IsMerge() || b.IsJoin();
 
@@ -2069,7 +2062,8 @@ static void DefineStep(
 
   os << "// Stepping function for advancing execution one step. This function\n"
      << "// takes in the current worker id `__wid` and a mask `__wm` that is\n"
-     << "// `2**num_workers - 1`. `__stages` is an `__wm` element array, containing\n"
+     << "// `2**num_workers - 1`. `__stages` is an `__wm` element array, "
+        "containing\n"
      << "// work lists for each depth of the dataflow graph.\n"
      << "//\n"
      << "// The return value of this function is the number of tuples that it\n"
@@ -2096,7 +2090,6 @@ static void DefineStep(
     auto num_cases = 0u;
 
     for (auto view : views) {
-
       const auto id = view.UniqueId();
 
       for (const auto is_add_stage : {false, true}) {
@@ -2104,7 +2097,7 @@ static void DefineStep(
           continue;
         }
 
-        auto do_case = [&] (QueryView source_view, bool has_source_view) {
+        auto do_case = [&](QueryView source_view, bool has_source_view) {
           auto cols = InputColumnSpec(source_view, view);
 
           os << "      // " << (is_add_stage ? "Add " : "Remove ")
@@ -2117,7 +2110,8 @@ static void DefineStep(
           os << "\n"
              << "      case " << num_cases << ": {\n"
              << "        __changed = true;\n"
-             << "        auto &__tuple = __stage.depth_" << depth << ".PopTuple<";
+             << "        auto &__tuple = __stage.depth_" << depth
+             << ".PopTuple<";
 
           auto sep = "";
           for (auto col : cols) {
@@ -2145,11 +2139,10 @@ static void DefineStep(
           ++num_cases;
         };
 
-        query.ForEachView([&] (QueryView source_view) {
-          case_map.emplace(
-              std::make_tuple(source_view.UniqueId(), view.UniqueId(),
-                              is_add_stage),
-              num_cases);
+        query.ForEachView([&](QueryView source_view) {
+          case_map.emplace(std::make_tuple(source_view.UniqueId(),
+                                           view.UniqueId(), is_add_stage),
+                           num_cases);
         });
 
         if (view.IsJoin()) {
@@ -2159,7 +2152,7 @@ static void DefineStep(
         } else if (view.IsMerge()) {
           for (auto source_view : QueryMerge::From(view).MergedViews()) {
             do_case(source_view,
-                    false  /* because we will pass through a refmask */);
+                    false /* because we will pass through a refmask */);
           }
         } else {
           do_case(view, false);
@@ -2172,7 +2165,7 @@ static void DefineStep(
 
     auto next_depth = depth;
     for (auto view : views) {
-      view.ForEachUser([&] (QueryView target_view) {
+      view.ForEachUser([&](QueryView target_view) {
         next_depth = std::min<unsigned>(target_view.Depth(), next_depth);
       });
     }
@@ -2189,7 +2182,7 @@ static void DefineStep(
     }
 
     os << "    }\n"  // End of `switch`.
-       << "  }\n";  // End of `while`.
+       << "  }\n";   // End of `while`.
 
     ++depth;
   }
@@ -2205,9 +2198,8 @@ static void DefineStep(
 // execution of Datalog.
 void GenerateCode(const ParsedModule &module, const Query &query,
                   OutputStream &os) {
-
   std::unordered_set<uint64_t> seen_generators;
-//  std::set<std::pair<ParsedFunctor, bool>> seen_functors;
+  //  std::set<std::pair<ParsedFunctor, bool>> seen_functors;
   std::set<std::pair<uint64_t, bool>> seen_aggregators;
 
   os << "struct Stage;\n";
@@ -2261,8 +2253,7 @@ void GenerateCode(const ParsedModule &module, const Query &query,
   }
 
   for (auto code : module.Inlines()) {
-    os << code.CodeToInline()
-       << '\n';
+    os << code.CodeToInline() << '\n';
   }
 
   os << '\n';
@@ -2292,13 +2283,12 @@ void GenerateCode(const ParsedModule &module, const Query &query,
   }
 
   if (false) {
-
     for (auto view : query.Merges()) {
       DefineMerge(os, view);
     }
   }
 
-  (void) CallUsers;
+  (void)CallUsers;
 }
 
 }  // namespace hyde

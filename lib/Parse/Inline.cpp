@@ -34,7 +34,7 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
       return;
     }
 
-  // Parse out a string literal, e.g. `#inline "..."`.
+    // Parse out a string literal, e.g. `#inline "..."`.
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {
     const auto code_id = tok.StringId();
     const auto code_len = tok.StringLength();
@@ -46,7 +46,7 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
       return;
     }
 
-  // Neither a string nor a code string.
+    // Neither a string nor a code string.
   } else {
     context->error_log.Append(scope_range, tok_range)
         << "Expected string or code literal for "

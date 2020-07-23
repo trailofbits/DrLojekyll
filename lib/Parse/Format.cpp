@@ -195,8 +195,7 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   if (clause.IsDeletion()) {
     os << '!';
   }
-  os << ParsedClauseHead(clause) << " : "
-     << ParsedClauseBody(clause) << ".";
+  os << ParsedClauseHead(clause) << " : " << ParsedClauseBody(clause) << ".";
   return os;
 }
 

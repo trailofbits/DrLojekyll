@@ -32,31 +32,31 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   auto local_hash = hash;
 
   assert(input_columns.Size() == 0);
-//
-//  for (auto col : columns) {
-//    auto in_set = out_to_in.find(col);
-//    assert(in_set != out_to_in.end());
-//    uint64_t pivot_hash = 0xC4CEB9FE1A85EC53ull;
-//    for (auto in_col : in_set->second) {
-//      pivot_hash ^= in_col->Hash();
-//    }
-//    local_hash ^= RotateRight64(local_hash, 13) * pivot_hash;
-//  }
+  //
+  //  for (auto col : columns) {
+  //    auto in_set = out_to_in.find(col);
+  //    assert(in_set != out_to_in.end());
+  //    uint64_t pivot_hash = 0xC4CEB9FE1A85EC53ull;
+  //    for (auto in_col : in_set->second) {
+  //      pivot_hash ^= in_col->Hash();
+  //    }
+  //    local_hash ^= RotateRight64(local_hash, 13) * pivot_hash;
+  //  }
 
   for (auto joined_view : joined_views) {
     local_hash ^= joined_view->Hash();
   }
 
   if (num_pivots) {
-    local_hash ^= RotateRight64(local_hash, (num_pivots + 53u) % 64u) *
-                  local_hash;
+    local_hash ^=
+        RotateRight64(local_hash, (num_pivots + 53u) % 64u) * local_hash;
   }
 
-  local_hash ^= RotateRight64(local_hash, (columns.Size() + 43u) % 64u) *
-                local_hash;
+  local_hash ^=
+      RotateRight64(local_hash, (columns.Size() + 43u) % 64u) * local_hash;
 
-  local_hash ^= RotateRight64(local_hash, (joined_views.Size() + 33u) % 64u) *
-                local_hash;
+  local_hash ^=
+      RotateRight64(local_hash, (joined_views.Size() + 33u) % 64u) * local_hash;
 
   hash = local_hash;
   return local_hash;
@@ -70,7 +70,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
   auto estimate = EstimateDepth(positive_conditions, 1u);
   estimate = EstimateDepth(negative_conditions, estimate);
   for (const auto &[out_col, in_cols] : out_to_in) {
-    (void) out_col;
+    (void)out_col;
     for (COL *in_col : in_cols) {
       estimate = std::max(estimate, in_col->view->depth);
     }
@@ -80,7 +80,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 
   auto real = 1u;
   for (const auto &[out_col, in_cols] : out_to_in) {
-    (void) out_col;
+    (void)out_col;
     real = GetDepth(in_cols, real);
   }
 
@@ -102,7 +102,7 @@ void Node<QueryJoin>::ReplaceViewInJoin(VIEW *view, VIEW *replacement_view) {
     }
   }
 
-  UseList<VIEW> new_joined_views(this, true  /* is_weak */);
+  UseList<VIEW> new_joined_views(this, true /* is_weak */);
   for (auto joined_view : joined_views) {
     if (joined_view) {
       if (joined_view == view) {
@@ -140,15 +140,15 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
   TUPLE *tuple = query->tuples.Create();
 
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(
-        col->var, tuple, col->id, col->Index());
+    auto out_col =
+        tuple->columns.Create(col->var, tuple, col->id, col->Index());
     out_col->CopyConstant(col);
   }
 
 #ifndef NDEBUG
   std::stringstream ss;
-  ss << "DEL-PIVOT-" << pivot_col->Index() << "("
-     << KindName() << ": " << producer << ')';
+  ss << "DEL-PIVOT-" << pivot_col->Index() << "(" << KindName() << ": "
+     << producer << ')';
   tuple->producer = ss.str();
 #endif
 
@@ -165,8 +165,8 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
       tuple->input_columns.AddUse(const_col);
 
     } else {
-      auto new_out_col = new_columns.Create(
-          out_col->var, this, out_col->id, new_col_index++);
+      auto new_out_col =
+          new_columns.Create(out_col->var, this, out_col->id, new_col_index++);
       tuple->input_columns.AddUse(new_out_col);
       new_out_col->CopyConstant(out_col);
       out_to_new_out.emplace(out_col, new_out_col);
@@ -191,7 +191,7 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
     }
   }
 
-  (void) num_joined_views;
+  (void)num_joined_views;
   std::unordered_map<COL *, UseList<COL>> new_out_to_in;
 
   for (auto out_col : columns) {
@@ -203,7 +203,8 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
     assert(new_out_col != nullptr);
 
     auto &old_pivot_set = out_to_in.find(out_col)->second;
-    auto &new_pivot_set = new_out_to_in.emplace(new_out_col, this).first->second;
+    auto &new_pivot_set =
+        new_out_to_in.emplace(new_out_col, this).first->second;
 
     assert(!old_pivot_set.Empty());
     assert(new_pivot_set.Empty());
@@ -268,9 +269,9 @@ void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
 // If we have a constant feeding into one of the pivot sets, then we want to
 // eliminate that pivot set and instead propagate CMP nodes to all pivot
 // sources.
-void Node<QueryJoin>::PropagateConstAcrossPivotSet(
-    QueryImpl *query, COL *const_col, UseList<COL> &pivot_cols) {
-
+void Node<QueryJoin>::PropagateConstAcrossPivotSet(QueryImpl *query,
+                                                   COL *const_col,
+                                                   UseList<COL> &pivot_cols) {
   is_canonical = false;
 
   std::vector<COL *> cols;
@@ -299,7 +300,6 @@ void Node<QueryJoin>::PropagateConstAcrossPivotSet(
   // to all incoming views.
   for (auto in_col : cols) {
     if (in_col->IsConstant() && in_col != const_col) {
-
       // Apply the comparison to all views because we don't know who proposed
       // this constant.
       for (auto &view : views) {
@@ -340,7 +340,7 @@ void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
   }
 
   for (const auto &[out_col, in_cols] : out_to_in) {
-    (void) out_col;
+    (void)out_col;
     for (auto in_col : in_cols) {
       if (!in_col->IsConstant()) {
         new_views.push_back(in_col->view);
@@ -382,8 +382,8 @@ void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
         }
       }
 
-      const auto cond = CreateOrInheritConditionOnView(
-          query, old_view, std::move(old_inputs));
+      const auto cond = CreateOrInheritConditionOnView(query, old_view,
+                                                       std::move(old_inputs));
 
       positive_conditions.AddUse(cond);
       cond->positive_users.AddUse(this);
@@ -407,9 +407,8 @@ void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
 //
 // TODO(pag): If we make the above transform, then a JOIN could devolve into
 //            a cross-product.
-bool Node<QueryJoin>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt) {
-
+bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
+                                   const OptimizationContext &opt) {
   if (out_to_in.empty()) {
     PrepareToDelete();
     return false;
@@ -442,7 +441,7 @@ bool Node<QueryJoin>::Canonicalize(
   assert(num_pivots == num_found_pivots);
 
   for (auto out_col : columns) {
-    (void) out_col;
+    (void)out_col;
     assert(out_to_in.count(out_col));
     assert(!out_to_in.find(out_col)->second.Empty());
   }
@@ -543,13 +542,12 @@ bool Node<QueryJoin>::Canonicalize(
       Canonicalize(query, opt);
       return true;
 
-    // All incoming pivot values are either constant, or constant refs, and
-    // they all refer to the same constant. We need to keep this pivot around
-    // to enforce a data dependency, but we can do constant propagation on the
-    // output, thus "breaking" the control dependency.
+      // All incoming pivot values are either constant, or constant refs, and
+      // they all refer to the same constant. We need to keep this pivot around
+      // to enforce a data dependency, but we can do constant propagation on the
+      // output, thus "breaking" the control dependency.
     } else if (same_const_ref) {
       if (opt.can_replace_inputs_with_constants) {
-
 #ifndef NDEBUG
         producer = "PIVOT-TO-CONST(" + producer + ")";
 #endif
@@ -565,9 +563,9 @@ bool Node<QueryJoin>::Canonicalize(
         return true;
       }
 
-    // At least one of the pivots is a reference to a constant; we will inject
-    // comparisons across all incominging pivots to ensure that they match this
-    // constant.
+      // At least one of the pivots is a reference to a constant; we will inject
+      // comparisons across all incominging pivots to ensure that they match
+      // this constant.
     } else if (first_const_ref) {
       if (!out_is_const_ref) {
 #ifndef NDEBUG
@@ -581,12 +579,12 @@ bool Node<QueryJoin>::Canonicalize(
         return true;
       }
 
-    // At least one of the pivots is a constant, and none of them are constant
-    // references (otherwise we would have been in the prior case). It is
-    // possible that after more optimization, we will discover that some of the
-    // other pivots are constants or constant refs. Thus, we cannot eagerly
-    // eliminate this pivot until we know that *all* incoming values are
-    // the same constant.
+      // At least one of the pivots is a constant, and none of them are constant
+      // references (otherwise we would have been in the prior case). It is
+      // possible that after more optimization, we will discover that some of
+      // the other pivots are constants or constant refs. Thus, we cannot
+      // eagerly eliminate this pivot until we know that *all* incoming values
+      // are the same constant.
     } else if (first_const) {
       if (!out_is_const_ref) {
 #ifndef NDEBUG
@@ -602,8 +600,7 @@ bool Node<QueryJoin>::Canonicalize(
 
     // Check to see if we should try to remove non-pivot output columns
     // (because they aren't used).
-    if (opt.can_remove_unused_columns &&
-        !need_remove_non_pivots &&
+    if (opt.can_remove_unused_columns && !need_remove_non_pivots &&
         in_cols.Size() == 1 && !out_col->IsUsed()) {
       is_canonical = false;
       need_remove_non_pivots = true;
@@ -639,8 +636,8 @@ bool Node<QueryJoin>::Canonicalize(
         ++num_found_pivots;
       }
       if (is_pivot_col || out_col->IsUsed()) {
-        const auto new_out_col = new_columns.Create(
-            out_col->var, this, out_col->id, col_index++);
+        const auto new_out_col =
+            new_columns.Create(out_col->var, this, out_col->id, col_index++);
         new_out_col->CopyConstant(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
 
@@ -669,7 +666,7 @@ bool Node<QueryJoin>::Canonicalize(
 
 #ifndef NDEBUG
   for (auto out_col : columns) {
-    (void) out_col;
+    (void)out_col;
     assert(out_to_in.count(out_col));
     assert(!out_to_in.find(out_col)->second.Empty());
   }
@@ -679,12 +676,12 @@ bool Node<QueryJoin>::Canonicalize(
   // time we get down here, we should have sunk conditions down to all the
   // source views
   if (1u >= joined_views.Size()) {
-
     TUPLE *tuple = query->tuples.Create();
 
     for (auto out_col : columns) {
       auto &in_cols = out_to_in.find(out_col)->second;
-      COL *new_out_col = tuple->columns.Create(out_col->var, tuple, out_col->id);
+      COL *new_out_col =
+          tuple->columns.Create(out_col->var, tuple, out_col->id);
       COL *new_in_col = in_cols[0];
       for (auto in_col : in_cols) {
         if (in_col->IsConstantRef()) {
@@ -718,8 +715,7 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
   }
 
   const auto that = that_->AsJoin();
-  if (!that ||
-      columns.Size() != that->columns.Size() ||
+  if (!that || columns.Size() != that->columns.Size() ||
       num_pivots != that->num_pivots ||
       out_to_in.size() != that->out_to_in.size() ||
       joined_views.Size() != that->joined_views.Size() ||
@@ -753,7 +749,7 @@ bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
     const auto j1_in_cols = out_to_in.find(j1_out_col);
     const auto j2_in_cols = that->out_to_in.find(j2_out_col);
 
-    if (j1_in_cols == out_to_in.end() ||  // Join not used.
+    if (j1_in_cols == out_to_in.end() ||        // Join not used.
         j2_in_cols == that->out_to_in.end() ||  // Join not used.
         !ColumnsEq(eq, j1_in_cols->second, j2_in_cols->second)) {
       eq.Remove(this, that);

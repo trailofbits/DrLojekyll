@@ -6,12 +6,9 @@ namespace hyde {
 
 // Identify which data flows can receive and produce deletions.
 void QueryImpl::TrackDifferentialUpdates(void) const {
+  std::unordered_map<ParsedDeclaration, std::vector<SELECT *>> decl_to_selects;
 
-  std::unordered_map<ParsedDeclaration, std::vector<SELECT *>>
-      decl_to_selects;
-
-  std::unordered_map<INSERT *, std::vector<SELECT *>>
-      insert_to_selects;
+  std::unordered_map<INSERT *, std::vector<SELECT *>> insert_to_selects;
 
   for (auto select : selects) {
     if (auto rel = select->relation.get(); rel) {
@@ -29,9 +26,9 @@ void QueryImpl::TrackDifferentialUpdates(void) const {
     }
   }
 
-  for (auto changed = true; changed; ) {
+  for (auto changed = true; changed;) {
     changed = false;
-    ForEachView([&] (VIEW *view) {
+    ForEachView([&](VIEW *view) {
       if (view->can_receive_deletions && !view->can_produce_deletions) {
         view->can_produce_deletions = true;
         changed = true;
@@ -52,7 +49,7 @@ void QueryImpl::TrackDifferentialUpdates(void) const {
       }
 
       for (COL *col : view->columns) {
-        col->ForEachUser([&] (VIEW *user_view) {
+        col->ForEachUser([&](VIEW *user_view) {
           if (!user_view->can_receive_deletions) {
             user_view->can_receive_deletions = true;
             changed = true;

@@ -1,7 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <ostream>
 #include <drlojekyll/Display/DisplayManager.h>
+#include <ostream>
 
 #pragma once
 
@@ -14,8 +14,7 @@ class OutputStream {
   ~OutputStream(void);
 
   inline OutputStream(const DisplayManager &display_manager_, std::ostream &os_)
-      : display_manager(display_manager_),
-        os(os_) {}
+      : display_manager(display_manager_), os(os_) {}
 
   OutputStream &operator<<(DisplayRange range);
 

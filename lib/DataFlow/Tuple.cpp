@@ -35,9 +35,8 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 // replacements easier. Because comparisons are mostly pointer-based, the
 // canonical form of this tuple is one where all input columns are sorted,
 // deduplicated, and where all output columns are guaranteed to be used.
-bool Node<QueryTuple>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt) {
-
+bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
+                                    const OptimizationContext &opt) {
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
@@ -45,7 +44,6 @@ bool Node<QueryTuple>::Canonicalize(
 
   bool has_replaceable_constref_inputs = false;
   if (is_canonical && opt.can_replace_inputs_with_constants) {
-
     for (auto in_col : input_columns) {
       if (in_col->IsConstantRef()) {
         is_canonical = false;
@@ -72,9 +70,7 @@ bool Node<QueryTuple>::Canonicalize(
   // a JOIN, because otherwise we might have a diamond pattern where there the
   // tuples exist to introduce two separate flows into a JOIN, e.g. as in
   // `transitive_closure.dr`.
-  if (!is_used_in_merge &&
-      !introduces_control_dep &&
-      !sets_condition &&
+  if (!is_used_in_merge && !introduces_control_dep && !sets_condition &&
       AllColumnsAreUsed()) {
     if (auto outgoing_view = OnlyUser();
         outgoing_view && !outgoing_view->AsJoin()) {
@@ -123,8 +119,8 @@ bool Node<QueryTuple>::Canonicalize(
       prev_out_col = out_col;
     }
 
-    const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt);
+    const auto [changed, can_remove] =
+        CanonicalizeColumnPair(in_col, out_col, opt);
 
     if (opt.can_replace_inputs_with_constants && in_col->IsConstantRef()) {
       has_replaceable_constref_inputs = true;
@@ -137,18 +133,15 @@ bool Node<QueryTuple>::Canonicalize(
   // We can replace the view with `incoming_view` if `incoming_view` only has
   // one use (this TUPLE), if order of columns doesn't matter, and if all
   // columns are preserved.
-  if (incoming_view &&
-      incoming_view->NumUses() == 1 &&
+  if (incoming_view && incoming_view->NumUses() == 1 &&
       incoming_view->columns.Size() == columns.Size() &&
       !introduces_control_dep) {
-
     assert(incoming_view != this);
 
     // If this view is used in a MERGE then it's only safe to replace it with
     // `incoming_view` if the columns are in the same order.
     if (is_used_in_merge) {
       if (incoming_view->columns.Size() == columns.Size()) {
-
         auto i = 0u;
         auto all_in_order = true;
         for (auto in_col : input_columns) {
@@ -165,8 +158,8 @@ bool Node<QueryTuple>::Canonicalize(
         }
       }
 
-    // `this` is not used in a MERGE, so there are no ordering constraints
-    // on `incoming_view`.
+      // `this` is not used in a MERGE, so there are no ordering constraints
+      // on `incoming_view`.
     } else {
       CopyTestedConditionsTo(incoming_view);
       TransferSetConditionTo(incoming_view);
@@ -183,7 +176,6 @@ bool Node<QueryTuple>::Canonicalize(
   }
 
   if (has_unused_columns || has_replaceable_constref_inputs) {
-
     DefList<COL> new_columns(this);
     UseList<COL> new_input_columns(this);
 
@@ -211,9 +203,7 @@ bool Node<QueryTuple>::Canonicalize(
       out_col->ReplaceAllUsesWith(new_out_col);
       new_out_col->CopyConstant(out_col);
 
-      if (opt.can_replace_inputs_with_constants &&
-          in_col->IsConstantRef()) {
-
+      if (opt.can_replace_inputs_with_constants && in_col->IsConstantRef()) {
         new_input_columns.AddUse(in_col->AsConstant());
         in_col->view->is_canonical = false;
         non_local_changes = true;
@@ -251,19 +241,18 @@ bool Node<QueryTuple>::Canonicalize(
 }
 
 // Equality over tuples is structural.
-bool Node<QueryTuple>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
+bool Node<QueryTuple>::Equals(EqualitySet &eq,
+                              Node<QueryView> *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }
 
   const auto that = that_->AsTuple();
-  if (!that ||
-      positive_conditions != that->positive_conditions ||
+  if (!that || positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions ||
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
-      columns.Size() != that->columns.Size() ||
-      InsertSetsOverlap(this, that)) {
+      columns.Size() != that->columns.Size() || InsertSetsOverlap(this, that)) {
     return false;
   }
 

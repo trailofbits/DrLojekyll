@@ -30,10 +30,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
   DisplayPosition next_pos;
   Token name;
 
-  for (next_pos = tok.NextPosition();
-       ReadNextSubToken(tok);
+  for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
-
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
 
@@ -78,8 +76,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected binding specifier ('bound' or 'free') in parameter "
-              << "declaration of #query '" << name << "', " << "but got '"
-              << tok << "' instead";
+              << "declaration of #query '" << name << "', "
+              << "but got '" << tok << "' instead";
           return;
         }
 
@@ -92,8 +90,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected type name here for parameter in #query '"
-              << name << "', but got '" << tok << "' instead";
+              << "Expected type name here for parameter in #query '" << name
+              << "', but got '" << tok << "' instead";
           return;
         }
 
@@ -106,8 +104,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of #query '" << name << "', but got '"
-              << tok << "' instead";
+              << "parameter name of #query '" << name << "', but got '" << tok
+              << "' instead";
           return;
         }
 
@@ -133,8 +131,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          query.reset(AddDecl<ParsedQuery>(
-              module, DeclarationKind::kQuery, name, params.size()));
+          query.reset(AddDecl<ParsedQuery>(module, DeclarationKind::kQuery,
+                                           name, params.size()));
           if (!query) {
             return;
 
@@ -155,11 +153,11 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         }
 
       case 6: {
-        DisplayRange err_range(
-            tok.Position(), sub_tokens.back().NextPosition());
+        DisplayRange err_range(tok.Position(),
+                               sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '"
-            << name << "' #query";
+            << "Unexpected tokens following declaration of the '" << name
+            << "' #query";
         state = 7;  // Ignore further errors, but add the query in.
         continue;
       }
@@ -176,8 +174,8 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
 
     RemoveDecl<ParsedQuery>(std::move(query));
   } else {
-    FinalizeDeclAndCheckConsistency<ParsedQuery>(
-        module->queries, std::move(query));
+    FinalizeDeclAndCheckConsistency<ParsedQuery>(module->queries,
+                                                 std::move(query));
   }
 }
 

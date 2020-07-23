@@ -41,8 +41,8 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
 // replacements easier. If this constraint's operator is unordered, then we
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
-bool Node<QueryConstraint>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt) {
+bool Node<QueryConstraint>::Canonicalize(QueryImpl *query,
+                                         const OptimizationContext &opt) {
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
@@ -59,8 +59,8 @@ bool Node<QueryConstraint>::Canonicalize(
   const auto is_equality = ComparisonOperator::kEqual == op;
 
   auto non_local_changes = false;
-  std::tie(is_canonical, non_local_changes) = CanonicalizeAttachedColumns(
-      (is_equality ? 1u : 2u), opt);
+  std::tie(is_canonical, non_local_changes) =
+      CanonicalizeAttachedColumns((is_equality ? 1u : 2u), opt);
 
   // Check if the result is used (ignoring merges).
   //
@@ -80,7 +80,8 @@ bool Node<QueryConstraint>::Canonicalize(
       (is_equality && lhs_out_is_const != (lhs_is_const || rhs_is_const)) ||
       (!is_equality && (lhs_out_is_const != lhs_is_const ||
                         rhs_out_is_const != rhs_is_const)) ||
-      (opt.can_replace_inputs_with_constants && (lhs_is_const || rhs_is_const))) {
+      (opt.can_replace_inputs_with_constants &&
+       (lhs_is_const || rhs_is_const))) {
     hash = 0;
     is_canonical = false;
   }
@@ -92,17 +93,17 @@ bool Node<QueryConstraint>::Canonicalize(
   // If this view is used by a merge then we're not allowed to re-order/remove
   // the columns. Instead, what we can do is create a tuple that will maintain
   // the ordering, and the canonicalize the join order below that tuple.
-//  (void) GuardWithTuple(query);
+  //  (void) GuardWithTuple(query);
 
   in_to_out.clear();
-  auto [changed_lhs, can_remove_lhs] = CanonicalizeColumnPair(
-      lhs_col, lhs_out_col, opt);
+  auto [changed_lhs, can_remove_lhs] =
+      CanonicalizeColumnPair(lhs_col, lhs_out_col, opt);
 
-  auto [changed_rhs, can_remove_rhs] = CanonicalizeColumnPair(
-      rhs_col, rhs_out_col, opt);
+  auto [changed_rhs, can_remove_rhs] =
+      CanonicalizeColumnPair(rhs_col, rhs_out_col, opt);
 
-  (void) can_remove_lhs;  // Can't remove these.
-  (void) can_remove_rhs;
+  (void)can_remove_lhs;  // Can't remove these.
+  (void)can_remove_rhs;
 
   if (changed_lhs || changed_rhs) {
     non_local_changes = true;
@@ -142,18 +143,17 @@ bool Node<QueryConstraint>::Canonicalize(
       return true;
     }
 
-    const auto new_lhs_out = new_columns.Create(
-        lhs_out_col->var, this, lhs_out_col->id);
+    const auto new_lhs_out =
+        new_columns.Create(lhs_out_col->var, this, lhs_out_col->id);
 
     in_to_out.emplace(lhs_col, new_lhs_out);
     in_to_out.emplace(rhs_col, new_lhs_out);
     new_lhs_out->CopyConstant(lhs_out_col);
     lhs_out_col->ReplaceAllUsesWith(new_lhs_out);
 
-  // Preserve the column ordering for the output columns of other
-  // comparisons.
+    // Preserve the column ordering for the output columns of other
+    // comparisons.
   } else {
-
     // This is kind of bad but totally possible. We've proven that we can't
     // satisfy this particular constraint.
     if (lhs_col == rhs_col) {
@@ -179,11 +179,11 @@ bool Node<QueryConstraint>::Canonicalize(
     // We don't need to re-order anything, but to be uniform with the rest and
     // possible sorting of attached columns, we will create a new set of
     // output columns.
-    const auto new_lhs_out = new_columns.Create(
-        lhs_out_col->var, this, lhs_out_col->id);
+    const auto new_lhs_out =
+        new_columns.Create(lhs_out_col->var, this, lhs_out_col->id);
 
-    const auto new_rhs_out = new_columns.Create(
-        rhs_out_col->var, this, rhs_out_col->id);
+    const auto new_rhs_out =
+        new_columns.Create(rhs_out_col->var, this, rhs_out_col->id);
 
     new_lhs_out->CopyConstant(lhs_out_col);
     new_rhs_out->CopyConstant(rhs_out_col);
@@ -201,7 +201,7 @@ bool Node<QueryConstraint>::Canonicalize(
   // Little functor that gets us the normal input column, or the constant
   // propagated one.
   auto did_constprop = false;
-  auto constprop_col = [&] (COL *in_col) -> COL * {
+  auto constprop_col = [&](COL *in_col) -> COL * {
     if (auto as_const = in_col->AsConstant();
         as_const && opt.can_replace_inputs_with_constants) {
       if (!in_col->IsConstant()) {
@@ -222,7 +222,6 @@ bool Node<QueryConstraint>::Canonicalize(
   new_input_columns.AddUse(constprop_col(rhs_col));
 
   for (auto j = 0u; i < num_cols; ++i, ++j) {
-
     const auto out_col = columns[i];
     const auto out_col_is_used = out_col->IsUsed();
     const auto in_col = attached_columns[j];
@@ -260,8 +259,8 @@ bool Node<QueryConstraint>::Canonicalize(
       continue;
     }
 
-    const auto new_out_col = new_columns.Create(
-        out_col->var, this, out_col->id);
+    const auto new_out_col =
+        new_columns.Create(out_col->var, this, out_col->id);
 
     new_out_col->CopyConstant(out_col);
     out_col->ReplaceAllUsesWith(new_out_col);
@@ -279,8 +278,8 @@ bool Node<QueryConstraint>::Canonicalize(
 
   // We may have just broken a dependency.
   if (did_constprop) {
-    auto prev_incoming_view = GetIncomingView(
-        new_input_columns, new_attached_columns);
+    auto prev_incoming_view =
+        GetIncomingView(new_input_columns, new_attached_columns);
     auto curr_incoming_view = GetIncomingView(input_columns, attached_columns);
 
     if (prev_incoming_view != curr_incoming_view) {
@@ -293,16 +292,16 @@ bool Node<QueryConstraint>::Canonicalize(
       // for the condtion.
       if (new_attached_columns.Empty() ||
           prev_incoming_view == GetIncomingView(new_input_columns)) {
-        cond = CreateOrInheritConditionOnView(
-            query, prev_incoming_view, std::move(new_input_columns));
+        cond = CreateOrInheritConditionOnView(query, prev_incoming_view,
+                                              std::move(new_input_columns));
 
-      // Otherwise use the attached columns.
+        // Otherwise use the attached columns.
       } else if (new_input_columns.Empty() ||
                  prev_incoming_view == GetIncomingView(new_attached_columns)) {
-        cond = CreateOrInheritConditionOnView(
-            query, prev_incoming_view, std::move(new_attached_columns));
+        cond = CreateOrInheritConditionOnView(query, prev_incoming_view,
+                                              std::move(new_attached_columns));
 
-      // Oof, maybe both are needed :-(
+        // Oof, maybe both are needed :-(
       } else {
         UseList<COL> combined_cols(this);
         for (auto col : new_input_columns) {
@@ -311,8 +310,8 @@ bool Node<QueryConstraint>::Canonicalize(
           }
         }
         assert(!combined_cols.Empty());
-        cond = CreateOrInheritConditionOnView(
-            query, prev_incoming_view, std::move(combined_cols));
+        cond = CreateOrInheritConditionOnView(query, prev_incoming_view,
+                                              std::move(combined_cols));
       }
 
       positive_conditions.AddUse(cond);
@@ -337,16 +336,14 @@ bool Node<QueryConstraint>::Canonicalize(
 //
 // NOTE(pag): The two inputs to the comparison being tested aren't always
 //            ordered; however, equality testing here assumes ordering.
-bool Node<QueryConstraint>::Equals(
-    EqualitySet &eq, Node<QueryView> *that_) noexcept {
-
+bool Node<QueryConstraint>::Equals(EqualitySet &eq,
+                                   Node<QueryView> *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }
 
   const auto that = that_->AsConstraint();
-  if (!that ||
-      op != that->op ||
+  if (!that || op != that->op ||
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
       columns.Size() != that_->columns.Size() ||

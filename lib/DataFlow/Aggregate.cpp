@@ -67,8 +67,8 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt) {
+bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
+                                        const OptimizationContext &opt) {
   if (is_canonical) {
     return false;
   }
@@ -101,13 +101,13 @@ bool Node<QueryAggregate>::Canonicalize(
   for (auto in_col : group_by_columns) {
     auto &prev_out_col = in_to_out[in_col];
     const auto out_col = columns[i];
-    const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
-                                 in_col->IsConstant();
+    const auto in_col_is_const =
+        opt.can_replace_outputs_with_constants && in_col->IsConstant();
     ++i;
 
-    const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt);
-    (void) can_remove;
+    const auto [changed, can_remove] =
+        CanonicalizeColumnPair(in_col, out_col, opt);
+    (void)can_remove;
 
     if (changed) {
       non_local_changes = true;
@@ -119,7 +119,7 @@ bool Node<QueryAggregate>::Canonicalize(
     // affect control dependencies, so we can remove it too.
     if (in_col_is_const || prev_out_col) {
       if (is_used_in_merge && !guard_tuple) {
-        guard_tuple = GuardWithTuple(query, true  /* force */);
+        guard_tuple = GuardWithTuple(query, true /* force */);
         non_local_changes = true;
       }
 
@@ -152,8 +152,8 @@ bool Node<QueryAggregate>::Canonicalize(
     const auto in_col = group_by_columns[j];
     if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
       new_group_by_columns.AddUse(in_col);
-      const auto new_out_col = new_columns.Create(
-          old_out_col->var, this, old_out_col->id);
+      const auto new_out_col =
+          new_columns.Create(old_out_col->var, this, old_out_col->id);
       old_out_col->ReplaceAllUsesWith(new_out_col);
       new_out_col->CopyConstant(old_out_col);
     }
@@ -163,8 +163,8 @@ bool Node<QueryAggregate>::Canonicalize(
   const auto num_cols = columns.Size();
   for (auto j = i; j < num_cols; ++j) {
     const auto old_out_col = columns[j];
-    const auto new_out_col = new_columns.Create(
-        old_out_col->var, this, old_out_col->id);
+    const auto new_out_col =
+        new_columns.Create(old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
     new_out_col->CopyConstant(old_out_col);
   }
@@ -182,16 +182,14 @@ bool Node<QueryAggregate>::Canonicalize(
 }
 
 // Equality over aggregates is structural.
-bool Node<QueryAggregate>::Equals(
-    EqualitySet &eq, Node<QueryView> *that_) noexcept {
-
+bool Node<QueryAggregate>::Equals(EqualitySet &eq,
+                                  Node<QueryView> *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }
 
   const auto that = that_->AsAggregate();
-  if (!that ||
-      functor != that->functor ||
+  if (!that || functor != that->functor ||
       columns.Size() != that->columns.Size() ||
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||

@@ -65,8 +65,7 @@ class NodeIterator {
   friend class NodeRange<T>;
 
   inline explicit NodeIterator(Node<T> *impl_, intptr_t offset_)
-      : impl(impl_),
-        offset(offset_) {}
+      : impl(impl_), offset(offset_) {}
 
   NodeIterator(void) = default;
 
@@ -80,15 +79,14 @@ class NodeRange {
   NodeRange(void) = default;
 
   inline explicit NodeRange(Node<T> *impl_, intptr_t offset_)
-      : impl(impl_),
-        offset(offset_) {}
+      : impl(impl_), offset(offset_) {}
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
   template <typename U>
   inline explicit NodeRange(Node<U> *impl_)
-      : impl(impl_),
-        offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
+      : impl(impl_)
+      , offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
 #pragma GCC diagnostic pop
 
   inline NodeIterator<T> begin(void) const {

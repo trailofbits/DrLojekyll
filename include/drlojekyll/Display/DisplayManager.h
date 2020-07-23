@@ -3,9 +3,9 @@
 #pragma once
 
 #include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <string_view>
-#include <iosfwd>
 
 #include <drlojekyll/Display/Display.h>
 

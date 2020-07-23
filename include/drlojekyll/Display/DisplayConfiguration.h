@@ -10,7 +10,6 @@ namespace hyde {
 // and warning/error reporting.
 class DisplayConfiguration {
  public:
-
   // Name of the display. This could be a file path.
   std::string name;
 
