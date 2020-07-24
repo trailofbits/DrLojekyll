@@ -107,7 +107,7 @@ QueryView::QueryView(const QueryAggregate &view)
 QueryView::QueryView(const QueryMerge &view)
     : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryConstraint &view)
+QueryView::QueryView(const QueryCompare &view)
     : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view)
@@ -141,7 +141,7 @@ QueryView QueryView::From(QueryMerge &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryConstraint &view) noexcept {
+QueryView QueryView::From(QueryCompare &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
 }
 
@@ -205,7 +205,7 @@ bool QueryView::IsMerge(void) const noexcept {
 }
 
 bool QueryView::IsConstraint(void) const noexcept {
-  return impl->AsConstraint() != nullptr;
+  return impl->AsCompare() != nullptr;
 }
 
 bool QueryView::IsInsert(void) const noexcept {
@@ -249,6 +249,75 @@ UsedNodeRange<QueryCondition> QueryView::NegativeConditions(void) const noexcept
   return {impl->negative_conditions.begin(), impl->negative_conditions.end()};
 }
 
+// Apply a callback `with_user` to each view that uses the columns of this
+// view.
+void QueryView::ForEachUser(std::function<void(QueryView)> with_user) const {
+  std::vector<QueryView> target_views;
+  for (QueryColumn col : Columns()) {
+    col.ForEachUser([&target_views] (QueryView user_view) {
+      target_views.push_back(user_view);
+    });
+  }
+
+  // Sort the views by depth. We want a consistent topological ordering of the
+  // nodes, so that we always send new information to the shallowest node
+  // first.
+  std::sort(
+      target_views.begin(), target_views.end(),
+      [] (QueryView a, QueryView b) { return a.UniqueId() < b.UniqueId(); });
+
+  auto it = std::unique(
+      target_views.begin(), target_views.end(),
+      [] (QueryView a, QueryView b) { return a.UniqueId() == b.UniqueId(); });
+
+  target_views.erase(it, target_views.end());
+
+  std::sort(
+      target_views.begin(), target_views.end(),
+      [] (QueryView a, QueryView b) { return a.Depth() < b.Depth(); });
+
+  for (auto target_view : target_views) {
+    with_user(target_view);
+  }
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryView::ForEachUse(std::function<void(QueryColumn,
+                                              InputColumnRole,
+                                              std::optional<QueryColumn>)>
+                           with_col) const {
+  if (auto sel = impl->AsSelect(); sel) {
+    QuerySelect(sel).ForEachUse(std::move(with_col));
+
+  } else if (auto join = impl->AsJoin(); join) {
+    QueryJoin(join).ForEachUse(std::move(with_col));
+
+  } else if (auto map = impl->AsMap(); map) {
+    QueryMap(map).ForEachUse(std::move(with_col));
+
+  } else if (auto agg = impl->AsAggregate(); agg) {
+    QueryAggregate(agg).ForEachUse(std::move(with_col));
+
+  } else if (auto merge = impl->AsMerge(); merge) {
+    QueryMerge(merge).ForEachUse(std::move(with_col));
+
+  } else if (auto cmp = impl->AsCompare(); cmp) {
+    QueryCompare(cmp).ForEachUse(std::move(with_col));
+
+  } else if (auto insert = impl->AsInsert(); insert) {
+    QueryInsert(insert).ForEachUse(std::move(with_col));
+
+  } else if (auto tuple = impl->AsTuple(); tuple) {
+    QueryTuple(tuple).ForEachUse(std::move(with_col));
+
+  } else if (auto kv = impl->AsKVIndex(); kv) {
+    QueryKVIndex(kv).ForEachUse(std::move(with_col));
+
+  } else {
+    assert(false);
+  }
+}
+
 DefinedNodeRange<QueryColumn> QuerySelect::Columns(void) const {
   return QueryView(impl).Columns();
 }
@@ -274,7 +343,7 @@ bool QueryColumn::IsMerge(void) const noexcept {
 }
 
 bool QueryColumn::IsConstraint(void) const noexcept {
-  return impl->view->AsConstraint() != nullptr;
+  return impl->view->AsCompare() != nullptr;
 }
 
 bool QueryColumn::IsConstant(void) const noexcept {
@@ -457,6 +526,39 @@ OutputStream &QuerySelect::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
+// Apply a callback `with_col` to each input column of this view.
+//
+// NOTE(pag): This will only call `with_col` if there is a corresponding
+//            `INSERT` on the underlying relation.
+void QuerySelect::ForEachUse(std::function<void(QueryColumn,
+                                                InputColumnRole,
+                                                std::optional<QueryColumn>)>
+                             with_col) const {
+  const auto max_i = impl->columns.Size();
+  for (auto view : impl->inserts) {
+    for (auto i = 0u; i < max_i; ++i) {
+      const auto out_col = impl->columns[i];
+      const auto in_col = view->columns[i];
+      with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+               QueryColumn(out_col));
+    }
+  }
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryJoin::ForEachUse(std::function<void(QueryColumn,
+                                              InputColumnRole,
+                                              std::optional<QueryColumn>)>
+                           with_col) const {
+  for (const auto &[out_col, in_cols] : impl->out_to_in) {
+    const auto role = in_cols.Size() == 1u ? InputColumnRole::kJoinNonPivot :
+                                             InputColumnRole::kJoinPivot;
+    for (const auto in_col : in_cols) {
+      with_col(QueryColumn(in_col), role, QueryColumn(out_col));
+    }
+  }
+}
+
 QueryJoin QueryJoin::From(QueryView view) {
   assert(view.IsJoin());
   return reinterpret_cast<QueryJoin &>(view);
@@ -610,6 +712,31 @@ OutputStream &QueryMap::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
+// Apply a callback `with_col` to each input column of this view.
+void QueryMap::ForEachUse(std::function<void(QueryColumn,
+                                             InputColumnRole,
+                                             std::optional<QueryColumn>)>
+                          with_col) const {
+  auto i = 0u;
+  auto max_i = impl->functor.Arity();
+  for (auto j = 0u; i < max_i; ++i) {
+    if (impl->functor.NthParameter(i).Binding() == ParameterBinding::kFree) {
+      continue;  // It's an output column.
+    }
+
+    const auto out_col = impl->columns[i];
+    const auto in_col = impl->input_columns[j++];
+    with_col(QueryColumn(in_col), InputColumnRole::kFunctorInput,
+             QueryColumn(out_col));
+  }
+  for (auto j = 0u; i < max_i; ++i, ++j) {
+    const auto out_col = impl->columns[i];
+    const auto in_col = impl->attached_columns[j];
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
+             QueryColumn(out_col));
+  }
+}
+
 QueryAggregate QueryAggregate::From(QueryView view) {
   assert(view.IsAggregate());
   return reinterpret_cast<QueryAggregate &>(view);
@@ -745,6 +872,30 @@ OutputStream &QueryAggregate::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
+// Apply a callback `with_col` to each input column of this view.
+void QueryAggregate::ForEachUse(std::function<void(QueryColumn,
+                                                   InputColumnRole,
+                                                   std::optional<QueryColumn>)>
+                                with_col) const {
+  auto i = 0u;
+  for (auto in_col : impl->group_by_columns) {
+    const auto out_col = impl->columns[i++];
+    with_col(QueryColumn(in_col), InputColumnRole::kAggregateGroup,
+             QueryColumn(out_col));
+  }
+
+  for (auto in_col : impl->config_columns) {
+    const auto out_col = impl->columns[i++];
+    with_col(QueryColumn(in_col), InputColumnRole::kAggregateConfig,
+             QueryColumn(out_col));
+  }
+
+  for (auto in_col : impl->aggregated_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kAggregatedColumn,
+             std::nullopt);
+  }
+}
+
 QueryMerge QueryMerge::From(QueryView view) {
   assert(view.IsMerge());
   return reinterpret_cast<QueryMerge &>(view);
@@ -788,20 +939,35 @@ OutputStream &QueryMerge::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
-ComparisonOperator QueryConstraint::Operator(void) const {
+// Apply a callback `with_col` to each input column of this view.
+void QueryMerge::ForEachUse(std::function<void(QueryColumn,
+                                               InputColumnRole,
+                                               std::optional<QueryColumn>)>
+                with_col) const {
+  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
+    const auto out_col = impl->columns[i];
+    for (auto view : impl->merged_views) {
+      const auto in_col = view->columns[i];
+      with_col(QueryColumn(in_col), InputColumnRole::kMergedColumn,
+               QueryColumn(out_col));
+    }
+  }
+}
+
+ComparisonOperator QueryCompare::Operator(void) const {
   return impl->op;
 }
 
-QueryConstraint QueryConstraint::From(QueryView view) {
+QueryCompare QueryCompare::From(QueryView view) {
   assert(view.IsConstraint());
-  return reinterpret_cast<QueryConstraint &>(view);
+  return reinterpret_cast<QueryCompare &>(view);
 }
 
-QueryColumn QueryConstraint::LHS(void) const {
+QueryColumn QueryCompare::LHS(void) const {
   return QueryColumn(impl->columns[0]);
 }
 
-QueryColumn QueryConstraint::RHS(void) const {
+QueryColumn QueryCompare::RHS(void) const {
   if (ComparisonOperator::kEqual == impl->op) {
     return QueryColumn(impl->columns[0]);
   } else {
@@ -809,25 +975,25 @@ QueryColumn QueryConstraint::RHS(void) const {
   }
 }
 
-QueryColumn QueryConstraint::InputLHS(void) const {
+QueryColumn QueryCompare::InputLHS(void) const {
   return QueryColumn(impl->input_columns[0]);
 }
 
-QueryColumn QueryConstraint::InputRHS(void) const {
+QueryColumn QueryCompare::InputRHS(void) const {
   return QueryColumn(impl->input_columns[1]);
 }
 
-unsigned QueryConstraint::NumCopiedColumns(void) const noexcept {
+unsigned QueryCompare::NumCopiedColumns(void) const noexcept {
   return impl->attached_columns.Size();
 }
 
-QueryColumn QueryConstraint::NthCopiedColumn(unsigned n) const noexcept {
+QueryColumn QueryCompare::NthCopiedColumn(unsigned n) const noexcept {
   auto offset = ComparisonOperator::kEqual == impl->op ? (n + 1) : (n + 2);
   assert(offset < impl->columns.Size());
   return QueryColumn(impl->columns[offset]);
 }
 
-DefinedNodeRange<QueryColumn> QueryConstraint::CopiedColumns(void) const {
+DefinedNodeRange<QueryColumn> QueryCompare::CopiedColumns(void) const {
   auto begin = impl->columns.begin();
   const auto end = impl->columns.end();
   ++begin;
@@ -839,13 +1005,40 @@ DefinedNodeRange<QueryColumn> QueryConstraint::CopiedColumns(void) const {
   }
 }
 
-UsedNodeRange<QueryColumn> QueryConstraint::InputCopiedColumns(void) const {
+UsedNodeRange<QueryColumn> QueryCompare::InputCopiedColumns(void) const {
   return {impl->attached_columns.begin(), impl->attached_columns.end()};
 }
 
-OutputStream &QueryConstraint::DebugString(OutputStream &os) const noexcept {
+OutputStream &QueryCompare::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryCompare::ForEachUse(std::function<void(QueryColumn,
+                                                 InputColumnRole,
+                                                 std::optional<QueryColumn>)>
+                              with_col) const {
+  auto i = 0u;
+  if (ComparisonOperator::kEqual == impl->op) {
+    with_col(QueryColumn(impl->input_columns[0]), InputColumnRole::kCompareLHS,
+             QueryColumn(impl->columns[0]));
+    with_col(QueryColumn(impl->input_columns[1]), InputColumnRole::kCompareRHS,
+             QueryColumn(impl->columns[0]));
+    i = 1u;
+  } else {
+    with_col(QueryColumn(impl->input_columns[0]), InputColumnRole::kCompareLHS,
+             QueryColumn(impl->columns[0]));
+    with_col(QueryColumn(impl->input_columns[1]), InputColumnRole::kCompareRHS,
+             QueryColumn(impl->columns[1]));
+    i = 2u;
+  }
+
+  for (auto j = 0u, max_i = impl->columns.Size(); i < max_i; ++i, ++j) {
+    with_col(QueryColumn(impl->attached_columns[j]), InputColumnRole::kCopied,
+             QueryColumn(impl->columns[i]));
+  }
+}
+
 
 QueryInsert QueryInsert::From(QueryView view) {
   assert(view.IsInsert());
@@ -898,6 +1091,16 @@ OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
+// Apply a callback `with_col` to each input column of this view.
+void QueryInsert::ForEachUse(std::function<void(QueryColumn,
+                                                InputColumnRole,
+                                                std::optional<QueryColumn>)>
+                             with_col) const {
+  for (auto in_col : impl->input_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough, std::nullopt);
+  }
+}
+
 QueryTuple QueryTuple::From(QueryView view) {
   assert(view.IsTuple());
   return reinterpret_cast<QueryTuple &>(view);
@@ -934,6 +1137,19 @@ UsedNodeRange<QueryColumn> QueryTuple::InputColumns(void) const noexcept {
 
 OutputStream &QueryTuple::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryTuple::ForEachUse(std::function<void(QueryColumn,
+                                               InputColumnRole,
+                                               std::optional<QueryColumn>)>
+                            with_col) const {
+  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
+    const auto out_col = impl->columns[i];
+    const auto in_col = impl->input_columns[i];
+    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+             QueryColumn(out_col));
+  }
 }
 
 QueryKVIndex QueryKVIndex::From(QueryView view) {
@@ -1009,6 +1225,23 @@ OutputStream &QueryKVIndex::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
+// Apply a callback `with_col` to each input column of this view.
+void QueryKVIndex::ForEachUse(std::function<void(QueryColumn,
+                                                 InputColumnRole,
+                                                 std::optional<QueryColumn>)>
+                              with_col) const {
+  auto i = 0u;
+  for (auto in_col : impl->input_columns) {
+    const auto out_col = impl->columns[i++];
+    with_col(QueryColumn(in_col), InputColumnRole::kIndexKey,
+             QueryColumn(out_col));
+  }
+
+  for (auto in_col : impl->attached_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kIndexValue, std::nullopt);
+  }
+}
+
 DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
   return {DefinedNodeIterator<QueryCondition>(impl->conditions.begin()),
           DefinedNodeIterator<QueryCondition>(impl->conditions.end())};
@@ -1069,9 +1302,9 @@ DefinedNodeRange<QueryMerge> Query::Merges(void) const {
           DefinedNodeIterator<QueryMerge>(impl->merges.end())};
 }
 
-DefinedNodeRange<QueryConstraint> Query::Constraints(void) const {
-  return {DefinedNodeIterator<QueryConstraint>(impl->constraints.begin()),
-          DefinedNodeIterator<QueryConstraint>(impl->constraints.end())};
+DefinedNodeRange<QueryCompare> Query::Constraints(void) const {
+  return {DefinedNodeIterator<QueryCompare>(impl->constraints.begin()),
+          DefinedNodeIterator<QueryCompare>(impl->constraints.end())};
 }
 
 Query::~Query(void) {}

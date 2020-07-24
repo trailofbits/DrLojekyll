@@ -57,11 +57,9 @@ class ParsedModule;
 class ParsedPredicate;
 class ParsedVariable;
 class TypeLoc;
-class QueryBuilder;
-class QueryBuilderImpl;
 class QueryColumn;
 class QueryConstant;
-class QueryConstraint;
+class QueryCompare;
 class QueryImpl;
 class QueryInsert;
 class QueryIO;
@@ -111,7 +109,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   using query::QueryNode<QueryColumn>::QueryNode;
 
   friend class QueryConstant;
-  friend class QueryConstraint;
+  friend class QueryCompare;
   friend class QueryInsert;
   friend class QueryJoin;
   friend class QueryMap;
@@ -233,6 +231,24 @@ class QueryTuple;
 class QueryKVIndex;
 class QueryInsert;
 
+// NOTE(pag): There is no `kSelected` because `SELECT` / `RECV` nodes have no
+//            input columns.
+enum class InputColumnRole {
+  kPassThrough,
+  kCopied,
+  kJoinPivot,
+  kJoinNonPivot,
+  kCompareLHS,
+  kCompareRHS,
+  kIndexKey,
+  kIndexValue,
+  kFunctorInput,
+  kAggregateConfig,
+  kAggregateGroup,
+  kAggregatedColumn,
+  kMergedColumn
+};
+
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
 class QueryView : public query::QueryNode<QueryView> {
@@ -248,7 +264,7 @@ class QueryView : public query::QueryNode<QueryView> {
   explicit QueryView(const QueryMap &view);
   explicit QueryView(const QueryAggregate &view);
   explicit QueryView(const QueryMerge &view);
-  explicit QueryView(const QueryConstraint &view);
+  explicit QueryView(const QueryCompare &view);
   explicit QueryView(const QueryInsert &view);
 
   inline static QueryView From(QueryView view) noexcept {
@@ -262,7 +278,7 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView From(QueryMap &view) noexcept;
   static QueryView From(QueryAggregate &view) noexcept;
   static QueryView From(QueryMerge &view) noexcept;
-  static QueryView From(QueryConstraint &view) noexcept;
+  static QueryView From(QueryCompare &view) noexcept;
   static QueryView From(QueryInsert &view) noexcept;
 
   const char *KindName(void) const noexcept;
@@ -299,39 +315,18 @@ class QueryView : public query::QueryNode<QueryView> {
   UsedNodeRange<QueryCondition> PositiveConditions(void) const noexcept;
   UsedNodeRange<QueryCondition> NegativeConditions(void) const noexcept;
 
-  // Apply a callback `cb` to each view that uses the columns of this view.
-  template <typename CB>
-  void ForEachUser(CB cb) {
-    std::vector<QueryView> target_views;
-    for (QueryColumn col : Columns()) {
-      col.ForEachUser([&target_views] (QueryView user_view) {
-        target_views.push_back(user_view);
-      });
-    }
+  // Apply a callback `with_user` to each view that uses the columns of this
+  // view.
+  void ForEachUser(std::function<void(QueryView)> with_user) const;
 
-    // Sort the views by depth. We want a consistent topological ordering of the
-    // nodes, so that we always send new information to the shallowest node
-    // first.
-    std::sort(
-        target_views.begin(), target_views.end(),
-        [] (QueryView a, QueryView b) { return a.UniqueId() < b.UniqueId(); });
-
-    auto it = std::unique(
-        target_views.begin(), target_views.end(),
-        [] (QueryView a, QueryView b) { return a.UniqueId() == b.UniqueId(); });
-
-    target_views.erase(it, target_views.end());
-
-    std::sort(
-        target_views.begin(), target_views.end(),
-        [] (QueryView a, QueryView b) { return a.Depth() < b.Depth(); });
-
-    for (auto target_view : target_views) {
-      cb(target_view);
-    }
-  }
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
 
  private:
+
   using query::QueryNode<QueryView>::QueryNode;
 };
 
@@ -351,6 +346,15 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
   QueryStream Stream(void) const noexcept;
 
   OutputStream &DebugString(OutputStream &) const noexcept;
+
+  // Apply a callback `with_col` to each input column of this view.
+  //
+  // NOTE(pag): This will only call `with_col` if there is a corresponding
+  //            `INSERT` on the underlying relation.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
 
  private:
   friend class QueryRelation;
@@ -404,6 +408,12 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
+
  private:
   using query::QueryNode<QueryJoin>::QueryNode;
 
@@ -454,6 +464,12 @@ class QueryMap : public query::QueryNode<QueryMap> {
   UsedNodeRange<QueryColumn> InputCopiedColumns(void) const;
 
   OutputStream &DebugString(OutputStream &) const noexcept;
+
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
 
  private:
   using query::QueryNode<QueryMap>::QueryNode;
@@ -516,6 +532,12 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
+
  private:
   using query::QueryNode<QueryAggregate>::QueryNode;
 
@@ -548,6 +570,12 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
+
  private:
   using query::QueryNode<QueryMerge>::QueryNode;
 
@@ -557,9 +585,9 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 // A constraint between two columns. The constraint results in either one
 // (in the case of equality) or two (inequality) output columns. The constraint
 // also passes through the other columns from the view.
-class QueryConstraint : public query::QueryNode<QueryConstraint> {
+class QueryCompare : public query::QueryNode<QueryCompare> {
  public:
-  static QueryConstraint From(QueryView view);
+  static QueryCompare From(QueryView view);
 
   ComparisonOperator Operator(void) const;
   QueryColumn LHS(void) const;
@@ -576,8 +604,14 @@ class QueryConstraint : public query::QueryNode<QueryConstraint> {
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
+
  private:
-  using query::QueryNode<QueryConstraint>::QueryNode;
+  using query::QueryNode<QueryCompare>::QueryNode;
 
   friend class QueryView;
 };
@@ -602,6 +636,12 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
+
  private:
   using query::QueryNode<QueryInsert>::QueryNode;
 
@@ -625,6 +665,12 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
   OutputStream &DebugString(OutputStream &) const noexcept;
+
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
 
  private:
   using query::QueryNode<QueryTuple>::QueryNode;
@@ -662,6 +708,12 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn,
+                                     InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                  with_col) const;
+
  private:
   using query::QueryNode<QueryKVIndex>::QueryNode;
 
@@ -672,7 +724,8 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 class Query {
  public:
   // Build and return a new query.
-  static std::optional<Query> Build(const ParsedModule &module, const ErrorLog &log);
+  static std::optional<Query> Build(
+      const ParsedModule &module, const ErrorLog &log);
 
   ~Query(void);
 
@@ -686,7 +739,7 @@ class Query {
   DefinedNodeRange<QueryMap> Maps(void) const;
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
   DefinedNodeRange<QueryMerge> Merges(void) const;
-  DefinedNodeRange<QueryConstraint> Constraints(void) const;
+  DefinedNodeRange<QueryCompare> Constraints(void) const;
   DefinedNodeRange<QueryIO> IOs(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
 
@@ -735,9 +788,6 @@ class Query {
   Query &operator=(Query &&) noexcept = default;
 
  private:
-  friend class QueryBuilder;
-  friend class QueryBuilderImpl;
-
   inline explicit Query(std::shared_ptr<QueryImpl> impl_)
       : impl(impl_) {}
 

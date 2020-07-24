@@ -404,7 +404,7 @@ bool QueryImpl::ShrinkConditions(void) {
       cond->positive_users.Clear();
       cond->negative_users.Clear();
 
-    } else if (CMP *cmp = setter->AsConstraint(); cmp) {
+    } else if (CMP *cmp = setter->AsCompare(); cmp) {
       (void) cmp;
     }
   }

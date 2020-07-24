@@ -396,7 +396,7 @@ static std::vector<QueryColumn> InputColumnSpec(QueryView source_view,
 
   // Filter / constraints.
   } else if (target_view.IsConstraint()) {
-    auto target_filter = QueryConstraint::From(target_view);
+    auto target_filter = QueryCompare::From(target_view);
     input_cols.push_back(target_filter.InputLHS());
     input_cols.push_back(target_filter.InputRHS());
     FillContainerFromRange(input_cols, target_filter.InputCopiedColumns());
@@ -1902,7 +1902,7 @@ static void DefineMap(OutputStream &os, QueryMap map,
      << "}\n\n";
 }
 
-static void DefineConstraint(OutputStream &os, QueryConstraint filter,
+static void DefineConstraint(OutputStream &os, QueryCompare filter,
                              ViewCaseMap &case_map) {
   const auto view = QueryView::From(filter);
 

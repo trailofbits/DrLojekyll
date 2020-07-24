@@ -94,7 +94,7 @@ void QueryImpl::FinalizeColumnIDs(void) const {
 
       // Comparisons pass-through all column IDs, except in the case of an
       // equality comparison.
-      } else if (auto cmp = v->AsConstraint(); cmp) {
+      } else if (auto cmp = v->AsCompare(); cmp) {
         auto i = 0u;
         if (ComparisonOperator::kEqual == cmp->op) {
           if (!cmp->columns[0]->id) {

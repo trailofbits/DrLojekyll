@@ -325,7 +325,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   virtual Node<QueryMap> *AsMap(void) noexcept;
   virtual Node<QueryAggregate> *AsAggregate(void) noexcept;
   virtual Node<QueryMerge> *AsMerge(void) noexcept;
-  virtual Node<QueryConstraint> *AsConstraint(void) noexcept;
+  virtual Node<QueryCompare> *AsCompare(void) noexcept;
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
   // Useful for communicating low-level debug info back to the formatter.
@@ -771,7 +771,7 @@ class Node<QueryMerge> : public Node<QueryView> {
 using MERGE = Node<QueryMerge>;
 
 template <>
-class Node<QueryConstraint> : public Node<QueryView> {
+class Node<QueryCompare> : public Node<QueryView> {
  public:
   Node(ComparisonOperator op_)
       : op(op_) {}
@@ -779,7 +779,7 @@ class Node<QueryConstraint> : public Node<QueryView> {
   virtual ~Node(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryConstraint> *AsConstraint(void) noexcept override;
+  Node<QueryCompare> *AsCompare(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
@@ -795,7 +795,7 @@ class Node<QueryConstraint> : public Node<QueryView> {
   DisplayRange spelling_range;
 };
 
-using CMP = Node<QueryConstraint>;
+using CMP = Node<QueryCompare>;
 
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.

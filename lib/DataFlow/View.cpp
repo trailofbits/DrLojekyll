@@ -75,7 +75,7 @@ const char *Node<QueryMerge>::KindName(void) const noexcept {
   }
 }
 
-const char *Node<QueryConstraint>::KindName(void) const noexcept {
+const char *Node<QueryCompare>::KindName(void) const noexcept {
   return "COMPARE";
 }
 
@@ -130,7 +130,7 @@ Node<QueryMerge> *Node<QueryView>::AsMerge(void) noexcept {
   return nullptr;
 }
 
-Node<QueryConstraint> *Node<QueryView>::AsConstraint(void) noexcept {
+Node<QueryCompare> *Node<QueryView>::AsCompare(void) noexcept {
   return nullptr;
 }
 
@@ -670,7 +670,7 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
 bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
   return !positive_conditions.Empty() ||
          !negative_conditions.Empty() ||
-         nullptr != const_cast<VIEW *>(this)->AsConstraint();
+         nullptr != const_cast<VIEW *>(this)->AsCompare();
 }
 
 // Returns `true` if all output columns are used.
