@@ -189,7 +189,7 @@ previous example would likely better be expressed as:
 
 ## Indentation, spacing, and braces.
 
-Dr. Lojekyll uses spaces for indentation, and the tab size should be set to two spaces. If your editor / IDE
+Dr. Lojekyll uses 2-space indendation. Tabs should not be used. If your editor / IDE
 supports automatic replacement of tabs with spaces then configure that feature accordingly.
 
 ### C++ constructor initializer lists
