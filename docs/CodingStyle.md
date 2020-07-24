@@ -1,5 +1,6 @@
 # C++ coding style of Dr. Lojekyll
 
+- [Overview](#overview)
 - [Naming scheme](#naming-scheme)
 - [Comments and comment placement](#comments-and-comment-placement)
   * [To-dos and Notes](#to-dos-and-notes)
