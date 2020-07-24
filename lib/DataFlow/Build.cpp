@@ -1604,7 +1604,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       stream = query->ios.Create(decl);
     }
     insert = query->inserts.Create(stream, decl, !clause.IsDeletion());
-    stream->sends.AddUse(insert);
+    stream->transmits.AddUse(insert);
 
   } else {
     auto &rel = query->decl_to_relation[decl];

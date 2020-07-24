@@ -220,7 +220,7 @@ class Node<QueryIO> final : public Node<QueryStream>, public User{
   inline Node(ParsedDeclaration declaration_)
       : User(this),
         declaration(declaration_),
-        sends(this),
+        transmits(this),
         receives(this) {}
 
   Node<QueryIO> *AsIO(void) noexcept override;
@@ -229,7 +229,7 @@ class Node<QueryIO> final : public Node<QueryStream>, public User{
   const ParsedDeclaration declaration;
 
   // List of nodes that send data to this I/O operation.
-  UseList<Node<QueryView>> sends;
+  UseList<Node<QueryView>> transmits;
 
   // List of nodes that receive data from this I/O operation.
   UseList<Node<QueryView>> receives;

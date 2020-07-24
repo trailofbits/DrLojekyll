@@ -36,9 +36,9 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
   for (auto io : ios) {
     auto error = false;
     if (!io->receives.Empty()) {
-      error = !io->sends.Empty();
+      error = !io->transmits.Empty();
 
-    } else if (!io->sends.Empty()) {
+    } else if (!io->transmits.Empty()) {
       error = !io->receives.Empty();
     }
 
@@ -168,7 +168,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
             io_it != decl_to_input.end()) {
 
           single_insert = inserts.Create(io_it->second, decl);
-          io_it->second->sends.AddUse(single_insert);
+          io_it->second->transmits.AddUse(single_insert);
 
         } else if (auto rel_it = decl_to_relation.find(decl);
                    rel_it != decl_to_relation.end()) {

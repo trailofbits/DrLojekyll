@@ -139,7 +139,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << color << ";\n";
     }
 
-    for (auto insert : io.Sends()) {
+    for (auto insert : io.Transmits()) {
       auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
       os << "t" << io.UniqueId() << " -> v" << insert.UniqueId()
          << color << ";\n";

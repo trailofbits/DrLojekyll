@@ -17,7 +17,7 @@ QueryImpl::~QueryImpl(void) {
   }
 
   for (auto io : ios) {
-    io->sends.ClearWithoutErasure();
+    io->transmits.ClearWithoutErasure();
     io->receives.ClearWithoutErasure();
   }
 
@@ -391,6 +391,13 @@ const ParsedVariable &QueryColumn::Variable(void) const noexcept {
   return impl->var;
 }
 
+// Identifies the logical "value" behind this column. If two columns share
+// the same `Id()` value then at runtime the same value will inhabit the two
+// columns.
+unsigned QueryColumn::Id(void) const noexcept {
+  return impl->id;
+}
+
 const TypeLoc &QueryColumn::Type(void) const noexcept {
   return impl->type;
 }
@@ -470,8 +477,8 @@ const ParsedDeclaration &QueryIO::Declaration(void) const noexcept {
 }
 
 // The list of sends to this I/O.
-UsedNodeRange<QueryView> QueryIO::Sends(void) const {
-  return {impl->sends.begin(), impl->sends.end()};
+UsedNodeRange<QueryView> QueryIO::Transmits(void) const {
+  return {impl->transmits.begin(), impl->transmits.end()};
 }
 
 // The list of receives of this I/O.

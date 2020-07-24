@@ -254,7 +254,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
   });
 
   all_ret |= ios.RemoveIf([] (IO *io) {
-    return io->receives.Empty() && io->sends.Empty();
+    return io->receives.Empty() && io->transmits.Empty();
   });
 
   return 0 != all_ret;

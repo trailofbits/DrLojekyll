@@ -105,6 +105,11 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   // Apply a function to each user.
   void ForEachUser(std::function<void(QueryView)> user_cb) const;
 
+  // Identifies the logical "value" behind this column. If two columns share
+  // the same `Id()` value then at runtime the same value will inhabit the two
+  // columns.
+  unsigned Id(void) const noexcept;
+
  private:
   using query::QueryNode<QueryColumn>::QueryNode;
 
@@ -212,7 +217,7 @@ class QueryIO : public query::QueryNode<QueryIO> {
   static QueryIO From(QueryStream &stream);
 
   // The list of sends to this I/O.
-  UsedNodeRange<QueryView> Sends(void) const;
+  UsedNodeRange<QueryView> Transmits(void) const;
 
   // The list of receives of this I/O.
   UsedNodeRange<QueryView> Receives(void) const;
@@ -257,15 +262,15 @@ class QueryView : public query::QueryNode<QueryView> {
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
-  explicit QueryView(const QuerySelect &view);
-  explicit QueryView(const QueryTuple &view);
-  explicit QueryView(const QueryKVIndex &view);
-  explicit QueryView(const QueryJoin &view);
-  explicit QueryView(const QueryMap &view);
-  explicit QueryView(const QueryAggregate &view);
-  explicit QueryView(const QueryMerge &view);
-  explicit QueryView(const QueryCompare &view);
-  explicit QueryView(const QueryInsert &view);
+  QueryView(const QuerySelect &view);
+  QueryView(const QueryTuple &view);
+  QueryView(const QueryKVIndex &view);
+  QueryView(const QueryJoin &view);
+  QueryView(const QueryMap &view);
+  QueryView(const QueryAggregate &view);
+  QueryView(const QueryMerge &view);
+  QueryView(const QueryCompare &view);
+  QueryView(const QueryInsert &view);
 
   inline static QueryView From(QueryView view) noexcept {
     return view;

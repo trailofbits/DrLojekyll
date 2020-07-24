@@ -21,7 +21,7 @@ const char *Node<QuerySelect>::KindName(void) const noexcept {
     if (s->AsConstant()) {
       return "CONST";
     } else if (s->AsIO()) {
-      return "RECV";
+      return "RECEIVE";
     } else {
       assert(false);
       return "STREAM";
@@ -84,7 +84,7 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
     return "MATERIALIZE";
 
   } else if (declaration.Kind() == DeclarationKind::kMessage) {
-    return "SEND";
+    return "TRANSMIT";
 
   } else if (is_insert) {
     if (declaration.Arity()) {
@@ -547,7 +547,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
     if (auto stream = insert->stream.get(); stream) {
       WeakUseRef<STREAM>().Swap(insert->stream);
       if (auto io = stream->AsIO(); io) {
-        io->sends.RemoveIf(is_this_view);
+        io->transmits.RemoveIf(is_this_view);
       } else {
         assert(false);
       }
