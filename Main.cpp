@@ -313,7 +313,7 @@ extern "C" int main(int argc, char *argv[]) {
 
     if (auto module_opt = parser.ParseStream(linked_module, config);
         module_opt) {
-      code = ProcessModule(display_manager, error_log, *module_opt);
+      code = hyde::ProcessModule(display_manager, error_log, *module_opt);
     }
   }
 
