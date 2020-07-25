@@ -62,6 +62,11 @@ def find_comment_lines(path):
       else:
         num_leading_comment_lines = 0
 
+  # Force an empty newline at the end of the file.
+  if len(new_lines) and new_lines[-1]:
+    new_lines.append("")
+    needs_fixes = True
+
   return new_lines, old_comments, needs_fixes
 
 
