@@ -15,11 +15,11 @@ enum PositionStatus : uint64_t {
 };
 
 struct Position {
-  uint64_t index:24;
-  uint64_t line:12;
-  uint64_t column:12;
-  uint64_t display_id:12;
-  uint64_t status:4;
+  uint64_t index : 24;
+  uint64_t line : 12;
+  uint64_t column : 12;
+  uint64_t display_id : 12;
+  uint64_t status : 4;
 };
 
 union PositionInterpreter {

@@ -8,6 +8,7 @@
 
 namespace hyde {
 namespace rt {
+
 //namespace {
 //
 //static uint64_t NumWorkersMask(uint64_t num_workers) noexcept {

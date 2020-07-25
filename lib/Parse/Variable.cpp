@@ -5,9 +5,9 @@
 namespace hyde {
 
 // Create a variable.
-Node<ParsedVariable> *ParserImpl::CreateVariable(
-    Node<ParsedClause> *clause,
-    Token name, bool is_param, bool is_arg) {
+Node<ParsedVariable> *ParserImpl::CreateVariable(Node<ParsedClause> *clause,
+                                                 Token name, bool is_param,
+                                                 bool is_arg) {
 
   auto var = new Node<ParsedVariable>;
   if (is_param) {
@@ -21,8 +21,8 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(
     if (!clause->body_variables.empty()) {
       clause->body_variables.back()->next = var;
     }
-    var->appearance = static_cast<unsigned>(
-        clause->body_variables.size() + kMaxArity);
+    var->appearance =
+        static_cast<unsigned>(clause->body_variables.size() + kMaxArity);
     clause->body_variables.emplace_back(var);
   }
 
@@ -52,13 +52,11 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(
 
 // Create a variable to name a literal.
 Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
-    Node<ParsedClause> *clause, Token tok,
-    bool is_param, bool is_arg) {
+    Node<ParsedClause> *clause, Token tok, bool is_param, bool is_arg) {
 
   auto lhs = CreateVariable(
       clause,
-      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable,
-                       tok.SpellingRange()),
+      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
       false, false);
 
   auto assign = new Node<ParsedAssignment>(lhs);
@@ -69,11 +67,8 @@ Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
     assign->rhs.data = data;
   } else {
     switch (tok.Lexeme()) {
-      case Lexeme::kLiteralNumber:
-        assign->rhs.data = "0";
-        break;
-      default:
-        break;
+      case Lexeme::kLiteralNumber: assign->rhs.data = "0"; break;
+      default: break;
     }
   }
   assign->rhs.assigned_to = lhs;
@@ -94,16 +89,15 @@ Node<ParsedVariable> *ParserImpl::CreateLiteralVariable(
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
     }
-    var->appearance = static_cast<unsigned>(
-        clause->head_variables.size());
+    var->appearance = static_cast<unsigned>(clause->head_variables.size());
     clause->head_variables.emplace_back(var);
 
   } else {
     if (!clause->body_variables.empty()) {
       clause->body_variables.back()->next = var;
     }
-    var->appearance = static_cast<unsigned>(
-        clause->body_variables.size() + kMaxArity);
+    var->appearance =
+        static_cast<unsigned>(clause->body_variables.size() + kMaxArity);
     clause->body_variables.emplace_back(var);
   }
 

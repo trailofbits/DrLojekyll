@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Util/EqualitySet.h>
+
+#include "Query.h"
 
 namespace hyde {
 
@@ -48,8 +48,7 @@ bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   }
 
   const auto that = that_->AsInsert();
-  if (!that ||
-      is_insert != that->is_insert ||
+  if (!that || is_insert != that->is_insert ||
       can_produce_deletions != that->can_produce_deletions ||
       declaration.Id() != that->declaration.Id() ||
       columns.Size() != that->columns.Size() ||

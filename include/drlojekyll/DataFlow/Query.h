@@ -21,8 +21,7 @@ namespace query {
 template <typename T>
 class QueryNode {
  public:
-  inline QueryNode(Node<T> *impl_)
-      : impl(impl_) {}
+  inline QueryNode(Node<T> *impl_) : impl(impl_) {}
 
   inline bool operator==(QueryNode<T> that) const {
     return impl == that.impl;
@@ -304,7 +303,7 @@ class QueryView : public query::QueryNode<QueryView> {
   void ForEachUser(CB cb) {
     std::vector<QueryView> target_views;
     for (QueryColumn col : Columns()) {
-      col.ForEachUser([&target_views] (QueryView user_view) {
+      col.ForEachUser([&target_views](QueryView user_view) {
         target_views.push_back(user_view);
       });
     }
@@ -314,17 +313,16 @@ class QueryView : public query::QueryNode<QueryView> {
     // first.
     std::sort(
         target_views.begin(), target_views.end(),
-        [] (QueryView a, QueryView b) { return a.UniqueId() < b.UniqueId(); });
+        [](QueryView a, QueryView b) { return a.UniqueId() < b.UniqueId(); });
 
     auto it = std::unique(
         target_views.begin(), target_views.end(),
-        [] (QueryView a, QueryView b) { return a.UniqueId() == b.UniqueId(); });
+        [](QueryView a, QueryView b) { return a.UniqueId() == b.UniqueId(); });
 
     target_views.erase(it, target_views.end());
 
-    std::sort(
-        target_views.begin(), target_views.end(),
-        [] (QueryView a, QueryView b) { return a.Depth() < b.Depth(); });
+    std::sort(target_views.begin(), target_views.end(),
+              [](QueryView a, QueryView b) { return a.Depth() < b.Depth(); });
 
     for (auto target_view : target_views) {
       cb(target_view);
@@ -338,7 +336,6 @@ class QueryView : public query::QueryNode<QueryView> {
 // A selection of all columns from a table.
 class QuerySelect : public query::QueryNode<QuerySelect> {
  public:
-
   // The selected columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
@@ -538,7 +535,7 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   QueryColumn NthColumn(unsigned n) const noexcept;
 
   // Number of views that are merged together at this point.
-  unsigned NumMergedViews(void) const noexcept ;
+  unsigned NumMergedViews(void) const noexcept;
 
   // Nth view that is merged together at this point.
   QueryView NthMergedView(unsigned n) const noexcept;
@@ -672,7 +669,8 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 class Query {
  public:
   // Build and return a new query.
-  static std::optional<Query> Build(const ParsedModule &module, const ErrorLog &log);
+  static std::optional<Query> Build(const ParsedModule &module,
+                                    const ErrorLog &log);
 
   ~Query(void);
 
@@ -738,8 +736,7 @@ class Query {
   friend class QueryBuilder;
   friend class QueryBuilderImpl;
 
-  inline explicit Query(std::shared_ptr<QueryImpl> impl_)
-      : impl(impl_) {}
+  inline explicit Query(std::shared_ptr<QueryImpl> impl_) : impl(impl_) {}
 
   std::shared_ptr<QueryImpl> impl;
 };
@@ -747,14 +744,14 @@ class Query {
 }  // namespace hyde
 namespace std {
 
-template<>
+template <>
 struct hash<::hyde::QueryColumn> {
   inline uint64_t operator()(::hyde::QueryColumn col) const noexcept {
     return col.UniqueId();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::QueryView> {
   inline uint64_t operator()(::hyde::QueryView view) const noexcept {
     return view.UniqueId();

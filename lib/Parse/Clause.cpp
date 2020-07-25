@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Parser.h"
-
 #include <drlojekyll/Util/DisjointSet.h>
+
+#include "Parser.h"
 
 namespace hyde {
 namespace {
@@ -26,8 +26,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
     var_to_set.emplace(var->Id(), clause_set);
   }
 
-  auto do_pred = [&] (Node<ParsedPredicate> *pred, DisjointSet *set) {
-
+  auto do_pred = [&](Node<ParsedPredicate> *pred, DisjointSet *set) {
     // This predicate has zero arguments, i.e. it is a condition already.
     // Associated it with the clause head set.
     if (pred->argument_uses.empty()) {
@@ -163,7 +162,6 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
       }
     }
   }
-
 }
 
 }  // namespace
@@ -205,7 +203,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   std::unique_ptr<Node<ParsedPredicate>> pred;
 
   // Link `pred` into `clause`.
-  auto link_pred = [&] (void) {
+  auto link_pred = [&](void) {
     if (negation_pos.IsValid()) {
       if (!clause->negated_predicates.empty()) {
         clause->negated_predicates.back()->next = pred.get();
@@ -219,8 +217,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     }
   };
 
-  for (next_pos = tok.NextPosition();
-       ReadNextSubToken(tok);
+  for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
     const auto lexeme = tok.Lexeme();
@@ -258,8 +255,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 5;
           continue;
 
-        // TODO(pag): Support `foo.` syntax? Could be an intersting way to
-        //            turn on/off options.
+          // TODO(pag): Support `foo.` syntax? Could be an intersting way to
+          //            turn on/off options.
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -280,8 +277,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         // `foo(V, ...) : V=1, ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
                    Lexeme::kLiteralNumber == lexeme) {
-          (void) CreateLiteralVariable(
-              clause.get(), tok, true, false);
+          (void) CreateLiteralVariable(clause.get(), tok, true, false);
           state = 3;
           continue;
 
@@ -336,8 +332,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected colon to denote the beginning of the body "
-              << "of the clause '" << clause->name << "', but got '"
-              << tok << "' instead";
+              << "of the clause '" << clause->name << "', but got '" << tok
+              << "' instead";
           return;
         }
 
@@ -376,10 +372,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 6:
-        if (Lexeme::kPuncEqual == lexeme ||
-            Lexeme::kPuncNotEqual == lexeme ||
-            Lexeme::kPuncLess == lexeme ||
-            Lexeme::kPuncGreater == lexeme) {
+        if (Lexeme::kPuncEqual == lexeme || Lexeme::kPuncNotEqual == lexeme ||
+            Lexeme::kPuncLess == lexeme || Lexeme::kPuncGreater == lexeme) {
           compare_op = tok;
           state = 7;
           continue;
@@ -434,6 +428,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
         if (rhs) {
+
           // Don't allow comparisons against the same named variable. This
           // simplifies later checks, and makes sure that iteration over the
           // comparisons containing a given variable are well-founded.
@@ -446,8 +441,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             return;
           }
 
-          const auto compare = new Node<ParsedComparison>(
-              lhs, rhs, compare_op);
+          const auto compare = new Node<ParsedComparison>(lhs, rhs, compare_op);
 
           // Add to the LHS variable's comparison use list.
           auto &lhs_comparison_uses = lhs->context->comparison_uses;
@@ -497,8 +491,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 9: {
-        DisplayRange err_range(
-            tok.Position(), sub_tokens.back().NextPosition());
+        DisplayRange err_range(tok.Position(),
+                               sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
             << "Unexpected tokens following clause '" << clause->name << "'";
         state = 10;  // Ignore further errors, but add the local in.
@@ -506,8 +500,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       }
 
       // We're just chugging tokens at the end, ignore them.
-      case 10:
-        continue;
+      case 10: continue;
 
       // We think we're parsing a negated predicate.
       case 11:
@@ -520,8 +513,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected atom here for negated predicate, but got '"
-              << tok << "' instead";
+              << "Expected atom here for negated predicate, but got '" << tok
+              << "' instead";
           return;
         }
 
@@ -570,8 +563,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
         if (arg) {
-          auto use = new Node<ParsedUse<ParsedPredicate>>(
-              UseKind::kArgument, arg, pred.get());
+          auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
+                                                          arg, pred.get());
 
           // Add to this variable's use list.
           auto &argument_uses = arg->context->argument_uses;
@@ -611,13 +604,12 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               pred->declaration->inline_attribute.IsValid()) {
             const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
             auto err = context->error_log.Append(scope_range, err_range);
-            err << "Cannot negate " << pred->declaration->KindName()
-                << " '" << pred->name
-                << "' because it has been marked as inline";
+            err << "Cannot negate " << pred->declaration->KindName() << " '"
+                << pred->name << "' because it has been marked as inline";
 
-            auto note = err.Note(
-                ParsedDeclaration(pred->declaration).SpellingRange(),
-                pred->declaration->inline_attribute.SpellingRange());
+            auto note =
+                err.Note(ParsedDeclaration(pred->declaration).SpellingRange(),
+                         pred->declaration->inline_attribute.SpellingRange());
             note << "Marked as inline here";
             return;
           }
@@ -629,7 +621,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               ParsedFunctor::From(pred_decl).IsAggregate()) {
 
             if (pred->negation_pos.IsValid()) {
-              const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
+              const auto err_range =
+                  ParsedPredicate(pred.get()).SpellingRange();
               context->error_log.Append(scope_range, err_range)
                   << "Cannot negate aggregating functor '" << pred->name << "'";
               return;
@@ -653,10 +646,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             // externally via later source-to-source transforms.
             if (kind == DeclarationKind::kFunctor ||
                 kind == DeclarationKind::kMessage) {
-              const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
+              const auto err_range =
+                  ParsedPredicate(pred.get()).SpellingRange();
               context->error_log.Append(scope_range, err_range)
-                  << "Cannot negate " << pred->declaration->KindName()
-                  << " '" << pred->name << "'";
+                  << "Cannot negate " << pred->declaration->KindName() << " '"
+                  << pred->name << "'";
               return;
             }
           }
@@ -677,8 +671,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
       case 15:
         if (Lexeme::kKeywordOver == lexeme) {
-          if (!ParseAggregatedPredicate(
-              module, clause.get(), std::move(pred), tok, next_pos)) {
+          if (!ParseAggregatedPredicate(module, clause.get(), std::move(pred),
+                                        tok, next_pos)) {
             return;
 
           } else {
@@ -701,10 +695,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     return;
   }
 
-  const auto is_query_clause = DeclarationKind::kQuery ==
-                               clause->declaration->context->kind;
-  const auto is_message_clause = DeclarationKind::kMessage ==
-                                 clause->declaration->context->kind;
+  const auto is_query_clause =
+      DeclarationKind::kQuery == clause->declaration->context->kind;
+  const auto is_message_clause =
+      DeclarationKind::kMessage == clause->declaration->context->kind;
 
   // Go make sure we don't have two messages inside of a given clause. In our
   // bottom-up execution model, the "inputs" to the system are messages, which
@@ -727,8 +721,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
       err << "Cannot have direct dependency on more than one messages";
 
-      auto note = err.Note(scope_range,
-                           ParsedPredicate(prev_message).SpellingRange());
+      auto note =
+          err.Note(scope_range, ParsedPredicate(prev_message).SpellingRange());
       note << "Previous message use is here";
       return;
 
@@ -807,7 +801,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     auto has_errors = false;
     for (const auto &clause : decl->context->clauses) {
       if (!clause->depends_on_messages) {
-        auto err = context->error_log.Append(scope_range, negation_tok.Position());
+        auto err =
+            context->error_log.Append(scope_range, negation_tok.Position());
         err << "All positive clauses of " << decl->name << '/'
             << decl->parameters.size() << " must directly depend on a message "
             << "because of the presence of a deletion clause";

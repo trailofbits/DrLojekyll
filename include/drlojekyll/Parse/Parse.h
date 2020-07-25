@@ -2,15 +2,15 @@
 
 #pragma once
 
+#include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Lex/Token.h>
+#include <drlojekyll/Parse/Type.h>
+#include <drlojekyll/Util/Node.h>
+
 #include <functional>
 #include <memory>
 #include <string_view>
 #include <utility>
-
-#include <drlojekyll/Display/DisplayPosition.h>
-#include <drlojekyll/Lex/Token.h>
-#include <drlojekyll/Util/Node.h>
-#include <drlojekyll/Parse/Type.h>
 
 namespace hyde {
 
@@ -22,11 +22,10 @@ namespace parse {
 
 // Base class of all parsed nodes. Parsed nodes are thin wrappers around
 // an implementation class pointer, where the data is managed by the parser.
-template<typename T>
+template <typename T>
 class ParsedNode {
  public:
-  inline explicit ParsedNode(Node<T> *impl_)
-      : impl(impl_) {}
+  inline explicit ParsedNode(Node<T> *impl_) : impl(impl_) {}
 
   inline bool operator==(const ParsedNode<T> &that) const {
     return impl == that.impl;
@@ -131,7 +130,8 @@ class ParsedUse : public parse::ParsedNode<ParsedUse<T>> {
   }
 
   inline const T &User(void) const noexcept {
-    return *reinterpret_cast<const T *>(parse::UseAccessor::GetUser(this->impl));
+    return *reinterpret_cast<const T *>(
+        parse::UseAccessor::GetUser(this->impl));
   }
 
  protected:
@@ -145,7 +145,6 @@ using ParsedArgumentUse = ParsedUse<ParsedPredicate>;
 // Represents a parsed variable.
 class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
  public:
-
   DisplayRange SpellingRange(void) const noexcept;
 
   // Returns the token corresponding with the name of this variable.
@@ -238,8 +237,7 @@ class ParsedComparison : public parse::ParsedNode<ParsedComparison> {
 };
 
 // Represents and attempt to assign a literal to a variable, e.g. `V=1`.
-class ParsedAssignment
-    : public parse::ParsedNode<ParsedAssignment> {
+class ParsedAssignment : public parse::ParsedNode<ParsedAssignment> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
   ParsedVariable LHS(void) const noexcept;
@@ -435,8 +433,7 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
 class ParsedClauseHead {
  public:
-  inline explicit ParsedClauseHead(ParsedClause clause_)
-      : clause(clause_) {}
+  inline explicit ParsedClauseHead(ParsedClause clause_) : clause(clause_) {}
 
   DisplayRange SpellingRange(void) const noexcept;
 
@@ -445,21 +442,14 @@ class ParsedClauseHead {
 
 class ParsedClauseBody {
  public:
-  inline explicit ParsedClauseBody(ParsedClause clause_)
-      : clause(clause_) {}
+  inline explicit ParsedClauseBody(ParsedClause clause_) : clause(clause_) {}
 
   DisplayRange SpellingRange(void) const noexcept;
 
   const ParsedClause clause;
 };
 
-enum class DeclarationKind {
-  kQuery,
-  kMessage,
-  kFunctor,
-  kExport,
-  kLocal
-};
+enum class DeclarationKind { kQuery, kMessage, kFunctor, kExport, kLocal };
 
 class ParsedQuery;
 class ParsedMessage;
@@ -891,80 +881,80 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
 
 namespace std {
 
-template<>
+template <>
 struct hash<::hyde::ParsedParameter> {
   inline uint64_t operator()(::hyde::ParsedParameter param) const noexcept {
     return param.UniqueId();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedModule> {
   inline uint64_t operator()(::hyde::ParsedModule module) const noexcept {
     return module.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedVariable> {
   inline uint64_t operator()(::hyde::ParsedVariable var) const noexcept {
     return var.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedDeclaration> {
   inline uint64_t operator()(::hyde::ParsedDeclaration decl) const noexcept {
     return decl.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedFunctor> {
   inline uint64_t operator()(::hyde::ParsedFunctor decl) const noexcept {
     return decl.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedMessage> {
   inline uint64_t operator()(::hyde::ParsedMessage decl) const noexcept {
     return decl.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedQuery> {
   inline uint64_t operator()(::hyde::ParsedQuery decl) const noexcept {
     return decl.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedExport> {
   inline uint64_t operator()(::hyde::ParsedExport decl) const noexcept {
     return decl.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedLocal> {
   inline uint64_t operator()(::hyde::ParsedLocal decl) const noexcept {
     return decl.Id();
   }
 };
 
-template<>
+template <>
 struct hash<::hyde::ParsedPredicate> {
   inline uint64_t operator()(::hyde::ParsedPredicate pred) const noexcept {
     return pred.UniqueId();
   }
 };
 
-template<typename T>
+template <typename T>
 struct hash<::hyde::parse::ParsedNode<T>> {
-  inline uintptr_t operator()(
-      ::hyde::parse::ParsedNode<T> node) const noexcept {
+  inline uintptr_t operator()(::hyde::parse::ParsedNode<T> node) const
+      noexcept {
     return node.Hash();
   }
 };

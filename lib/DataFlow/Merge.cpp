@@ -1,10 +1,9 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Util/EqualitySet.h>
 
 #include "Optimize.h"
+#include "Query.h"
 
 namespace hyde {
 
@@ -67,8 +66,8 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 // views might be the same.
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
-bool Node<QueryMerge>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt) {
+bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
+                                    const OptimizationContext &opt) {
   if (is_dead) {
     is_canonical = true;
     return false;
@@ -94,7 +93,7 @@ bool Node<QueryMerge>::Canonicalize(
   std::vector<VIEW *> unique_merged_views;
   std::vector<VIEW *> work_list;
 
-  for (auto i = merged_views.Size(); i; ) {
+  for (auto i = merged_views.Size(); i;) {
     work_list.push_back(merged_views[--i]);
   }
 
@@ -118,7 +117,7 @@ bool Node<QueryMerge>::Canonicalize(
       non_local_changes = true;
       is_canonical = false;
 
-      for (auto i = incoming_merge->merged_views.Size(); i; ) {
+      for (auto i = incoming_merge->merged_views.Size(); i;) {
         work_list.push_back(incoming_merge->merged_views[--i]);
       }
 
@@ -163,7 +162,7 @@ bool Node<QueryMerge>::Canonicalize(
     for (auto view : unique_merged_views) {
       assert(view->columns.Size() == num_cols);
 
-      TUPLE * const guarded_view = query->tuples.Create();
+      TUPLE *const guarded_view = query->tuples.Create();
 #ifndef NDEBUG
       guarded_view->producer = "MERGE-GUARD";
 #endif
@@ -193,16 +192,15 @@ bool Node<QueryMerge>::Canonicalize(
 }
 
 // Equality over merge is structural.
-bool Node<QueryMerge>::Equals(
-    EqualitySet &eq, Node<QueryView> *that_) noexcept {
+bool Node<QueryMerge>::Equals(EqualitySet &eq,
+                              Node<QueryView> *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }
 
   const auto that = that_->AsMerge();
   const auto num_views = merged_views.Size();
-  if (!that ||
-      columns.Size() != that->columns.Size() ||
+  if (!that || columns.Size() != that->columns.Size() ||
       num_views != that->merged_views.Size() ||
       positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions ||

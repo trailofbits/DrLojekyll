@@ -8,8 +8,7 @@ class ErrorLog;
 
 class OptimizationContext {
  public:
-  explicit OptimizationContext(const ErrorLog &log_)
-      : log(log_) {}
+  explicit OptimizationContext(const ErrorLog &log_) : log(log_) {}
 
   const ErrorLog &log;
 

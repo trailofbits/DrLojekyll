@@ -1,14 +1,13 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Parse/Format.h>
 
 #include <iomanip>
 #include <sstream>
 
-#include <drlojekyll/Display/Format.h>
-#include <drlojekyll/Parse/Format.h>
-
 #include "Optimize.h"
+#include "Query.h"
 
 namespace hyde {
 
@@ -195,7 +194,7 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
   } else if (this->Def<Node<QueryView>>::IsUsed()) {
     if (is_dead) {
 #ifndef NDEBUG
-      ForEachUse<VIEW>([] (VIEW *user_view, VIEW *) {
+      ForEachUse<VIEW>([](VIEW *user_view, VIEW *) {
         assert(user_view->is_dead || user_view->AsMerge());
       });
 #endif
@@ -210,9 +209,8 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
     if (col->Def<Node<QueryColumn>>::IsUsed()) {
       if (is_dead) {
 #ifndef NDEBUG
-        col->ForEachUse<VIEW>([] (VIEW *user_view, COL *) {
-          assert(user_view->is_dead);
-        });
+        col->ForEachUse<VIEW>(
+            [](VIEW *user_view, COL *) { assert(user_view->is_dead); });
 #endif
         continue;
       }
@@ -229,33 +227,30 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
   if (is_canonical) {
     is_canonical = false;
     for (auto col : columns) {
-      col->ForEachUse<VIEW>([=] (VIEW *user, COL *) {
-        user->is_canonical = false;
-      });
+      col->ForEachUse<VIEW>(
+          [=](VIEW *user, COL *) { user->is_canonical = false; });
     }
   }
 
-//  if (timestamp >= next_timestamp) {
-//    return;
-//  }
-//
-//  timestamp = next_timestamp;
-//  hash = 0;
-//  depth = 0;
-//
+  //  if (timestamp >= next_timestamp) {
+  //    return;
+  //  }
+  //
+  //  timestamp = next_timestamp;
+  //  hash = 0;
+  //  depth = 0;
+  //
 
-//
-//  // Update merges.
-//  ForEachUse<VIEW>([=] (VIEW *user, VIEW *) {
-//    user->Update(next_timestamp);
-//  });
+  //
+  //  // Update merges.
+  //  ForEachUse<VIEW>([=] (VIEW *user, VIEW *) {
+  //    user->Update(next_timestamp);
+  //  });
 }
 
 // Sort the `positive_conditions` and `negative_conditions`.
 void Node<QueryView>::OrderConditions(void) {
-  auto cb = [] (COND *cond) {
-    return cond->setters.Empty();
-  };
+  auto cb = [](COND *cond) { return cond->setters.Empty(); };
 
   positive_conditions.RemoveIf(cb);
   negative_conditions.RemoveIf(cb);
@@ -320,8 +315,7 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
     auto in_col = attached_columns[j];
     auto out_col = columns[i];
 
-    auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt);
+    auto [changed, can_remove] = CanonicalizeColumnPair(in_col, out_col, opt);
 
     non_local_changes = non_local_changes || changed;
     attached_are_canonical = attached_are_canonical && !can_remove;
@@ -375,7 +369,8 @@ unsigned Node<QueryView>::Depth(void) noexcept {
   return depth;
 }
 
-unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols, unsigned depth) {
+unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols,
+                                        unsigned depth) {
   for (const auto input_col : cols) {
     const auto input_depth = input_col->view->depth;
     if (input_depth >= depth) {
@@ -385,7 +380,8 @@ unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols, unsigned depth
   return depth;
 }
 
-unsigned Node<QueryView>::EstimateDepth(const UseList<COND> &conds, unsigned depth) {
+unsigned Node<QueryView>::EstimateDepth(const UseList<COND> &conds,
+                                        unsigned depth) {
   auto cond_depth = 2u;
   auto has_conds = false;
   for (const auto cond : conds) {
@@ -423,9 +419,7 @@ unsigned Node<QueryView>::NumUses(void) const noexcept {
   users.reserve(columns.Size() * 2);
 
   for (auto col : columns) {
-    col->ForEachUser([&users] (VIEW *user) {
-      users.push_back(user);
-    });
+    col->ForEachUser([&users](VIEW *user) { users.push_back(user); });
   }
 
   std::sort(users.begin(), users.end());
@@ -474,9 +468,9 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 
   unsigned i = 0u;
   for (auto col : columns) {
-    col->ForEachUse<VIEW>([=, &up_hash] (VIEW *user, COL *) {
-      up_hash ^= RotateRight64(up_hash, (i + 7u) % 64u) *
-                 user->UpHash(depth - 1u);
+    col->ForEachUse<VIEW>([=, &up_hash](VIEW *user, COL *) {
+      up_hash ^=
+          RotateRight64(up_hash, (i + 7u) % 64u) * user->UpHash(depth - 1u);
     });
     ++i;
   }
@@ -499,7 +493,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
   input_columns.Clear();
   attached_columns.Clear();
 
-  const auto is_this_view = [this] (VIEW *v) { return v == this; };
+  const auto is_this_view = [this](VIEW *v) { return v == this; };
 
   for (auto cond : positive_conditions) {
     cond->positive_users.RemoveIf(is_this_view);
@@ -580,7 +574,7 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
 void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
   if (auto cond = sets_condition.get(); cond) {
 
-    auto is_this_or_that = [=] (VIEW *v) { return v == this || v == that; };
+    auto is_this_or_that = [=](VIEW *v) { return v == this || v == that; };
 
     // Simple case: transfer "settership" of the condition.
     if (!that->sets_condition) {
@@ -620,7 +614,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
         // Our condition is set by multiple different VIEWs. We'll constrain
         // `that_cond` by adding `cond` as a tested condition to `that`.
         } else {
-          cond->setters.RemoveIf([=] (VIEW *v) { return v == this; });
+          cond->setters.RemoveIf([=](VIEW *v) { return v == this; });
           cond->positive_users.AddUse(that);
           that->positive_conditions.AddUse(cond);
         }
@@ -668,8 +662,7 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
 // Does this view introduce a control dependency? If a node introduces a
 // control dependency then it generally needs to be kept around.
 bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
-  return !positive_conditions.Empty() ||
-         !negative_conditions.Empty() ||
+  return !positive_conditions.Empty() || !negative_conditions.Empty() ||
          nullptr != const_cast<VIEW *>(this)->AsConstraint();
 }
 
@@ -694,8 +687,8 @@ bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
 // If this view is used by a merge then we're not allowed to re-order the
 // columns. Instead, what we can do is create a tuple that will maintain
 // the ordering, and the canonicalize the join order below that tuple.
-Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
-    QueryImpl *query, bool force) {
+Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
+                                                  bool force) {
 
   if (!force && !this->Def<Node<QueryView>>::IsUsed()) {
     return nullptr;
@@ -730,11 +723,14 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(
 
 // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
 // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
-Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
-    QueryImpl *query, ComparisonOperator op, COL *lhs_col, COL *rhs_col) {
+Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(QueryImpl *query,
+                                                       ComparisonOperator op,
+                                                       COL *lhs_col,
+                                                       COL *rhs_col) {
 
   // Prefer to have the constant first.
-  if ((ComparisonOperator::kEqual == op || ComparisonOperator::kNotEqual == op) &&
+  if ((ComparisonOperator::kEqual == op ||
+       ComparisonOperator::kNotEqual == op) &&
       rhs_col->IsConstant() && !lhs_col->IsConstant()) {
     return ProxyWithComparison(query, op, rhs_col, lhs_col);
   }
@@ -747,8 +743,8 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
   CMP *cmp = query->constraints.Create(op);
 
   cmp->input_columns.AddUse(lhs_col);
-  auto lhs_out_col = cmp->columns.Create(
-      lhs_col->var, cmp, lhs_col->id, col_index++);
+  auto lhs_out_col =
+      cmp->columns.Create(lhs_col->var, cmp, lhs_col->id, col_index++);
 
   lhs_out_col->CopyConstant(lhs_col);
   in_to_out.emplace(lhs_col, lhs_out_col);
@@ -759,8 +755,8 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
-    auto rhs_out_col = cmp->columns.Create(
-        rhs_col->var, cmp, rhs_col->id, col_index++);
+    auto rhs_out_col =
+        cmp->columns.Create(rhs_col->var, cmp, rhs_col->id, col_index++);
     rhs_out_col->CopyConstant(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
   }
@@ -771,8 +767,8 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
   for (auto col : columns) {
     if (col != lhs_col && col != rhs_col) {
       cmp->attached_columns.AddUse(col);
-      const auto attached_col = cmp->columns.Create(
-          col->var, cmp, col->id, col_index++);
+      const auto attached_col =
+          cmp->columns.Create(col->var, cmp, col->id, col_index++);
       attached_col->CopyConstant(col);
       in_to_out.emplace(col, attached_col);
     }
@@ -784,8 +780,8 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
   col_index = 0u;
   for (auto orig_col : columns) {
     const auto in_col = in_to_out[orig_col];
-    auto out_col = tuple->columns.Create(
-        orig_col->var, tuple, orig_col->id, col_index++);
+    auto out_col =
+        tuple->columns.Create(orig_col->var, tuple, orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
     out_col->CopyConstant(in_col);
   }
@@ -804,8 +800,8 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(
 }
 
 // Utility for comparing use lists.
-bool Node<QueryView>::ColumnsEq(
-    EqualitySet &eq, const UseList<COL> &c1s, const UseList<COL> &c2s) {
+bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
+                                const UseList<COL> &c2s) {
   const auto num_cols = c1s.Size();
   if (num_cols != c2s.Size()) {
     return false;
@@ -813,8 +809,7 @@ bool Node<QueryView>::ColumnsEq(
   for (auto i = 0u; i < num_cols; ++i) {
     auto a = c1s[i];
     auto b = c2s[i];
-    if (a->type.Kind() != b->type.Kind() ||
-        !a->view->Equals(eq, b->view)) {
+    if (a->type.Kind() != b->type.Kind() || !a->view->Equals(eq, b->view)) {
       return false;
     }
   }
@@ -852,7 +847,7 @@ Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
   VIEW *only_user = nullptr;
   bool fail = false;
   for (auto col : columns) {
-    col->ForEachUser([&] (VIEW *user) {
+    col->ForEachUser([&](VIEW *user) {
       if (!only_user) {
         only_user = user;
       } else if (only_user != user) {
@@ -863,7 +858,7 @@ Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
       return nullptr;
     }
   }
-  this->ForEachUse<VIEW>([&] (VIEW *user, VIEW *) {
+  this->ForEachUse<VIEW>([&](VIEW *user, VIEW *) {
     if (!only_user) {
       only_user = user;
     } else if (only_user != user) {
@@ -875,8 +870,9 @@ Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
 }
 
 // Create or inherit a condition created on `view`.
-COND *Node<QueryView>::CreateOrInheritConditionOnView(
-    QueryImpl *query, Node<QueryView> *view, UseList<COL> cols) {
+COND *Node<QueryView>::CreateOrInheritConditionOnView(QueryImpl *query,
+                                                      Node<QueryView> *view,
+                                                      UseList<COL> cols) {
   COND *condition = nullptr;
 
   // Inherit the condition proven by `incoming_view`.
@@ -887,11 +883,12 @@ COND *Node<QueryView>::CreateOrInheritConditionOnView(
   // Invent a new condition for `incoming_view`.
   } else {
     condition = query->conditions.Create();
-//    if (view->IsUsed()) {
-//      view = query->tuples.Create();
-//      view->force_is_canonical = true;
-//      view->input_columns.Swap(cols);
-//    }
+
+    //    if (view->IsUsed()) {
+    //      view = query->tuples.Create();
+    //      view->force_is_canonical = true;
+    //      view->input_columns.Swap(cols);
+    //    }
 
     assert(!view->sets_condition);
     WeakUseRef<COND>(view, condition).Swap(view->sets_condition);
@@ -929,12 +926,12 @@ bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1) const {
 // NOTE(pag): This isn't a pairwise matching; instead it checks that all
 //            columns in both of the lists independently reference the same
 //            view.
-bool Node<QueryView>::CheckIncomingViewsMatch(
-    const UseList<COL> &cols1, const UseList<COL> &cols2) const {
+bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1,
+                                              const UseList<COL> &cols2) const {
 #ifndef NDEBUG
   VIEW *prev_view = nullptr;
 
-  auto do_cols = [this, &prev_view] (const auto &cols) -> bool {
+  auto do_cols = [this, &prev_view](const auto &cols) -> bool {
     for (auto col : cols) {
       if (!col->IsConstant()) {
         if (prev_view) {
@@ -970,19 +967,19 @@ bool Node<QueryView>::CheckIncomingViewsMatch(
 // be merged because otherwise we would not get the cross product.
 //
 // NOTE(pag): The `group_ids` are sorted.
-bool Node<QueryView>::InsertSetsOverlap(
-    Node<QueryView> *a, Node<QueryView> *b) {
+bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
+                                        Node<QueryView> *b) {
 
-//  if (a->check_group_ids != b->check_group_ids) {
-//    return true;
-//  }
-//
-//  if (!a->check_group_ids) {
-//    return false;
-//  }
+  //  if (a->check_group_ids != b->check_group_ids) {
+  //    return true;
+  //  }
+  //
+  //  if (!a->check_group_ids) {
+  //    return false;
+  //  }
 
   for (auto i = 0u, j = 0u;
-       i < a->group_ids.size() && j < b->group_ids.size(); ) {
+       i < a->group_ids.size() && j < b->group_ids.size();) {
 
     if (a->group_ids[i] == b->group_ids[j]) {
       return true;

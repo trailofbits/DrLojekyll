@@ -3,13 +3,12 @@
 #pragma once
 
 #include <drlojekyll/Display/Display.h>
+#include <drlojekyll/Display/DisplayConfiguration.h>
 
 #include <cassert>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <drlojekyll/Display/DisplayConfiguration.h>
 
 namespace hyde {
 namespace display {
@@ -22,8 +21,7 @@ class DisplayManager;
 // Implementation of `Display`.
 class DisplayImpl {
  public:
-  explicit DisplayImpl(unsigned id_,
-                       const DisplayConfiguration &config_,
+  explicit DisplayImpl(unsigned id_, const DisplayConfiguration &config_,
                        display::DataStream *stream_);
 
   ~DisplayImpl(void);

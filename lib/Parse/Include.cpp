@@ -100,12 +100,12 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
     return;
   }
 
-  const auto include = new Node<ParsedInclude>(
-      scope_range, full_path, is_angled);
+  const auto include =
+      new Node<ParsedInclude>(scope_range, full_path, is_angled);
   if (!module->includes.empty()) {
     module->includes.back()->next = include;
   }
   module->includes.emplace_back(include);
 }
 
-}  // namesace hyde
+}  // namespace hyde

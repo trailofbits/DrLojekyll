@@ -2,94 +2,54 @@
 
 #include "Error.h"
 
-#include <iomanip>
-#include <cassert>
 #include <drlojekyll/Display/DisplayPosition.h>
-
 #include <drlojekyll/Lex/Token.h>
+
+#include <cassert>
+#include <iomanip>
 
 namespace hyde {
 namespace {
 
 static void BeginColor(std::ostream &os, Color color) {
   switch (color) {
-    case Color::kNone:
-      return;
-    case Color::kRed:
-      os << "\033[31m";
-      break;
-    case Color::kGreen:
-      os << "\033[92m";
-      break;
-    case Color::kGrey:
-      os << "\033[90m";
-      break;
-    case Color::kYellow:
-      os << "\033[93m";
-      break;
-    case Color::kBlue:
-      os << "\033[94m";
-      break;
-    case Color::kPurple:
-      os << "\033[95m";
-      break;
-    case Color::kBlack:
-      os << "\033[30m";
-      break;
-    case Color::kWhite:
-      os << "\033[97m";
-      break;
+    case Color::kNone: return;
+    case Color::kRed: os << "\033[31m"; break;
+    case Color::kGreen: os << "\033[92m"; break;
+    case Color::kGrey: os << "\033[90m"; break;
+    case Color::kYellow: os << "\033[93m"; break;
+    case Color::kBlue: os << "\033[94m"; break;
+    case Color::kPurple: os << "\033[95m"; break;
+    case Color::kBlack: os << "\033[30m"; break;
+    case Color::kWhite: os << "\033[97m"; break;
   }
 }
 
 static void EndColor(std::ostream &os, Color color) {
   switch (color) {
-    case Color::kNone:
-      return;
-    default:
-      os << "\033[39m";
-      break;
+    case Color::kNone: return;
+    default: os << "\033[39m"; break;
   }
 }
 
 static void BeginBackgroundColor(std::ostream &os, Color color) {
   switch (color) {
-    case Color::kNone:
-      return;
-    case Color::kRed:
-      os << "\033[41m";
-      break;
-    case Color::kGreen:
-      os << "\033[42m";
-      break;
-    case Color::kGrey:
-      os << "\033[100m";
-      break;
-    case Color::kYellow:
-      os << "\033[43m";
-      break;
-    case Color::kBlue:
-      os << "\033[44m";
-      break;
-    case Color::kPurple:
-      os << "\033[45m";
-      break;
-    case Color::kBlack:
-      os << "\033[40m";
-      break;
-    case Color::kWhite:
-      os << "\033[107m";
-      break;
+    case Color::kNone: return;
+    case Color::kRed: os << "\033[41m"; break;
+    case Color::kGreen: os << "\033[42m"; break;
+    case Color::kGrey: os << "\033[100m"; break;
+    case Color::kYellow: os << "\033[43m"; break;
+    case Color::kBlue: os << "\033[44m"; break;
+    case Color::kPurple: os << "\033[45m"; break;
+    case Color::kBlack: os << "\033[40m"; break;
+    case Color::kWhite: os << "\033[107m"; break;
   }
 }
 
 static void EndBackgroundColor(std::ostream &os, Color color) {
   switch (color) {
-    case Color::kNone:
-      return;
-    default:
-      os << "\033[49m";
-      break;
+    case Color::kNone: return;
+    default: os << "\033[49m"; break;
   }
 }
 
@@ -122,20 +82,20 @@ static DisplayPosition NextByte(const DisplayManager &dm, DisplayPosition pos) {
 }  // namespace
 
 const ErrorColorScheme Error::kDefaultColorScheme = {
-  Color::kBlack,  // `background_color`.
-  Color::kWhite,  // `file_path_color`.
-  Color::kWhite,  // `line_color`.
-  Color::kWhite,  // `column_color`.
-  Color::kRed,  // `error_category_color`.
-  Color::kGreen,  // `note_category_color`.
-  Color::kWhite,  // `message_color`.
-  Color::kYellow,  // `source_line_color`.
-  Color::kGrey,  // `disabled_source_line_color`.
-  Color::kWhite,  // `error_source_line_color`.
-  Color::kRed,  // `error_background_color`.
-  Color::kWhite,  // `note_source_line_color`.
-  Color::kBlue,  // `note_background_color`.
-  Color::kWhite  // `text_color`.
+    Color::kBlack,  // `background_color`.
+    Color::kWhite,  // `file_path_color`.
+    Color::kWhite,  // `line_color`.
+    Color::kWhite,  // `column_color`.
+    Color::kRed,  // `error_category_color`.
+    Color::kGreen,  // `note_category_color`.
+    Color::kWhite,  // `message_color`.
+    Color::kYellow,  // `source_line_color`.
+    Color::kGrey,  // `disabled_source_line_color`.
+    Color::kWhite,  // `error_source_line_color`.
+    Color::kRed,  // `error_background_color`.
+    Color::kWhite,  // `note_source_line_color`.
+    Color::kBlue,  // `note_background_color`.
+    Color::kWhite  // `text_color`.
 };
 
 
@@ -163,8 +123,7 @@ Error::Error(const DisplayManager &dm)
     : impl(std::make_shared<ErrorImpl>(dm)) {}
 
 // An error message related to a line:column offset.
-Error::Error(const DisplayManager &dm, const DisplayPosition &pos)
-    : Error(dm) {
+Error::Error(const DisplayManager &dm, const DisplayPosition &pos) : Error(dm) {
   impl->path = dm.DisplayName(pos);
   impl->line = pos.Line();
   impl->column = pos.Column();
@@ -204,14 +163,14 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range)
     auto stop = false;
     while (!stop && dm.TryDisplacePosition(next_to, 1)) {
       stop = next_to.Line() > to.Line();
-      to = next_to;\
+      to = next_to;
     }
     auto post_range = DisplayRange(range.To(), to);
     if (dm.TryReadData(post_range, &char_range)) {
       impl->post_source_start = impl->source.size();
       impl->post_source_len = char_range.size();
-      impl->source.insert(impl->source.end(),
-                          char_range.begin(), char_range.end());
+      impl->source.insert(impl->source.end(), char_range.begin(),
+                          char_range.end());
     }
   }
 
@@ -225,15 +184,15 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range)
 // character in particular being referenced.
 Error::Error(const DisplayManager &dm, const DisplayRange &range_,
              const DisplayPosition &pos_in_range)
-   : Error(dm, range_, DisplayRange(pos_in_range, NextByte(dm, pos_in_range)),
-           pos_in_range) {}
+    : Error(dm, range_, DisplayRange(pos_in_range, NextByte(dm, pos_in_range)),
+            pos_in_range) {}
 
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced, where the error itself is at
 // `pos_in_range`.
 Error::Error(const DisplayManager &dm, const DisplayRange &range,
              const DisplayRange &sub_range, const DisplayPosition &pos_in_range)
-   : Error(dm, range, sub_range) {
+    : Error(dm, range, sub_range) {
 
   if (pos_in_range.IsValid()) {
     impl->line = pos_in_range.Line();
@@ -245,7 +204,7 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
 // in particular being referenced.
 Error::Error(const DisplayManager &dm, const DisplayRange &range,
              const DisplayRange &sub_range)
-   : Error(dm, range) {
+    : Error(dm, range) {
 
   if (auto from = sub_range.From(); from.IsValid()) {
     impl->line = from.Line();
@@ -266,8 +225,7 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
   }
 
   int range_num_bytes = 0;
-  if (!sub_range.TryComputeDistance(
-      &range_num_bytes, nullptr, nullptr)) {
+  if (!sub_range.TryComputeDistance(&range_num_bytes, nullptr, nullptr)) {
     return;
   }
 
@@ -275,9 +233,8 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
     return;
   }
 
-  for (auto i = num_bytes;
-       (i < (num_bytes + range_num_bytes) &&
-        static_cast<size_t>(i) < impl->is_error.size());
+  for (auto i = num_bytes; (i < (num_bytes + range_num_bytes) &&
+                            static_cast<size_t>(i) < impl->is_error.size());
        ++i) {
     impl->is_error[static_cast<size_t>(i)] = true;
   }
@@ -373,8 +330,7 @@ void Error::Render(std::ostream &os,
         if (print_line) {
           ss << '\n';
           BeginColor(ss, color_scheme.line_color);
-          ss << std::setfill(' ') << std::setw(8)
-             << line_num << " | ";
+          ss << std::setfill(' ') << std::setw(8) << line_num << " | ";
           print_line = false;
           ++line_num;
 

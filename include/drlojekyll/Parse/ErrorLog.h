@@ -48,9 +48,8 @@ class ErrorLog {
   unsigned Size(void) const;
 
   // Render the formatted errors to a stream, along with any attached notes.
-  void Render(
-      std::ostream &os,
-      const ErrorColorScheme &color_scheme=Error::kDefaultColorScheme) const;
+  void Render(std::ostream &os, const ErrorColorScheme &color_scheme =
+                                    Error::kDefaultColorScheme) const;
 
  private:
   class Impl;

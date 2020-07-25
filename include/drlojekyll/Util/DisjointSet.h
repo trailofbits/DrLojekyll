@@ -10,7 +10,7 @@ class DisjointSet {
   DisjointSet *parent;
 
  public:
-  DisjointSet(unsigned id_=0);
+  DisjointSet(unsigned id_ = 0);
 
   static void Reparent(DisjointSet *set) {
     set->parent = set;

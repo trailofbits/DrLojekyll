@@ -1,24 +1,24 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <cstdlib>
-#include <cstring>
-#include <cassert>
-#include <fstream>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <type_traits>
-#include <unordered_map>
-
 #include <drlojekyll/CodeGen/BAM.h>
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
+#include <drlojekyll/Parse/Parser.h>
+
+#include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
 
 namespace hyde {
 
@@ -31,8 +31,7 @@ hyde::OutputStream *gCodeStream = nullptr;
 }  // namespace hyde
 
 static int CompileModule(hyde::DisplayManager display_manager,
-                         hyde::ErrorLog error_log,
-                         hyde::ParsedModule module) {
+                         hyde::ErrorLog error_log, hyde::ParsedModule module) {
 
   if (auto query_opt = hyde::Query::Build(module, error_log); query_opt) {
     if (hyde::gDOTStream) {
@@ -53,8 +52,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
 }
 
 static int ProcessModule(hyde::DisplayManager display_manager,
-                         hyde::ErrorLog error_log,
-                         hyde::ParsedModule module) {
+                         hyde::ErrorLog error_log, hyde::ParsedModule module) {
 
   // Output the amalgamation of all files.
   if (hyde::gDRStream) {
@@ -94,17 +92,27 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
 static int HelpMessage(char *argv[]) {
   std::cout
-      << "OVERVIEW: Dr. Lojekyll compiler" << std::endl << std::endl
-      << "USAGE: " << argv[0] << " [options] file..." << std::endl << std::endl
+      << "OVERVIEW: Dr. Lojekyll compiler" << std::endl
+      << std::endl
+      << "USAGE: " << argv[0] << " [options] file..." << std::endl
+      << std::endl
       << "OPTIONS:" << std::endl
-      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++." << std::endl
-      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively." << std::endl
-      << "                        imported modules amalgamated into a single Datalog module." << std::endl
-      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph" << std::endl
-      << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
-      << "  -isystem <PATH>       Directory where system C++ include files can be found." << std::endl
-      << "  -I <PATH>             Directory where user C++ include files can be found." << std::endl
-      << "  <PATH>                Path to an input Datalog module to parse and transpile." << std::endl
+      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++."
+      << std::endl
+      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively."
+      << std::endl
+      << "                        imported modules amalgamated into a single Datalog module."
+      << std::endl
+      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph"
+      << std::endl
+      << "  -M <PATH>             Directory where import statements can find needed Datalog modules."
+      << std::endl
+      << "  -isystem <PATH>       Directory where system C++ include files can be found."
+      << std::endl
+      << "  -I <PATH>             Directory where user C++ include files can be found."
+      << std::endl
+      << "  <PATH>                Path to an input Datalog module to parse and transpile."
+      << std::endl
       << std::endl;
 
   return EXIT_SUCCESS;
@@ -162,7 +170,7 @@ int main(int argc, char *argv[]) {
       ++i;
       if (i >= argc) {
         hyde::Error err(display_manager);
-        err << "Command-line argument '" << argv[i-1]
+        err << "Command-line argument '" << argv[i - 1]
             << "' must be followed by a file path for "
             << "alamgamated Datalog output";
         error_log.Append(std::move(err));
@@ -172,12 +180,11 @@ int main(int argc, char *argv[]) {
       }
 
     // GraphViz DOT digraph output, which is useful for debugging the data flow.
-    } else if (!strcmp(argv[i], "--dot") ||
-               !strcmp(argv[i], "-dot")) {
+    } else if (!strcmp(argv[i], "--dot") || !strcmp(argv[i], "-dot")) {
       ++i;
       if (i >= argc) {
         hyde::Error err(display_manager);
-        err << "Command-line argument '" << argv[i-1]
+        err << "Command-line argument '" << argv[i - 1]
             << "' must be followed by a file path for "
             << "GraphViz DOT digraph output";
         error_log.Append(std::move(err));
@@ -233,8 +240,7 @@ int main(int argc, char *argv[]) {
       parser.AddIncludeSearchPath(path, hyde::Parser::kUserInclude);
 
     // Help message :-)
-    } else if (!strcmp(argv[i], "--help") ||
-               !strcmp(argv[i], "-help") ||
+    } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
                !strcmp(argv[i], "-h")) {
       return HelpMessage(argv);
 
@@ -264,8 +270,7 @@ int main(int argc, char *argv[]) {
             file_path.push_back('\\');
             file_path.push_back('"');
             break;
-          default:
-            file_path.push_back(ch);
+          default: file_path.push_back(ch);
         }
       }
 
@@ -303,7 +308,8 @@ int main(int argc, char *argv[]) {
         true  // `use_tab_stops`.
     };
 
-    if (auto module_opt = parser.ParseStream(linked_module, config); module_opt) {
+    if (auto module_opt = parser.ParseStream(linked_module, config);
+        module_opt) {
       code = ProcessModule(display_manager, error_log, *module_opt);
     }
   }
