@@ -1,7 +1,6 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/DataFlow/Format.h>
-
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
@@ -11,22 +10,14 @@
 namespace hyde {
 namespace {
 
-static const char *kBeginTable = "<TABLE cellpadding=\"0\" cellspacing=\"0\" border=\"1\"><TR>";
+static const char *kBeginTable =
+    "<TABLE cellpadding=\"0\" cellspacing=\"0\" border=\"1\"><TR>";
 static const char *kEndTable = "</TR></TABLE>";
 
 static const char *kColors[] = {
-    "antiquewhite",
-    "aquamarine",
-    "cadetblue1",
-    "chartreuse1",
-    "chocolate1",
-    "deepskyblue2",
-    "goldenrod1",
-    "beige",
-    "cadetblue3",
-    "floralwhite",
-    "gainsboro",
-    "darkseagreen1",
+    "antiquewhite", "aquamarine",   "cadetblue1", "chartreuse1",
+    "chocolate1",   "deepskyblue2", "goldenrod1", "beige",
+    "cadetblue3",   "floralwhite",  "gainsboro",  "darkseagreen1",
 };
 
 }  // namespace
@@ -35,11 +26,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   os << "digraph {\n"
      << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
-  auto link_conds = [&] (auto view_) {
+  auto link_conds = [&](auto view_) {
     auto view = QueryView::From(view_);
-    auto do_cond = [&] (const char *port, QueryCondition cond) {
+    auto do_cond = [&](const char *port, QueryCondition cond) {
       os << "v" << view.UniqueId() << ":cc" << port << cond.UniqueId()
-         << " -> c" << cond.UniqueId()  << ";\n";
+         << " -> c" << cond.UniqueId() << ";\n";
     };
     for (auto cond : view.PositiveConditions()) {
       do_cond("p", cond);
@@ -49,7 +40,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   };
 
-  auto do_conds = [&] (int row_span, auto view_) {
+  auto do_conds = [&](int row_span, auto view_) {
     auto view = QueryView::From(view_);
     const auto pos_conds = view.PositiveConditions();
     const auto neg_conds = view.NegativeConditions();
@@ -57,7 +48,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       return;
     }
 
-    auto do_cond = [&] (const char *prefix, const char *port, QueryCondition cond) {
+    auto do_cond = [&](const char *prefix, const char *port,
+                       QueryCondition cond) {
       os << "<TD rowspan=\"" << row_span << "\" port=\"cc" << port
          << cond.UniqueId() << "\">" << prefix;
       if (auto maybe_pred = cond.Predicate(); maybe_pred) {
@@ -77,7 +69,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   };
 
-  auto do_col = [&] (QueryColumn col) -> OutputStream & {
+  auto do_col = [&](QueryColumn col) -> OutputStream & {
     if (col.IsConstant()) {
       os << "<B>" << QueryConstant::From(col).Literal() << "</B>";
     } else if (col.IsConstantRef()) {
@@ -106,18 +98,22 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     for (auto select : relation.Selects()) {
-      auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=purple]" : "";
-      os << "v" << select.UniqueId() << " -> t" << relation.UniqueId()
-         << color << ";\n";
+      auto color = QueryView::From(select).CanReceiveDeletions()
+                       ? " [color=purple]"
+                       : "";
+      os << "v" << select.UniqueId() << " -> t" << relation.UniqueId() << color
+         << ";\n";
     }
 
     for (auto insert : relation.Inserts()) {
       if (insert.IsInsert() && QueryInsert::From(insert).IsDelete()) {
         continue;
       }
-      auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
-      os << "t" << relation.UniqueId() << " -> v" << insert.UniqueId()
-         << color << ";\n";
+      auto color = QueryView::From(insert).CanReceiveDeletions()
+                       ? " [color=purple]"
+                       : "";
+      os << "t" << relation.UniqueId() << " -> v" << insert.UniqueId() << color
+         << ";\n";
     }
   }
 
@@ -134,15 +130,19 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     for (auto select : io.Receives()) {
-      auto color = QueryView::From(select).CanReceiveDeletions() ? " [color=purple]" : "";
-      os << "v" << select.UniqueId() << " -> t" << io.UniqueId()
-         << color << ";\n";
+      auto color = QueryView::From(select).CanReceiveDeletions()
+                       ? " [color=purple]"
+                       : "";
+      os << "v" << select.UniqueId() << " -> t" << io.UniqueId() << color
+         << ";\n";
     }
 
     for (auto insert : io.Transmits()) {
-      auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
-      os << "t" << io.UniqueId() << " -> v" << insert.UniqueId()
-         << color << ";\n";
+      auto color = QueryView::From(insert).CanReceiveDeletions()
+                       ? " [color=purple]"
+                       : "";
+      os << "t" << io.UniqueId() << " -> v" << insert.UniqueId() << color
+         << ";\n";
     }
   }
 
@@ -162,7 +162,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << cond.UniqueId();
     }
     os << "</TD>";
-    if (DEBUG(1 + ) 0) {
+    if (DEBUG(1 +) 0) {
       os << "</TR><TR><TD>depth=" << cond.Depth() << "</TD>";
     }
     os << kEndTable << ">];\n";
@@ -179,12 +179,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto i = 0u;
     for (auto col : select.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
       ++i;
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << select.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << select.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -207,18 +207,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "<TD rowspan=\"2\">" << QueryView(constraint).KindName() << ' ';
     switch (constraint.Operator()) {
-      case ComparisonOperator::kEqual:
-        os << "eq";
-        break;
-      case ComparisonOperator::kGreaterThan:
-        os << "gt";
-        break;
-      case ComparisonOperator::kLessThan:
-        os << "lt";
-        break;
-      case ComparisonOperator::kNotEqual:
-        os << "neq";
-        break;
+      case ComparisonOperator::kEqual: os << "eq"; break;
+      case ComparisonOperator::kGreaterThan: os << "gt"; break;
+      case ComparisonOperator::kLessThan: os << "lt"; break;
+      case ComparisonOperator::kNotEqual: os << "neq"; break;
     }
     const auto lhs = constraint.LHS();
     const auto rhs = constraint.RHS();
@@ -245,18 +237,23 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-    os << "<TD port=\"p0\">" << do_col(input_lhs)
-       << "</TD><TD port=\"p1\">" << do_col(input_rhs) << "</TD>";
+    os << "<TD port=\"p0\">" << do_col(input_lhs) << "</TD><TD port=\"p1\">"
+       << do_col(input_rhs) << "</TD>";
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << constraint.DebugString(os)
+             << "</TD>";)
 
-    auto color = QueryView::From(constraint).CanReceiveDeletions() ? " [color=purple]" : "";
+    auto color = QueryView::From(constraint).CanReceiveDeletions()
+                     ? " [color=purple]"
+                     : "";
 
     os << kEndTable << ">];\n"
        << "v" << constraint.UniqueId() << ":p0 -> v"
-       << input_lhs_view.UniqueId() << ":c" << input_lhs.UniqueId() << color << ";\n"
+       << input_lhs_view.UniqueId() << ":c" << input_lhs.UniqueId() << color
+       << ";\n"
        << "v" << constraint.UniqueId() << ":p1 -> v"
-       << input_rhs_view.UniqueId() << ":c" << input_rhs.UniqueId() << color << ";\n";
+       << input_rhs_view.UniqueId() << ":c" << input_rhs.UniqueId() << color
+       << ";\n";
 
     for (auto i = 0u; i < in_copied_cols.size(); ++i) {
       const auto col = in_copied_cols[i];
@@ -279,8 +276,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     auto i = 0u;
     for (auto col : kv.ValueColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << kv.NthValueMergeFunctor(i).Name() << "(" << do_col(col)
-         << ")</TD>";
+         << kv.NthValueMergeFunctor(i).Name() << "(" << do_col(col) << ")</TD>";
     }
     os << "</TR><TR>";
     i = 0u;
@@ -290,22 +286,24 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto col : kv.InputValueColumns()) {
       os << "<TD port=\"g" << (i++) << "\">" << do_col(col) << "</TD>";
     }
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << kv.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << kv.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
-    auto color = QueryView::From(kv).CanReceiveDeletions() ? " [color=purple]" : "";
+    auto color =
+        QueryView::From(kv).CanReceiveDeletions() ? " [color=purple]" : "";
 
     i = 0u;
     for (auto col : kv.InputKeyColumns()) {
       const auto view = QueryView::Containing(col);
-      os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
     for (auto col : kv.InputValueColumns()) {
       const auto view = QueryView::Containing(col);
-      os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
     link_conds(kv);
   }
@@ -314,17 +312,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "v" << join.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, join);
 
-//    auto num_pivot_inputs = 0u;
-//    auto num_pivots = join.NumPivotSets();
-//    for (auto i = 0u; i < join.NumPivotSets(); ++i) {
-//      num_pivot_inputs += join.NthPivotSet(i).size();
-//    }
-//
-//    for (auto i = 0u; i < join.NumPivotSets(); ++i) {
-//      auto color = kColors[i];
-//      os << "<TD colspan=\"" << join.NthPivotSet(i).size() << "\" bgcolor=\""
-//         << color << "\">" << join.NthPivotColumn(i).Variable() << "</TD>";
-//    }
+    //    auto num_pivot_inputs = 0u;
+    //    auto num_pivots = join.NumPivotSets();
+    //    for (auto i = 0u; i < join.NumPivotSets(); ++i) {
+    //      num_pivot_inputs += join.NthPivotSet(i).size();
+    //    }
+    //
+    //    for (auto i = 0u; i < join.NumPivotSets(); ++i) {
+    //      auto color = kColors[i];
+    //      os << "<TD colspan=\"" << join.NthPivotSet(i).size() << "\" bgcolor=\""
+    //         << color << "\">" << join.NthPivotColumn(i).Variable() << "</TD>";
+    //    }
 
     const auto num_pivots = join.NumPivotColumns();
     const auto num_outputs = join.NumMergedColumns();
@@ -334,16 +332,15 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto col = join.NthOutputPivotColumn(i);
       const auto color = kColors[i];
       os << "<TD port=\"c" << col.UniqueId() << "\" colspan=\""
-         << pivot_set_size << "\" bgcolor=\""
-         << color << "\">" << do_col(col) << "</TD>";
+         << pivot_set_size << "\" bgcolor=\"" << color << "\">" << do_col(col)
+         << "</TD>";
     }
 
     os << "<TD rowspan=\"2\">" << QueryView(join).KindName() << "</TD>";
 
     for (i = 0u; i < num_outputs; ++i) {
       const auto col = join.NthOutputMergedColumn(i);
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
 
     os << "</TR><TR>";
@@ -364,7 +361,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       j++;
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << join.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -376,8 +374,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       for (auto col : join.NthInputPivotSet(i)) {
         const auto view = QueryView::Containing(col);
         auto color = view.CanProduceDeletions() ? " [color=purple]" : "";
-        os << "v" << join.UniqueId() << ":p" << j << " -> v"
-           << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+        os << "v" << join.UniqueId() << ":p" << j << " -> v" << view.UniqueId()
+           << ":c" << col.UniqueId() << color << ";\n";
         j++;
       }
     }
@@ -386,8 +384,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto col = join.NthInputMergedColumn(i);
       const auto view = QueryView::Containing(col);
       auto color = view.CanProduceDeletions() ? " [color=purple]" : "";
-      os << "v" << join.UniqueId() << ":p" << j << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << join.UniqueId() << ":p" << j << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
       j++;
     }
 
@@ -402,16 +400,15 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (num_group) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : map.CopiedColumns()) {
-        os << "<TD port=\"c" << col.UniqueId() << "\">"
-           << do_col(col) << "</TD>";
+        os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col)
+           << "</TD>";
       }
     }
 
     os << "<TD rowspan=\"2\">" << QueryView(map).KindName() << ' '
        << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.MappedColumns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
 
     const auto num_inputs = map.NumInputColumns();
@@ -429,12 +426,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-//    // Empty space.
-//    if (auto diff = (map.Arity() - map.NumInputColumns())) {
-//      os << "<TD colspan=\"" << diff << "\"></TD>";
-//    }
+    //    // Empty space.
+    //    if (auto diff = (map.Arity() - map.NumInputColumns())) {
+    //      os << "<TD colspan=\"" << diff << "\"></TD>";
+    //    }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
@@ -443,16 +441,16 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto i = 0u; i < num_group; ++i) {
       auto col = map.NthInputCopiedColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << map.UniqueId() << ":g" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << map.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
 
     // Link the input columns to their sources.
     for (auto i = 0u; i < num_inputs; ++i) {
       auto col = map.NthInputColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << map.UniqueId() << ":p" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << map.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
 
     link_conds(map);
@@ -464,8 +462,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "<TD rowspan=\"3\">" << QueryView(agg).KindName() << ' '
        << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
     auto num_group = agg.NumGroupColumns();
@@ -494,29 +491,31 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"s" << i << "\">" << do_col(col) << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << agg.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << agg.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
-    auto color = QueryView::From(agg).CanReceiveDeletions() ? " [color=purple]" : "";
+    auto color =
+        QueryView::From(agg).CanReceiveDeletions() ? " [color=purple]" : "";
 
     for (auto i = 0u; i < num_group; ++i) {
       auto col = agg.NthInputGroupColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << agg.UniqueId() << ":g1_" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << agg.UniqueId() << ":g1_" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
     for (auto i = 0u; i < num_config; ++i) {
       auto col = agg.NthInputConfigurationColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << agg.UniqueId() << ":g2_" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << agg.UniqueId() << ":g2_" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
     for (auto i = 0u; i < num_summ; ++i) {
       auto col = agg.NthInputAggregateColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << agg.UniqueId() << ":s" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << agg.UniqueId() << ":s" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
 
     link_conds(agg);
@@ -526,20 +525,21 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto decl = insert.Declaration();
     os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, insert);
-    os << "<TD>"
-       << QueryView(insert).KindName() << ' '
+    os << "<TD>" << QueryView(insert).KindName() << ' '
        << ParsedDeclarationName(decl) << "</TD>";
 
     for (auto i = 0u, max_i = insert.NumInputColumns(); i < max_i; ++i) {
-      os << "<TD port=\"c" << i << "\">"
-         << do_col(insert.NthInputColumn(i)) << "</TD>";
+      os << "<TD port=\"c" << i << "\">" << do_col(insert.NthInputColumn(i))
+         << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
-    auto color = QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
+    auto color =
+        QueryView::From(insert).CanReceiveDeletions() ? " [color=purple]" : "";
 
     for (auto i = 0u, max_i = insert.NumInputColumns(); i < max_i; ++i) {
       const auto col = insert.NthInputColumn(i);
@@ -556,28 +556,29 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, tuple);
     os << "<TD rowspan=\"2\">" << QueryView(tuple).KindName() << "</TD>";
     for (auto col : tuple.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
 
     for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\">"
-         << do_col(tuple.NthInputColumn(i)) << "</TD>";
+      os << "<TD port=\"p" << i << "\">" << do_col(tuple.NthInputColumn(i))
+         << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString(os)
+             << "</TD>";)
 
     os << kEndTable << ">];\n";
 
-    auto color = QueryView::From(tuple).CanReceiveDeletions() ? " [color=purple]" : "";
+    auto color =
+        QueryView::From(tuple).CanReceiveDeletions() ? " [color=purple]" : "";
 
     // Link the input columns to their sources.
     for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
       auto col = tuple.NthInputColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << tuple.UniqueId() << ":p" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+      os << "v" << tuple.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
     }
 
     link_conds(tuple);
@@ -588,15 +589,16 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, merge);
     os << "<TD rowspan=\"2\">" << QueryView(merge).KindName() << "</TD>";
     for (auto col : merge.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
-         << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString(os) << "</TD>";)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString(os)
+             << "</TD>";)
     os << kEndTable << ">];\n";
 
     for (auto view : merge.MergedViews()) {
       auto color = view.CanProduceDeletions() ? " [color=purple]" : "";
-      os << "v" << merge.UniqueId() << " -> v" << view.UniqueId() << color << ";\n";
+      os << "v" << merge.UniqueId() << " -> v" << view.UniqueId() << color
+         << ";\n";
     }
 
     link_conds(merge);

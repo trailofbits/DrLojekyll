@@ -1,9 +1,9 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Program.h"
-
 #include <set>
 #include <unordered_map>
+
+#include "Program.h"
 
 namespace hyde {
 namespace {
@@ -19,7 +19,7 @@ std::set<QueryView> DependenciesOf(QueryView output) {
     const auto view = frontier.back();
     frontier.pop_back();
     view.ForEachUse(
-        [&] (QueryColumn col, InputColumnRole, std::optional<QueryColumn>) {
+        [&](QueryColumn col, InputColumnRole, std::optional<QueryColumn>) {
           auto dep_view = QueryView::Containing(col);
           if (!dependencies.count(dep_view)) {
             dependencies.insert(dep_view);
@@ -40,7 +40,7 @@ std::set<QueryView> DependentsOf(QueryView input) {
   while (!frontier.empty()) {
     const auto view = frontier.back();
     frontier.pop_back();
-    view.ForEachUser([&] (QueryView user) {
+    view.ForEachUser([&](QueryView user) {
       if (!dependents.count(user)) {
         dependents.insert(user);
         frontier.push_back(user);
@@ -54,8 +54,7 @@ std::set<QueryView> DependentsOf(QueryView input) {
 }  // namespace
 
 // Build a program from a query.
-std::optional<Program> Program::Build(
-    const Query &query, const ErrorLog &) {
+std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
 
   std::set<QueryView> eager;
   std::set<QueryView> lazy;

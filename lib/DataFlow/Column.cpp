@@ -63,8 +63,7 @@ bool Node<QueryColumn>::IsUsed(void) const noexcept {
 
 // Return the index of this column inside of its view.
 unsigned Node<QueryColumn>::Index(void) noexcept {
-  if (index >= view->columns.Size() ||
-      this != view->columns[index]) {
+  if (index >= view->columns.Size() || this != view->columns[index]) {
     auto i = 0u;
     for (auto col : view->columns) {
       if (col == this) {
@@ -80,9 +79,10 @@ unsigned Node<QueryColumn>::Index(void) noexcept {
 uint64_t Node<QueryColumn>::Hash(void) noexcept {
   if (!hash) {
     const auto view_hash = view->Hash();
-    hash = view_hash ^ RotateRight64(
-        view_hash * 0xff51afd7ed558ccdull,
-        (Index() + static_cast<unsigned>(type.Kind()) + 33u) % 64u);
+    hash = view_hash ^
+           RotateRight64(
+               view_hash * 0xff51afd7ed558ccdull,
+               (Index() + static_cast<unsigned>(type.Kind()) + 33u) % 64u);
   }
   return hash;
 }
@@ -100,9 +100,8 @@ void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
 
     // We've done a kind of constant propagation, so mark the using views
     // as non-canonical.
-    this->ForEachUse<VIEW>([] (VIEW *view, COL *) {
-      view->is_canonical = false;
-    });
+    this->ForEachUse<VIEW>(
+        [](VIEW *view, COL *) { view->is_canonical = false; });
 
     UseRef<COL> new_real_constant(const_col->CreateUse(this->view));
     referenced_constant.Swap(new_real_constant);
@@ -110,20 +109,22 @@ void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
 }
 
 void Node<QueryColumn>::ReplaceAllUsesWith(COL *that) {
-//  if (that->referenced_constant) {
-//    UseRef<COL> new_real_constant(that->referenced_constant->CreateUse(this->view));
-//    referenced_constant.Swap(new_real_constant);
-//
-//  } else if (that->IsConstant()) {
-//    UseRef<COL> new_real_constant(that->CreateUse(this->view));
-//    referenced_constant.Swap(new_real_constant);
-//
-//  } else {
+
+  //  if (that->referenced_constant) {
+  //    UseRef<COL> new_real_constant(that->referenced_constant->CreateUse(this->view));
+  //    referenced_constant.Swap(new_real_constant);
+  //
+  //  } else if (that->IsConstant()) {
+  //    UseRef<COL> new_real_constant(that->CreateUse(this->view));
+  //    referenced_constant.Swap(new_real_constant);
+  //
+  //  } else {
   if (referenced_constant && !that->IsConstantOrConstantRef()) {
     that->CopyConstant(referenced_constant.get());
   }
   this->Def<Node<QueryColumn>>::ReplaceAllUsesWith(that);
-//  }
+
+  //  }
 }
 
 }  // namespace hyde

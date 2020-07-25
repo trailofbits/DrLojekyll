@@ -2,9 +2,9 @@
 
 #pragma once
 
-#include <iosfwd>
-
 #include <drlojekyll/Display/DisplayPosition.h>
+
+#include <iosfwd>
 
 namespace hyde {
 

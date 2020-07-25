@@ -2,9 +2,9 @@
 
 #pragma once
 
-#include <memory>
-
 #include <drlojekyll/Parse/Parse.h>
+
+#include <memory>
 
 namespace hyde {
 

@@ -15,10 +15,8 @@ bool Token::IsValid(void) const {
     case ::hyde::Lexeme::kInvalidUnterminatedCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
-    case ::hyde::Lexeme::kInvalidUnknown:
-      return false;
-    default:
-      return true;
+    case ::hyde::Lexeme::kInvalidUnknown: return false;
+    default: return true;
   }
 }
 
@@ -51,15 +49,12 @@ DisplayPosition Token::NextPosition(void) const {
   auto column = position.Column();
 
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kInvalid:
-      return DisplayPosition();
+    case ::hyde::Lexeme::kInvalid: return DisplayPosition();
 
-    case ::hyde::Lexeme::kEndOfFile:
-      return position;
+    case ::hyde::Lexeme::kEndOfFile: return position;
 
     case ::hyde::Lexeme::kWhitespace:
-      index +=
-          token_interpreter.whitespace.spelling_width;
+      index += token_interpreter.whitespace.spelling_width;
 
       if (token_interpreter.whitespace.num_leading_newlines) {
         line += token_interpreter.whitespace.num_leading_newlines;
@@ -84,8 +79,7 @@ DisplayPosition Token::NextPosition(void) const {
     case ::hyde::Lexeme::kInvalidUnterminatedCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
-    case ::hyde::Lexeme::kInvalidUnknown:
-      return ErrorPosition();
+    case ::hyde::Lexeme::kInvalidUnknown: return ErrorPosition();
 
     default:
       index += token_interpreter.basic.spelling_width;
@@ -112,8 +106,8 @@ unsigned Token::SpellingWidth(void) const {
     case ::hyde::Lexeme::kLiteralCode: {
       int num_lines = 0;
       int num_cols = 0;
-      if (Position().TryComputeDistanceTo(NextPosition(), nullptr,
-                                          &num_lines, &num_cols) &&
+      if (Position().TryComputeDistanceTo(NextPosition(), nullptr, &num_lines,
+                                          &num_cols) &&
           !num_lines && 0 < num_cols) {
         return static_cast<unsigned>(num_cols);
       }
@@ -141,10 +135,8 @@ bool Token::IsType(void) const {
     case ::hyde::Lexeme::kTypeUUID:
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
-    case ::hyde::Lexeme::kTypeFn:
-      return true;
-    default:
-      return false;
+    case ::hyde::Lexeme::kTypeFn: return true;
+    default: return false;
   }
 }
 
@@ -186,8 +178,7 @@ unsigned Token::IdentifierId(void) const {
       const lex::TokenInterpreter interpreter = {opaque_data};
       return interpreter.identifier.index;
     }
-    default:
-      return 0;
+    default: return 0;
   }
 }
 
@@ -199,8 +190,7 @@ unsigned Token::IdentifierLength(void) const {
       const lex::TokenInterpreter interpreter = {opaque_data};
       return interpreter.identifier.spelling_width;
     }
-    default:
-      return 0;
+    default: return 0;
   }
 }
 
@@ -297,8 +287,8 @@ Token Token::Synthetic(::hyde::Lexeme lexeme, DisplayRange range) {
   interpreter.basic.lexeme = static_cast<uint8_t>(lexeme);
   int num_lines = 0;
   int num_cols = 0;
-  if (range.TryComputeDistance(nullptr, &num_lines, &num_cols) &&
-      !num_lines && 0 < num_cols) {
+  if (range.TryComputeDistance(nullptr, &num_lines, &num_cols) && !num_lines &&
+      0 < num_cols) {
     interpreter.basic.spelling_width = static_cast<uint16_t>(num_cols);
   }
 

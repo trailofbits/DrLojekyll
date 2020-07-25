@@ -18,8 +18,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
   assert(tok.Lexeme() == Lexeme::kHashImportModuleStmt);
 
-  std::unique_ptr<Node<ParsedImport>> imp(
-      new Node<ParsedImport>);
+  std::unique_ptr<Node<ParsedImport>> imp(new Node<ParsedImport>);
   imp->directive_pos = tok.Position();
 
   if (!ReadNextSubToken(tok)) {
@@ -92,8 +91,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   // Go and parse the module.
   ParserImpl sub_impl(context);
   auto sub_mod_opt = sub_impl.ParseDisplay(
-      context->display_manager.OpenPath(full_path, sub_config),
-      sub_config);
+      context->display_manager.OpenPath(full_path, sub_config), sub_config);
 
   // Restore the old first search path.
   context->import_search_paths[0] = prev_search0;

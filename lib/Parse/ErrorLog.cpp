@@ -11,8 +11,7 @@ namespace hyde {
 
 class ErrorLog::Impl {
  public:
-  explicit Impl(const DisplayManager &dm_)
-      : dm(dm_) {}
+  explicit Impl(const DisplayManager &dm_) : dm(dm_) {}
 
   const DisplayManager dm;
   std::vector<Error> errors;
@@ -58,8 +57,7 @@ Error ErrorLog::Append(const DisplayRange &range,
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced, where the error itself is at
 // `pos_in_range`.
-Error ErrorLog::Append(const DisplayRange &range,
-                       const DisplayRange &sub_range,
+Error ErrorLog::Append(const DisplayRange &range, const DisplayRange &sub_range,
                        const DisplayPosition &pos_in_range) const {
   Error err(impl->dm, range, sub_range, pos_in_range);
   impl->errors.push_back(err);
@@ -82,8 +80,8 @@ unsigned ErrorLog::Size(void) const {
 }
 
 // Render the formatted errors to a stream, along with any attached notes.
-void ErrorLog::Render(
-    std::ostream &os, const ErrorColorScheme &color_scheme) const {
+void ErrorLog::Render(std::ostream &os,
+                      const ErrorColorScheme &color_scheme) const {
   for (auto &error : impl->errors) {
     error.Render(os, color_scheme);
   }

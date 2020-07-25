@@ -19,8 +19,7 @@ namespace program {
 template <typename T>
 class ProgramNode {
  public:
-  inline ProgramNode(Node<T> *impl_)
-      : impl(impl_) {}
+  inline ProgramNode(Node<T> *impl_) : impl(impl_) {}
 
   inline bool operator==(ProgramNode<T> that) const {
     return impl == that.impl;
@@ -49,8 +48,7 @@ class ProgramNode {
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(
-      const Query &query, const ErrorLog &log);
+  static std::optional<Program> Build(const Query &query, const ErrorLog &log);
 
   ~Program(void);
 
@@ -60,8 +58,7 @@ class Program {
   Program &operator=(Program &&) noexcept = default;
 
  private:
-  inline explicit Program(std::shared_ptr<ProgramImpl> impl_)
-      : impl(impl_) {}
+  inline explicit Program(std::shared_ptr<ProgramImpl> impl_) : impl(impl_) {}
 
   std::shared_ptr<ProgramImpl> impl;
 };

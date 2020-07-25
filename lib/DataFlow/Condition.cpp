@@ -1,9 +1,9 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <algorithm>
 #include <unordered_map>
+
+#include "Query.h"
 
 namespace hyde {
 
@@ -15,20 +15,18 @@ void QueryImpl::SinkConditions(void) const {
   std::unordered_map<QueryView, std::vector<QueryView>> to_from;
   std::unordered_map<QueryView, std::vector<QueryView>> from_to;
 
-  ForEachView([&] (QueryView view) {
+  ForEachView([&](QueryView view) {
     auto &from = from_to[view];
-    view.ForEachUser([&] (QueryView user_view) {
-      from.push_back(user_view);
-    });
+    view.ForEachUser([&](QueryView user_view) { from.push_back(user_view); });
   });
 
-  for (auto changed = true; changed; ) {
+  for (auto changed = true; changed;) {
     changed = false;
     for (const auto &[input_view, user_views] : to_from) {
       const auto view = input_view.impl;
 
-      auto old_size = view->positive_conditions.Size() +
-                      view->negative_conditions.Size();
+      auto old_size =
+          view->positive_conditions.Size() + view->negative_conditions.Size();
 
       if (user_views.size() == 1) {
         auto user_view = user_views.front().impl;
@@ -45,8 +43,8 @@ void QueryImpl::SinkConditions(void) const {
       }
 
       view->OrderConditions();
-      auto new_size = view->positive_conditions.Size() +
-                      view->negative_conditions.Size();
+      auto new_size =
+          view->positive_conditions.Size() + view->negative_conditions.Size();
       changed = changed || new_size > old_size;
     }
   }

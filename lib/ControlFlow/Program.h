@@ -3,7 +3,6 @@
 #pragma once
 
 #include <drlojekyll/ControlFlow/Program.h>
-
 #include <drlojekyll/DataFlow/Query.h>
 
 #include <vector>
@@ -23,8 +22,7 @@ class Node<ProgramRegion> : public User {
  public:
   virtual ~Node(void);
 
-  inline Node(void)
-      : User(this) {}
+  inline Node(void) : User(this) {}
 
   virtual Node<ProgramBlockRegion> *AsBasic(void) noexcept;
   virtual Node<ProgramSeriesRegion> *AsSeries(void) noexcept;
@@ -37,8 +35,7 @@ class Node<ProgramBlockRegion> final : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  inline explicit Node(QueryView view_)
-      : view(view_) {}
+  inline explicit Node(QueryView view_) : view(view_) {}
 
   Node<ProgramBlockRegion> *AsBasic(void) noexcept override;
 
@@ -52,8 +49,7 @@ using BLOCK = Node<ProgramBlockRegion>;
 template <>
 class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(void)
-      : regions(this) {}
+  inline Node(void) : regions(this) {}
 
   virtual ~Node(void);
   Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
@@ -68,8 +64,7 @@ using SERIES = Node<ProgramSeriesRegion>;
 template <>
 class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(void)
-      : regions(this) {}
+  inline Node(void) : regions(this) {}
 
   virtual ~Node(void);
   Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
@@ -86,8 +81,7 @@ using PARALLEL = Node<ProgramParallelRegion>;
 template <>
 class Node<ProgramInduction> {
  public:
-  inline explicit Node(QueryMerge merge_)
-      : merge(merge_) {}
+  inline explicit Node(QueryMerge merge_) : merge(merge_) {}
 
   const QueryMerge merge;
   std::vector<QueryView> input_views;

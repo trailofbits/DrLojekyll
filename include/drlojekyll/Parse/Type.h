@@ -76,8 +76,7 @@ class TypeLoc {
   template <typename>
   friend class Node;
 
-  inline TypeLoc(void)
-      : kind(TypeKind::kInvalid) {}
+  inline TypeLoc(void) : kind(TypeKind::kInvalid) {}
 
   TypeKind kind;
   DisplayRange range;

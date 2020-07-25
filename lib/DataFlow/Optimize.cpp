@@ -1,10 +1,10 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include "Query.h"
+#include "Optimize.h"
 
 #include <drlojekyll/Util/EqualitySet.h>
 
-#include "Optimize.h"
+#include "Query.h"
 
 namespace hyde {
 namespace {
@@ -32,7 +32,7 @@ static bool CSE(CandidateList &all_views) {
   using CandidatePair = std::tuple<uint64_t, VIEW *, uint64_t, VIEW *>;
   std::vector<CandidatePair> to_replace;
   std::unordered_map<VIEW *, VIEW *> top_map;
-  auto resolve = [&] (VIEW *a) -> VIEW * {
+  auto resolve = [&](VIEW *a) -> VIEW * {
     while (top_map.count(a)) {
       a = top_map[a];
     }
@@ -58,29 +58,29 @@ static bool CSE(CandidateList &all_views) {
     }
 
     std::sort(to_replace.begin(), to_replace.end(),
-              [] (CandidatePair a, CandidatePair b) {
-      const auto a_v1_uphash = std::get<0>(a);
-      const auto a_v2_uphash = std::get<2>(a);
+              [](CandidatePair a, CandidatePair b) {
+                const auto a_v1_uphash = std::get<0>(a);
+                const auto a_v2_uphash = std::get<2>(a);
 
-      const auto b_v1_uphash = std::get<0>(b);
-      const auto b_v2_uphash = std::get<2>(b);
+                const auto b_v1_uphash = std::get<0>(b);
+                const auto b_v2_uphash = std::get<2>(b);
 
-      int a_bad = a_v1_uphash != a_v2_uphash;
-      int b_bad = b_v1_uphash != b_v2_uphash;
+                int a_bad = a_v1_uphash != a_v2_uphash;
+                int b_bad = b_v1_uphash != b_v2_uphash;
 
-      if (a_bad != b_bad) {
-        return a_bad < b_bad;
-      }
+                if (a_bad != b_bad) {
+                  return a_bad < b_bad;
+                }
 
-      const auto a_v1 = std::get<1>(a);
-      const auto a_v2 = std::get<3>(a);
+                const auto a_v1 = std::get<1>(a);
+                const auto a_v2 = std::get<3>(a);
 
-      const auto b_v1 = std::get<1>(b);
-      const auto b_v2 = std::get<3>(b);
+                const auto b_v1 = std::get<1>(b);
+                const auto b_v2 = std::get<3>(b);
 
-      return std::min(a_v1->Depth(), a_v2->Depth()) <
-             std::min(b_v1->Depth(), b_v2->Depth());
-    });
+                return std::min(a_v1->Depth(), a_v2->Depth()) <
+                       std::min(b_v1->Depth(), b_v2->Depth());
+              });
 
     while (!to_replace.empty()) {
       auto [v1_uphash, v1, v2_uphash, v2] = to_replace.back();
@@ -91,10 +91,7 @@ static bool CSE(CandidateList &all_views) {
       (void) v2_uphash;
 
       eq.Clear();
-      if (v1 != v2 &&
-          v1->IsUsed() &&
-          v2->IsUsed() &&
-          eq.Contains(v1, v2)) {
+      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && eq.Contains(v1, v2)) {
         v1->ReplaceAllUsesWith(v2);
         changed = true;
       }
@@ -125,7 +122,7 @@ void QueryImpl::RelabelGroupIDs(void) {
   std::vector<COL *> sorted_cols;
 
   unsigned i = 1u;
-  ForEachView([&] (VIEW *view) {
+  ForEachView([&](VIEW *view) {
     if (view->is_dead) {
       return;
     }
@@ -147,7 +144,7 @@ void QueryImpl::RelabelGroupIDs(void) {
     }
   });
 
-  ForEachView([&] (VIEW *view) {
+  ForEachView([&](VIEW *view) {
     if (view->is_dead) {
       return;
     }
@@ -156,14 +153,11 @@ void QueryImpl::RelabelGroupIDs(void) {
   });
 
   // Sort it so that we process deeper views (closer to INSERTs) first.
-  std::sort(
-      sorted_cols.begin(), sorted_cols.end(),
-      [] (COL *a, COL *b) {
-        return a->view->Depth() > b->view->Depth();
-      });
+  std::sort(sorted_cols.begin(), sorted_cols.end(),
+            [](COL *a, COL *b) { return a->view->Depth() > b->view->Depth(); });
 
   // Propagate the group IDs down through the graph.
-  for (auto changed = true; changed; ) {
+  for (auto changed = true; changed;) {
     changed = false;
     for (auto col : sorted_cols) {
       const auto view = col->view;
@@ -172,8 +166,7 @@ void QueryImpl::RelabelGroupIDs(void) {
 
       // Look at the users of this column, e.g. joins, aggregates, tuples,
       // and copy their view's group ids back to this view.
-      col->ForEachUser([=] (VIEW *user) {
-
+      col->ForEachUser([=](VIEW *user) {
         // If the user if a JOIN, AGGREGATE, or KVINDEX, then take its group
         // ID.
         if (user->group_id) {
@@ -181,10 +174,8 @@ void QueryImpl::RelabelGroupIDs(void) {
 
         // Otherwise, take its set of group IDs.
         } else {
-          view->group_ids.insert(
-              view->group_ids.end(),
-              user->group_ids.begin(),
-              user->group_ids.end());
+          view->group_ids.insert(view->group_ids.end(), user->group_ids.begin(),
+                                 user->group_ids.end());
         }
       });
 
@@ -206,11 +197,9 @@ bool QueryImpl::RemoveUnusedViews(void) {
 
   std::vector<VIEW *> views;
 
-  ForEachViewInReverseDepthOrder([&] (VIEW *view) {
-    views.push_back(view);
-  });
+  ForEachViewInReverseDepthOrder([&](VIEW *view) { views.push_back(view); });
 
-  for (auto changed = true; changed; ) {
+  for (auto changed = true; changed;) {
     changed = false;
     for (auto view : views) {
       if (!view->IsUsed()) {
@@ -222,40 +211,35 @@ bool QueryImpl::RemoveUnusedViews(void) {
   }
 
   do {
-//    for (auto rel : relations) {
-//      if (rel->IsUsed()) {
-//        rel->ForEachUse<VIEW>([] (VIEW *v, REL *) {
-//          assert(!v->is_dead);
-//        });
-//      }
-//      rel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
-//    }
+
+    //    for (auto rel : relations) {
+    //      if (rel->IsUsed()) {
+    //        rel->ForEachUse<VIEW>([] (VIEW *v, REL *) {
+    //          assert(!v->is_dead);
+    //        });
+    //      }
+    //      rel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
+    //    }
 
     ret = 0u;
 
-//    for (auto sel : selects) {
-//      sel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
-//    }
+    //    for (auto sel : selects) {
+    //      sel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
+    //    }
 
-    ret |= selects.RemoveUnused() |
-           tuples.RemoveUnused() |
-           kv_indices.RemoveUnused() |
-           joins.RemoveUnused() |
-           maps.RemoveUnused() |
-           aggregates.RemoveUnused() |
-           merges.RemoveUnused() |
-           constraints.RemoveUnused() |
+    ret |= selects.RemoveUnused() | tuples.RemoveUnused() |
+           kv_indices.RemoveUnused() | joins.RemoveUnused() |
+           maps.RemoveUnused() | aggregates.RemoveUnused() |
+           merges.RemoveUnused() | constraints.RemoveUnused() |
            inserts.RemoveUnused();
     all_ret |= ret;
   } while (ret);
 
-  all_ret |= relations.RemoveIf([] (REL *rel) {
-    return rel->inserts.Empty() && rel->selects.Empty();
-  });
+  all_ret |= relations.RemoveIf(
+      [](REL *rel) { return rel->inserts.Empty() && rel->selects.Empty(); });
 
-  all_ret |= ios.RemoveIf([] (IO *io) {
-    return io->receives.Empty() && io->transmits.Empty();
-  });
+  all_ret |= ios.RemoveIf(
+      [](IO *io) { return io->receives.Empty() && io->transmits.Empty(); });
 
   return 0 != all_ret;
 }
@@ -291,21 +275,19 @@ void QueryImpl::Simplify(const ErrorLog &log) {
 // "most optimal" form. Previously it was more about re-arranging columns
 // to encourange better CSE results.
 void QueryImpl::Canonicalize(const OptimizationContext &opt) {
-  ForEachView([&] (VIEW *view) {
-    view->is_canonical = false;
-  });
+  ForEachView([&](VIEW *view) { view->is_canonical = false; });
 
   // Canonicalize all views.
-  for (auto non_local_changes = true; non_local_changes; ) {
+  for (auto non_local_changes = true; non_local_changes;) {
     non_local_changes = false;
     if (opt.bottom_up) {
-      ForEachViewInDepthOrder([&] (VIEW *view) {
+      ForEachViewInDepthOrder([&](VIEW *view) {
         if (view->Canonicalize(this, opt)) {
           non_local_changes = true;
         }
       });
     } else {
-      ForEachViewInReverseDepthOrder([&] (VIEW *view) {
+      ForEachViewInReverseDepthOrder([&](VIEW *view) {
         if (view->Canonicalize(this, opt)) {
           non_local_changes = true;
         }
@@ -323,25 +305,22 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt) {
 // conditions and shrink down to a more minimal form.
 bool QueryImpl::ShrinkConditions(void) {
   std::vector<COND *> conds;
-  ForEachView([&] (VIEW *view) {
-    view->depth = 0;
-  });
+  ForEachView([&](VIEW *view) { view->depth = 0; });
 
   for (auto cond : conditions) {
     conds.push_back(cond);
   }
 
-  std::sort(conds.begin(), conds.end(),
-            [] (COND *a, COND *b) {
-              return QueryCondition(a).Depth() < QueryCondition(b).Depth();
-            });
+  std::sort(conds.begin(), conds.end(), [](COND *a, COND *b) {
+    return QueryCondition(a).Depth() < QueryCondition(b).Depth();
+  });
 
   for (auto cond : conds) {
     if (cond->setters.Size() != 1u) {
       continue;
     }
 
-    VIEW * const setter = cond->setters[0];
+    VIEW *const setter = cond->setters[0];
     assert(setter->sets_condition.get() == cond);
     bool all_constant = true;
     for (auto in_col : setter->input_columns) {
@@ -409,33 +388,27 @@ bool QueryImpl::ShrinkConditions(void) {
     }
   }
 
-  ForEachView([&] (VIEW *view) {
+  ForEachView([&](VIEW *view) {
     view->depth = 0;
     view->OrderConditions();
   });
 
-  return conditions.RemoveIf([] (COND *cond) {
-    return cond->setters.Empty();
-  });
+  return conditions.RemoveIf([](COND *cond) { return cond->setters.Empty(); });
 }
 
 // Apply common subexpression elimination (CSE) to the dataflow.
 void QueryImpl::Optimize(const ErrorLog &log) {
   CandidateList views;
 
-  auto do_cse = [&] (void) {
+  auto do_cse = [&](void) {
     views.clear();
-    this->ForEachView([&views] (VIEW *view) {
-      views.push_back(view);
-    });
+    this->ForEachView([&views](VIEW *view) { views.push_back(view); });
 
     while (CSE(views)) {
       RemoveUnusedViews();
       RelabelGroupIDs();
       views.clear();
-      this->ForEachView([&views] (VIEW *view) {
-        views.push_back(view);
-      });
+      this->ForEachView([&views](VIEW *view) { views.push_back(view); });
     }
   };
 
@@ -445,6 +418,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   do_cse();  // Apply CSE to all canonical views.
 
   do {
+
     // Now do a stronger form of canonicalization.
     opt.can_remove_unused_columns = true;
     opt.can_replace_inputs_with_constants = true;
