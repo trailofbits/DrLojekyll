@@ -38,8 +38,7 @@ class Display {
   friend class DisplayManager;
   friend class DisplayReader;
 
-  inline explicit Display(DisplayImpl *impl_)
-      : impl(impl_) {}
+  inline explicit Display(DisplayImpl *impl_) : impl(impl_) {}
 
   Display(void) = delete;
 

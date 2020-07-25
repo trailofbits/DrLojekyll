@@ -4,9 +4,7 @@
 
 namespace hyde {
 
-DisjointSet::DisjointSet(unsigned id_)
-    : parent(this),
-      id(id_) {}
+DisjointSet::DisjointSet(unsigned id_) : parent(this), id(id_) {}
 
 DisjointSet *DisjointSet::Find(void) {
   if (parent == this) {

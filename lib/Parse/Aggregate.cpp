@@ -45,9 +45,8 @@ static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
 
         case Lexeme::kKeywordSummary: {
           auto agg_range = ParsedAggregate(impl).SpellingRange();
-          auto err = log.Append(
-              agg_range,
-              ParsedVariable(param_var).SpellingRange());
+          auto err =
+              log.Append(agg_range, ParsedVariable(param_var).SpellingRange());
 
           err << "Parameter variable '" << param_var->name
               << "' to predicate being aggregated shares the same name "
@@ -60,14 +59,12 @@ static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
           err.Note(agg_range, ParsedVariable(found_as).SpellingRange())
               << "Variable '" << param_var->name
               << "' used here as as a summary argument to the aggregating functor '"
-              << impl->functor->name << "/" << impl->functor->argument_uses.size()
-              << "'";
+              << impl->functor->name << "/"
+              << impl->functor->argument_uses.size() << "'";
 
           break;
         }
-        default:
-          assert(false);
-          break;
+        default: assert(false); break;
       }
     }
   }
@@ -78,10 +75,9 @@ static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
 // Try to parse the predicate application following a use of an aggregating
 // functor.
 bool ParserImpl::ParseAggregatedPredicate(
-    Node<ParsedModule> *module,
-    Node<ParsedClause> *clause,
-    std::unique_ptr<Node<ParsedPredicate>> functor,
-    Token &tok, DisplayPosition &next_pos) {
+    Node<ParsedModule> *module, Node<ParsedClause> *clause,
+    std::unique_ptr<Node<ParsedPredicate>> functor, Token &tok,
+    DisplayPosition &next_pos) {
 
   auto state = 0;
 
@@ -105,16 +101,17 @@ bool ParserImpl::ParseAggregatedPredicate(
 
     switch (state) {
       case 0:
+
         // An inline predicate; we'll need to invent a declaration and
         // clause for it.
         if (Lexeme::kPuncOpenParen == lexeme) {
-          anon_decl.reset(new Node<ParsedLocal>(
-              module, DeclarationKind::kLocal));
+          anon_decl.reset(
+              new Node<ParsedLocal>(module, DeclarationKind::kLocal));
           anon_decl->directive_pos = tok.Position();
-          anon_decl->name = Token::Synthetic(
-              Lexeme::kIdentifierUnnamedAtom, tok_range);
-          anon_decl->inline_attribute = Token::Synthetic(
-              Lexeme::kKeywordInline, DisplayRange());
+          anon_decl->name =
+              Token::Synthetic(Lexeme::kIdentifierUnnamedAtom, tok_range);
+          anon_decl->inline_attribute =
+              Token::Synthetic(Lexeme::kKeywordInline, DisplayRange());
           assert(anon_decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom);
           anon_clause_toks.push_back(anon_decl->name);
 
@@ -167,8 +164,8 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_clause_toks.push_back(tok);
 
           arg = CreateVariable(clause, tok, false, true);
-          auto use = new Node<ParsedUse<ParsedPredicate>>(
-              UseKind::kArgument, arg, pred.get());
+          auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
+                                                          arg, pred.get());
 
           // Add to this variable's use list.
           auto &argument_uses = arg->context->argument_uses;
@@ -218,8 +215,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
       case 4:
         if (Lexeme::kPuncOpenBrace == lexeme) {
-          const auto colon = Token::Synthetic(
-              Lexeme::kPuncColon, tok_range);
+          const auto colon = Token::Synthetic(Lexeme::kPuncColon, tok_range);
           assert(colon.Lexeme() == Lexeme::kPuncColon);
           anon_clause_toks.push_back(colon);
           state = 5;
@@ -288,8 +284,8 @@ bool ParserImpl::ParseAggregatedPredicate(
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected opening parenthesis here to test predicate '"
-              << pred->name << "' used in aggregation, but got '"
-              << tok << "' instead";
+              << pred->name << "' used in aggregation, but got '" << tok
+              << "' instead";
           return false;
         }
 
@@ -307,8 +303,8 @@ bool ParserImpl::ParseAggregatedPredicate(
         }
 
         if (arg) {
-          auto use = new Node<ParsedUse<ParsedPredicate>>(
-              UseKind::kArgument, arg, pred.get());
+          auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
+                                                          arg, pred.get());
 
           // Add to this variable's use list.
           auto &argument_uses = arg->context->argument_uses;
@@ -330,8 +326,8 @@ bool ParserImpl::ParseAggregatedPredicate(
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected variable or literal here as argument to predicate '"
-              << pred->name << "' used in aggregation, but got '"
-              << tok << "' instead";
+              << pred->name << "' used in aggregation, but got '" << tok
+              << "' instead";
           return false;
         }
 
@@ -373,8 +369,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
 done:
 
-  std::unique_ptr<Node<ParsedAggregate>> agg(
-      new Node<ParsedAggregate>);
+  std::unique_ptr<Node<ParsedAggregate>> agg(new Node<ParsedAggregate>);
   agg->spelling_range = DisplayRange(functor->name.Position(), last_pos);
   agg->functor = std::move(functor);
   agg->predicate = std::move(pred);

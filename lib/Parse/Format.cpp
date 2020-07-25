@@ -1,11 +1,10 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
 #include <cassert>
-
-#include <drlojekyll/Display/Format.h>
-#include <drlojekyll/Lex/Format.h>
 
 namespace hyde {
 
@@ -35,30 +34,23 @@ OutputStream &operator<<(OutputStream &os, ParsedLiteral val) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedParameter param) {
+
   // Binding specific; optional for some declarations.
   switch (param.Binding()) {
-    case ParameterBinding::kImplicit:
-      break;
+    case ParameterBinding::kImplicit: break;
 
     case ParameterBinding::kMutable:
       os << "mutable(" << ParsedFunctor::MergeOperatorOf(param).Name() << ") "
          << param.Name();
+
       // NOTE(pag): `param.Type()` is valid but not explicitly printed as it's
       //            taken from the merge functor's parameter types.
       return os;
 
-    case ParameterBinding::kFree:
-      os << "free ";
-      break;
-    case ParameterBinding::kBound:
-      os << "bound ";
-      break;
-    case ParameterBinding::kAggregate:
-      os << "aggregate ";
-      break;
-    case ParameterBinding::kSummary:
-      os << "summary ";
-      break;
+    case ParameterBinding::kFree: os << "free "; break;
+    case ParameterBinding::kBound: os << "bound "; break;
+    case ParameterBinding::kAggregate: os << "aggregate "; break;
+    case ParameterBinding::kSummary: os << "summary "; break;
   }
 
   if (param.Type().IsValid()) {
@@ -130,18 +122,10 @@ OutputStream &operator<<(OutputStream &os, ParsedAssignment assign) {
 OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
   const char *op = "";
   switch (compare.Operator()) {
-    case ComparisonOperator::kEqual:
-      op = " = ";
-      break;
-    case ComparisonOperator::kNotEqual:
-      op = " != ";
-      break;
-    case ComparisonOperator::kLessThan:
-      op = " < ";
-      break;
-    case ComparisonOperator::kGreaterThan:
-      op = " > ";
-      break;
+    case ComparisonOperator::kEqual: op = " = "; break;
+    case ComparisonOperator::kNotEqual: op = " != "; break;
+    case ComparisonOperator::kLessThan: op = " < "; break;
+    case ComparisonOperator::kGreaterThan: op = " > "; break;
   }
   os << compare.LHS() << op << compare.RHS();
   return os;
@@ -195,8 +179,7 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   if (clause.IsDeletion()) {
     os << '!';
   }
-  os << ParsedClauseHead(clause) << " : "
-     << ParsedClauseBody(clause) << ".";
+  os << ParsedClauseHead(clause) << " : " << ParsedClauseBody(clause) << ".";
   return os;
 }
 

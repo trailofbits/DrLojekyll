@@ -13,11 +13,11 @@
 #include <vector>
 
 #if defined(__clang__) || defined(__GNUC__)
-# define DR_INLINE [[gnu::always_inline]] inline
+#  define DR_INLINE [[gnu::always_inline]] inline
 #elif defined(_MSVC_LANG)
-# define DR_INLINE __forceinline
+#  define DR_INLINE __forceinline
 #else
-# define DR_INLINE inline
+#  define DR_INLINE inline
 #endif
 
 template <typename T>
@@ -74,25 +74,19 @@ template <size_t kNumCases>
 class WorkList {
  private:
   static constexpr bool kIdIsI8 = static_cast<uint8_t>(kNumCases) == kNumCases;
-  static constexpr bool kIdIsI16 = static_cast<uint16_t>(kNumCases) == kNumCases;
+  static constexpr bool kIdIsI16 =
+      static_cast<uint16_t>(kNumCases) == kNumCases;
 
-  enum : size_t {
-    kMinSize = 4096u
-  };
+  enum : size_t { kMinSize = 4096u };
 
  public:
-
   using IdType = typename std::conditional<
       kIdIsI8, uint8_t,
-      typename std::conditional<
-          kIdIsI16, uint16_t,
-          uint32_t>::type>::type;
+      typename std::conditional<kIdIsI16, uint16_t, uint32_t>::type>::type;
 
   static_assert(sizeof(IdType) < kMinSize);
 
-  WorkList(void)
-      : begin_(new std::byte[kMinSize]),
-        end_(&(begin_[kMinSize])) {
+  WorkList(void) : begin_(new std::byte[kMinSize]), end_(&(begin_[kMinSize])) {
     Clear();
   }
 
@@ -145,13 +139,12 @@ class WorkList {
   WorkList(const SelfType &) = delete;
   WorkList(SelfType &&) noexcept = delete;
 
-  [[gnu::noinline]]
-  void Resize(void) {
+  [[gnu::noinline]] void Resize(void) {
     auto curr_size = end_ - begin_;
     auto new_size = ((curr_size * 5u) / 3u) + kMinSize;
     auto new_begin = new std::byte[new_size];
     std::move(begin_, end_, new_begin);
-    delete [] begin_;
+    delete[] begin_;
     curr_ = &(new_begin[curr_ - begin_]);
     end_ = &(new_begin[new_size]);
     begin_ = new_begin;
@@ -175,7 +168,7 @@ class Generator {
 
   ~Generator(void) {
     if (begin_ != &(inline_[0])) {
-      delete [] begin_;
+      delete[] begin_;
     }
   }
 
@@ -208,15 +201,13 @@ class Generator {
   }
 
  private:
-
-  [[gnu::noinline]]
-  void Resize(void) {
+  [[gnu::noinline]] void Resize(void) {
     auto curr_size = end_ - begin_;
     auto new_size = curr_size * 2u;
     auto new_begin = new Tuple[new_size];
     std::move(begin_, end_, new_begin);
     if (begin_ != &(inline_[0])) {
-      delete [] begin_;
+      delete[] begin_;
     }
     curr_ = &(new_begin[curr_size]);
     end_ = &(new_begin[new_size]);
@@ -249,7 +240,7 @@ template <typename... KeyTypes>
 struct Hash {
   inline static uint64_t Update(KeyTypes... keys) noexcept {
     uint64_t hash = 0;
-    auto apply_each = [&hash] (auto val) {
+    auto apply_each = [&hash](auto val) {
       hash = Hash<decltype(val)>::Update(hash, val);
     };
     int force[] = {(apply_each(keys), 0)...};
@@ -262,19 +253,18 @@ struct Hash {
 //
 //            Or have it do some kind of order preservation.
 #define HASH_MIX(a, b) \
-    ((((a) << 37) * 0x85ebca6bull) ^ \
-     (((a) >> 43) * 0xc2b2ae35ull) ^ \
-      ((b) * 0xcc9e2d51ull))
+  ((((a) << 37) * 0x85ebca6bull) ^ (((a) >> 43) * 0xc2b2ae35ull) ^ \
+   ((b) *0xcc9e2d51ull))
 
 #define MAKE_HASH_IMPL(type, utype, cast) \
-    template <> \
-    struct Hash<type> { \
-     public: \
-      inline static uint64_t Update(uint64_t hash, type val_) noexcept { \
-        const uint64_t val = cast<utype>(val_); \
-        return HASH_MIX(hash, val); \
-      } \
-    }
+  template <> \
+  struct Hash<type> { \
+   public: \
+    inline static uint64_t Update(uint64_t hash, type val_) noexcept { \
+      const uint64_t val = cast<utype>(val_); \
+      return HASH_MIX(hash, val); \
+    } \
+  }
 
 MAKE_HASH_IMPL(std::byte, unsigned char, static_cast);
 MAKE_HASH_IMPL(bool, uint8_t, static_cast);
@@ -323,8 +313,7 @@ template <>
 struct Hash<ASCII> {
  public:
   inline static uint64_t Update(uint64_t hash, ASCII str) noexcept {
-    _Pragma("unroll")
-    for (auto qword : str.opaque_qwords) {
+    _Pragma("unroll") for (auto qword : str.opaque_qwords) {
       hash = HASH_MIX(hash, qword);
     }
     return hash;
@@ -335,8 +324,7 @@ template <>
 struct Hash<UTF8> {
  public:
   inline static uint64_t Update(uint64_t hash, UTF8 str) noexcept {
-    _Pragma("unroll")
-    for (auto qword : str.opaque_qwords) {
+    _Pragma("unroll") for (auto qword : str.opaque_qwords) {
       hash = HASH_MIX(hash, qword);
     }
     return hash;
@@ -347,8 +335,7 @@ template <>
 struct Hash<Bytes> {
  public:
   inline static uint64_t Update(uint64_t hash, Bytes str) noexcept {
-    _Pragma("unroll")
-    for (auto qword : str.opaque_qwords) {
+    _Pragma("unroll") for (auto qword : str.opaque_qwords) {
       hash = HASH_MIX(hash, qword);
     }
     return hash;
@@ -384,37 +371,28 @@ class Aggregate;
 template <typename AggregatorType>
 class Aggregate<AggregatorType, NoConfigVars, NoGroupVars> {
  public:
-  AggregatorType *Get(void) noexcept {
-
-  }
+  AggregatorType *Get(void) noexcept {}
 };
 
 template <typename AggregatorType, typename... ConfigVarTypes>
 class Aggregate<AggregatorType, ConfigVars<ConfigVarTypes...>, NoGroupVars> {
  public:
-  AggregatorType *Get(
-      ConfigVarTypes&&... config_vars) noexcept {
-
-  }
+  AggregatorType *Get(ConfigVarTypes &&... config_vars) noexcept {}
 };
 
 template <typename AggregatorType, typename... GroupVarTypes>
 class Aggregate<AggregatorType, NoConfigVars, GroupVars<GroupVarTypes...>> {
  public:
-  AggregatorType *Get(
-      GroupVarTypes&&... group_vars) noexcept {
-
-  }
+  AggregatorType *Get(GroupVarTypes &&... group_vars) noexcept {}
 };
 
-template <typename AggregatorType, typename... GroupVarTypes, typename... ConfigVarTypes>
-class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>, GroupVars<ConfigVarTypes...>> {
+template <typename AggregatorType, typename... GroupVarTypes,
+          typename... ConfigVarTypes>
+class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>,
+                GroupVars<ConfigVarTypes...>> {
  public:
-  AggregatorType *Get(
-      GroupVarTypes&&... group_vars,
-      ConfigVarTypes&&... config_vars) noexcept {
-
-  }
+  AggregatorType *Get(GroupVarTypes &&... group_vars,
+                      ConfigVarTypes &&... config_vars) noexcept {}
 };
 
 template <typename... Keys>
@@ -427,7 +405,8 @@ struct SourceVars {};
 
 struct NoSourceVars {};
 
-template <typename PivotSetType, unsigned kNumSources, typename... SourceSetTypes>
+template <typename PivotSetType, unsigned kNumSources,
+          typename... SourceSetTypes>
 class Join;
 
 // Storage model for K/V mapping of an equi-join:
@@ -466,9 +445,9 @@ struct ConcatTupleTypes<std::tuple<LVars...>, std::tuple<RVars...>> {
 
 template <typename... Vars, typename... Rest>
 struct MapSourceVars<SourceVars<Vars...>, Rest...> {
-  using Type = typename ConcatTupleTypes<
-      std::tuple<std::vector<std::tuple<Vars...>>>,
-      typename MapSourceVars<Rest...>::Type>::Type;
+  using Type =
+      typename ConcatTupleTypes<std::tuple<std::vector<std::tuple<Vars...>>>,
+                                typename MapSourceVars<Rest...>::Type>::Type;
 };
 
 }  // namespace detail
@@ -503,7 +482,8 @@ struct JoinEntry<NoPivotVars, SVarSets...> {
 
 
 // Equi-join over one or more keys.
-template <typename... PivotKeyTypes, unsigned kNumSources, typename... SourceSetTypes>
+template <typename... PivotKeyTypes, unsigned kNumSources,
+          typename... SourceSetTypes>
 class Join<PivotVars<PivotKeyTypes...>, kNumSources, SourceSetTypes...> {
  public:
   static_assert(kNumSources == sizeof...(SourceSetTypes));
@@ -523,9 +503,8 @@ class Join<NoPivotVars, kNumSources, SourceSetTypes...> {
 template <typename... Keys>
 class Set {
  public:
-
   // Returns `true` if the entry was added.
-  bool Add(Keys&&... keys) {
+  bool Add(Keys &&... keys) {
     return true;  // TODO(pag): Implement me.
   }
 };
@@ -535,17 +514,15 @@ class Set {
 template <typename RC, typename... Keys>
 class DifferentialSet {
  public:
-
   // Returns `true` if the entry was added.
-  bool Add(Keys&&... keys, RC insert) {
+  bool Add(Keys &&... keys, RC insert) {
     return true;  // TODO(pag): Implement me.
   }
 
   // Returns `true` if the entry was deleted.
-  bool Remove(Keys&&... keys, RC clear) {
+  bool Remove(Keys &&... keys, RC clear) {
     return true;  // TODO(pag): Implement me.
   }
-
 };
 
 // Key/value mapping with a merge operator.
@@ -578,21 +555,15 @@ class Map<KeyVars<Keys...>, ValueVars<Values...>> {
  public:
   using Tuple = std::tuple<Values..., bool>;
 
-  Tuple Get(Keys... keys) const noexcept {
+  Tuple Get(Keys... keys) const noexcept {}
 
-  }
+  inline void Update(Keys... keys, Values... vals) noexcept {}
 
-  inline void Update(Keys... keys, Values... vals) noexcept {
-
-  }
-
-  inline void Insert(Keys... keys, Values... vals) noexcept {
-
-  }
+  inline void Insert(Keys... keys, Values... vals) noexcept {}
 };
 
 // Really, a glorified global variable.
-template <typename ...Values>
+template <typename... Values>
 class Map<EmptyKeyVars, ValueVars<Values...>> {
  public:
   using Tuple = std::tuple<Values..., bool>;
@@ -615,21 +586,15 @@ class DifferentialMap<KeyVars<Keys...>, ValueVars<Values...>> {
  public:
   using Tuple = std::tuple<Values..., bool>;
 
-  Tuple Get(Keys... keys) const noexcept {
+  Tuple Get(Keys... keys) const noexcept {}
 
-  }
+  inline void Put(Keys... keys, Values... vals) noexcept {}
 
-  inline void Put(Keys... keys, Values... vals) noexcept {
-
-  }
-
-  inline void Erase(Keys... keys) noexcept {
-
-  }
+  inline void Erase(Keys... keys) noexcept {}
 };
 
 // Really, a glorified global variable.
-template <typename ...Values>
+template <typename... Values>
 class DifferentialMap<EmptyKeyVars, ValueVars<Values...>> {
  public:
   using Tuple = std::tuple<Values..., bool>;
@@ -658,9 +623,7 @@ class MultiMap<KeyVars<Keys...>, ValueVars<Values...>> {
     return false;
   }
 
-  inline void Put(Keys... keys, Generator<Values...> &vals_gen) noexcept {
-
-  }
+  inline void Put(Keys... keys, Generator<Values...> &vals_gen) noexcept {}
 };
 
 template <typename... Keys, typename... Values>
@@ -670,13 +633,9 @@ class DifferentialMultiMap<KeyVars<Keys...>, ValueVars<Values...>> {
     return false;
   }
 
-  void Put(Keys... keys, Generator<Values...> &vals_gen) noexcept {
+  void Put(Keys... keys, Generator<Values...> &vals_gen) noexcept {}
 
-  }
-
-  inline void Erase(Keys... keys) noexcept {
-
-  }
+  inline void Erase(Keys... keys) noexcept {}
 };
 
 template <typename Tag>
@@ -685,8 +644,8 @@ struct InlineRedefinition {
 };
 
 template <typename Tag, typename Ret, typename... ArgTypes>
-inline static auto InlineDefinition(
-    Ret (*func)(ArgTypes...)) -> Ret (*)(ArgTypes...) {
+inline static auto InlineDefinition(Ret (*func)(ArgTypes...))
+    -> Ret (*)(ArgTypes...) {
   if constexpr (InlineRedefinition<Tag>::kIsDefined) {
     return InlineRedefinition<Tag>::template Run<Ret, ArgTypes...>;
   } else {
@@ -695,68 +654,66 @@ inline static auto InlineDefinition(
 }
 
 #define AGGREGATOR_CONFIG(name, binding_pattern) \
-    template <typename> \
-    class hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config>
+  template <typename> \
+  class hyde_rt_AggregateState<name##_##binding_pattern##_config>
 
 #define DIFF_AGGREGATOR_CONFIG(name, binding_pattern) \
-    template <typename> \
-    class hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config>
+  template <typename> \
+  class hyde_rt_DifferentialAggregateState<name##_##binding_pattern##_config>
 
 #define AGGREGATOR_INIT(name, binding_pattern, ...) \
-    struct name ## _ ## binding_pattern ## _config; \
-    extern "C" \
-    void name ## _ ## binding_pattern ## _init( \
-        hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
-        #__VA_ARGS__)
+  struct name##_##binding_pattern##_config; \
+  extern "C" void name##_##binding_pattern##_init( \
+      hyde_rt_AggregateState<name##_##binding_pattern##_config> &self, \
+      #__VA_ARGS__)
 
 #define AGGREGATOR_ADD(name, binding_pattern, ...) \
-    struct name ## _ ## binding_pattern ## _config; \
-    extern "C" \
-    void name ## _ ## binding_pattern ## _add( \
-        hyde_rt_AggregateState<name ## _ ## binding_pattern ## _config> &self, \
-        #__VA_ARGS__)
+  struct name##_##binding_pattern##_config; \
+  extern "C" void name##_##binding_pattern##_add( \
+      hyde_rt_AggregateState<name##_##binding_pattern##_config> &self, \
+      #__VA_ARGS__)
 
 #define DIFF_AGGREGATOR_INIT(name, binding_pattern, ...) \
-    struct name ## _ ## binding_pattern ## _config; \
-    extern "C" \
-    void name ## _ ## binding_pattern ## _init( \
-        hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
-        #__VA_ARGS__)
+  struct name##_##binding_pattern##_config; \
+  extern "C" void name##_##binding_pattern##_init( \
+      hyde_rt_DifferentialAggregateState<name##_##binding_pattern##_config> \
+          &self, \
+      #__VA_ARGS__)
 
 #define DIFF_AGGREGATOR_ADD(name, binding_pattern, ...) \
-    struct name ## _ ## binding_pattern ## _config; \
-    extern "C" \
-    void name ## _ ## binding_pattern ## _add( \
-        hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
-        #__VA_ARGS__)
+  struct name##_##binding_pattern##_config; \
+  extern "C" void name##_##binding_pattern##_add( \
+      hyde_rt_DifferentialAggregateState<name##_##binding_pattern##_config> \
+          &self, \
+      #__VA_ARGS__)
 
 #define DIFF_AGGREGATOR_REMOVE(name, binding_pattern, ...) \
-    struct name ## _ ## binding_pattern ## _result; \
-    struct name ## _ ## binding_pattern ## _config; \
-    extern "C" \
-    void name ## _ ## binding_pattern ## _remove( \
-        hyde_rt_DifferentialAggregateState<name ## _ ## binding_pattern ## _config> &self, \
-        #__VA_ARGS__)
+  struct name##_##binding_pattern##_result; \
+  struct name##_##binding_pattern##_config; \
+  extern "C" void name##_##binding_pattern##_remove( \
+      hyde_rt_DifferentialAggregateState<name##_##binding_pattern##_config> \
+          &self, \
+      #__VA_ARGS__)
 
 #define MERGE(name, type, prev_var, proposed_var) \
-    extern "C" type name ## _merge(type prev_var, type proposed_var)
+  extern "C" type name##_merge(type prev_var, type proposed_var)
 
 #define MAP(name, binding_pattern, ...) \
-    struct name ## _ ## binding_pattern ## _mapper \
-        : public name ## _ ## binding_pattern ## _generator { \
-      void Run(__VA_ARGS__); \
-    }; \
-    template <> \
-    struct InlineRedefinition<name ## _ ## binding_pattern ## _tag> { \
-      using __GenType = name ## _ ## binding_pattern ## _generator; \
-      using __SelfType = name ## _ ## binding_pattern ## _mapper; \
-      static constexpr bool kIsDefined = true; \
-      template <typename Ret, typename... Args> \
-      static Ret Run(__GenType &__self, Args... __args) { \
-        return reinterpret_cast<__SelfType &>(__self).Run(__args...); \
-      } \
-    }; \
-    void name ## _ ## binding_pattern ## _mapper ::Run(__VA_ARGS__)
+  struct name##_##binding_pattern##_mapper \
+      : public name##_##binding_pattern##_generator { \
+    void Run(__VA_ARGS__); \
+  }; \
+  template <> \
+  struct InlineRedefinition<name##_##binding_pattern##_tag> { \
+    using __GenType = name##_##binding_pattern##_generator; \
+    using __SelfType = name##_##binding_pattern##_mapper; \
+    static constexpr bool kIsDefined = true; \
+    template <typename Ret, typename... Args> \
+    static Ret Run(__GenType &__self, Args... __args) { \
+      return reinterpret_cast<__SelfType &>(__self).Run(__args...); \
+    } \
+  }; \
+  void name##_##binding_pattern##_mapper ::Run(__VA_ARGS__)
 
 }  // namespace rt
 }  // namespace hyde

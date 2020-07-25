@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <unordered_set>
+
+#include "Query.h"
 
 namespace hyde {
 
@@ -14,7 +14,7 @@ static bool IsTrivialCycle(TUPLE *tuple);
 bool QueryImpl::EliminateDeadFlows(void) {
   auto any_changed = false;
   auto outer_changed = true;
-  auto kill_view = [&] (VIEW *view) {
+  auto kill_view = [&](VIEW *view) {
     if (view->PrepareToDelete()) {
       outer_changed = true;
       any_changed = true;
@@ -23,7 +23,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
 
   std::unordered_set<void *> derived_from_input;
 
-  for (; outer_changed; ) {
+  for (; outer_changed;) {
     outer_changed = false;
 
     derived_from_input.clear();
@@ -35,8 +35,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
     }
 
     for (TUPLE *view : tuples) {
-      if (!view->is_dead &&
-          !VIEW::GetIncomingView(view->input_columns)) {
+      if (!view->is_dead && !VIEW::GetIncomingView(view->input_columns)) {
         derived_from_input.insert(view);  // All inputs are constants.
       }
     }
@@ -56,16 +55,16 @@ bool QueryImpl::EliminateDeadFlows(void) {
     }
 
     for (AGG *view : aggregates) {
-      if (!view->is_dead &&
-          !VIEW::GetIncomingView(view->aggregated_columns) &&
-          !VIEW::GetIncomingView(view->group_by_columns, view->config_columns)) {
+      if (!view->is_dead && !VIEW::GetIncomingView(view->aggregated_columns) &&
+          !VIEW::GetIncomingView(view->group_by_columns,
+                                 view->config_columns)) {
         derived_from_input.insert(view);  // All inputs are constants.
       }
     }
 
-    for (auto changed = true; changed; ) {
+    for (auto changed = true; changed;) {
       changed = false;
-      ForEachViewInDepthOrder([&] (VIEW *view) {
+      ForEachViewInDepthOrder([&](VIEW *view) {
         if (view->is_dead) {
           return;
         }
@@ -74,9 +73,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
           // Push to users of the column. The one condition is that we don't
           // push to JOINs.
           for (auto col : view->columns) {
-            col->ForEachUser([&] (VIEW *user_view) {
-              if (!user_view->is_dead &&
-                  !derived_from_input.count(user_view) &&
+            col->ForEachUser([&](VIEW *user_view) {
+              if (!user_view->is_dead && !derived_from_input.count(user_view) &&
                   !user_view->AsJoin()) {
                 changed = true;
                 derived_from_input.insert(user_view);
@@ -87,8 +85,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
         // Pull from the inserts.
         } else if (auto select = view->AsSelect(); select) {
           for (auto insert : select->inserts) {
-            if (insert &&
-                !insert->is_dead &&
+            if (insert && !insert->is_dead &&
                 derived_from_input.count(insert)) {
               derived_from_input.insert(select);
               changed = true;
@@ -99,8 +96,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
         // Pull from the merged views.
         } else if (auto merge = view->AsMerge(); merge) {
           for (auto merged_view : merge->merged_views) {
-            if (merged_view &&
-                !merged_view->is_dead &&
+            if (merged_view && !merged_view->is_dead &&
                 derived_from_input.count(merged_view)) {
               derived_from_input.insert(merge);
               changed = true;
@@ -113,7 +109,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
         } else if (auto join = view->AsJoin(); join) {
           auto all_tainted = true;
           for (auto joined_view : join->joined_views) {
-            if (joined_view->is_dead || !derived_from_input.count(joined_view)) {
+            if (joined_view->is_dead ||
+                !derived_from_input.count(joined_view)) {
               all_tainted = false;
               break;
             }
@@ -132,7 +129,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
         kill_view(view);
 
       } else if (auto merge = view->AsMerge(); merge) {
-        merge->merged_views.RemoveIf([&] (VIEW *merged_view) {
+        merge->merged_views.RemoveIf([&](VIEW *merged_view) {
           return !derived_from_input.count(merged_view);
         });
       } else if (auto tuple = view->AsTuple(); tuple && IsTrivialCycle(tuple)) {
@@ -140,7 +137,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       }
     });
 
-    for (auto changed = true; changed; ) {
+    for (auto changed = true; changed;) {
       changed = false;
       for (auto cond : conditions) {
         if (!cond->setters.Empty()) {
@@ -151,9 +148,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
         // the condition entirely.
         for (auto user_view : cond->negative_users) {
           if (user_view) {
-            user_view->negative_conditions.RemoveIf([=] (COND *c) {
-              return c == cond;
-            });
+            user_view->negative_conditions.RemoveIf(
+                [=](COND *c) { return c == cond; });
           }
         }
 
@@ -187,7 +183,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
   }
 
   if (any_changed || removed_conds) {
-    conditions.RemoveIf([] (COND *cond) {
+    conditions.RemoveIf([](COND *cond) {
       return cond->positive_users.Empty() && cond->negative_users.Empty();
     });
     RemoveUnusedViews();
@@ -210,9 +206,7 @@ bool IsTrivialCycle(TUPLE *tuple) {
   // There is only a single user view, which is the same as the incoming
   // view, meaning it's a cycle
   if (auto only_user = tuple->OnlyUser();
-      only_user &&
-      incoming_view &&
-      only_user == incoming_view &&
+      only_user && incoming_view && only_user == incoming_view &&
       incoming_view->columns.Size() == tuple->columns.Size()) {
     for (auto i = 0u; i < tuple->columns.Size(); ++i) {
       auto *in_col = incoming_view->columns[i];
@@ -227,10 +221,10 @@ bool IsTrivialCycle(TUPLE *tuple) {
     // contribute back the record to the MERGE. Contributing back the data to
     // the MERGE is a no-op; however, setting the condition is not. Thus, we
     // can break the cyclic dependency between the TUPLE and the MERGE whilst
-    // maintaining the TUPLE and its condition setting behavior. 
+    // maintaining the TUPLE and its condition setting behavior.
     if (tuple->sets_condition && tuple->IntroducesControlDependency()) {
       if (auto merge = incoming_view->AsMerge(); merge) {
-        merge->merged_views.RemoveIf([=] (VIEW *v) { return v == tuple; });
+        merge->merged_views.RemoveIf([=](VIEW *v) { return v == tuple; });
       }
 
       return false;
@@ -246,7 +240,7 @@ bool IsTrivialCycle(TUPLE *tuple) {
       return true;
     }
   }
-  
+
   return false;
 }
 

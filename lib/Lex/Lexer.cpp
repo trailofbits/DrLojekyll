@@ -1,15 +1,13 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Lex/Lexer.h>
-
-#include <cctype>
-#include <string>
-
 #include <drlojekyll/Display/Display.h>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/DisplayReader.h>
-
+#include <drlojekyll/Lex/Lexer.h>
 #include <drlojekyll/Lex/StringPool.h>
+
+#include <cctype>
+#include <string>
 
 #include "Token.h"
 
@@ -19,14 +17,14 @@
 namespace hyde {
 namespace {
 
-static const std::string kStopChars = " \r\t\n,.()!#{}[]<>:;=-+*/?\\|&^$%\"'~`@_";
+static const std::string kStopChars =
+    " \r\t\n,.()!#{}[]<>:;=-+*/?\\|&^$%\"'~`@_";
 
 }  // namespace
 
 class LexerImpl {
  public:
-  inline explicit LexerImpl(DisplayReader reader_)
-      : reader(reader_) {}
+  inline explicit LexerImpl(DisplayReader reader_) : reader(reader_) {}
 
   DisplayReader reader;
 
@@ -57,7 +55,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
   char ch = '\0';
 
   // Accumulator for adding characters to `impl->data`.
-  auto accumulate_if = [=] (auto accept) {
+  auto accumulate_if = [=](auto accept) {
     char acc_ch = '\0';
     while (impl->reader.TryReadChar(&acc_ch)) {
       if (!accept(acc_ch)) {
@@ -83,8 +81,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       interpreter.error.error_col = ret.position.Column();
       interpreter.error.invalid_char = '\0';
       interpreter.error.error_offset = 0;
-      interpreter.error.lexeme = static_cast<uint8_t>(
-          Lexeme::kInvalidStreamOrDisplay);
+      interpreter.error.lexeme =
+          static_cast<uint8_t>(Lexeme::kInvalidStreamOrDisplay);
 
     // We've reached the end of this display, yield a token and pop this
     // display off the stack.
@@ -107,9 +105,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     // token.
     case '\n':
     case ' ': {
-      accumulate_if([] (char next_ch) {
-        return next_ch == ' ' || next_ch == '\n';
-      });
+      accumulate_if(
+          [](char next_ch) { return next_ch == ' ' || next_ch == '\n'; });
 
       uint32_t num_leading_spaces = 0;
       uint32_t num_leading_lines = 0;
@@ -179,7 +176,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
       if (impl->reader.TryReadChar(&ch)) {
         if (ch == '=') {
-          interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncNotEqual);
+          interpreter.basic.lexeme =
+              static_cast<uint8_t>(Lexeme::kPuncNotEqual);
           interpreter.basic.spelling_width = 2;
         } else {
           impl->reader.UnreadChar();
@@ -228,16 +226,19 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           if (!done) {
             interpreter.error.error_offset = error_offset;
             interpreter.error.error_col = after_pos.Column();
-            interpreter.error.disp_lines = after_pos.Line() - ret.position.Line();
+            interpreter.error.disp_lines =
+                after_pos.Line() - ret.position.Line();
             interpreter.error.lexeme =
                 static_cast<uint8_t>(Lexeme::kInvalidUnterminatedCode);
 
           } else {
             interpreter.code.num_bytes = impl->data.size() + 4;
             interpreter.code.next_cols = after_pos.Column();
-            interpreter.code.disp_lines = after_pos.Line() - ret.position.Line();
+            interpreter.code.disp_lines =
+                after_pos.Line() - ret.position.Line();
             interpreter.code.id = string_pool.InternCode(impl->data);
-            interpreter.code.lexeme = static_cast<uint8_t>(Lexeme::kLiteralCode);
+            interpreter.code.lexeme =
+                static_cast<uint8_t>(Lexeme::kLiteralCode);
           }
 
           ret.opaque_data = interpreter.flat;
@@ -323,14 +324,14 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               case '0':  // NUL.
                 impl->data.push_back('\0');
                 break;
-              case '"':impl->data.push_back('"');
-                break;
+              case '"': impl->data.push_back('"'); break;
               default:
                 if (!is_invalid) {
                   const auto after_pos = impl->reader.CurrentPosition();
                   interpreter.error.error_offset = error_offset;
                   interpreter.error.error_col = after_pos.Column();
-                  interpreter.error.disp_lines = after_pos.Line() - ret.position.Line();
+                  interpreter.error.disp_lines =
+                      after_pos.Line() - ret.position.Line();
                   interpreter.error.invalid_char = ch;
                   interpreter.error.lexeme =
                       static_cast<uint8_t>(Lexeme::kInvalidEscapeInString);
@@ -374,30 +375,75 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Directives.
     case '#':
-      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kInvalidDirective);
+      interpreter.basic.lexeme =
+          static_cast<uint8_t>(Lexeme::kInvalidDirective);
       goto accumulate_directive_atom_keyword_variable;
 
     // Atoms, keywords.
-    case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
-    case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
-    case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u':
-    case 'v': case 'w': case 'x': case 'y': case 'z':
+    case 'a':
+    case 'b':
+    case 'c':
+    case 'd':
+    case 'e':
+    case 'f':
+    case 'g':
+    case 'h':
+    case 'i':
+    case 'j':
+    case 'k':
+    case 'l':
+    case 'm':
+    case 'n':
+    case 'o':
+    case 'p':
+    case 'q':
+    case 'r':
+    case 's':
+    case 't':
+    case 'u':
+    case 'v':
+    case 'w':
+    case 'x':
+    case 'y':
+    case 'z':
       interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kIdentifierAtom);
       goto accumulate_directive_atom_keyword_variable;
 
     // Variables.
     case '_':
-    case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G':
-    case 'H': case 'I': case 'J': case 'K': case 'L': case 'M': case 'N':
-    case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T': case 'U':
-    case 'V': case 'W': case 'X': case 'Y': case 'Z':
-      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kIdentifierVariable);
+    case 'A':
+    case 'B':
+    case 'C':
+    case 'D':
+    case 'E':
+    case 'F':
+    case 'G':
+    case 'H':
+    case 'I':
+    case 'J':
+    case 'K':
+    case 'L':
+    case 'M':
+    case 'N':
+    case 'O':
+    case 'P':
+    case 'Q':
+    case 'R':
+    case 'S':
+    case 'T':
+    case 'U':
+    case 'V':
+    case 'W':
+    case 'X':
+    case 'Y':
+    case 'Z':
+      interpreter.basic.lexeme =
+          static_cast<uint8_t>(Lexeme::kIdentifierVariable);
       goto accumulate_directive_atom_keyword_variable;
 
     accumulate_directive_atom_keyword_variable:
-      accumulate_if([] (char next_ch) {
-        return next_ch == '_' || std::isalnum(next_ch);
-      });
+      accumulate_if(
+          [](char next_ch) { return next_ch == '_' || std::isalnum(next_ch); });
 
       interpreter.basic.spelling_width =
           static_cast<uint16_t>(impl->data.size());
@@ -405,10 +451,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       switch (impl->data.size()) {
         case 1:
           if (impl->data[0] == '_') {
-            interpreter.basic.lexeme = static_cast<uint8_t>(
-                Lexeme::kIdentifierUnnamedVariable);
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kIdentifierUnnamedVariable);
             interpreter.identifier.spelling_width = 1;
-            interpreter.identifier.index = 1;  // See `DisplayManager::Impl::Impl`.
+            interpreter.identifier.index =
+                1;  // See `DisplayManager::Impl::Impl`.
           }
           break;
 
@@ -473,10 +520,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           break;
         case 4:
           if (impl->data == "free") {
-            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kKeywordFree);
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordFree);
 
           } else if (impl->data == "over") {
-            interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kKeywordOver);
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordOver);
 
           } else if (impl->data == "uuid") {
             interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeUUID);
@@ -590,8 +639,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           }
           break;
 
-        default:
-          break;
+        default: break;
       }
 
       // If we've found an identifier, then intern it.
@@ -608,21 +656,44 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       return true;
 
     // Number literals. We have to deal with a variety of formats here :-(
-    case '0': case '1': case '2': case '3': case '4': case '5':
-    case '6': case '7': case '8': case '9': {
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9': {
       auto is_all_decimal = true;
-      accumulate_if([&is_all_decimal] (char next_ch) {
+      accumulate_if([&is_all_decimal](char next_ch) {
         switch (next_ch) {
-          case '0': case '1': case '2': case '3': case '4': case '5':
-          case '6': case '7': case '8': case '9':
-            return true;
-          case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
-          case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-          case 'x': case 'X':
-            is_all_decimal = false;
-            return true;
-          default:
-            return false;
+          case '0':
+          case '1':
+          case '2':
+          case '3':
+          case '4':
+          case '5':
+          case '6':
+          case '7':
+          case '8':
+          case '9': return true;
+          case 'a':
+          case 'b':
+          case 'c':
+          case 'd':
+          case 'e':
+          case 'f':
+          case 'A':
+          case 'B':
+          case 'C':
+          case 'D':
+          case 'E':
+          case 'F':
+          case 'x':
+          case 'X': is_all_decimal = false; return true;
+          default: return false;
         }
       });
 
@@ -672,15 +743,29 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           auto i = 2u;
           while (all_hex && i < impl->data.size()) {
             switch (impl->data[i]) {
-              case '0': case '1': case '2': case '3': case '4': case '5':
-              case '6': case '7': case '8': case '9':
-              case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
-              case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-                ++i;
-                continue;
-              default:
-                all_hex = false;
-                break;
+              case '0':
+              case '1':
+              case '2':
+              case '3':
+              case '4':
+              case '5':
+              case '6':
+              case '7':
+              case '8':
+              case '9':
+              case 'a':
+              case 'b':
+              case 'c':
+              case 'd':
+              case 'e':
+              case 'f':
+              case 'A':
+              case 'B':
+              case 'C':
+              case 'D':
+              case 'E':
+              case 'F': ++i; continue;
+              default: all_hex = false; break;
             }
           }
 
@@ -707,19 +792,15 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           auto i = 2u;
           while (all_bin && i < impl->data.size()) {
             switch (impl->data[i]) {
-              case '0': case '1':
-                ++i;
-                continue;
-              default:
-                all_bin = false;
-                break;
+              case '0':
+              case '1': ++i; continue;
+              default: all_bin = false; break;
             }
           }
 
           if (all_bin) {
             interpreter.number.lexeme = Lexeme::kLiteralNumber;
-            interpreter.number.spelling_kind =
-                lex::NumberSpellingKind::kBinary;
+            interpreter.number.spelling_kind = lex::NumberSpellingKind::kBinary;
             interpreter.number.prefix_width = 2;  // `0b` or `0B`.
             interpreter.number.spelling_width =
                 static_cast<uint16_t>(impl->data.size());
@@ -747,20 +828,22 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                   ++i;
                 }
                 break;
-              case '1': case '2': case '3': case '4': case '5':
-              case '6': case '7':
+              case '1':
+              case '2':
+              case '3':
+              case '4':
+              case '5':
+              case '6':
+              case '7':
                 has_leading_zeros = false;
                 ++i;
                 continue;
-              default:
-                all_octal = false;
-                break;
+              default: all_octal = false; break;
             }
           }
           if (all_octal) {
             interpreter.number.lexeme = Lexeme::kLiteralNumber;
-            interpreter.number.spelling_kind =
-                lex::NumberSpellingKind::kBinary;
+            interpreter.number.spelling_kind = lex::NumberSpellingKind::kBinary;
             interpreter.number.prefix_width = 1;  // `0`.
             interpreter.number.spelling_width =
                 static_cast<uint16_t>(impl->data.size());
@@ -785,9 +868,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               if (std::isdigit(ch)) {
                 impl->data.push_back('.');
                 impl->data.push_back(ch);
-                accumulate_if([](char next_ch) {
-                  return std::isdigit(next_ch);
-                });
+                accumulate_if(
+                    [](char next_ch) { return std::isdigit(next_ch); });
 
                 interpreter.number.has_decimal_point = true;
 
@@ -820,8 +902,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         }
 
         interpreter.number.lexeme = Lexeme::kLiteralNumber;
-        interpreter.number.spelling_kind =
-            lex::NumberSpellingKind::kDecimal;
+        interpreter.number.spelling_kind = lex::NumberSpellingKind::kDecimal;
         interpreter.number.spelling_width =
             static_cast<uint16_t>(impl->data.size());
 
@@ -831,13 +912,17 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         is_all_decimal = true;
         while (is_all_decimal && i < impl->data.size()) {
           switch (impl->data[i]) {
-            case '0': case '1': case '2': case '3': case '4': case '5':
-            case '6': case '7': case '8': case '9':
-              ++i;
-              continue;
-            default:
-              is_all_decimal = false;
-              break;
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+            case '8':
+            case '9': ++i; continue;
+            default: is_all_decimal = false; break;
           }
         }
 
@@ -845,8 +930,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         interpreter.error.error_col = ret.position.Column() + i;
         interpreter.error.disp_lines = 0;
         interpreter.error.invalid_char = impl->data[i];
-        interpreter.error.lexeme =
-            static_cast<uint8_t>(Lexeme::kInvalidNumber);
+        interpreter.error.lexeme = static_cast<uint8_t>(Lexeme::kInvalidNumber);
       }
 
       ret.opaque_data = interpreter.flat;
@@ -855,9 +939,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Single line comment.
     case ';':
-      accumulate_if([] (char next_ch) {
-        return next_ch != '\n';
-      });
+      accumulate_if([](char next_ch) { return next_ch != '\n'; });
       interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kComment);
       interpreter.basic.spelling_width =
           static_cast<uint16_t>(impl->data.size());
@@ -869,7 +951,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       interpreter.error.invalid_char = ch;
 
       if (kStopChars.find(ch) == std::string::npos) {
-        accumulate_if([] (char next_ch) {
+        accumulate_if([](char next_ch) {
           return kStopChars.find(next_ch) == std::string::npos;
         });
       }

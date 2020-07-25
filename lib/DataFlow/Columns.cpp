@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <vector>
+
+#include "Query.h"
 
 namespace hyde {
 
@@ -14,8 +14,9 @@ void QueryImpl::FinalizeColumnIDs(void) const {
 
   auto next_col_id = 1u;
 
-  ForEachViewInDepthOrder([&] (VIEW *v) {
+  ForEachViewInDepthOrder([&](VIEW *v) {
     auto i = 0u;
+
     // SELECTs and MERGEs introduce new column IDs.
     if (v->AsMerge() || v->AsSelect()) {
       for (auto col : v->columns) {
@@ -34,14 +35,14 @@ void QueryImpl::FinalizeColumnIDs(void) const {
   });
 
   auto changed = true;
-  auto copy_col_id = [&changed] (COL *from_col, COL *to_col) {
+  auto copy_col_id = [&changed](COL *from_col, COL *to_col) {
     if (from_col->id && from_col->id != to_col->id) {
       changed = true;
       to_col->id = from_col->id;
     }
   };
 
-  for (; changed; ) {
+  for (; changed;) {
     changed = false;
     for (auto v : views) {
       const auto num_cols = v->columns.Size();
@@ -76,7 +77,8 @@ void QueryImpl::FinalizeColumnIDs(void) const {
           const auto out_col = map->columns[i];
 
           // It's an output column.
-          if (map->functor.NthParameter(i).Binding() == ParameterBinding::kFree) {
+          if (map->functor.NthParameter(i).Binding() ==
+              ParameterBinding::kFree) {
             if (!out_col->id) {
               out_col->id = next_col_id++;
               changed = true;
