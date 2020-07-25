@@ -2,14 +2,14 @@
 
 #pragma once
 
-#include <ostream>
+#include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Util/Compiler.h>
+
 #include <memory>
+#include <ostream>
 #include <type_traits>
 #include <utility>
 #include <variant>
-
-#include <drlojekyll/Util/Compiler.h>
-#include <drlojekyll/Display/DisplayPosition.h>
 
 namespace hyde {
 namespace parse {
@@ -70,10 +70,12 @@ class ErrorStream {
 
   template <typename T1, typename... Rest>
   const ErrorStream &operator<<(std::variant<T1, Rest...> options) const {
-    std::visit([=] (auto &&arg) {
-      DisplayRange range = arg.SpellingRange();
-      (*this) << range;
-    }, options);
+    std::visit(
+        [=](auto &&arg) {
+          DisplayRange range = arg.SpellingRange();
+          (*this) << range;
+        },
+        options);
     return *this;
   }
 
@@ -83,20 +85,23 @@ class ErrorStream {
   static inline constexpr node_tag *kNode = nullptr;
   static inline constexpr not_node_tag *kNotNode = nullptr;
 
-  template <typename T, typename std::enable_if<std::is_convertible_v<T *, parse::ParsedNode<T> *>, node_tag *>::type=kNode>
+  template <typename T, typename std::enable_if<
+                            std::is_convertible_v<T *, parse::ParsedNode<T> *>,
+                            node_tag *>::type = kNode>
   inline const ErrorStream &operator<<(T node) const {
     (*this) << node.SpellingRange();
     return *this;
   }
 
-  template <typename T, typename std::enable_if<!std::is_convertible_v<T *, parse::ParsedNode<T> *>, not_node_tag *>::type=kNotNode>
+  template <typename T, typename std::enable_if<
+                            !std::is_convertible_v<T *, parse::ParsedNode<T> *>,
+                            not_node_tag *>::type = kNotNode>
   inline const ErrorStream &operator<<(T data) const {
     (*os) << data;
     return *this;
   }
 
  private:
-
   friend class Error;
   friend class Note;
 
@@ -104,7 +109,7 @@ class ErrorStream {
       : os(os_),
         dm(dm_) {}
 
-  std::ostream * const os;
+  std::ostream *const os;
   const DisplayManager &dm;
 };
 
@@ -120,12 +125,11 @@ class Note {
  private:
   friend class Error;
 
-  inline Note(ErrorImpl *impl_)
-      : impl(impl_) {}
+  inline Note(ErrorImpl *impl_) : impl(impl_) {}
 
   ErrorStream Stream(void) const;
 
-  ErrorImpl * const impl;
+  ErrorImpl *const impl;
 };
 
 // Represents an error that was discovered during parsing or semantic analysis.
@@ -168,7 +172,7 @@ class Error {
 
   // Render the formatted error to a stream, along with any attached notes.
   void Render(std::ostream &os,
-              const ErrorColorScheme &color_scheme=kDefaultColorScheme) const;
+              const ErrorColorScheme &color_scheme = kDefaultColorScheme) const;
 
   // Attach an empty to the the error message.
   ::hyde::Note Note(void) const;

@@ -1,10 +1,9 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Util/EqualitySet.h>
 
 #include "Optimize.h"
+#include "Query.h"
 
 namespace hyde {
 namespace {
@@ -66,8 +65,7 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_->AsKVIndex();
-  if (!that ||
-      columns.Size() != that->columns.Size() ||
+  if (!that || columns.Size() != that->columns.Size() ||
       positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions ||
       !MergeFunctorsEq(merge_functors, that->merge_functors) ||
@@ -89,8 +87,8 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
 // Put the KV index into a canonical form. The only real internal optimization
 // that will happen is constant propagation of keys, but NOT values (as we can't
 // predict how the merge functors will affect them).
-bool Node<QueryKVIndex>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt) {
+bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
+                                      const OptimizationContext &opt) {
 
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
@@ -119,12 +117,12 @@ bool Node<QueryKVIndex>::Canonicalize(
   // might distinguish two values.
   for (auto in_col : input_columns) {
     const auto out_col = columns[i++];
-    const auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt);
+    const auto [changed, can_remove] =
+        CanonicalizeColumnPair(in_col, out_col, opt);
 
     auto &prev_out_col = in_to_out[in_col];
-    const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
-                                 in_col->IsConstant();
+    const auto in_col_is_const =
+        opt.can_replace_outputs_with_constants && in_col->IsConstant();
 
     non_local_changes = non_local_changes || changed;
     (void) can_remove;
@@ -196,8 +194,8 @@ bool Node<QueryKVIndex>::Canonicalize(
   // Make the new output columns for the keys that we're keeping.
   i = 0u;
   for (auto in_col : input_columns) {
-    const auto in_col_is_const = opt.can_replace_outputs_with_constants &&
-                                 in_col->IsConstant();
+    const auto in_col_is_const =
+        opt.can_replace_outputs_with_constants && in_col->IsConstant();
     const auto out_col = columns[i++];
     auto &prev_out_col = in_to_out[in_col];
 
@@ -223,8 +221,8 @@ bool Node<QueryKVIndex>::Canonicalize(
       continue;  // Remove the column.
     }
 
-    const auto new_out_col = new_output_columns.Create(
-        out_col->var, this, out_col->id);
+    const auto new_out_col =
+        new_output_columns.Create(out_col->var, this, out_col->id);
     new_out_col->CopyConstant(out_col);
     out_col->ReplaceAllUsesWith(new_out_col);
 
@@ -243,8 +241,8 @@ bool Node<QueryKVIndex>::Canonicalize(
   for (auto in_col : attached_columns) {
     (void) in_col;
     const auto old_out_col = columns[i++];
-    const auto new_out_col = new_output_columns.Create(
-        old_out_col->var, this, old_out_col->id);
+    const auto new_out_col =
+        new_output_columns.Create(old_out_col->var, this, old_out_col->id);
     assert(!old_out_col->IsConstantRef());
     old_out_col->ReplaceAllUsesWith(new_out_col);
   }

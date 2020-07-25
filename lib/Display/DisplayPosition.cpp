@@ -17,8 +17,7 @@ bool DisplayPosition::IsValid(void) const {
 // Returns `true` if the display position has data.
 bool DisplayPosition::HasData(void) const {
   display::PositionInterpreter interpreter = {opaque_data};
-  return 0 < interpreter.position.column &&
-         0 < interpreter.position.line &&
+  return 0 < interpreter.position.column && 0 < interpreter.position.line &&
          0 < interpreter.position.display_id;
 }
 
@@ -80,8 +79,8 @@ uint64_t DisplayPosition::Column(void) const {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
 
-DisplayPosition::DisplayPosition(
-    uint64_t display_id, uint64_t index, uint64_t line, uint64_t column) {
+DisplayPosition::DisplayPosition(uint64_t display_id, uint64_t index,
+                                 uint64_t line, uint64_t column) {
   display::PositionInterpreter interpreter = {};
   interpreter.position.line = line;
   interpreter.position.column = column;
@@ -117,15 +116,16 @@ DisplayPosition::DisplayPosition(
 #pragma GCC diagnostic pop
 
 // Tries to compute the distance between two positions.
-bool DisplayPosition::TryComputeDistanceTo(
-    DisplayPosition to, int *num_bytes, int *num_lines,
-    int *num_cols) const {
+bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int *num_bytes,
+                                           int *num_lines,
+                                           int *num_cols) const {
 
   display::PositionInterpreter from_interpreter = {opaque_data};
   display::PositionInterpreter to_interpreter = {to.opaque_data};
 
   if (IsValid() && to.IsValid() &&
-      from_interpreter.position.display_id == to_interpreter.position.display_id) {
+      from_interpreter.position.display_id ==
+          to_interpreter.position.display_id) {
 
     if (num_bytes) {
       *num_bytes = static_cast<int>(to_interpreter.position.index) -
@@ -166,7 +166,8 @@ bool DisplayRange::IsValid(void) const {
   display::PositionInterpreter from_interpreter = {from.opaque_data};
   display::PositionInterpreter to_interpreter = {to.opaque_data};
   return !from_interpreter.position.status && !to_interpreter.position.status &&
-         from_interpreter.position.display_id == to_interpreter.position.display_id &&
+         from_interpreter.position.display_id ==
+             to_interpreter.position.display_id &&
          from_interpreter.position.index < to_interpreter.position.index;
 }
 

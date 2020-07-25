@@ -16,28 +16,28 @@
 #include <vector>
 
 #if !defined(WIN32)
-# include <dirent.h>
-# include <fcntl.h>
-# include <sys/stat.h>
-# include <unistd.h>
+#  include <dirent.h>
+#  include <fcntl.h>
+#  include <sys/stat.h>
+#  include <unistd.h>
 #endif
 
 #if defined(__APPLE__)
-# include <sys/syslimits.h>
+#  include <sys/syslimits.h>
 #elif defined(__linux__)
-# include <linux/limits.h>
+#  include <linux/limits.h>
 #endif
 
 #if defined(_MAX_PATH) && !defined(PATH_MAX)
-# define PATH_MAX _MAX_PATH
+#  define PATH_MAX _MAX_PATH
 #endif
 
 #if defined(MAXPATHLEN) && !defined(PATH_MAX)
-# define PATH_MAX MAXPATHLEN
+#  define PATH_MAX MAXPATHLEN
 #endif
 
 #if !defined(PATH_MAX)
-# define PATH_MAX 4096
+#  define PATH_MAX 4096
 #endif
 
 // Do not include windows.h, or its macros might end up shadowing our functions.
@@ -161,7 +161,7 @@ class FileEntry {
   FileEntry(FileManagerImpl *fs_, FileEntry *parent_);
 
   // As long as a path exists, so does a
-  FileManagerImpl * const fs;
+  FileManagerImpl *const fs;
   FileEntry *parent;
   FileEntry *real_path_entry;
   size_t hash_code;
@@ -194,8 +194,8 @@ class FileEntry {
     new_ent->full_path = ss.str();
 
     std::string_view full_path_view = new_ent->full_path;
-    new_ent->name = full_path_view.substr(
-        new_ent->full_path.size() - child_name.size());
+    new_ent->name =
+        full_path_view.substr(new_ent->full_path.size() - child_name.size());
 
     children[new_ent->name].reset(new_ent);
     return new_ent;
@@ -217,12 +217,10 @@ FileEntry::FileEntry(FileManagerImpl *fs_, FileEntry *parent_)
 Path::Path(const FileManager &fs, std::string_view path)
     : Path(fs.impl->GetEntryFor(path)) {}
 
-Path::Path(FileEntry *entry_)
-    : entry(entry_) {}
+Path::Path(FileEntry *entry_) : entry(entry_) {}
 
 // Makes the root path.
-Path::Path(const FileManager &fs)
-    : entry(fs.impl->root.get()) {}
+Path::Path(const FileManager &fs) : entry(fs.impl->root.get()) {}
 
 // Switch the path to something new.
 void Path::Reset(std::string_view path) {
@@ -277,8 +275,8 @@ std::error_code Path::ComputeRealPath(void) const {
 
 #ifdef WIN32
     auto path_buff_size = entry->fs->path_buff.size();
-    auto ret = GetFullPathNameA(full_path, path_buff_size - 1,
-                                path_buff, nullptr);
+    auto ret =
+        GetFullPathNameA(full_path, path_buff_size - 1, path_buff, nullptr);
     auto err = GetLastError();
 #else
     auto ret = realpath(full_path, path_buff);
@@ -425,7 +423,7 @@ bool Path::IsExecutable(void) const {
     return false;
   } else {
     FindClose(handle);
-#error "TODO Path::IsExecutable"
+#  error "TODO Path::IsExecutable"
     return true;
   }
 
@@ -453,7 +451,7 @@ bool Path::IsFile(void) const {
     return false;
   } else {
     FindClose(handle);
-#error "TODO Path::IsFile"
+#  error "TODO Path::IsFile"
     return true;
   }
 
@@ -481,7 +479,7 @@ bool Path::IsDirectory(void) const {
     return false;
   } else {
     FindClose(handle);
-#error "TODO Path::IsDirectory"
+#  error "TODO Path::IsDirectory"
     return true;
   }
 
@@ -589,7 +587,7 @@ void FileManagerImpl::PopDirectory(void) {
 }
 
 #ifndef ENOTDIR
-# define ENOTDIR ENOENT
+#  define ENOTDIR ENOENT
 #endif
 
 size_t FileManagerImpl::SplitPathBuff(void) {
@@ -637,7 +635,7 @@ size_t FileManagerImpl::SplitPathBuff(void) {
 }
 
 FileEntry *FileManagerImpl::GetEntryFor(FileEntry *dir, size_t num_parts,
-                                       bool is_absolute) {
+                                        bool is_absolute) {
   if (!num_parts) {
     return dir;
   }
@@ -652,11 +650,12 @@ FileEntry *FileManagerImpl::GetEntryFor(FileEntry *dir, size_t num_parts,
       is_absolute = true;
       dir = root.get();
 
-      // We think this should be an absolute path, so check that the first path
-      // part ends with a colon.
+    // We think this should be an absolute path, so check that the first path
+    // part ends with a colon.
     } else if (is_absolute && path_parts[0].back() != ':') {
-      assert(false &&
-             "First path part in absolute path doesn't look like a Windows drive name");
+      assert(
+          false &&
+          "First path part in absolute path doesn't look like a Windows drive name");
     }
 
     // Make sure the parent of a drive is itself.
@@ -682,8 +681,7 @@ FileEntry *FileManagerImpl::GetEntryFor(FileEntry *dir, std::string_view path) {
   bool is_absolute = false;
 
   if (path_kind == PathKind::kWindows) {
-    std::replace(&(path_buff[0]), &(path_buff[path_buff.size()]),
-                 '/', '\\');
+    std::replace(&(path_buff[0]), &(path_buff[path_buff.size()]), '/', '\\');
     assert(path_buff[0] != '/');
   } else {
     if (path_buff[0] == '/') {
@@ -707,8 +705,7 @@ FileManager::~FileManager(void) {}
 FileManager::FileManager(PathKind path_kind)
     : impl(std::make_shared<FileManagerImpl>(path_kind)) {}
 
-FileManager::FileManager(const FileManager &that)
-    : impl(that.impl) {}
+FileManager::FileManager(const FileManager &that) : impl(that.impl) {}
 
 FileManager::FileManager(FileManager &&that) noexcept
     : impl(std::move(that.impl)) {}
@@ -754,7 +751,7 @@ std::error_code FileManager::ForEachPathInDirectory(
   auto real_path = dir.entry->real_path_entry->full_path.c_str();
 
 #ifdef WIN32
-# warning "Implement FileManager::ForEachPathInDirectory"
+#  warning "Implement FileManager::ForEachPathInDirectory"
   ec = std::make_error_code(std::errc::not_supported);
 #else
   errno = 0;
@@ -763,9 +760,9 @@ std::error_code FileManager::ForEachPathInDirectory(
   if (dp) {
 
     std::string file_name;
-# ifdef NAME_MAX
+#  ifdef NAME_MAX
     file_name.reserve(NAME_MAX);
-# endif
+#  endif
 
     while (true) {
       errno = 0;
@@ -812,7 +809,7 @@ std::error_code FileManager::RemoveFile(Path path) {
   auto real_path = path.entry->real_path_entry->full_path.c_str();
 
 #ifdef WIN32
-# warning "Implement FileManager::RemoveFile"
+#  warning "Implement FileManager::RemoveFile"
   ec = std::make_error_code(std::errc::not_supported);
 #else
   errno = 0;

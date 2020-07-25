@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include <drlojekyll/Parse/Error.h>
 #include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Parse/Error.h>
 
 #include <cstddef>
 #include <sstream>

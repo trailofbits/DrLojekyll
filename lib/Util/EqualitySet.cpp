@@ -11,8 +11,7 @@ class EqualitySet::Impl {
   std::set<std::pair<uintptr_t, uintptr_t>> equalities;
 };
 
-EqualitySet::EqualitySet(void)
-    : impl(new Impl) {}
+EqualitySet::EqualitySet(void) : impl(new Impl) {}
 
 EqualitySet::~EqualitySet(void) {}
 

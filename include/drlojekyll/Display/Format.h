@@ -1,7 +1,8 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <ostream>
 #include <drlojekyll/Display/DisplayManager.h>
+
+#include <ostream>
 
 #pragma once
 

@@ -3,15 +3,14 @@
 #pragma once
 
 #include <drlojekyll/DataFlow/Query.h>
+#include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Util/BitManipulation.h>
+#include <drlojekyll/Util/DefUse.h>
 
 #include <cassert>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <drlojekyll/Util/BitManipulation.h>
-#include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/DefUse.h>
 
 namespace hyde {
 
@@ -28,7 +27,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   static constexpr unsigned kInvalidIndex = ~0u;
 
   inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
-                       unsigned id_, unsigned index_=kInvalidIndex)
+                       unsigned id_, unsigned index_ = kInvalidIndex)
       : Def<Node<QueryColumn>>(this),
         var(var_),
         type(var.Type()),
@@ -83,7 +82,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   const TypeLoc type;
 
   // View to which this column belongs.
-  Node<QueryView> * const view;
+  Node<QueryView> *const view;
 
   // Reference to a use of a real constant. We need this indirection because
   // we depend on dataflow to sometimes encode control dependencies, but if we
@@ -122,9 +121,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   inline Node(void)
       : Def<Node<QueryCondition>>(this),
         User(this),
-        positive_users(this, true  /* is_weak */),
-        negative_users(this, true  /* is_weak */),
-        setters(this, true  /* is_weak */) {}
+        positive_users(this, true /* is_weak */),
+        negative_users(this, true /* is_weak */),
+        setters(this, true /* is_weak */) {}
 
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
@@ -132,9 +131,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
       : Def<Node<QueryCondition>>(this),
         User(this),
         declaration(decl_),
-        positive_users(this, true  /* is_weak */),
-        negative_users(this, true  /* is_weak */),
-        setters(this, true  /* is_weak */) {}
+        positive_users(this, true /* is_weak */),
+        negative_users(this, true /* is_weak */),
+        setters(this, true /* is_weak */) {}
 
   inline uint64_t Sort(void) const noexcept {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
@@ -184,8 +183,7 @@ class Node<QueryStream> : public Def<Node<QueryStream>> {
  public:
   virtual ~Node(void);
 
-  Node(void)
-      : Def<Node<QueryStream>>(this) {}
+  Node(void) : Def<Node<QueryStream>>(this) {}
 
   virtual Node<QueryConstant> *AsConstant(void) noexcept;
   virtual Node<QueryIO> *AsIO(void) noexcept;
@@ -200,8 +198,7 @@ class Node<QueryConstant> final : public Node<QueryStream> {
  public:
   virtual ~Node(void);
 
-  inline Node(ParsedLiteral literal_)
-      : literal(literal_) {}
+  inline Node(ParsedLiteral literal_) : literal(literal_) {}
 
   Node<QueryConstant> *AsConstant(void) noexcept override;
   const char *KindName(void) const noexcept override;
@@ -213,7 +210,7 @@ using CONST = Node<QueryConstant>;
 
 // Input, i.e. a messsage.
 template <>
-class Node<QueryIO> final : public Node<QueryStream>, public User{
+class Node<QueryIO> final : public Node<QueryStream>, public User {
  public:
   virtual ~Node(void);
 
@@ -286,7 +283,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Returns `true` if we had to "guard" this view with a tuple so that we
   // can put it into canonical form.
-  Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force=false);
+  Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force = false);
 
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
@@ -471,7 +468,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   //            view.
   bool CheckIncomingViewsMatch(const UseList<COL> &cols1) const;
   bool CheckIncomingViewsMatch(const UseList<COL> &cols1,
-                                const UseList<COL> &cols2) const;
+                               const UseList<COL> &cols2) const;
 
   // Figure out what the incoming view to `cols1` is.
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
@@ -483,8 +480,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   Node<QueryView> *OnlyUser(void) const noexcept;
 
   // Create or inherit a condition created on `view`.
-  static COND *CreateOrInheritConditionOnView(
-      QueryImpl *query, Node<QueryView> *view, UseList<COL> cols);
+  static COND *CreateOrInheritConditionOnView(QueryImpl *query,
+                                              Node<QueryView> *view,
+                                              UseList<COL> cols);
 
  protected:
   // Utilities for depth calculation.
@@ -509,17 +507,19 @@ class Node<QuerySelect> final : public Node<QueryView> {
   inline Node(Node<QueryRelation> *relation_, DisplayRange range)
       : position(range.From()),
         relation(this, relation_),
-        inserts(this, true  /* is_weak */) {
-    this->can_receive_deletions = 0u < relation->declaration.NumDeletionClauses();
+        inserts(this, true /* is_weak */) {
+    this->can_receive_deletions =
+        0u < relation->declaration.NumDeletionClauses();
     this->can_produce_deletions = this->can_receive_deletions;
   }
 
   inline Node(Node<QueryStream> *stream_, DisplayRange range)
       : position(range.From()),
         stream(this, stream_),
-        inserts(this, true  /* is_weak */) {
+        inserts(this, true /* is_weak */) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions = 0u < input_stream->declaration.NumDeletionClauses();
+      this->can_receive_deletions =
+          0u < input_stream->declaration.NumDeletionClauses();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -576,8 +576,7 @@ using TUPLE = Node<QueryTuple>;
 template <>
 class Node<QueryKVIndex> final : public Node<QueryView> {
  public:
-  Node(void)
-      : Node<QueryView>() {
+  Node(void) : Node<QueryView>() {
     can_produce_deletions = true;
   }
 
@@ -605,8 +604,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  Node(void)
-      : joined_views(this, true  /* is_weak */) {}
+  Node(void) : joined_views(this, true /* is_weak */) {}
 
   const char *KindName(void) const noexcept override;
   Node<QueryJoin> *AsJoin(void) noexcept override;
@@ -661,7 +659,6 @@ using JOIN = Node<QueryJoin>;
 template <>
 class Node<QueryMap> final : public Node<QueryView> {
  public:
-
   virtual ~Node(void);
 
   const char *KindName(void) const noexcept override;
@@ -743,8 +740,7 @@ using AGG = Node<QueryAggregate>;
 template <>
 class Node<QueryMerge> : public Node<QueryView> {
  public:
-  Node(void)
-      : merged_views(this) {}
+  Node(void) : merged_views(this) {}
 
   virtual ~Node(void);
 
@@ -773,8 +769,7 @@ using MERGE = Node<QueryMerge>;
 template <>
 class Node<QueryConstraint> : public Node<QueryView> {
  public:
-  Node(ComparisonOperator op_)
-      : op(op_) {}
+  Node(ComparisonOperator op_) : op(op_) {}
 
   virtual ~Node(void);
 
@@ -805,7 +800,7 @@ class Node<QueryInsert> : public Node<QueryView> {
   virtual ~Node(void);
 
   inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_,
-              bool is_insert_=true)
+              bool is_insert_ = true)
       : relation(this, relation_),
         declaration(decl_),
         is_insert(is_insert_) {
@@ -816,7 +811,7 @@ class Node<QueryInsert> : public Node<QueryView> {
   }
 
   inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_,
-              bool is_insert_=true)
+              bool is_insert_ = true)
       : stream(this, stream_),
         declaration(decl_),
         is_insert(is_insert_) {
@@ -843,13 +838,9 @@ using INSERT = Node<QueryInsert>;
 
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
-  view->ForEachUse<VIEW>([&user_cb] (VIEW *user, VIEW *) {
-    user_cb(user);
-  });
+  view->ForEachUse<VIEW>([&user_cb](VIEW *user, VIEW *) { user_cb(user); });
 
-  ForEachUse<VIEW>([&user_cb] (VIEW *view, COL *) {
-    user_cb(view);
-  });
+  ForEachUse<VIEW>([&user_cb](VIEW *view, COL *) { user_cb(view); });
 }
 
 class QueryImpl {
@@ -966,9 +957,8 @@ class QueryImpl {
       views.push_back(view);
     }
 
-    std::sort(views.begin(), views.end(), [] (VIEW *a, VIEW *b) {
-      return a->Depth() < b->Depth();
-    });
+    std::sort(views.begin(), views.end(),
+              [](VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
 
     for (auto view : views) {
       do_view(view);
@@ -1015,9 +1005,8 @@ class QueryImpl {
       views.push_back(view);
     }
 
-    std::sort(views.begin(), views.end(), [] (VIEW *a, VIEW *b) {
-      return a->Depth() > b->Depth();
-    });
+    std::sort(views.begin(), views.end(),
+              [](VIEW *a, VIEW *b) { return a->Depth() > b->Depth(); });
 
     for (auto view : views) {
       do_view(view);
@@ -1074,12 +1063,10 @@ class QueryImpl {
   void FinalizeColumnIDs(void) const;
 
   // The streams associated with input relations to queries.
-  std::unordered_map<ParsedDeclaration, Node<QueryIO> *>
-      decl_to_input;
+  std::unordered_map<ParsedDeclaration, Node<QueryIO> *> decl_to_input;
 
   // The tables available within any query sharing this context.
-  std::unordered_map<ParsedDeclaration, Node<QueryRelation> *>
-      decl_to_relation;
+  std::unordered_map<ParsedDeclaration, Node<QueryRelation> *> decl_to_relation;
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.

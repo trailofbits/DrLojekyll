@@ -1,8 +1,7 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Parse/Type.h>
-
 #include <drlojekyll/Lex/Token.h>
+#include <drlojekyll/Parse/Type.h>
 
 namespace hyde {
 namespace {
@@ -61,8 +60,7 @@ unsigned SizeInBytes(TypeKind kind) noexcept {
     case TypeKind::kBytes:
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
-    case TypeKind::kUUID:
-      return 16u;
+    case TypeKind::kUUID: return 16u;
   }
   return 0u;
 }

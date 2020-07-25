@@ -20,11 +20,11 @@ class StringPool {
   bool TryReadCode(unsigned id, std::string_view *code_out) const;
 
   // Intern a string into the pool, returning its offset in the pool.
-  unsigned InternString(std::string_view data, bool force=false) const;
+  unsigned InternString(std::string_view data, bool force = false) const;
 
   // Read out some string given its index and length.
-  bool TryReadString(
-      unsigned index, unsigned len, std::string_view *data_out) const;
+  bool TryReadString(unsigned index, unsigned len,
+                     std::string_view *data_out) const;
 
  private:
   class Impl;
@@ -32,4 +32,4 @@ class StringPool {
   std::shared_ptr<Impl> impl;
 };
 
-}  // namespace
+}  // namespace hyde

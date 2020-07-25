@@ -21,7 +21,7 @@ QueryImpl::~QueryImpl(void) {
     io->receives.ClearWithoutErasure();
   }
 
-  ForEachView([] (VIEW *view) {
+  ForEachView([](VIEW *view) {
     view->input_columns.ClearWithoutErasure();
     view->attached_columns.ClearWithoutErasure();
     view->positive_conditions.ClearWithoutErasure();
@@ -86,32 +86,23 @@ QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
 
-QueryView::QueryView(const QuerySelect &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QuerySelect &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryTuple &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryTuple &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryKVIndex &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryKVIndex &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryJoin &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryJoin &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryMap &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryMap &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryAggregate &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryAggregate &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryMerge &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryMerge &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryConstraint &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryConstraint &view) : QueryView(view.impl) {}
 
-QueryView::QueryView(const QueryInsert &view)
-    : QueryView(view.impl) {}
+QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
 
 QueryView QueryView::From(QuerySelect &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
@@ -241,11 +232,13 @@ uint64_t QueryView::Hash(void) const noexcept {
 
 // Positive conditions, i.e. zero-argument predicates, that must be true
 // for tuples to be accepted into this node.
-UsedNodeRange<QueryCondition> QueryView::PositiveConditions(void) const noexcept {
+UsedNodeRange<QueryCondition> QueryView::PositiveConditions(void) const
+    noexcept {
   return {impl->positive_conditions.begin(), impl->positive_conditions.end()};
 }
 
-UsedNodeRange<QueryCondition> QueryView::NegativeConditions(void) const noexcept {
+UsedNodeRange<QueryCondition> QueryView::NegativeConditions(void) const
+    noexcept {
   return {impl->negative_conditions.begin(), impl->negative_conditions.end()};
 }
 
@@ -309,13 +302,11 @@ bool QueryColumn::ReplaceAllUsesWith(QueryColumn that) const noexcept {
 
 // Apply a function to each user.
 void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
-  impl->view->ForEachUse<VIEW>([&user_cb] (VIEW *view, VIEW *) {
-    user_cb(QueryView(view));
-  });
+  impl->view->ForEachUse<VIEW>(
+      [&user_cb](VIEW *view, VIEW *) { user_cb(QueryView(view)); });
 
-  impl->ForEachUse<VIEW>([&user_cb] (VIEW *view, COL *) {
-    user_cb(QueryView(view));
-  });
+  impl->ForEachUse<VIEW>(
+      [&user_cb](VIEW *view, COL *) { user_cb(QueryView(view)); });
 }
 
 const ParsedVariable &QueryColumn::Variable(void) const noexcept {
@@ -335,7 +326,8 @@ bool QueryColumn::operator!=(QueryColumn that) const noexcept {
 }
 
 // The declaration of the
-const std::optional<ParsedDeclaration> &QueryCondition::Predicate(void) const noexcept {
+const std::optional<ParsedDeclaration> &QueryCondition::Predicate(void) const
+    noexcept {
   return impl->declaration;
 }
 
@@ -483,7 +475,8 @@ UsedNodeRange<QueryView> QueryJoin::JoinedViews(void) const noexcept {
 }
 
 // Returns the set of pivot columns proposed by the Nth incoming view.
-UsedNodeRange<QueryColumn> QueryJoin::NthInputPivotSet(unsigned n) const noexcept {
+UsedNodeRange<QueryColumn> QueryJoin::NthInputPivotSet(unsigned n) const
+    noexcept {
   assert(n < impl->num_pivots);
   auto use_list = impl->out_to_in.find(impl->columns[n]);
   assert(use_list != impl->out_to_in.end());
@@ -502,7 +495,7 @@ QueryColumn QueryJoin::NthInputMergedColumn(unsigned n) const noexcept {
 
 // Returns the `nth` output column.
 QueryColumn QueryJoin::NthOutputMergedColumn(unsigned n) const noexcept {
-  assert((n + impl->num_pivots)  < impl->columns.Size());
+  assert((n + impl->num_pivots) < impl->columns.Size());
   return QueryColumn(impl->columns[n + impl->num_pivots]);
 }
 
@@ -537,8 +530,7 @@ UsedNodeRange<QueryColumn> QueryMap::InputColumns(void) const noexcept {
 
 // The range of input group columns.
 UsedNodeRange<QueryColumn> QueryMap::InputCopiedColumns(void) const {
-  return {impl->attached_columns.begin(),
-          impl->attached_columns.end()};
+  return {impl->attached_columns.begin(), impl->attached_columns.end()};
 }
 
 DefinedNodeRange<QueryColumn> QueryMap::Columns(void) const {
@@ -549,9 +541,9 @@ DefinedNodeRange<QueryColumn> QueryMap::Columns(void) const {
 // The resulting mapped columns.
 DefinedNodeRange<QueryColumn> QueryMap::MappedColumns(void) const {
   const auto num_copied_cols = impl->attached_columns.Size();
-  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
-          DefinedNodeIterator<QueryColumn>(
-              impl->columns.end() - num_copied_cols)};
+  return {
+      DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+      DefinedNodeIterator<QueryColumn>(impl->columns.end() - num_copied_cols)};
 }
 
 // The resulting grouped columns.
@@ -559,10 +551,9 @@ DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
   const auto num_cols = impl->columns.Size();
   const auto num_copied_cols = impl->attached_columns.Size();
   const auto first_copied_col_index = num_cols - num_copied_cols;
-  return {
-    DefinedNodeIterator<QueryColumn>(
-        impl->columns.begin() + first_copied_col_index),
-    DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
+                                           first_copied_col_index),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
 // Returns the number of output columns.
@@ -622,48 +613,55 @@ DefinedNodeRange<QueryColumn> QueryAggregate::Columns(void) const noexcept {
 }
 
 // Subsequences of the above.
-DefinedNodeRange<QueryColumn> QueryAggregate::GroupColumns(void) const noexcept {
+DefinedNodeRange<QueryColumn> QueryAggregate::GroupColumns(void) const
+    noexcept {
   if (impl->group_by_columns.Empty()) {
     return {DefinedNodeIterator<QueryColumn>(impl->columns.end()),
             DefinedNodeIterator<QueryColumn>(impl->columns.end())};
   } else {
     auto begin = impl->columns.begin();
     return {DefinedNodeIterator<QueryColumn>(begin),
-            DefinedNodeIterator<QueryColumn>(begin + impl->group_by_columns.Size())};
+            DefinedNodeIterator<QueryColumn>(begin +
+                                             impl->group_by_columns.Size())};
   }
 }
 
-DefinedNodeRange<QueryColumn> QueryAggregate::ConfigurationColumns(void) const noexcept {
+DefinedNodeRange<QueryColumn> QueryAggregate::ConfigurationColumns(void) const
+    noexcept {
   if (impl->config_columns.Empty()) {
     return {DefinedNodeIterator<QueryColumn>(impl->columns.end()),
             DefinedNodeIterator<QueryColumn>(impl->columns.end())};
   } else {
     auto begin = impl->columns.begin() + impl->group_by_columns.Size();
-    return {DefinedNodeIterator<QueryColumn>(begin),
-            DefinedNodeIterator<QueryColumn>(begin + impl->config_columns.Size())};
+    return {
+        DefinedNodeIterator<QueryColumn>(begin),
+        DefinedNodeIterator<QueryColumn>(begin + impl->config_columns.Size())};
   }
 }
 
 // NOTE(pag): There should always be at least one summary column.
-DefinedNodeRange<QueryColumn> QueryAggregate::SummaryColumns(void) const noexcept {
+DefinedNodeRange<QueryColumn> QueryAggregate::SummaryColumns(void) const
+    noexcept {
   auto begin = impl->columns.begin() +
-       (impl->group_by_columns.Size() + impl->config_columns.Size());
+               (impl->group_by_columns.Size() + impl->config_columns.Size());
   return {DefinedNodeIterator<QueryColumn>(begin),
           DefinedNodeIterator<QueryColumn>(impl->columns.end())};
 }
 
-UsedNodeRange<QueryColumn> QueryAggregate::InputGroupColumns(void) const noexcept {
+UsedNodeRange<QueryColumn> QueryAggregate::InputGroupColumns(void) const
+    noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->group_by_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->group_by_columns.end())};
 }
 
-UsedNodeRange<QueryColumn>
-QueryAggregate::InputConfigurationColumns(void) const noexcept {
+UsedNodeRange<QueryColumn> QueryAggregate::InputConfigurationColumns(void) const
+    noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->config_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->config_columns.end())};
 }
 
-UsedNodeRange<QueryColumn> QueryAggregate::InputAggregatedColumns(void) const noexcept {
+UsedNodeRange<QueryColumn> QueryAggregate::InputAggregatedColumns(void) const
+    noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->aggregated_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->aggregated_columns.end())};
 }
@@ -725,7 +723,8 @@ QueryColumn QueryAggregate::NthInputGroupColumn(unsigned n) const noexcept {
 }
 
 // Returns the `nth` input config column.
-QueryColumn QueryAggregate::NthInputConfigurationColumn(unsigned n) const noexcept {
+QueryColumn QueryAggregate::NthInputConfigurationColumn(unsigned n) const
+    noexcept {
   assert(n < impl->config_columns.Size());
   return QueryColumn(impl->config_columns[n]);
 }
@@ -995,12 +994,14 @@ QueryColumn QueryKVIndex::NthInputValueColumn(unsigned n) const noexcept {
   return QueryColumn(impl->attached_columns[n]);
 }
 
-UsedNodeRange<QueryColumn> QueryKVIndex::InputValueColumns(void) const noexcept {
+UsedNodeRange<QueryColumn> QueryKVIndex::InputValueColumns(void) const
+    noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->attached_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->attached_columns.end())};
 }
 
-const ParsedFunctor &QueryKVIndex::NthValueMergeFunctor(unsigned n) const noexcept {
+const ParsedFunctor &QueryKVIndex::NthValueMergeFunctor(unsigned n) const
+    noexcept {
   assert(n < impl->attached_columns.Size());
   return impl->merge_functors[n];
 }

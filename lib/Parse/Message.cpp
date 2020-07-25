@@ -30,8 +30,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   DisplayPosition next_pos;
   Token name;
 
-  for (next_pos = tok.NextPosition();
-       ReadNextSubToken(tok);
+  for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
     const auto lexeme = tok.Lexeme();
@@ -73,8 +72,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected type name here for parameter in #message '"
-              << name << "', but got '" << tok << "' instead";
+              << "Expected type name here for parameter in #message '" << name
+              << "', but got '" << tok << "' instead";
           return;
         }
 
@@ -87,12 +86,13 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of #message '" << name << "', but got '"
-              << tok << "' instead";
+              << "parameter name of #message '" << name << "', but got '" << tok
+              << "' instead";
           return;
         }
 
       case 4:
+
         // Add the parameter in.
         if (!params.empty()) {
           params.back()->next = param.get();
@@ -136,8 +136,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         }
 
       case 5: {
-        DisplayRange err_range(
-            tok.Position(), sub_tokens.back().NextPosition());
+        DisplayRange err_range(tok.Position(),
+                               sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
             << "Unexpected tokens following declaration of the '"
             << message->name << "' message";
@@ -145,8 +145,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         continue;
       }
 
-      case 6:
-        continue;
+      case 6: continue;
     }
   }
 
@@ -158,8 +157,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
     RemoveDecl<ParsedMessage>(std::move(message));
 
   } else {
-    FinalizeDeclAndCheckConsistency<ParsedMessage>(
-        module->messages, std::move(message));
+    FinalizeDeclAndCheckConsistency<ParsedMessage>(module->messages,
+                                                   std::move(message));
   }
 }
 

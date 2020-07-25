@@ -19,7 +19,8 @@ class FileManagerImpl;
 enum class PathKind {
   kWindows,
   kPosix,
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+#if defined(WIN32) || defined(_WIN32) || \
+    defined(__WIN32) && !defined(__CYGWIN__)
   kDefault = kWindows
 #else
   kDefault = kPosix
@@ -33,11 +34,9 @@ enum class PathKind {
 // they were created.
 class Path {
  public:
-  inline Path(const Path &that)
-      : entry(that.entry) {}
+  inline Path(const Path &that) : entry(that.entry) {}
 
-  inline Path(Path &&that) noexcept
-      : entry(that.entry) {}
+  inline Path(Path &&that) noexcept : entry(that.entry) {}
 
   Path(const FileManager &fs, std::string_view path);
   Path(const FileManager &fs);  // Makes the root path.
@@ -120,8 +119,7 @@ class FileManager {
  public:
   ~FileManager(void);
 
-  inline FileManager(void)
-      : FileManager(PathKind::kDefault) {}
+  inline FileManager(void) : FileManager(PathKind::kDefault) {}
 
   explicit FileManager(PathKind path_kind);
   FileManager(const FileManager &that);
@@ -145,8 +143,8 @@ class FileManager {
   // Apply `cb` to every path in the directory `dir`. Returns an error code if
   // `dir` is not a directory. If `cb` returns `false` then the iteration is
   // stopped.
-  static std::error_code ForEachPathInDirectory(
-      Path dir, std::function<bool(Path)> cb);
+  static std::error_code ForEachPathInDirectory(Path dir,
+                                                std::function<bool(Path)> cb);
 
   // Create a directory.
   static std::error_code CreateDirectory(Path path);
@@ -161,7 +159,7 @@ class FileManager {
   std::shared_ptr<FileManagerImpl> impl;
 };
 
-}  // namespace mu
+}  // namespace hyde
 namespace std {
 
 // Specialize `std::hash` so that we can put paths into hash tables and sets.

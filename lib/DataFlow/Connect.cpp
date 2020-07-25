@@ -1,8 +1,8 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Parse/ErrorLog.h>
+
+#include "Query.h"
 
 namespace hyde {
 
@@ -13,10 +13,9 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
                      std::pair<std::vector<INSERT *>, std::vector<SELECT *>>>
       decl_to_views;
 
-  auto can_connect = [] (ParsedDeclaration decl) {
+  auto can_connect = [](ParsedDeclaration decl) {
     return !decl.NumNegatedUses() &&  // Not used in an existence check.
-           !decl.IsMessage() &&
-           0u < decl.Arity();  // Not a condition.
+           !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
   };
 
   // Collect a list of declarations mapping to their inserts and selects.
@@ -86,8 +85,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
           insert->CopyTestedConditionsTo(ins_proxy);
 
           for (auto in_col : insert->input_columns) {
-            auto out_col = ins_proxy->columns.Create(
-                in_col->var, ins_proxy, in_col->id);
+            auto out_col =
+                ins_proxy->columns.Create(in_col->var, ins_proxy, in_col->id);
             ins_proxy->input_columns.AddUse(in_col);
             out_col->CopyConstant(in_col);
           }
@@ -116,7 +115,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         // Create a guard tuple that enforces order of columns, so that we can
         // make the columns of the KVINDEX in the order of keys followed by
         // values, which might not match the normal column order.
-        view = view->GuardWithTuple(this, true  /* force */);
+        view = view->GuardWithTuple(this, true /* force */);
 
         const auto index = kv_indices.Create();
 
@@ -125,8 +124,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         for (ParsedParameter param : decl.Parameters()) {
           const auto merge_col = merge->columns[i++];
           if (param.Binding() != ParameterBinding::kMutable) {
-            const auto key_col = index->columns.Create(
-                merge_col->var, index, merge_col->id);
+            const auto key_col =
+                index->columns.Create(merge_col->var, index, merge_col->id);
             merge_col->ReplaceAllUsesWith(key_col);
           }
         }
@@ -136,8 +135,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         for (ParsedParameter param : decl.Parameters()) {
           const auto merge_col = merge->columns[i++];
           if (param.Binding() == ParameterBinding::kMutable) {
-            const auto val_col = index->columns.Create(
-                merge_col->var, index, merge_col->id);
+            const auto val_col =
+                index->columns.Create(merge_col->var, index, merge_col->id);
             merge_col->ReplaceAllUsesWith(val_col);
           }
         }
@@ -147,7 +146,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         for (ParsedParameter param : decl.Parameters()) {
           const auto merge_col = merge->columns[i++];
           if (param.Binding() == ParameterBinding::kMutable) {
-            index->merge_functors.push_back(ParsedFunctor::MergeOperatorOf(param));
+            index->merge_functors.push_back(
+                ParsedFunctor::MergeOperatorOf(param));
             index->attached_columns.AddUse(merge_col);
           } else {
             index->input_columns.AddUse(merge_col);
@@ -192,7 +192,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       }
 
       if (!can_connect_decl) {
-        for (auto select: select_views) {
+        for (auto select : select_views) {
           select->inserts.AddUse(single_insert);
         }
       }

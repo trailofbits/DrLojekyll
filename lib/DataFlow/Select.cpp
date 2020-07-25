@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Util/EqualitySet.h>
+
+#include "Query.h"
 
 namespace hyde {
 
@@ -24,10 +24,9 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
     hash ^= hash_ror * relation->declaration.Id();
 
   } else if (stream) {
-    if (auto const_stream  = stream->AsConstant()) {
+    if (auto const_stream = stream->AsConstant()) {
       hash ^= hash_ror *
-              std::hash<std::string_view>()(
-                  const_stream->literal.Spelling());
+              std::hash<std::string_view>()(const_stream->literal.Spelling());
 
     } else if (auto input_stream = stream->AsIO()) {
       hash ^= hash_ror * input_stream->declaration.Id();
@@ -94,9 +93,8 @@ bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
   }
 
   auto is_really_used = false;
-  ForEachUse<VIEW>([&is_really_used] (VIEW *, VIEW *) {
-    is_really_used = true;
-  });
+  ForEachUse<VIEW>(
+      [&is_really_used](VIEW *, VIEW *) { is_really_used = true; });
 
   if (!is_really_used) {
     PrepareToDelete();
@@ -108,11 +106,10 @@ bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over SELECTs is a mix of structural and pointer-based.
-bool Node<QuerySelect>::Equals(
-    EqualitySet &eq, Node<QueryView> *that_) noexcept {
+bool Node<QuerySelect>::Equals(EqualitySet &eq,
+                               Node<QueryView> *that_) noexcept {
   const auto that = that_->AsSelect();
-  if (!that ||
-      can_receive_deletions != that->can_receive_deletions ||
+  if (!that || can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
       positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions ||

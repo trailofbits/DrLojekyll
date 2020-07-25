@@ -40,8 +40,7 @@ class ErrorStream final : public display::DataStream {
 
 }  // namespace
 
-DisplayImpl::DisplayImpl(unsigned id_,
-                         const DisplayConfiguration &config_,
+DisplayImpl::DisplayImpl(unsigned id_, const DisplayConfiguration &config_,
                          display::DataStream *stream_)
     : id(id_),
       config(config_),
@@ -61,7 +60,7 @@ DisplayImpl::~DisplayImpl(void) {}
 bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
   std::string_view data_read;
 
-  auto try_add_waypoint = [this] (void) {
+  auto try_add_waypoint = [this](void) {
     if (!(data.size() % kWayPointIndex)) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
@@ -77,13 +76,13 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
   };
 
   do {
+
     // Go through and import any read characters. This will perform tab
     // expansion according to `config`, and if a bad character is found, it
     // will swap out `stream` with something that can report the position.
     for (auto ch : data_read) {
       switch (ch) {
-        case '\r':
-          continue;
+        case '\r': continue;
 
         case '\n':
           try_add_waypoint();
@@ -100,7 +99,7 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
           // TODO(pag): Unfortunately these apply inside strings too :-/
           if (config.use_tab_stops) {
             next_column = (next_column / config.num_spaces_in_tab) *
-                config.num_spaces_in_tab;
+                          config.num_spaces_in_tab;
           }
 
           for (auto i = 0U; i < (next_column - curr_column); ++i) {
@@ -114,8 +113,8 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
         default:
           if (ch < ' ' || ch > '~') {
             std::stringstream ss;
-            ss << "Invalid character in stream '" << config.name
-               << "' at line " << next_line << " and column " << next_column;
+            ss << "Invalid character in stream '" << config.name << "' at line "
+               << next_line << " and column " << next_column;
             stream.reset(new ErrorStream(ss.str()));
             goto done;
           } else {
@@ -219,7 +218,8 @@ bool Display::TryReadData(DisplayRange range,
     return false;
   }
 
-  const auto from_index = static_cast<unsigned>(interpreter_from.position.index);
+  const auto from_index =
+      static_cast<unsigned>(interpreter_from.position.index);
   const auto to_index = static_cast<unsigned>(interpreter_to.position.index);
 
   // NOTE(pag): The range is an exclusive range.

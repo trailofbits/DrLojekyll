@@ -77,8 +77,7 @@ void DisplayReader::UnreadChar(void) {
 
 // Returns the current display position.
 DisplayPosition DisplayReader::CurrentPosition(void) const {
-  return DisplayPosition(
-      display->id, index, line, column);
+  return DisplayPosition(display->id, index, line, column);
 }
 
 }  // namespace hyde
