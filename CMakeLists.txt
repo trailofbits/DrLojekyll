@@ -1,31 +1,47 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 cmake_minimum_required(VERSION 3.14)
-project(DrLojekyll)
+project(DrLojekyll LANGUAGES CXX)
+
+include(cmake/utils.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
 # --------------------------------------------
 option(ENABLE_LIBFUZZER "Build libFuzzer fuzz targets" OFF)
 option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
-
-include(cmake/utils.cmake)
+option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# --------------------------------------------
+# toolchain-specific warning options ---------
+# --------------------------------------------
+set(GNULIKE_COMPILER_LIST "Clang" "AppleClang" "GNU")
+
+if(CMAKE_CXX_COMPILER_ID IN_LIST GNULIKE_COMPILER_LIST)
+    set(CXX_WARNING_OPTIONS "-Wall -pedantic -Wconversion -Wno-unknown-pragmas")
+    set(CXX_WARNINGS_AS_ERRORS_OPTION "-Werror")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(CXX_WARNING_OPTIONS "/Wall")
+    set(CXX_WARNINGS_AS_ERRORS_OPTION "/WX")
+else()
+    set(CXX_WARNING_OPTIONS "")
+    set(CXX_WARNINGS_AS_ERRORS_OPTION "")
+    message(WARNING "Unsupported C++ compiler '${CMAKE_CXX_COMPILER_ID}'; build may not work right!")
+endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_WARNING_OPTIONS}")
+
+if(WARNINGS_AS_ERROR)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_WARNINGS_AS_ERRORS_OPTION}")
+endif()
 
 # settings -----------------------------------
 add_library(settings INTERFACE)
 target_include_directories(settings INTERFACE
     "${CMAKE_CURRENT_LIST_DIR}/include")
-
-target_compile_options(settings INTERFACE
-   -Werror -Wall -pedantic -Wconversion)
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(settings INTERFACE
-       -Wno-unknown-pragmas)
-endif()
 
 # release ------------------------------------
 add_library(settings-release INTERFACE)
@@ -59,7 +75,7 @@ endif()
 # libfuzzer ----------------------------------
 if(ENABLE_LIBFUZZER)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        message(FATAL_ERROR "You must use Clang to use ENABLE_LIBFUZZER")
+        message(FATAL_ERROR "You must use Clang to use ENABLE_LIBFUZZER (currently using '${CMAKE_CXX_COMPILER_ID}')")
     endif()
 
     add_sanitizer_settings(settings-libfuzzer
@@ -73,7 +89,6 @@ if(ENABLE_LIBFUZZER)
 endif()
 
 # targets ------------------------------------
-
 add_subdirectory(lib)
 
 function(add_test_target config)
