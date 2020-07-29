@@ -32,6 +32,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=gcc-7
           -DCMAKE_CXX_COMPILER=g++-7
+          -DWARNINGS_AS_ERRORS=1
           .
       - name: Build
         run: make -C build -j "$(nproc)"
@@ -47,6 +48,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_C_COMPILER=clang-6.0
           -DCMAKE_CXX_COMPILER=clang++-6.0
+          -DWARNINGS_AS_ERRORS=1
           .
       - name: Build
         run: cmake --build build -j "$(nproc)"
@@ -66,14 +68,22 @@ jobs:
         run: >
           cmake -B build
           -G 'Ninja Multi-Config'
-          -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=clang-10
           -DCMAKE_CXX_COMPILER=clang++-10
           -DENABLE_SANITIZERS=1
           -DENABLE_LIBFUZZER=1
+          -DWARNINGS_AS_ERRORS=1
           .
-      - name: Build
-        run: ninja -C build
+
+      # We ought to be able to build multiple configurations without them
+      # interfering.  First build debug, explicitly invoking `ninja`:
+      - name: Build Debug
+        run: ninja -C build -f build-Debug.ninja
+
+      # Next, build RelWithDebInfo, using the indirect `cmake --build`
+      # invocation of ninja.
+      - name: Build Release
+        run: cmake --build build --config RelWithDebInfo -j
 
   build4:
     name: macOS 10.15 / Debug / Sanitizers
@@ -86,6 +96,7 @@ jobs:
           -B build
           -G Xcode
           -DENABLE_SANITIZERS=1
+          -DWARNINGS_AS_ERRORS=1
           .
       - name: Build
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
@@ -100,7 +111,7 @@ jobs:
           cmake
           -B build
           -G "Visual Studio 16 2019"
+          -DWARNINGS_AS_ERRORS=1
           .
       - name: Build
         run: cmake --build build --config Debug -j
-        continue-on-error: true  # see Issue #37
