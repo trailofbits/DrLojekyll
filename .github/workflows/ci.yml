@@ -114,4 +114,4 @@ jobs:
           -DWARNINGS_AS_ERRORS=1
           .
       - name: Build
-        run: cmake --build build --config Debug -j
+        run: cmake --build build --config Debug --verbose -j
