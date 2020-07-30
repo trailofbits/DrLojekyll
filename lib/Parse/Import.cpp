@@ -44,31 +44,22 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
                                           &path_str) ||
       path_str.empty()) {
     context->error_log.Append(scope_range, tok_range)
-        << "Unknown error when trying to read data associatd with import "
+        << "Unknown error when trying to read data associated with import "
         << "path '" << tok << "'";
     return;
   }
 
   std::error_code ec;
-  std::string_view full_path;
+  std::filesystem::path full_path;
 
+  // Search filesystem for requested module
   for (auto search_path : context->import_search_paths) {
-    full_path = std::string_view();
-
-    ec = context->file_manager.PushDirectory(search_path);
+    std::filesystem::path joined_path(search_path / path_str);
+    std::filesystem::canonical(joined_path, ec);
     if (ec) {
       continue;
     }
-
-    Path path(context->file_manager, path_str);
-    context->file_manager.PopDirectory();
-
-    ec = path.RealPath(&full_path);
-
-    if (ec) {
-      continue;
-    }
-
+    full_path = joined_path;
     break;
   }
 
@@ -81,9 +72,8 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
   // Save the old first search path, and put in the directory containing the
   // about-to-be parsed module as the new first search path.
-  Path prev_search0 = context->import_search_paths[0];
-  context->import_search_paths[0] =
-      Path(context->file_manager, full_path).DirName();
+  std::filesystem::path prev_search0 = context->import_search_paths[0];
+  context->import_search_paths[0] = full_path.parent_path();
 
   DisplayConfiguration sub_config = module->config;
   sub_config.name = full_path;
@@ -91,7 +81,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   // Go and parse the module.
   ParserImpl sub_impl(context);
   auto sub_mod_opt = sub_impl.ParseDisplay(
-      context->display_manager.OpenPath(full_path, sub_config), sub_config);
+      context->display_manager.OpenPath(full_path.string(), sub_config), sub_config);
 
   // Restore the old first search path.
   context->import_search_paths[0] = prev_search0;
