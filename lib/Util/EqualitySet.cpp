@@ -2,6 +2,7 @@
 
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include <algorithm>
 #include <set>
 
 namespace hyde {
