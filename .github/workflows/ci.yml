@@ -21,7 +21,7 @@ on:
 # maximize problem detection ability with a minimal number of configurations.
 jobs:
   build1:
-    name: Ubuntu 18.04 / GCC 7.5 / Debug
+    name: Ubuntu 18.04 / GCC 8 / Debug
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
@@ -30,8 +30,8 @@ jobs:
           cmake
           -B build
           -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_C_COMPILER=gcc-7
-          -DCMAKE_CXX_COMPILER=g++-7
+          -DCMAKE_C_COMPILER=gcc-8
+          -DCMAKE_CXX_COMPILER=g++-8
           -DWARNINGS_AS_ERRORS=1
           .
       - name: Build
