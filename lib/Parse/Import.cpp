@@ -76,7 +76,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   context->import_search_paths[0] = full_path.parent_path();
 
   DisplayConfiguration sub_config = module->config;
-  sub_config.name = full_path;
+  sub_config.name = full_path.string();
 
   // Go and parse the module.
   ParserImpl sub_impl(context);
