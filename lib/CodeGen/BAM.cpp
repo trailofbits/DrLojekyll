@@ -6,7 +6,6 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Util/Node.h>
 
 #include <bitset>

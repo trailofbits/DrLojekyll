@@ -2,7 +2,6 @@
 
 add_library(util STATIC
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/BitManipulation.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Compiler.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DefUse.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DisjointSet.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/EqualitySet.h"
