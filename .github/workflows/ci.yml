@@ -54,7 +54,7 @@ jobs:
         run: cmake --build build -j "$(nproc)"
 
   build3:
-    name: Ubuntu 20.04 / Clang 10 / Debug / Fuzz / Sanitizers
+    name: Ubuntu 20.04 / Clang 10 / Multi-Config / Fuzz / Sanitizers
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
