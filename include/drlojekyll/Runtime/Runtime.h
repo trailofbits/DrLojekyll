@@ -12,14 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(__clang__) || defined(__GNUC__)
-#  define DR_INLINE [[gnu::always_inline]] inline
-#elif defined(_MSVC_LANG)
-#  define DR_INLINE __forceinline
-#else
-#  define DR_INLINE inline
-#endif
-
 template <typename T>
 class hyde_rt_AggregateState : public T {};
 
