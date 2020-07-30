@@ -26,7 +26,11 @@ union UUID {
   struct {
     uint64_t low;
     uint64_t high;
-  } __attribute__((packed)) opaque_pair;
+  }
+#ifdef __GNUC__
+  __attribute__((packed))
+#endif
+  opaque_pair;
 
   inline bool operator<(UUID other) const noexcept {
     return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
