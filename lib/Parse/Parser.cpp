@@ -1440,10 +1440,8 @@ std::optional<ParsedModule> Parser::ParsePath(
   // so that we can do file-relative imports.
   auto prev_path0 = impl->context->import_search_paths[0];
   impl->context->import_search_paths[0] = path.parent_path();
-
   auto module = impl->ParseDisplay(display, config);
-  impl->context->import_search_paths[0] =
-      prev_path0;  // Restore back to the CWD.
+  impl->context->import_search_paths[0] = prev_path0;  // Restore cwd
 
   return module;
 }

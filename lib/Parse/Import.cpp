@@ -49,21 +49,12 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     return;
   }
 
-  std::error_code ec;
-  std::filesystem::path full_path;
+  std::filesystem::path resolved_path;
+  std::error_code ec = ResolvePath(path_str, context->import_search_paths, resolved_path);
 
-  // Search filesystem for requested module
-  for (auto search_path : context->import_search_paths) {
-    std::filesystem::path joined_path(search_path / path_str);
-    std::filesystem::canonical(joined_path, ec);
-    if (ec) {
-      continue;
-    }
-    full_path = joined_path;
-    break;
-  }
-
-  if (ec || full_path.empty()) {
+  if (ec || resolved_path.empty()) {
+    // TODO(blarsen): fix up the error reporting here to include the source
+    // information, like in `ParseInclude`
     context->error_log.Append(scope_range, tok_range)
         << "Unable to locate module '" << tok
         << "' requested by import statement";
@@ -73,15 +64,15 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   // Save the old first search path, and put in the directory containing the
   // about-to-be parsed module as the new first search path.
   std::filesystem::path prev_search0 = context->import_search_paths[0];
-  context->import_search_paths[0] = full_path.parent_path();
+  context->import_search_paths[0] = resolved_path.parent_path();
 
   DisplayConfiguration sub_config = module->config;
-  sub_config.name = full_path.string();
+  sub_config.name = resolved_path.string();
 
   // Go and parse the module.
   ParserImpl sub_impl(context);
   auto sub_mod_opt = sub_impl.ParseDisplay(
-      context->display_manager.OpenPath(full_path.string(), sub_config), sub_config);
+      context->display_manager.OpenPath(resolved_path.string(), sub_config), sub_config);
 
   // Restore the old first search path.
   context->import_search_paths[0] = prev_search0;
@@ -97,7 +88,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
   } else {
     context->error_log.Append(scope_range, tok_range)
-        << "Failed to parse '" << full_path
+        << "Failed to parse '" << resolved_path
         << "' requested by import statement";
   }
 }

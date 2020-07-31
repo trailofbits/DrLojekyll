@@ -31,6 +31,7 @@ class SharedParserContext {
                       const ErrorLog &error_log_)
       : display_manager(display_manager_),
         error_log(error_log_) {
+    // FIXME(blarsen): grabbing the current path in parser construction is a hidden dependency
     std::filesystem::path cwd = std::filesystem::current_path();
     import_search_paths.push_back(cwd);
     include_search_paths[1].push_back(cwd);
@@ -156,6 +157,13 @@ class ParserImpl {
 
   // Try to parse `sub_range` as an include of C/C++ code.
   void ParseInclude(Node<ParsedModule> *module);
+
+  // Try to resolve the given path to a file on the filesystem, searching the
+  // provided directories in order.
+  // TODO(blarsen): fix up the filesystem error-handling behavior here
+  static std::error_code ResolvePath(const std::filesystem::path &path,
+                                     const std::vector<std::filesystem::path> &search_dirs,
+                                     std::filesystem::path &out_resolved_path);
 
   // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
   // module.

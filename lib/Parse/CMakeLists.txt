@@ -26,6 +26,7 @@ add_library(parse STATIC
     "ModuleIterator.cpp"
     "Parse.cpp"
     "Parser.cpp"
+    "Resolve.cpp"
     "Query.cpp"
     "Type.cpp"
     "Variable.cpp"
