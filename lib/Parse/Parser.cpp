@@ -1433,17 +1433,15 @@ std::optional<ParsedModule> Parser::ParsePath(
     std::string_view path_, const DisplayConfiguration &config) const {
 
   auto display = impl->context->display_manager.OpenPath(path_, config);
-  Path path(impl->context->file_manager, path_);
+  std::filesystem::path path(path_);
 
   // Special case for path parsing, we need to change the parser's current
   // working directory to the directory containing the file being parsed
   // so that we can do file-relative imports.
   auto prev_path0 = impl->context->import_search_paths[0];
-  impl->context->import_search_paths[0] = path.DirName();
-
+  impl->context->import_search_paths[0] = path.parent_path();
   auto module = impl->ParseDisplay(display, config);
-  impl->context->import_search_paths[0] =
-      prev_path0;  // Restore back to the CWD.
+  impl->context->import_search_paths[0] = prev_path0;  // Restore cwd
 
   return module;
 }
@@ -1460,15 +1458,14 @@ std::optional<ParsedModule> Parser::ParseStream(
 
 // Add a directory as a search path for files.
 void Parser::AddModuleSearchPath(std::string_view path) const {
-  impl->context->import_search_paths.emplace_back(impl->context->file_manager,
-                                                  path);
+  impl->context->import_search_paths.emplace_back(path);
 }
 
 // Add a directory as a search path for includes.
 void Parser::AddIncludeSearchPath(std::string_view path,
                                   IncludeSearchPathKind kind) const {
-  impl->context->include_search_paths[static_cast<unsigned>(kind)].emplace_back(
-      impl->context->file_manager, path);
+  unsigned ukind = static_cast<unsigned>(kind);
+  impl->context->include_search_paths[ukind].emplace_back(path);
 }
 
 }  // namespace hyde

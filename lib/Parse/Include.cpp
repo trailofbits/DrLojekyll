@@ -63,37 +63,18 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
     return;
   }
 
+  std::filesystem::path resolved_path;
   std::error_code ec;
-  std::string_view full_path;
 
-  auto found = false;
   for (const auto &search_paths : context->include_search_paths) {
-    for (auto search_path : search_paths) {
-      full_path = std::string_view();
-
-      ec = context->file_manager.PushDirectory(search_path);
-      if (ec) {
-        continue;
-      }
-
-      Path path(context->file_manager, path_str);
-      context->file_manager.PopDirectory();
-
-      ec = path.RealPath(&full_path);
-      if (ec) {
-        continue;
-      }
-
-      found = true;
-      break;
+    ec = ResolvePath(path_str, search_paths, resolved_path);
+    if (ec) {
+      continue;
     }
-
-    if (found) {
-      break;
-    }
+    break;
   }
 
-  if (ec || full_path.empty()) {
+  if (ec || resolved_path.empty()) {
     context->error_log.Append(scope_range, path_range)
         << "Unable to locate file '" << path_str
         << "' requested by include statement";
@@ -101,7 +82,7 @@ void ParserImpl::ParseInclude(Node<ParsedModule> *module) {
   }
 
   const auto include =
-      new Node<ParsedInclude>(scope_range, full_path, is_angled);
+      new Node<ParsedInclude>(scope_range, resolved_path.string(), is_angled);
   if (!module->includes.empty()) {
     module->includes.back()->next = include;
   }

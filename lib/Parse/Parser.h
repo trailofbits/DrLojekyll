@@ -12,10 +12,10 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parser.h>
-#include <drlojekyll/Util/FileManager.h>
 
 #include <cassert>
 #include <cstring>
+#include <filesystem>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -31,15 +31,17 @@ class SharedParserContext {
                       const ErrorLog &error_log_)
       : display_manager(display_manager_),
         error_log(error_log_) {
-    import_search_paths.push_back(file_manager.CurrentDirectory());
-    include_search_paths[1].push_back(file_manager.CurrentDirectory());
+    // FIXME(blarsen): grabbing the current path in parser construction is a hidden dependency
+    std::filesystem::path cwd = std::filesystem::current_path();
+    import_search_paths.push_back(cwd);
+    include_search_paths[1].push_back(cwd);
   }
 
   // Search paths for looking for imports.
-  std::vector<Path> import_search_paths;
+  std::vector<std::filesystem::path> import_search_paths;
 
   // Search paths for looking for includes.
-  std::vector<Path> include_search_paths[2];
+  std::vector<std::filesystem::path> include_search_paths[2];
 
   // All parsed modules.
   Node<ParsedModule> *root_module{nullptr};
@@ -51,7 +53,6 @@ class SharedParserContext {
   std::unordered_map<unsigned, std::weak_ptr<Node<ParsedModule>>>
       parsed_modules;
 
-  const FileManager file_manager;
   const DisplayManager display_manager;
   const ErrorLog error_log;
   const StringPool string_pool;
@@ -156,6 +157,13 @@ class ParserImpl {
 
   // Try to parse `sub_range` as an include of C/C++ code.
   void ParseInclude(Node<ParsedModule> *module);
+
+  // Try to resolve the given path to a file on the filesystem, searching the
+  // provided directories in order.
+  // TODO(blarsen): fix up the filesystem error-handling behavior here
+  static std::error_code ResolvePath(const std::filesystem::path &path,
+                                     const std::vector<std::filesystem::path> &search_dirs,
+                                     std::filesystem::path &out_resolved_path);
 
   // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
   // module.

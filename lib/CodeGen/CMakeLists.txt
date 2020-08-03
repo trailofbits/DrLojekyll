@@ -1,19 +1,17 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-function(add_codegen_library source_dir config)
-    add_library(codegen-${config} STATIC
-        "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/BAM.h"
+add_library(codegen STATIC
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/BAM.h"
 
-        "${source_dir}/BAM.cpp"
-    )
+    "BAM.cpp"
+)
 
-    target_link_libraries(codegen-${config}
-        PUBLIC
-            settings-${config}
-            dataflow-${config}
-            display-${config}
-            lex-${config}
-            parse-${config}
-            util-${config}
-    )
-endfunction(add_codegen_library)
+target_link_libraries(codegen
+    PUBLIC
+        settings
+        dataflow
+        display
+        lex
+        parse
+        util
+)

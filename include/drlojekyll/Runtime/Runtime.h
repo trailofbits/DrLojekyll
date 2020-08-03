@@ -12,20 +12,14 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(__clang__) || defined(__GNUC__)
-#  define DR_INLINE [[gnu::always_inline]] inline
-#elif defined(_MSVC_LANG)
-#  define DR_INLINE __forceinline
-#else
-#  define DR_INLINE inline
-#endif
-
 template <typename T>
 class hyde_rt_AggregateState : public T {};
 
 template <typename T>
 class hyde_rt_DifferentialAggregateState : public hyde_rt_AggregateState<T> {};
 
+// NOTE: many of the types here are placeholders or stubs just to get a sense
+// for how things will fit together.
 namespace hyde {
 namespace rt {
 
@@ -34,7 +28,8 @@ union UUID {
   struct {
     uint64_t low;
     uint64_t high;
-  } __attribute__((packed)) opaque_pair;
+  }
+  opaque_pair;
 
   inline bool operator<(UUID other) const noexcept {
     return memcmp(opaque_bytes, other.opaque_bytes, 16) < 0;
