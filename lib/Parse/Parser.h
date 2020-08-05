@@ -188,9 +188,9 @@ class ParserImpl {
                                        bool is_param, bool is_arg);
 
   // Create a variable to name a literal.
-  Node<ParsedVariable> *
-  CreateLiteralVariable(Node<ParsedClause> *clause, Token tok, bool is_param,
-                        bool is_arg);
+  Node<ParsedVariable> *CreateLiteralVariable(Node<ParsedClause> *clause,
+                                              Token tok, bool is_param,
+                                              bool is_arg);
 
   // Perform type checking/assignment. Returns `false` if there was an error.
   bool AssignTypes(Node<ParsedModule> *module);

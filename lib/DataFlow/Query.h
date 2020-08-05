@@ -482,9 +482,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   Node<QueryView> *OnlyUser(void) const noexcept;
 
   // Create or inherit a condition created on `view`.
-  static COND *
-  CreateOrInheritConditionOnView(QueryImpl *query, Node<QueryView> *view,
-                                 UseList<COL> cols);
+  static COND *CreateOrInheritConditionOnView(QueryImpl *query,
+                                              Node<QueryView> *view,
+                                              UseList<COL> cols);
 
  protected:
   // Utilities for depth calculation.

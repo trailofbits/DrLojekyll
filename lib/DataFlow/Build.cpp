@@ -556,10 +556,10 @@ static TUPLE *CreateIntermediary(QueryImpl *query, VIEW *view) {
 }
 
 // Create a JOIN from the pivots in `pivots`.
-static JOIN *
-CreateJoinFromPivots(QueryImpl *query, ParsedClause clause,
-                     ClauseContext &context, std::vector<COL *> &pivots,
-                     size_t num_joined_views) {
+static JOIN *CreateJoinFromPivots(QueryImpl *query, ParsedClause clause,
+                                  ClauseContext &context,
+                                  std::vector<COL *> &pivots,
+                                  size_t num_joined_views) {
 
   // Sort then expand the pivot set. Before sorting, `pivots` will contain
   // `N` columns, each with different views. After expanding, `pivots` will
@@ -806,9 +806,9 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Create a PRODUCT from multiple VIEWs.
-static void
-CreateProduct(QueryImpl *query, ParsedClause clause, ClauseContext &context,
-              const ErrorLog &log, WorkItem &work_item) {
+static void CreateProduct(QueryImpl *query, ParsedClause clause,
+                          ClauseContext &context, const ErrorLog &log,
+                          WorkItem &work_item) {
   auto &views = work_item.views;
 
   std::vector<COL *> unique_cols;
@@ -1061,9 +1061,9 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 }
 
 // Try to apply as many functors as possible to `view`.
-static bool
-TryApplyFunctors(QueryImpl *query, ParsedClause clause, ClauseContext &context,
-                 const ErrorLog &log, WorkItem &work_item) {
+static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
+                             ClauseContext &context, const ErrorLog &log,
+                             WorkItem &work_item) {
 
   const auto num_views = work_item.views.size();
 
@@ -1096,9 +1096,9 @@ TryApplyFunctors(QueryImpl *query, ParsedClause clause, ClauseContext &context,
 }
 
 // Create a view from an aggregate.
-static VIEW *
-ApplyAggregate(QueryImpl *query, ParsedClause clause, ClauseContext &context,
-               const ErrorLog &log, ParsedAggregate agg) {
+static VIEW *ApplyAggregate(QueryImpl *query, ParsedClause clause,
+                            ClauseContext &context, const ErrorLog &log,
+                            ParsedAggregate agg) {
 
   auto base_view = BuildPredicate(query, context, agg.Predicate(), log);
   if (!base_view) {

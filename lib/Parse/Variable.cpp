@@ -5,9 +5,9 @@
 namespace hyde {
 
 // Create a variable.
-Node<ParsedVariable> *
-ParserImpl::CreateVariable(Node<ParsedClause> *clause, Token name,
-                           bool is_param, bool is_arg) {
+Node<ParsedVariable> *ParserImpl::CreateVariable(Node<ParsedClause> *clause,
+                                                 Token name, bool is_param,
+                                                 bool is_arg) {
 
   auto var = new Node<ParsedVariable>;
   if (is_param) {
