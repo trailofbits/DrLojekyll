@@ -693,8 +693,8 @@ static VIEW *FindConstantClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Find `var` in the output columns of `view`, or as a constant.
-static COL *
-FindColVarInView(ClauseContext &context, VIEW *view, ParsedVariable var) {
+static COL *FindColVarInView(ClauseContext &context, VIEW *view,
+                             ParsedVariable var) {
   const auto id = VarId(context, var);
 
   // Try to find the column in `view`.
@@ -1346,8 +1346,8 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 }
 
 // Make the INSERT conditional on any zero-argument predicates.
-static void
-AddConditionsToInsert(QueryImpl *query, ParsedClause clause, INSERT *insert) {
+static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
+                                  INSERT *insert) {
   std::vector<COND *> conds;
 
   auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses) {
@@ -1643,8 +1643,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
 }  // namespace
 
-std::optional<Query>
-Query::Build(const ParsedModule &module, const ErrorLog &log) {
+std::optional<Query> Query::Build(const ParsedModule &module,
+                                  const ErrorLog &log) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl);
 

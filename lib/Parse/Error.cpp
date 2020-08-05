@@ -276,8 +276,8 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
 
 // An error message related to a highlighted range of tokens, with a sub-range
 // in particular being referenced.
-::hyde::Note
-Error::Note(const DisplayRange &range, const DisplayRange &sub_range) const {
+::hyde::Note Error::Note(const DisplayRange &range,
+                         const DisplayRange &sub_range) const {
   Error note(impl->display_manager, range, sub_range);
   note.impl->next.swap(impl->next);
   impl->next.swap(note.impl);

@@ -329,13 +329,13 @@ class Token {
 
   // Return a number literal token at `position` that occupies `spelling_width`
   // columns of text in the display.
-  static Token
-  FakeNumberLiteral(DisplayPosition position, unsigned spelling_width);
+  static Token FakeNumberLiteral(DisplayPosition position,
+                                 unsigned spelling_width);
 
   // Return a string literal token at `position` that occupies `spelling_width`
   // columns of text in the display.
-  static Token
-  FakeStringLiteral(DisplayPosition position, unsigned spelling_width);
+  static Token FakeStringLiteral(DisplayPosition position,
+                                 unsigned spelling_width);
 
   // Return a type token at `position` that occupies `spelling_width`
   // columns of text in the display.

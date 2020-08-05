@@ -369,8 +369,8 @@ unsigned Node<QueryView>::Depth(void) noexcept {
   return depth;
 }
 
-unsigned
-Node<QueryView>::EstimateDepth(const UseList<COL> &cols, unsigned depth) {
+unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols,
+                                        unsigned depth) {
   for (const auto input_col : cols) {
     const auto input_depth = input_col->view->depth;
     if (input_depth >= depth) {
@@ -380,8 +380,8 @@ Node<QueryView>::EstimateDepth(const UseList<COL> &cols, unsigned depth) {
   return depth;
 }
 
-unsigned
-Node<QueryView>::EstimateDepth(const UseList<COND> &conds, unsigned depth) {
+unsigned Node<QueryView>::EstimateDepth(const UseList<COND> &conds,
+                                        unsigned depth) {
   auto cond_depth = 2u;
   auto has_conds = false;
   for (const auto cond : conds) {
@@ -687,8 +687,8 @@ bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
 // If this view is used by a merge then we're not allowed to re-order the
 // columns. Instead, what we can do is create a tuple that will maintain
 // the ordering, and the canonicalize the join order below that tuple.
-Node<QueryTuple> *
-Node<QueryView>::GuardWithTuple(QueryImpl *query, bool force) {
+Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
+                                                  bool force) {
 
   if (!force && !this->Def<Node<QueryView>>::IsUsed()) {
     return nullptr;

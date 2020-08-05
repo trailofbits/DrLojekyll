@@ -5,8 +5,8 @@
 namespace hyde {
 namespace {
 
-static void
-AnalyzeAggregateVars(Node<ParsedAggregate> *impl, const ErrorLog &log) {
+static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
+                                 const ErrorLog &log) {
   auto next_group_var_ptr = &(impl->first_group_var);
   auto next_config_var_ptr = &(impl->first_config_var);
   auto next_aggregate_var_ptr = &(impl->first_aggregate_var);

@@ -23,8 +23,8 @@ class StringPool {
   unsigned InternString(std::string_view data, bool force = false) const;
 
   // Read out some string given its index and length.
-  bool
-  TryReadString(unsigned index, unsigned len, std::string_view *data_out) const;
+  bool TryReadString(unsigned index, unsigned len,
+                     std::string_view *data_out) const;
 
  private:
   class Impl;

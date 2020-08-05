@@ -199,8 +199,8 @@ class ParserImpl {
   //
   // NOTE(pag): Due to display caching, this may return a prior parsed module,
   //            so as to avoid re-parsing a module.
-  std::optional<ParsedModule>
-  ParseDisplay(Display display, const DisplayConfiguration &config);
+  std::optional<ParsedModule> ParseDisplay(Display display,
+                                           const DisplayConfiguration &config);
 };
 
 #pragma GCC diagnostic push

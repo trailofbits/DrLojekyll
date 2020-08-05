@@ -48,8 +48,8 @@ class Parser {
   enum IncludeSearchPathKind : unsigned { kSystemInclude, kUserInclude };
 
   // Add a directory as a search path for includes.
-  void
-  AddIncludeSearchPath(std::string_view path, IncludeSearchPathKind kind) const;
+  void AddIncludeSearchPath(std::string_view path,
+                            IncludeSearchPathKind kind) const;
 
  private:
   Parser(void) = delete;
