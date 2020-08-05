@@ -4,9 +4,10 @@
 
 namespace hyde {
 
-std::error_code ParserImpl::ResolvePath(const std::filesystem::path &path,
-                                        const std::vector<std::filesystem::path> &search_dirs,
-                                        std::filesystem::path &out_resolved_path) {
+std::error_code ParserImpl::ResolvePath(
+    const std::filesystem::path &path,
+    const std::vector<std::filesystem::path> &search_dirs,
+    std::filesystem::path &out_resolved_path) {
 
   std::error_code ec;
 
@@ -19,6 +20,7 @@ std::error_code ParserImpl::ResolvePath(const std::filesystem::path &path,
     std::filesystem::path joined_path(search_dir / path);
     std::filesystem::canonical(joined_path, ec);
     if (ec) {
+
       // not found here
       continue;
     }
