@@ -638,8 +638,8 @@ struct InlineRedefinition {
 };
 
 template <typename Tag, typename Ret, typename... ArgTypes>
-inline static auto InlineDefinition(Ret (*func)(ArgTypes...))
-    -> Ret (*)(ArgTypes...) {
+inline static auto
+InlineDefinition(Ret (*func)(ArgTypes...)) -> Ret (*)(ArgTypes...) {
   if constexpr (InlineRedefinition<Tag>::kIsDefined) {
     return InlineRedefinition<Tag>::template Run<Ret, ArgTypes...>;
   } else {

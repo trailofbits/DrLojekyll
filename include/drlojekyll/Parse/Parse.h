@@ -953,8 +953,8 @@ struct hash<::hyde::ParsedPredicate> {
 
 template <typename T>
 struct hash<::hyde::parse::ParsedNode<T>> {
-  inline uintptr_t operator()(
-      ::hyde::parse::ParsedNode<T> node) const noexcept {
+  inline uintptr_t
+  operator()(::hyde::parse::ParsedNode<T> node) const noexcept {
     return node.Hash();
   }
 };

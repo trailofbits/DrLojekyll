@@ -99,8 +99,8 @@ class DisplayRange {
   }
 
   // Tries to compute the distance between two positions.
-  inline bool TryComputeDistance(int *num_bytes, int *num_lines,
-                                 int *num_cols) const {
+  inline bool
+  TryComputeDistance(int *num_bytes, int *num_lines, int *num_cols) const {
     return from.TryComputeDistanceTo(to, num_bytes, num_lines, num_cols);
   }
 

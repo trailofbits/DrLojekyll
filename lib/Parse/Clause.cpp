@@ -11,8 +11,8 @@ namespace {
 // predicates that should be extracted into boolean conditions (zero-argument
 // clauses). It's simpler to demand that the writer of the code factor out these
 // conditions instead of having us do it automatically.
-static void FindUnrelatedConditions(Node<ParsedClause> *clause,
-                                    const ErrorLog &log) {
+static void
+FindUnrelatedConditions(Node<ParsedClause> *clause, const ErrorLog &log) {
 
   std::vector<std::unique_ptr<DisjointSet>> sets;
   std::unordered_map<uint64_t, DisjointSet *> var_to_set;

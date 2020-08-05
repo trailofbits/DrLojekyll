@@ -556,10 +556,10 @@ static TUPLE *CreateIntermediary(QueryImpl *query, VIEW *view) {
 }
 
 // Create a JOIN from the pivots in `pivots`.
-static JOIN *CreateJoinFromPivots(QueryImpl *query, ParsedClause clause,
-                                  ClauseContext &context,
-                                  std::vector<COL *> &pivots,
-                                  size_t num_joined_views) {
+static JOIN *
+CreateJoinFromPivots(QueryImpl *query, ParsedClause clause,
+                     ClauseContext &context, std::vector<COL *> &pivots,
+                     size_t num_joined_views) {
 
   // Sort then expand the pivot set. Before sorting, `pivots` will contain
   // `N` columns, each with different views. After expanding, `pivots` will
@@ -693,8 +693,8 @@ static VIEW *FindConstantClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Find `var` in the output columns of `view`, or as a constant.
-static COL *FindColVarInView(ClauseContext &context, VIEW *view,
-                             ParsedVariable var) {
+static COL *
+FindColVarInView(ClauseContext &context, VIEW *view, ParsedVariable var) {
   const auto id = VarId(context, var);
 
   // Try to find the column in `view`.
@@ -806,9 +806,9 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Create a PRODUCT from multiple VIEWs.
-static void CreateProduct(QueryImpl *query, ParsedClause clause,
-                          ClauseContext &context, const ErrorLog &log,
-                          WorkItem &work_item) {
+static void
+CreateProduct(QueryImpl *query, ParsedClause clause, ClauseContext &context,
+              const ErrorLog &log, WorkItem &work_item) {
   auto &views = work_item.views;
 
   std::vector<COL *> unique_cols;
@@ -1061,9 +1061,9 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 }
 
 // Try to apply as many functors as possible to `view`.
-static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
-                             ClauseContext &context, const ErrorLog &log,
-                             WorkItem &work_item) {
+static bool
+TryApplyFunctors(QueryImpl *query, ParsedClause clause, ClauseContext &context,
+                 const ErrorLog &log, WorkItem &work_item) {
 
   const auto num_views = work_item.views.size();
 
@@ -1096,9 +1096,9 @@ static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
 }
 
 // Create a view from an aggregate.
-static VIEW *ApplyAggregate(QueryImpl *query, ParsedClause clause,
-                            ClauseContext &context, const ErrorLog &log,
-                            ParsedAggregate agg) {
+static VIEW *
+ApplyAggregate(QueryImpl *query, ParsedClause clause, ClauseContext &context,
+               const ErrorLog &log, ParsedAggregate agg) {
 
   auto base_view = BuildPredicate(query, context, agg.Predicate(), log);
   if (!base_view) {
@@ -1346,8 +1346,8 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 }
 
 // Make the INSERT conditional on any zero-argument predicates.
-static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
-                                  INSERT *insert) {
+static void
+AddConditionsToInsert(QueryImpl *query, ParsedClause clause, INSERT *insert) {
   std::vector<COND *> conds;
 
   auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses) {
@@ -1643,8 +1643,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
 }  // namespace
 
-std::optional<Query> Query::Build(const ParsedModule &module,
-                                  const ErrorLog &log) {
+std::optional<Query>
+Query::Build(const ParsedModule &module, const ErrorLog &log) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl);
 

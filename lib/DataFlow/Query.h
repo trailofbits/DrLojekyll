@@ -302,14 +302,16 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Check to see if the attached columns are ordered and unique. If they're
   // not unique then we can deduplicate them.
-  std::pair<bool, bool> CanonicalizeAttachedColumns(
-      unsigned i, const OptimizationContext &opt) noexcept;
+  std::pair<bool, bool>
+  CanonicalizeAttachedColumns(unsigned i,
+                              const OptimizationContext &opt) noexcept;
 
   // Canonicalizes an input/output column pair. Returns `true` in the first
   // element if non-local changes are made, and `true` in the second element
   // if the column pair can be removed.
-  std::pair<bool, bool> CanonicalizeColumnPair(
-      COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept;
+  std::pair<bool, bool>
+  CanonicalizeColumnPair(COL *in_col, COL *out_col,
+                         const OptimizationContext &opt) noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
@@ -472,17 +474,17 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Figure out what the incoming view to `cols1` is.
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
-  static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
-                                          const UseList<COL> &cols2);
+  static Node<QueryView> *
+  GetIncomingView(const UseList<COL> &cols1, const UseList<COL> &cols2);
 
   // Returns a pointer to the only user of this node, or nullptr if there are
   // zero users, or more than one users.
   Node<QueryView> *OnlyUser(void) const noexcept;
 
   // Create or inherit a condition created on `view`.
-  static COND *CreateOrInheritConditionOnView(QueryImpl *query,
-                                              Node<QueryView> *view,
-                                              UseList<COL> cols);
+  static COND *
+  CreateOrInheritConditionOnView(QueryImpl *query, Node<QueryView> *view,
+                                 UseList<COL> cols);
 
  protected:
   // Utilities for depth calculation.
@@ -492,8 +494,8 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   static unsigned GetDepth(const UseList<COND> &conds, unsigned depth);
 
   // Utility for comparing use lists.
-  static bool ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
-                        const UseList<COL> &c2s);
+  static bool
+  ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s, const UseList<COL> &c2s);
 
   // Check if teh `group_ids` of two views have any overlaps.
   static bool InsertSetsOverlap(Node<QueryView> *a, Node<QueryView> *b);
@@ -627,8 +629,8 @@ class Node<QueryJoin> final : public Node<QueryView> {
                                     UseList<COL> &pivot_cols);
 
   // Replace the pivot column `pivot_col` with `const_col`.
-  void ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
-                                COL *const_col);
+  void
+  ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col, COL *const_col);
 
   // Replace `view`, which should be a member of `joined_views` with
   // `replacement_view` in this JOIN.

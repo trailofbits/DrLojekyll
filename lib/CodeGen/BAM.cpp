@@ -326,8 +326,8 @@ static void DefineMergeSources(OutputStream &os, Query query) {
 //}
 
 // Figure out a specification for the input columns.
-static std::vector<QueryColumn> InputColumnSpec(QueryView source_view,
-                                                QueryView target_view) {
+static std::vector<QueryColumn>
+InputColumnSpec(QueryView source_view, QueryView target_view) {
   std::vector<QueryColumn> input_cols;
 
   // Pass down the columns to a merge.
@@ -441,9 +441,9 @@ static void CallUsers(OutputStream &os, QueryView view, ViewCaseMap &case_map,
 }
 
 // Declare the function that will do aggregate some results.
-static void DeclareAggregate(
-    OutputStream &os, QueryAggregate agg,
-    std::set<std::pair<uint64_t, bool>> &seen_functors) {
+static void
+DeclareAggregate(OutputStream &os, QueryAggregate agg,
+                 std::set<std::pair<uint64_t, bool>> &seen_functors) {
 
   const auto functor = agg.Functor();
   const std::pair<uint64_t, bool> key(
@@ -497,8 +497,8 @@ static void DeclareAggregate(
 }
 
 // Generate code associated with an aggregate.
-static void DefineAggregate(OutputStream &os, QueryAggregate agg,
-                            ViewCaseMap case_map) {
+static void
+DefineAggregate(OutputStream &os, QueryAggregate agg, ViewCaseMap case_map) {
 
   const auto view = QueryView::From(agg);
   assert(view.CanProduceDeletions());
@@ -909,8 +909,8 @@ static void DeclareView(OutputStream &os, QueryView view) {
   os << ") noexcept;\n\n";
 }
 
-static void DefineTuple(OutputStream &os, QueryTuple tuple,
-                        ViewCaseMap &case_map) {
+static void
+DefineTuple(OutputStream &os, QueryTuple tuple, ViewCaseMap &case_map) {
 
   const auto view = QueryView::From(tuple);
 
@@ -1034,8 +1034,8 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "}\n\n";
 }
 
-static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
-                          ViewCaseMap case_map) {
+static void
+DefineKVIndex(OutputStream &os, QueryKVIndex kv, ViewCaseMap case_map) {
   const auto view = QueryView::From(kv);
 
   auto i = 0u;
@@ -1914,8 +1914,8 @@ static void DefineConstraint(OutputStream &os, QueryConstraint filter,
      << "}\n\n";
 }
 
-static void DeclareEquiJoin(OutputStream &os, QueryView from_view,
-                            QueryJoin join) {}
+static void
+DeclareEquiJoin(OutputStream &os, QueryView from_view, QueryJoin join) {}
 
 static void DeclareJoin(OutputStream &os, QueryJoin join) {
 

@@ -30,20 +30,20 @@ class DisplayManager {
   //
   // NOTE(pag): `data` must remain a valid reference for the lifetime of the
   //            `DisplayManager`.
-  Display OpenBuffer(std::string_view data,
-                     const DisplayConfiguration &config) const;
+  Display
+  OpenBuffer(std::string_view data, const DisplayConfiguration &config) const;
 
   // Open a file, specified by its path. This will read the entire contents
   // of the file into a buffer.
-  Display OpenPath(std::string_view path,
-                   const DisplayConfiguration &config) const;
+  Display
+  OpenPath(std::string_view path, const DisplayConfiguration &config) const;
 
   // Open an input stream.
   //
   // NOTE(pag): `is` must remain a valid reference for the lifetime of the
   //            `DisplayManager`.
-  Display OpenStream(std::istream &is,
-                     const DisplayConfiguration &config) const;
+  Display
+  OpenStream(std::istream &is, const DisplayConfiguration &config) const;
 
   // Tries to read a character from a display, given its position. Returns
   // `true` if successful and updates `*ch_out`.

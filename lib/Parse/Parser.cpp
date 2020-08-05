@@ -1353,8 +1353,8 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
 //
 // NOTE(pag): Due to display caching, this may return a prior parsed module,
 //            so as to avoid re-parsing a module.
-std::optional<ParsedModule> ParserImpl::ParseDisplay(
-    Display display, const DisplayConfiguration &config) {
+std::optional<ParsedModule>
+ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   auto &weak_module = context->parsed_modules[display.Id()];
   auto module = weak_module.lock();
   if (module) {
@@ -1422,15 +1422,17 @@ Parser::Parser(const DisplayManager &display_manager, const ErrorLog &error_log)
 //
 // NOTE(pag): `data` must remain valid for the lifetime of the parser's
 //            `display_manager`.
-std::optional<ParsedModule> Parser::ParseBuffer(
-    std::string_view data, const DisplayConfiguration &config) const {
+std::optional<ParsedModule>
+Parser::ParseBuffer(std::string_view data,
+                    const DisplayConfiguration &config) const {
   return impl->ParseDisplay(
       impl->context->display_manager.OpenBuffer(data, config), config);
 }
 
 // Parse a file, specified by its path.
-std::optional<ParsedModule> Parser::ParsePath(
-    std::string_view path_, const DisplayConfiguration &config) const {
+std::optional<ParsedModule>
+Parser::ParsePath(std::string_view path_,
+                  const DisplayConfiguration &config) const {
 
   auto display = impl->context->display_manager.OpenPath(path_, config);
   std::filesystem::path path(path_);
@@ -1450,8 +1452,9 @@ std::optional<ParsedModule> Parser::ParsePath(
 //
 // NOTE(pag): `is` must remain a valid reference for the lifetime of the
 //            parser's `display_manager`.
-std::optional<ParsedModule> Parser::ParseStream(
-    std::istream &is, const DisplayConfiguration &config) const {
+std::optional<ParsedModule>
+Parser::ParseStream(std::istream &is,
+                    const DisplayConfiguration &config) const {
   return impl->ParseDisplay(
       impl->context->display_manager.OpenStream(is, config), config);
 }

@@ -162,10 +162,10 @@ class ParserImpl {
   // Try to resolve the given path to a file on the filesystem, searching the
   // provided directories in order.
   // TODO(blarsen): fix up the filesystem error-handling behavior here
-  static std::error_code ResolvePath(
-      const std::filesystem::path &path,
-      const std::vector<std::filesystem::path> &search_dirs,
-      std::filesystem::path &out_resolved_path);
+  static std::error_code
+  ResolvePath(const std::filesystem::path &path,
+              const std::vector<std::filesystem::path> &search_dirs,
+              std::filesystem::path &out_resolved_path);
 
   // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
   // module.
@@ -188,9 +188,9 @@ class ParserImpl {
                                        bool is_param, bool is_arg);
 
   // Create a variable to name a literal.
-  Node<ParsedVariable> *CreateLiteralVariable(Node<ParsedClause> *clause,
-                                              Token tok, bool is_param,
-                                              bool is_arg);
+  Node<ParsedVariable> *
+  CreateLiteralVariable(Node<ParsedClause> *clause, Token tok, bool is_param,
+                        bool is_arg);
 
   // Perform type checking/assignment. Returns `false` if there was an error.
   bool AssignTypes(Node<ParsedModule> *module);
@@ -199,8 +199,8 @@ class ParserImpl {
   //
   // NOTE(pag): Due to display caching, this may return a prior parsed module,
   //            so as to avoid re-parsing a module.
-  std::optional<ParsedModule> ParseDisplay(Display display,
-                                           const DisplayConfiguration &config);
+  std::optional<ParsedModule>
+  ParseDisplay(Display display, const DisplayConfiguration &config);
 };
 
 #pragma GCC diagnostic push

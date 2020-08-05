@@ -426,8 +426,8 @@ ParsedPredicate ParsedAggregate::Predicate(void) const noexcept {
 
 // List of parameters to the predicate that are not paired with anything of
 // the arguments to the aggregating functor.
-NodeRange<ParsedVariable> ParsedAggregate::GroupVariablesFromPredicate(
-    void) const {
+NodeRange<ParsedVariable>
+ParsedAggregate::GroupVariablesFromPredicate(void) const {
   if (impl->first_group_var) {
     return NodeRange<ParsedVariable>(
         impl->first_group_var, static_cast<intptr_t>(__builtin_offsetof(
@@ -439,8 +439,8 @@ NodeRange<ParsedVariable> ParsedAggregate::GroupVariablesFromPredicate(
 
 // List of parameters from the predicate that are paired with a `aggregate`-
 // attributed variable in the functor.
-NodeRange<ParsedVariable> ParsedAggregate::AggregatedVariablesFromPredicate(
-    void) const {
+NodeRange<ParsedVariable>
+ParsedAggregate::AggregatedVariablesFromPredicate(void) const {
   if (impl->first_aggregate_var) {
     return NodeRange<ParsedVariable>(
         impl->first_aggregate_var,
@@ -453,8 +453,8 @@ NodeRange<ParsedVariable> ParsedAggregate::AggregatedVariablesFromPredicate(
 
 // List of parameters from the predicate that are paired with a `bound`-
 // attributed variables in the functor.
-NodeRange<ParsedVariable> ParsedAggregate::ConfigurationVariablesFromPredicate(
-    void) const {
+NodeRange<ParsedVariable>
+ParsedAggregate::ConfigurationVariablesFromPredicate(void) const {
   if (impl->first_config_var) {
     return NodeRange<ParsedVariable>(
         impl->first_config_var, static_cast<intptr_t>(__builtin_offsetof(

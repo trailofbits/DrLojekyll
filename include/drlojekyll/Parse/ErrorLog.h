@@ -28,8 +28,8 @@ class ErrorLog {
 
   // An error message related to a highlighted range of tokens, with one
   // character in particular being referenced.
-  Error Append(const DisplayRange &range,
-               const DisplayPosition &pos_in_range) const;
+  Error
+  Append(const DisplayRange &range, const DisplayPosition &pos_in_range) const;
 
   // An error message related to a highlighted range of tokens, with a sub-range
   // in particular being referenced.

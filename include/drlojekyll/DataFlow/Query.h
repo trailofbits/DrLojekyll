@@ -669,8 +669,8 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
 class Query {
  public:
   // Build and return a new query.
-  static std::optional<Query> Build(const ParsedModule &module,
-                                    const ErrorLog &log);
+  static std::optional<Query>
+  Build(const ParsedModule &module, const ErrorLog &log);
 
   ~Query(void);
 
