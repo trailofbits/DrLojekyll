@@ -9,17 +9,10 @@ import pathlib
 import subprocess
 import sys
 import traceback
+import shutil
 
 
 REFLOW_COMMENT = "// !!! REFLOW-COMMENT"
-
-
-def find_clang_format():
-  for path in os.environ['PATH'].split(os.pathsep):
-    exe_path = os.path.join(path, "clang-format")
-    if os.path.isfile(exe_path):
-      return exe_path
-  return None
 
 
 def find_comment_lines(path):
@@ -116,7 +109,7 @@ def fixup_file(path, lines, old_comments):
 
 
 def main():
-  clang_format_exe = find_clang_format()
+  clang_format_exe = shutil.which('clang-format')
 
   arg_parser = argparse.ArgumentParser()
 
