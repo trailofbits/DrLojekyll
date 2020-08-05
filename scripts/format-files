@@ -15,7 +15,7 @@ REFLOW_COMMENT = "// !!! REFLOW-COMMENT"
 
 
 def find_clang_format():
-  for path in sys.path:
+  for path in os.environ['PATH'].split(os.pathsep):
     exe_path = os.path.join(path, "clang-format")
     if os.path.isfile(exe_path):
       return exe_path
