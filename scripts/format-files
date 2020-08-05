@@ -81,7 +81,9 @@ def run_clang_format_on_files(format_exe, format_file, paths):
 
 def run_clang_format_on_lines(format_exe, format_file, path, lines):
   p = subprocess.Popen(
-      [format_exe, '--assume-filename={}'.format(path)],
+      [format_exe,
+       '--assume-filename={}'.format(path),
+       '--style=file'],
       stdin=subprocess.PIPE,
       stdout=subprocess.PIPE,
       stderr=subprocess.PIPE,
@@ -143,8 +145,16 @@ def main():
 
   args, _ = arg_parser.parse_known_args()
 
-  if not os.path.isdir(args.source_dir):
+  try:
+    source_dir = os.path.abspath(args.source_dir)
+    os.chdir(source_dir)
+  except:
     print("'{}' passed to --source_dir is not a directory".format(args.source_dir))
+    return 1
+
+  format_file = os.path.abspath(os.path.join(source_dir, ".clang-format"))
+  if not os.path.isfile(format_file):
+    print("Could not find clang-format file at '{}'".format(format_file))
     return 1
 
   if not os.path.isfile(args.format_exe):
@@ -156,19 +166,6 @@ def main():
   cxx_files = args.files
   if cxx_files:
     cxx_files = list(os.path.abspath(cxx_file) for cxx_file in cxx_files)
-
-  try:
-    source_dir = os.path.abspath(args.source_dir)
-    os.chdir(source_dir)
-  except:
-    print("'{}' passed to --source_dir is not a directory".format(args.source_dir))
-    return 1
-
-  format_file = os.path.join(source_dir, ".clang-format")
-  if not os.path.isfile(format_file):
-    print("Could not find clang-format file at '{}'".format(format_file))
-    return 1
-  # Change to source directory so that `clang-format` will find the `.clang-format` file.
   
   if not cxx_files:
     cxx_header_files = pathlib.Path(source_dir).rglob("*.h")

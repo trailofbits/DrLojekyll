@@ -43,7 +43,7 @@ else
 fi
 
 # Run our wrapper of `clang-format` on the files that have changed.
-${PYTHON3_EXE} "${SCRIPTS_DIR}/clang-format" \
+${PYTHON3_EXE} "${SCRIPTS_DIR}/format-files" \
     --source_dir "${SOURCE_DIR}" \
     --format_exe "${CLANG_FORMAT_EXE}" \
     --files ${STAGED_FILES} \
