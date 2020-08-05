@@ -22,6 +22,7 @@ add_library(dataflow STATIC
     "Insert.cpp"
     "Join.cpp"
     "KVIndex.cpp"
+    "Link.cpp"
     "Map.cpp"
     "Merge.cpp"
     "Optimize.cpp"

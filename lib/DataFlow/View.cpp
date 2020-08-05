@@ -20,7 +20,7 @@ const char *Node<QuerySelect>::KindName(void) const noexcept {
     if (s->AsConstant()) {
       return "CONST";
     } else if (s->AsIO()) {
-      return "RECV";
+      return "RECEIVE";
     } else {
       assert(false);
       return "STREAM";
@@ -74,7 +74,7 @@ const char *Node<QueryMerge>::KindName(void) const noexcept {
   }
 }
 
-const char *Node<QueryConstraint>::KindName(void) const noexcept {
+const char *Node<QueryCompare>::KindName(void) const noexcept {
   return "COMPARE";
 }
 
@@ -83,7 +83,7 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
     return "MATERIALIZE";
 
   } else if (declaration.Kind() == DeclarationKind::kMessage) {
-    return "SEND";
+    return "TRANSMIT";
 
   } else if (is_insert) {
     if (declaration.Arity()) {
@@ -129,7 +129,7 @@ Node<QueryMerge> *Node<QueryView>::AsMerge(void) noexcept {
   return nullptr;
 }
 
-Node<QueryConstraint> *Node<QueryView>::AsConstraint(void) noexcept {
+Node<QueryCompare> *Node<QueryView>::AsCompare(void) noexcept {
   return nullptr;
 }
 
@@ -541,7 +541,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
     if (auto stream = insert->stream.get(); stream) {
       WeakUseRef<STREAM>().Swap(insert->stream);
       if (auto io = stream->AsIO(); io) {
-        io->sends.RemoveIf(is_this_view);
+        io->transmits.RemoveIf(is_this_view);
       } else {
         assert(false);
       }
@@ -663,7 +663,7 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
 // control dependency then it generally needs to be kept around.
 bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
   return !positive_conditions.Empty() || !negative_conditions.Empty() ||
-         nullptr != const_cast<VIEW *>(this)->AsConstraint();
+         nullptr != const_cast<VIEW *>(this)->AsCompare();
 }
 
 // Returns `true` if all output columns are used.
@@ -739,7 +739,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   in_to_out.clear();
 
   auto col_index = 0u;
-  CMP *cmp = query->constraints.Create(op);
+  CMP *cmp = query->compares.Create(op);
 
   cmp->input_columns.AddUse(lhs_col);
   auto lhs_out_col =

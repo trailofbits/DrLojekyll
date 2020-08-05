@@ -300,6 +300,23 @@ class UseList {
 };
 
 template <typename T>
+class WeakUseList : public UseList<T> {
+ public:
+  WeakUseList(WeakUseList<T> &&that) noexcept : UseList<T>(that) {}
+
+  WeakUseList(User *owner_) : UseList<T>(owner_, true /* is_weak */) {}
+
+  void Swap(WeakUseList<T> &that) {
+    this->UseList<T>::Swap(that);
+  }
+
+ private:
+  void Swap(UseList<T> &) {
+    __builtin_unreachable();
+  }
+};
+
+template <typename T>
 class DefList;
 
 // An iterator over a definition list.
@@ -569,7 +586,7 @@ void UseList<T>::AddUse(Def<T> *def) {
 template <typename T>
 class UseRef {
  public:
-  UseRef(Use<T> *use_) : use(use_) {}
+  UseRef(User *user, Def<T> *def) : use(def ? def->CreateUse(user) : nullptr) {}
 
   void Swap(UseRef<T> &that) {
     if (use && that.use) {

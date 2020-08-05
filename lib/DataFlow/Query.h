@@ -121,9 +121,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   inline Node(void)
       : Def<Node<QueryCondition>>(this),
         User(this),
-        positive_users(this, true /* is_weak */),
-        negative_users(this, true /* is_weak */),
-        setters(this, true /* is_weak */) {}
+        positive_users(this),
+        negative_users(this),
+        setters(this) {}
 
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
@@ -131,9 +131,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
       : Def<Node<QueryCondition>>(this),
         User(this),
         declaration(decl_),
-        positive_users(this, true /* is_weak */),
-        negative_users(this, true /* is_weak */),
-        setters(this, true /* is_weak */) {}
+        positive_users(this),
+        negative_users(this),
+        setters(this) {}
 
   inline uint64_t Sort(void) const noexcept {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
@@ -143,14 +143,14 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   // zero-argument predicate.
   const std::optional<ParsedDeclaration> declaration;
 
-  // *WEAK* use list of views using this condition.
-  UseList<Node<QueryView>> positive_users;
-  UseList<Node<QueryView>> negative_users;
+  // List of views using this condition.
+  WeakUseList<Node<QueryView>> positive_users;
+  WeakUseList<Node<QueryView>> negative_users;
 
-  // *WEAK* use list of views that produce values for this condition.
+  // List of views that produce values for this condition.
   //
   // TODO(pag): Consider making this not be a weak use list.
-  UseList<Node<QueryView>> setters;
+  WeakUseList<Node<QueryView>> setters;
 };
 
 using COND = Node<QueryCondition>;
@@ -217,7 +217,7 @@ class Node<QueryIO> final : public Node<QueryStream>, public User {
   inline Node(ParsedDeclaration declaration_)
       : User(this),
         declaration(declaration_),
-        sends(this),
+        transmits(this),
         receives(this) {}
 
   Node<QueryIO> *AsIO(void) noexcept override;
@@ -226,7 +226,7 @@ class Node<QueryIO> final : public Node<QueryStream>, public User {
   const ParsedDeclaration declaration;
 
   // List of nodes that send data to this I/O operation.
-  UseList<Node<QueryView>> sends;
+  UseList<Node<QueryView>> transmits;
 
   // List of nodes that receive data from this I/O operation.
   UseList<Node<QueryView>> receives;
@@ -247,7 +247,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
         input_columns(this),
         attached_columns(this),
         positive_conditions(this),
-        negative_conditions(this) {
+        negative_conditions(this),
+        predecessors(this),
+        successors(this) {
     assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
            reinterpret_cast<uintptr_t>(this));
   }
@@ -324,7 +326,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   virtual Node<QueryMap> *AsMap(void) noexcept;
   virtual Node<QueryAggregate> *AsAggregate(void) noexcept;
   virtual Node<QueryMerge> *AsMerge(void) noexcept;
-  virtual Node<QueryConstraint> *AsConstraint(void) noexcept;
+  virtual Node<QueryCompare> *AsCompare(void) noexcept;
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
   // Useful for communicating low-level debug info back to the formatter.
@@ -392,6 +394,13 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // If this VIEW sets a CONDition, then keep track of that here.
   WeakUseRef<COND> sets_condition;
+
+  // Predecessors and successors of this VIEW.
+  //
+  // NOTE(pag): These are only filled in *after* all optimizations. They exist
+  //            for external/public users.
+  WeakUseList<Node<QueryView>> predecessors;
+  WeakUseList<Node<QueryView>> successors;
 
   // Used during canonicalization. Mostly just convenient to have around for
   // re-use of memory.
@@ -509,7 +518,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
   inline Node(Node<QueryRelation> *relation_, DisplayRange range)
       : position(range.From()),
         relation(this, relation_),
-        inserts(this, true /* is_weak */) {
+        inserts(this) {
     this->can_receive_deletions =
         0u < relation->declaration.NumDeletionClauses();
     this->can_produce_deletions = this->can_receive_deletions;
@@ -518,7 +527,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
   inline Node(Node<QueryStream> *stream_, DisplayRange range)
       : position(range.From()),
         stream(this, stream_),
-        inserts(this, true /* is_weak */) {
+        inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
       this->can_receive_deletions =
           0u < input_stream->declaration.NumDeletionClauses();
@@ -547,8 +556,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
   WeakUseRef<REL> relation;
   WeakUseRef<STREAM> stream;
 
-  // *WEAK* list that might feed this SELECT.
-  UseList<Node<QueryView>> inserts;
+  // List of views that might feed this SELECT.
+  WeakUseList<Node<QueryView>> inserts;
 };
 
 using SELECT = Node<QuerySelect>;
@@ -606,7 +615,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  Node(void) : joined_views(this, true /* is_weak */) {}
+  Node(void) : joined_views(this) {}
 
   const char *KindName(void) const noexcept override;
   Node<QueryJoin> *AsJoin(void) noexcept override;
@@ -649,7 +658,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   //
   // TODO(pag): I don't think the ordering invariant is maintained through
   //            canonicalization.
-  UseList<VIEW> joined_views;
+  WeakUseList<VIEW> joined_views;
 
   // Number of pivot columns. If this value is zero then this is actuall a
   // cross-product.
@@ -769,14 +778,14 @@ class Node<QueryMerge> : public Node<QueryView> {
 using MERGE = Node<QueryMerge>;
 
 template <>
-class Node<QueryConstraint> : public Node<QueryView> {
+class Node<QueryCompare> : public Node<QueryView> {
  public:
   Node(ComparisonOperator op_) : op(op_) {}
 
   virtual ~Node(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryConstraint> *AsConstraint(void) noexcept override;
+  Node<QueryCompare> *AsCompare(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
@@ -792,7 +801,7 @@ class Node<QueryConstraint> : public Node<QueryView> {
   DisplayRange spelling_range;
 };
 
-using CMP = Node<QueryConstraint>;
+using CMP = Node<QueryCompare>;
 
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.
@@ -875,7 +884,7 @@ class QueryImpl {
     for (auto view : merges) {
       views.push_back(view);
     }
-    for (auto view : constraints) {
+    for (auto view : compares) {
       views.push_back(view);
     }
     for (auto view : inserts) {
@@ -889,7 +898,6 @@ class QueryImpl {
 
   template <typename CB>
   void ForEachView(CB do_view) const {
-    std::vector<VIEW *> views;
     for (auto view : selects) {
       do_view(view);
     }
@@ -911,7 +919,7 @@ class QueryImpl {
     for (auto view : merges) {
       do_view(view);
     }
-    for (auto view : constraints) {
+    for (auto view : compares) {
       do_view(view);
     }
     for (auto view : inserts) {
@@ -950,7 +958,7 @@ class QueryImpl {
       view->depth = 0;
       views.push_back(view);
     }
-    for (auto view : constraints) {
+    for (auto view : compares) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -998,7 +1006,7 @@ class QueryImpl {
       view->depth = 0;
       views.push_back(view);
     }
-    for (auto view : constraints) {
+    for (auto view : compares) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -1064,6 +1072,9 @@ class QueryImpl {
   // value at runtime.
   void FinalizeColumnIDs(void) const;
 
+  // Link together views in terms of predecessors and successors.
+  void LinkViews(void) const;
+
   // The streams associated with input relations to queries.
   std::unordered_map<ParsedDeclaration, Node<QueryIO> *> decl_to_input;
 
@@ -1091,7 +1102,7 @@ class QueryImpl {
   DefList<MAP> maps;
   DefList<AGG> aggregates;
   DefList<MERGE> merges;
-  DefList<CMP> constraints;
+  DefList<CMP> compares;
   DefList<INSERT> inserts;
 };
 

@@ -137,7 +137,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << ";\n";
     }
 
-    for (auto insert : io.Sends()) {
+    for (auto insert : io.Transmits()) {
       auto color = QueryView::From(insert).CanReceiveDeletions()
                        ? " [color=purple]"
                        : "";
@@ -191,7 +191,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     link_conds(select);
   }
 
-  for (auto constraint : query.Constraints()) {
+  for (auto constraint : query.Compares()) {
     os << "v" << constraint.UniqueId() << " [ label=<" << kBeginTable;
     do_conds(2, constraint);
 
