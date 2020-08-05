@@ -4,9 +4,9 @@
 
 namespace hyde {
 
-Node<ProgramBlockRegion>::~Node(void) {}
+Node<ProgramInductionRegion>::~Node(void) {}
 
-Node<ProgramBlockRegion> *Node<ProgramBlockRegion>::AsBasic(void) noexcept {
+Node<ProgramInductionRegion> *Node<ProgramInductionRegion>::AsInduction(void) noexcept {
   return this;
 }
 

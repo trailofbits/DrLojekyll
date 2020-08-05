@@ -740,7 +740,7 @@ Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(QueryImpl *query,
   in_to_out.clear();
 
   auto col_index = 0u;
-  CMP *cmp = query->constraints.Create(op);
+  CMP *cmp = query->compares.Create(op);
 
   cmp->input_columns.AddUse(lhs_col);
   auto lhs_out_col =

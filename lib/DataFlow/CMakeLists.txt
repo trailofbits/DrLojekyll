@@ -23,6 +23,7 @@ function(add_dataflow_library source_dir config)
         "${source_dir}/Insert.cpp"
         "${source_dir}/Join.cpp"
         "${source_dir}/KVIndex.cpp"
+        "${source_dir}/Link.cpp"
         "${source_dir}/Map.cpp"
         "${source_dir}/Merge.cpp"
         "${source_dir}/Optimize.cpp"

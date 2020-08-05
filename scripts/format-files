@@ -9,17 +9,10 @@ import pathlib
 import subprocess
 import sys
 import traceback
+import shutil
 
 
 REFLOW_COMMENT = "// !!! REFLOW-COMMENT"
-
-
-def find_clang_format():
-  for path in sys.path:
-    exe_path = os.path.join(path, "clang-format")
-    if os.path.isfile(exe_path):
-      return exe_path
-  return None
 
 
 def find_comment_lines(path):
@@ -27,7 +20,7 @@ def find_comment_lines(path):
   old_comments = []
   needs_fixes = False
   with open(path, "r") as lines:
-    num_leading_comment_lines = 0 
+    num_leading_comment_lines = 0
     for line_ in lines:
       line = line_.rstrip("\n\r\t ")
       unindented_line = line.lstrip("\t ")
@@ -35,9 +28,9 @@ def find_comment_lines(path):
       new_lines.append(line)
 
       if unindented_line.startswith("//"):
-        
+
         # Make sure that every line that begins a comment block
-        # is preceded by a new line or a closing brace. 
+        # is preceded by a new line or a closing brace.
         if not num_leading_comment_lines and 1 < len(new_lines):
           prev_line = new_lines[-2].strip()
           if prev_line != "" and prev_line != "}":
@@ -81,7 +74,9 @@ def run_clang_format_on_files(format_exe, format_file, paths):
 
 def run_clang_format_on_lines(format_exe, format_file, path, lines):
   p = subprocess.Popen(
-      [format_exe, '--assume-filename={}'.format(path)],
+      [format_exe,
+       '--assume-filename={}'.format(path),
+       '--style=file'],
       stdin=subprocess.PIPE,
       stdout=subprocess.PIPE,
       stderr=subprocess.PIPE,
@@ -114,7 +109,7 @@ def fixup_file(path, lines, old_comments):
 
 
 def main():
-  clang_format_exe = find_clang_format()
+  clang_format_exe = shutil.which('clang-format')
 
   arg_parser = argparse.ArgumentParser()
 
@@ -143,8 +138,16 @@ def main():
 
   args, _ = arg_parser.parse_known_args()
 
-  if not os.path.isdir(args.source_dir):
+  try:
+    source_dir = os.path.abspath(args.source_dir)
+    os.chdir(source_dir)
+  except:
     print("'{}' passed to --source_dir is not a directory".format(args.source_dir))
+    return 1
+
+  format_file = os.path.abspath(os.path.join(source_dir, ".clang-format"))
+  if not os.path.isfile(format_file):
+    print("Could not find clang-format file at '{}'".format(format_file))
     return 1
 
   if not os.path.isfile(args.format_exe):
@@ -157,19 +160,6 @@ def main():
   if cxx_files:
     cxx_files = list(os.path.abspath(cxx_file) for cxx_file in cxx_files)
 
-  try:
-    source_dir = os.path.abspath(args.source_dir)
-    os.chdir(source_dir)
-  except:
-    print("'{}' passed to --source_dir is not a directory".format(args.source_dir))
-    return 1
-
-  format_file = os.path.join(source_dir, ".clang-format")
-  if not os.path.isfile(format_file):
-    print("Could not find clang-format file at '{}'".format(format_file))
-    return 1
-  # Change to source directory so that `clang-format` will find the `.clang-format` file.
-  
   if not cxx_files:
     cxx_header_files = pathlib.Path(source_dir).rglob("*.h")
     cxx_source_files = pathlib.Path(source_dir).rglob("*.cpp")
@@ -177,6 +167,10 @@ def main():
 
   in_place_files = []
   for cxx_file_ in cxx_files:
+    cxx_file = os.path.abspath(cxx_file_)
+    if not (cxx_file.endswith(".h") or cxx_file.endswith(".cpp")):
+      continue
+
     try:
       new_lines, old_comments, needs_fixes = find_comment_lines(cxx_file)
     except:

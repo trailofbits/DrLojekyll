@@ -258,7 +258,7 @@ static VIEW *GuardWithWithInequality(QueryImpl *query, ParsedClause clause,
       continue;
     }
 
-    CMP *filter = query->constraints.Create(cmp.Operator());
+    CMP *filter = query->compares.Create(cmp.Operator());
     filter->spelling_range = cmp.SpellingRange();
     filter->input_columns.AddUse(lhs_col);
     filter->input_columns.AddUse(rhs_col);
@@ -336,7 +336,7 @@ static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
         continue;  // Unique.
       }
 
-      CMP *cmp = query->constraints.Create(ComparisonOperator::kEqual);
+      CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
       cmp->input_columns.AddUse(prev_col);
       cmp->input_columns.AddUse(col);
 
@@ -368,7 +368,7 @@ static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
 
       auto const_col = context.var_id_to_col[lhs_var.UniqueId()]->col;
 
-      CMP *cmp = query->constraints.Create(ComparisonOperator::kEqual);
+      CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
       cmp->input_columns.AddUse(const_col);
       cmp->input_columns.AddUse(col);
 
@@ -979,7 +979,7 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
           continue;
         }
 
-        CMP *cmp = query->constraints.Create(ComparisonOperator::kEqual);
+        CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
         cmp->input_columns.AddUse(check.first);
         cmp->input_columns.AddUse(check.second);
         cmp->columns.Create(check.first->var, cmp, check.first->id, 0u);
@@ -1687,6 +1687,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   //  impl->SinkConditions();
   impl->TrackDifferentialUpdates();
   impl->FinalizeColumnIDs();
+  impl->LinkViews();
 
   return Query(std::move(impl));
 }

@@ -294,7 +294,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMap(void) const noexcept;
   bool IsAggregate(void) const noexcept;
   bool IsMerge(void) const noexcept;
-  bool IsConstraint(void) const noexcept;
+  bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
 
   // Can this view receive inputs that should logically "delete" entries?
@@ -318,6 +318,10 @@ class QueryView : public query::QueryNode<QueryView> {
   // for tuples to be accepted into this node.
   UsedNodeRange<QueryCondition> PositiveConditions(void) const noexcept;
   UsedNodeRange<QueryCondition> NegativeConditions(void) const noexcept;
+
+  // Successor and predecessor views of this view.
+  UsedNodeRange<QueryView> Successors(void) const noexcept;
+  UsedNodeRange<QueryView> Predecessors(void) const noexcept;
 
   // Apply a callback `with_user` to each view that uses the columns of this
   // view.
@@ -731,7 +735,7 @@ class Query {
   DefinedNodeRange<QueryMap> Maps(void) const;
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
   DefinedNodeRange<QueryMerge> Merges(void) const;
-  DefinedNodeRange<QueryCompare> Constraints(void) const;
+  DefinedNodeRange<QueryCompare> Compares(void) const;
   DefinedNodeRange<QueryIO> IOs(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
 
@@ -765,7 +769,7 @@ class Query {
       cb(QueryView::From(view));
     }
 
-    for (auto view : Constraints()) {
+    for (auto view : Compares()) {
       cb(QueryView::From(view));
     }
 

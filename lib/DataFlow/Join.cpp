@@ -101,7 +101,7 @@ void Node<QueryJoin>::ReplaceViewInJoin(VIEW *view, VIEW *replacement_view) {
     }
   }
 
-  UseList<VIEW> new_joined_views(this, true /* is_weak */);
+  WeakUseList<VIEW> new_joined_views(this);
   for (auto joined_view : joined_views) {
     if (joined_view) {
       if (joined_view == view) {

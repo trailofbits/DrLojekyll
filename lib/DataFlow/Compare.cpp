@@ -333,7 +333,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
   return non_local_changes;
 }
 
-// Equality over constraints is structural.
+// Equality over compares is structural.
 //
 // NOTE(pag): The two inputs to the comparison being tested aren't always
 //            ordered; however, equality testing here assumes ordering.

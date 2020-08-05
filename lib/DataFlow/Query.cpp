@@ -26,6 +26,8 @@ QueryImpl::~QueryImpl(void) {
     view->attached_columns.ClearWithoutErasure();
     view->positive_conditions.ClearWithoutErasure();
     view->negative_conditions.ClearWithoutErasure();
+    view->predecessors.ClearWithoutErasure();
+    view->successors.ClearWithoutErasure();
   });
 
   for (auto join : joins) {
@@ -195,7 +197,7 @@ bool QueryView::IsMerge(void) const noexcept {
   return impl->AsMerge() != nullptr;
 }
 
-bool QueryView::IsConstraint(void) const noexcept {
+bool QueryView::IsCompare(void) const noexcept {
   return impl->AsCompare() != nullptr;
 }
 
@@ -242,34 +244,20 @@ UsedNodeRange<QueryCondition> QueryView::NegativeConditions(void) const
   return {impl->negative_conditions.begin(), impl->negative_conditions.end()};
 }
 
+// Successor and predecessor views of this view.
+UsedNodeRange<QueryView> QueryView::Successors(void) const noexcept {
+  return {impl->successors.begin(), impl->successors.end()};
+}
+
+UsedNodeRange<QueryView> QueryView::Predecessors(void) const noexcept {
+  return {impl->predecessors.begin(), impl->predecessors.end()};
+}
+
 // Apply a callback `with_user` to each view that uses the columns of this
 // view.
 void QueryView::ForEachUser(std::function<void(QueryView)> with_user) const {
-  std::vector<QueryView> target_views;
-  for (QueryColumn col : Columns()) {
-    col.ForEachUser([&target_views](QueryView user_view) {
-      target_views.push_back(user_view);
-    });
-  }
-
-  // Sort the views by depth. We want a consistent topological ordering of the
-  // nodes, so that we always send new information to the shallowest node
-  // first.
-  std::sort(
-      target_views.begin(), target_views.end(),
-      [](QueryView a, QueryView b) { return a.UniqueId() < b.UniqueId(); });
-
-  auto it = std::unique(
-      target_views.begin(), target_views.end(),
-      [](QueryView a, QueryView b) { return a.UniqueId() == b.UniqueId(); });
-
-  target_views.erase(it, target_views.end());
-
-  std::sort(target_views.begin(), target_views.end(),
-            [](QueryView a, QueryView b) { return a.Depth() < b.Depth(); });
-
-  for (auto target_view : target_views) {
-    with_user(target_view);
+  for (auto succ_view : Predecessors()) {
+    with_user(succ_view);
   }
 }
 
@@ -958,7 +946,7 @@ ComparisonOperator QueryCompare::Operator(void) const {
 }
 
 QueryCompare QueryCompare::From(QueryView view) {
-  assert(view.IsConstraint());
+  assert(view.IsCompare());
   return reinterpret_cast<QueryCompare &>(view);
 }
 
@@ -1299,9 +1287,9 @@ DefinedNodeRange<QueryMerge> Query::Merges(void) const {
           DefinedNodeIterator<QueryMerge>(impl->merges.end())};
 }
 
-DefinedNodeRange<QueryCompare> Query::Constraints(void) const {
-  return {DefinedNodeIterator<QueryCompare>(impl->constraints.begin()),
-          DefinedNodeIterator<QueryCompare>(impl->constraints.end())};
+DefinedNodeRange<QueryCompare> Query::Compares(void) const {
+  return {DefinedNodeIterator<QueryCompare>(impl->compares.begin()),
+          DefinedNodeIterator<QueryCompare>(impl->compares.end())};
 }
 
 Query::~Query(void) {}

@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 # Get the list of changed C++ header and source files.
@@ -33,7 +33,7 @@ if [[ "${NAME_OF_THIS_FILE_DIR}" == "scripts" ]] ; then
 # This script being executed is located in the `.git/hooks` directory.
 elif [[ "${NAME_OF_THIS_FILE_DIR}" == "hooks" ]] ; then
   GIT_DIR=$( cd "$( dirname "${SCRIPTS_DIR}" )" && pwd )
-  SOURCE_DIR=$( cd "$( dirname "${GIT_DIR}" )" && pwd )  
+  SOURCE_DIR=$( cd "$( dirname "${GIT_DIR}" )" && pwd )
   SCRIPTS_DIR="${SOURCE_DIR}/scripts"
 
 # Not sure where this script is.
@@ -43,7 +43,7 @@ else
 fi
 
 # Run our wrapper of `clang-format` on the files that have changed.
-${PYTHON3_EXE} "${SCRIPTS_DIR}/clang-format" \
+${PYTHON3_EXE} "${SCRIPTS_DIR}/format-files" \
     --source_dir "${SOURCE_DIR}" \
     --format_exe "${CLANG_FORMAT_EXE}" \
     --files ${STAGED_FILES} \
