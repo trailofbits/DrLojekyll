@@ -24,8 +24,8 @@ void QueryImpl::LinkViews(void) const {
   }
 
   for (auto view : kv_indices) {
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                   view->attached_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
@@ -40,8 +40,8 @@ void QueryImpl::LinkViews(void) const {
   }
 
   for (auto view : maps) {
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                   view->attached_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
@@ -49,8 +49,8 @@ void QueryImpl::LinkViews(void) const {
   }
 
   for (auto view : aggregates) {
-    if (auto incoming_view = VIEW::GetIncomingView(view->group_by_columns,
-                                                   view->config_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->group_by_columns, view->config_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
@@ -71,8 +71,8 @@ void QueryImpl::LinkViews(void) const {
   }
 
   for (auto view : compares) {
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                   view->attached_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);

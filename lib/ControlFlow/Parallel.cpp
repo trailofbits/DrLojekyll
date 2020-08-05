@@ -6,8 +6,8 @@ namespace hyde {
 
 Node<ProgramParallelRegion>::~Node(void) {}
 
-Node<ProgramParallelRegion> *Node<ProgramParallelRegion>::AsBasic(
-    void) noexcept {
+Node<ProgramParallelRegion> *
+Node<ProgramParallelRegion>::AsBasic(void) noexcept {
   return this;
 }
 

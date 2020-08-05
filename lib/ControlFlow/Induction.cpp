@@ -6,7 +6,8 @@ namespace hyde {
 
 Node<ProgramInductionRegion>::~Node(void) {}
 
-Node<ProgramInductionRegion> *Node<ProgramInductionRegion>::AsInduction(void) noexcept {
+Node<ProgramInductionRegion> *
+Node<ProgramInductionRegion>::AsInduction(void) noexcept {
   return this;
 }
 

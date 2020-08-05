@@ -28,19 +28,19 @@ class Parser {
   //
   // NOTE(pag): `data` must remain valid for the lifetime of the parser's
   //            `display_manager`.
-  std::optional<ParsedModule> ParseBuffer(
-      std::string_view data, const DisplayConfiguration &config) const;
+  std::optional<ParsedModule>
+  ParseBuffer(std::string_view data, const DisplayConfiguration &config) const;
 
   // Parse a file, specified by its path.
-  std::optional<ParsedModule> ParsePath(
-      std::string_view path, const DisplayConfiguration &config) const;
+  std::optional<ParsedModule>
+  ParsePath(std::string_view path, const DisplayConfiguration &config) const;
 
   // Parse an input stream.
   //
   // NOTE(pag): `is` must remain a valid reference for the lifetime of the
   //            parser's `display_manager`.
-  std::optional<ParsedModule> ParseStream(
-      std::istream &is, const DisplayConfiguration &config) const;
+  std::optional<ParsedModule>
+  ParseStream(std::istream &is, const DisplayConfiguration &config) const;
 
   // Add a directory as a search path for modules.
   void AddModuleSearchPath(std::string_view path) const;

@@ -741,8 +741,8 @@ void FileManager::PopDirectory(void) const {
 // Apply `cb` to every path in the directory `dir`. Returns an error code if
 // `dir` is not a directory. If `cb` returns `false` then the iteration is
 // stopped.
-std::error_code FileManager::ForEachPathInDirectory(
-    Path dir, std::function<bool(Path)> cb) {
+std::error_code
+FileManager::ForEachPathInDirectory(Path dir, std::function<bool(Path)> cb) {
   auto ec = dir.ComputeRealPath();
   if (ec) {
     return ec;

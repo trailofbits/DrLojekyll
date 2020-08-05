@@ -143,7 +143,8 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   unsigned Depth(void) const noexcept;
 
   // Find an ancestor node that's both shared by `this` and `that`.
-  Node<ProgramRegion> *FindCommonAncestor(Node<ProgramRegion> *that) const noexcept;
+  Node<ProgramRegion> *
+  FindCommonAncestor(Node<ProgramRegion> *that) const noexcept;
 
   // Make sure that `this` will execute before `that`.
   void ExecuteBefore(ProgramImpl *program, Node<ProgramRegion> *that) noexcept;
@@ -152,22 +153,18 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   void ExecuteAfter(ProgramImpl *program, Node<ProgramRegion> *that) noexcept;
 
   // Make sure that `this` will execute alongside `that`.
-  void ExecuteAlongside(ProgramImpl *program, Node<ProgramRegion> *that) noexcept;
+  void ExecuteAlongside(ProgramImpl *program,
+                        Node<ProgramRegion> *that) noexcept;
 
   // Every child REGION of a procedure will have easy access to create new
   // variables.
-  Node<ProgramProcedureRegion> * const containing_procedure;
+  Node<ProgramProcedureRegion> *const containing_procedure;
   Node<ProgramRegion> *parent{nullptr};
 };
 
 using REGION = Node<ProgramRegion>;
 
-enum class VariableRole {
-  kParameter,
-  kLocal,
-  kFree,
-  kGlobalBoolean
-};
+enum class VariableRole { kParameter, kLocal, kFree, kGlobalBoolean };
 
 // A variable in the program. This could be a procedure parameter or a local
 // variable.
@@ -194,6 +191,7 @@ using VAR = Node<DataVariable>;
 
 
 enum class ProgramOperation {
+
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then
   // execution descends into `body`. The table into which we are inserting is
@@ -322,9 +320,7 @@ using PROC = Node<ProgramProcedureRegion>;
 template <>
 class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(REGION *parent_)
-      : Node<ProgramRegion>(parent_),
-        regions(this) {}
+  inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
 
   virtual ~Node(void);
   Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
@@ -339,9 +335,7 @@ using SERIES = Node<ProgramSeriesRegion>;
 template <>
 class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(REGION *parent_)
-      : Node<ProgramRegion>(parent_),
-        regions(this) {}
+  inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
 
   virtual ~Node(void);
   Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
@@ -361,8 +355,7 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   virtual ~Node(void);
   Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
 
-  inline explicit Node(REGION *parent_)
-      : Node<ProgramRegion>(parent_) {}
+  inline explicit Node(REGION *parent_) : Node<ProgramRegion>(parent_) {}
 
   UseRef<REGION> init;
   UseRef<REGION> cycle;

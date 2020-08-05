@@ -1,9 +1,9 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Program.h"
-
 #include <algorithm>
 #include <sstream>
+
+#include "Program.h"
 
 namespace hyde {
 namespace {
@@ -51,8 +51,9 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(
   return table;
 }
 
-Node<DataTable> *Node<DataTable>::GetOrCreate(
-    ProgramImpl *program, UsedNodeRange<QueryColumn> cols, QueryView tag) {
+Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *program,
+                                              UsedNodeRange<QueryColumn> cols,
+                                              QueryView tag) {
 
   std::vector<unsigned> col_ids;
   for (auto col : cols) {
@@ -72,8 +73,8 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(
 
 
 // Get or create a table in a procedure.
-Node<DataTable> *Node<DataTable>::Create(
-    Node<ProgramRegion> *region, DefinedNodeRange<QueryColumn> cols) {
+Node<DataTable> *Node<DataTable>::Create(Node<ProgramRegion> *region,
+                                         DefinedNodeRange<QueryColumn> cols) {
   std::vector<unsigned> col_ids;
   for (auto col : cols) {
     col_ids.push_back(col.Id());
@@ -83,8 +84,8 @@ Node<DataTable> *Node<DataTable>::Create(
 }
 
 // Get or create a table in a procedure.
-Node<DataTable> *Node<DataTable>::Create(
-    Node<ProgramRegion> *region, UsedNodeRange<QueryColumn> cols) {
+Node<DataTable> *Node<DataTable>::Create(Node<ProgramRegion> *region,
+                                         UsedNodeRange<QueryColumn> cols) {
   std::vector<unsigned> col_ids;
   for (auto col : cols) {
     col_ids.push_back(col.Id());
@@ -94,14 +95,14 @@ Node<DataTable> *Node<DataTable>::Create(
 }
 
 // Get or create an index on the table.
-Node<DataIndex> *Node<DataView>::GetOrCreateIndex(
-    std::vector<QueryColumn> cols) {
+Node<DataIndex> *
+Node<DataView>::GetOrCreateIndex(std::vector<QueryColumn> cols) {
   return viewed_table->GetOrCreateIndex(std::move(cols));
 }
 
 // Get or create an index on the table.
-Node<DataIndex> *Node<DataTable>::GetOrCreateIndex(
-    std::vector<QueryColumn> cols) {
+Node<DataIndex> *
+Node<DataTable>::GetOrCreateIndex(std::vector<QueryColumn> cols) {
 
   std::vector<unsigned> col_ids;
   for (auto col : cols) {

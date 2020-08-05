@@ -6,7 +6,8 @@ namespace hyde {
 
 Node<ProgramOperationRegion>::~Node(void) {}
 
-Node<ProgramOperationRegion> *Node<ProgramOperationRegion>::AsOperation(void) noexcept {
+Node<ProgramOperationRegion> *
+Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 

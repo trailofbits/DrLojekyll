@@ -41,7 +41,7 @@ Node<ProgramRegion> *Node<ProgramRegion>::FindCommonAncestor(
   auto self = this;
   auto self_depth = self->Depth();
   auto that_depth = that->Depth();
-  for (; self_depth || that_depth; ) {
+  for (; self_depth || that_depth;) {
     if (self_depth > that_depth) {
       self = self->parent;
       self_depth -= 1u;
@@ -64,8 +64,8 @@ Node<ProgramRegion> *Node<ProgramRegion>::FindCommonAncestor(
 }
 
 // Make sure that `this` will execute before `that`.
-void Node<ProgramRegion>::ExecuteBefore(
-    ProgramImpl *program, Node<ProgramRegion> *that) noexcept {
+void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
+                                        Node<ProgramRegion> *that) noexcept {
 
   if (auto series = that->AsSeries(); series) {
     UseList<REGION> new_regions(series);
@@ -98,8 +98,8 @@ void Node<ProgramRegion>::ExecuteBefore(
 }
 
 // Make sure that `this` will execute after `that`.
-void Node<ProgramRegion>::ExecuteAfter(
-    ProgramImpl *program, Node<ProgramRegion> *that) noexcept {
+void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
+                                       Node<ProgramRegion> *that) noexcept {
   if (auto series = that->AsSeries(); series) {
     series->regions.AddUse(this);
     this->parent = series;
@@ -124,8 +124,8 @@ void Node<ProgramRegion>::ExecuteAfter(
 }
 
 // Make sure that `this` will execute alongside `that`.
-void Node<ProgramRegion>::ExecuteAlongside(
-    ProgramImpl *program, Node<ProgramRegion> *that) noexcept {
+void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
+                                           Node<ProgramRegion> *that) noexcept {
   if (auto par = that->AsParallel(); par) {
     if (auto this_par = this->AsParallel(); this_par) {
       for (auto region : this_par->regions) {

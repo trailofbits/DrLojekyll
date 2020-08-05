@@ -1,5 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <drlojekyll/Util/DisjointSet.h>
+
 #include <algorithm>
 #include <cassert>
 #include <set>
@@ -8,8 +10,6 @@
 #include <vector>
 
 #include "Program.h"
-
-#include <drlojekyll/Util/DisjointSet.h>
 
 // IDEAS
 //
@@ -46,6 +46,7 @@
 //      the former.
 namespace hyde {
 namespace {
+
 //
 //struct ViewRegion : public DisjointSet {
 //  explicit ViewRegion(QueryView view_)
@@ -72,21 +73,21 @@ struct Context {
   // A vector of tuples produced for a PRODUCT.
   std::unordered_map<QueryJoin, TABLE *> product_vector;
 
-//  std::unordered_map<QueryView, std::set<QueryView>> used_by;
-//  std::unordered_map<QueryView, std::set<QueryView>> fed_by;
+  //  std::unordered_map<QueryView, std::set<QueryView>> used_by;
+  //  std::unordered_map<QueryView, std::set<QueryView>> fed_by;
 
 
-//  std::vector<std::unique_ptr<ViewRegion>> view_regions;
-//  std::unordered_map<QueryView, ViewRegion *> view_to_region;
-//
-//  ViewRegion *RegionFor(QueryView view) {
-//    auto &region = view_to_region[view];
-//    if (!region) {
-//      region = new ViewRegion(view);
-//      view_regions.emplace_back(region);
-//    }
-//    return region;
-//  }
+  //  std::vector<std::unique_ptr<ViewRegion>> view_regions;
+  //  std::unordered_map<QueryView, ViewRegion *> view_to_region;
+  //
+  //  ViewRegion *RegionFor(QueryView view) {
+  //    auto &region = view_to_region[view];
+  //    if (!region) {
+  //      region = new ViewRegion(view);
+  //      view_regions.emplace_back(region);
+  //    }
+  //    return region;
+  //  }
 };
 
 // Return the set of all views that contribute data to `view`. This includes
@@ -146,7 +147,8 @@ static bool ViewIsAlsoFedBy(QueryView view, Context &usage,
 }
 
 static REGION *BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                                QueryView view, Context &context, REGION *parent);
+                                QueryView view, Context &context,
+                                REGION *parent);
 
 // Add in the regions for the successors of a node.
 static REGION *BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
@@ -184,9 +186,9 @@ static REGION *BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 // responsible for handling the evaluation of PRODUCTs, and doing so for eagerly
 // executed joins, as well as for lazily executed PRODUCTs whose results have
 // previously been evaluated, and thus require eager updates.
-static REGION *BuildEagerProductRegion(
-    ProgramImpl *impl, QueryView pred_view, QueryJoin view, Context &context,
-    REGION *parent) {
+static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
+                                       QueryJoin view, Context &context,
+                                       REGION *parent) {
 
 #ifndef NDEBUG
   view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
@@ -214,8 +216,8 @@ static REGION *BuildEagerProductRegion(
     // Insert the variables from predecessor into the table. The semantics of
     // the insert is that is conditionally executes it's `body` if the insert
     // adds new data.
-    insert->views.AddUse(TABLE::GetOrCreate(impl, pred_view.Columns(),
-                                            view_tag));
+    insert->views.AddUse(
+        TABLE::GetOrCreate(impl, pred_view.Columns(), view_tag));
     for (auto col : pred_view.Columns()) {
       insert->variables.AddUse(proc->GetOrCreateLocal(col));
     }
@@ -236,8 +238,8 @@ static REGION *BuildEagerProductRegion(
 
     auto &guard_var = context.product_guard_var[view];
     if (!guard_var) {
-      guard_var = impl->global_vars.Create(
-          ~0u - impl->global_vars.Size(), VariableRole::kGlobalBoolean);
+      guard_var = impl->global_vars.Create(~0u - impl->global_vars.Size(),
+                                           VariableRole::kGlobalBoolean);
     }
 
     // We're on the edge of egerness and laziness. Materialize this side of the
@@ -319,8 +321,8 @@ static REGION *BuildEagerProductRegion(
       // the insert is that is conditionally executes it's `body` if the insert
       // adds new data.
       const QueryView view_tag = is_eager ? joined_view : view;
-      inner_loop->views.AddUse(TABLE::GetOrCreate(impl, joined_view.Columns(),
-                                                  view_tag));
+      inner_loop->views.AddUse(
+          TABLE::GetOrCreate(impl, joined_view.Columns(), view_tag));
       for (auto col : joined_view.Columns()) {
         inner_loop->variables.AddUse(proc->GetOrCreateLocal(col));
       }
@@ -389,15 +391,15 @@ static REGION *BuildEagerProductRegion(
 // the evaluation of JOINs, and doing so for eagerly executed joins, as well as
 // for lazily executed JOINs whose results have previously been evaluated, and
 // thus require eager updates.
-static REGION *BuildEagerJoinRegion(
-    ProgramImpl *impl, QueryView pred_view, QueryJoin view, Context &context,
-    REGION *parent) {
+static REGION *BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
+                                    QueryJoin view, Context &context,
+                                    REGION *parent) {
 
   assert(0u < view.NumPivotColumns());
 
   const auto proc = parent->containing_procedure;
-  const auto let_binding = impl->operation_regions.Create(
-      parent, ProgramOperation::kLetBinding);
+  const auto let_binding =
+      impl->operation_regions.Create(parent, ProgramOperation::kLetBinding);
 
   // Map input to output variables where the column IDs differ.
   view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
@@ -481,12 +483,12 @@ static REGION *BuildEagerJoinRegion(
   // This is the first time we're seeing this JOIN node, go create a JOIN region
   // for it.
   if (!region) {
-    auto join_region = impl->operation_regions.Create(
-        env, ProgramOperation::kJoinTables);
+    auto join_region =
+        impl->operation_regions.Create(env, ProgramOperation::kJoinTables);
 
     // Attach the users of the JOIN in.
-    auto users_of_join = BuildEagerSuccessorRegions(
-        impl, view, context, join_region);
+    auto users_of_join =
+        BuildEagerSuccessorRegions(impl, view, context, join_region);
     UseRef<REGION>(join_region, users_of_join).Swap(join_region->body);
 
     // We'll assign the JOIN region to `region` so that if we enter into this
@@ -509,8 +511,7 @@ static REGION *BuildEagerJoinRegion(
           impl, QueryView::Containing(indexed_cols[0]).Columns(), view);
 
       join_region->views.AddUse(joined_table);
-      join_region->indices.AddUse(
-          joined_table->GetOrCreateIndex(indexed_cols));
+      join_region->indices.AddUse(joined_table->GetOrCreateIndex(indexed_cols));
     }
 
     UseRef<REGION>(env, join_region).Swap(env->body);
@@ -597,13 +598,13 @@ static REGION *BuildEagerJoinRegion(
   return let_binding;
 }
 
-static REGION *BuildEagerInsertRegion(
-    ProgramImpl *impl, QueryView pred_view, QueryInsert view, Context &context,
-    REGION *parent) {
+static REGION *BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
+                                      QueryInsert view, Context &context,
+                                      REGION *parent) {
 
   const auto proc = parent->containing_procedure;
-  const auto insert = impl->operation_regions.Create(
-      parent, ProgramOperation::kInsertIntoView);
+  const auto insert =
+      impl->operation_regions.Create(parent, ProgramOperation::kInsertIntoView);
 
   insert->tables.AddUse(TABLE::GetOrCreate(impl, view.InputColumns(), view));
   for (auto pred_col : pred_view.Columns()) {
@@ -619,16 +620,15 @@ static REGION *BuildEagerInsertRegion(
   if (!region) {
 
   } else {
-
   }
 }
 
 // Build an eager region where this eager region is being conditionally
 // executed, i.e. executing inside the scope of the conditions being tested
 // by `view.PositiveConditions()` and `view.NegativeConditions()`.
-static REGION *BuildConditionalEagerRegion(
-    ProgramImpl *impl, QueryView pred_view, QueryView view, Context &context,
-    REGION *parent) {
+static REGION *BuildConditionalEagerRegion(ProgramImpl *impl,
+                                           QueryView pred_view, QueryView view,
+                                           Context &context, REGION *parent) {
 
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
@@ -660,20 +660,20 @@ static REGION *BuildConditionalEagerRegion(
     return nullptr;
   }
 
-//
-//  if (series->regions.Size() == 1u) {
-//    auto only_child = series->regions[0];
-//    only_child->parent = parent;
-//    series->regions.Clear();
-//    return only_child;
-//
-//  } else {
-//    return series;
-//  }
+  //
+  //  if (series->regions.Size() == 1u) {
+  //    auto only_child = series->regions[0];
+  //    only_child->parent = parent;
+  //    series->regions.Clear();
+  //    return only_child;
+  //
+  //  } else {
+  //    return series;
+  //  }
 }
 
-REGION *BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                         QueryView view, Context &usage, REGION *parent) {
+REGION *BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
+                         Context &usage, REGION *parent) {
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
 
@@ -681,21 +681,20 @@ REGION *BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
   if (!pos_conds.empty() || !neg_conds.empty()) {
     const auto cond = impl->operation_regions.Create(
         parent, ProgramOperation::kTestConditions);
-    cond->positive_conditions.insert(
-        cond->positive_conditions.end(), pos_conds.begin(), pos_conds.end());
-    cond->negative_conditions.insert(
-        cond->negative_conditions.end(), neg_conds.begin(), neg_conds.end());
+    cond->positive_conditions.insert(cond->positive_conditions.end(),
+                                     pos_conds.begin(), pos_conds.end());
+    cond->negative_conditions.insert(cond->negative_conditions.end(),
+                                     neg_conds.begin(), neg_conds.end());
 
-    auto child_region = BuildConditionalEagerRegion(
-       impl, pred_view, view, usage, cond);
+    auto child_region =
+        BuildConditionalEagerRegion(impl, pred_view, view, usage, cond);
 
     UseRef<REGION>(cond, child_region).Swap(cond->body);
 
     return cond;
 
   } else {
-    return BuildConditionalEagerRegion(
-         impl, pred_view, view, usage, parent);
+    return BuildConditionalEagerRegion(impl, pred_view, view, usage, parent);
   }
 }
 

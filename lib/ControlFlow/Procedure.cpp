@@ -20,7 +20,8 @@ Node<ProgramProcedureRegion>::Node(QueryView view, ProgramImpl *program)
   UseRef<REGION>(this, loop).Swap(body);
 }
 
-Node<ProgramProcedureRegion> *Node<ProgramProcedureRegion>::AsProcedure(void) noexcept {
+Node<ProgramProcedureRegion> *
+Node<ProgramProcedureRegion>::AsProcedure(void) noexcept {
   return this;
 }
 

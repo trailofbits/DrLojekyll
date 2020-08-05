@@ -441,9 +441,9 @@ static void CallUsers(OutputStream &os, QueryView view, ViewCaseMap &case_map,
 }
 
 // Declare the function that will do aggregate some results.
-static void DeclareAggregate(
-    OutputStream &os, QueryAggregate agg,
-    std::set<std::pair<uint64_t, bool>> &seen_functors) {
+static void
+DeclareAggregate(OutputStream &os, QueryAggregate agg,
+                 std::set<std::pair<uint64_t, bool>> &seen_functors) {
 
   const auto functor = agg.Functor();
   const std::pair<uint64_t, bool> key(
@@ -984,8 +984,8 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "  auto __present = __initialized;\n";
 
   for (auto col : view.ValueColumns()) {
-    os << "  auto prev_C" << col.Id() << " = old_C" << col.Id()
-       << ';' << CommentOnCol(os, col) << '\n';
+    os << "  auto prev_C" << col.Id() << " = old_C" << col.Id() << ';'
+       << CommentOnCol(os, col) << '\n';
   }
   os << '\n' << "  for (auto [";
   sep = "";
@@ -999,8 +999,8 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
      << "    if (!__present) {\n"
      << "      __present = true;\n";
   for (auto col : view.ValueColumns()) {
-    os << "      prev_C" << col.Id() << " = proposed_C" << col.Id()
-       << ';' << CommentOnCol(os, col) << '\n';
+    os << "      prev_C" << col.Id() << " = proposed_C" << col.Id() << ';'
+       << CommentOnCol(os, col) << '\n';
   }
 
   os << "\n"
@@ -1010,8 +1010,8 @@ static void DefineGlobalVarTail(OutputStream &os, QueryKVIndex view) {
   auto i = 0u;
   for (auto col : view.ValueColumns()) {
     os << "      prev_C" << col.Id() << " = "
-       << view.NthValueMergeFunctor(i++).Name() << "_merge(prev_C"
-       << col.Id() << ", proposed_C" << col.Id() << ");\n";
+       << view.NthValueMergeFunctor(i++).Name() << "_merge(prev_C" << col.Id()
+       << ", proposed_C" << col.Id() << ");\n";
   }
 
   os << "    }\n"
@@ -1256,8 +1256,8 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
   for (auto col : kv.ValueColumns()) {
     os << "        prev_C" << col.Id() << " = "
        << kv.NthValueMergeFunctor(i++).Name() << "_merge(\n"
-       << "            prev_C" << col.Id() << ", proposed_C"
-       << col.Id() << ");\n";
+       << "            prev_C" << col.Id() << ", proposed_C" << col.Id()
+       << ");\n";
   }
 
   // TODO(pag): Think about whether k/v removal should remove by key matching
@@ -1270,8 +1270,7 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 
   sep = "";
   for (auto col : kv.ValueColumns()) {
-    os << sep << "proposed_C" << col.Id() << " != first_C"
-       << col.Id();
+    os << sep << "proposed_C" << col.Id() << " != first_C" << col.Id();
     sep = " || ";
   }
 
@@ -1301,27 +1300,25 @@ static void DefineKVIndex(OutputStream &os, QueryKVIndex kv,
 
   i = 0u;
   for (auto col : kv.ValueColumns()) {
-    os << "        first_C" << col.Id() << " = curr_C" << col.Id()
-       << ';' << CommentOnCol(os, col) << '\n'
+    os << "        first_C" << col.Id() << " = curr_C" << col.Id() << ';'
+       << CommentOnCol(os, col) << '\n'
        << "        prev_C" << col.Id() << " = "
-       << kv.NthValueMergeFunctor(i++).Name() << "_merge(curr_C"
-       << col.Id() << ", proposed_C" << col.Id() << ");\n";
+       << kv.NthValueMergeFunctor(i++).Name() << "_merge(curr_C" << col.Id()
+       << ", proposed_C" << col.Id() << ");\n";
   }
   os << "      } else {\n";
   for (auto col : kv.ValueColumns()) {
-    os << "        first_C" << col.Id() << " = proposed_C"
-       << col.Id() << ';' << CommentOnCol(os, col) << '\n'
-       << "        prev_C" << col.Id() << " = proposed_C"
-       << col.Id() << ";\n";
+    os << "        first_C" << col.Id() << " = proposed_C" << col.Id() << ';'
+       << CommentOnCol(os, col) << '\n'
+       << "        prev_C" << col.Id() << " = proposed_C" << col.Id() << ";\n";
   }
 
   os << "      }\n"
      << "    } else {\n";
   for (auto col : kv.ValueColumns()) {
-    os << "      first_C" << col.Id() << " = proposed_C" << col.Id()
-       << ';' << CommentOnCol(os, col) << '\n'
-       << "      prev_C" << col.Id() << " = proposed_C" << col.Id()
-       << ";\n";
+    os << "      first_C" << col.Id() << " = proposed_C" << col.Id() << ';'
+       << CommentOnCol(os, col) << '\n'
+       << "      prev_C" << col.Id() << " = proposed_C" << col.Id() << ";\n";
   }
 
   os << "    }\n"
@@ -1621,8 +1618,8 @@ static void DefineMap(OutputStream &os, QueryMap map, ViewCaseMap &case_map) {
   os << "] = __tuple;\n";
 
   for (auto [out_col, in_col] : out_to_in) {
-    os << "  const auto C" << out_col.Id() << " = I" << col_to_id[in_col]
-       << ';' << CommentOnCol(os, out_col) << '\n';
+    os << "  const auto C" << out_col.Id() << " = I" << col_to_id[in_col] << ';'
+       << CommentOnCol(os, out_col) << '\n';
   }
 
   // If this function isn't pure then that means that we can produce differential

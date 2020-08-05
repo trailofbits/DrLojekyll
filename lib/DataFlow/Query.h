@@ -304,14 +304,16 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Check to see if the attached columns are ordered and unique. If they're
   // not unique then we can deduplicate them.
-  std::pair<bool, bool> CanonicalizeAttachedColumns(
-      unsigned i, const OptimizationContext &opt) noexcept;
+  std::pair<bool, bool>
+  CanonicalizeAttachedColumns(unsigned i,
+                              const OptimizationContext &opt) noexcept;
 
   // Canonicalizes an input/output column pair. Returns `true` in the first
   // element if non-local changes are made, and `true` in the second element
   // if the column pair can be removed.
-  std::pair<bool, bool> CanonicalizeColumnPair(
-      COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept;
+  std::pair<bool, bool>
+  CanonicalizeColumnPair(COL *in_col, COL *out_col,
+                         const OptimizationContext &opt) noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
