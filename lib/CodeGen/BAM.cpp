@@ -6,9 +6,9 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/Compiler.h>
 #include <drlojekyll/Util/Node.h>
 
+#include <algorithm>
 #include <bitset>
 #include <cassert>
 #include <functional>
@@ -1952,8 +1952,8 @@ static void DefineStage(OutputStream &os, Query query) {
       os << ";\n";
     }
 
-    const auto depth = view.Depth();
-    num_cases_at_depth.resize(std::max(num_cases_at_depth.size(), depth + 1ul));
+    std::vector<unsigned>::size_type depth = view.Depth();
+    num_cases_at_depth.resize(std::max(num_cases_at_depth.size(), depth + 1u));
 
     auto can_remove_scale = view.CanReceiveDeletions() ? 2u : 1u;
     auto num_cases = 1u;
@@ -1981,8 +1981,8 @@ static void DefineStep(OutputStream &os, Query query, ViewCaseMap &case_map) {
   std::vector<std::vector<QueryView>> views_by_depth;
 
   query.ForEachView([&](QueryView view) {
-    const auto depth = view.Depth();
-    views_by_depth.resize(std::max(views_by_depth.size(), depth + 1ul));
+    std::vector<unsigned>::size_type depth = view.Depth();
+    views_by_depth.resize(std::max(views_by_depth.size(), depth + 1u));
     views_by_depth[depth].push_back(view);
   });
 
