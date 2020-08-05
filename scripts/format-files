@@ -27,7 +27,7 @@ def find_comment_lines(path):
   old_comments = []
   needs_fixes = False
   with open(path, "r") as lines:
-    num_leading_comment_lines = 0 
+    num_leading_comment_lines = 0
     for line_ in lines:
       line = line_.rstrip("\n\r\t ")
       unindented_line = line.lstrip("\t ")
@@ -35,9 +35,9 @@ def find_comment_lines(path):
       new_lines.append(line)
 
       if unindented_line.startswith("//"):
-        
+
         # Make sure that every line that begins a comment block
-        # is preceded by a new line or a closing brace. 
+        # is preceded by a new line or a closing brace.
         if not num_leading_comment_lines and 1 < len(new_lines):
           prev_line = new_lines[-2].strip()
           if prev_line != "" and prev_line != "}":
@@ -166,7 +166,7 @@ def main():
   cxx_files = args.files
   if cxx_files:
     cxx_files = list(os.path.abspath(cxx_file) for cxx_file in cxx_files)
-  
+
   if not cxx_files:
     cxx_header_files = pathlib.Path(source_dir).rglob("*.h")
     cxx_source_files = pathlib.Path(source_dir).rglob("*.cpp")

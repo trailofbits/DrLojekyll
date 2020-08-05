@@ -33,7 +33,7 @@ if [[ "${NAME_OF_THIS_FILE_DIR}" == "scripts" ]] ; then
 # This script being executed is located in the `.git/hooks` directory.
 elif [[ "${NAME_OF_THIS_FILE_DIR}" == "hooks" ]] ; then
   GIT_DIR=$( cd "$( dirname "${SCRIPTS_DIR}" )" && pwd )
-  SOURCE_DIR=$( cd "$( dirname "${GIT_DIR}" )" && pwd )  
+  SOURCE_DIR=$( cd "$( dirname "${GIT_DIR}" )" && pwd )
   SCRIPTS_DIR="${SOURCE_DIR}/scripts"
 
 # Not sure where this script is.
