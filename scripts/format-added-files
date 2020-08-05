@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 # Get the list of changed C++ header and source files.
