@@ -136,6 +136,11 @@ def main():
       required=False,
       default=str(os.path.dirname(os.path.dirname(__file__))))
 
+  arg_parser.add_argument(
+      '--files',
+      help='Specific files to format',
+      nargs='*')
+
   args, _ = arg_parser.parse_known_args()
 
   if not os.path.isdir(args.source_dir):
@@ -145,6 +150,12 @@ def main():
   if not os.path.isfile(args.format_exe):
     print("'{}' passed to --format_exe does not exist".format(args.format_exe))
     return 1
+
+  # NOTE(pag): Go get the abs paths of the files here before we change the current
+  #            working directory.
+  cxx_files = args.files
+  if cxx_files:
+    cxx_files = list(os.path.abspath(cxx_file) for cxx_file in cxx_files)
 
   try:
     source_dir = os.path.abspath(args.source_dir)
@@ -159,12 +170,22 @@ def main():
     return 1
   # Change to source directory so that `clang-format` will find the `.clang-format` file.
   
+  if not cxx_files:
+    cxx_header_files = pathlib.Path(source_dir).rglob("*.h")
+    cxx_source_files = pathlib.Path(source_dir).rglob("*.cpp")
+    cxx_files = itertools.chain(cxx_header_files, cxx_source_files)
 
-  cxx_header_files = pathlib.Path(source_dir).rglob("*.h")
-  cxx_source_files = pathlib.Path(source_dir).rglob("*.cpp")
   in_place_files = []
-  for cxx_file in itertools.chain(cxx_header_files, cxx_source_files):
-    new_lines, old_comments, needs_fixes = find_comment_lines(cxx_file)
+  for cxx_file_ in cxx_files:
+    cxx_file = os.path.abspath(cxx_file_)
+    if not (cxx_file.endswith(".h") or cxx_file.endswith(".cpp")):
+      continue
+
+    try:
+      new_lines, old_comments, needs_fixes = find_comment_lines(cxx_file)
+    except:
+      continue
+
     if not needs_fixes:
       in_place_files.append(cxx_file)
     else:
