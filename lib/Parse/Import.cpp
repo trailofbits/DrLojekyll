@@ -50,9 +50,11 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   }
 
   std::filesystem::path resolved_path;
-  std::error_code ec = ResolvePath(path_str, context->import_search_paths, resolved_path);
+  std::error_code ec =
+      ResolvePath(path_str, context->import_search_paths, resolved_path);
 
   if (ec || resolved_path.empty()) {
+
     // TODO(blarsen): fix up the error reporting here to include the source
     // information, like in `ParseInclude`
     context->error_log.Append(scope_range, tok_range)
@@ -72,7 +74,8 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   // Go and parse the module.
   ParserImpl sub_impl(context);
   auto sub_mod_opt = sub_impl.ParseDisplay(
-      context->display_manager.OpenPath(resolved_path.string(), sub_config), sub_config);
+      context->display_manager.OpenPath(resolved_path.string(), sub_config),
+      sub_config);
 
   // Restore the old first search path.
   context->import_search_paths[0] = prev_search0;

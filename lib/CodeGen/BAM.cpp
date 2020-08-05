@@ -441,9 +441,9 @@ static void CallUsers(OutputStream &os, QueryView view, ViewCaseMap &case_map,
 }
 
 // Declare the function that will do aggregate some results.
-static void DeclareAggregate(
-    OutputStream &os, QueryAggregate agg,
-    std::set<std::pair<uint64_t, bool>> &seen_functors) {
+static void
+DeclareAggregate(OutputStream &os, QueryAggregate agg,
+                 std::set<std::pair<uint64_t, bool>> &seen_functors) {
 
   const auto functor = agg.Functor();
   const std::pair<uint64_t, bool> key(

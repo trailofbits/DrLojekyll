@@ -74,6 +74,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   } while (false);
 
   Parser parser(display_manager, error_log);
+
   // FIXME(blarsen): Using ParseStream do re-parse a pretty-printed module
   //                 doesn't work, due to differences in module search paths
   //                 with ParseStream and ParsePath.

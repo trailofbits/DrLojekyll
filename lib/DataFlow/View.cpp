@@ -723,10 +723,9 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 
 // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
 // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
-Node<QueryTuple> *Node<QueryView>::ProxyWithComparison(QueryImpl *query,
-                                                       ComparisonOperator op,
-                                                       COL *lhs_col,
-                                                       COL *rhs_col) {
+Node<QueryTuple> *
+Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
+                                     COL *lhs_col, COL *rhs_col) {
 
   // Prefer to have the constant first.
   if ((ComparisonOperator::kEqual == op ||
