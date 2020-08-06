@@ -806,4 +806,11 @@ struct hash<::hyde::QueryView> {
   }
 };
 
+template <>
+struct hash<::hyde::QueryCondition> {
+  inline uint64_t operator()(::hyde::QueryCondition cond) const noexcept {
+    return cond.UniqueId();
+  }
+};
+
 }  // namespace std

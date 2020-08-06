@@ -11,8 +11,16 @@ ProgramImpl::~ProgramImpl(void) {
   for (auto region : parallel_regions) {
     region->regions.ClearWithoutErasure();
   }
-  for (auto ind : inductions) {
+  for (auto ind : induction_regions) {
+    ind->init.ClearWithoutErasure();
     ind->cycle.ClearWithoutErasure();
+  }
+  for (auto op : operation_regions) {
+    op->body.ClearWithoutErasure();
+    op->variables.ClearWithoutErasure();
+    op->tables.ClearWithoutErasure();
+    op->views.ClearWithoutErasure();
+    op->indices.ClearWithoutErasure();
   }
 }
 

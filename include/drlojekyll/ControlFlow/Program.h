@@ -58,7 +58,7 @@ class Program {
   Program &operator=(Program &&) noexcept = default;
 
  private:
-  inline explicit Program(std::shared_ptr<ProgramImpl> impl_) : impl(impl_) {}
+  Program(std::shared_ptr<ProgramImpl> impl_);
 
   std::shared_ptr<ProgramImpl> impl;
 };

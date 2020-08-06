@@ -6,6 +6,18 @@ namespace hyde {
 
 Node<ProgramRegion>::~Node(void) {}
 
+Node<ProgramRegion>::Node(Node<ProgramProcedureRegion> *containing_procedure_)
+    : Def<Node<ProgramRegion>>(this),
+      User(this),
+      containing_procedure(containing_procedure_),
+      parent(containing_procedure_) {}
+
+Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
+    : Def<Node<ProgramRegion>>(this),
+      User(this),
+      containing_procedure(parent_->containing_procedure),
+      parent(parent_) {}
+
 Node<ProgramProcedureRegion> *Node<ProgramRegion>::AsProcedure(void) noexcept {
   return nullptr;
 }
@@ -37,7 +49,7 @@ unsigned Node<ProgramRegion>::Depth(void) const noexcept {
 
 // Find an ancestor node that's shared by both `this` and `that`.
 Node<ProgramRegion> *Node<ProgramRegion>::FindCommonAncestor(
-    Node<ProgramRegion> *that) const noexcept {
+    Node<ProgramRegion> *that) noexcept {
   auto self = this;
   auto self_depth = self->Depth();
   auto that_depth = that->Depth();

@@ -1,12 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-function(add_runtime_library source_dir config)
-    add_library(runtime-${config} STATIC
-        "${source_dir}/Runtime.cpp"
-    )
+add_library(runtime STATIC
+    "Runtime.cpp"
+)
 
-    target_link_libraries(runtime-${config}
-        PUBLIC
-            settings-${config}
-    )
-endfunction(add_runtime_library)
+target_link_libraries(runtime PUBLIC settings)

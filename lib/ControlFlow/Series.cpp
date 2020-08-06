@@ -6,7 +6,7 @@ namespace hyde {
 
 Node<ProgramSeriesRegion>::~Node(void) {}
 
-Node<ProgramSeriesRegion> *Node<ProgramSeriesRegion>::AsBasic(void) noexcept {
+Node<ProgramSeriesRegion> *Node<ProgramSeriesRegion>::AsSeries(void) noexcept {
   return this;
 }
 

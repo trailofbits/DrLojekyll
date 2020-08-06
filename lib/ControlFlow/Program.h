@@ -6,6 +6,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -35,11 +36,7 @@ class Node<DataView> : public Def<Node<DataView>>, public User {
  public:
   virtual ~Node(void);
 
-  inline Node(Node<DataTable> *table_, QueryView view_tag_)
-      : Def<Node<DataView>>(this),
-        User(this),
-        view_tag(view_tag_),
-        viewed_table(this, table_) {}
+  Node(Node<DataTable> *table_, QueryView view_tag_);
 
   // Get or create an index on the table.
   Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
@@ -56,11 +53,7 @@ class Node<DataIndex> : public Def<Node<DataIndex>>, public User {
  public:
   virtual ~Node(void);
 
-  inline Node(Node<DataTable> *table_, std::string column_spec_)
-      : Def<Node<DataIndex>>(this),
-        User(this),
-        column_spec(column_spec_),
-        indexed_table(this, table_) {}
+  Node(Node<DataTable> *table_, std::string column_spec_);
 
   const std::string column_spec;
   const WeakUseRef<Node<DataTable>> indexed_table;
@@ -76,12 +69,7 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
  public:
   virtual ~Node(void);
 
-  inline Node(std::vector<unsigned> column_ids_)
-      : Def<Node<DataTable>>(this),
-        User(this),
-        column_ids(std::move(column_ids_)),
-        indices(this),
-        views(this) {}
+  Node(std::vector<unsigned> column_ids_);
 
   // Get or create a table in the program.
   static Node<DataView> *GetOrCreate(ProgramImpl *program,
@@ -109,8 +97,14 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
   const std::vector<unsigned> column_ids;
 
   // The views into this table. A given row might belong to one or more views.
+  //
+  // The general idea here is that we can say that two sets of columns can
+  // belong to the same view if the arity of the rows will be the same, or if
+  // one will be a subset of the other.
   DefList<VIEW> views;
 
+  // Indexes that should be created on this table. By default, all tables have
+  // a UNIQUE index.
   DefList<INDEX> indices;
 };
 
@@ -120,18 +114,8 @@ template <>
 class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
  public:
   virtual ~Node(void);
-
-  inline explicit Node(Node<ProgramProcedureRegion> *containing_procedure_)
-      : Def<Node<ProgramRegion>>(this),
-        User(this),
-        containing_procedure(containing_procedure_),
-        parent(containing_procedure_) {}
-
-  inline explicit Node(Node<ProgramRegion> *parent_)
-      : Def<Node<ProgramRegion>>(this),
-        User(this),
-        containing_procedure(parent->containing_procedure),
-        parent(parent_) {}
+  explicit Node(Node<ProgramProcedureRegion> *containing_procedure_);
+  explicit Node(Node<ProgramRegion> *parent_);
 
   virtual Node<ProgramProcedureRegion> *AsProcedure(void) noexcept;
   virtual Node<ProgramOperationRegion> *AsOperation(void) noexcept;
@@ -143,8 +127,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   unsigned Depth(void) const noexcept;
 
   // Find an ancestor node that's both shared by `this` and `that`.
-  Node<ProgramRegion> *
-  FindCommonAncestor(Node<ProgramRegion> *that) const noexcept;
+  Node<ProgramRegion> *FindCommonAncestor(Node<ProgramRegion> *that) noexcept;
 
   // Make sure that `this` will execute before `that`.
   void ExecuteBefore(ProgramImpl *program, Node<ProgramRegion> *that) noexcept;
@@ -164,7 +147,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
 using REGION = Node<ProgramRegion>;
 
-enum class VariableRole { kParameter, kLocal, kFree, kGlobalBoolean };
+enum class VariableRole {
+  kParameter, kLocal, kFree, kGlobalBoolean, kConditionRefCount
+};
 
 // A variable in the program. This could be a procedure parameter or a local
 // variable.
@@ -176,8 +161,8 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
         role(role_),
         id(id_) {}
 
-  const unsigned id;
   const VariableRole role;
+  const unsigned id;
 
   inline unsigned Sort(void) const noexcept {
     return id;
@@ -239,9 +224,10 @@ enum class ProgramOperation {
   // variable, and `variables[2*n + 1]` is the value being bound.
   kLetBinding,
 
-  // Tests that all of `positive_conditions` are true, and `negative_conditions`
-  // are false. If the conditions tested are all met, then descend into `body`.
-  kTestConditions,
+  // Used to test reference count variables associated with `QueryCondition`
+  // nodes in the data flow.
+  kTestAllNonZero,
+  kTestAllZero,
 
   // Test/set a global boolean variable to `true`. The variable is
   // `variables[0]`. The usage is for cross products. If we've ever executed a
@@ -254,10 +240,7 @@ template <>
 class Node<ProgramOperationRegion> final : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
-
-  inline explicit Node(REGION *parent_, ProgramOperation op_)
-      : Node<ProgramRegion>(parent_),
-        op(op_) {}
+  explicit Node(REGION *parent_, ProgramOperation op_);
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
@@ -269,9 +252,6 @@ class Node<ProgramOperationRegion> final : public Node<ProgramRegion> {
 
   std::optional<ComparisonOperator> compare_operator;
   std::optional<ParsedFunctor> functor;
-
-  const std::vector<QueryCondition> positive_conditions;
-  const std::vector<QueryCondition> negative_conditions;
 
   // If this operation does something conditional then this is the body it
   // executes.
@@ -388,9 +368,11 @@ class ProgramImpl : public User {
 
   DefList<TABLE> tables;
   DefList<VAR> global_vars;
+  unsigned next_global_var_id{~0u};
 
   std::unordered_map<std::string, TABLE *> col_spec_to_table;
   std::unordered_map<QueryView, PROC *> procedures;
+  std::unordered_map<QueryCondition, VAR *> cond_ref_counts;
 };
 
 }  // namespace hyde

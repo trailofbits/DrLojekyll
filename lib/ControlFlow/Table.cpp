@@ -31,8 +31,27 @@ Node<DataView>::~Node(void) {}
 Node<DataIndex>::~Node(void) {}
 Node<DataTable>::~Node(void) {}
 
+Node<DataView>::Node(Node<DataTable> *table_, QueryView view_tag_)
+    : Def<Node<DataView>>(this),
+      User(this),
+      view_tag(view_tag_),
+      viewed_table(this, table_) {}
+
+Node<DataIndex>::Node(Node<DataTable> *table_, std::string column_spec_)
+    : Def<Node<DataIndex>>(this),
+      User(this),
+      column_spec(column_spec_),
+      indexed_table(this, table_) {}
+
+Node<DataTable>::Node(std::vector<unsigned> column_ids_)
+    : Def<Node<DataTable>>(this),
+      User(this),
+      column_ids(std::move(column_ids_)),
+      views(this),
+      indices(this) {}
+
 // Get or create a table in the program.
-Node<DataTable> *Node<DataTable>::GetOrCreate(
+Node<DataView> *Node<DataTable>::GetOrCreate(
     ProgramImpl *program, DefinedNodeRange<QueryColumn> cols, QueryView tag) {
 
   std::vector<unsigned> col_ids;
@@ -51,9 +70,9 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(
   return table;
 }
 
-Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *program,
-                                              UsedNodeRange<QueryColumn> cols,
-                                              QueryView tag) {
+Node<DataView> *Node<DataTable>::GetOrCreate(ProgramImpl *program,
+                                             UsedNodeRange<QueryColumn> cols,
+                                             QueryView tag) {
 
   std::vector<unsigned> col_ids;
   for (auto col : cols) {
@@ -70,7 +89,6 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *program,
 
   return table;
 }
-
 
 // Get or create a table in a procedure.
 Node<DataTable> *Node<DataTable>::Create(Node<ProgramRegion> *region,

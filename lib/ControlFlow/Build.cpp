@@ -68,10 +68,10 @@ struct Context {
 
   // Boolean guard variable used to determine if we should try to execute
   // a lazy PRODUCT in eager code.
-  std::unordered_map<QueryJoin, VAR *> product_guard_var;
+  std::unordered_map<QueryView, VAR *> product_guard_var;
 
   // A vector of tuples produced for a PRODUCT.
-  std::unordered_map<QueryJoin, TABLE *> product_vector;
+  std::unordered_map<QueryView, TABLE *> product_vector;
 
   //  std::unordered_map<QueryView, std::set<QueryView>> used_by;
   //  std::unordered_map<QueryView, std::set<QueryView>> fed_by;
@@ -111,41 +111,6 @@ std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
   return dependencies;
 }
 
-// Return the set of all views that are transitively derived from `input`.
-std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
-  std::set<QueryView> dependents;
-  std::vector<QueryView> frontier;
-  frontier.push_back(input);
-
-  while (!frontier.empty()) {
-    const auto view = frontier.back();
-    frontier.pop_back();
-    for (auto succ_view : view.Successors()) {
-      if (!dependents.count(succ_view)) {
-        dependents.insert(succ_view);
-        frontier.push_back(succ_view);
-      }
-    }
-  }
-
-  return dependents;
-}
-
-// We want to break up all code in terms of which sets of RECV I/Os potentially
-// feed data to that node. If data froms from VIEW `a` to VIEW `b`, and
-// `usage.fed_by[a] != usage.fed_by[b]` then we'll treat `b` as being a new
-// procedure entrypoint.
-static bool ViewIsAlsoFedBy(QueryView view, Context &usage,
-                            const std::set<QueryView> &covered_set) {
-  const auto fed_by_it = usage.fed_by.find(view);
-  if (fed_by_it == usage.fed_by.end()) {
-    assert(false);
-    return false;
-  }
-
-  return fed_by_it->second == covered_set;
-}
-
 static REGION *BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
                                 QueryView view, Context &context,
                                 REGION *parent);
@@ -170,7 +135,7 @@ static REGION *BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
       child_region->ExecuteAlongside(impl, par);
 
     } else {
-      auto par = impl->parallel_regions.Create(parent);
+      par = impl->parallel_regions.Create(parent);
       child_region->ExecuteAlongside(impl, par);
       child->ExecuteAlongside(impl, par);
       child_region = par;
@@ -181,11 +146,10 @@ static REGION *BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   return child_region;
 }
 
-
-// Create an eager PRODUCT region for a cross-product. An eager PRODUCT region is
-// responsible for handling the evaluation of PRODUCTs, and doing so for eagerly
-// executed joins, as well as for lazily executed PRODUCTs whose results have
-// previously been evaluated, and thus require eager updates.
+// Create an eager PRODUCT region for a cross-product. An eager PRODUCT region
+// is responsible for handling the evaluation of PRODUCTs, and doing so for
+// eagerly executed joins, as well as for lazily executed PRODUCTs whose results
+// have previously been evaluated, and thus require eager updates.
 static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
                                        QueryJoin view, Context &context,
                                        REGION *parent) {
@@ -238,7 +202,7 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 
     auto &guard_var = context.product_guard_var[view];
     if (!guard_var) {
-      guard_var = impl->global_vars.Create(~0u - impl->global_vars.Size(),
+      guard_var = impl->global_vars.Create(--impl->next_global_var_id,
                                            VariableRole::kGlobalBoolean);
     }
 
@@ -275,16 +239,16 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   }
 
   const auto input_vec = TABLE::Create(proc, pred_view.Columns());
-  const auto append_region = impl->operation_regions.Create(
+  const auto append_to_input_vec = impl->operation_regions.Create(
       env, ProgramOperation::kAppendProductInputToVector);
 
-  append_region->tables.AddUse(input_vec);
+  append_to_input_vec->tables.AddUse(input_vec);
   for (auto pred_col : pred_view.Columns()) {
-    append_region->variables.AddUse(proc->GetOrCreateLocal(pred_col));
+    append_to_input_vec->variables.AddUse(proc->GetOrCreateLocal(pred_col));
   }
-  append_region->variables.Unique();
+  append_to_input_vec->variables.Unique();
 
-  UseRef<REGION>(env, append_region).Swap(env->body);
+  UseRef<REGION>(env, append_to_input_vec).Swap(env->body);
 
   auto &region = proc->view_to_region[view];
 
@@ -295,16 +259,16 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // This loop is added to a parallel region, so that each time we reach a
   // PRODUCT, we add in a new side of the cross-product.
   auto make_loop = [&](PARALLEL *par_region) -> OP * {
-    auto loop = impl->operation_regions.Create(
+    auto loop_over_input_vec = impl->operation_regions.Create(
         par_region, ProgramOperation::kLoopOverProductInputVector);
-    loop->tables.AddUse(input_vec);
+    loop_over_input_vec->tables.AddUse(input_vec);
 
     for (auto col : pred_view.Columns()) {
-      loop->variables.AddUse(proc->GetOrCreateLocal(col));
+      loop_over_input_vec->variables.AddUse(proc->GetOrCreateLocal(col));
     }
-    loop->variables.Unique();
+    loop_over_input_vec->variables.Unique();
 
-    auto outer_loop = loop;
+    auto outer_loop = loop_over_input_vec;
 
     // Make a loop nest iterating over all views other than `pred_view`. In
     // place of `pred_view`, we have the above loop over the product tuple
@@ -332,10 +296,22 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
       outer_loop = inner_loop;
     }
 
-    // TODO(pag): Add in an append to the output vector.
+    // In the innermost loop, go and add the results to the output vector.
+    const auto append_to_output_vec = impl->operation_regions.Create(
+        outer_loop, ProgramOperation::kAppendProductOutputToVector);
 
-    par_region->regions.AddUse(loop);
-    return loop;
+    append_to_output_vec->tables.AddUse(output_vec);
+    for (auto col : view.Columns()) {
+      append_to_output_vec->variables.AddUse(proc->GetOrCreateLocal(col));
+    }
+    append_to_output_vec->variables.Unique();
+
+    UseRef<REGION>(outer_loop, append_to_output_vec).Swap(outer_loop->body);
+
+    // Add the outer loop_over_input_vec to the parallel region that handles the different
+    // "sides" of the PRODUCT.
+    par_region->regions.AddUse(loop_over_input_vec);
+    return loop_over_input_vec;
   };
 
   // This is our first time seeing this PRODUCT, so we're going to create a
@@ -370,9 +346,23 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     series_region->regions.AddUse(par_region);
 
     make_loop(par_region);
+
+    // NOTE(pag): All further visits to this PRODUCT are going to add in their
+    //            loops to this `par_region`.
     region = par_region;
 
-    // TODO(pag): Add in a loop over the output vector.
+    // We now have all results in `output_vec`. Loop over them and pass them
+    // along.
+    auto loop_over_output_vec = impl->operation_regions.Create(
+        series_region, ProgramOperation::kLoopOverProductOutputVector);
+    loop_over_output_vec->tables.AddUse(output_vec);
+
+    for (auto col : view.Columns()) {
+      loop_over_output_vec->variables.AddUse(proc->GetOrCreateLocal(col));
+    }
+    loop_over_output_vec->variables.Unique();
+
+    series_region->regions.AddUse(loop_over_output_vec);
 
   // This is the Nth time seeing this PRODUCT, add a loop into the parallel
   // region.
@@ -606,7 +596,7 @@ static REGION *BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto insert =
       impl->operation_regions.Create(parent, ProgramOperation::kInsertIntoView);
 
-  insert->tables.AddUse(TABLE::GetOrCreate(impl, view.InputColumns(), view));
+  insert->views.AddUse(TABLE::GetOrCreate(impl, view.InputColumns(), view));
   for (auto pred_col : pred_view.Columns()) {
     insert->variables.AddUse(proc->GetOrCreateLocal(pred_col));
   };
@@ -620,16 +610,18 @@ static REGION *BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   if (!region) {
 
   } else {
+
   }
+
+  return nullptr;
 }
 
-// Build an eager region where this eager region is being conditionally
-// executed, i.e. executing inside the scope of the conditions being tested
-// by `view.PositiveConditions()` and `view.NegativeConditions()`.
-static REGION *BuildConditionalEagerRegion(ProgramImpl *impl,
+// Build an eager region where this eager region is being unconditionally
+// executed, i.e. ignoring whether or not `view.PositiveConditions()` or
+// `view.NegativeConditions()` have elements.
+static REGION *BuildUnconditionalEagerRegion(ProgramImpl *impl,
                                            QueryView pred_view, QueryView view,
                                            Context &context, REGION *parent) {
-
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
@@ -657,51 +649,67 @@ static REGION *BuildConditionalEagerRegion(ProgramImpl *impl,
 
   } else {
     assert(false);
-    return nullptr;
   }
 
-  //
-  //  if (series->regions.Size() == 1u) {
-  //    auto only_child = series->regions[0];
-  //    only_child->parent = parent;
-  //    series->regions.Clear();
-  //    return only_child;
-  //
-  //  } else {
-  //    return series;
-  //  }
+  return nullptr;
 }
 
+// Returns a global reference count variable associated with a query condition.
+VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
+  auto &cond_var = impl->cond_ref_counts[cond];
+  if (!cond_var) {
+    cond_var = impl->global_vars.Create(
+        --impl->next_global_var_id,
+         VariableRole::kGlobalBoolean);
+  }
+  return cond_var;
+}
+
+// Build an eager region. This guards the execution of the region in
+// conditionals if the view itself is conditional.
 REGION *BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                          Context &usage, REGION *parent) {
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
 
-  // If this view is conditional
-  if (!pos_conds.empty() || !neg_conds.empty()) {
-    const auto cond = impl->operation_regions.Create(
-        parent, ProgramOperation::kTestConditions);
-    cond->positive_conditions.insert(cond->positive_conditions.end(),
-                                     pos_conds.begin(), pos_conds.end());
-    cond->negative_conditions.insert(cond->negative_conditions.end(),
-                                     neg_conds.begin(), neg_conds.end());
+  auto child_region = BuildUnconditionalEagerRegion(
+      impl, pred_view, view, usage, parent);
 
-    auto child_region =
-        BuildConditionalEagerRegion(impl, pred_view, view, usage, cond);
+  // Innermost test for negative conditions.
+  if (!neg_conds.empty()) {
+    auto test = impl->operation_regions.Create(
+        parent, ProgramOperation::kTestAllZero);
 
-    UseRef<REGION>(cond, child_region).Swap(cond->body);
+    for (auto cond : neg_conds) {
+      test->variables.AddUse(ConditionVariable(impl, cond));
+    }
 
-    return cond;
-
-  } else {
-    return BuildConditionalEagerRegion(impl, pred_view, view, usage, parent);
+    UseRef<REGION>(test, child_region).Swap(test->body);
+    child_region->parent = test;
+    child_region = test;
   }
+
+  // Outermost test for positive conditions.
+  if (!pos_conds.empty()) {
+    auto test = impl->operation_regions.Create(
+        parent, ProgramOperation::kTestAllNonZero);
+
+    for (auto cond : pos_conds) {
+      test->variables.AddUse(ConditionVariable(impl, cond));
+    }
+
+    UseRef<REGION>(test, child_region).Swap(test->body);
+    child_region->parent = test;
+    child_region = test;
+  }
+
+  return child_region;
 }
 
 static PROC *DeclareEagerProcedure(ProgramImpl *impl, QueryView view) {
   auto &proc = impl->procedures[view];
   if (!proc) {
-    proc = impl->procedure_regions.Create(view);
+    proc = impl->procedure_regions.Create(view, impl);
   }
   return proc;
 }
@@ -709,9 +717,9 @@ static PROC *DeclareEagerProcedure(ProgramImpl *impl, QueryView view) {
 // Create a procedure for a view.
 static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
                                 Context &usage) {
-  const auto covered_set_it = usage.fed_by.find(view);
-  assert(covered_set_it != usage.fed_by.end());
-  const auto &covered_set = covered_set_it->second;
+//  const auto covered_set_it = usage.fed_by.find(view);
+//  assert(covered_set_it != usage.fed_by.end());
+//  const auto &covered_set = covered_set_it->second;
 
   const auto proc = DeclareEagerProcedure(impl, view);
   if (auto proc_body = proc->body->AsOperation();
@@ -729,9 +737,12 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
 
 }  // namespace
 
+Program::Program(std::shared_ptr<ProgramImpl> impl_)
+    : impl(std::move(impl_)) {}
+
 // Build a program from a query.
 std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
-  auto impl = std::make_shared<ProgramImpl>();
+  auto impl = std::make_shared<ProgramImpl>(query);
 
   Context context;
 
@@ -815,8 +826,45 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
     process_sub_regions();
   }
 
-  return impl;
+  return Program(std::move(impl));
 }
+
+
+//// Return the set of all views that are transitively derived from `input`.
+//std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
+//  std::set<QueryView> dependents;
+//  std::vector<QueryView> frontier;
+//  frontier.push_back(input);
+//
+//  while (!frontier.empty()) {
+//    const auto view = frontier.back();
+//    frontier.pop_back();
+//    for (auto succ_view : view.Successors()) {
+//      if (!dependents.count(succ_view)) {
+//        dependents.insert(succ_view);
+//        frontier.push_back(succ_view);
+//      }
+//    }
+//  }
+//
+//  return dependents;
+//}
+//
+
+//// We want to break up all code in terms of which sets of RECV I/Os potentially
+//// feed data to that node. If data froms from VIEW `a` to VIEW `b`, and
+//// `usage.fed_by[a] != usage.fed_by[b]` then we'll treat `b` as being a new
+//// procedure entrypoint.
+//static bool ViewIsAlsoFedBy(QueryView view, Context &usage,
+//                            const std::set<QueryView> &covered_set) {
+//  const auto fed_by_it = usage.fed_by.find(view);
+//  if (fed_by_it == usage.fed_by.end()) {
+//    assert(false);
+//    return false;
+//  }
+//
+//  return fed_by_it->second == covered_set;
+//}
 
 //// Conditions need to be eagerly updated. Transmits and queries may need to
 //// depend on them so they must be up-to-date.
