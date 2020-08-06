@@ -14,6 +14,7 @@ add_library(dataflow STATIC
     "Compare.cpp"
     "Condition.cpp"
     "Connect.cpp"
+    "Compare.cpp"
     "Constant.cpp"
     "DeadFlowElimination.cpp"
     "Differential.cpp"

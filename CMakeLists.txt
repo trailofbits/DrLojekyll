@@ -85,7 +85,8 @@ target_link_libraries(test PRIVATE
     lex
     parse
     dataflow
-    controlflow)
+    controlflow
+)
 
 if(ENABLE_LIBFUZZER)
     add_executable(fuzzer
