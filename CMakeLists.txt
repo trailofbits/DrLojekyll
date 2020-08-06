@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.14)
 project(DrLojekyll LANGUAGES CXX)
 
 include(cmake/utils.cmake)
+enable_testing()
 
 # --------------------------------------------
 # build-time options -------------------------
@@ -73,12 +74,23 @@ if(ENABLE_LIBFUZZER)
     add_sanitizer_settings(settings-fuzz-target SANITIZERS fuzzer)
 endif()
 
+# vendored dependencies ----------------------
+
+# Cribbed from https://github.com/google/googletest/tree/master/googletest
+#
+# Prevent overriding the parent project's compiler/linker
+# settings on Windows
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+add_subdirectory(vendor/googletest-release-1.10.0
+    ${CMAKE_CURRENT_BINARY_DIR}/googletest-build
+    EXCLUDE_FROM_ALL)
+
 # targets ------------------------------------
 add_subdirectory(lib)
 
-add_executable(test
-    Main.cpp)
-target_link_libraries(test PRIVATE
+add_executable(drlojekyll
+    bin/drlojekyll/Main.cpp)
+target_link_libraries(drlojekyll PRIVATE
     settings
     util
     display
@@ -100,3 +112,4 @@ if(ENABLE_LIBFUZZER)
     )
 endif()
 
+add_subdirectory(tests)

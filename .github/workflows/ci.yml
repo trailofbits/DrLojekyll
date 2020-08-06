@@ -36,6 +36,8 @@ jobs:
           .
       - name: Build
         run: make -C build -j "$(nproc)"
+      - name: Test
+        run: cd build && ctest --output-on-failure
 
   build2:
     name: Ubuntu 18.04 / Clang 6.0 / Release
@@ -52,6 +54,8 @@ jobs:
           .
       - name: Build
         run: cmake --build build -j "$(nproc)"
+      - name: Test
+        run: cd build && ctest --output-on-failure
 
   build3:
     name: Ubuntu 20.04 / Clang 10 / Multi-Config / Fuzz / Sanitizers
@@ -85,6 +89,9 @@ jobs:
       - name: Build Release
         run: cmake --build build --config RelWithDebInfo -j
 
+      - name: Test Release
+        run: cd build && ctest -C RelWithDebInfo --output-on-failure
+
   build4:
     name: macOS 10.15 / Debug / Sanitizers
     runs-on: macos-10.15
@@ -100,6 +107,8 @@ jobs:
           .
       - name: Build
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
+      - name: Test
+        run: cd build && ctest --output-on-failure
 
   build5:
     name: Windows Server 2019 / Debug
@@ -115,3 +124,5 @@ jobs:
           .
       - name: Build
         run: cmake --build build --config Debug -j
+      - name: Test
+        run: cd build && ctest --output-on-failure
