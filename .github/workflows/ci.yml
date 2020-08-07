@@ -126,3 +126,20 @@ jobs:
         run: cmake --build build --config Debug -j
       - name: Test
         run: cd build && ctest --output-on-failure
+
+  build6:
+    name: Ubuntu 18.04 / Clang 8 / Release / Tests Disabled
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=clang-8
+          -DCMAKE_CXX_COMPILER=clang++-8
+          -DWARNINGS_AS_ERRORS=1
+          -DENABLE_TESTS=0
+          .
+      - name: Build
+        run: make -C build -j "$(nproc)"

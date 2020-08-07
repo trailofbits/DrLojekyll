@@ -11,6 +11,7 @@ enable_testing()
 # --------------------------------------------
 option(ENABLE_LIBFUZZER "Build libFuzzer fuzz targets" OFF)
 option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
+option(ENABLE_TESTS "Build test suite" ON)
 option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -72,21 +73,30 @@ if(ENABLE_LIBFUZZER)
             -g
     )
 
+    # make a `settings-fuzz-target` library that enables `-fsanitize=fuzzer`
     add_sanitizer_settings(settings-fuzz-target SANITIZERS fuzzer)
 endif()
 
+# --------------------------------------------
 # vendored dependencies ----------------------
+# --------------------------------------------
+if(ENABLE_TESTS)
+  # Google Test --------------------------------
+  #
+  # Cribbed from https://github.com/google/googletest/tree/master/googletest
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  add_subdirectory(vendor/googletest-release-1.10.0
+      EXCLUDE_FROM_ALL)
 
-# Cribbed from https://github.com/google/googletest/tree/master/googletest
-#
-# Prevent overriding the parent project's compiler/linker
-# settings on Windows
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-add_subdirectory(vendor/googletest-release-1.10.0
-    ${CMAKE_CURRENT_BINARY_DIR}/googletest-build
-    EXCLUDE_FROM_ALL)
+  # rapidcheck ---------------------------------
+  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
+  add_subdirectory(vendor/rapidcheck
+      EXCLUDE_FROM_ALL)
+endif()
 
+# --------------------------------------------
 # targets ------------------------------------
+# --------------------------------------------
 add_subdirectory(lib)
 
 add_executable(drlojekyll
@@ -113,4 +123,6 @@ if(ENABLE_LIBFUZZER)
     )
 endif()
 
-add_subdirectory(tests)
+if(ENABLE_TESTS)
+  add_subdirectory(tests)
+endif()

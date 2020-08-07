@@ -4,10 +4,24 @@ cmake_minimum_required(VERSION 3.14)
 
 include(GoogleTest)
 
-# Now simply link against gtest or gtest_main as needed. Eg
-add_executable(example example.cpp)
-target_link_libraries(example gtest_main)
+add_executable(unittests unittests.cpp)
+target_link_libraries(unittests PRIVATE
+    gtest_main
+    rapidcheck_gtest
 
-gtest_discover_tests(example)
+    settings
+    util
+    display
+    lex
+    parse
+    dataflow
+    codegen
+    )
 
+# Dynamically add all gtest tests from the `unittests` binary as CTest test
+# cases:
+gtest_discover_tests(unittests)
+
+# If we want some other test cases aside from gtest, we can explicitly add
+# them:
 # add_test(NAME test_foo COMMAND true)
