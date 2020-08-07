@@ -524,9 +524,10 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
+    auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
     return DisplayRange(impl->directive_pos.IsValid() ? impl->directive_pos
                                                       : impl->name.Position(),
-                        impl->rparen.NextPosition());
+                        last_tok.NextPosition());
   } else {
     return impl->name.SpellingRange();
   }
@@ -846,9 +847,10 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
-                      impl->dot.NextPosition());
+                      last_tok.NextPosition());
 }
 
 // Returns the arity of this clause.
@@ -948,7 +950,8 @@ const ParsedQuery &ParsedQuery::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedQuery::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedQuery> ParsedQuery::Redeclarations(void) const {
@@ -984,7 +987,8 @@ const ParsedExport &ParsedExport::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedExport::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedExport> ParsedExport::Redeclarations(void) const {
@@ -1020,7 +1024,8 @@ const ParsedLocal &ParsedLocal::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedLocal::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedLocal> ParsedLocal::Redeclarations(void) const {
@@ -1073,7 +1078,8 @@ const ParsedFunctor ParsedFunctor::MergeOperatorOf(ParsedParameter param) {
 }
 
 DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedFunctor> ParsedFunctor::Redeclarations(void) const {
@@ -1099,16 +1105,8 @@ unsigned ParsedFunctor::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
 }
 
-unsigned ParsedFunctor::NumUnorderedParameterSets(void) const noexcept {
-  return static_cast<unsigned>(impl->unordered_sets.size());
-}
-
-NodeRange<ParsedParameter> ParsedFunctor::NthUnorderedSet(unsigned n) const {
-  assert(n < impl->unordered_sets.size());
-  const auto &uset = impl->unordered_sets[n];
-  return NodeRange<ParsedParameter>(
-      uset.params.front(), static_cast<intptr_t>(__builtin_offsetof(
-                               Node<ParsedParameter>, next_unordered)));
+FunctorRange ParsedFunctor::Range(void) const noexcept {
+  return impl->range;
 }
 
 const ParsedMessage &ParsedMessage::From(const ParsedDeclaration &decl) {
@@ -1117,7 +1115,8 @@ const ParsedMessage &ParsedMessage::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedMessage::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedMessage> ParsedMessage::Redeclarations(void) const {

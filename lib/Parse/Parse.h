@@ -317,6 +317,7 @@ class Node<ParsedClause> {
   Token rparen;
   Token first_body_token;
   Token dot;
+  Token last_tok;
 
   // Variables used in this clause.
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
@@ -336,23 +337,6 @@ class Node<ParsedClause> {
 
   // Compute the identifier for this clause.
   uint64_t Id(void) const noexcept;
-};
-
-struct UnorderedParameterSet {
- public:
-  Token begin;
-  Token end;
-
-  // The mask formed by ORing together `1 << param.index` for each `param`.
-  // This lets us easily compare two sets, without having to deal with things
-  // like variable names being different.
-  uint64_t mask;
-
-  std::vector<Node<ParsedParameter> *> params;
-
-  inline DisplayRange SpellingRange(void) {
-    return DisplayRange(begin.Position(), end.NextPosition());
-  }
 };
 
 template <>
@@ -407,8 +391,11 @@ class Node<ParsedDeclaration> {
 
   Token name;
   Token rparen;
-  std::vector<UnorderedParameterSet> unordered_sets;
+  Token range_begin_opt;
+  Token range_end_opt;
+  FunctorRange range{FunctorRange::kZeroOrMore};
   Token inline_attribute;
+  Token last_tok;
   bool is_aggregate{false};
   bool is_pure{true};
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;

@@ -671,6 +671,13 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
   ParsedDeclaration Declaration(void) const;
 };
 
+enum class FunctorRange {
+  kZeroOrMore,  // Default.
+  kZeroOrOne,
+  kOneToOne,
+  kOneOrMore
+};
+
 // Represents a rule that is supplied by a plugin. These rules must have
 // globally unique names, and follow similar declaration rules as exports.
 //
@@ -680,13 +687,6 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 //
 // The above example feasibly adds one to `Pred`, subtracts one from `Succ`, or
 // checks that `Pred+1 == Succ`.
-//
-// The `unordered` qualifier in the below functor declaration tells the
-// optimizer that if a value is feeding into `A` and a value is feeding into
-// `B`, then it is free to swap the order of those values, usually so that it
-// can merge two separate uses in the data flow graph.
-//
-//    #functor add(bound i32 A, bound i32 B, free i32 Res) unordered(A, B)
 //
 // The `impure` qualifier in the below example tells Dr. Lojekyll that it can't
 // trust a functor to produce the same outputs given the same inputs. This
@@ -701,6 +701,12 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 // `A=0` on the first use. At a later time, it produces `A=1`. The implication
 // is that the data flow node will have to produce a deletion record of
 // `-(10, 0)` before it produces an insertion record `+(10, 1)`.
+//
+// The `range` qualified in the below example tells Dr. Lojekyll whether or not
+// a functor will output zero-or-one, zero-or-more (default), or one-or-more
+// outputs given its inputs. If all parameters to a functor are bound, then the
+// range of the functor is fixed as zero-or-one, i.e. treated like a filter
+// function.
 class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
  public:
   static const ParsedFunctor &From(const ParsedDeclaration &decl);
@@ -722,9 +728,7 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
 
   unsigned NumPositiveUses(void) const noexcept;
 
-  unsigned NumUnorderedParameterSets(void) const noexcept;
-
-  NodeRange<ParsedParameter> NthUnorderedSet(unsigned n) const;
+  FunctorRange Range(void) const noexcept;
 
   inline unsigned NumNegatedUses(void) const noexcept {
     return 0;

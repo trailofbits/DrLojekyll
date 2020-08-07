@@ -1,13 +1,9 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Util/DisjointSet.h>
-
 #include <algorithm>
 #include <cassert>
 #include <set>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include "Program.h"
 
@@ -46,16 +42,6 @@
 //      the former.
 namespace hyde {
 namespace {
-
-//
-//struct ViewRegion : public DisjointSet {
-//  explicit ViewRegion(QueryView view_)
-//      : DisjointSet(view_.Depth()),
-//        view(view_) {}
-//
-//  const QueryView view;
-//  REGION *region{nullptr};
-//};
 
 using WorkItem = std::tuple<PROC *, QueryView, REGION *>;
 
@@ -183,7 +169,7 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     insert->views.AddUse(
         TABLE::GetOrCreate(impl, pred_view.Columns(), view_tag));
     for (auto col : pred_view.Columns()) {
-      insert->variables.AddUse(proc->GetOrCreateLocal(col));
+      insert->variables.AddUse(proc->VariableFor(col));
     }
 
     insert->variables.Unique();
@@ -235,16 +221,16 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // Outputs of the PRODUCT are dumped into this view.
   auto &output_vec = context.product_vector[view];
   if (!output_vec) {
-    output_vec = TABLE::Create(proc, view.Columns());
+    output_vec = proc->VectorFor(view.Columns());
   }
 
-  const auto input_vec = TABLE::Create(proc, pred_view.Columns());
+  const auto input_vec = proc->VectorFor(pred_view.Columns());
   const auto append_to_input_vec = impl->operation_regions.Create(
       env, ProgramOperation::kAppendProductInputToVector);
 
   append_to_input_vec->tables.AddUse(input_vec);
   for (auto pred_col : pred_view.Columns()) {
-    append_to_input_vec->variables.AddUse(proc->GetOrCreateLocal(pred_col));
+    append_to_input_vec->variables.AddUse(proc->VariableFor(pred_col));
   }
   append_to_input_vec->variables.Unique();
 
@@ -264,7 +250,7 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     loop_over_input_vec->tables.AddUse(input_vec);
 
     for (auto col : pred_view.Columns()) {
-      loop_over_input_vec->variables.AddUse(proc->GetOrCreateLocal(col));
+      loop_over_input_vec->variables.AddUse(proc->VariableFor(col));
     }
     loop_over_input_vec->variables.Unique();
 
@@ -288,7 +274,7 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
       inner_loop->views.AddUse(
           TABLE::GetOrCreate(impl, joined_view.Columns(), view_tag));
       for (auto col : joined_view.Columns()) {
-        inner_loop->variables.AddUse(proc->GetOrCreateLocal(col));
+        inner_loop->variables.AddUse(proc->VariableFor(col));
       }
       inner_loop->variables.Unique();
 
@@ -302,7 +288,7 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 
     append_to_output_vec->tables.AddUse(output_vec);
     for (auto col : view.Columns()) {
-      append_to_output_vec->variables.AddUse(proc->GetOrCreateLocal(col));
+      append_to_output_vec->variables.AddUse(proc->VariableFor(col));
     }
     append_to_output_vec->variables.Unique();
 
@@ -358,7 +344,7 @@ static REGION *BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     loop_over_output_vec->tables.AddUse(output_vec);
 
     for (auto col : view.Columns()) {
-      loop_over_output_vec->variables.AddUse(proc->GetOrCreateLocal(col));
+      loop_over_output_vec->variables.AddUse(proc->VariableFor(col));
     }
     loop_over_output_vec->variables.Unique();
 
@@ -396,8 +382,8 @@ static REGION *BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                       std::optional<QueryColumn> out_col) {
     if (out_col && QueryView::Containing(in_col) == pred_view &&
         in_col.Id() == out_col->Id()) {
-      let_binding->variables.AddUse(proc->GetOrCreateLocal(*out_col));
-      let_binding->variables.AddUse(proc->GetOrCreateLocal(in_col));
+      let_binding->variables.AddUse(proc->VariableFor(*out_col));
+      let_binding->variables.AddUse(proc->VariableFor(in_col));
     }
   });
 
@@ -417,7 +403,7 @@ static REGION *BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     //            it is an optimization or not.
     insert->views.AddUse(TABLE::GetOrCreate(impl, pred_view.Columns(), view));
     for (auto pred_col : pred_view.Columns()) {
-      insert->variables.AddUse(proc->GetOrCreateLocal(pred_col));
+      insert->variables.AddUse(proc->VariableFor(pred_col));
     }
     insert->variables.Unique();
 
@@ -449,7 +435,7 @@ static REGION *BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
         env, ProgramOperation::kCheckTupleIsPresentInView);
     check->views.AddUse(pivot_table);
     for (auto col : view.PivotColumns()) {
-      check->variables.AddUse(proc->GetOrCreateLocal(col));
+      check->variables.AddUse(proc->VariableFor(col));
     }
     check->variables.Unique();
 
@@ -515,7 +501,7 @@ static REGION *BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     // second viewing of the JOIN be an INSERT into the vector.
     if (ProgramOperation::kJoinTables == op_region->op) {
 
-      auto vec = TABLE::Create(proc, view.PivotColumns());
+      auto vec = proc->VectorFor(view.PivotColumns());
 
       auto prev_add_to_vec = impl->operation_regions.Create(
           op_region->parent, ProgramOperation::kAppendJoinPivotsToVector);
@@ -532,7 +518,7 @@ static REGION *BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
       curr_add_to_vec->tables.AddUse(vec);
 
       for (auto col : view.PivotColumns()) {
-        const auto var = proc->GetOrCreateLocal(col);
+        const auto var = proc->VariableFor(col);
         prev_add_to_vec->variables.AddUse(var);
         curr_add_to_vec->variables.AddUse(var);
         loop->variables.AddUse(var);
@@ -598,7 +584,7 @@ static REGION *BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   insert->views.AddUse(TABLE::GetOrCreate(impl, view.InputColumns(), view));
   for (auto pred_col : pred_view.Columns()) {
-    insert->variables.AddUse(proc->GetOrCreateLocal(pred_col));
+    insert->variables.AddUse(proc->VariableFor(pred_col));
   };
 
   insert->variables.Unique();
@@ -740,9 +726,48 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
 Program::Program(std::shared_ptr<ProgramImpl> impl_)
     : impl(std::move(impl_)) {}
 
+// Building the data model means figuring out which `QueryView`s can share the
+// same backing storage. This doesn't mean that all views will be backed by
+// such storage, but when we need backing storage, we can maximally share it
+// among other places where it might be needed.
+static void BuildDataModel(const Query &query, ProgramImpl *program) {
+  query.ForEachView([=](QueryView view) {
+    auto model = new DataModel;
+    program->models.emplace_back(model);
+    program->view_to_model.emplace(view, model);
+  });
+
+  query.ForEachView([=](QueryView view) {
+    const auto model = program->view_to_model[view];
+    if (auto preds = view.Predecessors(); preds.size() == 1) {
+      const auto pred_model = program->view_to_model[preds[0]];
+      if (view.IsCompare() || view.IsTuple() || view.IsInsert() ||
+          view.IsSelect()) {
+        DisjointSet::Union(model, pred_model);
+
+      // This is really the only interesting case, and is the motivator for
+      // including `range` specifiers on functor declarations in the language.
+      // If a functor does not amplify the number of tuples, i.e. filters some
+      // out, or passes them through, perhaps adding in additional data, then
+      // we can have the `MapView` share the same backing storage as its only
+      // predecessor view.
+      } else if (view.IsMap()) {
+        const auto range = QueryMap::From(view).Functor().Range();
+        if (FunctorRange::kZeroOrOne == range ||
+            FunctorRange::kOneToOne == range) {
+          DisjointSet::Union(model, pred_model);
+        }
+      }
+    }
+  });
+}
+
 // Build a program from a query.
 std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   auto impl = std::make_shared<ProgramImpl>(query);
+  const auto program = impl.get();
+
+  BuildDataModel(query, program);
 
   Context context;
 
@@ -764,8 +789,6 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
       context.eager.insert(deps.begin(), deps.end());
     }
   }
-
-  const auto program = impl.get();
 
   for (auto io : query.IOs()) {
     for (auto receive : io.Receives()) {

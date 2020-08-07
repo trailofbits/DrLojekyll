@@ -5,7 +5,9 @@
 #include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Util/DisjointSet.h>
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -36,12 +38,13 @@ class Node<DataView> : public Def<Node<DataView>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(Node<DataTable> *table_, QueryView view_tag_);
+  Node(Node<DataTable> *table_, QueryView view_tag_, std::string col_spec_);
 
   // Get or create an index on the table.
   Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
 
   const QueryView view_tag;
+  const std::string col_spec;
   const WeakUseRef<Node<DataTable>> viewed_table;
 };
 
@@ -69,7 +72,7 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(std::vector<unsigned> column_ids_);
+  explicit Node(TableKind kind_);
 
   // Get or create a table in the program.
   static Node<DataView> *GetOrCreate(ProgramImpl *program,
@@ -80,21 +83,13 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
                                      UsedNodeRange<QueryColumn> cols,
                                      QueryView view_tag);
 
-  // Get or create a table in a procedure. This corresponds to a temporary
-  // table / vector of tuples.
-  static Node<DataTable> *Create(Node<ProgramRegion> *region,
-                                 DefinedNodeRange<QueryColumn> cols);
-
-  // Get or create a table in a procedure. This corresponds to a temporary
-  // table / vector of tuples.
-  static Node<DataTable> *Create(Node<ProgramRegion> *region,
-                                 UsedNodeRange<QueryColumn> cols);
-
   // Get or create an index on the table.
   Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
 
+  const TableKind kind;
+
   // The sorted, uniqued column IDs (derived from `QueryColumn::Id`).
-  const std::vector<unsigned> column_ids;
+  std::vector<QueryColumn> columns;
 
   // The views into this table. A given row might belong to one or more views.
   //
@@ -109,6 +104,11 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
 };
 
 using TABLE = Node<DataTable>;
+
+struct DataModel : public DisjointSet {
+ public:
+  TABLE *table{nullptr};
+};
 
 template <>
 class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
@@ -146,10 +146,6 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 };
 
 using REGION = Node<ProgramRegion>;
-
-enum class VariableRole {
-  kParameter, kLocal, kFree, kGlobalBoolean, kConditionRefCount
-};
 
 // A variable in the program. This could be a procedure parameter or a local
 // variable.
@@ -270,8 +266,11 @@ class Node<ProgramProcedureRegion> final : public Node<ProgramRegion> {
 
   Node<ProgramProcedureRegion> *AsProcedure(void) noexcept override;
 
+  // Create a new vector in this procedure for a list of columns.
+  TABLE *VectorFor(DefinedNodeRange<QueryColumn> cols);
+
   // Gets or creates a local variable in the procedure.
-  VAR *GetOrCreateLocal(QueryColumn col);
+  VAR *VariableFor(QueryColumn col);
 
   // Local variables that are defined/used in the body of this procedure.
   DefList<VAR> locals;
@@ -370,9 +369,12 @@ class ProgramImpl : public User {
   DefList<VAR> global_vars;
   unsigned next_global_var_id{~0u};
 
-  std::unordered_map<std::string, TABLE *> col_spec_to_table;
   std::unordered_map<QueryView, PROC *> procedures;
   std::unordered_map<QueryCondition, VAR *> cond_ref_counts;
+
+  // We build up "data models" of views that can share the same backing storage.
+  std::vector<std::unique_ptr<DataModel>> models;
+  std::unordered_map<QueryView, DataModel *> view_to_model;
 };
 
 }  // namespace hyde

@@ -14,7 +14,7 @@ Node<ProgramProcedureRegion>::Node(QueryView view, ProgramImpl *program)
       this, ProgramOperation::kLoopOverImplicitInputVector);
 
   for (auto col : view.Columns()) {
-    loop->variables.AddUse(GetOrCreateLocal(col));
+    loop->variables.AddUse(VariableFor(col));
   }
 
   UseRef<REGION>(this, loop).Swap(body);
@@ -25,9 +25,26 @@ Node<ProgramProcedureRegion>::AsProcedure(void) noexcept {
   return this;
 }
 
+
+// Get or create a table in a procedure.
+TABLE *Node<ProgramProcedureRegion>::VectorFor(
+    DefinedNodeRange<QueryColumn> cols) {
+  const auto table = tables.Create(TableKind::kVector);
+  auto &columns = table->columns;
+  for (auto col : cols) {
+    columns.push_back(col);
+  }
+
+  std::sort(columns.begin(), columns.end());
+  auto it = std::unique(columns.begin(), columns.end());
+  columns.erase(it, columns.end());
+
+  return table;
+}
+
 // Gets or creates a local variable in the procedure.
-VAR *Node<ProgramProcedureRegion>::GetOrCreateLocal(QueryColumn col) {
-  VAR *&var = col_id_to_var.find(col.Id());
+VAR *Node<ProgramProcedureRegion>::VariableFor(QueryColumn col) {
+  auto &var = col_id_to_var[col.Id()];
   if (!var) {
     var = locals.Create(col.Id(), VariableRole::kLocal);
   }

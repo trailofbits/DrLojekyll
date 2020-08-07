@@ -45,6 +45,15 @@ class ProgramNode {
 
 }  // namespace program
 
+enum TableKind {
+  kPersistent,
+  kVector
+};
+
+enum class VariableRole {
+  kParameter, kLocal, kFree, kGlobalBoolean, kConditionRefCount
+};
+
 class Program {
  public:
   // Build a program from a query.

@@ -31,10 +31,12 @@ Node<DataView>::~Node(void) {}
 Node<DataIndex>::~Node(void) {}
 Node<DataTable>::~Node(void) {}
 
-Node<DataView>::Node(Node<DataTable> *table_, QueryView view_tag_)
+Node<DataView>::Node(Node<DataTable> *table_, QueryView view_tag_,
+                     std::string col_spec_)
     : Def<Node<DataView>>(this),
       User(this),
       view_tag(view_tag_),
+      col_spec(std::move(col_spec_)),
       viewed_table(this, table_) {}
 
 Node<DataIndex>::Node(Node<DataTable> *table_, std::string column_spec_)
@@ -43,10 +45,10 @@ Node<DataIndex>::Node(Node<DataTable> *table_, std::string column_spec_)
       column_spec(column_spec_),
       indexed_table(this, table_) {}
 
-Node<DataTable>::Node(std::vector<unsigned> column_ids_)
+Node<DataTable>::Node(TableKind kind_)
     : Def<Node<DataTable>>(this),
       User(this),
-      column_ids(std::move(column_ids_)),
+      kind(kind_),
       views(this),
       indices(this) {}
 
@@ -55,61 +57,55 @@ Node<DataView> *Node<DataTable>::GetOrCreate(
     ProgramImpl *program, DefinedNodeRange<QueryColumn> cols, QueryView tag) {
 
   std::vector<unsigned> col_ids;
+  DataModel *model = nullptr;
   for (auto col : cols) {
+    auto view = QueryView::Containing(col);
+    auto view_model = program->view_to_model[view]->FindAs<DataModel>();
+    if (!model) {
+      model = view_model;
+    } else {
+      assert(model == view_model);
+    }
     col_ids.push_back(col.Id());
   }
 
-  SortAndUnique(col_ids);
-
-  auto col_spec = ColumnSpec(col_ids);
-  auto &table = program->col_spec_to_table[col_spec];
-  if (!table) {
-    table = program->tables.Create(std::move(col_ids));
+  if (!model->table) {
+    model->table = program->tables.Create(TableKind::kPersistent);
   }
 
-  return table;
+  const auto table = model->table;
+  auto &columns = table->columns;
+  for (auto col : cols) {
+    columns.push_back(col);
+  }
+
+  std::sort(columns.begin(), columns.end());
+  auto it = std::unique(columns.begin(), columns.end());
+  columns.erase(it, columns.end());
+
+  SortAndUnique(col_ids);
+  auto col_spec = ColumnSpec(col_ids);
+
+  for (auto view : table->views) {
+    if (view->view_tag == tag && view->col_spec == col_spec) {
+      return view;
+    }
+  }
+
+  return table->views.Create(table, tag, std::move(col_spec));
 }
 
 Node<DataView> *Node<DataTable>::GetOrCreate(ProgramImpl *program,
                                              UsedNodeRange<QueryColumn> cols,
                                              QueryView tag) {
-
-  std::vector<unsigned> col_ids;
-  for (auto col : cols) {
-    col_ids.push_back(col.Id());
+  assert(!cols.empty());
+  const auto first_view = QueryView::Containing(cols[0]);
+#ifndef NDEBUG
+  for (auto i = 1u; i < cols.size(); ++i) {
+    assert(first_view == QueryView::Containing(cols[i]));
   }
-
-  SortAndUnique(col_ids);
-
-  auto col_spec = ColumnSpec(col_ids);
-  auto &table = program->col_spec_to_table[col_spec];
-  if (!table) {
-    table = program->tables.Create(std::move(col_ids));
-  }
-
-  return table;
-}
-
-// Get or create a table in a procedure.
-Node<DataTable> *Node<DataTable>::Create(Node<ProgramRegion> *region,
-                                         DefinedNodeRange<QueryColumn> cols) {
-  std::vector<unsigned> col_ids;
-  for (auto col : cols) {
-    col_ids.push_back(col.Id());
-  }
-  SortAndUnique(col_ids);
-  return region->containing_procedure->tables.Create(std::move(col_ids));
-}
-
-// Get or create a table in a procedure.
-Node<DataTable> *Node<DataTable>::Create(Node<ProgramRegion> *region,
-                                         UsedNodeRange<QueryColumn> cols) {
-  std::vector<unsigned> col_ids;
-  for (auto col : cols) {
-    col_ids.push_back(col.Id());
-  }
-  SortAndUnique(col_ids);
-  return region->containing_procedure->tables.Create(std::move(col_ids));
+#endif
+  return Node<DataTable>::GetOrCreate(program, first_view.Columns(), tag);
 }
 
 // Get or create an index on the table.

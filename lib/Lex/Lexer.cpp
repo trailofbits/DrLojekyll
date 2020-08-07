@@ -170,6 +170,24 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       ret.opaque_data = interpreter.flat;
       return true;
 
+    case '?':
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncQuestion);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '*':
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncStar);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '+':
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncPlus);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
     case '!':
       interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncExclaim);
       interpreter.basic.spelling_width = 1;
@@ -553,6 +571,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeASCII);
             interpreter.type.spelling_width = 5;
             interpreter.type.type_width = 128;
+
+          } else if (impl->data == "range") {
+            interpreter.basic.spelling_width = 5;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordRange);
           }
           break;
         case 6:
@@ -631,11 +654,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.spelling_width = 9;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordAggregate);
-
-          } else if (impl->data == "unordered") {
-            interpreter.basic.spelling_width = 9;
-            interpreter.basic.lexeme =
-                static_cast<uint8_t>(Lexeme::kKeywordUnordered);
           }
           break;
 

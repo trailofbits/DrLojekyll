@@ -11,6 +11,7 @@ add_library(controlflow STATIC
     "Induction.cpp"
     "Operation.cpp"
     "Parallel.cpp"
+    "Procedure.cpp"
     "Program.cpp"
     "Region.cpp"
     "Series.cpp"
