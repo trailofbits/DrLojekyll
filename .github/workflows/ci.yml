@@ -115,3 +115,10 @@ jobs:
           .
       - name: Build
         run: cmake --build build --config Debug -j
+  build6:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build Docker image
+        run: docker build -t trailofbits/drlojekyll .
