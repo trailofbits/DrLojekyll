@@ -39,5 +39,5 @@ target_link_libraries(parse
         display
         lex
         util
-	std::filesystem
+        std::filesystem
 )
