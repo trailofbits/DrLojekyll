@@ -32,10 +32,12 @@ add_library(parse STATIC
     "Variable.cpp"
 )
 
+find_package(Filesystem REQUIRED)
 target_link_libraries(parse
     PUBLIC
         settings
         display
         lex
         util
+	std::filesystem
 )
