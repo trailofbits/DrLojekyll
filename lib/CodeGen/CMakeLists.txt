@@ -15,3 +15,13 @@ target_link_libraries(codegen
         parse
         util
 )
+
+install(
+  TARGETS codegen
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)

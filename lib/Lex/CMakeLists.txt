@@ -19,3 +19,13 @@ target_link_libraries(lex
         settings
         display
 )
+
+install(
+  TARGETS lex
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)

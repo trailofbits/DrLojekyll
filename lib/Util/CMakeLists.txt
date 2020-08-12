@@ -14,3 +14,13 @@ add_library(util STATIC
 )
 
 target_link_libraries(util PUBLIC settings)
+
+install(
+  TARGETS util
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)

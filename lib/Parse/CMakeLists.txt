@@ -39,3 +39,13 @@ target_link_libraries(parse
         lex
         util
 )
+
+install(
+  TARGETS parse
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)

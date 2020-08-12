@@ -5,3 +5,13 @@ add_library(runtime STATIC
 )
 
 target_link_libraries(runtime PUBLIC settings)
+
+install(
+  TARGETS runtime
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)

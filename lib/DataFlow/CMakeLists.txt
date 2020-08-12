@@ -40,3 +40,13 @@ target_link_libraries(dataflow
         parse
         util
 )
+
+install(
+  TARGETS dataflow
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)
