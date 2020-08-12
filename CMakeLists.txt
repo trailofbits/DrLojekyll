@@ -34,6 +34,12 @@ else()
 endif()
 
 # --------------------------------------------
+# Dependencies -------------------------------
+# --------------------------------------------
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+
+
+# --------------------------------------------
 # `settings` for global build options --------
 # --------------------------------------------
 add_library(settings INTERFACE)
