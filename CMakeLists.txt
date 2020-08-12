@@ -92,7 +92,9 @@ target_link_libraries(test PRIVATE
     lex
     parse
     dataflow
-    codegen)
+    codegen
+    DrLojekyllVersion
+    )
 install(TARGETS test RUNTIME DESTINATION "bin")
 
 if(ENABLE_LIBFUZZER)
@@ -105,6 +107,7 @@ if(ENABLE_LIBFUZZER)
         display
         lex
         parse
+        DrLojekyllVersion
     )
 endif()
 
