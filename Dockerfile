@@ -1,11 +1,29 @@
-FROM ubuntu:20.04
+ARG ARCH=amd64
+ARG UBUNTU_VERSION=20.04
+ARG DISTRO_BASE=ubuntu${UBUNTU_VERSION}
+ARG BUILD_BASE=ubuntu:${UBUNTU_VERSION}
 
-RUN apt-get update -y && \
+ARG INSTALL_DIR=/opt/trailofbits/drlojekyll
+
+
+# Run-time dependencies go here
+FROM ${BUILD_BASE} as base
+ARG INSTALL_DIR
+
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# Build-time dependencies go here
+FROM base as deps
+ARG INSTALL_DIR
+
+RUN apt-get update && \
     apt-get install -y wget gnupg && \
     wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add - && \
-    echo "deb https://apt.kitware.com/ubuntu/ focal main" >>/etc/apt/sources.list
-
-RUN apt-get update -y && \
+    echo "deb https://apt.kitware.com/ubuntu/ focal main" >>/etc/apt/sources.list && \
+    apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y \
       cmake \
@@ -13,9 +31,13 @@ RUN apt-get update -y && \
       g++ \
       ninja-build
 
-WORKDIR /DrLojekyll
 
-COPY ./ /DrLojekyll
+# Source code build
+FROM deps as build
+ARG INSTALL_DIR
+
+WORKDIR /DrLojekyll
+COPY . ./
 
 RUN cmake -G Ninja \
       -B build \
@@ -23,5 +45,19 @@ RUN cmake -G Ninja \
       -DCMAKE_C_COMPILER=gcc \
       -DCMAKE_CXX_COMPILER=g++ \
       -DWARNINGS_AS_ERRORS=1 \
+      -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       . && \
-    cmake --build build -j "$(nproc)"
+    cmake --build build -j "$(nproc)" && \
+    cmake --build build --target install
+
+
+# Minimal distribution image with only DrLojekyll and run-time dependencies
+FROM base as dist
+ARG INSTALL_DIR
+ENV DRLOG_INSTALL_DIR="${INSTALL_DIR}"
+
+WORKDIR /drlog/local
+COPY scripts/docker-entrypoint.sh /drlog/
+COPY --from=build "${INSTALL_DIR}" "${INSTALL_DIR}"
+ENV PATH="${INSTALL_DIR}/bin":${PATH}
+ENTRYPOINT ["/drlog/docker-entrypoint.sh"]
