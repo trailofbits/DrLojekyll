@@ -27,7 +27,7 @@ install(
   RUNTIME
     DESTINATION "bin"
   LIBRARY
-    DESTINATION "lib"
+    DESTINATION "lib/drlojekyll"
   ARCHIVE
-    DESTINATION "lib"
+    DESTINATION "lib/drlojekyll"
 )
