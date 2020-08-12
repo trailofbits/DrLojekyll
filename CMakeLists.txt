@@ -74,6 +74,7 @@ if(ENABLE_LIBFUZZER)
 endif()
 
 # targets ------------------------------------
+add_subdirectory(include)
 add_subdirectory(lib)
 
 add_executable(test
