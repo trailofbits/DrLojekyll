@@ -85,7 +85,9 @@ target_link_libraries(test PRIVATE
     lex
     parse
     dataflow
-    codegen)
+    codegen
+    DrLojekyllVersion
+    )
 
 if(ENABLE_LIBFUZZER)
     add_executable(fuzzer
@@ -97,6 +99,7 @@ if(ENABLE_LIBFUZZER)
         display
         lex
         parse
+        DrLojekyllVersion
     )
 endif()
 
