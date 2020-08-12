@@ -103,6 +103,8 @@ static int HelpMessage(char *argv[]) {
       << "USAGE: " << argv[0] << " [options] file..." << std::endl
       << std::endl
       << "OPTIONS:" << std::endl
+      << "  -version              Show version number and exit."
+      << std::endl
       << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++."
       << std::endl
       << "  -amalgamation <PATH>  Datalog output file representing all input and transitively."
@@ -124,7 +126,7 @@ static int HelpMessage(char *argv[]) {
   return EXIT_SUCCESS;
 }
 
-static void VersionMessage() {
+static int VersionMessage() {
   std::stringstream version;
 
   auto vs = hyde::Version::GetVersionString();
@@ -147,9 +149,7 @@ static void VersionMessage() {
     }
   }
 
-  std::cout << s.str();
-}
-
+  std::cout << version.str();
   return EXIT_SUCCESS;
 }
 

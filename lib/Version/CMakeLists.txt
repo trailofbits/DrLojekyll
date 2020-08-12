@@ -12,5 +12,5 @@ include("${PROJECT_SOURCE_DIR}/cmake/git_watcher.cmake")
 
 # Create a library out of the compiled post-configure file.
 add_library(DrLojekyllVersion STATIC ${POST_CONFIGURE_FILE})
-target_include_directories(DrLojekyllVersion PUBLIC ${PROJECT_SOURCE_DIR})
+target_include_directories(DrLojekyllVersion PUBLIC ${PROJECT_SOURCE_DIR}/include)
 add_dependencies(DrLojekyllVersion check_git_${PROJECT_NAME})
