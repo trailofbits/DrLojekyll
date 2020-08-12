@@ -122,3 +122,5 @@ jobs:
       - uses: actions/checkout@v2
       - name: Build Docker image
         run: docker build -t trailofbits/drlojekyll .
+      - name: Test Docker image
+        run: prog=join_attributes; docker run --rm -v $(pwd):/drlog/local -w /drlog/local trailofbits/drlojekyll -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
