@@ -86,6 +86,7 @@ target_link_libraries(test PRIVATE
     parse
     dataflow
     codegen)
+install(TARGETS test RUNTIME DESTINATION "bin")
 
 if(ENABLE_LIBFUZZER)
     add_executable(fuzzer

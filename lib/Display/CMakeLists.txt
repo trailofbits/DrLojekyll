@@ -21,3 +21,13 @@ add_library(display STATIC
 )
 
 target_link_libraries(display PUBLIC settings)
+
+install(
+  TARGETS display
+  RUNTIME
+    DESTINATION "bin"
+  LIBRARY
+    DESTINATION "lib"
+  ARCHIVE
+    DESTINATION "lib"
+)
