@@ -1,5 +1,5 @@
 ARG ARCH=amd64
-ARG UBUNTU_VERSION=20.04
+ARG UBUNTU_VERSION=18.04
 ARG DISTRO_BASE=ubuntu${UBUNTU_VERSION}
 ARG BUILD_BASE=ubuntu:${UBUNTU_VERSION}
 
@@ -22,13 +22,13 @@ ARG INSTALL_DIR
 RUN apt-get update && \
     apt-get install -y wget gnupg && \
     wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add - && \
-    echo "deb https://apt.kitware.com/ubuntu/ focal main" >>/etc/apt/sources.list && \
+    echo "deb https://apt.kitware.com/ubuntu/ bionic main" >>/etc/apt/sources.list && \
     apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y \
       cmake \
-      gcc \
-      g++ \
+      gcc-8 \
+      g++-8 \
       ninja-build
 
 
@@ -42,8 +42,8 @@ COPY . ./
 RUN cmake -G Ninja \
       -B build \
       -DCMAKE_BUILD_TYPE=Debug \
-      -DCMAKE_C_COMPILER=gcc \
-      -DCMAKE_CXX_COMPILER=g++ \
+      -DCMAKE_C_COMPILER=gcc-8 \
+      -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       . && \
