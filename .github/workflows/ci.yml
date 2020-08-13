@@ -46,20 +46,18 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          echo "${INSTALL_DIR}"
           cmake -B build \
             -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
             -DCMAKE_C_COMPILER=gcc-8 \
             -DCMAKE_CXX_COMPILER=g++-8 \
             .
           cmake --build build
-          cat build/CMakeCache.txt
 
   build2:
     name: Ubuntu 18.04 / Clang 6.0 / Release
     runs-on: ubuntu-18.04
     env:
-      INSTALL_DIR: ${GITHUB_WORKSPACE}installation
+      INSTALL_DIR: ${{ github.workspace }}/installation
     steps:
       - uses: actions/checkout@v2
       - name: Configure
@@ -89,7 +87,7 @@ jobs:
     name: Ubuntu 20.04 / Clang 10 / Multi-Config / Fuzz / Sanitizers
     runs-on: ubuntu-20.04
     env:
-      INSTALL_DIR: ${GITHUB_WORKSPACE}installation
+      INSTALL_DIR: ${{ github.workspace }}/installation
     steps:
       - uses: actions/checkout@v2
       - name: Install Dependencies
@@ -147,7 +145,7 @@ jobs:
     name: macOS 10.15 / Debug / Sanitizers
     runs-on: macos-10.15
     env:
-      INSTALL_DIR: ${GITHUB_WORKSPACE}installation
+      INSTALL_DIR: ${{ github.workspace }}/installation
     steps:
       - uses: actions/checkout@v2
       - name: Configure
@@ -173,7 +171,7 @@ jobs:
     name: Windows Server 2019 / Debug
     runs-on: windows-2019
     env:
-      INSTALL_DIR: ${GITHUB_WORKSPACE}installation
+      INSTALL_DIR: ${{ github.workspace }}/installation
     steps:
       - uses: actions/checkout@v2
       - name: Configure
