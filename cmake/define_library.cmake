@@ -37,7 +37,7 @@ function(DefineLibrary libname)
     )
     install(
       TARGETS ${libname}
-      EXPORT "${libname}Targets"
+      EXPORT "${PROJECT_NAME}Targets"
       RUNTIME
         DESTINATION "bin"
       LIBRARY
@@ -46,12 +46,5 @@ function(DefineLibrary libname)
         DESTINATION "lib/${lower_project_name}"
       PUBLIC_HEADER
         DESTINATION "include/${lower_project_name}/${libname}"
-    )
-
-    install (
-        EXPORT      "${libname}Targets"
-        FILE        "${libname}Targets.cmake"
-        DESTINATION "lib/cmake/${PROJECT_NAME}"
-        NAMESPACE   "${PROJECT_NAME}::"
     )
 endfunction()
