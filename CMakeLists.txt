@@ -35,6 +35,12 @@ else()
 endif()
 
 # --------------------------------------------
+# Dependencies -------------------------------
+# --------------------------------------------
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+
+
+# --------------------------------------------
 # `settings` for global build options --------
 # --------------------------------------------
 add_library(settings INTERFACE)
@@ -86,7 +92,9 @@ target_link_libraries(test PRIVATE
     Lex
     Parse
     DataFlow
-    CodeGen)
+    CodeGen
+    DrLojekyllVersion
+    )
 install(TARGETS test RUNTIME DESTINATION "bin")
 
 if(ENABLE_LIBFUZZER)
@@ -99,6 +107,6 @@ if(ENABLE_LIBFUZZER)
         Display
         Lex
         Parse
+        DrLojekyllVersion
     )
 endif()
-

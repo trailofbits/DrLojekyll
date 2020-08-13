@@ -38,10 +38,13 @@ set(Parse_PRIV_DEPS
     settings
 )
 
+find_package(Filesystem REQUIRED)
+
 set(Parse_DEPS
     Display
     Lex
     Util
+    std::filesystem
 )
 
 DefineLibrary(Parse
