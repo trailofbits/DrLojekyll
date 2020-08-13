@@ -36,6 +36,8 @@ jobs:
           .
       - name: Build
         run: make -C build -j "$(nproc)"
+      - name: Install
+        run: cmake --build build --target install
 
   build2:
     name: Ubuntu 18.04 / Clang 6.0 / Release
@@ -52,6 +54,8 @@ jobs:
           .
       - name: Build
         run: cmake --build build -j "$(nproc)"
+      - name: Install
+        run: cmake --build build --target install
 
   build3:
     name: Ubuntu 20.04 / Clang 10 / Multi-Config / Fuzz / Sanitizers
@@ -84,6 +88,8 @@ jobs:
       # invocation of ninja.
       - name: Build Release
         run: cmake --build build --config RelWithDebInfo -j
+      - name: Install
+        run: cmake --build build --target install
 
   build4:
     name: macOS 10.15 / Debug / Sanitizers
@@ -100,6 +106,8 @@ jobs:
           .
       - name: Build
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
+      - name: Install
+        run: cmake --build build --target install
 
   build5:
     name: Windows Server 2019 / Debug
@@ -115,3 +123,5 @@ jobs:
           .
       - name: Build
         run: cmake --build build --config Debug -j
+      - name: Install
+        run: cmake --build build --target install
