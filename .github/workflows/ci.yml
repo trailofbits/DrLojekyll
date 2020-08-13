@@ -171,7 +171,7 @@ jobs:
     name: Windows Server 2019 / Debug
     runs-on: windows-2019
     env:
-      INSTALL_DIR: ${{ github.workspace }}/installation
+      INSTALL_DIR: "${{ github.workspace }}\installation"
     steps:
       - uses: actions/checkout@v2
       - name: Configure
