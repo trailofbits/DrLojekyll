@@ -69,6 +69,7 @@ ENTRYPOINT ["/drlog/docker-entrypoint.sh"]
 FROM deps as test_lib
 ARG INSTALL_DIR
 
+WORKDIR /test_lib
 COPY . .
 COPY --from=dist "${INSTALL_DIR}" "${INSTALL_DIR}"
 RUN cd tests/external_build && \
