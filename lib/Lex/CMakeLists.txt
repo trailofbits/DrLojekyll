@@ -16,8 +16,11 @@ set(Lex_SRCS
     "Token.cpp"
 )
 
-set(Lex_DEPS
+set(Lex_PRIV_DEPS
     settings
+)
+
+set(Lex_DEPS
     Display
 )
 
@@ -26,4 +29,5 @@ DefineLibrary(Lex
   SOURCES ${Lex_SRCS}
   PUBLIC_HEADERS ${Lex_PUBLIC_H}
   DEPENDENCIES ${Lex_DEPS}
+  PRIVATE_DEPS ${Lex_PRIV_DEPS}
 )

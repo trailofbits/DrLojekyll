@@ -22,8 +22,11 @@ set(Display_SRCS
     "Format.cpp"
 )
 
-set(Display_DEPS
+set(Display_PRIV_DEPS
     settings
+)
+
+set(Display_DEPS
 )
 
 DefineLibrary(Display
@@ -31,4 +34,5 @@ DefineLibrary(Display
   SOURCES ${Display_SRCS}
   PUBLIC_HEADERS ${Display_PUBLIC_H}
   DEPENDENCIES ${Display_DEPS}
+  PRIVATE_DEPS ${Display_PRIV_DEPS}
 )

@@ -8,8 +8,11 @@ set(CodeGen_SRCS
     "BAM.cpp"
 )
 
-set(CodeGen_DEPS
+set(CodeGen_PRIV_DEPS
     settings
+)
+
+set(CodeGen_DEPS
     DataFlow
     Display
     Lex
@@ -22,4 +25,5 @@ DefineLibrary(CodeGen
   SOURCES ${CodeGen_SRCS}
   PUBLIC_HEADERS ${CodeGen_PUBLIC_H}
   DEPENDENCIES ${CodeGen_DEPS}
+  PRIVATE_DEPS ${CodeGen_PRIV_DEPS}
 )

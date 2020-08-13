@@ -34,8 +34,11 @@ set(Parse_SRCS
     "Variable.cpp"
 )
 
-set(Parse_DEPS
+set(Parse_PRIV_DEPS
     settings
+)
+
+set(Parse_DEPS
     Display
     Lex
     Util
@@ -46,4 +49,5 @@ DefineLibrary(Parse
   SOURCES ${Parse_SRCS}
   PUBLIC_HEADERS ${Parse_PUBLIC_H}
   DEPENDENCIES ${Parse_DEPS}
+  PRIVATE_DEPS ${Parse_PRIV_DEPS}
 )

@@ -17,8 +17,11 @@ set(Util_SRCS
     "Node.cpp"
 )
 
-set(Util_DEPS
+set(Util_PRIV_DEPS
     settings
+)
+
+set(Util_DEPS
 )
 
 DefineLibrary(Util
@@ -26,4 +29,5 @@ DefineLibrary(Util
   SOURCES ${Util_SRCS}
   PUBLIC_HEADERS ${Util_PUBLIC_H}
   DEPENDENCIES ${Util_DEPS}
+  PRIVATE_DEPS ${Util_PRIV_DEPS}
 )

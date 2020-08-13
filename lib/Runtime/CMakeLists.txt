@@ -8,8 +8,11 @@ set(Runtime_SRCS
     "Runtime.cpp"
 )
 
-set(Runtime_DEPS
+set(Runtime_PRIV_DEPS
     settings
+)
+
+set(Runtime_DEPS
 )
 
 DefineLibrary(Runtime
@@ -17,4 +20,5 @@ DefineLibrary(Runtime
   SOURCES ${Runtime_SRCS}
   PUBLIC_HEADERS ${Runtime_PUBLIC_H}
   DEPENDENCIES ${Runtime_DEPS}
+  PRIVATE_DEPS ${Runtime_PRIV_DEPS}
 )

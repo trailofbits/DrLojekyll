@@ -34,8 +34,11 @@ set(DataFlow_SRCS
     "View.cpp"
 )
 
-set(DataFlow_DEPS
+set(DataFlow_PRIV_DEPS
     settings
+)
+
+set(DataFlow_DEPS
     Display
     Lex
     Parse
@@ -47,4 +50,5 @@ DefineLibrary(DataFlow
   SOURCES ${DataFlow_SRCS}
   PUBLIC_HEADERS ${DataFlow_PUBLIC_H}
   DEPENDENCIES ${DataFlow_DEPS}
+  PRIVATE_DEPS ${DataFlow_PRIV_DEPS}
 )
