@@ -40,7 +40,9 @@ jobs:
       - name: Build
         run: make -C build -j "$(nproc)"
       - name: Install
-        run: cmake --build build --target install
+        run: |
+          cmake --build build --target install
+          rm -rf build
       - name: Test Install
         run: |
           cd tests/external_build
