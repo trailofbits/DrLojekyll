@@ -62,3 +62,22 @@ COPY scripts/docker-entrypoint.sh /drlog/
 COPY --from=build "${INSTALL_DIR}" "${INSTALL_DIR}"
 ENV PATH="${INSTALL_DIR}/bin":${PATH}
 ENTRYPOINT ["/drlog/docker-entrypoint.sh"]
+
+
+# Test library installation copying
+# Needs to be "FROM deps" in order to actually build with gcc
+FROM deps as test_lib
+ARG INSTALL_DIR
+
+COPY . .
+COPY --from=dist "${INSTALL_DIR}" "${INSTALL_DIR}"
+RUN cd tests/external_build && \
+    cmake \
+      -B build \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_C_COMPILER=gcc-8 \
+      -DCMAKE_CXX_COMPILER=g++-8 \
+      -DWARNINGS_AS_ERRORS=1 \
+      -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+      . && \
+    cmake --build build
