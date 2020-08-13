@@ -46,12 +46,14 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
+          echo "${INSTALL_DIR}"
           cmake -B build \
             -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
             -DCMAKE_C_COMPILER=gcc-8 \
             -DCMAKE_CXX_COMPILER=g++-8 \
             .
           cmake --build build
+          cat build/CMakeCache.txt
 
   build2:
     name: Ubuntu 18.04 / Clang 6.0 / Release
