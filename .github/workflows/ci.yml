@@ -33,6 +33,7 @@ jobs:
           -DCMAKE_C_COMPILER=gcc-8
           -DCMAKE_CXX_COMPILER=g++-8
           -DWARNINGS_AS_ERRORS=1
+          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
           .
       - name: Build
         run: make -C build -j "$(nproc)"
@@ -51,6 +52,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang-6.0
           -DCMAKE_CXX_COMPILER=clang++-6.0
           -DWARNINGS_AS_ERRORS=1
+          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
           .
       - name: Build
         run: cmake --build build -j "$(nproc)"
@@ -77,18 +79,21 @@ jobs:
           -DENABLE_SANITIZERS=1
           -DENABLE_LIBFUZZER=1
           -DWARNINGS_AS_ERRORS=1
+          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
           .
 
       # We ought to be able to build multiple configurations without them
       # interfering.  First build debug, explicitly invoking `ninja`:
       - name: Build Debug
         run: ninja -C build -f build-Debug.ninja
+      - name: Install Debug
+        run: cmake --build build --target install
 
       # Next, build RelWithDebInfo, using the indirect `cmake --build`
       # invocation of ninja.
       - name: Build Release
         run: cmake --build build --config RelWithDebInfo -j
-      - name: Install
+      - name: Install Release
         run: cmake --build build --target install
 
   build4:
@@ -103,6 +108,7 @@ jobs:
           -G Xcode
           -DENABLE_SANITIZERS=1
           -DWARNINGS_AS_ERRORS=1
+          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
           .
       - name: Build
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
@@ -120,6 +126,7 @@ jobs:
           -B build
           -G "Visual Studio 16 2019"
           -DWARNINGS_AS_ERRORS=0
+          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
           .
       - name: Build
         run: cmake --build build --config Debug -j
