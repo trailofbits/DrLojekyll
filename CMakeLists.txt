@@ -96,7 +96,7 @@ configure_package_config_file(${PROJECT_NAME}Config.cmake.in
 
 # Install the ${PROJECT_NAME}Config.cmake
 install(FILES
-  "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
   DESTINATION lib/cmake/${PROJECT_NAME}
 )
 install(DIRECTORY
