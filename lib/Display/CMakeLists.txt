@@ -1,13 +1,15 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-add_library(display STATIC
+set(Display_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Display.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayConfiguration.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayManager.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayPosition.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayReader.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Format.h"
+)
 
+set(Display_SRCS
     "DataStream.h"
     "Display.h"
     "DisplayPosition.h"
@@ -20,14 +22,17 @@ add_library(display STATIC
     "Format.cpp"
 )
 
-target_link_libraries(display PUBLIC settings)
+set(Display_PRIV_DEPS
+    settings
+)
 
-install(
-  TARGETS display
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
+set(Display_DEPS
+)
+
+DefineLibrary(Display
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Display_SRCS}
+  PUBLIC_HEADERS ${Display_PUBLIC_H}
+  DEPENDENCIES ${Display_DEPS}
+  PRIVATE_DEPS ${Display_PRIV_DEPS}
 )

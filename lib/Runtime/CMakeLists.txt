@@ -1,17 +1,24 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-add_library(runtime STATIC
+set(Runtime_PUBLIC_H
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+)
+
+set(Runtime_SRCS
     "Runtime.cpp"
 )
 
-target_link_libraries(runtime PUBLIC settings)
+set(Runtime_PRIV_DEPS
+    settings
+)
 
-install(
-  TARGETS runtime
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
+set(Runtime_DEPS
+)
+
+DefineLibrary(Runtime
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Runtime_SRCS}
+  PUBLIC_HEADERS ${Runtime_PUBLIC_H}
+  DEPENDENCIES ${Runtime_DEPS}
+  PRIVATE_DEPS ${Runtime_PRIV_DEPS}
 )

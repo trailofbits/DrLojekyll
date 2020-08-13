@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.14)
 project(DrLojekyll LANGUAGES CXX)
 
 include(cmake/utils.cmake)
+include(cmake/define_library.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
@@ -80,19 +81,18 @@ if(ENABLE_LIBFUZZER)
 endif()
 
 # targets ------------------------------------
-add_subdirectory(include)
 add_subdirectory(lib)
 
 add_executable(test
     Main.cpp)
 target_link_libraries(test PRIVATE
     settings
-    util
-    display
-    lex
-    parse
-    dataflow
-    codegen
+    Util
+    Display
+    Lex
+    Parse
+    DataFlow
+    CodeGen
     DrLojekyllVersion
     )
 install(TARGETS test RUNTIME DESTINATION "bin")
@@ -103,11 +103,10 @@ if(ENABLE_LIBFUZZER)
     target_link_libraries(fuzzer PRIVATE
         settings
         settings-fuzz-target
-        util
-        display
-        lex
-        parse
+        Util
+        Display
+        Lex
+        Parse
         DrLojekyllVersion
     )
 endif()
-
