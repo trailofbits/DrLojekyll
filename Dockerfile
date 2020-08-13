@@ -82,3 +82,7 @@ RUN cd tests/external_build && \
       -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
       . && \
     cmake --build build
+
+
+# Make this last so that it's also default
+FROM dist
