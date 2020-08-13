@@ -1,17 +1,29 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-add_library(codegen STATIC
+set(CodeGen_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/BAM.h"
+)
 
+set(CodeGen_SRCS
     "BAM.cpp"
 )
 
-target_link_libraries(codegen
-    PUBLIC
-        settings
-        dataflow
-        display
-        lex
-        parse
-        util
+set(CodeGen_PRIV_DEPS
+    settings
+)
+
+set(CodeGen_DEPS
+    DataFlow
+    Display
+    Lex
+    Parse
+    Util
+)
+
+DefineLibrary(CodeGen
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${CodeGen_SRCS}
+  PUBLIC_HEADERS ${CodeGen_PUBLIC_H}
+  DEPENDENCIES ${CodeGen_DEPS}
+  PRIVATE_DEPS ${CodeGen_PRIV_DEPS}
 )

@@ -1,11 +1,13 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-add_library(lex STATIC
+set(Lex_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/Format.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/Lexer.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/StringPool.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/Token.h"
+)
 
+set(Lex_SRCS
     "Token.h"
 
     "Format.cpp"
@@ -14,8 +16,18 @@ add_library(lex STATIC
     "Token.cpp"
 )
 
-target_link_libraries(lex
-    PUBLIC
-        settings
-        display
+set(Lex_PRIV_DEPS
+    settings
+)
+
+set(Lex_DEPS
+    Display
+)
+
+DefineLibrary(Lex
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Lex_SRCS}
+  PUBLIC_HEADERS ${Lex_PUBLIC_H}
+  DEPENDENCIES ${Lex_DEPS}
+  PRIVATE_DEPS ${Lex_PRIV_DEPS}
 )

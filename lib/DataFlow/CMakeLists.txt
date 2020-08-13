@@ -1,9 +1,11 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-add_library(dataflow STATIC
+set(DataFlow_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Format.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Query.h"
+)
 
+set(DataFlow_SRCS
     "Optimize.h"
     "Query.h"
 
@@ -32,11 +34,21 @@ add_library(dataflow STATIC
     "View.cpp"
 )
 
-target_link_libraries(dataflow
-    PUBLIC
-        settings
-        display
-        lex
-        parse
-        util
+set(DataFlow_PRIV_DEPS
+    settings
+)
+
+set(DataFlow_DEPS
+    Display
+    Lex
+    Parse
+    Util
+)
+
+DefineLibrary(DataFlow
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${DataFlow_SRCS}
+  PUBLIC_HEADERS ${DataFlow_PUBLIC_H}
+  DEPENDENCIES ${DataFlow_DEPS}
+  PRIVATE_DEPS ${DataFlow_PRIV_DEPS}
 )
