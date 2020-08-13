@@ -201,8 +201,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build Docker image
-        run: docker build -t trailofbits/drlojekyll --target=dist .
+        run: |
+          docker build -t trailofbits/drlojekyll --target=dist .
+          # Test here for layer caching
+          docker build -t trailofbits/drlojekyll --target=test_lib .
       - name: Test Docker Executable
         run: prog=join_attributes; docker run --rm -v $(pwd):/drlog/local -w /drlog/local trailofbits/drlojekyll -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
       - name: Test Docker Library
-        run: docker build -t trailofbits/drlojekyll --target=test_lib .
