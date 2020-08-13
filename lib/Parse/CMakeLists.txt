@@ -11,8 +11,6 @@ set(Parse_PUBLIC_H
 )
 
 set(Parse_SRCS
-    ${Parse_PUBLIC_H}
-
     "Error.h"
     "Parser.h"
     "Parse.h"
@@ -36,35 +34,16 @@ set(Parse_SRCS
     "Variable.cpp"
 )
 
-add_library(Parse STATIC
-    ${Parse_SRCS}
+set(Parse_DEPS
+    settings
+    Display
+    Lex
+    Util
 )
 
-target_link_libraries(Parse
-    PUBLIC
-        settings
-        Display
-        Lex
-        Util
-)
-
-set_target_properties (Parse PROPERTIES PUBLIC_HEADER "${Parse_PUBLIC_H}")
-
-target_include_directories(Parse PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse>
-  $<INSTALL_INTERFACE:include/drlojekyll/Parse>
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-install(
-  TARGETS Parse
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
-  PUBLIC_HEADER
-    DESTINATION "include/drlojekyll/Parse"
+DefineLibrary(Parse
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Parse_SRCS}
+  PUBLIC_HEADERS ${Parse_PUBLIC_H}
+  DEPENDENCIES ${Parse_DEPS}
 )

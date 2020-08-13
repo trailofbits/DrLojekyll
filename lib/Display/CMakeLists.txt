@@ -10,8 +10,6 @@ set(Display_PUBLIC_H
 )
 
 set(Display_SRCS
-    ${Display_PUBLIC_H}
-
     "DataStream.h"
     "Display.h"
     "DisplayPosition.h"
@@ -24,29 +22,13 @@ set(Display_SRCS
     "Format.cpp"
 )
 
-add_library(Display STATIC
-    ${Display_SRCS}
+set(Display_DEPS
+    settings
 )
 
-target_link_libraries(Display PUBLIC settings)
-
-set_target_properties (Display PROPERTIES PUBLIC_HEADER "${Display_PUBLIC_H}")
-
-target_include_directories(Display PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/drlojekyll/Display>
-  $<INSTALL_INTERFACE:include/drlojekyll/Display>
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-install(
-  TARGETS Display
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
-  PUBLIC_HEADER
-    DESTINATION "include/drlojekyll/Display"
+DefineLibrary(Display
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Display_SRCS}
+  PUBLIC_HEADERS ${Display_PUBLIC_H}
+  DEPENDENCIES ${Display_DEPS}
 )

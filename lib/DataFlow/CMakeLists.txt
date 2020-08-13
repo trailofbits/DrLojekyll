@@ -6,8 +6,6 @@ set(DataFlow_PUBLIC_H
 )
 
 set(DataFlow_SRCS
-    ${DataFlow_PUBLIC_H}
-
     "Optimize.h"
     "Query.h"
 
@@ -36,36 +34,17 @@ set(DataFlow_SRCS
     "View.cpp"
 )
 
-add_library(DataFlow STATIC
-    ${DataFlow_SRCS}
+set(DataFlow_DEPS
+    settings
+    Display
+    Lex
+    Parse
+    Util
 )
 
-target_link_libraries(DataFlow
-    PUBLIC
-        settings
-        Display
-        Lex
-        Parse
-        Util
-)
-
-set_target_properties (DataFlow PROPERTIES PUBLIC_HEADER "${DataFlow_PUBLIC_H}")
-
-target_include_directories(DataFlow PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow>
-  $<INSTALL_INTERFACE:include/drlojekyll/DataFlow>
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-install(
-  TARGETS DataFlow
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
-  PUBLIC_HEADER
-    DESTINATION "include/drlojekyll/DataFlow"
+DefineLibrary(DataFlow
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${DataFlow_SRCS}
+  PUBLIC_HEADERS ${DataFlow_PUBLIC_H}
+  DEPENDENCIES ${DataFlow_DEPS}
 )

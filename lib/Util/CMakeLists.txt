@@ -17,29 +17,13 @@ set(Util_SRCS
     "Node.cpp"
 )
 
-add_library(Util STATIC
-  ${Util_SRCS}
+set(Util_DEPS
+    settings
 )
 
-target_link_libraries(Util PUBLIC settings)
-
-set_target_properties (Util PROPERTIES PUBLIC_HEADER "${Util_PUBLIC_H}")
-
-target_include_directories(Util PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/drlojekyll/Util>
-  $<INSTALL_INTERFACE:include/drlojekyll/Util>
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-install(
-  TARGETS Util
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
-  PUBLIC_HEADER
-    DESTINATION "include/drlojekyll/Util"
+DefineLibrary(Util
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Util_SRCS}
+  PUBLIC_HEADERS ${Util_PUBLIC_H}
+  DEPENDENCIES ${Util_DEPS}
 )

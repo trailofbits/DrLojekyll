@@ -8,8 +8,6 @@ set(Lex_PUBLIC_H
 )
 
 set(Lex_SRCS
-    ${Lex_PUBLIC_H}
-
     "Token.h"
 
     "Format.cpp"
@@ -18,33 +16,14 @@ set(Lex_SRCS
     "Token.cpp"
 )
 
-add_library(Lex STATIC
-    ${Lex_SRCS}
+set(Lex_DEPS
+    settings
+    Display
 )
 
-target_link_libraries(Lex
-    PUBLIC
-        settings
-        Display
-)
-
-set_target_properties (Lex PROPERTIES PUBLIC_HEADER "${Lex_PUBLIC_H}")
-
-target_include_directories(Lex PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex>
-  $<INSTALL_INTERFACE:include/drlojekyll/Lex>
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-install(
-  TARGETS Lex
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/drlojekyll"
-  ARCHIVE
-    DESTINATION "lib/drlojekyll"
-  PUBLIC_HEADER
-    DESTINATION "include/drlojekyll/Lex"
+DefineLibrary(Lex
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Lex_SRCS}
+  PUBLIC_HEADERS ${Lex_PUBLIC_H}
+  DEPENDENCIES ${Lex_DEPS}
 )

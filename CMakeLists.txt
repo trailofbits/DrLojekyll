@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.14)
 project(DrLojekyll LANGUAGES CXX)
 
 include(cmake/utils.cmake)
+include(cmake/define_library.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
