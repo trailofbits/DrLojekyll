@@ -44,7 +44,11 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_C_COMPILER=gcc-8 \
+            -DCMAKE_CXX_COMPILER=g++-8 \
+            .
           cmake --build build
 
   build2:
@@ -70,7 +74,11 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_C_COMPILER=clang-6.0 \
+            -DCMAKE_CXX_COMPILER=clang++-6.0 \
+            .
           cmake --build build
 
   build3:
@@ -107,7 +115,11 @@ jobs:
       - name: Test Debug Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_C_COMPILER=clang-10 \
+            -DCMAKE_CXX_COMPILER=clang++-10 \
+            .
           cmake --build build
 
 
@@ -120,7 +132,11 @@ jobs:
       - name: Test Release Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_C_COMPILER=clang-10 \
+            -DCMAKE_CXX_COMPILER=clang++-10 \
+            .
           cmake --build build
 
   build4:
@@ -146,7 +162,7 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build -G Xcode -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
           cmake --build build
 
   build5:
@@ -171,5 +187,8 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -G "Visual Studio 16 2019" \
+            .
           cmake --build build
