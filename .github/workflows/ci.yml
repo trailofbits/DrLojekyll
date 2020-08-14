@@ -187,5 +187,6 @@ jobs:
       - name: Test Install
         shell: bash
         run: |
-          cmake -B tests/external_build/build -DCMAKE_PREFIX_PATH=installation -G "Visual Studio 16 2019" tests/external_build
-          cmake --build tests/external_build/build
+          cd tests/external_build
+          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" -G "Visual Studio 16 2019" .
+          cmake --build build
