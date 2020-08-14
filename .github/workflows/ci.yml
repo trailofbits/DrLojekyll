@@ -166,8 +166,6 @@ jobs:
     runs-on: windows-2019
     steps:
       - uses: actions/checkout@v2
-      - name: Debug
-        run: echo "${{ env.INSTALL_DIR }}"
       - name: Configure
         run: >
           cmake
