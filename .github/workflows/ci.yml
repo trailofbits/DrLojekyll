@@ -47,7 +47,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}"
             -DCMAKE_C_COMPILER=gcc-8 \
             -DCMAKE_CXX_COMPILER=g++-8 \
             .
@@ -65,7 +65,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang-6.0
           -DCMAKE_CXX_COMPILER=clang++-6.0
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
         run: cmake --build build -j "$(nproc)"
@@ -75,7 +75,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
             -DCMAKE_C_COMPILER=clang-6.0 \
             -DCMAKE_CXX_COMPILER=clang++-6.0 \
             .
@@ -101,7 +101,7 @@ jobs:
           -DENABLE_SANITIZERS=1
           -DENABLE_LIBFUZZER=1
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
 
       # We ought to be able to build multiple configurations without them
@@ -114,7 +114,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
             -DCMAKE_C_COMPILER=clang-10 \
             -DCMAKE_CXX_COMPILER=clang++-10 \
             .
@@ -131,7 +131,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
             -DCMAKE_C_COMPILER=clang-10 \
             -DCMAKE_CXX_COMPILER=clang++-10 \
             .
@@ -149,7 +149,7 @@ jobs:
           -G Xcode
           -DENABLE_SANITIZERS=1
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
@@ -158,7 +158,7 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -G Xcode -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" .
+          cmake -B build -G Xcode -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" .
           cmake --build build
 
   build5:
@@ -167,26 +167,21 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Debug
-        shell: bash
-        run: echo "${INSTALL_DIR}"
+        run: echo "${{ env.INSTALL_DIR }}"
       - name: Configure
-        shell: bash
         run: >
           cmake
           -B build
           -G "Visual Studio 16 2019"
           -DWARNINGS_AS_ERRORS=0
-          -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
-        shell: bash
         run: cmake --build build --config Debug -j
       - name: Install
-        shell: bash
         run: cmake --build build --target install
       - name: Test Install
-        shell: bash
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" -G "Visual Studio 16 2019" .
+          cmake -B build -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" -G "Visual Studio 16 2019" .
           cmake --build build
