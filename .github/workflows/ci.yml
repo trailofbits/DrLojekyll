@@ -47,7 +47,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}"
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
             -DCMAKE_C_COMPILER=gcc-8 \
             -DCMAKE_CXX_COMPILER=g++-8 \
             .
