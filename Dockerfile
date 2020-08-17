@@ -48,7 +48,7 @@ RUN cmake -G Ninja \
       -DWARNINGS_AS_ERRORS=1 \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       . && \
-    cmake --build build -j "$(nproc)" && \
+    cmake --build build && \
     cmake --build build --target install
 
 
@@ -60,12 +60,12 @@ ENV DRLOG_INSTALL_DIR="${INSTALL_DIR}"
 WORKDIR /drlog/local
 COPY scripts/docker-entrypoint.sh /drlog/
 COPY --from=build "${INSTALL_DIR}" "${INSTALL_DIR}"
-ENV PATH="${INSTALL_DIR}/bin":${PATH}
+ENV PATH="${INSTALL_DIR}/bin:${PATH}"
 ENTRYPOINT ["/drlog/docker-entrypoint.sh"]
 
 
 # Test library installation copying
-# Needs to be "FROM deps" in order to actually build with gcc
+# Needs to be "FROM deps" in order to actually build the test project with gcc
 FROM deps as test_lib
 ARG INSTALL_DIR
 
