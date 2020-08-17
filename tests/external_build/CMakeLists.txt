@@ -6,7 +6,9 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(DrLojekyll CONFIG REQUIRED)
 
-add_executable(ext_test ../../Main.cpp)
+# FIXME(bjl): swap out this program for a test file that lives here
+#             this will be a problem some day
+add_executable(ext_test ../../bin/drlojekyll/Main.cpp)
 
 # add library
 target_link_libraries(ext_test PRIVATE
