@@ -130,7 +130,6 @@ jobs:
             .
           cmake --build build
 
-
       # Next, build RelWithDebInfo, using the indirect `cmake --build`
       # invocation of ninja.
       - name: Build Release

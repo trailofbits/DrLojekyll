@@ -125,25 +125,25 @@ static int HelpMessage(char *argv[]) {
   return EXIT_SUCCESS;
 }
 
-static int VersionMessage() {
+static int VersionMessage(void) {
   std::stringstream version;
 
-  auto vs = hyde::Version::GetVersionString();
+  auto vs = hyde::version::GetVersionString();
   if (0 == vs.size()) {
     vs = "unknown";
   }
   version << "Dr. Lojekyll compiler: " << vs << "\n";
-  if (!hyde::Version::HasVersionData()) {
+  if (!hyde::version::HasVersionData()) {
     version << "No extended version information found!\n";
   } else {
-    version << "Commit Hash: " << hyde::Version::GetCommitHash() << "\n";
-    version << "Commit Date: " << hyde::Version::GetCommitDate() << "\n";
-    version << "Last commit by: " << hyde::Version::GetAuthorName() << " ["
-            << hyde::Version::GetAuthorEmail() << "]\n";
-    version << "Commit Subject: [" << hyde::Version::GetCommitSubject()
+    version << "Commit Hash: " << hyde::version::GetCommitHash() << "\n";
+    version << "Commit Date: " << hyde::version::GetCommitDate() << "\n";
+    version << "Last commit by: " << hyde::version::GetAuthorName() << " ["
+            << hyde::version::GetAuthorEmail() << "]\n";
+    version << "Commit Subject: [" << hyde::version::GetCommitSubject()
             << "]\n";
     version << "\n";
-    if (hyde::Version::HasUncommittedChanges()) {
+    if (hyde::version::HasUncommittedChanges()) {
       version << "Uncommitted changes were present during build.\n";
     } else {
       version << "All changes were committed prior to building.\n";
