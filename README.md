@@ -1,3 +1,5 @@
+![Continuous Integration](https://github.com/trailofbits/DrLojekyll/workflows/Continuous%20Integration/badge.svg)
+
 # Dr. Lojekyll
 
 Dr. Lojekyll, pronounced Dr. Logical, is a Datalog compiler and execution
@@ -21,7 +23,7 @@ a kind of broadcast of "new facts of interst."
 The key idea is that a user of a Dr. Lojekyll-compiled program `P` will itself be a separate
 program -- likely a server that receives messages published by `P` -- that does work,
 possibly querying `P` (like a database) and then publishing messages back to `P` for `P`
-to receive.  
+to receive.
 
 ### Database
 A Dr. Lojekyll-compiled program is a kind of specialized database. Messages received may trigger
@@ -39,7 +41,7 @@ access to incoming messages, current database state, and access to arbitrary log
 C++ functions.
 
 In the case of Redis, clients of a Redis server must themselves listen to messages and query Redis
-to implement the logic that publishes messages or puts database values that can then influence other 
+to implement the logic that publishes messages or puts database values that can then influence other
 clients.
 
 A good example of where the logic gets tricky for clients to implement consistently is when a message
