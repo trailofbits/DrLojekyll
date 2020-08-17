@@ -198,6 +198,15 @@ jobs:
       - name: Test
         run: cd build && ctest --output-on-failure
 
+      - name: Install
+        run: cmake --build build --target install
+
+      - name: Test Install
+        run: |
+          cd tests/external_build
+          cmake -B build -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" -G "Visual Studio 16 2019" .
+          cmake --build build
+
   build6:
     name: Ubuntu 18.04 / Clang 8 / Release / Tests Disabled
     runs-on: ubuntu-18.04
@@ -214,12 +223,3 @@ jobs:
           .
       - name: Build
         run: make -C build -j "$(nproc)"
-
-      - name: Install
-        run: cmake --build build --target install
-
-      - name: Test Install
-        run: |
-          cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" -G "Visual Studio 16 2019" .
-          cmake --build build

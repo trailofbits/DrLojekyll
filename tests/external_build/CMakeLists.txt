@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(DrLojekyll CONFIG REQUIRED)
 
-add_executable(ext_test ../../Main.cpp)
+add_executable(ext_test ${PROJECT_SOURCE_DIR}/Main.cpp)
 
 # add library
 target_link_libraries(ext_test PRIVATE
