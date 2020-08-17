@@ -11,13 +11,13 @@ target_link_libraries(unittests PRIVATE
 
     settings
 
-    DrLojekyll::Util
-    DrLojekyll::Display
-    DrLojekyll::Lex
-    DrLojekyll::Parse
-    DrLojekyll::DataFlow
-    DrLojekyll::CodeGen
-    DrLojekyll::Version
+    Util
+    Display
+    Lex
+    Parse
+    DataFlow
+    CodeGen
+    Version
 )
 
 # Dynamically add all gtest tests from the `unittests` binary as CTest test

@@ -142,13 +142,13 @@ add_executable(drlojekyll
     bin/drlojekyll/Main.cpp)
 target_link_libraries(drlojekyll PRIVATE
     settings
-    DrLojekyll::Util
-    DrLojekyll::Display
-    DrLojekyll::Lex
-    DrLojekyll::Parse
-    DrLojekyll::DataFlow
-    DrLojekyll::CodeGen
-    DrLojekyll::Version
+    Util
+    Display
+    Lex
+    Parse
+    DataFlow
+    CodeGen
+    Version
 )
 install(TARGETS drlojekyll RUNTIME DESTINATION "bin")
 
@@ -159,11 +159,11 @@ if(ENABLE_LIBFUZZER)
     target_link_libraries(fuzzer PRIVATE
         settings
         settings-fuzz-target
-        DrLojekyll::Util
-        DrLojekyll::Display
-        DrLojekyll::Lex
-        DrLojekyll::Parse
-        DrLojekyll::Version
+        Util
+        Display
+        Lex
+        Parse
+        Version
     )
 endif()
 
