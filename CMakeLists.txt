@@ -83,6 +83,33 @@ endif()
 # targets ------------------------------------
 add_subdirectory(lib)
 
+# Export the package for use from the build-tree
+# (this registers the build-tree with a global CMake-registry)
+export(PACKAGE ${PROJECT_NAME})
+
+include(CMakePackageConfigHelpers)
+# Create the ${PROJECT_NAME}Config.cmake
+configure_package_config_file(${PROJECT_NAME}Config.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+    INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+# Install the ${PROJECT_NAME}Config.cmake
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+install(DIRECTORY
+  "${PROJECT_SOURCE_DIR}/cmake/modules"
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+# Install the export set for use with the install-tree
+install(EXPORT ${PROJECT_NAME}Targets
+        DESTINATION lib/cmake/${PROJECT_NAME}
+        NAMESPACE "${PROJECT_NAME}::"
+)
+
 add_executable(test
     Main.cpp)
 target_link_libraries(test PRIVATE
@@ -93,7 +120,7 @@ target_link_libraries(test PRIVATE
     Parse
     DataFlow
     CodeGen
-    DrLojekyllVersion
+    Version
     )
 install(TARGETS test RUNTIME DESTINATION "bin")
 
@@ -107,6 +134,6 @@ if(ENABLE_LIBFUZZER)
         Display
         Lex
         Parse
-        DrLojekyllVersion
+        Version
     )
 endif()

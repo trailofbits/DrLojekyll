@@ -6,6 +6,8 @@ on:
       - master
   pull_request:
 
+env:
+  INSTALL_DIR: "${{ github.workspace }}/installation"
 
 # A full build matrix would vary at least the following:
 #
@@ -33,12 +35,23 @@ jobs:
           -DCMAKE_C_COMPILER=gcc-8
           -DCMAKE_CXX_COMPILER=g++-8
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
         run: make -C build -j "$(nproc)"
       - name: Install
-        run: cmake --build build --target install
+        run: |
+          cmake --build build --target install
+          rm -rf build
+      - name: Test Install
+        run: |
+          cd tests/external_build
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
+            -DCMAKE_C_COMPILER=gcc-8 \
+            -DCMAKE_CXX_COMPILER=g++-8 \
+            .
+          cmake --build build
 
   build2:
     name: Ubuntu 18.04 / Clang 6.0 / Release
@@ -52,12 +65,21 @@ jobs:
           -DCMAKE_C_COMPILER=clang-6.0
           -DCMAKE_CXX_COMPILER=clang++-6.0
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
         run: cmake --build build -j "$(nproc)"
       - name: Install
         run: cmake --build build --target install
+      - name: Test Install
+        run: |
+          cd tests/external_build
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
+            -DCMAKE_C_COMPILER=clang-6.0 \
+            -DCMAKE_CXX_COMPILER=clang++-6.0 \
+            .
+          cmake --build build
 
   build3:
     name: Ubuntu 20.04 / Clang 10 / Multi-Config / Fuzz / Sanitizers
@@ -79,7 +101,7 @@ jobs:
           -DENABLE_SANITIZERS=1
           -DENABLE_LIBFUZZER=1
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
 
       # We ought to be able to build multiple configurations without them
@@ -88,6 +110,16 @@ jobs:
         run: ninja -C build -f build-Debug.ninja
       - name: Install Debug
         run: cmake --build build --target install
+      - name: Test Debug Install
+        run: |
+          cd tests/external_build
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
+            -DCMAKE_C_COMPILER=clang-10 \
+            -DCMAKE_CXX_COMPILER=clang++-10 \
+            .
+          cmake --build build
+
 
       # Next, build RelWithDebInfo, using the indirect `cmake --build`
       # invocation of ninja.
@@ -95,6 +127,15 @@ jobs:
         run: cmake --build build --config RelWithDebInfo -j
       - name: Install Release
         run: cmake --build build --target install
+      - name: Test Release Install
+        run: |
+          cd tests/external_build
+          cmake -B build \
+            -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" \
+            -DCMAKE_C_COMPILER=clang-10 \
+            -DCMAKE_CXX_COMPILER=clang++-10 \
+            .
+          cmake --build build
 
   build4:
     name: macOS 10.15 / Debug / Sanitizers
@@ -108,12 +149,17 @@ jobs:
           -G Xcode
           -DENABLE_SANITIZERS=1
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
       - name: Install
         run: cmake --build build --target install
+      - name: Test Install
+        run: |
+          cd tests/external_build
+          cmake -B build -G Xcode -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" .
+          cmake --build build
 
   build5:
     name: Windows Server 2019 / Debug
@@ -126,9 +172,14 @@ jobs:
           -B build
           -G "Visual Studio 16 2019"
           -DWARNINGS_AS_ERRORS=0
-          -DCMAKE_INSTALL_PREFIX=$(pwd)/build/install
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}"
           .
       - name: Build
         run: cmake --build build --config Debug -j
       - name: Install
         run: cmake --build build --target install
+      - name: Test Install
+        run: |
+          cd tests/external_build
+          cmake -B build -DCMAKE_PREFIX_PATH="${{ env.INSTALL_DIR }}" -G "Visual Studio 16 2019" .
+          cmake --build build
