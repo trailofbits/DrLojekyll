@@ -6,6 +6,7 @@
 
 namespace hyde {
 
+/// Rotate `val` to the right `rot` positions.
 inline static uint64_t RotateRight64(uint64_t val, unsigned rot) {
 #ifdef __has_builtin
 #  if !__has_builtin(__builtin_rotateright64)
@@ -18,6 +19,7 @@ inline static uint64_t RotateRight64(uint64_t val, unsigned rot) {
 #endif
 
 #if HYDE_NEEDS_ROR64
+  if (!rot) return val;
   return (val >> rot) | (val << (64u - (rot % 64u)));
 #else
   return __builtin_rotateright64(val, rot);
