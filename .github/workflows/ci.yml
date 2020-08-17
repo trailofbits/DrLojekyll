@@ -192,8 +192,8 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t trailofbits/drlojekyll --target=dist .
-          # Test here for layer caching
-          docker build -t trailofbits/drlojekyll --target=test_lib .
+          # Test library copy/build here to take advantage of Docker layer
+          # caching
+          docker build -t drlog_lib_test --target=test_lib .
       - name: Test Docker Executable
         run: prog=join_attributes; docker run --rm -v $(pwd):/drlog/local -w /drlog/local trailofbits/drlojekyll -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
-      - name: Test Docker Library
