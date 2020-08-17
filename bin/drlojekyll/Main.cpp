@@ -9,6 +9,7 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
+#include <drlojekyll/Version/Version.h>
 
 #include <cassert>
 #include <cstdlib>
@@ -102,6 +103,7 @@ static int HelpMessage(char *argv[]) {
       << "USAGE: " << argv[0] << " [options] file..." << std::endl
       << std::endl
       << "OPTIONS:" << std::endl
+      << "  -version              Show version number and exit." << std::endl
       << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++."
       << std::endl
       << "  -amalgamation <PATH>  Datalog output file representing all input and transitively."
@@ -120,6 +122,35 @@ static int HelpMessage(char *argv[]) {
       << std::endl
       << std::endl;
 
+  return EXIT_SUCCESS;
+}
+
+static int VersionMessage() {
+  std::stringstream version;
+
+  auto vs = hyde::Version::GetVersionString();
+  if (0 == vs.size()) {
+    vs = "unknown";
+  }
+  version << "Dr. Lojekyll compiler: " << vs << "\n";
+  if (!hyde::Version::HasVersionData()) {
+    version << "No extended version information found!\n";
+  } else {
+    version << "Commit Hash: " << hyde::Version::GetCommitHash() << "\n";
+    version << "Commit Date: " << hyde::Version::GetCommitDate() << "\n";
+    version << "Last commit by: " << hyde::Version::GetAuthorName() << " ["
+            << hyde::Version::GetAuthorEmail() << "]\n";
+    version << "Commit Subject: [" << hyde::Version::GetCommitSubject()
+            << "]\n";
+    version << "\n";
+    if (hyde::Version::HasUncommittedChanges()) {
+      version << "Uncommitted changes were present during build.\n";
+    } else {
+      version << "All changes were committed prior to building.\n";
+    }
+  }
+
+  std::cout << version.str();
   return EXIT_SUCCESS;
 }
 
@@ -250,6 +281,11 @@ extern "C" int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
                !strcmp(argv[i], "-h")) {
       return hyde::HelpMessage(argv);
+
+    // Version Message
+    } else if (!strcmp(argv[i], "--version") || !strcmp(argv[i], "-version") ||
+               !strcmp(argv[i], "-v")) {
+      return hyde::VersionMessage();
 
     // Does this look like a command-line option?
     } else if (strstr(argv[i], "--") == argv[i] ||

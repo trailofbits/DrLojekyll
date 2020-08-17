@@ -1,6 +1,6 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-add_library(parse STATIC
+set(Parse_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Error.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/ErrorLog.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Format.h"
@@ -8,7 +8,9 @@ add_library(parse STATIC
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parse.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parser.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Type.h"
+)
 
+set(Parse_SRCS
     "Error.h"
     "Parser.h"
     "Parse.h"
@@ -32,10 +34,23 @@ add_library(parse STATIC
     "Variable.cpp"
 )
 
-target_link_libraries(parse
-    PUBLIC
-        settings
-        display
-        lex
-        util
+set(Parse_PRIV_DEPS
+    settings
+)
+
+find_package(Filesystem REQUIRED)
+
+set(Parse_DEPS
+    Display
+    Lex
+    Util
+    std::filesystem
+)
+
+DefineLibrary(Parse
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Parse_SRCS}
+  PUBLIC_HEADERS ${Parse_PUBLIC_H}
+  DEPENDENCIES ${Parse_DEPS}
+  PRIVATE_DEPS ${Parse_PRIV_DEPS}
 )
