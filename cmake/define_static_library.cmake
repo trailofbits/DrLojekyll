@@ -1,4 +1,4 @@
-function(DefineLibrary libname)
+function(define_static_library libname)
     set(options)
     set(oneValueArgs CURDIR)
     set(multiValueArgs SOURCES PUBLIC_HEADERS DEPENDENCIES PRIVATE_DEPS)
@@ -7,8 +7,6 @@ function(DefineLibrary libname)
         "${oneValueArgs}"
         "${multiValueArgs}"
         ${ARGN})
-
-    string(TOLOWER ${PROJECT_NAME} lower_project_name)
 
     # Create our library
     add_library(${libname} STATIC
@@ -35,6 +33,7 @@ function(DefineLibrary libname)
       $<INSTALL_INTERFACE:include>
       PRIVATE ${CURLIB_CURDIR}
     )
+    string(TOLOWER ${PROJECT_NAME} lower_project_name)
     install(
       TARGETS ${libname}
       EXPORT "${PROJECT_NAME}Targets"

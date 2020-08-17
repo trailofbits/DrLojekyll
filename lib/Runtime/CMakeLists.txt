@@ -15,7 +15,7 @@ set(Runtime_PRIV_DEPS
 set(Runtime_DEPS
 )
 
-DefineLibrary(Runtime
+define_static_library(Runtime
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Runtime_SRCS}
   PUBLIC_HEADERS ${Runtime_PUBLIC_H}

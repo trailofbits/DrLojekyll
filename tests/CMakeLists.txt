@@ -10,13 +10,15 @@ target_link_libraries(unittests PRIVATE
     rapidcheck_gtest
 
     settings
-    util
-    display
-    lex
-    parse
-    dataflow
-    codegen
-    )
+
+    DrLojekyll::Util
+    DrLojekyll::Display
+    DrLojekyll::Lex
+    DrLojekyll::Parse
+    DrLojekyll::DataFlow
+    DrLojekyll::CodeGen
+    DrLojekyll::Version
+)
 
 # Dynamically add all gtest tests from the `unittests` binary as CTest test
 # cases:

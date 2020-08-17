@@ -45,7 +45,7 @@ set(DataFlow_DEPS
     Util
 )
 
-DefineLibrary(DataFlow
+define_static_library(DataFlow
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${DataFlow_SRCS}
   PUBLIC_HEADERS ${DataFlow_PUBLIC_H}

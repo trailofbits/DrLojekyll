@@ -47,7 +47,7 @@ set(Parse_DEPS
     std::filesystem
 )
 
-DefineLibrary(Parse
+define_static_library(Parse
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Parse_SRCS}
   PUBLIC_HEADERS ${Parse_PUBLIC_H}

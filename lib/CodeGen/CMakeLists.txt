@@ -20,7 +20,7 @@ set(CodeGen_DEPS
     Util
 )
 
-DefineLibrary(CodeGen
+define_static_library(CodeGen
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${CodeGen_SRCS}
   PUBLIC_HEADERS ${CodeGen_PUBLIC_H}

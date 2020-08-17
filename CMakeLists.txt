@@ -5,8 +5,8 @@ project(DrLojekyll LANGUAGES CXX)
 
 enable_testing()
 
-include(cmake/utils.cmake)
-include(cmake/define_library.cmake)
+include(cmake/add_sanitizer_settings.cmake)
+include(cmake/define_static_library.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
@@ -134,37 +134,40 @@ endif()
 # --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
+# Dr. Lojekyll Libraries
 add_subdirectory(lib)
 
+# `drlojekyll`
 add_executable(drlojekyll
     bin/drlojekyll/Main.cpp)
 target_link_libraries(drlojekyll PRIVATE
     settings
-    Util
-    Display
-    Lex
-    Parse
-    DataFlow
-    CodeGen
-    Version
-    )
-
+    DrLojekyll::Util
+    DrLojekyll::Display
+    DrLojekyll::Lex
+    DrLojekyll::Parse
+    DrLojekyll::DataFlow
+    DrLojekyll::CodeGen
+    DrLojekyll::Version
+)
 install(TARGETS drlojekyll RUNTIME DESTINATION "bin")
 
+# `fuzzer`
 if(ENABLE_LIBFUZZER)
     add_executable(fuzzer
         fuzz/Fuzzer.cpp)
     target_link_libraries(fuzzer PRIVATE
         settings
         settings-fuzz-target
-        Util
-        Display
-        Lex
-        Parse
-        Version
+        DrLojekyll::Util
+        DrLojekyll::Display
+        DrLojekyll::Lex
+        DrLojekyll::Parse
+        DrLojekyll::Version
     )
 endif()
 
+# tests
 if(ENABLE_TESTS)
   add_subdirectory(tests)
 endif()

@@ -29,10 +29,10 @@ set(Display_PRIV_DEPS
 set(Display_DEPS
 )
 
-DefineLibrary(Display
-  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
-  SOURCES ${Display_SRCS}
-  PUBLIC_HEADERS ${Display_PUBLIC_H}
-  DEPENDENCIES ${Display_DEPS}
-  PRIVATE_DEPS ${Display_PRIV_DEPS}
+define_static_library(Display
+    CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+    SOURCES ${Display_SRCS}
+    PUBLIC_HEADERS ${Display_PUBLIC_H}
+    DEPENDENCIES ${Display_DEPS}
+    PRIVATE_DEPS ${Display_PRIV_DEPS}
 )
