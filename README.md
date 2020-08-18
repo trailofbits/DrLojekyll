@@ -13,21 +13,19 @@ to operating on tuples.
 Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a
 C++17-compliant toolchain.
 
-### Developer debug build
-Developers may want to build like the following:
-
+**Developer debug build on Linux**
 ```bash
-$ cmake -B build -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 -DCMAKE_INSTALL_PREFIX="$PWD"/install
+$ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 -DCMAKE_INSTALL_PREFIX="$PWD"/install
 $ cmake --build build
 $ cmake --install build
 ```
 
-### More examples
+**More examples**
 See the [continuous integration](.github/workflows/ci.yml) for
 additional concrete examples of how this software is built.
 
-### Listing available CMake options
-There are numerous CMake options that affect the build. One way to list them:
+**Listing available CMake options**
+One way to list the numerous available CMake options:
 ```bash
 $ cmake -B build -LAH
 ```
