@@ -42,7 +42,7 @@ COPY . ./
 
 RUN cmake -G Ninja \
       -B build \
-      -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_C_COMPILER=gcc-8 \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
@@ -73,7 +73,7 @@ COPY --from=dist "${INSTALL_DIR}" "${INSTALL_DIR}"
 RUN cd tests/external_build && \
     cmake \
       -B build \
-      -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_C_COMPILER=gcc-8 \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
