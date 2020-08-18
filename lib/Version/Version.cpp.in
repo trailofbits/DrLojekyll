@@ -50,7 +50,7 @@ namespace version {
     return "@GIT_COMMIT_SUBJECT@";
   }
   std::string GetCommitBody(void) {
-    return R"(@GIT_COMMIT_BODY@)";
+    return @GIT_COMMIT_BODY@;
   }
   std::string GetVersionString(void) {
     return "@VERSION_STRING@";
