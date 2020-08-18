@@ -24,7 +24,7 @@ set(Util_PRIV_DEPS
 set(Util_DEPS
 )
 
-DefineLibrary(Util
+define_static_library(Util
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Util_SRCS}
   PUBLIC_HEADERS ${Util_PUBLIC_H}

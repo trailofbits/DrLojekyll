@@ -3,17 +3,21 @@
 cmake_minimum_required(VERSION 3.14)
 project(DrLojekyll LANGUAGES CXX)
 
-include(cmake/utils.cmake)
-include(cmake/define_library.cmake)
+enable_testing()
+
+include(cmake/add_sanitizer_settings.cmake)
+include(cmake/define_static_library.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
 # --------------------------------------------
 option(ENABLE_LIBFUZZER "Build libFuzzer fuzz targets" OFF)
 option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
+option(ENABLE_TESTS "Build test suite" ON)
 option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -39,6 +43,35 @@ endif()
 # --------------------------------------------
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
+# --------------------------------------------
+# CMake installation stuff -------------------
+# --------------------------------------------
+# Export the package for use from the build-tree
+# (this registers the build-tree with a global CMake-registry)
+export(PACKAGE ${PROJECT_NAME})
+
+include(CMakePackageConfigHelpers)
+# Create the ${PROJECT_NAME}Config.cmake
+configure_package_config_file(${PROJECT_NAME}Config.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+    INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+# Install the ${PROJECT_NAME}Config.cmake
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+install(DIRECTORY
+  "${PROJECT_SOURCE_DIR}/cmake/modules"
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+# Install the export set for use with the install-tree
+install(EXPORT ${PROJECT_NAME}Targets
+        DESTINATION lib/cmake/${PROJECT_NAME}
+        NAMESPACE "${PROJECT_NAME}::"
+)
 
 # --------------------------------------------
 # `settings` for global build options --------
@@ -77,42 +110,37 @@ if(ENABLE_LIBFUZZER)
             -g
     )
 
+    # make a `settings-fuzz-target` library that enables `-fsanitize=fuzzer`
     add_sanitizer_settings(settings-fuzz-target SANITIZERS fuzzer)
 endif()
 
+# --------------------------------------------
+# vendored dependencies ----------------------
+# --------------------------------------------
+if(ENABLE_TESTS)
+  # Google Test --------------------------------
+  #
+  # Cribbed from https://github.com/google/googletest/tree/master/googletest
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  add_subdirectory(vendor/googletest-release-1.10.0
+      EXCLUDE_FROM_ALL)
+
+  # rapidcheck ---------------------------------
+  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
+  add_subdirectory(vendor/rapidcheck
+      EXCLUDE_FROM_ALL)
+endif()
+
+# --------------------------------------------
 # targets ------------------------------------
+# --------------------------------------------
+# Dr. Lojekyll Libraries
 add_subdirectory(lib)
 
-# Export the package for use from the build-tree
-# (this registers the build-tree with a global CMake-registry)
-export(PACKAGE ${PROJECT_NAME})
-
-include(CMakePackageConfigHelpers)
-# Create the ${PROJECT_NAME}Config.cmake
-configure_package_config_file(${PROJECT_NAME}Config.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-    INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
-)
-
-# Install the ${PROJECT_NAME}Config.cmake
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-  DESTINATION lib/cmake/${PROJECT_NAME}
-)
-install(DIRECTORY
-  "${PROJECT_SOURCE_DIR}/cmake/modules"
-  DESTINATION lib/cmake/${PROJECT_NAME}
-)
-
-# Install the export set for use with the install-tree
-install(EXPORT ${PROJECT_NAME}Targets
-        DESTINATION lib/cmake/${PROJECT_NAME}
-        NAMESPACE "${PROJECT_NAME}::"
-)
-
-add_executable(test
-    Main.cpp)
-target_link_libraries(test PRIVATE
+# `drlojekyll`
+add_executable(drlojekyll
+    bin/drlojekyll/Main.cpp)
+target_link_libraries(drlojekyll PRIVATE
     settings
     Util
     Display
@@ -121,9 +149,10 @@ target_link_libraries(test PRIVATE
     DataFlow
     CodeGen
     Version
-    )
-install(TARGETS test RUNTIME DESTINATION "bin")
+)
+install(TARGETS drlojekyll RUNTIME DESTINATION "bin")
 
+# `fuzzer`
 if(ENABLE_LIBFUZZER)
     add_executable(fuzzer
         fuzz/Fuzzer.cpp)
@@ -136,4 +165,9 @@ if(ENABLE_LIBFUZZER)
         Parse
         Version
     )
+endif()
+
+# tests
+if(ENABLE_TESTS)
+  add_subdirectory(tests)
 endif()

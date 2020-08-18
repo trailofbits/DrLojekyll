@@ -24,7 +24,7 @@ set(Lex_DEPS
     Display
 )
 
-DefineLibrary(Lex
+define_static_library(Lex
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Lex_SRCS}
   PUBLIC_HEADERS ${Lex_PUBLIC_H}

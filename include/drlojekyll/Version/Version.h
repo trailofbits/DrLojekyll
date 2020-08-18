@@ -29,17 +29,17 @@
 #include <string>
 
 namespace hyde {
-namespace Version {
+namespace version {
 
-bool HasVersionData();
-bool HasUncommittedChanges();
-std::string GetAuthorName();
-std::string GetAuthorEmail();
-std::string GetCommitHash();
-std::string GetCommitDate();
-std::string GetCommitSubject();
-std::string GetCommitBody();
-std::string GetVersionString();
+bool HasVersionData(void);
+bool HasUncommittedChanges(void);
+std::string GetAuthorName(void);
+std::string GetAuthorEmail(void);
+std::string GetCommitHash(void);
+std::string GetCommitDate(void);
+std::string GetCommitSubject(void);
+std::string GetCommitBody(void);
+std::string GetVersionString(void);
 
-}  // namespace Version
+}  // namespace version
 }  // namespace hyde
