@@ -235,4 +235,4 @@ jobs:
           # caching
           docker build -t drlog_lib_test --target=test_lib .
       - name: Test Docker Executable
-        run: prog=join_attributes; docker run --rm -v $(pwd):/drlog/local -w /drlog/local trailofbits/drlojekyll -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
+        run: prog=join_attributes; docker run --rm -v "$(pwd):/drlog/local" -w /drlog/local trailofbits/drlojekyll -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
