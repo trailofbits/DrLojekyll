@@ -8,6 +8,7 @@ on:
 
 env:
   INSTALL_DIR: "${{ github.workspace }}/installation"
+  DOCKER_TAG: "docker.pkg.github.com/trailofbits/drlojekyll/drlojekyll:latest"
 
 # A full build matrix would vary at least the following:
 #
@@ -230,9 +231,16 @@ jobs:
       - uses: actions/checkout@v2
       - name: Build Docker image
         run: |
-          docker build -t trailofbits/drlojekyll --target=dist .
+          docker build -t "${{ env.DOCKER_TAG }}" --target=dist .
           # Test library copy/build here to take advantage of Docker layer
           # caching
           docker build -t drlog_lib_test --target=test_lib .
       - name: Test Docker Executable
-        run: prog=join_attributes; docker run --rm -v "$(pwd):/drlog/local" -w /drlog/local trailofbits/drlojekyll -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
+        run: prog=join_attributes; docker run --rm -v "$(pwd):/drlog/local" -w /drlog/local "${{ env.DOCKER_TAG }}" -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
+      - name: Push Docker image
+        run: |
+          docker login docker.pkg.github.com -u "${GH_USER}" -p "${GH_TOKEN}"
+          docker push "${{ env.DOCKER_TAG }}"
+        env:
+          GH_USER: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
