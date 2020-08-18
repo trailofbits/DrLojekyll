@@ -55,13 +55,11 @@ RUN cmake -G Ninja \
 # Minimal distribution image with only DrLojekyll and run-time dependencies
 FROM base as dist
 ARG INSTALL_DIR
-ENV DRLOG_INSTALL_DIR="${INSTALL_DIR}"
 
 WORKDIR /drlog/local
-COPY scripts/docker-entrypoint.sh /drlog/
 COPY --from=build "${INSTALL_DIR}" "${INSTALL_DIR}"
 ENV PATH="${INSTALL_DIR}/bin:${PATH}"
-ENTRYPOINT ["/drlog/docker-entrypoint.sh"]
+ENTRYPOINT ["drlojekyll"]
 
 
 # Test library installation copying
