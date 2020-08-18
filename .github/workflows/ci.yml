@@ -238,6 +238,7 @@ jobs:
       - name: Test Docker Executable
         run: prog=join_attributes; docker run --rm -v "$(pwd):/drlog/local" -w /drlog/local "${{ env.DOCKER_TAG }}" -dot "${prog}.dot" -amalgamation "${prog}.amal" -o "${prog}.out" "./data/examples/${prog}.dr"
       - name: Push Docker image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           docker login docker.pkg.github.com -u "${GH_USER}" -p "${GH_TOKEN}"
           docker push "${{ env.DOCKER_TAG }}"
