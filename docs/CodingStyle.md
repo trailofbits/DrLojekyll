@@ -21,13 +21,9 @@
   * [Using namespaces](#using-namespaces)
 - [C preprocessor use](#c-preprocessor-use)
 
-## Naming scheme
+## Naming conventions
 
-The following code sample shows various naming conventions used. Almost all symbols that would
-traditionally be visible across function or module boundaries follow CapitalCase. Data (global or
-thread-local variables) are prefixed with `g` for global, mutable variables, `k` for constant data that will
-not change, and `t` for thread-local, mutable variables. It is permissible to use `g` for thread-local
-variables.
+The following code sample shows various naming conventions used:
 
 ```c++
 int gGlobalVar;
@@ -56,6 +52,15 @@ enum EnumName {
   kEnumeratorName
 };
 ```
+
+Guidelines:
+- Almost all symbols that would traditionally be visible across function
+  or module boundaries follow CapitalCase.
+- C++ namespaces are lower-case, using underscores for word separation.
+- Data (global or thread-local variables) are prefixed with `g` for
+  global, mutable variables, `k` for constant data that will not change,
+  and `t` for thread-local, mutable variables. It is permissible to use
+  `g` for thread-local variables.
 
 ## Comments and comment placement
 
@@ -241,8 +246,9 @@ switch (...) {
 
 ### Goto labels
 
-You may use `goto` statements, although please use them sparingly. When using a `goto` statement,
-indent the label in line with the nearest enclosing `}`. For example:
+You may use `goto` statements, although please use them judiciously.
+When using a `goto` statement, indent the label in line with the nearest
+enclosing `}`. For example:
 
 ```void Foo(void) {
   goto bar;
