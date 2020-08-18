@@ -8,7 +8,31 @@ Brass's "push method" of pipelined bottom-up Datalog execution. It operates
 somewhere between full materialization and vectorized execution with respect
 to operating on tuples.
 
-## What is it, though?
+## Quick Start
+
+Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a
+C++17-compliant toolchain.
+
+**Developer debug build on Linux:**
+```bash
+$ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 -DCMAKE_INSTALL_PREFIX="$PWD"/install
+$ cmake --build build
+$ cmake --install build
+```
+
+See the [continuous integration](.github/workflows/ci.yml) for
+additional concrete examples of how this software is built.
+
+**Listing available CMake options:**
+```bash
+$ cmake -B build -LAH
+```
+
+The Dr. Lojekyll-specific options are mostly found in the top-level
+[CMakeLists.txt](CMakeLists.txt).
+
+
+## Okay, so what is Dr. Lojekyll, anyway?
 
 The right way to think of a compiled Dr. Lojekyll program is as a combination of
 an orchestration engine and database system.
