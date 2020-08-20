@@ -62,6 +62,7 @@ jobs:
           -DENABLE_SANITIZERS=1
           -DENABLE_LIBFUZZER=1
           -DWARNINGS_AS_ERRORS=1
+          -DENABLE_TESTS=0
           .
 
       - name: Build
