@@ -1,0 +1,70 @@
+name: Fuzz Testing
+
+on:
+  # Run on master every day at 10:15
+  schedule:
+    branches:
+      - master
+    cron: "15 10 * * *"
+
+  # Run when manually triggered
+  # See https://github.blog/changelog/2020-07-06-github-actions-manual-triggers-with-workflow_dispatch/
+  workflow_dispatch:
+
+
+jobs:
+  fuzz1:
+    name: Ubuntu 20.04 / Clang 10 / Release / Sanitizers
+    runs-on: ubuntu-18.04
+
+    env:
+      FUZZ_RUN_DIR: "${{ github.workspace }}/fuzzer-run"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo apt-get install ninja-build clang-10
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang-10
+          -DCMAKE_CXX_COMPILER=clang++-10
+          -DENABLE_SANITIZERS=1
+          -DENABLE_LIBFUZZER=1
+          -DWARNINGS_AS_ERRORS=1
+          .
+
+      - name: Build
+        run: make -C build -j "$(nproc)"
+
+      - name: Cache fuzzer artifacts
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.FUZZ_RUN_DIR }}
+          key: fuzz_run_dir
+
+      - name: Prepare for fuzzing
+        run: |
+          mkdir -p "$FUZZ_RUN_DIR/artifacts" "$FUZZ_RUN_DIR/corpus"
+          cp fuzz/dict.txt "$FUZZ_RUN_DIR/"
+          cp -r data/examples/*.dr "$FUZZ_RUN_DIR/corpus/"
+          NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
+          echo "$NUM_CORPUS_ITEMS items in corpus"
+
+      - name: Fuzz
+        run: >
+          build/fuzzer
+          -max_total_time=1800
+          -timeout=5
+          -max_len=800
+          -print_final_stats=1
+          -artifact_prefix="$FUZZ_RUN_DIR/artifacts/"
+          -dict="$FUZZ_RUN_DIR/dict.txt"
+          "$FUZZ_RUN_DIR/corpus"
