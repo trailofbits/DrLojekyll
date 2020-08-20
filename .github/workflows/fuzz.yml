@@ -8,7 +8,21 @@ on:
   # Run when manually triggered
   # See https://github.blog/changelog/2020-07-06-github-actions-manual-triggers-with-workflow_dispatch/
   workflow_dispatch:
+    inputs:
+      fuzz_seconds:
+        description: "Maximum number of seconds to run the fuzzer"
+        required: true
+        default: "1800"
 
+      timeout_seconds:
+        description: "Number of seconds before the fuzzer treats the input as a timeout"
+        required: true
+        default: "5"
+
+      max_length:
+        description: "Maximum length of fuzzer-generated inputs"
+        required: true
+        default: "800"
 
 jobs:
   fuzz1:
@@ -59,9 +73,9 @@ jobs:
       - name: Fuzz
         run: >
           build/fuzzer
-          -max_total_time=1800
-          -timeout=5
-          -max_len=800
+          -max_total_time="$INPUT_FUZZ_SECONDS"
+          -timeout="$INPUT_TIMEOUT_SECONDS"
+          -max_len="$INPUT_MAX_LENGTH"
           -print_final_stats=1
           -artifact_prefix="$FUZZ_RUN_DIR/artifacts/"
           -dict="$FUZZ_RUN_DIR/dict.txt"
