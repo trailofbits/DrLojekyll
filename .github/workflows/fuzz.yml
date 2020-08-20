@@ -30,7 +30,7 @@ on:
 jobs:
   fuzz1:
     name: Ubuntu 20.04 / Clang 10 / Release / Sanitizers
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     env:
       FUZZ_RUN_DIR: "${{ github.workspace }}/fuzzer-run"
@@ -57,7 +57,7 @@ jobs:
           .
 
       - name: Build
-        run: make -C build -j "$(nproc)"
+        run: ninja -C build -j "$(nproc)"
 
       - name: Cache fuzzer artifacts
         uses: actions/cache@v2
