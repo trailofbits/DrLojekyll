@@ -70,11 +70,37 @@ jobs:
       - name: Build
         run: ninja -C build -j "$(nproc)"
 
+      # Note: The following use of GitHub Actions cache mechanism is a hack to
+      #       persist the fuzzer corpus and other generated artifacts from run
+      #       to run in our CI.
+      #
+      #       The particular contents of the fuzzer corpus aren't especially
+      #       important beyond the fact that they represent possibly
+      #       hard-earned knowledge about inputs that evoke different behavior
+      #       from the fuzz target.
+      #
+      #       During each run of this workflow, we deliberately try to get an
+      #       "exact cache miss", and fall back to fetching the most recent
+      #       cache entry with the `fuzz_run_dir-` prefix.  Then, when the job
+      #       completes successfully, the cache will be updated.
+      #
+      #       Currently, cache entries are kept until they have no longer been
+      #       accessed for 7 days, or until 5GB of cache has been consumed.
+      #
+      #       See https://docs.github.com/en/actions/configuring-and-managing-workflows/caching-dependencies-to-speed-up-workflows for more details.
+      #
+      #       This could be simplified if GitHub Actions cache mechanism had a
+      #       way of explicitly forcing the cache to be updated upon job
+      #       completion.  Alternatively, we may want to switch to some other
+      #       mechanism for persisting the corpus, such as an S3 bucket.
+      #
+      #       See #76.
       - name: Cache fuzzer artifacts
         uses: actions/cache@v2
         with:
           path: ${{ env.FUZZ_RUN_DIR }}
-          key: fuzz_run_dir
+          key: fuzz_run_dir-${{ github.sha }}
+          restore-keys: fuzz_run_dir-
 
       - name: Prepare for fuzzing
         run: |
