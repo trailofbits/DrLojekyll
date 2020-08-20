@@ -1,5 +1,11 @@
 name: Fuzz Testing
 
+env:
+  INPUT_FUZZ_SECONDS: 90
+  INPUT_TIMEOUT_SECONDS: 5
+  INPUT_MAX_LENGTH: 800
+  INPUT_CORPUS_PRUNE_THRESHOLD: 20
+
 on:
   push:
     branches: [fuzz-ci]
@@ -15,22 +21,22 @@ on:
       fuzz_seconds:
         description: "Maximum number of seconds to run the fuzzer"
         required: true
-        default: "1800"
+        default: ${{ env.INPUT_FUZZ_SECONDS }}
 
       timeout_seconds:
         description: "Number of seconds before the fuzzer treats the input as a timeout"
         required: true
-        default: "5"
+        default: ${{ env.INPUT_TIMEOUT_SECONDS }}
 
       max_length:
         description: "Maximum length of fuzzer-generated inputs"
         required: true
-        default: "800"
+        default: ${{ env.INPUT_MAX_LENGTH }}
 
       corpus_prune_size:
         description: "The number of corpus entries at which to try corpus minimization"
         required: true
-        default: "10"
+        default: ${{ env.INPUT_CORPUS_PRUNE_THRESHOLD }}
 
 jobs:
   fuzz1:
@@ -72,7 +78,7 @@ jobs:
 
       - name: Prepare for fuzzing
         run: |
-          set -x
+          set -xu
           mkdir -p "$FUZZ_RUN_DIR/artifacts" "$FUZZ_RUN_DIR/corpus"
           cp fuzz/dict.txt "$FUZZ_RUN_DIR/"
           cp -r data/examples/*.dr "$FUZZ_RUN_DIR/corpus/"
@@ -81,7 +87,7 @@ jobs:
 
       - name: Fuzz
         run: |
-          set -x
+          set -xu
           build/fuzzer \
             -max_total_time="$INPUT_FUZZ_SECONDS" \
             -timeout="$INPUT_TIMEOUT_SECONDS" \
@@ -91,7 +97,7 @@ jobs:
             -dict="$FUZZ_RUN_DIR/dict.txt" \
             "$FUZZ_RUN_DIR/corpus"
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
-          export SHOULD_PRUNE_CORPUS=$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_SIZE ))
+          export SHOULD_PRUNE_CORPUS=$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_THRESHOLD ))
 
       - name: Prune fuzzer corpus
         if: env.SHOULD_PRUNE_CORPUS
