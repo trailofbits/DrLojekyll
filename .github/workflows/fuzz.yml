@@ -21,22 +21,22 @@ on:
       fuzz_seconds:
         description: "Maximum number of seconds to run the fuzzer"
         required: true
-        default: ${{ env.INPUT_FUZZ_SECONDS }}
+        default: "1800"
 
       timeout_seconds:
         description: "Number of seconds before the fuzzer treats the input as a timeout"
         required: true
-        default: ${{ env.INPUT_TIMEOUT_SECONDS }}
+        default: "5"
 
       max_length:
         description: "Maximum length of fuzzer-generated inputs"
         required: true
-        default: ${{ env.INPUT_MAX_LENGTH }}
+        default: "2000"
 
       corpus_prune_size:
         description: "The number of corpus entries at which to try corpus minimization"
         required: true
-        default: ${{ env.INPUT_CORPUS_PRUNE_THRESHOLD }}
+        default: "500"
 
 jobs:
   fuzz1:
