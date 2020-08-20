@@ -35,7 +35,7 @@ jobs:
           -DCMAKE_C_COMPILER=gcc-8
           -DCMAKE_CXX_COMPILER=g++-8
           -DWARNINGS_AS_ERRORS=1
-          -DCMAKE_INSTALL_PREFIX="DR_INSTALL_DIR"
+          -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
           .
       - name: Build
         run: make -C build -j "$(nproc)"
@@ -188,7 +188,7 @@ jobs:
           -B build
           -G "Visual Studio 16 2019"
           -DWARNINGS_AS_ERRORS=0
-          -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
+          -DCMAKE_INSTALL_PREFIX="$env:DR_INSTALL_DIR"
           .
       - name: Build
         run: cmake --build build --config Debug -j
@@ -202,7 +202,7 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
+          cmake -B build -DCMAKE_PREFIX_PATH="$env:DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
           cmake --build build
 
   build6:

@@ -2,14 +2,14 @@ name: Fuzz Testing
 
 on:
   # Run on master every day at 10:15
-  schedule:
-    - branches:
-      - master
-      cron: "15 10 * * *"
+  - schedule:
+      - branches:
+        - master
+        cron: "15 10 * * *"
 
   # Run when manually triggered
   # See https://github.blog/changelog/2020-07-06-github-actions-manual-triggers-with-workflow_dispatch/
-  workflow_dispatch:
+  - workflow_dispatch:
 
 
 jobs:
