@@ -1,0 +1,143 @@
+name: Fuzz Testing
+
+env:
+  INPUT_FUZZ_SECONDS: 1200
+  INPUT_TIMEOUT_SECONDS: 5
+  INPUT_MAX_LENGTH: 800
+  INPUT_CORPUS_PRUNE_THRESHOLD: 500
+
+on:
+  # Run on the default branch every day at 10:15
+  schedule:
+    - cron: "15 10 * * *"
+
+  # Run when manually triggered
+  # See https://github.blog/changelog/2020-07-06-github-actions-manual-triggers-with-workflow_dispatch/
+  workflow_dispatch:
+    inputs:
+      fuzz_seconds:
+        description: "Maximum number of seconds to run the fuzzer"
+        required: true
+        default: "1800"
+
+      timeout_seconds:
+        description: "Number of seconds before the fuzzer treats the input as a timeout"
+        required: true
+        default: "5"
+
+      max_length:
+        description: "Maximum length of fuzzer-generated inputs"
+        required: true
+        default: "2000"
+
+      corpus_prune_size:
+        description: "The number of corpus entries at which to try corpus minimization"
+        required: true
+        default: "500"
+
+jobs:
+  fuzz1:
+    name: Ubuntu 20.04 / Clang 10 / Debug / Sanitizers
+    runs-on: ubuntu-20.04
+
+    env:
+      FUZZ_RUN_DIR: "${{ github.workspace }}/fuzzer-run"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo apt-get install ninja-build clang-10
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang-10
+          -DCMAKE_CXX_COMPILER=clang++-10
+          -DENABLE_SANITIZERS=1
+          -DENABLE_LIBFUZZER=1
+          -DWARNINGS_AS_ERRORS=1
+          -DENABLE_TESTS=0
+          .
+
+      - name: Build
+        run: ninja -C build -j "$(nproc)"
+
+      # Note: The following use of GitHub Actions cache mechanism is a hack to
+      #       persist the fuzzer corpus and other generated artifacts from run
+      #       to run in our CI.
+      #
+      #       The particular contents of the fuzzer corpus aren't especially
+      #       important beyond the fact that they represent possibly
+      #       hard-earned knowledge about inputs that evoke different behavior
+      #       from the fuzz target.
+      #
+      #       During each run of this workflow, we deliberately try to get an
+      #       "exact cache miss", and fall back to fetching the most recent
+      #       cache entry with the `fuzz_run_dir-` prefix.  Then, when the job
+      #       completes successfully, the cache will be updated.
+      #
+      #       Currently, cache entries are kept until they have no longer been
+      #       accessed for 7 days, or until 5GB of cache has been consumed.
+      #
+      #       See https://docs.github.com/en/actions/configuring-and-managing-workflows/caching-dependencies-to-speed-up-workflows for more details.
+      #
+      #       This could be simplified if GitHub Actions cache mechanism had a
+      #       way of explicitly forcing the cache to be updated upon job
+      #       completion.  Alternatively, we may want to switch to some other
+      #       mechanism for persisting the corpus, such as an S3 bucket.
+      #
+      #       See #76.
+      - name: Cache fuzzer artifacts
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.FUZZ_RUN_DIR }}
+          key: fuzz_run_dir-${{ github.sha }}
+          restore-keys: fuzz_run_dir-
+
+      - name: Prepare for fuzzing
+        run: |
+          set -xu
+          mkdir -p "$FUZZ_RUN_DIR/artifacts" "$FUZZ_RUN_DIR/corpus"
+          cp fuzz/dict.txt "$FUZZ_RUN_DIR/"
+          cp -r data/examples/*.dr "$FUZZ_RUN_DIR/corpus/"
+          NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
+          echo "$NUM_CORPUS_ITEMS items in corpus"
+
+      - name: Fuzz
+        run: |
+          set -xu
+          build/fuzzer \
+            -max_total_time="$INPUT_FUZZ_SECONDS" \
+            -timeout="$INPUT_TIMEOUT_SECONDS" \
+            -max_len="$INPUT_MAX_LENGTH" \
+            -print_final_stats=1 \
+            -artifact_prefix="$FUZZ_RUN_DIR/artifacts/" \
+            -dict="$FUZZ_RUN_DIR/dict.txt" \
+            "$FUZZ_RUN_DIR/corpus"
+          NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
+          # Note: `export` doesn't work here; you must use this special form.
+          #       See https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
+          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_THRESHOLD ))"
+
+      - name: Prune fuzzer corpus
+        if: env.SHOULD_PRUNE_CORPUS
+        run: |
+          set -xu
+          mv "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
+          mkdir -p "$FUZZ_RUN_DIR/corpus"
+          build/fuzzer -merge=1 "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
+
+
+      # This will allow us to manually download the fuzzer artifacts from the
+      # GitHub UI if needed
+      - name: Archive fuzzer artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: fuzzer-artifacts
+          path: ${{ env.FUZZ_RUN_DIR }}
