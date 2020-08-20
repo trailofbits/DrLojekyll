@@ -104,13 +104,10 @@ jobs:
       - name: Prune fuzzer corpus
         if: env.SHOULD_PRUNE_CORPUS
         run: |
-          set -x
+          set -xu
           mv "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
           mkdir -p "$FUZZ_RUN_DIR/corpus"
-          build/fuzzer
-          -merge=1
-          "$FUZZ_RUN_DIR/corpus"
-          "$FUZZ_RUN_DIR/corpus.orig"
+          build/fuzzer -merge=1 "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
 
 
       # This will allow us to manually download the fuzzer artifacts from the
