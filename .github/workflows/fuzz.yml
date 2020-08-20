@@ -7,9 +7,6 @@ env:
   INPUT_CORPUS_PRUNE_THRESHOLD: 500
 
 on:
-  push:
-    branches: [fuzz-ci]
-
   # Run on the default branch every day at 10:15
   schedule:
     - cron: "15 10 * * *"
