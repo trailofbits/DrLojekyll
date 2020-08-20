@@ -27,6 +27,11 @@ on:
         required: true
         default: "800"
 
+      corpus_prune_size:
+        description: "The number of corpus entries at which to try corpus minimization"
+        required: true
+        default: "10"
+
 jobs:
   fuzz1:
     name: Ubuntu 20.04 / Clang 10 / Debug / Sanitizers
@@ -67,6 +72,7 @@ jobs:
 
       - name: Prepare for fuzzing
         run: |
+          set -x
           mkdir -p "$FUZZ_RUN_DIR/artifacts" "$FUZZ_RUN_DIR/corpus"
           cp fuzz/dict.txt "$FUZZ_RUN_DIR/"
           cp -r data/examples/*.dr "$FUZZ_RUN_DIR/corpus/"
@@ -74,12 +80,35 @@ jobs:
           echo "$NUM_CORPUS_ITEMS items in corpus"
 
       - name: Fuzz
-        run: >
+        run: |
+          set -x
+          build/fuzzer \
+            -max_total_time="$INPUT_FUZZ_SECONDS" \
+            -timeout="$INPUT_TIMEOUT_SECONDS" \
+            -max_len="$INPUT_MAX_LENGTH" \
+            -print_final_stats=1 \
+            -artifact_prefix="$FUZZ_RUN_DIR/artifacts/" \
+            -dict="$FUZZ_RUN_DIR/dict.txt" \
+            "$FUZZ_RUN_DIR/corpus"
+          NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
+          export SHOULD_PRUNE_CORPUS=$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_SIZE ))
+
+      - name: Prune fuzzer corpus
+        if: env.SHOULD_PRUNE_CORPUS
+        run: |
+          set -x
+          mv "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
+          mkdir -p "$FUZZ_RUN_DIR/corpus"
           build/fuzzer
-          -max_total_time="$INPUT_FUZZ_SECONDS"
-          -timeout="$INPUT_TIMEOUT_SECONDS"
-          -max_len="$INPUT_MAX_LENGTH"
-          -print_final_stats=1
-          -artifact_prefix="$FUZZ_RUN_DIR/artifacts/"
-          -dict="$FUZZ_RUN_DIR/dict.txt"
+          -merge=1
           "$FUZZ_RUN_DIR/corpus"
+          "$FUZZ_RUN_DIR/corpus.orig"
+
+
+      # This will allow us to manually download the fuzzer artifacts from the
+      # GitHub UI if needed
+      - name: Archive fuzzer artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: fuzzer-artifacts
+          path: ${{ env.FUZZ_RUN_DIR }}
