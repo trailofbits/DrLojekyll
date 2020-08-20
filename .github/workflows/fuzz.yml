@@ -99,7 +99,7 @@ jobs:
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
           # Note: `export` doesn't work here; you must use this special form.
           #       See https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
-          echo "::set-env SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_THRESHOLD ))"
+          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_THRESHOLD ))"
 
       - name: Prune fuzzer corpus
         if: env.SHOULD_PRUNE_CORPUS
