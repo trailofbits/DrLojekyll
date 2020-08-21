@@ -1,3 +1,4 @@
+# TODO(bjl): add a comment explaining what is this function does, and why it exists?
 function(define_static_library libname)
     set(options)
     set(oneValueArgs CURDIR)
@@ -21,9 +22,9 @@ function(define_static_library libname)
             PUBLIC ${CURLIB_DEPENDENCIES}
         )
     endif()
-    if(CURLIB_PRIVATE_DEPENDENCIES)
+    if(CURLIB_PRIVATE_DEPS)
         target_link_libraries(${libname}
-            PRIVATE ${CURLIB_PRIVATE_DEPENDENCIES}
+            PRIVATE ${CURLIB_PRIVATE_DEPS}
         )
     endif()
 

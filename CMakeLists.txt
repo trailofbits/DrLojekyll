@@ -77,8 +77,11 @@ install(EXPORT ${PROJECT_NAME}Targets
 # `settings` for global build options --------
 # --------------------------------------------
 add_library(settings INTERFACE)
+# ??? https://stackoverflow.com/questions/25676277/cmake-target-include-directories-prints-an-error-when-i-try-to-add-the-source
 target_include_directories(settings INTERFACE
-    "${CMAKE_CURRENT_LIST_DIR}/include")
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 
 target_compile_options(settings INTERFACE ${CXX_WARNING_OPTIONS})
 
@@ -113,6 +116,11 @@ if(ENABLE_LIBFUZZER)
     # make a `settings-fuzz-target` library that enables `-fsanitize=fuzzer`
     add_sanitizer_settings(settings-fuzz-target SANITIZERS fuzzer)
 endif()
+
+install(
+    TARGETS settings
+    EXPORT "${PROJECT_NAME}Targets"
+)
 
 # --------------------------------------------
 # vendored dependencies ----------------------
