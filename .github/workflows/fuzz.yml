@@ -5,8 +5,11 @@ on:
   schedule:
     - cron: "15 10 * * *"
 
-  # Run when manually triggered
+  # Run when manually triggered.
   # See https://github.blog/changelog/2020-07-06-github-actions-manual-triggers-with-workflow_dispatch/
+  #
+  # NOTE: If you update the default values here, make sure to also update the
+  #       values in the following `env` section.
   workflow_dispatch:
     inputs:
       fuzz_seconds:
@@ -22,12 +25,31 @@ on:
       max_length:
         description: "Maximum length of fuzzer-generated inputs"
         required: true
-        default: "2000"
+        default: "800"
 
       corpus_prune_threshold:
         description: "The number of corpus entries at which to try corpus minimization"
         required: true
         default: "500"
+
+# Note: the following environment variables are duplicated from the default values
+#       of the inputs specified in the `workflow_dispatch` trigger above.
+#       The `workflow_dispatch` trigger support in GitHub Actions seems to have
+#       a bunch of rough edges.  In particular, the default values show up as
+#       expected in the GitHub web UI when manually triggering the job, but the
+#       values are _not_ propagated reliably as `INPUT_*` environment variables,
+#       and the default values do not seem to be programmatically accessible
+#       within job steps via any actions context.
+#
+#       It seems difficult to avoid repeating ourselves for these default values,
+#       so here we are.
+env:
+  FUZZ_SECONDS_DEFAULT: "90"
+  TIMEOUT_SECONDS_DEFAULT: "5"
+  MAX_LENGTH_DEFAULT: "800"
+  CORPUS_PRUNE_THRESHOLD_DEFAULT: "500"
+
+
 
 jobs:
   fuzz1:
@@ -110,20 +132,12 @@ jobs:
         #       doesn't seem to actually be correct.
         env:
           FUZZ_SECONDS: ${{ github.event.inputs.fuzz_seconds }}
-          FUZZ_SECONDS_DEFAULT: ${{ github.event.inputs.fuzz_seconds.default }}
-
           TIMEOUT_SECONDS: ${{ github.events.inputs.timeout_seconds }}
-          TIMEOUT_SECONDS_DEFAULT: ${{ github.events.inputs.timeout_seconds.default }}
-
           MAX_LENGTH: ${{ github.events.inputs.max_length }}
-          MAX_LENGTH_DEFAULT: ${{ github.events.inputs.max_length.default }}
-
           CORPUS_PRUNE_THRESHOLD: ${{ github.events.inputs.corpus_prune_threshold }}
-          CORPUS_PRUNE_THRESHOLD_DEFAULT: ${{ github.events.inputs.corpus_prune_threshold.default }}
 
         run: |
           set -xu
-          env
           build/fuzzer \
             -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
             -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
