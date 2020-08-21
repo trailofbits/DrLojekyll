@@ -15,7 +15,7 @@ on:
       fuzz_seconds:
         description: "Maximum number of seconds to run the fuzzer"
         required: true
-        default: "90"
+        default: "1200"
 
       timeout_seconds:
         description: "Number of seconds before the fuzzer treats the input as a timeout"
@@ -44,7 +44,7 @@ on:
 #       It seems difficult to avoid repeating ourselves for these default values,
 #       so here we are.
 env:
-  FUZZ_SECONDS_DEFAULT: "90"
+  FUZZ_SECONDS_DEFAULT: "1200"
   TIMEOUT_SECONDS_DEFAULT: "5"
   MAX_LENGTH_DEFAULT: "800"
   CORPUS_PRUNE_THRESHOLD_DEFAULT: "500"
@@ -138,8 +138,6 @@ jobs:
 
         run: |
           set -xu
-          echo "${{ github.event.inputs }}"
-          echo "${{ toJson(github.event.inputs) }}"
           build/fuzzer \
             -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
             -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
