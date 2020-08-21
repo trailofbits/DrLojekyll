@@ -110,6 +110,16 @@ jobs:
           echo "$NUM_CORPUS_ITEMS items in corpus"
 
       - name: Fuzz
+
+        # Note: we have to set these up manually, because the documented behavior
+        #       for event inputs (exposing them via specially-named environment variables)
+        #       doesn't seem to actually be correct.
+        env:
+          INPUT_FUZZ_SECONDS: ${{ github.event.inputs.fuzz_seconds }}
+          INPUT_TIMEOUT_SECONDS: ${{ github.events.inputs.timeout_seconds }}
+          INPUT_MAX_LENGTH: ${{ github.events.inputs.max_length }}
+          INPUT_CORPUS_PRUNE_THRESHOLD: ${{ github.events.inputs.corpus_prune_threshold }}
+
         run: |
           set -xu
           env
