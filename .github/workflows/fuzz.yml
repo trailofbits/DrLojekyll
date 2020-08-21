@@ -1,11 +1,5 @@
 name: Fuzz Testing
 
-env:
-  FUZZ_SECONDS: 60
-  TIMEOUT_SECONDS: 5
-  MAX_LENGTH: 800
-  CORPUS_PRUNE_THRESHOLD: 500
-
 on:
   # Run on the default branch every day at 10:15
   schedule:
@@ -18,7 +12,7 @@ on:
       fuzz_seconds:
         description: "Maximum number of seconds to run the fuzzer"
         required: true
-        default: "1800"
+        default: "90"
 
       timeout_seconds:
         description: "Number of seconds before the fuzzer treats the input as a timeout"
@@ -115,18 +109,25 @@ jobs:
         #       for event inputs (exposing them via specially-named environment variables)
         #       doesn't seem to actually be correct.
         env:
-          INPUT_FUZZ_SECONDS: ${{ github.event.inputs.fuzz_seconds }}
-          INPUT_TIMEOUT_SECONDS: ${{ github.events.inputs.timeout_seconds }}
-          INPUT_MAX_LENGTH: ${{ github.events.inputs.max_length }}
-          INPUT_CORPUS_PRUNE_THRESHOLD: ${{ github.events.inputs.corpus_prune_threshold }}
+          FUZZ_SECONDS: ${{ github.event.inputs.fuzz_seconds }}
+          FUZZ_SECONDS_DEFAULT: ${{ github.event.inputs.fuzz_seconds.default }}
+
+          TIMEOUT_SECONDS: ${{ github.events.inputs.timeout_seconds }}
+          TIMEOUT_SECONDS_DEFAULT: ${{ github.events.inputs.timeout_seconds.default }}
+
+          MAX_LENGTH: ${{ github.events.inputs.max_length }}
+          MAX_LENGTH_DEFAULT: ${{ github.events.inputs.max_length.default }}
+
+          CORPUS_PRUNE_THRESHOLD: ${{ github.events.inputs.corpus_prune_threshold }}
+          CORPUS_PRUNE_THRESHOLD_DEFAULT: ${{ github.events.inputs.corpus_prune_threshold.default }}
 
         run: |
           set -xu
           env
           build/fuzzer \
-            -max_total_time="${INPUT_FUZZ_SECONDS:-${FUZZ_SECONDS}}" \
-            -timeout="${INPUT_TIMEOUT_SECONDS:-${TIMEOUT_SECONDS}}" \
-            -max_len="${INPUT_MAX_LENGTH:-${MAX_LENGTH}}" \
+            -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
+            -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
+            -max_len="${MAX_LENGTH:-${MAX_LENGTH_DEFAULT}}" \
             -print_final_stats=1 \
             -artifact_prefix="$FUZZ_RUN_DIR/artifacts/" \
             -dict="$FUZZ_RUN_DIR/dict.txt" \
@@ -134,7 +135,7 @@ jobs:
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
           # Note: `export` doesn't work here; you must use this special form.
           #       See https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
-          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= ${INPUT_CORPUS_PRUNE_THRESHOLD:-${CORPUS_PRUNE_THRESHOLD}} ))"
+          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= ${CORPUS_PRUNE_THRESHOLD:-${CORPUS_PRUNE_THRESHOLD_DEFAULT}} ))"
 
       - name: Prune fuzzer corpus
         if: env.SHOULD_PRUNE_CORPUS != 0
