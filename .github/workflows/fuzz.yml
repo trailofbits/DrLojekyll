@@ -53,7 +53,7 @@ env:
 
 jobs:
   fuzz1:
-    name: Ubuntu 20.04 / Clang 10 / Debug / Sanitizers
+    name: Fuzz Ubuntu 20.04 / Clang 10 / Debug / Sanitizers
     runs-on: ubuntu-20.04
 
     env:
