@@ -96,7 +96,10 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   return CompileModule(display_manager, error_log, module);
 }
 
-static int HelpMessage(char *argv[]) {
+// Our current clang-format configuration reformats the long lines in following function into something very hard to read...
+//
+// clang-format off
+static int HelpMessage(const char *argv[]) {
   std::cout
       << "OVERVIEW: Dr. Lojekyll compiler" << std::endl
       << std::endl
@@ -104,26 +107,19 @@ static int HelpMessage(char *argv[]) {
       << std::endl
       << "OPTIONS:" << std::endl
       << "  -version              Show version number and exit." << std::endl
-      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++."
-      << std::endl
-      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively."
-      << std::endl
-      << "                        imported modules amalgamated into a single Datalog module."
-      << std::endl
-      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph"
-      << std::endl
-      << "  -M <PATH>             Directory where import statements can find needed Datalog modules."
-      << std::endl
-      << "  -isystem <PATH>       Directory where system C++ include files can be found."
-      << std::endl
-      << "  -I <PATH>             Directory where user C++ include files can be found."
-      << std::endl
-      << "  <PATH>                Path to an input Datalog module to parse and transpile."
-      << std::endl
+      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++." << std::endl
+      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively" << std::endl
+      << "                        imported modules amalgamated into a single Datalog module." << std::endl
+      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph." << std::endl
+      << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
+      << "  -isystem <PATH>       Directory where system C++ include files can be found." << std::endl
+      << "  -I <PATH>             Directory where user C++ include files can be found." << std::endl
+      << "  <PATH>                Path to an input Datalog module to parse and transpile." << std::endl
       << std::endl;
 
   return EXIT_SUCCESS;
 }
+// clang-format on
 
 static int VersionMessage(void) {
   std::stringstream version;
