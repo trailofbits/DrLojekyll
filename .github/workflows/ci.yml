@@ -117,8 +117,10 @@ jobs:
       # interfering.  First build debug, explicitly invoking `ninja`:
       - name: Build Debug
         run: ninja -C build -f build-Debug.ninja
+
       - name: Install Debug
-        run: cmake --build build --target install
+        run: cmake --install build --config Debug
+
       - name: Test Debug Install
         run: |
           cd tests/external_build
@@ -133,8 +135,10 @@ jobs:
       # invocation of ninja.
       - name: Build Release
         run: cmake --build build --config RelWithDebInfo -j
+
       - name: Install Release
-        run: cmake --build build --target install
+        run: cmake --install build --config RelWithDebInfo
+
       - name: Test Release Install
         run: |
           cd tests/external_build
@@ -169,7 +173,7 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Install
-        run: cmake --build build --target install
+        run: cmake --install build --config Debug
 
       - name: Test Install
         run: |
@@ -197,7 +201,7 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Install
-        run: cmake --build build --target install
+        run: cmake --install build --config Debug
 
       - name: Test Install
         run: |
