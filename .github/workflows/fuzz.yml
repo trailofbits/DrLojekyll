@@ -1,7 +1,7 @@
 name: Fuzz Testing
 
 env:
-  FUZZ_SECONDS: 1200
+  FUZZ_SECONDS: 60
   TIMEOUT_SECONDS: 5
   MAX_LENGTH: 800
   CORPUS_PRUNE_THRESHOLD: 500
@@ -112,6 +112,7 @@ jobs:
       - name: Fuzz
         run: |
           set -xu
+          env
           build/fuzzer \
             -max_total_time="${INPUT_FUZZ_SECONDS:-${FUZZ_SECONDS}}" \
             -timeout="${INPUT_TIMEOUT_SECONDS:-${TIMEOUT_SECONDS}}" \
