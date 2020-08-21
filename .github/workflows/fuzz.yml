@@ -1,24 +1,21 @@
 name: Fuzz Testing
 
-env:
-  INPUT_FUZZ_SECONDS: 1200
-  INPUT_TIMEOUT_SECONDS: 5
-  INPUT_MAX_LENGTH: 800
-  INPUT_CORPUS_PRUNE_THRESHOLD: 500
-
 on:
   # Run on the default branch every day at 10:15
   schedule:
     - cron: "15 10 * * *"
 
-  # Run when manually triggered
+  # Run when manually triggered.
   # See https://github.blog/changelog/2020-07-06-github-actions-manual-triggers-with-workflow_dispatch/
+  #
+  # NOTE: If you update the default values here, make sure to also update the
+  #       values in the following `env` section.
   workflow_dispatch:
     inputs:
       fuzz_seconds:
         description: "Maximum number of seconds to run the fuzzer"
         required: true
-        default: "1800"
+        default: "1200"
 
       timeout_seconds:
         description: "Number of seconds before the fuzzer treats the input as a timeout"
@@ -28,16 +25,35 @@ on:
       max_length:
         description: "Maximum length of fuzzer-generated inputs"
         required: true
-        default: "2000"
+        default: "800"
 
-      corpus_prune_size:
+      corpus_prune_threshold:
         description: "The number of corpus entries at which to try corpus minimization"
         required: true
         default: "500"
 
+# Note: the following environment variables are duplicated from the default values
+#       of the inputs specified in the `workflow_dispatch` trigger above.
+#       The `workflow_dispatch` trigger support in GitHub Actions seems to have
+#       a bunch of rough edges.  In particular, the default values show up as
+#       expected in the GitHub web UI when manually triggering the job, but the
+#       values are _not_ propagated reliably as `INPUT_*` environment variables,
+#       and the default values do not seem to be programmatically accessible
+#       within job steps via any actions context.
+#
+#       It seems difficult to avoid repeating ourselves for these default values,
+#       so here we are.
+env:
+  FUZZ_SECONDS_DEFAULT: "1200"
+  TIMEOUT_SECONDS_DEFAULT: "5"
+  MAX_LENGTH_DEFAULT: "800"
+  CORPUS_PRUNE_THRESHOLD_DEFAULT: "500"
+
+
+
 jobs:
   fuzz1:
-    name: Ubuntu 20.04 / Clang 10 / Debug / Sanitizers
+    name: Fuzz Ubuntu 20.04 / Clang 10 / Debug / Sanitizers
     runs-on: ubuntu-20.04
 
     env:
@@ -110,12 +126,22 @@ jobs:
           echo "$NUM_CORPUS_ITEMS items in corpus"
 
       - name: Fuzz
+
+        # Note: we have to set these up manually, because the documented behavior
+        #       for event inputs (exposing them via specially-named environment variables)
+        #       doesn't seem to actually be correct.
+        env:
+          FUZZ_SECONDS: ${{ github.event.inputs.fuzz_seconds }}
+          TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds }}
+          MAX_LENGTH: ${{ github.event.inputs.max_length }}
+          CORPUS_PRUNE_THRESHOLD: ${{ github.event.inputs.corpus_prune_threshold }}
+
         run: |
           set -xu
           build/fuzzer \
-            -max_total_time="$INPUT_FUZZ_SECONDS" \
-            -timeout="$INPUT_TIMEOUT_SECONDS" \
-            -max_len="$INPUT_MAX_LENGTH" \
+            -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
+            -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
+            -max_len="${MAX_LENGTH:-${MAX_LENGTH_DEFAULT}}" \
             -print_final_stats=1 \
             -artifact_prefix="$FUZZ_RUN_DIR/artifacts/" \
             -dict="$FUZZ_RUN_DIR/dict.txt" \
@@ -123,15 +149,16 @@ jobs:
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
           # Note: `export` doesn't work here; you must use this special form.
           #       See https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
-          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_THRESHOLD ))"
+          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= ${CORPUS_PRUNE_THRESHOLD:-${CORPUS_PRUNE_THRESHOLD_DEFAULT}} ))"
 
       - name: Prune fuzzer corpus
-        if: env.SHOULD_PRUNE_CORPUS
+        if: env.SHOULD_PRUNE_CORPUS != 0
         run: |
           set -xu
           mv "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
           mkdir -p "$FUZZ_RUN_DIR/corpus"
           build/fuzzer -merge=1 "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
+          rm -rf "$FUZZ_RUN_DIR/corpus.orig"
 
 
       # This will allow us to manually download the fuzzer artifacts from the
