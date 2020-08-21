@@ -132,12 +132,14 @@ jobs:
         #       doesn't seem to actually be correct.
         env:
           FUZZ_SECONDS: ${{ github.event.inputs.fuzz_seconds }}
-          TIMEOUT_SECONDS: ${{ github.events.inputs.timeout_seconds }}
-          MAX_LENGTH: ${{ github.events.inputs.max_length }}
-          CORPUS_PRUNE_THRESHOLD: ${{ github.events.inputs.corpus_prune_threshold }}
+          TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds }}
+          MAX_LENGTH: ${{ github.event.inputs.max_length }}
+          CORPUS_PRUNE_THRESHOLD: ${{ github.event.inputs.corpus_prune_threshold }}
 
         run: |
           set -xu
+          echo "${{ github.event.inputs }}"
+          echo "${{ toJson(github.event.inputs) }}"
           build/fuzzer \
             -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
             -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
