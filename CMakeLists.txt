@@ -134,40 +134,10 @@ endif()
 # --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
-# Dr. Lojekyll Libraries
 add_subdirectory(lib)
+add_subdirectory(bin)
+add_subdirectory(fuzz)
 
-# `drlojekyll`
-add_executable(drlojekyll
-    bin/drlojekyll/Main.cpp)
-target_link_libraries(drlojekyll PRIVATE
-    settings
-    Util
-    Display
-    Lex
-    Parse
-    DataFlow
-    CodeGen
-    Version
-)
-install(TARGETS drlojekyll RUNTIME DESTINATION "bin")
-
-# `fuzzer`
-if(ENABLE_LIBFUZZER)
-    add_executable(fuzzer
-        fuzz/Fuzzer.cpp)
-    target_link_libraries(fuzzer PRIVATE
-        settings
-        settings-fuzz-target
-        Util
-        Display
-        Lex
-        Parse
-        Version
-    )
-endif()
-
-# tests
 if(ENABLE_TESTS)
   add_subdirectory(tests)
 endif()

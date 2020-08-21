@@ -131,6 +131,20 @@ jobs:
             .
           cmake --build build
 
+      # Just a quick test to make sure the fuzzer doesn't crash immediately
+      - name: Test Debug Fuzzer
+        run: |
+          mkdir -p fuzz-run/Debug
+          cp -r data/examples fuzz-run/Debug/corpus
+          cd fuzz-run/Debug
+          ../../build/fuzz/Debug/fuzzer \
+            -max_total_time=5 \
+            -timeout=5 \
+            -max_len=400 \
+            -print_final_stats=1 \
+            -dict=fuzz/dict.txt" \
+            corpus
+
       # Next, build RelWithDebInfo, using the indirect `cmake --build`
       # invocation of ninja.
       - name: Build Release
@@ -151,6 +165,20 @@ jobs:
 
       - name: Test Release
         run: cd build && ctest -C RelWithDebInfo --output-on-failure
+
+      # Just a quick test to make sure the fuzzer doesn't crash immediately
+      - name: Test Release Fuzzer
+        run: |
+          mkdir -p fuzz-run/RelWithDebInfo
+          cp -r data/examples fuzz-run/RelWithDebInfo/corpus
+          cd fuzz-run/RelWithDebInfo
+          ../../build/fuzz/RelWithDebInfo/fuzzer \
+            -max_total_time=5 \
+            -timeout=5 \
+            -max_len=400 \
+            -print_final_stats=1 \
+            -dict=fuzz/dict.txt" \
+            corpus
 
   build4:
     name: macOS 10.15 / Debug / Sanitizers
