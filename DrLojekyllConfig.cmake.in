@@ -2,17 +2,6 @@
 
 include(CMakeFindDependencyMacro)
 
-# Use our own FindFilesystem.cmake module temporarily
-set(CMAKE_MODULE_PATH_OLD_DR_LOG ${CMAKE_MODULE_PATH})
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/modules" ${CMAKE_MODULE_PATH})
-
-# TODO: This is only needed for Parse. How do I ensure that it's only
-# required for Parse?
-find_dependency(Filesystem REQUIRED)
-
-# Set module path back
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH_OLD_DR_LOG})
-
 include("${CMAKE_CURRENT_LIST_DIR}/DrLojekyllTargets.cmake")
 
 check_required_components("DrLojekyll")
