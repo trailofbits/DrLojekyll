@@ -1,0 +1,4 @@
+#pragma once
+
+// An absolute path to the Dr. Lojekyll `data/examples` directory
+#define DR_EXAMPLES_DIR "@DrLojekyll_SOURCE_DIR@/data/examples"
