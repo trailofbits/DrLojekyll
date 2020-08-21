@@ -126,7 +126,7 @@ jobs:
           echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= ${INPUT_CORPUS_PRUNE_THRESHOLD:-${CORPUS_PRUNE_THRESHOLD}} ))"
 
       - name: Prune fuzzer corpus
-        if: env.SHOULD_PRUNE_CORPUS
+        if: env.SHOULD_PRUNE_CORPUS != 0
         run: |
           set -xu
           mv "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
