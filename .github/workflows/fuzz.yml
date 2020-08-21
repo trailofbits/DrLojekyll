@@ -1,10 +1,10 @@
 name: Fuzz Testing
 
 env:
-  INPUT_FUZZ_SECONDS: 1200
-  INPUT_TIMEOUT_SECONDS: 5
-  INPUT_MAX_LENGTH: 800
-  INPUT_CORPUS_PRUNE_THRESHOLD: 500
+  FUZZ_SECONDS: 1200
+  TIMEOUT_SECONDS: 5
+  MAX_LENGTH: 800
+  CORPUS_PRUNE_THRESHOLD: 500
 
 on:
   # Run on the default branch every day at 10:15
@@ -30,7 +30,7 @@ on:
         required: true
         default: "2000"
 
-      corpus_prune_size:
+      corpus_prune_threshold:
         description: "The number of corpus entries at which to try corpus minimization"
         required: true
         default: "500"
@@ -113,9 +113,9 @@ jobs:
         run: |
           set -xu
           build/fuzzer \
-            -max_total_time="$INPUT_FUZZ_SECONDS" \
-            -timeout="$INPUT_TIMEOUT_SECONDS" \
-            -max_len="$INPUT_MAX_LENGTH" \
+            -max_total_time="${INPUT_FUZZ_SECONDS:-${FUZZ_SECONDS}}" \
+            -timeout="${INPUT_TIMEOUT_SECONDS:-${TIMEOUT_SECONDS}}" \
+            -max_len="${INPUT_MAX_LENGTH:-${MAX_LENGTH}}" \
             -print_final_stats=1 \
             -artifact_prefix="$FUZZ_RUN_DIR/artifacts/" \
             -dict="$FUZZ_RUN_DIR/dict.txt" \
@@ -123,7 +123,7 @@ jobs:
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
           # Note: `export` doesn't work here; you must use this special form.
           #       See https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
-          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= INPUT_CORPUS_PRUNE_THRESHOLD ))"
+          echo "::set-env name=SHOULD_PRUNE_CORPUS::$(( NUM_CORPUS_ITEMS >= ${INPUT_CORPUS_PRUNE_THRESHOLD:-${CORPUS_PRUNE_THRESHOLD}} ))"
 
       - name: Prune fuzzer corpus
         if: env.SHOULD_PRUNE_CORPUS
