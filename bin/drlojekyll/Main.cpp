@@ -162,7 +162,7 @@ struct FileStream {
 }  // namespace
 }  // namespace hyde
 
-extern "C" int main(int argc, char *argv[]) {
+extern "C" int main(int argc, const char *argv[]) {
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log(display_manager);
   hyde::Parser parser(display_manager, error_log);
