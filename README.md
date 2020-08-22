@@ -11,11 +11,18 @@ to operating on tuples.
 ## Quick Start
 
 Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a
-C++17-compliant toolchain.
+C++17-compliant toolchain. [vcpkg](https://github.com/microsoft/vcpkg) is the
+dependency manager of choice and can easily gather and build all necessary
+dependencies for all supported platforms.
 
 **Developer debug build on Linux:**
 ```bash
-$ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 -DCMAKE_INSTALL_PREFIX="$PWD"/install
+$ ./vcpkg/bootstrap-vcpkg.sh
+$ ./vcpkg/vcpkg install @vcpkg.txt
+$ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 \
+    -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 \
+    -DCMAKE_INSTALL_PREFIX="$PWD"/install \
+    -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake .
 $ cmake --build build
 $ cmake --install build
 ```
