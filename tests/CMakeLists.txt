@@ -2,12 +2,15 @@
 
 cmake_minimum_required(VERSION 3.14)
 
+find_package(GTest CONFIG REQUIRED)
+find_package(rapidcheck CONFIG REQUIRED)
+
 include(GoogleTest)
 
 add_executable(unittests unittests.cpp)
 target_link_libraries(unittests PRIVATE
-    gtest_main
-    rapidcheck_gtest
+    GTest::gtest_main
+    rapidcheck
 
     settings
 

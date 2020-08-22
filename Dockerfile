@@ -27,17 +27,29 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y \
       cmake \
+      curl \
+      tar \
+      zip \
+      unzip \
       git \
       gcc-8 \
       g++-8 \
       ninja-build
 
+WORKDIR /DrLojekyll
+
+COPY vcpkg vcpkg
+ENV CC=gcc-8 \
+    CXX=g++-8
+RUN ./vcpkg/bootstrap-vcpkg.sh
+
+COPY vcpkg.txt ./
+RUN ./vcpkg/vcpkg install @vcpkg.txt
 
 # Source code build
 FROM deps as build
 ARG INSTALL_DIR
 
-WORKDIR /DrLojekyll
 COPY . ./
 
 RUN cmake -G Ninja \
@@ -47,6 +59,7 @@ RUN cmake -G Ninja \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
+      -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" \
       . && \
     cmake --build build && \
     cmake --build build --target install
@@ -78,6 +91,7 @@ RUN cd tests/external_build && \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
       -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
+      -DCMAKE_TOOLCHAIN_FILE="../../vcpkg/scripts/buildsystems/vcpkg.cmake" \
       . && \
     cmake --build build
 

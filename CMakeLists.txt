@@ -115,23 +115,6 @@ if(ENABLE_LIBFUZZER)
 endif()
 
 # --------------------------------------------
-# vendored dependencies ----------------------
-# --------------------------------------------
-if(ENABLE_TESTS)
-  # Google Test --------------------------------
-  #
-  # Cribbed from https://github.com/google/googletest/tree/master/googletest
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/googletest-release-1.10.0
-      EXCLUDE_FROM_ALL)
-
-  # rapidcheck ---------------------------------
-  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/rapidcheck
-      EXCLUDE_FROM_ALL)
-endif()
-
-# --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
 # Dr. Lojekyll Libraries
