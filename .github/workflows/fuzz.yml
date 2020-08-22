@@ -1,5 +1,8 @@
 name: Fuzz Testing
 
+env:
+  vcpkgResponseFile: "${{ github.workspace }}/vcpkg.txt"
+
 on:
   # Run on the default branch every day at 10:15
   schedule:
@@ -62,6 +65,13 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Restore from cache and run vcpkg
+        uses: lukka/run-vcpkg@v3
+        with:
+          vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
+          vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
+
       - name: Install Dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
@@ -79,6 +89,7 @@ jobs:
           -DENABLE_LIBFUZZER=1
           -DWARNINGS_AS_ERRORS=1
           -DENABLE_TESTS=0
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           .
 
       - name: Build
