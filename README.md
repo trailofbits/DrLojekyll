@@ -17,6 +17,7 @@ dependencies for all supported platforms.
 
 **Developer debug build on Linux:**
 ```bash
+$ git submodule update --init --recursive
 $ ./vcpkg/bootstrap-vcpkg.sh
 $ ./vcpkg/vcpkg install @vcpkg.txt
 $ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 \
@@ -38,6 +39,13 @@ $ cmake -B build -LAH
 The Dr. Lojekyll-specific options are mostly found in the top-level
 [CMakeLists.txt](CMakeLists.txt).
 
+If and when the vcpkg submodule is update for new dependencies, the following
+workflow should be used:
+
+```bash
+$ git submodule update --init --recursive
+$ ./vcpkg/vcpkg upgrade
+```
 
 ## Okay, so what is Dr. Lojekyll, anyway?
 
