@@ -5,8 +5,16 @@ add_library(controlflow STATIC
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/ControlFlow/Program.h"
 
     "Program.h"
-
-    "Build.cpp"
+    
+    "Build/Build.h"
+    "Build/Build.cpp"
+    "Build/Induction.cpp"
+    "Build/Insert.cpp"
+    "Build/Join.cpp"
+    "Build/Merge.cpp"
+    "Build/Product.cpp"
+    "Build/Union.cpp"
+    
     "Format.cpp"
     "Induction.cpp"
     "Operation.cpp"

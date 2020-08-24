@@ -13,7 +13,7 @@ namespace hyde {
 class User {
  public:
   template <typename T>
-  explicit User(T *) : user_id(typeid(T).hash_code()) {}
+  explicit User(T *) {}
 
   virtual ~User(void);
 
@@ -21,8 +21,6 @@ class User {
   virtual void Update(uint64_t next_timestamp);
 
   static uint64_t gNextTimestamp;
-
-  const size_t user_id;
 
  protected:
   User(void) = delete;
@@ -470,10 +468,11 @@ class Def {
 
   template <typename U, typename CB>
   inline void ForEachUse(CB cb) const {
-    const auto user_id = typeid(U).hash_code();
     for (const auto &use : uses) {
-      if (use && use->user->user_id == user_id) {
-        cb(reinterpret_cast<U *>(use->user), use->def_being_used);
+      if (use) {
+        if (auto user = dynamic_cast<U *>(use->user); user) {
+          cb(user, use->def_being_used);
+        }
       }
     }
   }

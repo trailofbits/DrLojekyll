@@ -179,6 +179,16 @@ enum class ProgramOperation {
   // `views[0]`.
   kInsertIntoView,
 
+  // When dealing with MERGE/UNION nodes with an inductive cycle.
+  kAppendInductionInputToVector,
+  kLoopOverInductionInputVector,
+
+  // When dealing with a MERGE/UNION node that isn't part of an inductive
+  // cycle.
+  kAppendUnionInputToVector,
+  kLoopOverUnionInputVector,
+  kClearUnionInputVector,
+
   // Check if a row exists in a view. The tuple values are found in
   // `operands` and the table being used is `views[0]`.
   kCheckTupleIsPresentInView,
@@ -200,8 +210,10 @@ enum class ProgramOperation {
   // Loop over a vector of inputs. The format of the vector is based off of
   // the variables in `variables`. The region `body` is executed for each
   // loop iteration.
-  kLoopOverImplicitInputVector,
+  kLoopOverInputVector,
 
+  // Merge two values into an updated value when using `mutable`-attributed
+  // parameters.
   kCallMergeFunctor,
 
   // Call a filter function, stored in `functor`, that is a functor where all
@@ -289,7 +301,7 @@ class Node<ProgramProcedureRegion> final : public Node<ProgramRegion> {
   // multiple times within a procedure, and it's convenient to use the opcode
   // (`OP::op`) as a kind of state tracker to decide how to handle the 2nd, and
   // Nth visits of a given view.
-  std::unordered_map<QueryView, REGION *> view_to_region;
+  std::unordered_map<std::pair<QueryView, QueryView>, REGION *> view_to_region;
 };
 
 using PROC = Node<ProgramProcedureRegion>;
@@ -324,20 +336,43 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
 
 using PARALLEL = Node<ProgramParallelRegion>;
 
-// An induction is a loop centred on a MERGE node. Some of the views incoming
-// to that MERGE are treated as "inputs", as they bring initial data into the
-// MERGE. Other nodes are treated as "inductions" as they cycle back to the
-// MERGE.
+// An induction is a loop centred on a `QueryMerge` node. Some of the views
+// incoming to that `QueryMerge` are treated as "inputs", as they bring initial
+// data into the `QueryMerge`. Other nodes are treated as "inductions" as they
+// cycle back to the `QueryMerge`.
 template <>
 class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
   Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
 
-  inline explicit Node(REGION *parent_) : Node<ProgramRegion>(parent_) {}
+  explicit Node(ProgramImpl *impl, REGION *parent_);
 
-  UseRef<REGION> init;
-  UseRef<REGION> cycle;
+  // Initial regions that fill up one or more of the inductive vectors.
+  UseRef<REGION> init_region;
+
+  // The cyclic regions of this induction. This is a PARALLEL region.
+  UseRef<REGION> cyclic_region;
+
+  // The output regions of this induction. This is a PARALLEL region.
+  UseRef<REGION> output_region;
+
+  // It could be the case that a when going through the induction we end up
+  // going into a co-mingled induction, as is the case in
+  // `transitive_closure2.dr` and `transitive_closure3.dr`.
+  std::unordered_map<QueryView, UseRef<TABLE>> view_to_vec;
+
+  // List of append to vector regions inside this induction.
+  std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
+
+  // List of append to vector regions inside this induction.
+  std::unordered_map<QueryView, UseList<REGION>> view_to_cycle_appends;
+
+  // Maps views to their cycles inside of the `cyclic_region`.
+  std::unordered_map<QueryView, UseRef<REGION>> view_to_cycle_loop;
+
+  // Maps views to their cycles inside of the `output_region`.
+  std::unordered_map<QueryView, UseRef<REGION>> view_to_output_loop;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;

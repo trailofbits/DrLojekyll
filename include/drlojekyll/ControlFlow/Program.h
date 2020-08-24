@@ -47,7 +47,8 @@ class ProgramNode {
 
 enum TableKind {
   kPersistent,
-  kVector
+  kVector,
+  kInputVector
 };
 
 enum class VariableRole {

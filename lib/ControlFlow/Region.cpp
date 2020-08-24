@@ -139,14 +139,6 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
 void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
                                            Node<ProgramRegion> *that) noexcept {
   if (auto par = that->AsParallel(); par) {
-    if (auto this_par = this->AsParallel(); this_par) {
-      for (auto region : this_par->regions) {
-        region->parent = par;
-        par->regions.AddUse(this);
-      }
-      this_par->regions.Clear();
-    }
-
     par->regions.AddUse(this);
     this->parent = par;
 

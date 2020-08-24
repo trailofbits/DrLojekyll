@@ -11,7 +11,7 @@ Node<ProgramProcedureRegion>::Node(QueryView view, ProgramImpl *program)
       locals(this),
       tables(this) {
   auto loop = program->operation_regions.Create(
-      this, ProgramOperation::kLoopOverImplicitInputVector);
+      this, ProgramOperation::kLoopOverInputVector);
 
   for (auto col : view.Columns()) {
     loop->variables.AddUse(VariableFor(col));
