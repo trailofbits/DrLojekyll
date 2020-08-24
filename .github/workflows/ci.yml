@@ -29,7 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.sh
+        run: |
+          ./download_vcpkg.sh
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
         # Restore from cache the previously built ports. If "cache miss", then provision vcpkg, install desired ports, finally cache everything for the next run.
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
@@ -38,6 +40,8 @@ jobs:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           # Location of vcpkg for the repository.
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          # Commit Id for vcpkg
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           # Since the cache must be invalidated when content of the response file changes, let's
           # compute its hash and append this to the computed cache's key.
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
@@ -80,12 +84,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.sh
+        run: |
+          ./download_vcpkg.sh
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
       - name: Configure
         run: >
@@ -123,12 +130,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.sh
+        run: |
+          ./download_vcpkg.sh
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
       - name: Install Dependencies
         run: |
@@ -191,12 +201,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.sh
+        run: |
+          ./download_vcpkg.sh
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
       - name: Configure
         run: >
@@ -229,13 +242,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.bat
+        run: |
+          ./download_vcpkg.bat
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
           vcpkgTriplet: 'x64-windows'
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
       - name: Configure
         run: >
@@ -267,12 +283,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.sh
+        run: |
+          ./download_vcpkg.bat
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
       - name: Configure
         run: >

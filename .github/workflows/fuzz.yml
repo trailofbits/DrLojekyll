@@ -65,12 +65,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Download vcpkg
-        run: ./download_vcpkg.sh
+        run: |
+          ./download_vcpkg.sh
+          echo "::set-env name=vcpkgGitCommitId::$(cat vcpkg_commit.txt)"
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: '${{ env.vcpkgGitCommitId }}'
           appendedCacheKey: ${{ hashFiles(env.vcpkgResponseFile) }}
 
       - name: Install Dependencies
