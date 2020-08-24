@@ -28,15 +28,15 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
+      - name: Download vcpkg
+        run: ./download_vcpkg.sh
         # Restore from cache the previously built ports. If "cache miss", then provision vcpkg, install desired ports, finally cache everything for the next run.
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
           # Response file stored in source control, it provides the list of ports and triplet(s).
           vcpkgArguments: '@${{ env.vcpkgResponseFile }}'
-          # Location of the vcpkg as submodule of the repository.
+          # Location of vcpkg for the repository.
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
           # Since the cache must be invalidated when content of the response file changes, let's
           # compute its hash and append this to the computed cache's key.
@@ -79,8 +79,8 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
+      - name: Download vcpkg
+        run: ./download_vcpkg.sh
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
@@ -122,8 +122,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
+      - name: Download vcpkg
+        run: ./download_vcpkg.sh
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
@@ -190,8 +190,8 @@ jobs:
     runs-on: macos-10.15
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
+      - name: Download vcpkg
+        run: ./download_vcpkg.sh
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
@@ -228,8 +228,8 @@ jobs:
     runs-on: windows-2019
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
+      - name: Download vcpkg
+        run: ./download_vcpkg.bat
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
@@ -266,8 +266,8 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
+      - name: Download vcpkg
+        run: ./download_vcpkg.sh
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:
@@ -294,8 +294,6 @@ jobs:
       DOCKER_TAG: "docker.pkg.github.com/trailofbits/drlojekyll/drlojekyll:latest"
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Build Docker image
         run: |
           docker build -t "$DOCKER_TAG" --target=dist .

@@ -64,7 +64,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-
+      - name: Download vcpkg
+        run: ./download_vcpkg.sh
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v3
         with:

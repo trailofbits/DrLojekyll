@@ -17,7 +17,7 @@ dependencies for all supported platforms.
 
 **Developer debug build on Linux:**
 ```bash
-$ git submodule update --init --recursive
+$ ./download_vcpkg.sh
 $ ./vcpkg/bootstrap-vcpkg.sh
 $ ./vcpkg/vcpkg install @vcpkg.txt
 $ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 \

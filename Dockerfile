@@ -38,12 +38,15 @@ RUN apt-get update && \
 
 WORKDIR /DrLojekyll
 
-COPY vcpkg vcpkg
+COPY download_vcpkg.sh download_vcpkg.sh
+COPY vcpkg_commit.txt vcpkg_commit.txt
 ENV CC=gcc-8 \
     CXX=g++-8
-RUN ./vcpkg/bootstrap-vcpkg.sh
 
-COPY vcpkg.txt ./
+# vcpkg installation
+RUN ./download_vcpkg.sh && \
+    ./vcpkg/bootstrap-vcpkg.sh
+COPY vcpkg.txt vcpkg.txt
 RUN ./vcpkg/vcpkg install @vcpkg.txt
 
 # Source code build
@@ -59,7 +62,7 @@ RUN cmake -G Ninja \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
-      -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" \
+      -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake \
       . && \
     cmake --build build && \
     cmake --build build --target install
@@ -91,7 +94,7 @@ RUN cd tests/external_build && \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
       -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
-      -DCMAKE_TOOLCHAIN_FILE="../../vcpkg/scripts/buildsystems/vcpkg.cmake" \
+      -DCMAKE_TOOLCHAIN_FILE="/DrLojekyll/vcpkg/scripts/buildsystems/vcpkg.cmake" \
       . && \
     cmake --build build
 
