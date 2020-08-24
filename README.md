@@ -43,7 +43,8 @@ If and when the vcpkg submodule is update for new dependencies, the following
 workflow should be used:
 
 ```bash
-$ git submodule update --init --recursive
+$ ./download_vcpkg.sh
+$ ./vcpkg/bootstrap-vcpkg.sh
 $ ./vcpkg/vcpkg upgrade
 ```
 
