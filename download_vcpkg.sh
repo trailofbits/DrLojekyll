@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/sh -eu
 
 cur_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
 
