@@ -38,16 +38,14 @@ RUN apt-get update && \
 
 WORKDIR /DrLojekyll
 
-COPY download_vcpkg.sh download_vcpkg.sh
+COPY scripts/download_vcpkg.sh scripts/download_vcpkg.sh
 COPY vcpkg_commit.txt vcpkg_commit.txt
 ENV CC=gcc-8 \
     CXX=g++-8
 
 # vcpkg installation
-RUN ./download_vcpkg.sh && \
-    ./vcpkg/bootstrap-vcpkg.sh
 COPY vcpkg.txt vcpkg.txt
-RUN ./vcpkg/vcpkg install @vcpkg.txt
+RUN ./scripts/download_vcpkg.sh
 
 # Source code build
 FROM deps as build
