@@ -1,7 +1,8 @@
 #!/bin/sh -eu
 
 cur_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
-repo_root="$(realpath "${cur_dir}/..")"
+# Hacky realpath
+repo_root="$( cd "${cur_dir}/.." ; pwd -P )"
 # Should be populated when running in CI
 CI=${CI:-}
 
