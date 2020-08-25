@@ -1,11 +1,14 @@
 #!/bin/sh -eu
 
 cur_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root="$(readlink -m "${cur_dir}/..")"
+# Should be populated when running in CI
+CI=${CI:-}
 
 # default arguments
-vcpkg_commit="$(cat "${cur_dir}/vcpkg_commit.txt")"
+vcpkg_commit="$(cat "${repo_root}/vcpkg_commit.txt")"
 vcpkg_url="https://github.com/microsoft/vcpkg.git"
-vcpkg_directory="${cur_dir}/vcpkg"
+vcpkg_directory="${repo_root}/vcpkg"
 
 # Loop through arguments and process them
 for arg in "$@"
@@ -38,21 +41,27 @@ done
 echo "Setting up vcpkg from ${vcpkg_url}@${vcpkg_commit} in ${vcpkg_directory}"
 echo ""
 
+# First clone the repo, but don't check out any files
 if [ ! -d "${vcpkg_directory}" ]; then
-    git clone -n "${vcpkg_url}" "${vcpkg_directory}" > /dev/null 2>&1
+    git clone -n "${vcpkg_url}" "${vcpkg_directory}"
 fi
+
 cd "${vcpkg_directory}"
-if [ "$(git rev-parse HEAD)" != "${vcpkg_commit}" ]; then
+# Corner case to detect if vcpkg commit is at HEAD of master and not checked out
+if [ "$(git rev-parse HEAD)" != "${vcpkg_commit}" ] || [ "$(find . -maxdepth 1 | wc -l)" -le 5 ]; then
+    git fetch
     git checkout "${vcpkg_commit}"
+    if [ -z "${CI}" ]; then
+        "${vcpkg_directory}/bootstrap-vcpkg.sh"
+        cd "${repo_root}"
+        "${vcpkg_directory}/vcpkg" install @vcpkg.txt
+        "${vcpkg_directory}/vcpkg" upgrade
+    fi
 fi
-cd "${cur_dir}"
+cd "${repo_root}"
 
 echo ""
-echo "Done setting up vcpkg"
-echo "Please run the following to install DrLojekyll dependencies"
-echo ""
-echo "  $ ${vcpkg_directory}/bootstrap-vcpkg.sh"
-echo "  $ ${vcpkg_directory}/vcpkg install @vcpkg.txt"
+echo "********************************************************************************"
 echo ""
 echo "To compile DrLojekyll with vcpkg dependencies, please add the following to your"
 echo "CMake invocation:"
