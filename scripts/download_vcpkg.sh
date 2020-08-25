@@ -56,7 +56,7 @@ if [ "$(git rev-parse HEAD)" != "${vcpkg_commit}" ] || [ "$(find . -maxdepth 1 |
         "${vcpkg_directory}/bootstrap-vcpkg.sh"
         cd "${repo_root}"
         "${vcpkg_directory}/vcpkg" install @vcpkg.txt
-        "${vcpkg_directory}/vcpkg" upgrade
+        "${vcpkg_directory}/vcpkg" upgrade --no-dry-run
     fi
 fi
 cd "${repo_root}"

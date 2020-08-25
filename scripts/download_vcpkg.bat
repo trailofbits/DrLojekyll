@@ -56,7 +56,7 @@ IF NOT DEFINED CI (
    CALL bootstrap-vcpkg.bat || exit /b
    cd "%repo_root%"
    "%drlog_vcpkg_dir%\vcpkg.exe" install "@vcpkg.txt" || exit /b
-   "%drlog_vcpkg_dir%\vcpkg.exe" upgrade || exit /b
+   "%drlog_vcpkg_dir%\vcpkg.exe" upgrade --no-dry-run || exit /b
 )
 
 :end
