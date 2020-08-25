@@ -1,7 +1,7 @@
 #!/bin/sh -eu
 
 cur_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
-repo_root="$(readlink -m "${cur_dir}/..")"
+repo_root="$(realpath "${cur_dir}/..")"
 # Should be populated when running in CI
 CI=${CI:-}
 
