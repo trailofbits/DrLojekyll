@@ -15,7 +15,7 @@ env:
 #     - Build mode: debug or release
 #     - Fuzzing: enabled or disabled
 #     - macOS / several LTS versions of ubuntu / windows
-#     - gcc 7 / clang 6.0 / clang 9 / gcc 9
+#     - gcc 8 / clang 6.0 / clang 9 / gcc 9
 #     - ninja / makefiles / visual studio solution / xcode
 #
 # This would be hundreds of configurations, and it would be silly to test all
