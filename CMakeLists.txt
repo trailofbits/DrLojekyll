@@ -42,36 +42,30 @@ endif()
 # --------------------------------------------
 # Dependencies -------------------------------
 # --------------------------------------------
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
 # --------------------------------------------
 # CMake installation stuff -------------------
 # --------------------------------------------
-# Export the package for use from the build-tree
-# (this registers the build-tree with a global CMake-registry)
 export(PACKAGE ${PROJECT_NAME})
 
+set(DRLOJEKYLL_CMAKE_INSTALL_DIR "share/cmake/${PROJECT_NAME}")
+
 include(CMakePackageConfigHelpers)
-# Create the ${PROJECT_NAME}Config.cmake
-configure_package_config_file(${PROJECT_NAME}Config.cmake.in
+configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-    INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+    INSTALL_DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
 
-# Install the ${PROJECT_NAME}Config.cmake
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-  DESTINATION lib/cmake/${PROJECT_NAME}
+install(EXPORT "${PROJECT_NAME}Targets"
+    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
+    NAMESPACE "${PROJECT_NAME}::"
 )
-install(DIRECTORY
-  "${PROJECT_SOURCE_DIR}/cmake/modules"
-  DESTINATION lib/cmake/${PROJECT_NAME}
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
-
-# Install the export set for use with the install-tree
-install(EXPORT ${PROJECT_NAME}Targets
-        DESTINATION lib/cmake/${PROJECT_NAME}
-        NAMESPACE "${PROJECT_NAME}::"
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/cmake/modules"
+    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
 
 # --------------------------------------------

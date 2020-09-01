@@ -52,7 +52,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=gcc-8 \
             -DCMAKE_CXX_COMPILER=g++-8 \
             .
@@ -85,7 +85,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=clang-6.0 \
             -DCMAKE_CXX_COMPILER=clang++-6.0 \
             .
@@ -125,7 +125,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=clang-10 \
             -DCMAKE_CXX_COMPILER=clang++-10 \
             .
@@ -157,7 +157,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=clang-10 \
             -DCMAKE_CXX_COMPILER=clang++-10 \
             .
@@ -206,7 +206,7 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -G Xcode -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" .
+          cmake -B build -G Xcode -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" .
           cmake --build build
 
   build5:
@@ -234,7 +234,7 @@ jobs:
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="$env:DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
+          cmake -B build -DCMAKE_INSTALL_PREFIX="$env:DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
           cmake --build build
 
   build6:
