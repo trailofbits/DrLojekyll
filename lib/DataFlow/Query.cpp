@@ -5,7 +5,7 @@
 #include <cassert>
 
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wno-strict-aliasing"
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
 
 namespace hyde {
 
