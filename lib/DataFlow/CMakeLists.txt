@@ -35,7 +35,6 @@ set(DataFlow_SRCS
 )
 
 set(DataFlow_PRIV_DEPS
-    settings
 )
 
 set(DataFlow_DEPS
@@ -43,6 +42,7 @@ set(DataFlow_DEPS
     Lex
     Parse
     Util
+    settings
 )
 
 define_static_library(DataFlow

@@ -9,10 +9,10 @@ set(Runtime_SRCS
 )
 
 set(Runtime_PRIV_DEPS
-    settings
 )
 
 set(Runtime_DEPS
+    settings
 )
 
 define_static_library(Runtime

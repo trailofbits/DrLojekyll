@@ -9,7 +9,6 @@ set(CodeGen_SRCS
 )
 
 set(CodeGen_PRIV_DEPS
-    settings
 )
 
 set(CodeGen_DEPS
@@ -18,6 +17,7 @@ set(CodeGen_DEPS
     Lex
     Parse
     Util
+    settings
 )
 
 define_static_library(CodeGen

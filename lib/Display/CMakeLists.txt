@@ -23,10 +23,10 @@ set(Display_SRCS
 )
 
 set(Display_PRIV_DEPS
-    settings
 )
 
 set(Display_DEPS
+    settings
 )
 
 define_static_library(Display

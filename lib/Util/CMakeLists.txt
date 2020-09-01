@@ -18,10 +18,10 @@ set(Util_SRCS
 )
 
 set(Util_PRIV_DEPS
-    settings
 )
 
 set(Util_DEPS
+    settings
 )
 
 define_static_library(Util

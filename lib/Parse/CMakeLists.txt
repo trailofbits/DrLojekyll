@@ -35,7 +35,6 @@ set(Parse_SRCS
 )
 
 set(Parse_PRIV_DEPS
-    settings
 )
 
 find_package(Filesystem REQUIRED)
@@ -45,6 +44,7 @@ set(Parse_DEPS
     Lex
     Util
     std::filesystem
+    settings
 )
 
 define_static_library(Parse

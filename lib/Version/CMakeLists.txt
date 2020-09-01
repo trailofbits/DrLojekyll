@@ -20,10 +20,10 @@ set(Version_SRCS
 )
 
 set(Version_PRIV_DEPS
-    settings
 )
 
 set(Version_DEPS
+    settings
 )
 
 define_static_library(Version

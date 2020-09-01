@@ -17,11 +17,11 @@ set(Lex_SRCS
 )
 
 set(Lex_PRIV_DEPS
-    settings
 )
 
 set(Lex_DEPS
     Display
+    settings
 )
 
 define_static_library(Lex
