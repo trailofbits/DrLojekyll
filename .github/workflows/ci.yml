@@ -138,11 +138,11 @@ jobs:
           cp -r data/examples fuzz-run/Debug/corpus
           cd fuzz-run/Debug
           ../../build/fuzz/Debug/fuzzer \
-            -max_total_time=5 \
-            -timeout=5 \
+            -max_total_time=3 \
+            -timeout=1 \
             -max_len=400 \
             -print_final_stats=1 \
-            -dict=fuzz/dict.txt" \
+            -dict=../../fuzz/dict.txt \
             corpus
 
       # Next, build RelWithDebInfo, using the indirect `cmake --build`
@@ -173,11 +173,11 @@ jobs:
           cp -r data/examples fuzz-run/RelWithDebInfo/corpus
           cd fuzz-run/RelWithDebInfo
           ../../build/fuzz/RelWithDebInfo/fuzzer \
-            -max_total_time=5 \
-            -timeout=5 \
+            -max_total_time=3 \
+            -timeout=1 \
             -max_len=400 \
             -print_final_stats=1 \
-            -dict=fuzz/dict.txt" \
+            -dict=../../fuzz/dict.txt \
             corpus
 
   build4:
