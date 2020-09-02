@@ -26,10 +26,9 @@ set(Display_PRIV_DEPS
 )
 
 set(Display_DEPS
-    settings
 )
 
-define_static_library(Display
+dr_define_static_library(Display
     CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
     SOURCES ${Display_SRCS}
     PUBLIC_HEADERS ${Display_PUBLIC_H}

@@ -1,5 +1,5 @@
 # TODO(bjl): add a comment explaining what is this function does, and why it exists?
-function(define_static_library libname)
+function(dr_define_static_library libname)
     set(options)
     set(oneValueArgs CURDIR)
     set(multiValueArgs SOURCES PUBLIC_HEADERS DEPENDENCIES PRIVATE_DEPS)
@@ -27,6 +27,11 @@ function(define_static_library libname)
             PRIVATE ${CURLIB_PRIVATE_DEPS}
         )
     endif()
+
+    target_link_libraries(${libname}
+        PUBLIC  settings_public
+        PRIVATE settings_private
+    )
 
     set_target_properties(${libname} PROPERTIES PUBLIC_HEADER "${CURLIB_PUBLIC_HEADERS}")
     target_include_directories(${libname} PUBLIC

@@ -21,7 +21,8 @@ target_link_libraries(unittests PRIVATE
     gtest_main
     rapidcheck_gtest
 
-    settings
+    settings_private
+    settings_public
 
     Util
     Display

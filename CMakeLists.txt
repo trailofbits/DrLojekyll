@@ -69,24 +69,35 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/cmake/modules"
 )
 
 # --------------------------------------------
-# `settings` for global build options --------
+# settings interface libraries
 # --------------------------------------------
-add_library(settings INTERFACE)
-# ??? https://stackoverflow.com/questions/25676277/cmake-target-include-directories-prints-an-error-when-i-try-to-add-the-source
-target_include_directories(settings INTERFACE
+
+# `settings_private` is for _private_ build options of Dr. Lojekyll libraries,
+# i.e., for build options we don't want to be exposed to downstream users.
+#
+# Example of settings we don't want to propagate: compiler warning settings
+add_library(settings_private INTERFACE)
+
+# `settings_private` is for _public build options of Dr. Lojekyll libraries,
+# i.e., for build options that should be propagated to downstream users.
+#
+# Example of settings we need to propagate: sanitizer settings
+add_library(settings_public INTERFACE)
+
+target_include_directories(settings_public INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_options(settings INTERFACE ${CXX_WARNING_OPTIONS})
+target_compile_options(settings_private INTERFACE ${CXX_WARNING_OPTIONS})
 
 if(WARNINGS_AS_ERRORS)
-    target_compile_options(settings INTERFACE ${CXX_WARNINGS_AS_ERRORS_OPTION})
+    target_compile_options(settings_private INTERFACE ${CXX_WARNINGS_AS_ERRORS_OPTION})
 endif()
 
 # sanitizer settings -------------------------
 if(ENABLE_SANITIZERS)
-    add_sanitizer_settings(settings
+    add_sanitizer_settings(settings_public
         SANITIZERS
             address
             undefined
@@ -101,19 +112,19 @@ if(ENABLE_LIBFUZZER)
         message(FATAL_ERROR "ENABLE_LIBFUZZER requires using Clang (currently using '${CMAKE_CXX_COMPILER_ID}')")
     endif()
 
-    add_sanitizer_settings(settings
+    add_sanitizer_settings(settings_public
         SANITIZERS
             fuzzer-no-link
         OPTIONS
             -g
     )
 
-    # make a `settings-fuzz-target` library that enables `-fsanitize=fuzzer`
-    add_sanitizer_settings(settings-fuzz-target SANITIZERS fuzzer)
+    # make a `settings_fuzz_target` library that enables `-fsanitize=fuzzer`
+    add_sanitizer_settings(settings_fuzz_target SANITIZERS fuzzer)
 endif()
 
 install(
-    TARGETS settings
+    TARGETS settings_public settings_private
     EXPORT "${PROJECT_NAME}Targets"
 )
 

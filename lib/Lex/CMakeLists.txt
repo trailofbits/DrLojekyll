@@ -21,10 +21,9 @@ set(Lex_PRIV_DEPS
 
 set(Lex_DEPS
     Display
-    settings
 )
 
-define_static_library(Lex
+dr_define_static_library(Lex
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Lex_SRCS}
   PUBLIC_HEADERS ${Lex_PUBLIC_H}

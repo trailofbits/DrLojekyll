@@ -42,10 +42,9 @@ set(DataFlow_DEPS
     Lex
     Parse
     Util
-    settings
 )
 
-define_static_library(DataFlow
+dr_define_static_library(DataFlow
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${DataFlow_SRCS}
   PUBLIC_HEADERS ${DataFlow_PUBLIC_H}

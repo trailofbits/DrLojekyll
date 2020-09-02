@@ -23,10 +23,9 @@ set(Version_PRIV_DEPS
 )
 
 set(Version_DEPS
-    settings
 )
 
-define_static_library(Version
+dr_define_static_library(Version
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Version_SRCS}
   PUBLIC_HEADERS ${Version_PUBLIC_H}
