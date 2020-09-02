@@ -6,7 +6,7 @@ project(DrLojekyll LANGUAGES CXX)
 enable_testing()
 
 include(cmake/add_sanitizer_settings.cmake)
-include(cmake/define_static_library.cmake)
+include(cmake/dr_define_static_library.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
