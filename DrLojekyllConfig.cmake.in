@@ -2,8 +2,8 @@
 
 include(CMakeFindDependencyMacro)
 
-list(PREPEND CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake/@PROJECT_NAME@/modules")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/lib/cmake/@PROJECT_NAME@/modules")
 find_dependency(Filesystem)
 
-include("${CMAKE_INSTALL_PREFIX}/share/cmake/@PROJECT_NAME@/@PROJECT_NAME@Targets.cmake")
+include("${CMAKE_INSTALL_PREFIX}/lib/cmake/@PROJECT_NAME@/@PROJECT_NAME@Targets.cmake")
 check_required_components("@PROJECT_NAME@")

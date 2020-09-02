@@ -49,7 +49,7 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 # --------------------------------------------
 export(PACKAGE ${PROJECT_NAME})
 
-set(DRLOJEKYLL_CMAKE_INSTALL_DIR "share/cmake/${PROJECT_NAME}")
+set(DRLOJEKYLL_CMAKE_INSTALL_DIR "lib/cmake/${PROJECT_NAME}")
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
