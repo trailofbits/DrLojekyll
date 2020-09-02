@@ -1,6 +1,14 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 cmake_minimum_required(VERSION 3.14)
+
+# Switch default of NO_PACKAGE_REGISTRY. Can be removed with CMake 3.15+
+#
+# Without this, installing Dr. Lojekyll using CMake ends up polluting the
+# filesystem outside of the build, source, or install directories.
+set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY ON CACHE BOOL "")
+set(CMAKE_EXPORT_PACKAGE_REGISTRY OFF CACHE BOOL "")
+
 project(DrLojekyll LANGUAGES CXX)
 
 enable_testing()
@@ -42,7 +50,7 @@ endif()
 # --------------------------------------------
 # Dependencies -------------------------------
 # --------------------------------------------
-list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # --------------------------------------------
 # CMake installation stuff -------------------
@@ -56,16 +64,15 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
     INSTALL_DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
-
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+        "${PROJECT_SOURCE_DIR}/cmake/FindFilesystem.cmake"
+    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
+)
 install(EXPORT "${PROJECT_NAME}Targets"
     DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
     NAMESPACE "${PROJECT_NAME}::"
-)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
-)
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/cmake/modules"
-    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
 
 # --------------------------------------------
