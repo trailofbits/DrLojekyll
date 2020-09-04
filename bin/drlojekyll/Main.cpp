@@ -334,7 +334,7 @@ extern "C" int main(int argc, const char *argv[]) {
         true  // `use_tab_stops`.
     };
 
-    if (auto module_opt = parser.ParsePath(input_path, config); module_opt) {
+    if (auto module_opt = parser.ParsePath(input_path, config)) {
       code = hyde::ProcessModule(display_manager, error_log, *module_opt);
     }
 
@@ -347,8 +347,7 @@ extern "C" int main(int argc, const char *argv[]) {
         true  // `use_tab_stops`.
     };
 
-    if (auto module_opt = parser.ParseStream(linked_module, config);
-        module_opt) {
+    if (auto module_opt = parser.ParseStream(linked_module, config)) {
       code = hyde::ProcessModule(display_manager, error_log, *module_opt);
     }
   }
