@@ -55,11 +55,12 @@ TEST(Parsing, invalid_examples) {
     hyde::Parser parser(display_mgr, err_log);
     hyde::DisplayConfiguration display_cfg = {entry.path(), 2, true};
 
-    auto mmod = parser.ParsePath(entry.path().native(), display_cfg);
-    // NOTE: sometimes, parsing successfully gives back a module, but has
-    //       errors for other reasons.  So mmod may have a value.
-    //       But either we should get no module value, or we should get errors
-    //       in the log.
-    EXPECT_TRUE(!mmod.has_value() || !err_log.IsEmpty());
+    // When parsing, either we should get back a module without errors in the
+    // log, or we should /not/ get a module but have a non-empty log.
+    if (auto mmod = parser.ParsePath(entry.path().native(), display_cfg)) {
+      EXPECT_TRUE(err_log.IsEmpty());
+    } else {
+      EXPECT_FALSE(err_log.IsEmpty());
+    }
   }
 }
