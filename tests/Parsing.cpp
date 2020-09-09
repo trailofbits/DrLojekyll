@@ -1,21 +1,21 @@
 #include <filesystem>
 #include <string>
 
-#include "unittests.h"
-
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/Parser.h"
+#include "unittests.h"
 
 namespace fs = std::filesystem;
 
 namespace hyde {
-  // Needed for Google Test to be able to print hyde::ErrorLog values
-  std::ostream& operator<<(std::ostream& os, const ErrorLog& log) {
-    log.Render(os);
-    return os;
-  }
+
+// Needed for Google Test to be able to print hyde::ErrorLog values
+std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
+  log.Render(os);
+  return os;
+}
 }  // namespace hyde
 
 // Make sure that we can parse each of the .dr files in the examples directory
