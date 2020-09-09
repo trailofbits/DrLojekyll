@@ -41,8 +41,8 @@ TEST(Parsing, examples) {
 
 // Make sure that we fail to parse each of the .dr files in the invalid_examples
 // directory with an error
-TEST(Parsing, invalid_examples) {
-  for (const auto &entry : fs::directory_iterator(kInvalidExamplesDir)) {
+TEST(Parsing, invalid_syntax_examples) {
+  for (const auto &entry : fs::directory_iterator(kInvalidSyntaxExamplesDir)) {
     if (entry.path().extension() != ".dr" || !fs::is_regular_file(entry)) {
       continue;
     }
@@ -55,12 +55,9 @@ TEST(Parsing, invalid_examples) {
     hyde::Parser parser(display_mgr, err_log);
     hyde::DisplayConfiguration display_cfg = {entry.path(), 2, true};
 
-    // When parsing, either we should get back a module without errors in the
-    // log, or we should /not/ get a module but have a non-empty log.
-    if (auto mmod = parser.ParsePath(entry.path().native(), display_cfg)) {
-      EXPECT_TRUE(err_log.IsEmpty());
-    } else {
-      EXPECT_FALSE(err_log.IsEmpty());
-    }
+    // Parsing is expected to fail for the invalid examples.
+    auto mmod = parser.ParsePath(entry.path().native(), display_cfg);
+    EXPECT_FALSE(mmod.has_value());
+    EXPECT_FALSE(err_log.IsEmpty());
   }
 }
