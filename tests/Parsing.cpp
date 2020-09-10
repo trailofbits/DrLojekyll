@@ -31,7 +31,7 @@ TEST(Parsing, examples) {
     hyde::DisplayManager display_mgr;
     hyde::ErrorLog err_log(display_mgr);
     hyde::Parser parser(display_mgr, err_log);
-    std::string path(entry.path());
+    std::string path(entry.path().string());
     hyde::DisplayConfiguration display_cfg = {path, 2, true};
 
     auto mmod = parser.ParsePath(path, display_cfg);
@@ -54,7 +54,7 @@ TEST(Parsing, invalid_syntax_examples) {
     hyde::DisplayManager display_mgr;
     hyde::ErrorLog err_log(display_mgr);
     hyde::Parser parser(display_mgr, err_log);
-    std::string path(entry.path());
+    std::string path(entry.path().string());
     hyde::DisplayConfiguration display_cfg = {path, 2, true};
 
     // Parsing is expected to fail for the invalid examples.
