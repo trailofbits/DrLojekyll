@@ -1,6 +1,6 @@
 #include <drlojekyll/Util/BitManipulation.h>
 
-#include "unittests.h"
+#include "UnitTests.h"
 
 // A simple Google Test example
 TEST(BitManipulation, rotate_zero) {

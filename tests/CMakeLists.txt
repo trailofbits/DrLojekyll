@@ -9,7 +9,7 @@ configure_file(drlojekyll_paths.h.in drlojekyll_paths.h @ONLY)
 find_package(Filesystem REQUIRED)
 
 add_executable(unittests
-    unittests.h
+    UnitTests.h
 
     BitManipulation.cpp
     Parsing.cpp
