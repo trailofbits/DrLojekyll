@@ -31,10 +31,10 @@ TEST(Parsing, examples) {
     hyde::DisplayManager display_mgr;
     hyde::ErrorLog err_log(display_mgr);
     hyde::Parser parser(display_mgr, err_log);
-    auto nativePath = entry.path().native();
-    hyde::DisplayConfiguration display_cfg = {nativePath, 2, true};
+    std::string path(entry.path());
+    hyde::DisplayConfiguration display_cfg = {path, 2, true};
 
-    auto mmod = parser.ParsePath(entry.path().native(), display_cfg);
+    auto mmod = parser.ParsePath(path, display_cfg);
     EXPECT_TRUE(mmod.has_value());
     EXPECT_TRUE(err_log.IsEmpty()) << "Parsing failed:" << std::endl << err_log;
   }
@@ -54,11 +54,11 @@ TEST(Parsing, invalid_syntax_examples) {
     hyde::DisplayManager display_mgr;
     hyde::ErrorLog err_log(display_mgr);
     hyde::Parser parser(display_mgr, err_log);
-    auto nativePath = entry.path().native();
-    hyde::DisplayConfiguration display_cfg = {nativePath, 2, true};
+    std::string path(entry.path());
+    hyde::DisplayConfiguration display_cfg = {path, 2, true};
 
     // Parsing is expected to fail for the invalid examples.
-    auto mmod = parser.ParsePath(nativePath, display_cfg);
+    auto mmod = parser.ParsePath(path, display_cfg);
     EXPECT_FALSE(mmod.has_value());
     EXPECT_FALSE(err_log.IsEmpty());
   }
