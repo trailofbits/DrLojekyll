@@ -1,6 +1,6 @@
 # Cribbed from https://github.com/google/googletest/tree/master/googletest.
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.17)
 
 include(GoogleTest)
 

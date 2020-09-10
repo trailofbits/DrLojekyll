@@ -1,13 +1,6 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-cmake_minimum_required(VERSION 3.14)
-
-# Switch default of NO_PACKAGE_REGISTRY. Can be removed with CMake 3.15+
-#
-# Without this, installing Dr. Lojekyll using CMake ends up polluting the
-# filesystem outside of the build, source, or install directories.
-set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY ON CACHE BOOL "")
-set(CMAKE_EXPORT_PACKAGE_REGISTRY OFF CACHE BOOL "")
+cmake_minimum_required(VERSION 3.17)
 
 project(DrLojekyll LANGUAGES CXX)
 
