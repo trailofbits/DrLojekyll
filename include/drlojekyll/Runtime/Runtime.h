@@ -270,8 +270,12 @@ MAKE_HASH_IMPL(int32_t, uint32_t, static_cast);
 MAKE_HASH_IMPL(uint32_t, uint32_t, static_cast);
 MAKE_HASH_IMPL(int64_t, uint64_t, static_cast);
 MAKE_HASH_IMPL(uint64_t, uint64_t, static_cast);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
 MAKE_HASH_IMPL(float, uint32_t &, reinterpret_cast);
 MAKE_HASH_IMPL(double, uint64_t &, reinterpret_cast);
+#pragma GCC diagnostic pop
 
 #undef MAKE_HASH_IMPL
 

@@ -18,13 +18,12 @@ set(Util_SRCS
 )
 
 set(Util_PRIV_DEPS
-    settings
 )
 
 set(Util_DEPS
 )
 
-define_static_library(Util
+dr_define_static_library(Util
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Util_SRCS}
   PUBLIC_HEADERS ${Util_PUBLIC_H}

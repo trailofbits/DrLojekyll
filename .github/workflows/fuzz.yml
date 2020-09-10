@@ -138,7 +138,7 @@ jobs:
 
         run: |
           set -xu
-          build/fuzzer \
+          build/fuzz/fuzzer \
             -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
             -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
             -max_len="${MAX_LENGTH:-${MAX_LENGTH_DEFAULT}}" \
@@ -157,7 +157,7 @@ jobs:
           set -xu
           mv "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
           mkdir -p "$FUZZ_RUN_DIR/corpus"
-          build/fuzzer -merge=1 "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
+          build/fuzz/fuzzer -merge=1 "$FUZZ_RUN_DIR/corpus" "$FUZZ_RUN_DIR/corpus.orig"
           rm -rf "$FUZZ_RUN_DIR/corpus.orig"
 
 

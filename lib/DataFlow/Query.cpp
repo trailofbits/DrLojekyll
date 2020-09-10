@@ -4,6 +4,9 @@
 
 #include <cassert>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
 namespace hyde {
 
 QueryImpl::~QueryImpl(void) {
@@ -1075,3 +1078,5 @@ DefinedNodeRange<QueryConstraint> Query::Constraints(void) const {
 Query::~Query(void) {}
 
 }  // namespace hyde
+
+#pragma GCC diagnostic pop
