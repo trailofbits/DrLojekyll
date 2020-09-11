@@ -1,12 +1,13 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.17)
+
 project(DrLojekyll LANGUAGES CXX)
 
 enable_testing()
 
 include(cmake/add_sanitizer_settings.cmake)
-include(cmake/define_static_library.cmake)
+include(cmake/dr_define_static_library.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
@@ -19,6 +20,7 @@ option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # --------------------------------------------
@@ -41,54 +43,61 @@ endif()
 # --------------------------------------------
 # Dependencies -------------------------------
 # --------------------------------------------
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # --------------------------------------------
 # CMake installation stuff -------------------
 # --------------------------------------------
-# Export the package for use from the build-tree
-# (this registers the build-tree with a global CMake-registry)
 export(PACKAGE ${PROJECT_NAME})
 
+set(DRLOJEKYLL_CMAKE_INSTALL_DIR "lib/cmake/${PROJECT_NAME}")
+
 include(CMakePackageConfigHelpers)
-# Create the ${PROJECT_NAME}Config.cmake
-configure_package_config_file(${PROJECT_NAME}Config.cmake.in
+configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-    INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+    INSTALL_DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
-
-# Install the ${PROJECT_NAME}Config.cmake
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-  DESTINATION lib/cmake/${PROJECT_NAME}
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+        "${PROJECT_SOURCE_DIR}/cmake/FindFilesystem.cmake"
+    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
-install(DIRECTORY
-  "${PROJECT_SOURCE_DIR}/cmake/modules"
-  DESTINATION lib/cmake/${PROJECT_NAME}
-)
-
-# Install the export set for use with the install-tree
-install(EXPORT ${PROJECT_NAME}Targets
-        DESTINATION lib/cmake/${PROJECT_NAME}
-        NAMESPACE "${PROJECT_NAME}::"
+install(EXPORT "${PROJECT_NAME}Targets"
+    DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
+    NAMESPACE "${PROJECT_NAME}::"
 )
 
 # --------------------------------------------
-# `settings` for global build options --------
+# settings interface libraries
 # --------------------------------------------
-add_library(settings INTERFACE)
-target_include_directories(settings INTERFACE
-    "${CMAKE_CURRENT_LIST_DIR}/include")
 
-target_compile_options(settings INTERFACE ${CXX_WARNING_OPTIONS})
+# `settings_private` is for _private_ build options of Dr. Lojekyll libraries,
+# i.e., for build options we don't want to be exposed to downstream users.
+#
+# Example of settings we don't want to propagate: compiler warning settings
+add_library(settings_private INTERFACE)
+
+# `settings_private` is for _public build options of Dr. Lojekyll libraries,
+# i.e., for build options that should be propagated to downstream users.
+#
+# Example of settings we need to propagate: sanitizer settings
+add_library(settings_public INTERFACE)
+
+target_include_directories(settings_public INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+target_compile_options(settings_private INTERFACE ${CXX_WARNING_OPTIONS})
 
 if(WARNINGS_AS_ERRORS)
-    target_compile_options(settings INTERFACE ${CXX_WARNINGS_AS_ERRORS_OPTION})
+    target_compile_options(settings_private INTERFACE ${CXX_WARNINGS_AS_ERRORS_OPTION})
 endif()
 
 # sanitizer settings -------------------------
 if(ENABLE_SANITIZERS)
-    add_sanitizer_settings(settings
+    add_sanitizer_settings(settings_public
         SANITIZERS
             address
             undefined
@@ -103,16 +112,21 @@ if(ENABLE_LIBFUZZER)
         message(FATAL_ERROR "ENABLE_LIBFUZZER requires using Clang (currently using '${CMAKE_CXX_COMPILER_ID}')")
     endif()
 
-    add_sanitizer_settings(settings
+    add_sanitizer_settings(settings_public
         SANITIZERS
             fuzzer-no-link
         OPTIONS
             -g
     )
 
-    # make a `settings-fuzz-target` library that enables `-fsanitize=fuzzer`
-    add_sanitizer_settings(settings-fuzz-target SANITIZERS fuzzer)
+    # make a `settings_fuzz_target` library that enables `-fsanitize=fuzzer`
+    add_sanitizer_settings(settings_fuzz_target SANITIZERS fuzzer)
 endif()
+
+install(
+    TARGETS settings_public settings_private
+    EXPORT "${PROJECT_NAME}Targets"
+)
 
 # --------------------------------------------
 # vendored dependencies ----------------------
@@ -134,41 +148,10 @@ endif()
 # --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
-# Dr. Lojekyll Libraries
 add_subdirectory(lib)
+add_subdirectory(bin)
+add_subdirectory(fuzz)
 
-# `drlojekyll`
-add_executable(drlojekyll
-    bin/drlojekyll/Main.cpp)
-target_link_libraries(drlojekyll PRIVATE
-    settings
-    Util
-    Display
-    Lex
-    Parse
-    DataFlow
-    CodeGen
-    ControlFlow
-    Version
-)
-install(TARGETS drlojekyll RUNTIME DESTINATION "bin")
-
-# `fuzzer`
-if(ENABLE_LIBFUZZER)
-    add_executable(fuzzer
-        fuzz/Fuzzer.cpp)
-    target_link_libraries(fuzzer PRIVATE
-        settings
-        settings-fuzz-target
-        Util
-        Display
-        Lex
-        Parse
-        Version
-    )
-endif()
-
-# tests
 if(ENABLE_TESTS)
   add_subdirectory(tests)
 endif()

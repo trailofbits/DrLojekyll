@@ -23,13 +23,12 @@ set(Display_SRCS
 )
 
 set(Display_PRIV_DEPS
-    settings
 )
 
 set(Display_DEPS
 )
 
-define_static_library(Display
+dr_define_static_library(Display
     CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
     SOURCES ${Display_SRCS}
     PUBLIC_HEADERS ${Display_PUBLIC_H}

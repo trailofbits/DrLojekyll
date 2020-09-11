@@ -15,7 +15,7 @@ env:
 #     - Build mode: debug or release
 #     - Fuzzing: enabled or disabled
 #     - macOS / several LTS versions of ubuntu / windows
-#     - gcc 7 / clang 6.0 / clang 9 / gcc 9
+#     - gcc 8 / clang 6.0 / clang 9 / gcc 9
 #     - ninja / makefiles / visual studio solution / xcode
 #
 # This would be hundreds of configurations, and it would be silly to test all
@@ -52,7 +52,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=gcc-8 \
             -DCMAKE_CXX_COMPILER=g++-8 \
             .
@@ -85,7 +85,7 @@ jobs:
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=clang-6.0 \
             -DCMAKE_CXX_COMPILER=clang++-6.0 \
             .
@@ -117,29 +117,47 @@ jobs:
       # interfering.  First build debug, explicitly invoking `ninja`:
       - name: Build Debug
         run: ninja -C build -f build-Debug.ninja
+
       - name: Install Debug
-        run: cmake --build build --target install
+        run: cmake --install build --config Debug
+
       - name: Test Debug Install
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=clang-10 \
             -DCMAKE_CXX_COMPILER=clang++-10 \
             .
           cmake --build build
 
+      # Just a quick test to make sure the fuzzer doesn't crash immediately
+      - name: Test Debug Fuzzer
+        run: |
+          mkdir -p fuzz-run/Debug
+          cp -r data/examples fuzz-run/Debug/corpus
+          cd fuzz-run/Debug
+          ../../build/fuzz/Debug/fuzzer \
+            -max_total_time=3 \
+            -timeout=1 \
+            -max_len=400 \
+            -print_final_stats=1 \
+            -dict=../../fuzz/dict.txt \
+            corpus
+
       # Next, build RelWithDebInfo, using the indirect `cmake --build`
       # invocation of ninja.
       - name: Build Release
         run: cmake --build build --config RelWithDebInfo -j
+
       - name: Install Release
-        run: cmake --build build --target install
+        run: cmake --install build --config RelWithDebInfo
+
       - name: Test Release Install
         run: |
           cd tests/external_build
           cmake -B build \
-            -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
             -DCMAKE_C_COMPILER=clang-10 \
             -DCMAKE_CXX_COMPILER=clang++-10 \
             .
@@ -147,6 +165,20 @@ jobs:
 
       - name: Test Release
         run: cd build && ctest -C RelWithDebInfo --output-on-failure
+
+      # Just a quick test to make sure the fuzzer doesn't crash immediately
+      - name: Test Release Fuzzer
+        run: |
+          mkdir -p fuzz-run/RelWithDebInfo
+          cp -r data/examples fuzz-run/RelWithDebInfo/corpus
+          cd fuzz-run/RelWithDebInfo
+          ../../build/fuzz/RelWithDebInfo/fuzzer \
+            -max_total_time=3 \
+            -timeout=1 \
+            -max_len=400 \
+            -print_final_stats=1 \
+            -dict=../../fuzz/dict.txt \
+            corpus
 
   build4:
     name: macOS 10.15 / Debug / Sanitizers
@@ -169,12 +201,12 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Install
-        run: cmake --build build --target install
+        run: cmake --install build --config Debug
 
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -G Xcode -DCMAKE_PREFIX_PATH="$DR_INSTALL_DIR" .
+          cmake -B build -G Xcode -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" .
           cmake --build build
 
   build5:
@@ -197,12 +229,12 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Install
-        run: cmake --build build --target install
+        run: cmake --install build --config Debug
 
       - name: Test Install
         run: |
           cd tests/external_build
-          cmake -B build -DCMAKE_PREFIX_PATH="$env:DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
+          cmake -B build -DCMAKE_INSTALL_PREFIX="$env:DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
           cmake --build build
 
   build6:

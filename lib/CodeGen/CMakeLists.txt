@@ -9,7 +9,6 @@ set(CodeGen_SRCS
 )
 
 set(CodeGen_PRIV_DEPS
-    settings
 )
 
 set(CodeGen_DEPS
@@ -20,7 +19,7 @@ set(CodeGen_DEPS
     Util
 )
 
-define_static_library(CodeGen
+dr_define_static_library(CodeGen
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${CodeGen_SRCS}
   PUBLIC_HEADERS ${CodeGen_PUBLIC_H}

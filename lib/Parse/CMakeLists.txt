@@ -35,7 +35,6 @@ set(Parse_SRCS
 )
 
 set(Parse_PRIV_DEPS
-    settings
 )
 
 find_package(Filesystem REQUIRED)
@@ -47,7 +46,7 @@ set(Parse_DEPS
     std::filesystem
 )
 
-define_static_library(Parse
+dr_define_static_library(Parse
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
   SOURCES ${Parse_SRCS}
   PUBLIC_HEADERS ${Parse_PUBLIC_H}
