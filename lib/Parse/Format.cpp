@@ -94,15 +94,15 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
     if (!functor.IsPure()) {
       os << " impure";
     }
-    for (auto i = 0u; i < functor.NumUnorderedParameterSets(); ++i) {
-      os << " unordered(";
-      comma = "";
-      for (auto param : functor.NthUnorderedSet(i)) {
-        os << comma << param.Name();
-        comma = ", ";
-      }
-      os << ")";
+    os << " range(";
+    switch (functor.Range()) {
+      case FunctorRange::kOneOrMore: os << "+"; break;
+      case FunctorRange::kZeroOrMore: os << "*"; break;
+      case FunctorRange::kZeroOrOne: os << "?"; break;
+      case FunctorRange::kOneToOne: os << "."; break;
     }
+    os << ")";
+
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " inline";
   }

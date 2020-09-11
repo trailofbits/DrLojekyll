@@ -48,7 +48,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
-
+    if (functor) {
+      functor->last_tok = tok;
+    }
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
@@ -187,13 +189,25 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         }
 
       case 6:
-        if (Lexeme::kKeywordUnordered == lexeme) {
-          functor->unordered_sets.emplace_back();
-          auto &uset = functor->unordered_sets.back();
-          uset.begin = tok;
-          uset.end = tok;
-          state = 7;
-          continue;
+        if (Lexeme::kKeywordRange == lexeme) {
+          if (functor->range_begin_opt.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected 'range' attribute here; functor " << name
+                << " was already specified with a range";
+
+            DisplayRange prev_range(functor->range_begin_opt.Position(),
+                                    functor->range_end_opt.NextPosition());
+            err.Note(scope_range, prev_range)
+                << "Previous 'range' attribute was here";
+
+            RemoveDecl<ParsedFunctor>(std::move(functor));
+            return;
+
+          } else {
+            functor->range_begin_opt = tok;
+            state = 7;
+            continue;
+          }
 
         } else if (Lexeme::kKeywordImpure == lexeme) {
           if (functor->is_pure) {
@@ -216,7 +230,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected 'unordered' attribute here, "
+              << "Expected 'range' specifier or 'impure' attribute here, "
               << "but got '" << tok << "' instead";
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
@@ -224,76 +238,29 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
       case 7:
         if (Lexeme::kPuncOpenParen == lexeme) {
-          assert(!functor->unordered_sets.empty());
-          auto &uset = functor->unordered_sets.back();
-          uset.end = tok;
-
           state = 8;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected an opening parenthesis here to begin 'unordered' set"
-              << " but got '" << tok << "' instead";
+              << "Expected an opening parenthesis here to begin 'range' "
+              << "specification '" << tok << "' instead";
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
 
       case 8:
-        if (Lexeme::kIdentifierVariable == lexeme) {
-          assert(!functor->unordered_sets.empty());
-          auto &uset = functor->unordered_sets.back();
-          uset.end = tok;
-          auto found = false;
-          for (const auto &func_param : functor->parameters) {
-            if (func_param->name.IdentifierId() != tok.IdentifierId()) {
-              continue;
-            }
+        if (Lexeme::kPuncPeriod == lexeme) {
+          functor->range = FunctorRange::kOneToOne;
 
-            if (func_param->opt_binding.Lexeme() != Lexeme::kKeywordBound) {
-              context->error_log.Append(scope_range, tok_range)
-                  << "Variable '" << tok
-                  << "' specified in unordered set is not a 'bound'-attributed "
-                  << "parameter of this #functor";
-              RemoveDecl<ParsedFunctor>(std::move(functor));
-              return;
-            }
+        } else if (Lexeme::kPuncStar == lexeme) {
+          functor->range = FunctorRange::kZeroOrMore;
 
-            if (func_param->opt_unordered_name.IsValid()) {
-              auto err = context->error_log.Append(scope_range, tok_range);
-              err << "Parameter variable '" << tok
-                  << "' cannot belong to more than one unordered sets";
+        } else if (Lexeme::kPuncQuestion == lexeme) {
+          functor->range = FunctorRange::kZeroOrOne;
 
-              err.Note(scope_range,
-                       func_param->opt_unordered_name.SpellingRange())
-                  << "Previous use in an unordered set was here";
-
-              RemoveDecl<ParsedFunctor>(std::move(functor));
-              return;
-            }
-
-            func_param->opt_unordered_name = tok;
-            if (!uset.params.empty()) {
-              uset.params.back()->next_unordered = func_param.get();
-            }
-            uset.params.push_back(func_param.get());
-            uset.mask |= 1ull << func_param->index;
-            found = true;
-            break;
-          }
-
-          if (!found) {
-            context->error_log.Append(scope_range, tok_range)
-                << "Variable '" << tok
-                << "' specified in unordered set is not a parameter "
-                << "variable of this #functor";
-            RemoveDecl<ParsedFunctor>(std::move(functor));
-            return;
-
-          } else {
-            state = 9;
-            continue;
-          }
+        } else if (Lexeme::kPuncPlus == lexeme) {
+          functor->range = FunctorRange::kOneOrMore;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -302,50 +269,52 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
+        state = 9;
+        continue;
 
       case 9:
-        if (Lexeme::kPuncComma == lexeme) {
-          assert(!functor->unordered_sets.empty());
-          auto &uset = functor->unordered_sets.back();
-          uset.end = tok;
-          state = 8;
-          continue;
-
-        } else if (Lexeme::kPuncCloseParen == lexeme) {
-          assert(!functor->unordered_sets.empty());
-          auto &uset = functor->unordered_sets.back();
-          uset.end = tok;
-
-          if (2 > uset.params.size()) {
-            context->error_log.Append(scope_range, uset.SpellingRange())
-                << "Unordered set specification must list at least two "
-                << "parameter variables";
-            RemoveDecl<ParsedFunctor>(std::move(functor));
-            return;
-          }
-
-          functor->rparen = tok;
+        if (Lexeme::kPuncCloseParen == lexeme) {
+          functor->range_end_opt = tok;
           state = 6;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected either a comma (to continue unordered set) or a "
-              << "closing parenthesis (to end undordered set) here, "
-              << "but got '" << tok << "' instead";
+              << "Expected a closing parenthesis (to end range specifier) here,"
+              << " but got '" << tok << "' instead";
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
     }
   }
 
+  // If this is a filter functor then change the default range behavior.
+  if (functor->range_begin_opt.IsInvalid() && !num_free_params) {
+    functor->range = FunctorRange::kZeroOrOne;
+  }
+
   const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
 
-  if (state != 6 && state != 13) {
+  DisplayRange range_spec(functor->range_begin_opt.Position(),
+                          functor->range_end_opt.NextPosition());
+
+  if (state != 6) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete functor declaration; the declaration must be "
         << "placed entirely on one line";
     RemoveDecl<ParsedFunctor>(std::move(functor));
+
+  // Aggregating functors can't have range specifiers.
+  } else if (is_aggregate && functor->range_begin_opt.IsValid()) {
+    context->error_log.Append(scope_range, range_spec)
+        << "Aggregating functors are not allowed to have range specifiers";
+
+  // Filter functors, i.e. functors taking in only bound parameters, must have
+  // a zero-or-one range.
+  } else if (!num_free_params && functor->range != FunctorRange::kZeroOrOne) {
+    context->error_log.Append(scope_range, range_spec)
+        << "Invalid range specified on filter functor (having only bound "
+        << "parameters); range must be 'range(?)`, i.e. zero-or-one";
 
   // If we have a summary argument, then require us to have an aggregate
   // argument.
@@ -447,42 +416,6 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         RemoveDecl<ParsedFunctor>(std::move(functor));
         return;
       }
-    }
-
-    // Make sure both have the same number of unordered sets.
-    const auto num_sets = redecl->unordered_sets.size();
-    if (num_sets != functor->unordered_sets.size()) {
-      auto err = context->error_log.Append(scope_range);
-      err << "Mismatch between the number of unordered parameter sets "
-          << "specified for functor '" << name << "/" << arity
-          << "' has different number of unordered parameter sets specified";
-
-      err.Note(ParsedDeclaration(redecl).SpellingRange())
-          << "Conflicting functor declaration is here";
-
-      RemoveDecl<ParsedFunctor>(std::move(functor));
-      return;
-    }
-
-    // Check the unordered sets.
-    for (auto u = 0u; u < num_sets; ++u) {
-      auto &uset = functor->unordered_sets[u];
-      auto &redecl_uset = redecl->unordered_sets[u];
-      if (uset.mask == redecl_uset.mask) {
-        continue;
-      }
-
-      auto err = context->error_log.Append(scope_range, uset.SpellingRange());
-      err << "Parameter variables covered by this unordered set doesn't "
-          << "match the corresponding unordered set specification in the "
-          << "first declaration of this #functor";
-
-      err.Note(ParsedDeclaration(redecl).SpellingRange(),
-               redecl_uset.SpellingRange())
-          << "Corresponding unordered set specification is here";
-
-      RemoveDecl<ParsedFunctor>(std::move(functor));
-      return;
     }
 
     // Do generic consistency checking.

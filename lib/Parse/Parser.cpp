@@ -383,6 +383,10 @@ void ParserImpl::ParseLocalExport(
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
+    if (local) {
+      local->last_tok = tok;
+    }
+
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
 
@@ -540,6 +544,27 @@ void ParserImpl::ParseLocalExport(
 
           param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
           assert(param->opt_merge->parameters.size() == 3);
+
+          // Make sure the `range` specification of the merge functor is sane.
+          if (decl->range_begin_opt.IsValid()) {
+            if (decl->range != FunctorRange::kOneToOne) {
+              DisplayRange range_spec(decl->range_begin_opt.Position(),
+                                      decl->range_end_opt.NextPosition());
+
+              auto err = context->error_log.Append(scope_range, tok_range);
+
+              err << "Merge functor '" << decl->name << "/3' declared with "
+                  << "explicit, non-one-to-one range specification, but must "
+                  << "be one-to-one, i.e. 'range(.)'";
+
+              err.Note(ParsedFunctor(param->opt_merge).SpellingRange(),
+                       range_spec)
+                  << "Incorrect range specification specification is here";
+              return;
+            }
+          } else {
+            decl->range = FunctorRange::kOneToOne;
+          }
 
           param->opt_type =
               TypeLoc(param->opt_merge->parameters[0]->opt_type.Kind(),

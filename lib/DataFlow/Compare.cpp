@@ -8,13 +8,13 @@
 
 namespace hyde {
 
-Node<QueryConstraint>::~Node(void) {}
+Node<QueryCompare>::~Node(void) {}
 
-Node<QueryConstraint> *Node<QueryConstraint>::AsConstraint(void) noexcept {
+Node<QueryCompare> *Node<QueryCompare>::AsCompare(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryConstraint>::Hash(void) noexcept {
+uint64_t Node<QueryCompare>::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -40,8 +40,8 @@ uint64_t Node<QueryConstraint>::Hash(void) noexcept {
 // replacements easier. If this constraint's operator is unordered, then we
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
-bool Node<QueryConstraint>::Canonicalize(QueryImpl *query,
-                                         const OptimizationContext &opt) {
+bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
+                                      const OptimizationContext &opt) {
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
@@ -333,18 +333,18 @@ bool Node<QueryConstraint>::Canonicalize(QueryImpl *query,
   return non_local_changes;
 }
 
-// Equality over constraints is structural.
+// Equality over compares is structural.
 //
 // NOTE(pag): The two inputs to the comparison being tested aren't always
 //            ordered; however, equality testing here assumes ordering.
-bool Node<QueryConstraint>::Equals(EqualitySet &eq,
-                                   Node<QueryView> *that_) noexcept {
+bool Node<QueryCompare>::Equals(EqualitySet &eq,
+                                Node<QueryView> *that_) noexcept {
 
   if (eq.Contains(this, that_)) {
     return true;
   }
 
-  const auto that = that_->AsConstraint();
+  const auto that = that_->AsCompare();
   if (!that || op != that->op ||
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||

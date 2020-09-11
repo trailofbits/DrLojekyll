@@ -220,6 +220,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
+    if (clause) {
+      clause->last_tok = tok;
+    }
+
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
     switch (state) {
@@ -524,10 +528,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else if (Lexeme::kPuncPeriod == lexeme) {
+          clause->dot = tok;
           if (!TryMatchPredicateWithDecl(module, pred.get())) {
             return;
           }
-          clause->dot = tok;
           state = 9;
           link_pred();
 

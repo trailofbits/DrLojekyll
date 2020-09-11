@@ -13,7 +13,7 @@ namespace hyde {
 class User {
  public:
   template <typename T>
-  explicit User(T *) : user_id(typeid(T).hash_code()) {}
+  explicit User(T *) {}
 
   virtual ~User(void);
 
@@ -21,8 +21,6 @@ class User {
   virtual void Update(uint64_t next_timestamp);
 
   static uint64_t gNextTimestamp;
-
-  const size_t user_id;
 
  protected:
   User(void) = delete;
@@ -300,6 +298,23 @@ class UseList {
 };
 
 template <typename T>
+class WeakUseList : public UseList<T> {
+ public:
+  WeakUseList(WeakUseList<T> &&that) noexcept : UseList<T>(that) {}
+
+  WeakUseList(User *owner_) : UseList<T>(owner_, true /* is_weak */) {}
+
+  void Swap(WeakUseList<T> &that) {
+    this->UseList<T>::Swap(that);
+  }
+
+ private:
+  void Swap(UseList<T> &) {
+    __builtin_unreachable();
+  }
+};
+
+template <typename T>
 class DefList;
 
 // An iterator over a definition list.
@@ -453,10 +468,11 @@ class Def {
 
   template <typename U, typename CB>
   inline void ForEachUse(CB cb) const {
-    const auto user_id = typeid(U).hash_code();
     for (const auto &use : uses) {
-      if (use && use->user->user_id == user_id) {
-        cb(reinterpret_cast<U *>(use->user), use->def_being_used);
+      if (use) {
+        if (auto user = dynamic_cast<U *>(use->user); user) {
+          cb(user, use->def_being_used);
+        }
       }
     }
   }
@@ -569,7 +585,7 @@ void UseList<T>::AddUse(Def<T> *def) {
 template <typename T>
 class UseRef {
  public:
-  UseRef(Use<T> *use_) : use(use_) {}
+  UseRef(User *user, Def<T> *def) : use(def ? def->CreateUse(user) : nullptr) {}
 
   void Swap(UseRef<T> &that) {
     if (use && that.use) {

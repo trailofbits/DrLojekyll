@@ -40,7 +40,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       }
     }
 
-    for (CMP *view : constraints) {
+    for (CMP *view : compares) {
       if (!view->is_dead &&
           !VIEW::GetIncomingView(view->input_columns, view->attached_columns)) {
         derived_from_input.insert(view);  // All inputs are constants.

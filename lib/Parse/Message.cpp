@@ -33,6 +33,10 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
+    if (message) {
+      message->last_tok = tok;
+    }
+
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
 

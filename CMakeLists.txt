@@ -148,6 +148,7 @@ target_link_libraries(drlojekyll PRIVATE
     Parse
     DataFlow
     CodeGen
+    ControlFlow
     Version
 )
 install(TARGETS drlojekyll RUNTIME DESTINATION "bin")

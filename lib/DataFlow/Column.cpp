@@ -103,8 +103,7 @@ void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
     this->ForEachUse<VIEW>(
         [](VIEW *view, COL *) { view->is_canonical = false; });
 
-    UseRef<COL> new_real_constant(const_col->CreateUse(this->view));
-    referenced_constant.Swap(new_real_constant);
+    UseRef<COL>(view, const_col).Swap(referenced_constant);
   }
 }
 
