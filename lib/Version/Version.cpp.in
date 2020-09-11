@@ -50,10 +50,17 @@ namespace version {
     return "@GIT_COMMIT_SUBJECT@";
   }
   std::string GetCommitBody(void) {
+    // NOTE: GIT_COMMIT_BODY is explicitly quoted by git_watcher.cmake, whereas
+    // the other variables are not.
     return @GIT_COMMIT_BODY@;
   }
   std::string GetVersionString(void) {
-    return "@VERSION_STRING@";
+    // NOTE: this value that ends up here seems to be just an abbreviated
+    // version of the commit hash.
+    //
+    // FIXME(blarsen): We may one day want this to be more meaningful, e.g., an
+    //                 actual released version number
+    return "@GIT_DESCRIBE@";
   }
 
 
