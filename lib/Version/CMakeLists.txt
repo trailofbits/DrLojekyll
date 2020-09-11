@@ -33,4 +33,4 @@ dr_define_static_library(Version
   PRIVATE_DEPS ${Version_PRIV_DEPS}
 )
 
-add_dependencies(Version check_git_${PROJECT_NAME})
+add_dependencies(Version check_git)
