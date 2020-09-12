@@ -4,8 +4,10 @@
 
 #include <cassert>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
 
 namespace hyde {
 
@@ -87,6 +89,8 @@ bool QueryStream::IsIO(void) const noexcept {
 QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
+
+QueryView::QueryView(const QueryView &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QuerySelect &view) : QueryView(view.impl) {}
 
@@ -1296,4 +1300,6 @@ Query::~Query(void) {}
 
 }  // namespace hyde
 
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif

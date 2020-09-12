@@ -203,8 +203,10 @@ class ParserImpl {
                                            const DisplayConfiguration &config);
 };
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
@@ -280,7 +282,9 @@ void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
   }
 }
 
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.

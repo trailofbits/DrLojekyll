@@ -10,14 +10,13 @@ set(ControlFlow_PUBLIC_H
 set(ControlFlow_SRCS
     "Program.h"
     
-    #"Build/Build.h"
+    "Build/Build.h"
     "Build/Build.cpp"
-    #"Build/Induction.cpp"
-    #"Build/Insert.cpp"
-    #"Build/Join.cpp"
-    #"Build/Merge.cpp"
-    #"Build/Product.cpp"
-    #"Build/Union.cpp"
+    "Build/Induction.cpp"
+    "Build/Insert.cpp"
+    "Build/Join.cpp"
+    "Build/Product.cpp"
+    "Build/Union.cpp"
     
     "Format.cpp"
     "Induction.cpp"
@@ -31,7 +30,6 @@ set(ControlFlow_SRCS
 )
 
 set(ControlFlow_PRIV_DEPS
-    settings
 )
 
 set(ControlFlow_DEPS

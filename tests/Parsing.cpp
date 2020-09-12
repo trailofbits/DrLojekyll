@@ -1,3 +1,5 @@
+// Copyright 2020, Trail of Bits, Inc. All rights reserved.
+
 #include <filesystem>
 #include <string>
 
@@ -16,6 +18,7 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
   log.Render(os);
   return os;
 }
+
 }  // namespace hyde
 
 // Make sure that we can parse each of the .dr files in the examples directory

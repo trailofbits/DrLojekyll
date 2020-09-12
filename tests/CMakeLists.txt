@@ -29,7 +29,6 @@ target_link_libraries(unittests PRIVATE
     Lex
     Parse
     DataFlow
-    CodeGen
     Version
 
     std::filesystem

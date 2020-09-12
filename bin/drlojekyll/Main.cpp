@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/CodeGen/BAM.h>
+#include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
@@ -41,8 +41,13 @@ static int CompileModule(hyde::DisplayManager display_manager,
       gDOTStream->Flush();
     }
 
+    if (auto program_opt = Program::Build(*query_opt, error_log); program_opt) {
+      (void) program_opt;
+    }
+
     if (gCodeStream) {
-      GenerateCode(module, *query_opt, *gCodeStream);
+
+//      GenerateCode(module, *query_opt, *gCodeStream);
       gCodeStream->Flush();
     }
 

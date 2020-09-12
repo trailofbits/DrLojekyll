@@ -5,6 +5,7 @@
 #include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/DisjointSet.h>
 
 #include <memory>
@@ -12,6 +13,19 @@
 #include <unordered_map>
 #include <vector>
 
+namespace std {
+
+template <>
+struct hash<std::pair<::hyde::QueryView, ::hyde::QueryView>> {
+  using argument_type = std::pair<::hyde::QueryView, ::hyde::QueryView>;
+  using result_type = uint64_t;
+  inline uint64_t operator()(argument_type views) const noexcept {
+    return (views.first.UniqueId() * views.second.Hash()) ^
+           views.second.UniqueId();
+  }
+};
+
+}  // namespace std
 namespace hyde {
 
 class Program;

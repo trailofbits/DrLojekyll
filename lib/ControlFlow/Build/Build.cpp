@@ -95,9 +95,14 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
     } else {
       BuildEagerProductRegion(impl, pred_view, join, context, parent);
     }
+
   } else if (view.IsMerge()) {
-    BuildEagerMergeRegion(
-        impl, pred_view, QueryMerge::From(view), context, parent);
+    const auto merge = QueryMerge::From(view);
+    if (context.inductive_successors.count(view)) {
+      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent);
+    } else {
+      BuildEagerUnionRegion(impl, pred_view, merge, context, parent);
+    }
 
   } else if (view.IsAggregate()) {
 
@@ -112,7 +117,7 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsInsert()) {
     BuildEagerInsertRegion(impl, pred_view, QueryInsert::From(view),
-                                  context, parent);
+                           context, parent);
 
   } else {
     assert(false);
@@ -130,10 +135,12 @@ static VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   return cond_var;
 }
 
+}  // namespace
+
 // Build an eager region. This guards the execution of the region in
 // conditionals if the view itself is conditional.
-static void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryView view, Context &usage, OP *parent) {
+void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
+                      QueryView view, Context &usage, OP *parent) {
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
 
@@ -167,9 +174,7 @@ static void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
       impl, pred_view, view, usage, parent);
 }
 
-}  // namespace
-
-void WorkItem::Anchor(void) {}
+WorkItem::~WorkItem(void) {}
 
 // Create a procedure for a view.
 static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
@@ -208,9 +213,9 @@ static void DiscoverInductions(const Query &query, Context &context) {
     for (auto succ_view : QueryView(view).Successors()) {
       auto succs_of_succ = TransitiveSuccessorsOf(succ_view);
       if (succs_of_succ.count(view)) {
-        context.inductive_successors[view].push_back(succ_view);
+        context.inductive_successors[view].insert(succ_view);
       } else {
-        context.noninductive_successors[view].push_back(succ_view);
+        context.noninductive_successors[view].insert(succ_view);
       }
     }
 
@@ -322,11 +327,11 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   for (auto io : query.IOs()) {
     for (auto receive : io.Receives()) {
       context.view_to_induction.clear();
-      context.product_guard_var.clear();
-      context.product_vector.clear();
+//      context.product_guard_var.clear();
+//      context.product_vector.clear();
       context.work_list.clear();
       context.view_to_work_item.clear();
-      (void) BuildEagerProcedure(program, receive, context);
+      BuildEagerProcedure(program, receive, context);
 
       while (!context.work_list.empty()) {
         prev_work_list.swap(context.work_list);

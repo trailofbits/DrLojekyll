@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wconversion"
 #  pragma GCC diagnostic ignored "-Wsign-compare"
@@ -10,7 +10,7 @@
 
 #include <rapidcheck/gtest.h>
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic pop
 #endif
 

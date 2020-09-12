@@ -11,8 +11,11 @@
 
 #include "Token.h"
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
 namespace hyde {
 namespace {
@@ -983,6 +986,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
   }
 }
 
-#pragma GCC diagnostic pop
-
 }  // namespace hyde
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif

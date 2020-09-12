@@ -519,12 +519,18 @@ void ParserImpl::ParseLocalExport(
 
       case 6:
         if (Lexeme::kIdentifierAtom == lexeme) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
           parse::IdInterpreter interpreter = {};
           interpreter.info.atom_name_id = tok.IdentifierId();
           interpreter.info.arity = 3;  // Old val, proposed val, new val.
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
           const auto id = interpreter.flat;
           if (!context->declarations.count(id)) {
@@ -735,12 +741,18 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
     return false;
   }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
   interpreter.info.arity = clause->head_variables.size();
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   const auto id = interpreter.flat;
 
@@ -827,13 +839,18 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
 // Try to match a clause with a declaration.
 bool ParserImpl::TryMatchPredicateWithDecl(Node<ParsedModule> *module,
                                            Node<ParsedPredicate> *pred) {
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
   interpreter.info.arity = pred->argument_uses.size();
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   const auto id = interpreter.flat;
 

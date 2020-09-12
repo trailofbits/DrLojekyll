@@ -23,15 +23,15 @@ class QueryNode {
  public:
   inline QueryNode(Node<T> *impl_) : impl(impl_) {}
 
-  inline bool operator==(QueryNode<T> that) const {
+  inline bool operator==(const QueryNode<T> &that) const noexcept {
     return impl == that.impl;
   }
 
-  inline bool operator!=(QueryNode<T> that) const {
+  inline bool operator!=(const QueryNode<T> &that) const noexcept {
     return impl == that.impl;
   }
 
-  inline bool operator<(QueryNode<T> that) const {
+  inline bool operator<(const QueryNode<T> &that) const noexcept {
     return impl < that.impl;
   }
 
@@ -261,6 +261,7 @@ class QueryView : public query::QueryNode<QueryView> {
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
+  QueryView(const QueryView &view);
   QueryView(const QuerySelect &view);
   QueryView(const QueryTuple &view);
   QueryView(const QueryKVIndex &view);
@@ -794,6 +795,8 @@ namespace std {
 
 template <>
 struct hash<::hyde::QueryColumn> {
+  using argument_type = ::hyde::QueryColumn;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::QueryColumn col) const noexcept {
     return col.UniqueId();
   }
@@ -801,6 +804,8 @@ struct hash<::hyde::QueryColumn> {
 
 template <>
 struct hash<::hyde::QueryView> {
+  using argument_type = ::hyde::QueryView;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::QueryView view) const noexcept {
     return view.UniqueId();
   }
@@ -808,6 +813,8 @@ struct hash<::hyde::QueryView> {
 
 template <>
 struct hash<::hyde::QueryCondition> {
+  using argument_type = ::hyde::QueryCondition;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::QueryCondition cond) const noexcept {
     return cond.UniqueId();
   }

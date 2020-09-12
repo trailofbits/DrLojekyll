@@ -11,7 +11,7 @@ target_link_libraries(drlojekyll PRIVATE
     Lex
     Parse
     DataFlow
-    CodeGen
+    ControlFlow
     Version
 )
 install(TARGETS drlojekyll)

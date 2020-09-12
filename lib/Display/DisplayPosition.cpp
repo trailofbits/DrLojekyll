@@ -76,8 +76,10 @@ uint64_t DisplayPosition::Column(void) const {
   }
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
 DisplayPosition::DisplayPosition(uint64_t display_id, uint64_t index,
                                  uint64_t line, uint64_t column) {
@@ -113,7 +115,9 @@ DisplayPosition::DisplayPosition(uint64_t display_id, uint64_t index,
   opaque_data = interpreter.flat;
 }
 
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
 // Tries to compute the distance between two positions.
 bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int *num_bytes,
