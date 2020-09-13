@@ -211,22 +211,21 @@ static void DiscoverInductions(const Query &query, Context &context) {
     }
 
     for (auto succ_view : QueryView(view).Successors()) {
-      auto succs_of_succ = TransitiveSuccessorsOf(succ_view);
-      if (succs_of_succ.count(view)) {
+      if (preds.count(succ_view)) {
         context.inductive_successors[view].insert(succ_view);
       } else {
         context.noninductive_successors[view].insert(succ_view);
       }
     }
 
-    for (auto pred_view : QueryView(view).Predecessors()) {
-      auto preds_of_pred = TransitivePredecessorsOf(pred_view);
-      if (preds_of_pred.count(view)) {
-        context.inductive_predecessors[view].insert(pred_view);
-      } else {
-        context.noninductive_predecessors[view].insert(pred_view);
-      }
-    }
+//    auto succs = TransitiveSuccessorsOf(view);
+//    for (auto pred_view : QueryView(view).Predecessors()) {
+//      if (succs.count(pred_view)) {
+//        context.inductive_predecessors[view].insert(pred_view);
+//      } else {
+//        context.noninductive_predecessors[view].insert(pred_view);
+//      }
+//    }
   }
 
   // Now group together the merges into co-inductive sets, i.e. when one
@@ -338,7 +337,7 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
         context.view_to_work_item.clear();
         std::stable_sort(prev_work_list.begin(), prev_work_list.end(),
                          [](const WorkItemPtr &a, const WorkItemPtr &b) {
-                           return a->view.Depth() < b->view.Depth();
+                           return a->order < b->order;
                          });
         for (const auto &item : prev_work_list) {
           item->Run(program, context);

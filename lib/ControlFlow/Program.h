@@ -186,6 +186,7 @@ using VAR = Node<DataVariable>;
 
 
 enum class ProgramOperation {
+  kInvalid,
 
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then
@@ -206,6 +207,7 @@ enum class ProgramOperation {
   // Check if a row exists in a view. The tuple values are found in
   // `operands` and the table being used is `views[0]`.
   kCheckTupleIsPresentInView,
+  kCheckTupleIsNotPresentInView,
 
   // JOIN-specific
 
@@ -387,6 +389,12 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // Maps views to their cycles inside of the `output_region`.
   std::unordered_map<QueryView, UseRef<REGION>> view_to_output_loop;
+
+  enum State {
+    kAccumulatingInputRegions,
+    kAccumulatingCycleRegions,
+    kBuildingOutputRegions
+  } state = kAccumulatingInputRegions;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;

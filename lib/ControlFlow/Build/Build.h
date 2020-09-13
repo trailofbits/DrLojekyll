@@ -28,13 +28,15 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
+  static constexpr unsigned kRunAsLateAsPossible = ~0u;
+
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
 
-  explicit WorkItem(QueryView view_)
-      : view(view_) {}
+  explicit WorkItem(unsigned order_)
+      : order(order_) {}
 
-  const QueryView view;
+  const unsigned order;
 };
 
 // General wrapper around data used when lifting from the data flow to the
@@ -45,12 +47,15 @@ class Context {
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
 
-  //
+  // Set of successors of a `QueryMerge` that may lead back to the merge
+  // (inductive) and never lead back to the merge (noninductive), respectively.
   std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_successors;
   std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_successors;
 
-  std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_predecessors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_predecessors;
+//  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
+//  // an inductive
+//  std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_predecessors;
+//  std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_predecessors;
 
   // Set of regions that execute eagerly. In practice this means that these
   // regions are directly needed in order to produce an output message.
