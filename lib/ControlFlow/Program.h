@@ -184,7 +184,6 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
 
 using VAR = Node<DataVariable>;
 
-
 enum class ProgramOperation {
   kInvalid,
 
@@ -215,6 +214,7 @@ enum class ProgramOperation {
   kJoinTables,
   kAppendJoinPivotsToVector,
   kLoopOverJoinPivots,
+  kClearJoinPivotVector,
 
   // Used to implement the cross-product of some tables.
   kLoopOverView,
@@ -266,6 +266,9 @@ class Node<ProgramOperationRegion> final : public Node<ProgramRegion> {
   virtual ~Node(void);
   explicit Node(REGION *parent_, ProgramOperation op_);
 
+  // Returns `true` if this operation is a loop.
+  bool IsLoop(void) const noexcept;
+
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
   const ProgramOperation op;
@@ -275,6 +278,7 @@ class Node<ProgramOperationRegion> final : public Node<ProgramRegion> {
   UseList<INDEX> indices;
 
   std::optional<ComparisonOperator> compare_operator;
+  std::optional<QueryJoin> join;
   std::optional<ParsedFunctor> functor;
 
   // If this operation does something conditional then this is the body it

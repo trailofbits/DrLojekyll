@@ -19,4 +19,17 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 
+bool Node<ProgramOperationRegion>::IsLoop(void) const noexcept {
+  switch (op) {
+    case ProgramOperation::kLoopOverUnionInputVector:
+    case ProgramOperation::kLoopOverJoinPivots:
+    case ProgramOperation::kLoopOverProductInputVector:
+    case ProgramOperation::kLoopOverProductOutputVector:
+    case ProgramOperation::kLoopOverInputVector:
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace hyde

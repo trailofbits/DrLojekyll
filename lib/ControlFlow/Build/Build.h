@@ -122,8 +122,10 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     let->ExecuteAlongside(impl, par);
 
     succ_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole,
-                             std::optional<QueryColumn> out_col) {
-      if (out_col && in_col != out_col) {
+                              std::optional<QueryColumn> out_col) {
+      if (out_col && in_col != out_col &&
+          (QueryView::Containing(in_col) == view ||
+           in_col.IsConstant())) {
         const auto src_var = proc->VariableFor(in_col);
         const auto dst_var = proc->VariableFor(*out_col);
         let->variables.AddUse(dst_var);

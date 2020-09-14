@@ -25,7 +25,6 @@ Node<ProgramProcedureRegion>::AsProcedure(void) noexcept {
   return this;
 }
 
-
 // Get or create a table in a procedure.
 TABLE *Node<ProgramProcedureRegion>::VectorFor(
     DefinedNodeRange<QueryColumn> cols) {

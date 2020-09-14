@@ -71,12 +71,11 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
     }
   }
 
-  if (1u == num_init_appends) {
+  if (1u >= num_init_appends) {
     common_ancestor = proc;
   }
 
-  assert(common_ancestor != nullptr);
-  if (proc == common_ancestor || !common_ancestor) {
+  if (proc == common_ancestor) {
     common_ancestor = proc->body.get();
   }
 
@@ -195,16 +194,16 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  OP * const check_not_exists = impl->operation_regions.Create(
-      parent, ProgramOperation::kCheckTupleIsNotPresentInView);
+  OP * const insert = impl->operation_regions.Create(
+      parent, ProgramOperation::kInsertIntoView);
   for (auto col : view.Columns()) {
     const auto var = proc->VariableFor(col);
-    check_not_exists->variables.AddUse(var);
+    insert->variables.AddUse(var);
   }
-  check_not_exists->views.AddUse(
+  insert->views.AddUse(
       TABLE::GetOrCreate(impl, view.Columns(), pred_view));
-  check_not_exists->variables.Unique();
-  UseRef<REGION>(parent, check_not_exists).Swap(parent->body);
+  insert->variables.Unique();
+  UseRef<REGION>(parent, insert).Swap(parent->body);
 
   // This is the first time seeing any MERGE associated with this induction.
   // We'll make an INDUCTION, and a work item that will let us explore the
@@ -230,14 +229,14 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Add a tuple to the input vector.
   OP * const append_to_vec = impl->operation_regions.Create(
-      check_not_exists, ProgramOperation::kAppendInductionInputToVector);
+      insert, ProgramOperation::kAppendInductionInputToVector);
   append_to_vec->tables.AddUse(vec.get());
   for (auto col : view.Columns()) {
     const auto var = proc->VariableFor(col);
-    check_not_exists->variables.AddUse(var);
+    insert->variables.AddUse(var);
   }
 
-  UseRef<REGION>(check_not_exists, append_to_vec).Swap(check_not_exists->body);
+  UseRef<REGION>(insert, append_to_vec).Swap(insert->body);
 
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:

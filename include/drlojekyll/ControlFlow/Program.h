@@ -45,13 +45,13 @@ class ProgramNode {
 
 }  // namespace program
 
-enum TableKind {
+enum class TableKind : unsigned {
   kPersistent,
   kVector,
   kInputVector
 };
 
-enum class VariableRole {
+enum class VariableRole : unsigned{
   kParameter, kLocal, kFree, kGlobalBoolean, kConditionRefCount
 };
 

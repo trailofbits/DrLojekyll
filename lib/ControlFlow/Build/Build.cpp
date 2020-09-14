@@ -189,6 +189,9 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
     loop->variables.AddUse(proc->VariableFor(col));
   }
 
+  // NOTE(pag): The input vector is "implicit", defined in terms of the
+  //            variables.
+
   // They should all be unique anyway.
   loop->variables.Unique();
   assert(loop->variables.Size() == view.Columns().size());
