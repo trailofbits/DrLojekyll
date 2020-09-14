@@ -5,6 +5,11 @@
 namespace hyde {
 
 Node<ProgramOperationRegion>::~Node(void) {}
+Node<ProgramLetBindingRegion>::~Node(void) {}
+Node<ProgramVectorLoopRegion>::~Node(void) {}
+Node<ProgramVectorAppendRegion>::~Node(void) {}
+Node<ProgramViewInsertRegion>::~Node(void) {}
+Node<ProgramViewJoinRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
@@ -19,17 +24,55 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 
-bool Node<ProgramOperationRegion>::IsLoop(void) const noexcept {
-  switch (op) {
-    case ProgramOperation::kLoopOverUnionInputVector:
-    case ProgramOperation::kLoopOverJoinPivots:
-    case ProgramOperation::kLoopOverProductInputVector:
-    case ProgramOperation::kLoopOverProductOutputVector:
-    case ProgramOperation::kLoopOverInputVector:
-      return true;
-    default:
-      return false;
-  }
+Node<ProgramVectorLoopRegion> *
+Node<ProgramOperationRegion>::AsVectorLoop(void) noexcept {
+  return nullptr;
 }
+
+Node<ProgramVectorAppendRegion> *
+Node<ProgramOperationRegion>::AsVectorAppend(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramLetBindingRegion> *
+Node<ProgramOperationRegion>::AsLetBinding(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramViewInsertRegion> *
+Node<ProgramOperationRegion>::AsViewInsert(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramViewJoinRegion> *
+Node<ProgramOperationRegion>::AsViewJoin(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramVectorLoopRegion> *
+Node<ProgramVectorLoopRegion>::AsVectorLoop(void) noexcept {
+  return this;
+}
+
+Node<ProgramLetBindingRegion> *
+Node<ProgramLetBindingRegion>::AsLetBinding(void) noexcept {
+  return this;
+}
+
+Node<ProgramVectorAppendRegion> *
+Node<ProgramVectorAppendRegion>::AsVectorAppend(void) noexcept {
+  return this;
+}
+
+Node<ProgramViewInsertRegion> *
+Node<ProgramViewInsertRegion>::AsViewInsert(void) noexcept {
+  return this;
+}
+
+Node<ProgramViewJoinRegion> *
+Node<ProgramViewJoinRegion>::AsViewJoin(void) noexcept {
+  return this;
+}
+
 
 }  // namespace hyde

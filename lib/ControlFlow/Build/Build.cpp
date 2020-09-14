@@ -180,10 +180,10 @@ WorkItem::~WorkItem(void) {}
 static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
                                 Context &context) {
 
-  const auto proc = impl->procedure_regions.Create(view, impl);
+  const auto proc = impl->procedure_regions.CreateDerived<VECTORPROC>(view, impl);
   impl->procedures.emplace(view, proc);
 
-  OP * const loop = impl->operation_regions.Create(
+  OP * const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
   for (auto col : view.Columns()) {
     loop->variables.AddUse(proc->VariableFor(col));
@@ -195,6 +195,9 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
   // They should all be unique anyway.
   loop->variables.Unique();
   assert(loop->variables.Size() == view.Columns().size());
+
+  TABLE * const vec = proc->VectorFor(view.Columns(), TableKind::kInputVector);
+  loop->tables.AddUse(vec);
 
   UseRef<REGION>(proc, loop).Swap(proc->body);
 

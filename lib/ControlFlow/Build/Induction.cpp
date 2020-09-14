@@ -100,34 +100,34 @@ void ContinueInductionWorkItem::Run(ProgramImpl *program, Context &context) {
 
   // Now build the inductive cycle regions and add them in. We'll do this
   // before we actually add the successor regions in.
-  for (auto view : induction_set->merges) {
-    auto &vec = induction->view_to_vec[view];
+  for (auto merge : induction_set->merges) {
+    auto &vec = induction->view_to_vec[merge];
     if (!vec) {
-      UseRef<TABLE>(induction, proc->VectorFor(view.Columns())).Swap(vec);
+      UseRef<TABLE>(induction, proc->VectorFor(merge.Columns())).Swap(vec);
     }
 
-    const auto cycle = program->operation_regions.Create(
+    const auto cycle = program->operation_regions.CreateDerived<VECTORLOOP>(
         cycle_par, ProgramOperation::kLoopOverInductionInputVector);
     cycle->ExecuteAlongside(program, cycle_par);
 
-    for (auto col : view.Columns()) {
+    for (auto col : merge.Columns()) {
       const auto var = proc->VariableFor(col);
       cycle->variables.AddUse(var);
     }
     cycle->variables.Unique();
     cycle->tables.AddUse(vec.get());
 
-    UseRef<REGION>(induction, cycle).Swap(induction->view_to_cycle_loop[view]);
+    UseRef<REGION>(induction, cycle).Swap(induction->view_to_cycle_loop[merge]);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // inductive successors.
-  for (auto view : induction_set->merges) {
-    OP * const cycle = induction->view_to_cycle_loop[view]->AsOperation();
+  for (auto merge : induction_set->merges) {
+    OP * const cycle = induction->view_to_cycle_loop[merge]->AsOperation();
     assert(cycle != nullptr);
 
     BuildEagerSuccessorRegions(
-        program, view, context, cycle, context.inductive_successors[view]);
+        program, merge, context, cycle, context.inductive_successors[merge]);
   }
 
   // Finally, add in an action to finish off this induction by processing
@@ -151,34 +151,34 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *program, Context &context) {
 
   // Now build the inductive output regions and add them in. We'll do this
   // before we actually add the successor regions in.
-  for (auto view : induction_set->merges) {
-    auto &vec = induction->view_to_vec[view];
+  for (auto merge : induction_set->merges) {
+    auto &vec = induction->view_to_vec[merge];
     if (!vec) {
-      UseRef<TABLE>(induction, proc->VectorFor(view.Columns())).Swap(vec);
+      UseRef<TABLE>(induction, proc->VectorFor(merge.Columns())).Swap(vec);
     }
 
-    const auto cycle = program->operation_regions.Create(
+    const auto cycle = program->operation_regions.CreateDerived<VECTORLOOP>(
         cycle_par, ProgramOperation::kLoopOverInductionInputVector);
     cycle->ExecuteAlongside(program, cycle_par);
 
-    for (auto col : view.Columns()) {
+    for (auto col : merge.Columns()) {
       const auto var = proc->VariableFor(col);
       cycle->variables.AddUse(var);
     }
     cycle->variables.Unique();
     cycle->tables.AddUse(vec.get());
 
-    UseRef<REGION>(induction, cycle).Swap(induction->view_to_output_loop[view]);
+    UseRef<REGION>(induction, cycle).Swap(induction->view_to_output_loop[merge]);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // non-inductive successors.
-  for (auto view : induction_set->merges) {
-    OP * const cycle = induction->view_to_output_loop[view]->AsOperation();
+  for (auto merge : induction_set->merges) {
+    OP * const cycle = induction->view_to_output_loop[merge]->AsOperation();
     assert(cycle != nullptr);
 
     BuildEagerSuccessorRegions(
-        program, view, context, cycle, context.noninductive_successors[view]);
+        program, merge, context, cycle, context.noninductive_successors[merge]);
   }
 }
 
@@ -194,8 +194,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  OP * const insert = impl->operation_regions.Create(
-      parent, ProgramOperation::kInsertIntoView);
+  OP * const insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
   for (auto col : view.Columns()) {
     const auto var = proc->VariableFor(col);
     insert->variables.AddUse(var);
@@ -228,7 +227,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   }
 
   // Add a tuple to the input vector.
-  OP * const append_to_vec = impl->operation_regions.Create(
+  OP * const append_to_vec = impl->operation_regions.CreateDerived<VECTORAPPEND>(
       insert, ProgramOperation::kAppendInductionInputToVector);
   append_to_vec->tables.AddUse(vec.get());
   for (auto col : view.Columns()) {

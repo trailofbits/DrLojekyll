@@ -116,8 +116,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   UseRef<REGION>(parent, par).Swap(parent->body);
 
   for (QueryView succ_view : successors) {
-    const auto let = impl->operation_regions.Create(
-        par, ProgramOperation::kLetBinding);
+    const auto let = impl->operation_regions.CreateDerived<LET>(par);
 
     let->ExecuteAlongside(impl, par);
 

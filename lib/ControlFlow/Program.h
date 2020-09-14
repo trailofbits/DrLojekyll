@@ -35,7 +35,7 @@ class ProgramRegion;
 class ProgramInductionRegion;
 class ProgramOperationRegion;
 class ProgramParallelRegion;
-class ProgramProcedureRegion;
+class ProgramProcedure;
 class ProgramSeriesRegion;
 
 class DataIndex;
@@ -128,10 +128,10 @@ template <>
 class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
  public:
   virtual ~Node(void);
-  explicit Node(Node<ProgramProcedureRegion> *containing_procedure_);
+  explicit Node(Node<ProgramProcedure> *containing_procedure_);
   explicit Node(Node<ProgramRegion> *parent_);
 
-  virtual Node<ProgramProcedureRegion> *AsProcedure(void) noexcept;
+  virtual Node<ProgramProcedure> *AsProcedure(void) noexcept;
   virtual Node<ProgramOperationRegion> *AsOperation(void) noexcept;
   virtual Node<ProgramSeriesRegion> *AsSeries(void) noexcept;
   virtual Node<ProgramParallelRegion> *AsParallel(void) noexcept;
@@ -155,7 +155,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   // Every child REGION of a procedure will have easy access to create new
   // variables.
-  Node<ProgramProcedureRegion> *const containing_procedure;
+  Node<ProgramProcedure> *const containing_procedure;
   Node<ProgramRegion> *parent{nullptr};
 };
 
@@ -260,14 +260,18 @@ enum class ProgramOperation {
   kSetGlobalVariableToTrue,
 };
 
+// A generic operation.
 template <>
-class Node<ProgramOperationRegion> final : public Node<ProgramRegion> {
+class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
   explicit Node(REGION *parent_, ProgramOperation op_);
 
-  // Returns `true` if this operation is a loop.
-  bool IsLoop(void) const noexcept;
+  virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
+  virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
+  virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
+  virtual Node<ProgramViewInsertRegion> *AsViewInsert(void) noexcept;
+  virtual Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
@@ -288,18 +292,96 @@ class Node<ProgramOperationRegion> final : public Node<ProgramRegion> {
 
 using OP = Node<ProgramOperationRegion>;
 
+// A let binding, i.e. an assignment of zero or more variables.
+template <>
+class Node<ProgramLetBindingRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(REGION *parent_)
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kLetBinding) {}
+
+  Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept override;
+};
+
+using LET = Node<ProgramLetBindingRegion>;
+
+// A loop over a vector, specified in `tables[0]`. This also performs variable
+// binding into the variables specified in `variables`.
+template <>
+class Node<ProgramVectorLoopRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  using Node<ProgramOperationRegion>::Node;
+
+  Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
+};
+
+using VECTORLOOP = Node<ProgramVectorLoopRegion>;
+
+// An append of a tuple (specified in terms of `variables`) into a vector,
+// specified in terms of `tables[0]`.
+template <>
+class Node<ProgramVectorAppendRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  using Node<ProgramOperationRegion>::Node;
+
+  Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept override;
+};
+
+using VECTORAPPEND = Node<ProgramVectorAppendRegion>;
+
+// An append of a tuple (specified in terms of `variables`) into a vector,
+// specified in terms of `tables[0]`.
+template <>
+class Node<ProgramViewInsertRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_)
+      : Node<ProgramOperationRegion>(
+            parent_, ProgramOperation::kInsertIntoView) {}
+
+  Node<ProgramViewInsertRegion> *AsViewInsert(void) noexcept override;
+};
+
+using VIEWINSERT = Node<ProgramViewInsertRegion>;
+
+// An equi-join between two or more views.
+template <>
+class Node<ProgramViewJoinRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_)
+      : Node<ProgramOperationRegion>(
+            parent_, ProgramOperation::kJoinTables) {}
+
+  Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept override;
+};
+
+using VIEWJOIN = Node<ProgramViewJoinRegion>;
+
 // A procedure region. This represents some entrypoint of data into the program.
 template <>
-class Node<ProgramProcedureRegion> final : public Node<ProgramRegion> {
+class Node<ProgramProcedure> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
   explicit Node(QueryView view, ProgramImpl *program);
 
-  Node<ProgramProcedureRegion> *AsProcedure(void) noexcept override;
+  Node<ProgramProcedure> *AsProcedure(void) noexcept override;
+
+  virtual Node<ProgramVectorProcedure> *AsVector(void);
+  virtual Node<ProgramTupleProcedure> *AsTuple(void);
 
   // Create a new vector in this procedure for a list of columns.
-  TABLE *VectorFor(DefinedNodeRange<QueryColumn> cols);
+  TABLE *VectorFor(DefinedNodeRange<QueryColumn> cols,
+                   TableKind kind=TableKind::kVector);
 
   // Gets or creates a local variable in the procedure.
   VAR *VariableFor(QueryColumn col);
@@ -324,7 +406,31 @@ class Node<ProgramProcedureRegion> final : public Node<ProgramRegion> {
   std::unordered_map<std::pair<QueryView, QueryView>, REGION *> view_to_region;
 };
 
-using PROC = Node<ProgramProcedureRegion>;
+using PROC = Node<ProgramProcedure>;
+
+// A vector procedure, which corresponds to receipt of I/Os of a particular
+// kind.
+template <>
+class Node<ProgramVectorProcedure> final : public Node<ProgramProcedure> {
+ public:
+  using Node<ProgramProcedure>::Node;
+  virtual ~Node(void);
+  virtual Node<ProgramVectorProcedure> *AsVector(void) override;
+};
+
+using VECTORPROC = Node<ProgramVectorProcedure>;
+
+// A tuple procedure, which corresponds to an individual `QueryView` that can
+// take in a differential update.
+template <>
+class Node<ProgramTupleProcedure> final : public Node<ProgramProcedure> {
+ public:
+  using Node<ProgramProcedure>::Node;
+  virtual ~Node(void);
+  virtual Node<ProgramTupleProcedure> *AsTuple(void) override;
+};
+
+using VECTORPROC = Node<ProgramVectorProcedure>;
 
 // A series region is where the `regions[N]` must finish before `regions[N+1]`
 // begins.

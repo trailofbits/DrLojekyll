@@ -11,7 +11,7 @@ class ParsedParameter;
 class ParsedLiteral;
 class Token;
 
-enum class TypeKind {
+enum class TypeKind : int {
   kInvalid,
   kSigned8,
   kSigned16,

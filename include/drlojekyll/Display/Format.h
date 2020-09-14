@@ -3,6 +3,7 @@
 #include <drlojekyll/Display/DisplayManager.h>
 
 #include <ostream>
+#include <string>
 
 #pragma once
 
@@ -16,7 +17,9 @@ class OutputStream {
 
   inline OutputStream(const DisplayManager &display_manager_, std::ostream &os_)
       : display_manager(display_manager_),
-        os(os_) {}
+        os(os_) {
+    indent.reserve(16);
+  }
 
   OutputStream &operator<<(DisplayRange range);
 
@@ -50,11 +53,25 @@ class OutputStream {
     os.flush();
   }
 
+  inline void PushIndent(void) {
+    indent.push_back(' ');
+    indent.push_back(' ');
+  }
+
+  inline void PopIndent(void) {
+    indent.resize(indent.size() - 2u);
+  }
+
+  inline const std::string &Indent(void) const {
+    return indent;
+  }
+
  private:
   const DisplayManager &display_manager;
   std::ostream &os;
   bool include_imports{true};
   bool rename_locals{false};
+  std::string indent;
 };
 
 }  // namespace hyde

@@ -62,7 +62,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     TABLE * const pivot_vec = proc->VectorFor(view.Columns());
 
     for (auto insert : inserts) {
-      OP * const append = impl->operation_regions.Create(
+      OP * const append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
           insert, ProgramOperation::kAppendJoinPivotsToVector);
 
       for (auto col : join_view.PivotColumns()) {
@@ -84,7 +84,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     ancestor->ReplaceAllUsesWith(seq);
     ancestor->ExecuteAfter(impl, seq);
 
-    parent = impl->operation_regions.Create(
+    parent = impl->operation_regions.CreateDerived<VECTORLOOP>(
         seq, ProgramOperation::kLoopOverJoinPivots);
     for (auto col : join_view.PivotColumns()) {
       const auto var = proc->VariableFor(col);
@@ -99,8 +99,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  OP * const join = impl->operation_regions.Create(
-      parent, ProgramOperation::kJoinTables);
+  OP * const join = impl->operation_regions.CreateDerived<VIEWJOIN>(parent);
 
   std::vector<QueryColumn> cols;
   for (auto pred_view : view.Predecessors()) {
@@ -134,8 +133,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  OP * const insert = impl->operation_regions.Create(
-      parent, ProgramOperation::kInsertIntoView);
+  OP * const insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
   for (auto col : view.Columns()) {
     const auto var = proc->VariableFor(col);
     insert->variables.AddUse(var);
@@ -148,6 +146,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   auto &action = context.view_to_work_item[view];
   if (!action) {
     action = new ContinueJoinWorkItem(view);
+    context.work_list.emplace_back(action);
   }
 
   dynamic_cast<ContinueJoinWorkItem *>(action)->inserts.push_back(insert);

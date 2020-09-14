@@ -6,7 +6,7 @@ namespace hyde {
 
 Node<ProgramRegion>::~Node(void) {}
 
-Node<ProgramRegion>::Node(Node<ProgramProcedureRegion> *containing_procedure_)
+Node<ProgramRegion>::Node(Node<ProgramProcedure> *containing_procedure_)
     : Def<Node<ProgramRegion>>(this),
       User(this),
       containing_procedure(containing_procedure_),
@@ -18,7 +18,7 @@ Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
       containing_procedure(parent_->containing_procedure),
       parent(parent_) {}
 
-Node<ProgramProcedureRegion> *Node<ProgramRegion>::AsProcedure(void) noexcept {
+Node<ProgramProcedure> *Node<ProgramRegion>::AsProcedure(void) noexcept {
   return nullptr;
 }
 

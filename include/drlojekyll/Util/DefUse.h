@@ -697,6 +697,13 @@ class DefList {
     return new_def;
   }
 
+  template <typename D, typename... Args>
+  D *CreateDerived(Args &&... args) {
+    auto new_def = new D(std::forward<Args>(args)...);
+    defs.emplace_back(new_def);
+    return new_def;
+  }
+
   DefListIterator<T> begin(void) const noexcept {
     return defs.data();
   }
