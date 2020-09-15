@@ -69,23 +69,20 @@ OutputStream &operator<<(OutputStream &os, ProgramViewJoinRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
-  os << os.Indent() << "induction {\n";
+  os << os.Indent() << "induction\n";
   os.PushIndent();
-  os << os.Indent() << "init {\n";
+  os << os.Indent() << "init\n";
   os.PushIndent();
-  os << region.Initializer();
+  os << region.Initializer() << '\n';
   os.PopIndent();
-  os << os.Indent() << "}\n";
-  os << os.Indent() << "fixpoint-loop {\n";
+  os << os.Indent() << "fixpoint-loop\n";
   os.PushIndent();
-  os << region.FixpointLoop();
+  os << region.FixpointLoop() << '\n';
   os.PopIndent();
-  os << os.Indent() << "}\n";
-  os << os.Indent() << "output {\n";
+  os << os.Indent() << "output\n";
   os.PushIndent();
-  os << region.Output();
+  os << region.Output() << '\n';
   os.PopIndent();
-  os << os.Indent() << "}\n";
   os.PopIndent();
   os << os.Indent() << '}';
   return os;
@@ -105,11 +102,12 @@ OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
   os << os.Indent() << "par\n";
   os.PushIndent();
   for (auto sub_region : region.Regions()) {
-    os << os.Indent() << "{\n";
+    os << sep << os.Indent() << "{\n";
     os.PushIndent();
     os << sub_region << '\n';
     os.PopIndent();
-    os << os.Indent() << "}\n";
+    os << os.Indent() << '}';
+    sep = "\n";
   }
   os.PopIndent();
   return os;

@@ -21,6 +21,7 @@ set(ControlFlow_SRCS
     "Format.cpp"
     "Induction.cpp"
     "Operation.cpp"
+    "Optimize.cpp"
     "Parallel.cpp"
     "Procedure.cpp"
     "Program.cpp"

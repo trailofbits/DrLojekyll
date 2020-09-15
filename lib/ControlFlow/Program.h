@@ -137,8 +137,16 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   virtual Node<ProgramParallelRegion> *AsParallel(void) noexcept;
   virtual Node<ProgramInductionRegion> *AsInduction(void) noexcept;
 
+  inline void ReplaceAllUsesWith(Node<ProgramRegion> *that) {
+    this->Def<Node<ProgramRegion>>::ReplaceAllUsesWith(that);
+    that->parent = this->parent;
+  }
+
   // Returns the lexical level of this node.
   unsigned Depth(void) const noexcept;
+
+  // Returns true if this region is a no-op.
+  virtual bool IsNoOp(void) const noexcept;
 
   // Find an ancestor node that's both shared by `this` and `that`.
   Node<ProgramRegion> *FindCommonAncestor(Node<ProgramRegion> *that) noexcept;
@@ -299,6 +307,8 @@ class Node<ProgramLetBindingRegion> final
  public:
   virtual ~Node(void);
 
+  bool IsNoOp(void) const noexcept override;
+
   inline Node(REGION *parent_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kLetBinding) {}
 
@@ -315,6 +325,8 @@ class Node<ProgramVectorLoopRegion> final
  public:
   virtual ~Node(void);
   using Node<ProgramOperationRegion>::Node;
+
+  bool IsNoOp(void) const noexcept override;
 
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
 };
@@ -360,6 +372,8 @@ class Node<ProgramViewJoinRegion> final
   inline Node(Node<ProgramRegion> *parent_)
       : Node<ProgramOperationRegion>(
             parent_, ProgramOperation::kJoinTables) {}
+
+  bool IsNoOp(void) const noexcept override;
 
   Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept override;
 };
@@ -441,6 +455,7 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
 
   virtual ~Node(void);
   Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
+  bool IsNoOp(void) const noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
 };
@@ -456,6 +471,7 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
 
   virtual ~Node(void);
   Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
+  bool IsNoOp(void) const noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
 };
@@ -522,6 +538,8 @@ class ProgramImpl : public User {
         induction_regions(this),
         operation_regions(this),
         tables(this) {}
+
+  void Optimize(void);
 
   // The dataflow from which this was created.
   const Query query;

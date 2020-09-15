@@ -47,6 +47,11 @@ unsigned Node<ProgramRegion>::Depth(void) const noexcept {
   }
 }
 
+// Returns true if this region is a no-op.
+bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
+  return false;
+}
+
 // Find an ancestor node that's shared by both `this` and `that`.
 Node<ProgramRegion> *Node<ProgramRegion>::FindCommonAncestor(
     Node<ProgramRegion> *that) noexcept {

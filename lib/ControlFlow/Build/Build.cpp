@@ -353,6 +353,8 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
     }
   }
 
+  impl->Optimize();
+
   return Program(std::move(impl));
 }
 

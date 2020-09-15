@@ -54,9 +54,17 @@ Node<ProgramVectorLoopRegion>::AsVectorLoop(void) noexcept {
   return this;
 }
 
+bool Node<ProgramVectorLoopRegion>::IsNoOp(void) const noexcept {
+  return !body;
+}
+
 Node<ProgramLetBindingRegion> *
 Node<ProgramLetBindingRegion>::AsLetBinding(void) noexcept {
   return this;
+}
+
+bool Node<ProgramLetBindingRegion>::IsNoOp(void) const noexcept {
+  return !body;
 }
 
 Node<ProgramVectorAppendRegion> *
@@ -74,5 +82,8 @@ Node<ProgramViewJoinRegion>::AsViewJoin(void) noexcept {
   return this;
 }
 
+bool Node<ProgramViewJoinRegion>::IsNoOp(void) const noexcept {
+  return !body;
+}
 
 }  // namespace hyde
