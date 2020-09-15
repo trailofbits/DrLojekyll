@@ -42,7 +42,7 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor;
+  return common_ancestor->NearestRegionEnclosedByInduction();
 }
 
 void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
@@ -54,24 +54,26 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto join_view = QueryJoin::From(view);
   OP *parent = inserts[0];
   PROC * const proc = parent->containing_procedure;
+  SERIES *seq = nullptr;
+  VECTOR *pivot_vec = nullptr;
 
   // If there are more than one sources leading into this JOIN then we want
   // to have each append to a vector, then we'll loop over the vector of
   // pivots.
   if (1u < inserts.size()) {
-    TABLE * const pivot_vec = proc->VectorFor(view.Columns());
+    pivot_vec = proc->VectorFor(
+        VectorKind::kJoinPivots, join_view.PivotColumns());
 
     for (auto insert : inserts) {
-      OP * const append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+      const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
           insert, ProgramOperation::kAppendJoinPivotsToVector);
 
       for (auto col : join_view.PivotColumns()) {
-        const auto var = proc->VariableFor(col);
-        append->variables.AddUse(var);
+        const auto var = insert->VariableFor(impl, col);
+        append->tuple_vars.AddUse(var);
       }
-      append->variables.Unique();
-      append->tables.AddUse(pivot_vec);
 
+      UseRef<VECTOR>(append, pivot_vec).Swap(append->vector);
       UseRef<REGION>(insert, append).Swap(insert->body);
     }
 
@@ -79,47 +81,75 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     // the reached `QueryJoin`s that happened before this work item. Everything
     // under this common ancestor must execute before the loop over the join_view
     // pivots.
-    auto ancestor = FindCommonAncestorOfInsertRegions();
-    auto seq = impl->series_regions.Create(ancestor->parent);
+    const auto ancestor = FindCommonAncestorOfInsertRegions();
+    seq = impl->series_regions.Create(ancestor->parent);
     ancestor->ReplaceAllUsesWith(seq);
     ancestor->ExecuteAfter(impl, seq);
 
-    parent = impl->operation_regions.CreateDerived<VECTORLOOP>(
+    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
         seq, ProgramOperation::kLoopOverJoinPivots);
-    for (auto col : join_view.PivotColumns()) {
-      const auto var = proc->VariableFor(col);
-      parent->variables.AddUse(var);
-    }
-    parent->variables.Unique();
-    parent->tables.AddUse(pivot_vec);
 
-    parent->ExecuteAfter(impl, seq);
+    for (auto col : join_view.PivotColumns()) {
+      const auto var = loop->defined_vars.Create(
+          col.Id(), VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+    }
+
+    UseRef<VECTOR>(loop, pivot_vec).Swap(loop->vector);
+
+    loop->ExecuteAfter(impl, seq);
+
+    parent = loop;
   }
 
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  OP * const join = impl->operation_regions.CreateDerived<VIEWJOIN>(parent);
+  const auto join = impl->operation_regions.CreateDerived<VIEWJOIN>(
+      parent, join_view);
+  UseRef<REGION>(parent, join).Swap(parent->body);
 
-  std::vector<QueryColumn> cols;
+  // If this join executes inside of a vector loop, then we want to clear out
+  // the vector after executing the join.
+  if (seq) {
+    auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
+        seq, ProgramOperation::kClearJoinPivotVector);
+    UseRef<VECTOR>(clear, pivot_vec).Swap(clear->vector);
+    clear->ExecuteAfter(impl, seq);
+  }
+
+  std::vector<QueryColumn> pivot_cols;
+
   for (auto pred_view : view.Predecessors()) {
-    cols.clear();
+    pivot_cols.clear();
+
+    auto &out_vars = join->output_vars.emplace_back(join);
+
     join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                              std::optional<QueryColumn>) {
-      if (InputColumnRole::kJoinPivot == role &&
-          QueryView::Containing(in_col) == pred_view) {
-        cols.push_back(in_col);
+                              std::optional<QueryColumn> out_col) {
+      if (out_col && QueryView::Containing(in_col) == pred_view) {
+        if (InputColumnRole::kJoinPivot == role) {
+          pivot_cols.push_back(in_col);
+
+        } else if (InputColumnRole::kJoinNonPivot == role) {
+          auto var = out_vars.Create(
+              out_col->Id(), VariableRole::kJoinNonPivot);
+          var->query_column = *out_col;
+          join->col_id_to_var.emplace(out_col->Id(), var);
+
+        } else {
+          assert(false);
+        }
       }
     });
 
     const auto table = TABLE::GetOrCreate(impl, pred_view.Columns(), view);
-    const auto index = table->GetOrCreateIndex(cols);
+    const auto index = table->GetOrCreateIndex(pivot_cols);
     join->views.AddUse(table);
     join->indices.AddUse(index);
-    join->join = join_view;
   }
 
-  UseRef<REGION>(parent, join).Swap(parent->body);
   BuildEagerSuccessorRegions(impl, view, context, join, view.Successors());
 }
 
@@ -128,19 +158,22 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                           QueryJoin view, Context &context, OP *parent) {
-  PROC * const proc = parent->containing_procedure;
 
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  OP * const insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
+  const auto insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
   for (auto col : view.Columns()) {
-    const auto var = proc->VariableFor(col);
-    insert->variables.AddUse(var);
+    const auto var = parent->VariableFor(impl, col);
+    insert->col_values.AddUse(var);
   }
-  insert->views.AddUse(
-      TABLE::GetOrCreate(impl, pred_view.Columns(), view));
-  insert->variables.Unique();
+  insert->col_values.Unique();
+  for (auto var : insert->col_values) {
+    insert->col_ids.push_back(var->id);
+  }
+
+  const auto table_view = TABLE::GetOrCreate(impl, pred_view.Columns(), view);
+  UseRef<VIEW>(insert, table_view).Swap(insert->view);
   UseRef<REGION>(parent, insert).Swap(parent->body);
 
   auto &action = context.view_to_work_item[view];

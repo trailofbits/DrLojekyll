@@ -111,7 +111,6 @@ template <typename List>
 void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
                                 Context &context, OP *parent,
                                 List &&successors) {
-  const auto proc = parent->containing_procedure;
   const auto par = impl->parallel_regions.Create(parent);
   UseRef<REGION>(parent, par).Swap(parent->body);
 
@@ -122,13 +121,15 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
     succ_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole,
                               std::optional<QueryColumn> out_col) {
-      if (out_col && in_col != out_col &&
-          (QueryView::Containing(in_col) == view ||
-           in_col.IsConstant())) {
-        const auto src_var = proc->VariableFor(in_col);
-        const auto dst_var = proc->VariableFor(*out_col);
-        let->variables.AddUse(dst_var);
-        let->variables.AddUse(src_var);
+      if (out_col && in_col.Id() != out_col->Id() &&
+          (QueryView::Containing(in_col) == view || in_col.IsConstant())) {
+
+        const auto src_var = par->VariableFor(impl, in_col);
+        let->used_vars.AddUse(src_var);
+        const auto dst_var = let->defined_vars.Create(
+            out_col->Id(), VariableRole::kLetBinding);
+        dst_var->query_column = *out_col;
+        let->col_id_to_var.emplace(out_col->Id(), dst_var);
       }
     });
 

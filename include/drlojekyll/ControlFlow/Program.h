@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/Node.h>
 
@@ -50,20 +51,19 @@ class ProgramNode {
 
 enum class TableKind : int {
   kPersistent,
-  kVector,
-  kInputVector
 };
 
-enum class VariableRole : int {
-  kParameter, kLocal, kFree, kGlobalBoolean, kConditionRefCount
-};
+class DataVariable;
+class DataVector;
 
+class ProgramExistenceCheckRegion;
 class ProgramInductionRegion;
 class ProgramLetBindingRegion;
 class ProgramParallelRegion;
 class ProgramProcedure;
 class ProgramSeriesRegion;
 class ProgramVectorAppendRegion;
+class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
 class ProgramViewInsertRegion;
 class ProgramViewJoinRegion;
@@ -71,11 +71,13 @@ class ProgramViewJoinRegion;
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  public:
+  ProgramRegion(const ProgramExistenceCheckRegion &);
   ProgramRegion(const ProgramInductionRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
   ProgramRegion(const ProgramParallelRegion &);
   ProgramRegion(const ProgramSeriesRegion &);
   ProgramRegion(const ProgramVectorAppendRegion &);
+  ProgramRegion(const ProgramVectorClearRegion &);
   ProgramRegion(const ProgramVectorLoopRegion &);
   ProgramRegion(const ProgramViewInsertRegion &);
   ProgramRegion(const ProgramViewJoinRegion &);
@@ -83,19 +85,23 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsInduction(void) const noexcept;
   bool IsVectorLoop(void) const noexcept;
   bool IsVectorAppend(void) const noexcept;
+  bool IsVectorClear(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
   bool IsViewInsert(void) const noexcept;
   bool IsViewJoin(void) const noexcept;
   bool IsSeries(void) const noexcept;
+  bool IsExistenceCheck(void) const noexcept;
   bool IsParallel(void) const noexcept;
 
  private:
+  friend class ProgramExistenceCheckRegion;
   friend class ProgramInductionRegion;
   friend class ProgramLetBindingRegion;
   friend class ProgramParallelRegion;
   friend class ProgramProcedure;
   friend class ProgramSeriesRegion;
   friend class ProgramVectorAppendRegion;
+  friend class ProgramVectorClearRegion;
   friend class ProgramVectorLoopRegion;
   friend class ProgramViewInsertRegion;
   friend class ProgramViewJoinRegion;
@@ -132,37 +138,75 @@ class ProgramParallelRegion
   using program::ProgramNode<ProgramParallelRegion>::ProgramNode;
 };
 
-class ProgramVariable : public program::ProgramNode<ProgramVariable> {
+
+enum class VariableRole : int {
+  kConditionRefCount, kConstant, kVectorVariable, kLetBinding, kJoinNonPivot
+};
+
+// A variable in the program.
+class DataVariable : public program::ProgramNode<DataVariable> {
  public:
-};
+  VariableRole DefiningRole(void) const noexcept;
 
-class GlobalVariable : public program::ProgramNode<GlobalVariable> {
- public:
-};
+  // The region which defined this local variable. If this variable has no
+  // defining region then it is a global variable.
+  std::optional<ProgramRegion> DefiningRegion(void) const noexcept;
 
-enum class VariableDefinitionRole : int {
-  kLetBinding
-};
+  // Unique ID of this variable.
+  unsigned Id(void) const noexcept;
 
-enum class VariableUsageRole : int {
-  kLetBinding
-};
+  // Name of this variable, if any. There might not be a name.
+  Token Name(void) const noexcept;
 
-// Local variable within a function.
-class LocalVariable : public program::ProgramNode<LocalVariable> {
- public:
+  // The literal, constant value of this variable.
+  std::optional<ParsedLiteral> Value(void) const noexcept;
+
+  // Type of this variable.
   TypeKind Type(void) const noexcept;
 
-  VariableDefinitionRole Role(void) const noexcept;
+ private:
+  using program::ProgramNode<DataVariable>::ProgramNode;
+};
 
-  // The region which defined this local variable.
-  ProgramRegion DefiningRegion(void) const noexcept;
+enum class VectorKind : unsigned {
+  kInput,
+  kInduction,
+  kJoinPivots,
+};
 
-  // Regions that directly use this local variable.
-  void ForEachUsage(std::function<void(ProgramRegion, VariableUsageRole)>);
+// A vector in the program.
+class DataVector : public program::ProgramNode<DataVector> {
+ public:
+  VectorKind Kind(void) const noexcept;
+  unsigned Id(void) const noexcept;
+  bool IsInputVector(void) const noexcept;
+  const std::vector<TypeKind> ColumnTypes(void) const noexcept;
 
  private:
-  using program::ProgramNode<LocalVariable>::ProgramNode;
+  using program::ProgramNode<DataVector>::ProgramNode;
+};
+
+// A zero or not-zero check on some reference counters that track whether or
+// not some set of tuples exists.
+class ProgramExistenceCheckRegion
+    : public program::ProgramNode<ProgramExistenceCheckRegion> {
+ public:
+  static ProgramExistenceCheckRegion From(ProgramRegion) noexcept;
+
+  bool CheckForZero(void) const noexcept;
+  bool CheckForNotZero(void) const noexcept;
+
+  // List of reference count variables to check.
+  UsedNodeRange<DataVariable> ReferenceCounts(void) const;
+
+  // Return the body which is conditionally executed if all reference count
+  // variables are either all zero, or all non-zero.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramExistenceCheckRegion>::ProgramNode;
 };
 
 // A let binding is an assignment of variables.
@@ -179,8 +223,14 @@ class ProgramLetBindingRegion
   using program::ProgramNode<ProgramLetBindingRegion>::ProgramNode;
 };
 
-enum class VectorKind {
+enum class VectorUsage : unsigned {
+  kInvalid,
+  kInductionVector,
+  kUnionInputVector,
   kJoinPivots,
+  kProductInputVector,
+  kProductOutputVector,
+  kProcedureInputVector,
 };
 
 // Loop over a vector.
@@ -192,7 +242,9 @@ class ProgramVectorLoopRegion
   // Return the loop body.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
-  VectorKind Kind(void) const noexcept;
+  VectorUsage Usage(void) const noexcept;
+  DataVector Vector(void) const noexcept;
+  DefinedNodeRange<DataVariable> TupleVariables(void) const;
 
  private:
   friend class ProgramRegion;
@@ -206,12 +258,29 @@ class ProgramVectorAppendRegion
  public:
   static ProgramVectorAppendRegion From(ProgramRegion) noexcept;
 
-  VectorKind Kind(void) const noexcept;
+  VectorUsage Usage(void) const noexcept;
+  DataVector Vector(void) const noexcept;
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
 
  private:
   friend class ProgramRegion;
 
   using program::ProgramNode<ProgramVectorAppendRegion>::ProgramNode;
+};
+
+// Clear a vector.
+class ProgramVectorClearRegion
+    : public program::ProgramNode<ProgramVectorClearRegion> {
+ public:
+  static ProgramVectorClearRegion From(ProgramRegion) noexcept;
+
+  VectorUsage Usage(void) const noexcept;
+  DataVector Vector(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramVectorClearRegion>::ProgramNode;
 };
 
 // Insert a tuple into a view.
@@ -222,6 +291,8 @@ class ProgramViewInsertRegion
 
   // The body that conditionally executes if the insert succeeds.
   std::optional<ProgramRegion> Body(void) const noexcept;
+
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
 
  private:
   friend class ProgramRegion;
@@ -260,6 +331,12 @@ class ProgramInductionRegion
     : public program::ProgramNode<ProgramInductionRegion> {
  public:
   static ProgramInductionRegion From(ProgramRegion) noexcept;
+
+  // Set of induction vectors that are filled with initial data in the
+  // `Initializer()` region, then accumulate more data during the
+  // `FixpointLoop()` region (and are tested), and then are finally iterated
+  // and cleared in the `Output()` region.
+  UsedNodeRange<DataVector> Vectors(void) const;
 
   ProgramRegion Initializer(void) const noexcept;
   ProgramRegion FixpointLoop(void) const noexcept;
@@ -347,7 +424,10 @@ class Program {
   // Build a program from a query.
   static std::optional<Program> Build(const Query &query, const ErrorLog &log);
 
-  // Return the list of all vector procedures.
+  // List of all global constants.
+  DefinedNodeRange<DataVariable> Constants(void) const;
+
+  // List of all procedures.
   DefinedNodeRange<ProgramProcedure> Procedures(void) const;
 
   ~Program(void);

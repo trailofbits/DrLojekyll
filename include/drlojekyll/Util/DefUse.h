@@ -686,6 +686,17 @@ class WeakUseRef {
 template <typename T>
 class DefList {
  public:
+  DefList(DefList<T> &&that) noexcept
+      : owner(that.owner),
+        defs(std::move(that.defs)) {}
+
+  DefList<T> &operator=(DefList<T> &&that) noexcept {
+    Clear();
+    owner = that.owner;
+    defs = std::move(that.defs);
+    return *this;
+  }
+
   DefList(void) = default;
 
   DefList(User *owner_) : owner(owner_) {}

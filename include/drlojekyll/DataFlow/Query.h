@@ -794,6 +794,15 @@ class Query {
 namespace std {
 
 template <>
+struct hash<::hyde::QueryConstant> {
+  using argument_type = ::hyde::QueryConstant;
+  using result_type = uint64_t;
+  inline uint64_t operator()(::hyde::QueryConstant col) const noexcept {
+    return col.UniqueId();
+  }
+};
+
+template <>
 struct hash<::hyde::QueryColumn> {
   using argument_type = ::hyde::QueryColumn;
   using result_type = uint64_t;

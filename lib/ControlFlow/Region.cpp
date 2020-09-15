@@ -52,6 +52,18 @@ bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
   return false;
 }
 
+// Return the nearest enclosing region that is itself enclosed by an
+// induction.
+Node<ProgramRegion> *
+Node<ProgramRegion>::NearestRegionEnclosedByInduction(void) noexcept {
+  auto ret_region = this;
+  for (auto region = this; !region->AsProcedure() && !region->AsInduction();
+       region = region->parent) {
+    ret_region = region;
+  }
+  return ret_region;
+}
+
 // Find an ancestor node that's shared by both `this` and `that`.
 Node<ProgramRegion> *Node<ProgramRegion>::FindCommonAncestor(
     Node<ProgramRegion> *that) noexcept {
@@ -163,6 +175,26 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
     that->parent = par;
     this->parent = par;
   }
+}
+
+// Return a lexically available use of a variable.
+VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
+  if (col.IsConstant()) {
+    const auto const_val = QueryConstant::From(col);
+    return impl->const_to_var[const_val];
+  } else {
+    return VariableForRec(col);
+  }
+}
+
+// Return a lexically available use of a variable.
+VAR *Node<ProgramRegion>::VariableForRec(QueryColumn col) {
+  auto &var = col_id_to_var[col.Id()];
+  if (!var && this != parent) {
+   var = parent->VariableForRec(col);
+   assert(var != nullptr);
+  }
+  return var;
 }
 
 }  // namespace hyde

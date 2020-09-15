@@ -42,6 +42,7 @@ class DataIndex;
 class DataVariable;
 class DataTable;
 class DataView;
+class DataVector;
 
 // Represents a view into a table of data. Each view is basically the subset
 // of some data in a table that is specific to a `QueryView`. Thus, there is
@@ -124,6 +125,59 @@ struct DataModel : public DisjointSet {
   TABLE *table{nullptr};
 };
 
+// A vector of tuples in the program.
+template <>
+class Node<DataVector> final : public Def<Node<DataVector>> {
+ public:
+  static constexpr unsigned kInputVectorId = 0u;
+
+  template <typename ColList>
+  Node(unsigned id_, VectorKind kind_, ColList &&cols)
+      : Def<Node<DataVector>>(this),
+        id(id_),
+        kind(kind_) {
+
+    for (QueryColumn col : cols) {
+      col_types.push_back(col.Type().Kind());
+    }
+  }
+
+  const unsigned id;
+  const VectorKind kind;
+  std::vector<TypeKind> col_types;
+};
+
+using VECTOR = Node<DataVector>;
+
+// A variable in the program. This could be a procedure parameter or a local
+// variable.
+template <>
+class Node<DataVariable> final : public Def<Node<DataVariable>> {
+ public:
+  inline explicit Node(unsigned id_, VariableRole role_)
+      : Def<Node<DataVariable>>(this),
+        role(role_),
+        id(id_) {}
+
+  const VariableRole role;
+  const unsigned id;
+
+  // NOTE(pag): Only valid after optimization when building the control flow
+  //            IR is complete.
+  Node<ProgramRegion> *defining_region{nullptr};
+
+  inline unsigned Sort(void) const noexcept {
+    return id;
+  }
+
+  std::optional<QueryConstant> query_const;
+  std::optional<QueryColumn> query_column;
+  std::optional<QueryCondition> query_cond;
+};
+
+using VAR = Node<DataVariable>;
+
+// A lexically scoped region in the program.
 template <>
 class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
  public:
@@ -142,11 +196,19 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
     that->parent = this->parent;
   }
 
+  // Gets or creates a local variable in the procedure.
+  VAR *VariableFor(ProgramImpl *impl, QueryColumn col);
+  VAR *VariableForRec(QueryColumn col);
+
   // Returns the lexical level of this node.
   unsigned Depth(void) const noexcept;
 
   // Returns true if this region is a no-op.
   virtual bool IsNoOp(void) const noexcept;
+
+  // Return the nearest enclosing region that is itself enclosed by an
+  // induction.
+  Node<ProgramRegion> *NearestRegionEnclosedByInduction(void) noexcept;
 
   // Find an ancestor node that's both shared by `this` and `that`.
   Node<ProgramRegion> *FindCommonAncestor(Node<ProgramRegion> *that) noexcept;
@@ -165,32 +227,16 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // variables.
   Node<ProgramProcedure> *const containing_procedure;
   Node<ProgramRegion> *parent{nullptr};
+
+  // Maps `QueryColumn::Id()` values to variables. Used to provide lexical
+  // scoping of variables.
+  //
+  // NOTE(pag): Only valid before optimization, during the building of the
+  //            control flow IR.
+  std::unordered_map<unsigned, VAR *> col_id_to_var;
 };
 
 using REGION = Node<ProgramRegion>;
-
-// A variable in the program. This could be a procedure parameter or a local
-// variable.
-template <>
-class Node<DataVariable> final : public Def<Node<DataVariable>> {
- public:
-  inline explicit Node(unsigned id_, VariableRole role_)
-      : Def<Node<DataVariable>>(this),
-        role(role_),
-        id(id_) {}
-
-  const VariableRole role;
-  const unsigned id;
-
-  inline unsigned Sort(void) const noexcept {
-    return id;
-  }
-
-  std::vector<QueryColumn> query_columns;
-  std::vector<ParsedVariable> parsed_vars;
-};
-
-using VAR = Node<DataVariable>;
 
 enum class ProgramOperation {
   kInvalid,
@@ -204,6 +250,7 @@ enum class ProgramOperation {
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendInductionInputToVector,
   kLoopOverInductionInputVector,
+  kClearInductionInputVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
   // cycle.
@@ -277,21 +324,15 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
+  virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramViewInsertRegion> *AsViewInsert(void) noexcept;
   virtual Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept;
+  virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
   const ProgramOperation op;
-  UseList<VAR> variables;
-  UseList<TABLE> tables;
-  UseList<VIEW> views;
-  UseList<INDEX> indices;
-
-  std::optional<ComparisonOperator> compare_operator;
-  std::optional<QueryJoin> join;
-  std::optional<ParsedFunctor> functor;
 
   // If this operation does something conditional then this is the body it
   // executes.
@@ -310,9 +351,15 @@ class Node<ProgramLetBindingRegion> final
   bool IsNoOp(void) const noexcept override;
 
   inline Node(REGION *parent_)
-      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kLetBinding) {}
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kLetBinding),
+        defined_vars(this),
+        used_vars(this) {}
 
   Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept override;
+
+  // Local variables that are defined/used in the body of this procedure.
+  DefList<VAR> defined_vars;
+  UseList<VAR> used_vars;
 };
 
 using LET = Node<ProgramLetBindingRegion>;
@@ -324,11 +371,20 @@ class Node<ProgramVectorLoopRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  using Node<ProgramOperationRegion>::Node;
+
+  inline Node(REGION *parent_, ProgramOperation op_)
+      : Node<ProgramOperationRegion>(parent_, op_),
+        defined_vars(this) {}
 
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
+
+  // Local variables bound to the vector being looped.
+  DefList<VAR> defined_vars;
+
+  // Vector being looped.
+  UseRef<VECTOR> vector;
 };
 
 using VECTORLOOP = Node<ProgramVectorLoopRegion>;
@@ -340,12 +396,33 @@ class Node<ProgramVectorAppendRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  using Node<ProgramOperationRegion>::Node;
+
+  inline Node(REGION *parent_, ProgramOperation op_)
+      : Node<ProgramOperationRegion>(parent_, op_),
+        tuple_vars(this) {}
 
   Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept override;
+
+  UseList<VAR> tuple_vars;
+  UseRef<VECTOR> vector;
 };
 
 using VECTORAPPEND = Node<ProgramVectorAppendRegion>;
+
+// Clear a vector.
+template <>
+class Node<ProgramVectorClearRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  using Node<ProgramOperationRegion>::Node;
+
+  Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept override;
+
+  UseRef<VECTOR> vector;
+};
+
+using VECTORCLEAR = Node<ProgramVectorClearRegion>;
 
 // An append of a tuple (specified in terms of `variables`) into a vector,
 // specified in terms of `tables[0]`.
@@ -356,12 +433,43 @@ class Node<ProgramViewInsertRegion> final
   virtual ~Node(void);
   inline Node(Node<ProgramRegion> *parent_)
       : Node<ProgramOperationRegion>(
-            parent_, ProgramOperation::kInsertIntoView) {}
+            parent_, ProgramOperation::kInsertIntoView),
+        col_values(this) {}
 
   Node<ProgramViewInsertRegion> *AsViewInsert(void) noexcept override;
+
+  // Variables that make up the tuple.
+  UseList<VAR> col_values;
+
+  // Column IDs associated with each of the `used_vars`.
+  std::vector<unsigned> col_ids;
+
+  // View into which the tuple is being inserted.
+  UseRef<VIEW> view;
 };
 
 using VIEWINSERT = Node<ProgramViewInsertRegion>;
+
+// Represents a positive or negative existence check.
+template <>
+class Node<ProgramExistenceCheckRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
+      : Node<ProgramOperationRegion>(parent_, op_),
+        cond_vars(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept override;
+
+  // Variables associated with these existence checks.
+  UseList<VAR> cond_vars;
+};
+
+using EXISTS = Node<ProgramExistenceCheckRegion>;
 
 // An equi-join between two or more views.
 template <>
@@ -369,13 +477,24 @@ class Node<ProgramViewJoinRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_)
       : Node<ProgramOperationRegion>(
-            parent_, ProgramOperation::kJoinTables) {}
+            parent_, ProgramOperation::kJoinTables),
+        query_join(query_join_),
+        views(this),
+        indices(this) {}
 
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept override;
+
+  const QueryJoin query_join;
+
+  UseList<VIEW> views;
+  UseList<INDEX> indices;
+
+  DefList<VAR> output_pivot_vars;
+  std::vector<DefList<VAR>> output_vars;
 };
 
 using VIEWJOIN = Node<ProgramViewJoinRegion>;
@@ -394,14 +513,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   virtual Node<ProgramTupleProcedure> *AsTuple(void);
 
   // Create a new vector in this procedure for a list of columns.
-  TABLE *VectorFor(DefinedNodeRange<QueryColumn> cols,
-                   TableKind kind=TableKind::kVector);
-
-  // Gets or creates a local variable in the procedure.
-  VAR *VariableFor(QueryColumn col);
-
-  // Local variables that are defined/used in the body of this procedure.
-  DefList<VAR> locals;
+  VECTOR *VectorFor(VectorKind kind, DefinedNodeRange<QueryColumn> cols);
 
   // Temporary tables within this procedure.
   DefList<TABLE> tables;
@@ -410,8 +522,9 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // input vector.
   UseRef<REGION> body;
 
-  // Maps `QueryColumn::Id()` values to variables.
-  std::unordered_map<unsigned, VAR *> col_id_to_var;
+  // Vectors defined in this procedure. If this is a vector procedure then
+  // the first vector is the input vector.
+  DefList<VECTOR> vectors;
 
   // Used during building. We are permittied to visit a given `QueryView`
   // multiple times within a procedure, and it's convenient to use the opcode
@@ -499,10 +612,13 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // The output regions of this induction. This is a PARALLEL region.
   UseRef<REGION> output_region;
 
+  // Vectors built up by this induction.
+  UseList<VECTOR> vectors;
+
   // It could be the case that a when going through the induction we end up
   // going into a co-mingled induction, as is the case in
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
-  std::unordered_map<QueryView, UseRef<TABLE>> view_to_vec;
+  std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
 
   // List of append to vector regions inside this induction.
   std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
@@ -553,6 +669,9 @@ class ProgramImpl : public User {
   DefList<TABLE> tables;
   DefList<VAR> global_vars;
   unsigned next_global_var_id{~0u};
+
+  DefList<VAR> const_vars;
+  std::unordered_map<QueryConstant, VAR *> const_to_var;
 
   std::unordered_map<QueryView, PROC *> procedures;
   std::unordered_map<QueryCondition, VAR *> cond_ref_counts;

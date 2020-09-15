@@ -130,9 +130,50 @@ static VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   if (!cond_var) {
     cond_var = impl->global_vars.Create(
         --impl->next_global_var_id,
-         VariableRole::kGlobalBoolean);
+        VariableRole::kConditionRefCount);
+    cond_var->query_cond = cond;
   }
   return cond_var;
+}
+
+// Map all variables to their defining regions.
+void MapVariables(REGION *region) {
+  if (!region) {
+    return;
+
+  } else if (auto op = region->AsOperation(); op) {
+    if (auto let = op->AsLetBinding(); let) {
+      for (auto var : let->defined_vars) {
+        var->defining_region = region;
+      }
+    } else if (auto loop = op->AsVectorLoop(); loop) {
+      for (auto var : loop->defined_vars) {
+        var->defining_region = region;
+      }
+    } else if (auto join = op->AsViewJoin(); join) {
+      for (const auto &var_list : join->output_vars) {
+        for (auto var : var_list) {
+          var->defining_region = region;
+        }
+      }
+    }
+
+    MapVariables(op->body.get());
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    MapVariables(induction->init_region.get());
+    MapVariables(induction->cyclic_region.get());
+    MapVariables(induction->output_region.get());
+
+  } else if (auto par = region->AsParallel(); par) {
+    for (auto sub_region : par->regions) {
+      MapVariables(sub_region);
+    }
+  } else if (auto series = region->AsSeries(); series) {
+    for (auto sub_region : series->regions) {
+      MapVariables(sub_region);
+    }
+  }
 }
 
 }  // namespace
@@ -146,11 +187,11 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Innermost test for negative conditions.
   if (!neg_conds.empty()) {
-    auto test = impl->operation_regions.Create(
+    auto test = impl->operation_regions.CreateDerived<EXISTS>(
         parent, ProgramOperation::kTestAllZero);
 
     for (auto cond : neg_conds) {
-      test->variables.AddUse(ConditionVariable(impl, cond));
+      test->cond_vars.AddUse(ConditionVariable(impl, cond));
     }
 
     UseRef<REGION>(parent, test).Swap(parent->body);
@@ -159,11 +200,11 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Outermost test for positive conditions.
   if (!pos_conds.empty()) {
-    auto test = impl->operation_regions.Create(
+    auto test = impl->operation_regions.CreateDerived<EXISTS>(
         parent, ProgramOperation::kTestAllNonZero);
 
     for (auto cond : pos_conds) {
-      test->variables.AddUse(ConditionVariable(impl, cond));
+      test->cond_vars.AddUse(ConditionVariable(impl, cond));
     }
 
     UseRef<REGION>(parent, test).Swap(parent->body);
@@ -183,22 +224,18 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
   const auto proc = impl->procedure_regions.CreateDerived<VECTORPROC>(view, impl);
   impl->procedures.emplace(view, proc);
 
-  OP * const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+  const auto vec = proc->VectorFor(VectorKind::kInput, view.Columns());
+  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
+
   for (auto col : view.Columns()) {
-    loop->variables.AddUse(proc->VariableFor(col));
+    const auto var = loop->defined_vars.Create(
+        col.Id(), VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
   }
 
-  // NOTE(pag): The input vector is "implicit", defined in terms of the
-  //            variables.
-
-  // They should all be unique anyway.
-  loop->variables.Unique();
-  assert(loop->variables.Size() == view.Columns().size());
-
-  TABLE * const vec = proc->VectorFor(view.Columns(), TableKind::kInputVector);
-  loop->tables.AddUse(vec);
-
+  UseRef<VECTOR>(loop, vec).Swap(loop->vector);
   UseRef<REGION>(proc, loop).Swap(proc->body);
 
   BuildEagerSuccessorRegions(impl, view, context, loop, view.Successors());
@@ -320,6 +357,15 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
     }
   }
 
+  // Create constant variables.
+  for (auto const_val : query.Constants()) {
+    auto var = impl->const_vars.Create(
+        --impl->next_global_var_id,
+        VariableRole::kConstant);
+    var->query_const = const_val;
+    impl->const_to_var.emplace(const_val, var);
+  }
+
   // Go figure out which merges are inductive, and then classify their
   // predecessors and successors in terms of which ones are inductive and
   // which aren't.
@@ -354,6 +400,11 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   }
 
   impl->Optimize();
+
+  // Assign defining regions to each variable.
+  for (auto proc : impl->procedure_regions) {
+    MapVariables(proc->body.get());
+  }
 
   return Program(std::move(impl));
 }

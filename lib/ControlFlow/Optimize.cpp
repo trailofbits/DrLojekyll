@@ -104,27 +104,47 @@ void ProgramImpl::Optimize(void) {
     }
 
     for (auto op : operation_regions) {
+
+      // We try to aggressively eliminate LET bindings by down-propagating
+      // variable assignments.
       if (auto let = op->AsLetBinding(); let) {
 
-        // This LET binding's parent is also a LET binding; we can merge into
-        // the parent.
-        if (auto parent_op = let->parent->AsOperation(); parent_op) {
-          if (auto parent_let = parent_op->AsLetBinding(); parent_let) {
-            changed = true;
-            for (auto var : let->variables) {
-              parent_let->variables.AddUse(var);
-            }
-
-            let->variables.Clear();
-          }
+        // Down-propagate all bindings.
+        for (auto i = 0u, max_i = let->defined_vars.Size(); i < max_i; ++i) {
+          changed = true;
+          const auto var_def = let->defined_vars[i];
+          const auto var_use = let->used_vars[i];
+          var_def->ReplaceAllUsesWith(var_use);
         }
 
-        // It's a LET binding without any variables.
-        if (let->variables.Empty()) {
-          if (auto body = let->body.get(); body) {
-            changed = true;
-            UseRef<REGION>().Swap(let->body);
-            let->ReplaceAllUsesWith(body);
+        let->defined_vars.Clear();
+        let->used_vars.Clear();
+
+        if (auto body = let->body.get(); body) {
+          changed = true;
+          UseRef<REGION>().Swap(let->body);
+          let->ReplaceAllUsesWith(body);
+        }
+
+      // If we have an exists check nested inside another one, then try to merge
+      // upward.
+      } else if (auto exists = op->AsExistenceCheck(); exists) {
+        if (auto parent_op = exists->parent->AsOperation(); parent_op) {
+          if (auto parent_exists = parent_op->AsExistenceCheck();
+              parent_exists && exists->op == parent_exists->op) {
+
+            for (auto cond : exists->cond_vars) {
+              changed = true;
+              parent_exists->cond_vars.AddUse(cond);
+            }
+
+            exists->cond_vars.Clear();
+
+            if (auto body = exists->body.get(); body) {
+              changed = true;
+              UseRef<REGION>().Swap(exists->body);
+              exists->ReplaceAllUsesWith(body);
+            }
           }
         }
       }

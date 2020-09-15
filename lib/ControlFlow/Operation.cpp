@@ -8,16 +8,14 @@ Node<ProgramOperationRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
+Node<ProgramVectorClearRegion>::~Node(void) {}
 Node<ProgramViewInsertRegion>::~Node(void) {}
 Node<ProgramViewJoinRegion>::~Node(void) {}
+Node<ProgramExistenceCheckRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
-      op(op_),
-      variables(this),
-      tables(this),
-      views(this),
-      indices(this) {}
+      op(op_) {}
 
 Node<ProgramOperationRegion> *
 Node<ProgramOperationRegion>::AsOperation(void) noexcept {
@@ -34,6 +32,11 @@ Node<ProgramOperationRegion>::AsVectorAppend(void) noexcept {
   return nullptr;
 }
 
+Node<ProgramVectorClearRegion> *
+Node<ProgramOperationRegion>::AsVectorClear(void) noexcept {
+  return nullptr;
+}
+
 Node<ProgramLetBindingRegion> *
 Node<ProgramOperationRegion>::AsLetBinding(void) noexcept {
   return nullptr;
@@ -46,6 +49,11 @@ Node<ProgramOperationRegion>::AsViewInsert(void) noexcept {
 
 Node<ProgramViewJoinRegion> *
 Node<ProgramOperationRegion>::AsViewJoin(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramExistenceCheckRegion> *
+Node<ProgramOperationRegion>::AsExistenceCheck(void) noexcept {
   return nullptr;
 }
 
@@ -77,8 +85,22 @@ Node<ProgramViewInsertRegion>::AsViewInsert(void) noexcept {
   return this;
 }
 
+bool Node<ProgramExistenceCheckRegion>::IsNoOp(void) const noexcept {
+  return !body;
+}
+
+Node<ProgramExistenceCheckRegion> *
+Node<ProgramExistenceCheckRegion>::AsExistenceCheck(void) noexcept {
+  return this;
+}
+
 Node<ProgramViewJoinRegion> *
 Node<ProgramViewJoinRegion>::AsViewJoin(void) noexcept {
+  return this;
+}
+
+Node<ProgramVectorClearRegion> *
+Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
   return this;
 }
 

@@ -11,6 +11,66 @@
 
 namespace hyde {
 
+OutputStream &operator<<(OutputStream &os, DataVector vec) {
+
+  switch (vec.Kind()) {
+    case VectorKind::kInput:
+      os << "$input";
+      break;
+    case VectorKind::kInduction:
+      os << "$induction:" << vec.Id();
+      break;
+    case VectorKind::kJoinPivots:
+      os << "$pivots:" << vec.Id();
+      break;
+  }
+
+  auto sep = "<";
+  for (auto type_kind : vec.ColumnTypes()) {
+    os << sep << type_kind;
+    sep = ",";
+  }
+  os << '>';
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, DataVariable var) {
+  os << '$';
+  if (auto name = var.Name();
+      name.Lexeme() == Lexeme::kIdentifierAtom ||
+      name.Lexeme() == Lexeme::kIdentifierVariable) {
+    os << name << ':';
+  }
+  os << var.Id();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os << os.Indent() << "exists-check ";
+    if (region.CheckForNotZero()) {
+      os << "not-zero";
+    } else {
+      os << "zero";
+    }
+
+    auto sep = " ";
+    for (auto var : region.ReferenceCounts()) {
+      os << sep << var;
+      sep = ", ";
+    }
+
+    os << "{\n";
+    os.PushIndent();
+    os << (*maybe_body) << '\n';
+    os.PopIndent();
+    os << os.Indent() << '}';
+  } else {
+    os << os.Indent() << "empty-exists-checks";
+  }
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
     os << os.Indent() << "let-binding {\n";
@@ -26,7 +86,13 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "vector-loop {\n";
+    os << os.Indent() << "vector-loop {";
+    auto sep = "";
+    for (auto var : region.TupleVariables()) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "} over " << region.Vector() << " {\n";
     os.PushIndent();
     os << (*maybe_body) << '\n';
     os.PopIndent();
@@ -38,19 +104,42 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorAppendRegion region) {
-  os << os.Indent() << "vector-append";
+  os << os.Indent() << "vector-append {";
+  auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} into " << region.Vector();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region) {
+  os << os.Indent() << "vector-clear " << region.Vector();
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramViewInsertRegion region) {
+
+  os << os.Indent();
+  if (region.Body()) {
+    os << "if-";
+  }
+
+  os << "insert-into-view {";
+  auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} into ??";
+
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "if-insert-into-view {\n";
+    os << "{\n";
     os.PushIndent();
     os << (*maybe_body) << '\n';
     os.PopIndent();
     os << os.Indent() << '}';
-  } else {
-    os << os.Indent() << "insert-into-view";
   }
   return os;
 }
@@ -75,7 +164,15 @@ OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
   os.PushIndent();
   os << region.Initializer() << '\n';
   os.PopIndent();
-  os << os.Indent() << "fixpoint-loop\n";
+  os << os.Indent() << "fixpoint-loop testing ";
+
+  auto sep = "";
+  for (auto vec : region.Vectors()) {
+    os << sep << vec;
+    sep = ", ";
+  }
+  os << '\n';
+
   os.PushIndent();
   os << region.FixpointLoop() << '\n';
   os.PopIndent();
@@ -102,11 +199,7 @@ OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
   os << os.Indent() << "par\n";
   os.PushIndent();
   for (auto sub_region : region.Regions()) {
-    os << sep << os.Indent() << "{\n";
-    os.PushIndent();
-    os << sub_region << '\n';
-    os.PopIndent();
-    os << os.Indent() << '}';
+    os << sep << sub_region;
     sep = "\n";
   }
   os.PopIndent();
@@ -126,10 +219,14 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramVectorLoopRegion::From(region);
   } else if (region.IsVectorAppend()) {
     os << ProgramVectorAppendRegion::From(region);
+  } else if (region.IsVectorClear()) {
+    os << ProgramVectorClearRegion::From(region);
   } else if (region.IsViewInsert()) {
     os << ProgramViewInsertRegion::From(region);
   } else if (region.IsViewJoin()) {
     os << ProgramViewJoinRegion::From(region);
+  } else if (region.IsExistenceCheck()) {
+    os << ProgramExistenceCheckRegion::From(region);
   } else {
     assert(false);
     os << "<<unknown region>>";
