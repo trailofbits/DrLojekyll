@@ -89,7 +89,7 @@ OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
       sep = ", ";
     }
 
-    os << "{\n";
+    os << " {\n";
     os.PushIndent();
     os << (*maybe_body) << '\n';
     os.PopIndent();

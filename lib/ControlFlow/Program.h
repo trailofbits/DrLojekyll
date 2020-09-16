@@ -63,7 +63,7 @@ class Node<DataView> : public Def<Node<DataView>>, public User {
   const QueryView view_tag;
   const std::string col_spec;
   const std::vector<unsigned> col_ids;
-  const WeakUseRef<Node<DataTable>> viewed_table;
+  WeakUseRef<Node<DataTable>> viewed_table;
 };
 
 using DATAVIEW = Node<DataView>;
@@ -79,7 +79,7 @@ class Node<DataIndex> : public Def<Node<DataIndex>>, public User {
 
   const std::string column_spec;
   const std::vector<unsigned> col_ids;
-  const WeakUseRef<Node<DataTable>> indexed_table;
+  WeakUseRef<Node<DataTable>> indexed_table;
 };
 
 using INDEX = Node<DataIndex>;
@@ -100,9 +100,22 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
         indices(this) {}
 
   // Get or create a table in the program.
+  template <typename List>
   static Node<DataView> *GetOrCreate(ProgramImpl *program,
-                                     DefinedNodeRange<QueryColumn> cols,
-                                     QueryView view_tag);
+                                     List &&cols,
+                                     QueryView view_tag) {
+    std::vector<QueryColumn> col_list;
+    for (auto col : cols) {
+      col_list.push_back(col);
+    }
+
+    return GetOrCreateImpl(program, col_list, view_tag);
+  }
+
+  // Get or create a table in the program.
+  static Node<DataView> *GetOrCreateImpl(ProgramImpl *program,
+                                         const std::vector<QueryColumn> &cols,
+                                         QueryView view_tag);
 
   // Get or create an index on the table.
   Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);

@@ -28,6 +28,7 @@ QueryImpl::~QueryImpl(void) {
     view->attached_columns.ClearWithoutErasure();
     view->positive_conditions.ClearWithoutErasure();
     view->negative_conditions.ClearWithoutErasure();
+    view->sets_condition.ClearWithoutErasure();
     view->predecessors.ClearWithoutErasure();
     view->successors.ClearWithoutErasure();
   });
@@ -58,7 +59,14 @@ QueryImpl::~QueryImpl(void) {
   }
 
   for (auto select : selects) {
+    select->relation.ClearWithoutErasure();
+    select->stream.ClearWithoutErasure();
     select->inserts.ClearWithoutErasure();
+  }
+
+  for (auto insert : inserts) {
+    insert->relation.ClearWithoutErasure();
+    insert->stream.ClearWithoutErasure();
   }
 }
 

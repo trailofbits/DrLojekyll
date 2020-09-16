@@ -51,8 +51,8 @@ Node<DataIndex>::Node(Node<DataTable> *table_, std::vector<unsigned> col_ids_,
       indexed_table(this, table_) {}
 
 // Get or create a table in the program.
-Node<DataView> *Node<DataTable>::GetOrCreate(
-    ProgramImpl *impl, DefinedNodeRange<QueryColumn> cols, QueryView tag) {
+Node<DataView> *Node<DataTable>::GetOrCreateImpl(
+    ProgramImpl *impl, const std::vector<QueryColumn> &cols, QueryView tag) {
 
   // TODO(pag): Make it so that the view has the right columns in the right
   //            order, even if the table itself de-duplicates some of them.

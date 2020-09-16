@@ -10,12 +10,23 @@
 namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
+  for (auto table : tables) {
+    for (auto view : table->views) {
+      view->viewed_table.ClearWithoutErasure();
+    }
+    for (auto index : table->indices) {
+      index->indexed_table.ClearWithoutErasure();
+    }
+  }
+
   for (auto region : series_regions) {
     region->regions.ClearWithoutErasure();
   }
+
   for (auto region : parallel_regions) {
     region->regions.ClearWithoutErasure();
   }
+
   for (auto induction : induction_regions) {
     for (auto &entry : induction->view_to_init_appends) {
       entry.second.ClearWithoutErasure();
@@ -60,8 +71,12 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto view_join = op->AsViewJoin(); view_join) {
       view_join->views.ClearWithoutErasure();
       view_join->indices.ClearWithoutErasure();
+
+    } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
+      exists_check->cond_vars.ClearWithoutErasure();
     }
   }
+
   for (auto proc : procedure_regions) {
     proc->body.ClearWithoutErasure();
   }

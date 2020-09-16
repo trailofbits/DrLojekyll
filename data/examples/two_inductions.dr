@@ -1,0 +1,18 @@
+; This example has two independent inductions, i.e. two cyclic regions in
+; the dataflow.
+
+#message input(i32 A)
+#query output(bound i32 A)
+
+#message blah1(i32 A, i32 B)
+#message blah2(i32 A, i32 B)
+
+#local loop1(A)
+loop1(A) : input(A).
+loop1(B) : loop1(A), blah1(A, B).
+
+#local loop2(A)
+loop2(A) : loop1(A).
+loop2(B) : loop2(A), blah2(A, B).
+
+output(A) : loop2(A).

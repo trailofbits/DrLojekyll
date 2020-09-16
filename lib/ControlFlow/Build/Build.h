@@ -55,10 +55,10 @@ class Context {
   std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_successors;
   std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_successors;
 
-//  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
-//  // an inductive
-//  std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_predecessors;
-//  std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_predecessors;
+  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
+  // an inductive
+  std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_predecessors;
+  std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_predecessors;
 
   // Set of regions that execute eagerly. In practice this means that these
   // regions are directly needed in order to produce an output message.

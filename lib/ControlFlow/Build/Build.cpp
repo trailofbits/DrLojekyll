@@ -137,7 +137,7 @@ static VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
 }
 
 // Map all variables to their defining regions.
-void MapVariables(REGION *region) {
+static void MapVariables(REGION *region) {
   if (!region) {
     return;
 
@@ -175,47 +175,6 @@ void MapVariables(REGION *region) {
     }
   }
 }
-
-}  // namespace
-
-// Build an eager region. This guards the execution of the region in
-// conditionals if the view itself is conditional.
-void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                      QueryView view, Context &usage, OP *parent) {
-  const auto pos_conds = view.PositiveConditions();
-  const auto neg_conds = view.NegativeConditions();
-
-  // Innermost test for negative conditions.
-  if (!neg_conds.empty()) {
-    auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllZero);
-
-    for (auto cond : neg_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
-    }
-
-    UseRef<REGION>(parent, test).Swap(parent->body);
-    parent = test;
-  }
-
-  // Outermost test for positive conditions.
-  if (!pos_conds.empty()) {
-    auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllNonZero);
-
-    for (auto cond : pos_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
-    }
-
-    UseRef<REGION>(parent, test).Swap(parent->body);
-    parent = test;
-  }
-
-  BuildUnconditionalEagerRegion(
-      impl, pred_view, view, usage, parent);
-}
-
-WorkItem::~WorkItem(void) {}
 
 // Create a procedure for a view.
 static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
@@ -303,28 +262,59 @@ static void DiscoverInductions(const Query &query, Context &context) {
       }
     }
 
-//    auto succs = TransitiveSuccessorsOf(view);
-//    for (auto pred_view : QueryView(view).Predecessors()) {
-//      if (succs.count(pred_view)) {
-//        context.inductive_predecessors[view].insert(pred_view);
-//      } else {
-//        context.noninductive_predecessors[view].insert(pred_view);
-//      }
-//    }
+    auto succs = TransitiveSuccessorsOf(view);
+    for (auto pred_view : QueryView(view).Predecessors()) {
+      if (succs.count(pred_view)) {
+        context.inductive_predecessors[view].insert(pred_view);
+      } else {
+        context.noninductive_predecessors[view].insert(pred_view);
+      }
+    }
   }
 
   // Now group together the merges into co-inductive sets, i.e. when one
   // induction is tied with another induction.
+  std::set<QueryView> seen;
+  std::vector<QueryView> frontier;
+  std::set<std::pair<QueryView, QueryView>> disallowed_edges;
+
+  for (auto &[view, noninductive_predecessors] : context.noninductive_predecessors) {
+    for (QueryView pred_view : noninductive_predecessors) {
+      disallowed_edges.emplace(pred_view, view);
+    }
+  }
+
   for (const auto &[view, inductive_successors] : context.inductive_successors) {
-    DisjointSet &base_set = context.merge_sets[view];
+    if (inductive_successors.empty()) {
+      continue;
+    }
+
+    frontier.clear();
+    seen.clear();
+
     for (QueryView succ_view : inductive_successors) {
-      for (auto reached_view : TransitiveSuccessorsOf(succ_view)) {
-        if (reached_view.IsMerge()) {
-          QueryMerge reached_merge = QueryMerge::From(reached_view);
-          if (context.inductive_successors.count(reached_merge)) {
-            auto &reached_set = context.merge_sets[reached_merge];
-            DisjointSet::Union(&base_set, &reached_set);
-          }
+      frontier.push_back(succ_view);
+    }
+
+    while (!frontier.empty()) {
+      const auto view = frontier.back();
+      frontier.pop_back();
+      for (auto succ_view : view.Successors()) {
+        if (!seen.count(succ_view) &&
+            !disallowed_edges.count({view, succ_view})) {
+          seen.insert(succ_view);
+          frontier.push_back(succ_view);
+        }
+      }
+    }
+
+    DisjointSet &base_set = context.merge_sets[view];
+    for (auto reached_view : seen) {
+      if (reached_view.IsMerge()) {
+        QueryMerge reached_merge = QueryMerge::From(reached_view);
+        if (context.inductive_successors.count(reached_merge)) {
+          auto &reached_set = context.merge_sets[reached_merge];
+          DisjointSet::Union(&base_set, &reached_set);
         }
       }
     }
@@ -370,6 +360,48 @@ void BuildDataModel(const Query &query, ProgramImpl *program) {
     }
   });
 }
+
+
+}  // namespace
+
+// Build an eager region. This guards the execution of the region in
+// conditionals if the view itself is conditional.
+void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
+                      QueryView view, Context &usage, OP *parent) {
+  const auto pos_conds = view.PositiveConditions();
+  const auto neg_conds = view.NegativeConditions();
+
+  // Innermost test for negative conditions.
+  if (!neg_conds.empty()) {
+    auto test = impl->operation_regions.CreateDerived<EXISTS>(
+        parent, ProgramOperation::kTestAllZero);
+
+    for (auto cond : neg_conds) {
+      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+    }
+
+    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent = test;
+  }
+
+  // Outermost test for positive conditions.
+  if (!pos_conds.empty()) {
+    auto test = impl->operation_regions.CreateDerived<EXISTS>(
+        parent, ProgramOperation::kTestAllNonZero);
+
+    for (auto cond : pos_conds) {
+      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+    }
+
+    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent = test;
+  }
+
+  BuildUnconditionalEagerRegion(
+      impl, pred_view, view, usage, parent);
+}
+
+WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
 std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {

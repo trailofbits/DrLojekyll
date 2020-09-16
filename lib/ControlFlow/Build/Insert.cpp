@@ -12,7 +12,7 @@ namespace {
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryInsert insert, Context &context, OP *parent) {
   const auto view = QueryView(insert);
-  const auto cols = view.Columns();
+  const auto cols = insert.InputColumns();
 
   if (insert.IsStream()) {
     assert(!"TODO");
