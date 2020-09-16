@@ -441,9 +441,6 @@ class Node<ProgramViewInsertRegion> final
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
-  // Column IDs associated with each of the `used_vars`.
-  std::vector<unsigned> col_ids;
-
   // View into which the tuple is being inserted.
   UseRef<VIEW> view;
 };
@@ -505,7 +502,9 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  explicit Node(QueryView view, ProgramImpl *program);
+  inline Node(void)
+      : Node<ProgramRegion>(this),
+        tables(this) {}
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
@@ -525,12 +524,6 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // Vectors defined in this procedure. If this is a vector procedure then
   // the first vector is the input vector.
   DefList<VECTOR> vectors;
-
-  // Used during building. We are permittied to visit a given `QueryView`
-  // multiple times within a procedure, and it's convenient to use the opcode
-  // (`OP::op`) as a kind of state tracker to decide how to handle the 2nd, and
-  // Nth visits of a given view.
-  std::unordered_map<std::pair<QueryView, QueryView>, REGION *> view_to_region;
 };
 
 using PROC = Node<ProgramProcedure>;
@@ -540,9 +533,13 @@ using PROC = Node<ProgramProcedure>;
 template <>
 class Node<ProgramVectorProcedure> final : public Node<ProgramProcedure> {
  public:
-  using Node<ProgramProcedure>::Node;
+  inline Node(QueryIO io_)
+      : io(io_) {}
+
   virtual ~Node(void);
   virtual Node<ProgramVectorProcedure> *AsVector(void) override;
+
+  const QueryIO io;
 };
 
 using VECTORPROC = Node<ProgramVectorProcedure>;
@@ -672,8 +669,6 @@ class ProgramImpl : public User {
 
   DefList<VAR> const_vars;
   std::unordered_map<QueryConstant, VAR *> const_to_var;
-
-  std::unordered_map<QueryView, PROC *> procedures;
   std::unordered_map<QueryCondition, VAR *> cond_ref_counts;
 
   // We build up "data models" of views that can share the same backing storage.

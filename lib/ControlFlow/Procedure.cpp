@@ -5,13 +5,8 @@
 namespace hyde {
 
 Node<ProgramProcedure>::~Node(void) {}
-
 Node<ProgramVectorProcedure>::~Node(void) {}
 Node<ProgramTupleProcedure>::~Node(void) {}
-
-Node<ProgramProcedure>::Node(QueryView view, ProgramImpl *program)
-    : Node<ProgramRegion>(this),
-      tables(this) {}
 
 Node<ProgramProcedure> *
 Node<ProgramProcedure>::AsProcedure(void) noexcept {

@@ -497,6 +497,16 @@ ProgramVectorProcedure::From(ProgramProcedure proc) noexcept {
   return ProgramVectorProcedure(vec_impl);
 }
 
+// The message received and handled by this procedure.
+ParsedMessage ProgramVectorProcedure::Message(void) const noexcept {
+  return ParsedMessage::From(impl->io.Declaration());
+}
+
+// The input vector that this procedure will operate on.
+DataVector ProgramVectorProcedure::InputVector(void) const noexcept {
+  return DataVector(impl->vectors[0]);
+}
+
 // Return the region contained by this procedure.
 ProgramRegion ProgramVectorProcedure::Body(void) const noexcept {
   return ProgramRegion(impl->body.get());

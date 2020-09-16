@@ -163,13 +163,9 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
   const auto insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
-  for (auto col : view.Columns()) {
+  for (auto col : pred_view.Columns()) {
     const auto var = parent->VariableFor(impl, col);
     insert->col_values.AddUse(var);
-  }
-  insert->col_values.Unique();
-  for (auto var : insert->col_values) {
-    insert->col_ids.push_back(var->id);
   }
 
   const auto table_view = TABLE::GetOrCreate(impl, pred_view.Columns(), view);

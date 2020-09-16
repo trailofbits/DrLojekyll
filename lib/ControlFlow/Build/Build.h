@@ -39,6 +39,8 @@ class WorkItem {
   const unsigned order;
 };
 
+using WorkItemPtr = std::unique_ptr<WorkItem>;
+
 // General wrapper around data used when lifting from the data flow to the
 // control flow representation.
 class Context {
@@ -71,7 +73,8 @@ class Context {
   std::unordered_map<QueryView, VAR *> product_guard_var;
 
   // Work list of actions to invoke to build the execution tree.
-  std::vector<std::unique_ptr<WorkItem>> work_list;
+  std::vector<WorkItemPtr> work_list;
+  std::vector<WorkItemPtr> prev_work_list;
   std::unordered_map<QueryView, WorkItem *> view_to_work_item;
 };
 

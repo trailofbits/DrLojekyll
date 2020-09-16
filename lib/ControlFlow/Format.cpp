@@ -235,7 +235,9 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorProcedure proc) {
-  os << "vector-proc {\n";
+  auto message = proc.Message();
+  os << "vector-proc " << message.Name() << '/' << message.Arity()
+     << '(' << proc.InputVector() << ") {\n";
   os.PushIndent();
   os << proc.Body() << '\n';
   os.PopIndent();

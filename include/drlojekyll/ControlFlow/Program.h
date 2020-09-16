@@ -386,6 +386,12 @@ class ProgramVectorProcedure : public program::ProgramNode<ProgramVectorProcedur
  public:
   static ProgramVectorProcedure From(ProgramProcedure proc) noexcept;
 
+  // The message received and handled by this procedure.
+  ParsedMessage Message(void) const noexcept;
+
+  // The input vector that this procedure will operate on.
+  DataVector InputVector(void) const noexcept;
+
   // Return the region contained by this procedure.
   ProgramRegion Body(void) const noexcept;
 

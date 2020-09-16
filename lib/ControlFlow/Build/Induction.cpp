@@ -117,7 +117,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
       const auto var = cycle->defined_vars.Create(
           col.Id(), VariableRole::kVectorVariable);
       var->query_column = col;
-      cycle->REGION::col_id_to_var.emplace(col.Id(), var);
+      cycle->col_id_to_var.emplace(col.Id(), var);
     }
     UseRef<VECTOR>(cycle, vec.get()).Swap(cycle->vector);
     UseRef<REGION>(induction, cycle).Swap(induction->view_to_cycle_loop[merge]);
@@ -213,14 +213,6 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
   // First, check if we should add this tuple to the induction.
   const auto insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
-  for (auto col : view.Columns()) {
-    const auto var = parent->VariableFor(impl, col);
-    insert->col_values.AddUse(var);
-  }
-  insert->col_values.Unique();
-  for (auto var : insert->col_values) {
-    insert->col_ids.push_back(var->id);
-  }
 
   const auto table_view = TABLE::GetOrCreate(impl, view.Columns(), pred_view);
   UseRef<VIEW>(insert, table_view).Swap(insert->view);
@@ -259,11 +251,6 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     const auto var = parent->VariableFor(impl, col);
     insert->col_values.AddUse(var);
     append_to_vec->tuple_vars.AddUse(var);
-  }
-
-  insert->col_values.Unique();
-  for (auto var : insert->col_values) {
-    insert->col_ids.push_back(var->id);
   }
 
   UseRef<VECTOR>(append_to_vec, vec.get()).Swap(append_to_vec->vector);

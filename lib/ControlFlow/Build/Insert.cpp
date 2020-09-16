@@ -24,11 +24,6 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
       const auto var = parent->VariableFor(impl, col);
       insert->col_values.AddUse(var);
     }
-    insert->col_values.Unique();
-
-    for (auto var : insert->col_values) {
-      insert->col_ids.push_back(var->id);
-    }
 
     // TODO(pag): Think about eliminating `view` as a tag if there is only
     //            one inserter into VIEW.

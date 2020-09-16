@@ -218,27 +218,67 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
 WorkItem::~WorkItem(void) {}
 
 // Create a procedure for a view.
-static void BuildEagerProcedure(ProgramImpl *impl, QueryView view,
+static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
                                 Context &context) {
+  const auto receives = io.Receives();
+  if (receives.empty()) {
+    return;
+  }
 
-  const auto proc = impl->procedure_regions.CreateDerived<VECTORPROC>(view, impl);
-  impl->procedures.emplace(view, proc);
-
-  const auto vec = proc->VectorFor(VectorKind::kInput, view.Columns());
+  const auto proc = impl->procedure_regions.CreateDerived<VECTORPROC>(io);
+  const auto vec = proc->VectorFor(VectorKind::kInput, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
+  auto par = impl->parallel_regions.Create(loop);
 
-  for (auto col : view.Columns()) {
+  for (auto col : receives[0].Columns()) {
     const auto var = loop->defined_vars.Create(
         col.Id(), VariableRole::kVectorVariable);
     var->query_column = col;
     loop->col_id_to_var.emplace(col.Id(), var);
   }
 
+  UseRef<REGION>(loop, par).Swap(loop->body);
   UseRef<VECTOR>(loop, vec).Swap(loop->vector);
   UseRef<REGION>(proc, loop).Swap(proc->body);
 
-  BuildEagerSuccessorRegions(impl, view, context, loop, view.Successors());
+  for (auto receive : io.Receives()) {
+    context.view_to_induction.clear();
+    context.work_list.clear();
+    context.view_to_work_item.clear();
+
+    auto let = impl->operation_regions.CreateDerived<LET>(par);
+    let->ExecuteAlongside(impl, par);
+
+    auto i = 0u;
+    for (auto col : receive.Columns()) {
+      auto first_col = receives[0].Columns()[i++];
+      if (col.Id() != first_col.Id()) {
+        let->used_vars.AddUse(par->VariableFor(impl, first_col));
+        const auto var = let->defined_vars.Create(
+            col.Id(), VariableRole::kLetBinding);
+        var->query_column = col;
+        loop->col_id_to_var.emplace(col.Id(), var);
+      }
+    }
+
+    BuildEagerSuccessorRegions(impl, receive, context, let,
+                               receive.Successors());
+  }
+
+  while (!context.work_list.empty()) {
+    context.prev_work_list.swap(context.work_list);
+    context.view_to_work_item.clear();
+    std::stable_sort(context.prev_work_list.begin(),
+                     context.prev_work_list.end(),
+                     [](const WorkItemPtr &a, const WorkItemPtr &b) {
+                       return a->order < b->order;
+                     });
+    for (const auto &item : context.prev_work_list) {
+      item->Run(impl, context);
+    }
+    context.prev_work_list.clear();
+  }
 }
 
 // Analyze the MERGE/UNION nodes and figure out which ones are inductive.
@@ -371,32 +411,8 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   // which aren't.
   DiscoverInductions(query, context);
 
-  // Work list of tasks to process.
-  using WorkItemPtr = std::unique_ptr<WorkItem>;
-  std::vector<WorkItemPtr> prev_work_list;
-
   for (auto io : query.IOs()) {
-    for (auto receive : io.Receives()) {
-      context.view_to_induction.clear();
-//      context.product_guard_var.clear();
-//      context.product_vector.clear();
-      context.work_list.clear();
-      context.view_to_work_item.clear();
-      BuildEagerProcedure(program, receive, context);
-
-      while (!context.work_list.empty()) {
-        prev_work_list.swap(context.work_list);
-        context.view_to_work_item.clear();
-        std::stable_sort(prev_work_list.begin(), prev_work_list.end(),
-                         [](const WorkItemPtr &a, const WorkItemPtr &b) {
-                           return a->order < b->order;
-                         });
-        for (const auto &item : prev_work_list) {
-          item->Run(program, context);
-        }
-        prev_work_list.clear();
-      }
-    }
+    BuildEagerProcedure(program, io, context);
   }
 
   impl->Optimize();

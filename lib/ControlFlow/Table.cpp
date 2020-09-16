@@ -56,6 +56,9 @@ Node<DataTable>::Node(TableKind kind_)
 Node<DataView> *Node<DataTable>::GetOrCreate(
     ProgramImpl *program, DefinedNodeRange<QueryColumn> cols, QueryView tag) {
 
+  // TODO(pag): Make it so that the view has the right columns in the right
+  //            order, even if the table itself deduplicates some of them.
+
   std::vector<unsigned> col_ids;
   DataModel *model = nullptr;
   for (auto col : cols) {
