@@ -94,14 +94,16 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
     if (!functor.IsPure()) {
       os << " impure";
     }
-    os << " range(";
-    switch (functor.Range()) {
-      case FunctorRange::kOneOrMore: os << "+"; break;
-      case FunctorRange::kZeroOrMore: os << "*"; break;
-      case FunctorRange::kZeroOrOne: os << "?"; break;
-      case FunctorRange::kOneToOne: os << "."; break;
+    if (!functor.IsAggregate() && !functor.IsMerge()) {
+      os << " range(";
+      switch (functor.Range()) {
+        case FunctorRange::kOneOrMore: os << "+"; break;
+        case FunctorRange::kZeroOrMore: os << "*"; break;
+        case FunctorRange::kZeroOrOne: os << "?"; break;
+        case FunctorRange::kOneToOne: os << "."; break;
+      }
+      os << ")";
     }
-    os << ")";
 
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " inline";

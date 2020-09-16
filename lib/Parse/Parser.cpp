@@ -549,6 +549,7 @@ void ParserImpl::ParseLocalExport(
           }
 
           param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
+          param->opt_merge->is_merge = true;
           assert(param->opt_merge->parameters.size() == 3);
 
           // Make sure the `range` specification of the merge functor is sane.

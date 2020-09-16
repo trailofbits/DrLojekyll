@@ -47,23 +47,26 @@ class DataVector;
 // Represents a view into a table of data. Each view is basically the subset
 // of some data in a table that is specific to a `QueryView`. Thus, there is
 // a one-to-many relationship between individual rows of data in a table and
-// the views which identify those rows as containing
+// the views which identify those rows as containing the data.
 template <>
 class Node<DataView> : public Def<Node<DataView>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(Node<DataTable> *table_, QueryView view_tag_, std::string col_spec_);
+  Node(Node<DataTable> *table_, unsigned id_, QueryView view_tag_,
+       std::vector<unsigned> col_ids_, std::string col_spec_);
 
   // Get or create an index on the table.
   Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
 
+  const unsigned id;
   const QueryView view_tag;
   const std::string col_spec;
+  const std::vector<unsigned> col_ids;
   const WeakUseRef<Node<DataTable>> viewed_table;
 };
 
-using VIEW = Node<DataView>;
+using DATAVIEW = Node<DataView>;
 
 // Represents an index on some subset of columns in a table.
 template <>
@@ -71,9 +74,11 @@ class Node<DataIndex> : public Def<Node<DataIndex>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(Node<DataTable> *table_, std::string column_spec_);
+  Node(Node<DataTable> *table_, std::vector<unsigned> col_ids_,
+       std::string column_spec_);
 
   const std::string column_spec;
+  const std::vector<unsigned> col_ids;
   const WeakUseRef<Node<DataTable>> indexed_table;
 };
 
@@ -87,23 +92,24 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
  public:
   virtual ~Node(void);
 
-  explicit Node(TableKind kind_);
+  inline Node(unsigned id_)
+      : Def<Node<DataTable>>(this),
+        User(this),
+        id(id_),
+        views(this),
+        indices(this) {}
 
   // Get or create a table in the program.
   static Node<DataView> *GetOrCreate(ProgramImpl *program,
                                      DefinedNodeRange<QueryColumn> cols,
                                      QueryView view_tag);
 
-  static Node<DataView> *GetOrCreate(ProgramImpl *program,
-                                     UsedNodeRange<QueryColumn> cols,
-                                     QueryView view_tag);
-
   // Get or create an index on the table.
   Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
 
-  const TableKind kind;
+  const unsigned id;
 
-  // The sorted, uniqued column IDs (derived from `QueryColumn::Id`).
+  // The sorted, uniqued columns (derived from `QueryColumn::Id`).
   std::vector<QueryColumn> columns;
 
   // The views into this table. A given row might belong to one or more views.
@@ -111,7 +117,7 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
   // The general idea here is that we can say that two sets of columns can
   // belong to the same view if the arity of the rows will be the same, or if
   // one will be a subset of the other.
-  DefList<VIEW> views;
+  DefList<DATAVIEW> views;
 
   // Indexes that should be created on this table. By default, all tables have
   // a UNIQUE index.
@@ -160,6 +166,8 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
         id(id_) {}
 
   const VariableRole role;
+
+  // Unique ID for this variable. Unrelated to column IDs.
   const unsigned id;
 
   // NOTE(pag): Only valid after optimization when building the control flow
@@ -194,6 +202,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   inline void ReplaceAllUsesWith(Node<ProgramRegion> *that) {
     this->Def<Node<ProgramRegion>>::ReplaceAllUsesWith(that);
     that->parent = this->parent;
+    this->parent = nullptr;
   }
 
   // Gets or creates a local variable in the procedure.
@@ -441,11 +450,15 @@ class Node<ProgramViewInsertRegion> final
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
+  // IDs of the columns in `col_values`. Optimization might change what actual
+  // variable IDs/column values are stored.
+  std::vector<unsigned> col_ids;
+
   // View into which the tuple is being inserted.
-  UseRef<VIEW> view;
+  UseRef<DATAVIEW> view;
 };
 
-using VIEWINSERT = Node<ProgramViewInsertRegion>;
+using DATAVIEWINSERT = Node<ProgramViewInsertRegion>;
 
 // Represents a positive or negative existence check.
 template <>
@@ -487,14 +500,14 @@ class Node<ProgramViewJoinRegion> final
 
   const QueryJoin query_join;
 
-  UseList<VIEW> views;
+  UseList<DATAVIEW> views;
   UseList<INDEX> indices;
 
   DefList<VAR> output_pivot_vars;
   std::vector<DefList<VAR>> output_vars;
 };
 
-using VIEWJOIN = Node<ProgramViewJoinRegion>;
+using DATAVIEWJOIN = Node<ProgramViewJoinRegion>;
 
 // A procedure region. This represents some entrypoint of data into the program.
 template <>
@@ -502,17 +515,20 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  inline Node(void)
+  inline Node(unsigned id_)
       : Node<ProgramRegion>(this),
+        id(id_),
         tables(this) {}
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
-  virtual Node<ProgramVectorProcedure> *AsVector(void);
-  virtual Node<ProgramTupleProcedure> *AsTuple(void);
-
   // Create a new vector in this procedure for a list of columns.
-  VECTOR *VectorFor(VectorKind kind, DefinedNodeRange<QueryColumn> cols);
+  VECTOR *VectorFor(
+      ProgramImpl *impl, VectorKind kind, DefinedNodeRange<QueryColumn> cols);
+
+  const unsigned id;
+
+  std::optional<QueryIO> io;
 
   // Temporary tables within this procedure.
   DefList<TABLE> tables;
@@ -521,40 +537,16 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // input vector.
   UseRef<REGION> body;
 
+  // Input vectors and variables.
+  DefList<VECTOR> input_vectors;
+  DefList<VAR> input_vars;
+
   // Vectors defined in this procedure. If this is a vector procedure then
   // the first vector is the input vector.
   DefList<VECTOR> vectors;
 };
 
 using PROC = Node<ProgramProcedure>;
-
-// A vector procedure, which corresponds to receipt of I/Os of a particular
-// kind.
-template <>
-class Node<ProgramVectorProcedure> final : public Node<ProgramProcedure> {
- public:
-  inline Node(QueryIO io_)
-      : io(io_) {}
-
-  virtual ~Node(void);
-  virtual Node<ProgramVectorProcedure> *AsVector(void) override;
-
-  const QueryIO io;
-};
-
-using VECTORPROC = Node<ProgramVectorProcedure>;
-
-// A tuple procedure, which corresponds to an individual `QueryView` that can
-// take in a differential update.
-template <>
-class Node<ProgramTupleProcedure> final : public Node<ProgramProcedure> {
- public:
-  using Node<ProgramProcedure>::Node;
-  virtual ~Node(void);
-  virtual Node<ProgramTupleProcedure> *AsTuple(void) override;
-};
-
-using VECTORPROC = Node<ProgramVectorProcedure>;
 
 // A series region is where the `regions[N]` must finish before `regions[N+1]`
 // begins.
@@ -572,8 +564,8 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
 
 using SERIES = Node<ProgramSeriesRegion>;
 
-// A region where multiple things can happen in parallel. Often when a VIEW's
-// columns are needed by two or more other VIEWs, we will have one of these.
+// A region where multiple things can happen in parallel. Often when a DATAVIEW's
+// columns are needed by two or more other DATAVIEWs, we will have one of these.
 template <>
 class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
  public:
@@ -665,7 +657,7 @@ class ProgramImpl : public User {
 
   DefList<TABLE> tables;
   DefList<VAR> global_vars;
-  unsigned next_global_var_id{~0u};
+  unsigned next_id{0u};
 
   DefList<VAR> const_vars;
   std::unordered_map<QueryConstant, VAR *> const_to_var;

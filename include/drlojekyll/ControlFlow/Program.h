@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/Node.h>
@@ -49,12 +50,10 @@ class ProgramNode {
 
 }  // namespace program
 
-enum class TableKind : int {
-  kPersistent,
-};
-
+class DataTable;
 class DataVariable;
 class DataVector;
+class DataView;
 
 class ProgramExistenceCheckRegion;
 class ProgramInductionRegion;
@@ -172,6 +171,38 @@ enum class VectorKind : unsigned {
   kInput,
   kInduction,
   kJoinPivots,
+};
+
+// A view into a table.
+class DataView : public program::ProgramNode<DataView> {
+ public:
+  unsigned Id(void) const noexcept;
+
+  // List of column IDs represented by this view.
+  const std::vector<unsigned> ColumnIds(void) const noexcept;
+
+ private:
+  friend class DataTable;
+
+  using program::ProgramNode<DataView>::ProgramNode;
+};
+
+// A persistent table, backed by some kind of data store / database.
+class DataTable : public program::ProgramNode<DataTable> {
+ public:
+  static DataTable Backing(DataView view) noexcept;
+
+  unsigned Id(void) const noexcept;
+
+  // Columns in this table. The columns may be from different `QueryView`
+  // nodes.
+  const std::vector<QueryColumn> &Columns(void) const noexcept;
+
+  // Views into this table. Each view is logically a column.
+  DefinedNodeRange<DataView> Views(void) const;
+
+ private:
+  using program::ProgramNode<DataTable>::ProgramNode;
 };
 
 // A vector in the program.
@@ -292,7 +323,12 @@ class ProgramViewInsertRegion
   // The body that conditionally executes if the insert succeeds.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
+  unsigned Arity(void) const noexcept;
+  unsigned NthColumnId(unsigned n) const noexcept;
+
   UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  DataView View(void) const;
 
  private:
   friend class ProgramRegion;
@@ -348,87 +384,35 @@ class ProgramInductionRegion
   using program::ProgramNode<ProgramInductionRegion>::ProgramNode;
 };
 
-class ProgramVectorProcedure;
-class ProgramTupleProcedure;
-
-// A procedure in the program. It could be a vector procedure or a tuple
-// procedure.
+// A procedure in the program.
 class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
  public:
-  ProgramProcedure(const ProgramVectorProcedure &);
-  ProgramProcedure(const ProgramTupleProcedure &);
-
-  bool OperatesOnVector(void) const noexcept;
-  bool OperatesOnTuple(void) const noexcept;
-
-  // Return the region contained by this procedure.
-  ProgramRegion Body(void) const noexcept;
-
- private:
-  friend class ProgramVectorProcedure;
-  friend class ProgramTupleProcedure;
-
-  using program::ProgramNode<ProgramProcedure>::ProgramNode;
-};
-
-// A procedure in the program, operating on a vector of tuples. Vector
-// procedures correspond with received I/Os in the data flow representation,
-// and messages used in clause bodies in the parsed representation.
-//
-// Vector procedures contain a single region, and are the entrypoints of a
-// program. They can call external functions, such as functors (used in
-// key/value indices, aggregates, and mapping/filter functions), and they
-// can also call tuple procedures.
-//
-// Vector procedures perform bottom-up derivations of all derivable rules given
-// an input set of new facts.
-class ProgramVectorProcedure : public program::ProgramNode<ProgramVectorProcedure> {
- public:
-  static ProgramVectorProcedure From(ProgramProcedure proc) noexcept;
+  // Unique ID of this procedure.
+  unsigned Id(void) const noexcept;
 
   // The message received and handled by this procedure.
-  ParsedMessage Message(void) const noexcept;
+  std::optional<ParsedMessage> Message(void) const noexcept;
 
-  // The input vector that this procedure will operate on.
-  DataVector InputVector(void) const noexcept;
+  // Zero or more input vectors on which this procedure operates.
+  DefinedNodeRange<DataVector> InputVectors(void) const;
 
-  // Return the region contained by this procedure.
-  ProgramRegion Body(void) const noexcept;
-
- private:
-  friend class ProgramProcedure;
-
-  using program::ProgramNode<ProgramVectorProcedure>::ProgramNode;
-};
-
-// A procedure in the program,  operating on a single tuple.
-//
-// Tuple procedures contain a single region, and are only called from inside of
-// vector procedures.
-//
-// Tuple procedures are highly recursive, and behave like the bottom-up push
-// method of Datalog execution, as described by Stefan Brass. However, whereas
-// the push method is used for normal Datalog execution (proving rule heads
-// from facts in the clause bodies), tuple procedurs are instead used for
-// *removing* facts. That is, they recursively apply removals, so as to support
-// differential updates.
-class ProgramTupleProcedure : public program::ProgramNode<ProgramTupleProcedure> {
- public:
-  static ProgramTupleProcedure From(ProgramProcedure proc) noexcept;
+  // Zero or more vectors on which this procedure operates.
+  DefinedNodeRange<DataVector> DefinedVectors(void) const;
 
   // Return the region contained by this procedure.
   ProgramRegion Body(void) const noexcept;
 
  private:
-  friend class ProgramProcedure;
-
-  using program::ProgramNode<ProgramTupleProcedure>::ProgramNode;
+  using program::ProgramNode<ProgramProcedure>::ProgramNode;
 };
 
 class Program {
  public:
   // Build a program from a query.
   static std::optional<Program> Build(const Query &query, const ErrorLog &log);
+
+  // All persistent tables needed to store data.
+  DefinedNodeRange<DataTable> Tables(void) const;
 
   // List of all global constants.
   DefinedNodeRange<DataVariable> Constants(void) const;

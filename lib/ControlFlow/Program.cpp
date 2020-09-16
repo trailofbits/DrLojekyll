@@ -371,8 +371,21 @@ std::optional<ProgramRegion> ProgramViewInsertRegion::Body(void) const noexcept 
   }
 }
 
+unsigned ProgramViewInsertRegion::Arity(void) const noexcept {
+  return static_cast<unsigned>(impl->col_ids.size());
+}
+
+unsigned ProgramViewInsertRegion::NthColumnId(unsigned n) const noexcept {
+  assert(n < impl->col_ids.size());
+  return impl->col_ids[n];
+}
+
 UsedNodeRange<DataVariable> ProgramViewInsertRegion::TupleVariables(void) const {
   return {impl->col_values.begin(), impl->col_values.end()};
+}
+
+DataView ProgramViewInsertRegion::View(void) const {
+  return DataView(impl->view.get());
 }
 
 ProgramViewJoinRegion ProgramViewJoinRegion::From(
@@ -392,20 +405,6 @@ std::optional<ProgramRegion> ProgramViewJoinRegion::Body(void) const noexcept {
   } else {
     return std::nullopt;
   }
-}
-
-ProgramProcedure::ProgramProcedure(const ProgramVectorProcedure &proc)
-    : program::ProgramNode<ProgramProcedure>(proc.impl) {}
-
-ProgramProcedure::ProgramProcedure(const ProgramTupleProcedure &proc)
-    : program::ProgramNode<ProgramProcedure>(proc.impl) {}
-
-bool ProgramProcedure::OperatesOnTuple(void) const noexcept {
-  return impl->AsTuple();
-}
-
-bool ProgramProcedure::OperatesOnVector(void) const noexcept {
-  return impl->AsVector();
 }
 
 VariableRole DataVariable::DefiningRole(void) const noexcept {
@@ -470,6 +469,33 @@ TypeKind DataVariable::Type(void) const noexcept {
   }
 }
 
+unsigned DataView::Id(void) const noexcept {
+  return impl->id;
+}
+
+// List of column IDs represented by this view.
+const std::vector<unsigned> DataView::ColumnIds(void) const noexcept {
+  return impl->col_ids;
+}
+
+DataTable DataTable::Backing(DataView view) noexcept {
+  return DataTable(view.impl->viewed_table.get());
+}
+
+unsigned DataTable::Id(void) const noexcept {
+  return impl->id;
+}
+
+const std::vector<QueryColumn> &DataTable::Columns(void) const noexcept {
+  return impl->columns;
+}
+
+// Views into this table. Each view is logically a column.
+DefinedNodeRange<DataView> DataTable::Views(void) const {
+  return {DefinedNodeIterator<DataView>(impl->views.begin()),
+          DefinedNodeIterator<DataView>(impl->views.end())};
+}
+
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;
 }
@@ -486,41 +512,34 @@ const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
   return impl->col_types;
 }
 
-// Return the region contained by this procedure.
-ProgramRegion ProgramProcedure::Body(void) const noexcept {
-  return ProgramRegion(impl->body.get());
-}
-ProgramVectorProcedure
-ProgramVectorProcedure::From(ProgramProcedure proc) noexcept {
-  const auto vec_impl = proc.impl->AsVector();
-  assert(vec_impl != nullptr);
-  return ProgramVectorProcedure(vec_impl);
+// Unique ID of this procedure.
+unsigned ProgramProcedure::Id(void) const noexcept {
+  return impl->id;
 }
 
 // The message received and handled by this procedure.
-ParsedMessage ProgramVectorProcedure::Message(void) const noexcept {
-  return ParsedMessage::From(impl->io.Declaration());
+std::optional<ParsedMessage> ProgramProcedure::Message(void) const noexcept {
+  if (impl->io) {
+    return ParsedMessage::From(impl->io->Declaration());
+  } else {
+    return std::nullopt;
+  }
 }
 
 // The input vector that this procedure will operate on.
-DataVector ProgramVectorProcedure::InputVector(void) const noexcept {
-  return DataVector(impl->vectors[0]);
+DefinedNodeRange<DataVector> ProgramProcedure::InputVectors(void) const {
+  return {DefinedNodeIterator<DataVector>(impl->input_vectors.begin()),
+          DefinedNodeIterator<DataVector>(impl->input_vectors.end())};
+}
+
+// Zero or more vectors on which this procedure operates.
+DefinedNodeRange<DataVector> ProgramProcedure::DefinedVectors(void) const {
+  return {DefinedNodeIterator<DataVector>(impl->vectors.begin()),
+          DefinedNodeIterator<DataVector>(impl->vectors.end())};
 }
 
 // Return the region contained by this procedure.
-ProgramRegion ProgramVectorProcedure::Body(void) const noexcept {
-  return ProgramRegion(impl->body.get());
-}
-
-ProgramTupleProcedure
-ProgramTupleProcedure::From(ProgramProcedure proc) noexcept {
-  const auto tuple_impl = proc.impl->AsTuple();
-  assert(tuple_impl != nullptr);
-  return ProgramTupleProcedure(tuple_impl);
-}
-
-// Return the region contained by this procedure.
-ProgramRegion ProgramTupleProcedure::Body(void) const noexcept {
+ProgramRegion ProgramProcedure::Body(void) const noexcept {
   return ProgramRegion(impl->body.get());
 }
 
@@ -549,6 +568,12 @@ ProgramRegion ProgramInductionRegion::FixpointLoop(void) const noexcept {
 
 ProgramRegion ProgramInductionRegion::Output(void) const noexcept {
   return ProgramRegion(impl->output_region.get());
+}
+
+// All persistent tables needed to store data.
+DefinedNodeRange<DataTable> Program::Tables(void) const {
+  return {DefinedNodeIterator<DataTable>(impl->tables.begin()),
+          DefinedNodeIterator<DataTable>(impl->tables.end())};
 }
 
 // List of all global constants.

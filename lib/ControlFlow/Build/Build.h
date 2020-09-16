@@ -28,7 +28,8 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
-  static constexpr unsigned kRunAsLateAsPossible = ~0u;
+  static constexpr unsigned kContinueInductionOrder = (~0u) >> 2u;
+  static constexpr unsigned kFinalizeInductionOrder = (~0u) >> 1u;
 
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
@@ -74,7 +75,6 @@ class Context {
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
-  std::vector<WorkItemPtr> prev_work_list;
   std::unordered_map<QueryView, WorkItem *> view_to_work_item;
 };
 
@@ -130,7 +130,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
         const auto src_var = par->VariableFor(impl, in_col);
         let->used_vars.AddUse(src_var);
         const auto dst_var = let->defined_vars.Create(
-            out_col->Id(), VariableRole::kLetBinding);
+            impl->next_id++, VariableRole::kLetBinding);
         dst_var->query_column = *out_col;
         let->col_id_to_var.emplace(out_col->Id(), dst_var);
       }

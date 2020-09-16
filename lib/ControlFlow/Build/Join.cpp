@@ -51,6 +51,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     return;
   }
 
+  context.view_to_work_item.erase(view);
+
   const auto join_view = QueryJoin::From(view);
   OP *parent = inserts[0];
   PROC * const proc = parent->containing_procedure;
@@ -62,7 +64,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // pivots.
   if (1u < inserts.size()) {
     pivot_vec = proc->VectorFor(
-        VectorKind::kJoinPivots, join_view.PivotColumns());
+        impl, VectorKind::kJoinPivots, join_view.PivotColumns());
 
     for (auto insert : inserts) {
       const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
@@ -91,7 +93,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
 
     for (auto col : join_view.PivotColumns()) {
       const auto var = loop->defined_vars.Create(
-          col.Id(), VariableRole::kVectorVariable);
+          impl->next_id++, VariableRole::kVectorVariable);
       var->query_column = col;
       loop->col_id_to_var.emplace(col.Id(), var);
     }
@@ -106,7 +108,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  const auto join = impl->operation_regions.CreateDerived<VIEWJOIN>(
+  const auto join = impl->operation_regions.CreateDerived<DATAVIEWJOIN>(
       parent, join_view);
   UseRef<REGION>(parent, join).Swap(parent->body);
 
@@ -162,14 +164,15 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  const auto insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
+  const auto insert = impl->operation_regions.CreateDerived<DATAVIEWINSERT>(parent);
   for (auto col : pred_view.Columns()) {
     const auto var = parent->VariableFor(impl, col);
     insert->col_values.AddUse(var);
+    insert->col_ids.push_back(col.Id());
   }
 
   const auto table_view = TABLE::GetOrCreate(impl, pred_view.Columns(), view);
-  UseRef<VIEW>(insert, table_view).Swap(insert->view);
+  UseRef<DATAVIEW>(insert, table_view).Swap(insert->view);
   UseRef<REGION>(parent, insert).Swap(parent->body);
 
   auto &action = context.view_to_work_item[view];

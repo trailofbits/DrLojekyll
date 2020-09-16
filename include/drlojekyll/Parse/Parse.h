@@ -719,8 +719,15 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   ParsedParameter NthParameter(unsigned n) const noexcept;
   NodeRange<ParsedParameter> Parameters(void) const;
 
+  // Is this an aggregating functor?
   bool IsAggregate(void) const noexcept;
 
+  // Is this functor used to merge values in a `mutable`-attributed parameter?
+  // If so, it has three parameters (prev value, proposed value, merged value).
+  bool IsMerge(void) const noexcept;
+
+  // Is this a "pure" functor? That is, do we expect that if we re-execute it
+  // given the same inputs, that it will produce the same outputs?
   bool IsPure(void) const noexcept;
 
   NodeRange<ParsedFunctor> Redeclarations(void) const;

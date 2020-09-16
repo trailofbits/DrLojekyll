@@ -19,17 +19,18 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
-    const auto insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
+    const auto insert = impl->operation_regions.CreateDerived<DATAVIEWINSERT>(parent);
     for (auto col : cols) {
       const auto var = parent->VariableFor(impl, col);
       insert->col_values.AddUse(var);
+      insert->col_ids.push_back(col.Id());
     }
 
     // TODO(pag): Think about eliminating `view` as a tag if there is only
-    //            one inserter into VIEW.
+    //            one inserter into DATAVIEW.
     const auto table_view = TABLE::GetOrCreate(impl, cols, view);
 
-    UseRef<VIEW>(insert, table_view).Swap(insert->view);
+    UseRef<DATAVIEW>(insert, table_view).Swap(insert->view);
     UseRef<REGION>(parent, insert).Swap(parent->body);
 
     if (const auto succs = view.Successors(); succs.size()) {

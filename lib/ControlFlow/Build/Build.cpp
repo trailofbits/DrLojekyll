@@ -129,7 +129,7 @@ static VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   auto &cond_var = impl->cond_ref_counts[cond];
   if (!cond_var) {
     cond_var = impl->global_vars.Create(
-        --impl->next_global_var_id,
+        impl->next_id++,
         VariableRole::kConditionRefCount);
     cond_var->query_cond = cond;
   }
@@ -225,15 +225,18 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     return;
   }
 
-  const auto proc = impl->procedure_regions.CreateDerived<VECTORPROC>(io);
-  const auto vec = proc->VectorFor(VectorKind::kInput, receives[0].Columns());
+  const auto proc = impl->procedure_regions.CreateDerived<PROC>(impl->next_id++);
+  proc->io = io;
+
+  const auto vec = proc->VectorFor(
+      impl, VectorKind::kInput, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
   auto par = impl->parallel_regions.Create(loop);
 
   for (auto col : receives[0].Columns()) {
     const auto var = loop->defined_vars.Create(
-        col.Id(), VariableRole::kVectorVariable);
+        impl->next_id++, VariableRole::kVectorVariable);
     var->query_column = col;
     loop->col_id_to_var.emplace(col.Id(), var);
   }
@@ -242,11 +245,11 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   UseRef<VECTOR>(loop, vec).Swap(loop->vector);
   UseRef<REGION>(proc, loop).Swap(proc->body);
 
-  for (auto receive : io.Receives()) {
-    context.view_to_induction.clear();
-    context.work_list.clear();
-    context.view_to_work_item.clear();
+  context.view_to_induction.clear();
+  context.work_list.clear();
+  context.view_to_work_item.clear();
 
+  for (auto receive : io.Receives()) {
     auto let = impl->operation_regions.CreateDerived<LET>(par);
     let->ExecuteAlongside(impl, par);
 
@@ -256,7 +259,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
       if (col.Id() != first_col.Id()) {
         let->used_vars.AddUse(par->VariableFor(impl, first_col));
         const auto var = let->defined_vars.Create(
-            col.Id(), VariableRole::kLetBinding);
+            impl->next_id++, VariableRole::kLetBinding);
         var->query_column = col;
         loop->col_id_to_var.emplace(col.Id(), var);
       }
@@ -267,17 +270,16 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   }
 
   while (!context.work_list.empty()) {
-    context.prev_work_list.swap(context.work_list);
-    context.view_to_work_item.clear();
-    std::stable_sort(context.prev_work_list.begin(),
-                     context.prev_work_list.end(),
+//    context.view_to_work_item.clear();
+    std::stable_sort(context.work_list.begin(),
+                     context.work_list.end(),
                      [](const WorkItemPtr &a, const WorkItemPtr &b) {
-                       return a->order < b->order;
+                       return a->order > b->order;
                      });
-    for (const auto &item : context.prev_work_list) {
-      item->Run(impl, context);
-    }
-    context.prev_work_list.clear();
+
+    WorkItemPtr action = std::move(context.work_list.back());
+    context.work_list.pop_back();
+    action->Run(impl, context);
   }
 }
 
@@ -400,7 +402,7 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   // Create constant variables.
   for (auto const_val : query.Constants()) {
     auto var = impl->const_vars.Create(
-        --impl->next_global_var_id,
+        impl->next_id++,
         VariableRole::kConstant);
     var->query_const = const_val;
     impl->const_to_var.emplace(const_val, var);

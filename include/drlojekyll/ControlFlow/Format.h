@@ -8,6 +8,8 @@ namespace hyde {
 
 class OutputStream;
 
+OutputStream &operator<<(OutputStream &os, DataView view);
+OutputStream &operator<<(OutputStream &os, DataTable table);
 OutputStream &operator<<(OutputStream &os, DataVector vec);
 OutputStream &operator<<(OutputStream &os, DataVariable var);
 OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region);
@@ -21,7 +23,6 @@ OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramRegion region);
-OutputStream &operator<<(OutputStream &os, ProgramVectorProcedure proc);
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc);
 OutputStream &operator<<(OutputStream &os, Program program);
 

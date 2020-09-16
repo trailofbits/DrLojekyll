@@ -1076,6 +1076,10 @@ bool ParsedFunctor::IsAggregate(void) const noexcept {
   return impl->is_aggregate;
 }
 
+bool ParsedFunctor::IsMerge(void) const noexcept {
+  return impl->is_merge;
+}
+
 bool ParsedFunctor::IsPure(void) const noexcept {
   return impl->is_pure;
 }

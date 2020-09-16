@@ -11,6 +11,35 @@
 
 namespace hyde {
 
+OutputStream &operator<<(OutputStream &os, DataView view) {
+  os << "$view:" << view.Id() << "(";
+  auto sep = "";
+  for (auto col_id : view.ColumnIds()) {
+    os << sep << col_id;
+    sep = ", ";
+  }
+  os << ")";
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, DataTable table) {
+  os << os.Indent() << "create $table:" << table.Id() << " {\n";
+  os.PushIndent();
+  for (auto col : table.Columns()) {
+    os << os.Indent() << "col:" << col.Id() << ":" << col.Type().Kind()
+       << "  ; " << col.Variable() << '\n';
+  }
+
+  os << '\n';
+  for (auto view : table.Views()) {
+    os << os.Indent() << "declare " << view << '\n';
+  }
+
+  os.PopIndent();
+  os << os.Indent() << '}';
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
@@ -18,13 +47,13 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
       os << "$input";
       break;
     case VectorKind::kInduction:
-      os << "$induction:" << vec.Id();
+      os << "$induction";
       break;
     case VectorKind::kJoinPivots:
-      os << "$pivots:" << vec.Id();
+      os << "$pivots";
       break;
   }
-
+  os << ':' << vec.Id();
   auto sep = "<";
   for (auto type_kind : vec.ColumnTypes()) {
     os << sep << type_kind;
@@ -128,14 +157,16 @@ OutputStream &operator<<(OutputStream &os, ProgramViewInsertRegion region) {
 
   os << "insert-into-view {";
   auto sep = "";
+  auto i = 0u;
   for (auto var : region.TupleVariables()) {
-    os << sep << var;
+    const auto col_id = region.NthColumnId(i++);
+    os << sep << "col:" << col_id << '=' << var;
     sep = ", ";
   }
-  os << "} into ??";
+  os << "} into " << region.View();
 
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << "{\n";
+    os << " {\n";
     os.PushIndent();
     os << (*maybe_body) << '\n';
     os.PopIndent();
@@ -234,35 +265,46 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramVectorProcedure proc) {
-  auto message = proc.Message();
-  os << "vector-proc " << message.Name() << '/' << message.Arity()
-     << '(' << proc.InputVector() << ") {\n";
+OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
+
+  os << "proc ";
+  if (auto message = proc.Message(); message) {
+    os << message->Name() << '/' << message->Arity() << ':' << proc.Id();
+  } else {
+    os << '$' << proc.Id();
+  }
+  os << '(';
+  auto sep = "";
+  for (auto vec : proc.InputVectors()) {
+    os << sep << vec;
+    sep = ", ";
+  }
+  os << ") {\n";
   os.PushIndent();
+
+  for (auto vec : proc.DefinedVectors()) {
+    os << os.Indent() << "vector-define " << vec << '\n';
+  }
+
   os << proc.Body() << '\n';
   os.PopIndent();
   os << '}';
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
-  if (proc.OperatesOnVector()) {
-    os << ProgramVectorProcedure::From(proc);
-
-  } else if (proc.OperatesOnTuple()) {
-    assert(!"TODO!");
-
-  } else {
-    assert(false);
-    os << "<<invalid procedure>>";
-  }
-  return os;
-}
-
 OutputStream &operator<<(OutputStream &os, Program program) {
   auto sep = "";
+  for (auto var : program.Constants()) {
+    os << sep << os.Indent() << "const " << var << " = "
+       << *(var.Value());
+    sep = "\n\n";
+  }
+  for (auto table : program.Tables()) {
+    os << sep << os.Indent() << table;
+    sep = "\n\n";
+  }
   for (auto proc : program.Procedures()) {
-    os << sep << proc;
+    os << sep << os.Indent() << proc;
     sep = "\n\n";
   }
   return os;

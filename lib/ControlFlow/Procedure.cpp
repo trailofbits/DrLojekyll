@@ -5,35 +5,23 @@
 namespace hyde {
 
 Node<ProgramProcedure>::~Node(void) {}
-Node<ProgramVectorProcedure>::~Node(void) {}
-Node<ProgramTupleProcedure>::~Node(void) {}
 
 Node<ProgramProcedure> *
 Node<ProgramProcedure>::AsProcedure(void) noexcept {
   return this;
 }
 
-Node<ProgramVectorProcedure> *Node<ProgramProcedure>::AsVector(void) {
-  return nullptr;
-}
-
-Node<ProgramTupleProcedure> *Node<ProgramProcedure>::AsTuple(void) {
-  return nullptr;
-}
-
 // Get or create a table in a procedure.
 VECTOR *Node<ProgramProcedure>::VectorFor(
+    ProgramImpl *impl,
     VectorKind kind,
     DefinedNodeRange<QueryColumn> cols) {
-  return vectors.Create(vectors.Size(), kind, cols);
-}
-
-Node<ProgramVectorProcedure> *Node<ProgramVectorProcedure>::AsVector(void) {
-  return this;
-}
-
-Node<ProgramTupleProcedure> *Node<ProgramTupleProcedure>::AsTuple(void) {
-  return this;
+  const auto next_id = impl->next_id++;
+  if (VectorKind::kInput == kind) {
+    return input_vectors.Create(next_id, kind, cols);
+  } else {
+    return vectors.Create(next_id, kind, cols);
+  }
 }
 
 }  // namespace hyde

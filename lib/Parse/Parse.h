@@ -398,6 +398,7 @@ class Node<ParsedDeclaration> {
   Token last_tok;
   bool is_aggregate{false};
   bool is_pure{true};
+  bool is_merge{false};
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
   std::string binding_pattern;
 

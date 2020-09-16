@@ -13,6 +13,16 @@
 namespace hyde {
 namespace {
 
+static unsigned MaxDepth(InductionSet *induction_set) {
+  unsigned max_depth = 0u;
+  for (auto merge : induction_set->merges) {
+    if (auto depth = merge.Depth(); depth > max_depth) {
+      max_depth = depth;
+    }
+  }
+  return max_depth;
+}
+
 // A work item whose `Run` method is invoked after all initialization paths
 // into an inductive region have been covered.
 class ContinueInductionWorkItem final : public WorkItem {
@@ -21,7 +31,7 @@ class ContinueInductionWorkItem final : public WorkItem {
 
   ContinueInductionWorkItem(INDUCTION *induction_,
                             InductionSet *induction_set_)
-      : WorkItem(WorkItem::kRunAsLateAsPossible),
+      : WorkItem(WorkItem::kContinueInductionOrder + MaxDepth(induction_set_)),
         induction(induction_),
         induction_set(induction_set_) {}
 
@@ -43,7 +53,7 @@ class FinalizeInductionWorkItem final : public WorkItem {
 
   FinalizeInductionWorkItem(INDUCTION *induction_,
                             InductionSet *induction_set_)
-      : WorkItem(WorkItem::kRunAsLateAsPossible),
+      : WorkItem(WorkItem::kFinalizeInductionOrder + MaxDepth(induction_set_)),
         induction(induction_),
         induction_set(induction_set_) {}
 
@@ -104,7 +114,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     auto &vec = induction->view_to_vec[merge];
     if (!vec) {
       const auto incoming_vec = proc->VectorFor(
-          VectorKind::kInduction, merge.Columns());
+          impl, VectorKind::kInduction, merge.Columns());
       UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
       induction->vectors.AddUse(incoming_vec);
     }
@@ -115,7 +125,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
     for (auto col : merge.Columns()) {
       const auto var = cycle->defined_vars.Create(
-          col.Id(), VariableRole::kVectorVariable);
+          impl->next_id++, VariableRole::kVectorVariable);
       var->query_column = col;
       cycle->col_id_to_var.emplace(col.Id(), var);
     }
@@ -158,10 +168,12 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // Now build the inductive output regions and add them in. We'll do this
   // before we actually add the successor regions in.
   for (auto merge : induction_set->merges) {
+    context.view_to_work_item.erase(merge);
+
     auto &vec = induction->view_to_vec[merge];
     if (!vec) {
       const auto incoming_vec = proc->VectorFor(
-          VectorKind::kInduction, merge.Columns());
+          impl, VectorKind::kInduction, merge.Columns());
       UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
       induction->vectors.AddUse(incoming_vec);
     }
@@ -180,9 +192,9 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
     for (auto col : merge.Columns()) {
       const auto var = cycle->defined_vars.Create(
-          col.Id(), VariableRole::kVectorVariable);
+          impl->next_id++, VariableRole::kVectorVariable);
       var->query_column = col;
-      cycle->REGION::col_id_to_var.emplace(col.Id(), var);
+      cycle->col_id_to_var.emplace(col.Id(), var);
     }
 
     UseRef<VECTOR>(cycle, vec.get()).Swap(cycle->vector);
@@ -212,10 +224,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  const auto insert = impl->operation_regions.CreateDerived<VIEWINSERT>(parent);
+  const auto insert = impl->operation_regions.CreateDerived<DATAVIEWINSERT>(parent);
 
   const auto table_view = TABLE::GetOrCreate(impl, view.Columns(), pred_view);
-  UseRef<VIEW>(insert, table_view).Swap(insert->view);
+  UseRef<DATAVIEW>(insert, table_view).Swap(insert->view);
   UseRef<REGION>(parent, insert).Swap(parent->body);
 
   // This is the first time seeing any MERGE associated with this induction.
@@ -238,7 +250,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   auto &vec = induction->view_to_vec[view];
   if (!vec) {
     const auto incoming_vec = proc->VectorFor(
-        VectorKind::kInduction, view.Columns());
+        impl, VectorKind::kInduction, view.Columns());
     UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
     induction->vectors.AddUse(incoming_vec);
   }
@@ -250,6 +262,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   for (auto col : view.Columns()) {
     const auto var = parent->VariableFor(impl, col);
     insert->col_values.AddUse(var);
+    insert->col_ids.push_back(col.Id());
     append_to_vec->tuple_vars.AddUse(var);
   }
 

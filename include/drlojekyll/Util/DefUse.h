@@ -554,9 +554,9 @@ void UseList<T>::Clear(void) {
         if (use->def_being_used) {
           assert(use->user == owner);
           use->def_being_used->EraseWeakUse(use);
+          use->def_being_used = nullptr;
         }
         use->user = nullptr;
-        use->def_being_used = nullptr;
         delete use;
       }
     }
