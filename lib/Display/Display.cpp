@@ -1,10 +1,9 @@
-// Copyright 2019, Trail of Bits, Inc. All rights reserved.
-
-#include "Display.h"
+// Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 #include <sstream>
 
 #include "DataStream.h"
+#include "Display.h"
 #include "DisplayPosition.h"
 
 namespace hyde {

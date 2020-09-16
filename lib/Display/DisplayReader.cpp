@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Display/DisplayReader.h>
+#include <drlojekyll/Display.h>
 
 #include <cassert>
 

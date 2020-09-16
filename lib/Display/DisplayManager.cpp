@@ -1,7 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Display/DisplayConfiguration.h>
-#include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Display.h>
 
 #include <cerrno>
 #include <fstream>

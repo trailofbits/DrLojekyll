@@ -1,8 +1,7 @@
 #include <filesystem>
 #include <string>
 
-#include "drlojekyll/Display/DisplayConfiguration.h"
-#include "drlojekyll/Display/DisplayManager.h"
+#include "drlojekyll/Display.h"
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/Parser.h"
 #include "UnitTests.h"

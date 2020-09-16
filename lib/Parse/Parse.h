@@ -2,8 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Display/Display.h>
-#include <drlojekyll/Display/DisplayConfiguration.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parse.h>

@@ -1,8 +1,6 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Display/Display.h>
-#include <drlojekyll/Display/DisplayManager.h>
-#include <drlojekyll/Display/DisplayReader.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Lexer.h>
 #include <drlojekyll/Lex/StringPool.h>
 

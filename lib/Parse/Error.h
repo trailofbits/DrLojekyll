@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Parse/Error.h>
 
 #include <cstddef>

@@ -1,7 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/DataFlow/Query.h>
-#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>

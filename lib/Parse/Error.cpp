@@ -2,7 +2,7 @@
 
 #include "Error.h"
 
-#include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Token.h>
 
 #include <cassert>

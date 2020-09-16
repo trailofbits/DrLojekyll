@@ -1,12 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 set(Display_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Display.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayConfiguration.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayManager.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayPosition.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/DisplayReader.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display/Format.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Display.h"
 )
 
 set(Display_SRCS

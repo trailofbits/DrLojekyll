@@ -2,9 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Display/DisplayManager.h>
-#include <drlojekyll/Display/DisplayReader.h>
-#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Lex/Lexer.h>
 #include <drlojekyll/Lex/StringPool.h>

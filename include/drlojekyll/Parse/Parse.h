@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/Type.h>
 #include <drlojekyll/Util/Node.h>

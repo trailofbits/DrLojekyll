@@ -2,8 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Display/Display.h>
-#include <drlojekyll/Display/DisplayConfiguration.h>
+#include <drlojekyll/Display.h>
 
 #include <cassert>
 #include <memory>

@@ -2,9 +2,7 @@
 
 #include <drlojekyll/CodeGen/BAM.h>
 #include <drlojekyll/DataFlow/Format.h>
-#include <drlojekyll/Display/DisplayConfiguration.h>
-#include <drlojekyll/Display/DisplayManager.h>
-#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>

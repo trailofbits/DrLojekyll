@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Display.h>
 
 #include <memory>
 #include <ostream>

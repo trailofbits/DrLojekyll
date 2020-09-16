@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Display.h>
 
 namespace hyde {
 

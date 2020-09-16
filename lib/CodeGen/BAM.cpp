@@ -2,7 +2,7 @@
 
 #include <drlojekyll/CodeGen/BAM.h>
 #include <drlojekyll/DataFlow/Format.h>
-#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Display.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
