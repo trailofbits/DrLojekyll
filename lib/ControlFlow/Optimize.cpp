@@ -162,6 +162,13 @@ void ProgramImpl::Optimize(void) {
             }
           }
         }
+
+      } else {
+        if (op->body && op->body->IsNoOp()) {
+          op->body->parent = nullptr;
+          UseRef<REGION>().Swap(op->body);
+          changed = true;
+        }
       }
     }
 

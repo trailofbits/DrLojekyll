@@ -89,7 +89,7 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor;
+  return common_ancestor->NearestRegionEnclosedByInduction();
 }
 
 // Build the cyclic regions of this INDUCTION.
