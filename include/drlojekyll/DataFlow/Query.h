@@ -331,6 +331,9 @@ class QueryView : public query::QueryNode<QueryView> {
   void ForEachUser(std::function<void(QueryView)> with_user) const;
 
   // Apply a callback `with_col` to each input column of this view.
+  //
+  // NOTE(pag): This does not provide any guarantees on column visiting order
+  //            and one should assume the worst-case order.
   void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;

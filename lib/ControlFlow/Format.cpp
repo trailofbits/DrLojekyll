@@ -260,7 +260,28 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
     os << os.Indent() << "join-tables\n";
     os.PushIndent();
+    const auto tables = region.Tables();
+    for (auto i = 0u; i < tables.size(); ++i) {
+      auto table = tables[i];
+      auto index = region.Index(i);
+      auto pivots = region.PivotVariables(i);
+      auto outputs = region.OutputVariables(i);
+      os << os.Indent() << "from " << table << " using " << index;
+      auto sep = " with {";
+      for (auto var : pivots) {
+        os << sep << var;
+        sep = ", ";
+      }
+      sep = "} select {";
+      for (auto var : outputs) {
+        os << sep << var;
+        sep = ", ";
+      }
+      os << "}\n";
+    }
+    os.PushIndent();
     os << (*maybe_body);
+    os.PopIndent();
     os.PopIndent();
   } else {
     os << os.Indent() << "empty-join-tables";

@@ -122,6 +122,12 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // If this join executes inside of a vector loop, then we want to clear out
   // the vector after executing the join.
   if (seq) {
+
+    // We prefer to pass down the lexically needed variables.
+    for (auto col : join_view.PivotColumns()) {
+      join->col_id_to_var.emplace(col.Id(), parent->VariableFor(impl, col));
+    }
+
     auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
         seq, ProgramOperation::kClearJoinPivotVector);
     UseRef<VECTOR>(clear, pivot_vec).Swap(clear->vector);
@@ -129,15 +135,16 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   }
 
   std::vector<unsigned> pivot_cols;
-
   for (auto pred_view : view.Predecessors()) {
 
+    auto &pivot_vars = join->pivot_vars.emplace_back(join);
     join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
                               std::optional<QueryColumn> out_col) {
       if (out_col && QueryView::Containing(in_col) == pred_view &&
-        InputColumnRole::kJoinPivot == role) {
+          InputColumnRole::kJoinPivot == role) {
         assert(!in_col.IsConstant());
         pivot_cols.push_back(*(in_col.Index()));
+        pivot_vars.AddUse(parent->VariableFor(impl, *out_col));
       }
     });
 

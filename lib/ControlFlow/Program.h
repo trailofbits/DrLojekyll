@@ -508,7 +508,8 @@ class Node<ProgramTableJoinRegion> final
   UseList<TABLE> tables;
   UseList<TABLEINDEX> indices;
 
-  DefList<VAR> output_pivot_vars;
+  std::vector<UseList<VAR>> pivot_vars;
+
   std::vector<DefList<VAR>> output_vars;
 };
 
@@ -523,7 +524,7 @@ class Node<ProgramTupleCompareRegion> final
   inline Node(Node<ProgramRegion> *parent_, ComparisonOperator op_)
       : Node<ProgramOperationRegion>(
             parent_, ProgramOperation::kCompareTuples),
-        op(op_),
+        cmp_op(op_),
         lhs_vars(this),
         rhs_vars(this) {}
 
@@ -531,7 +532,7 @@ class Node<ProgramTupleCompareRegion> final
 
   Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
 
-  const ComparisonOperator op;
+  const ComparisonOperator cmp_op;
   UseList<VAR> lhs_vars;
   UseList<VAR> rhs_vars;
 };

@@ -237,12 +237,6 @@ class UseList {
   void ClearWithoutErasure(void) {
     if (is_weak) {
       Clear();
-//      for (auto &use : uses) {
-//        if (use) {
-//          delete use;
-//          use = nullptr;
-//        }
-//      }
     } else {
       uses.clear();
     }
@@ -292,8 +286,10 @@ class UseList {
     } else if (is_weak) {
       delete use;
 
+    // The def was deleted before all of its uses were deleted.
     } else {
-      assert(false);
+      assert(use->index == ~0u);
+      delete use;
     }
   }
 
@@ -425,12 +421,17 @@ class Def {
     }
     weak_uses.clear();
 
+    // If we delete a def and it still has uses, then we don't delete
+    // the uses, and instead let the use lists delete them when they go out
+    // of scope.
     std::vector<std::unique_ptr<Use<T>>> our_uses;
     our_uses.swap(uses);
     for (auto &use : our_uses) {
       assert(use->def_being_used == self);
       use->user = nullptr;
       use->def_being_used = nullptr;
+      use->index = ~0u;
+      use.release();
     }
   }
 

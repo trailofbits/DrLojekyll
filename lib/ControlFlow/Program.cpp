@@ -72,6 +72,9 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto view_join = op->AsTableJoin(); view_join) {
       view_join->tables.ClearWithoutErasure();
       view_join->indices.ClearWithoutErasure();
+      for (auto &pivot_vars : view_join->pivot_vars) {
+        pivot_vars.ClearWithoutErasure();
+      }
 
     } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
       exists_check->cond_vars.ClearWithoutErasure();
@@ -248,6 +251,8 @@ USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
 USED_RANGE(ProgramParallelRegion, Regions, ProgramRegion, regions)
 USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable, cond_vars)
 USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
+USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
+USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
 
 #undef DEFINED_RANGE
 #undef USED_RANGE
@@ -479,7 +484,28 @@ ProgramTupleCompareRegion::From(ProgramRegion region) noexcept {
 }
 
 ComparisonOperator ProgramTupleCompareRegion::Operator(void) const noexcept {
-  return impl->op;
+  return impl->cmp_op;
+}
+
+// The index used by the Nth table scan.
+DataIndex ProgramTableJoinRegion::Index(unsigned table_index) const noexcept {
+  assert(table_index < impl->indices.Size());
+  return DataIndex(impl->indices[table_index]);
+}
+
+UsedNodeRange<DataVariable>
+ProgramTableJoinRegion::PivotVariables(unsigned table_index) const {
+  assert(table_index < impl->pivot_vars.size());
+  const auto &vars = impl->pivot_vars[table_index];
+  return {vars.begin(), vars.end()};
+}
+
+DefinedNodeRange<DataVariable>
+ProgramTableJoinRegion::OutputVariables(unsigned table_index) const {
+  assert(table_index < impl->output_vars.size());
+  const auto &vars = impl->output_vars[table_index];
+  return {DefinedNodeIterator<DataVariable>(vars.begin()),
+          DefinedNodeIterator<DataVariable>(vars.end())};
 }
 
 }  // namespace hyde

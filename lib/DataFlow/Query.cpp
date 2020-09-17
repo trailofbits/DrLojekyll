@@ -274,6 +274,9 @@ void QueryView::ForEachUser(std::function<void(QueryView)> with_user) const {
 }
 
 // Apply a callback `with_col` to each input column of this view.
+//
+// NOTE(pag): This does not provide any guarantees on column visiting order
+//            and one should assume the worst-case order.
 void QueryView::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                               std::optional<QueryColumn>)>
                                with_col) const {
@@ -554,7 +557,9 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
 void QueryJoin::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                               std::optional<QueryColumn>)>
                                with_col) const {
-  for (const auto &[out_col, in_cols] : impl->out_to_in) {
+  for (auto out_col : impl->columns) {
+    auto in_cols_it = impl->out_to_in.find(out_col);
+    auto &in_cols = in_cols_it->second;
     const auto role = in_cols.Size() == 1u ? InputColumnRole::kJoinNonPivot
                                            : InputColumnRole::kJoinPivot;
     for (const auto in_col : in_cols) {

@@ -386,6 +386,23 @@ class ProgramTableJoinRegion
   // bindings are applied.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
+  // The tables that are joined together. The same table may appear more than
+  // once.
+  UsedNodeRange<DataTable> Tables(void) const;
+
+  // The indices on the tables.
+  UsedNodeRange<DataIndex> Indices(void) const;
+
+  // The index used by the Nth table scan.
+  DataIndex Index(unsigned table_index) const noexcept;
+
+  // These are the input variables that are used for scanning from the Nth
+  // table. They are in the correct order for the index.
+  UsedNodeRange<DataVariable> PivotVariables(unsigned table_index) const;
+
+  // These are the output variables from the Nth table scan.
+  DefinedNodeRange<DataVariable> OutputVariables(unsigned table_index) const;
+
  private:
   friend class ProgramRegion;
 
