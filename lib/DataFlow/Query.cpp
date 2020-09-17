@@ -380,11 +380,20 @@ const ParsedVariable &QueryColumn::Variable(void) const noexcept {
   return impl->var;
 }
 
-// Identifies the logical "value" behind this column. If two columns share
-// the same `Id()` value then at runtime the same value will inhabit the two
-// columns.
+// Unique identifier for columns.
 unsigned QueryColumn::Id(void) const noexcept {
   return impl->id;
+}
+
+// Index of this column in its defining view. Returns nothing if this column
+// is a constant.
+std::optional<unsigned> QueryColumn::Index(void) const noexcept {
+  if (!impl->IsConstant()) {
+    assert(impl->index < impl->view->columns.Size());
+    return impl->index;
+  } else {
+    return std::nullopt;
+  }
 }
 
 const TypeLoc &QueryColumn::Type(void) const noexcept {

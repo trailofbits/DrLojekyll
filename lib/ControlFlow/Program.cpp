@@ -11,11 +11,12 @@ namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
   for (auto table : tables) {
-    for (auto view : table->views) {
-      view->viewed_table.ClearWithoutErasure();
+    for (auto column : table->columns) {
+      column->table.ClearWithoutErasure();
     }
     for (auto index : table->indices) {
-      index->indexed_table.ClearWithoutErasure();
+      index->table.ClearWithoutErasure();
+      index->columns.ClearWithoutErasure();
     }
   }
 
@@ -64,16 +65,20 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto vec_clear = op->AsVectorClear(); vec_clear) {
       vec_clear->vector.ClearWithoutErasure();
 
-    } else if (auto view_insert = op->AsViewInsert(); view_insert) {
-      view_insert->view.ClearWithoutErasure();
+    } else if (auto view_insert = op->AsTableInsert(); view_insert) {
+      view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
 
-    } else if (auto view_join = op->AsViewJoin(); view_join) {
-      view_join->views.ClearWithoutErasure();
+    } else if (auto view_join = op->AsTableJoin(); view_join) {
+      view_join->tables.ClearWithoutErasure();
       view_join->indices.ClearWithoutErasure();
 
     } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
       exists_check->cond_vars.ClearWithoutErasure();
+
+    } else if (auto cmp = op->AsTupleCompare(); cmp) {
+      cmp->lhs_vars.ClearWithoutErasure();
+      cmp->rhs_vars.ClearWithoutErasure();
     }
   }
 
@@ -111,10 +116,10 @@ ProgramRegion::ProgramRegion(const ProgramVectorClearRegion &region)
 ProgramRegion::ProgramRegion(const ProgramVectorLoopRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
-ProgramRegion::ProgramRegion(const ProgramViewInsertRegion &region)
+ProgramRegion::ProgramRegion(const ProgramTableInsertRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
-ProgramRegion::ProgramRegion(const ProgramViewJoinRegion &region)
+ProgramRegion::ProgramRegion(const ProgramTableJoinRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
 bool ProgramRegion::IsInduction(void) const noexcept {
@@ -153,17 +158,17 @@ bool ProgramRegion::IsLetBinding(void) const noexcept {
   }
 }
 
-bool ProgramRegion::IsViewInsert(void) const noexcept {
+bool ProgramRegion::IsTableInsert(void) const noexcept {
   if (auto op = impl->AsOperation(); op) {
-    return op->AsViewInsert() != nullptr;
+    return op->AsTableInsert() != nullptr;
   } else {
     return false;
   }
 }
 
-bool ProgramRegion::IsViewJoin(void) const noexcept {
+bool ProgramRegion::IsTableJoin(void) const noexcept {
   if (auto op = impl->AsOperation(); op) {
-    return op->AsViewJoin() != nullptr;
+    return op->AsTableJoin() != nullptr;
   } else {
     return false;
   }
@@ -183,6 +188,14 @@ bool ProgramRegion::IsSeries(void) const noexcept {
 
 bool ProgramRegion::IsParallel(void) const noexcept {
   return impl->AsParallel() != nullptr;
+}
+
+bool ProgramRegion::IsTupleCompare(void) const noexcept {
+  if (auto op = impl->AsOperation(); op) {
+    return op->AsTupleCompare() != nullptr;
+  } else {
+    return false;
+  }
 }
 
 ProgramSeriesRegion ProgramSeriesRegion::From(
@@ -252,8 +265,19 @@ ProgramLetBindingRegion ProgramLetBindingRegion::From(
   return ProgramLetBindingRegion(derived_impl);
 }
 
+DefinedNodeRange<DataVariable>
+ProgramLetBindingRegion::DefinedVars(void) const {
+  return {DefinedNodeIterator<DataVariable>(impl->defined_vars.begin()),
+          DefinedNodeIterator<DataVariable>(impl->defined_vars.end())};
+}
+
+UsedNodeRange<DataVariable> ProgramLetBindingRegion::UsedVars(void) const {
+  return {impl->used_vars.begin(), impl->used_vars.end()};
+}
+
 // Return the body to which the lexical scoping of the variables applies.
-std::optional<ProgramRegion> ProgramLetBindingRegion::Body(void) const noexcept {
+std::optional<ProgramRegion>
+ProgramLetBindingRegion::Body(void) const noexcept {
   if (impl->body) {
     return ProgramRegion(impl->body.get());
   } else {
@@ -271,7 +295,8 @@ ProgramVectorLoopRegion ProgramVectorLoopRegion::From(
 }
 
 // Return the loop body.
-std::optional<ProgramRegion> ProgramVectorLoopRegion::Body(void) const noexcept {
+std::optional<ProgramRegion>
+ProgramVectorLoopRegion::Body(void) const noexcept {
   if (impl->body) {
     return ProgramRegion(impl->body.get());
   } else {
@@ -368,17 +393,17 @@ DataVector ProgramVectorClearRegion::Vector(void) const noexcept {
   return DataVector(impl->vector.get());
 }
 
-ProgramViewInsertRegion ProgramViewInsertRegion::From(
+ProgramTableInsertRegion ProgramTableInsertRegion::From(
     ProgramRegion region) noexcept {
   const auto op = region.impl->AsOperation();
   assert(op != nullptr);
-  const auto derived_impl = op->AsViewInsert();
+  const auto derived_impl = op->AsTableInsert();
   assert(derived_impl != nullptr);
-  return ProgramViewInsertRegion(derived_impl);
+  return ProgramTableInsertRegion(derived_impl);
 }
 
 // The body that conditionally executes if the insert succeeds.
-std::optional<ProgramRegion> ProgramViewInsertRegion::Body(void) const noexcept {
+std::optional<ProgramRegion> ProgramTableInsertRegion::Body(void) const noexcept {
   if (impl->body) {
     return ProgramRegion(impl->body.get());
   } else {
@@ -386,35 +411,30 @@ std::optional<ProgramRegion> ProgramViewInsertRegion::Body(void) const noexcept 
   }
 }
 
-unsigned ProgramViewInsertRegion::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->col_ids.size());
+unsigned ProgramTableInsertRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
 }
 
-unsigned ProgramViewInsertRegion::NthColumnId(unsigned n) const noexcept {
-  assert(n < impl->col_ids.size());
-  return impl->col_ids[n];
-}
-
-UsedNodeRange<DataVariable> ProgramViewInsertRegion::TupleVariables(void) const {
+UsedNodeRange<DataVariable> ProgramTableInsertRegion::TupleVariables(void) const {
   return {impl->col_values.begin(), impl->col_values.end()};
 }
 
-DataView ProgramViewInsertRegion::View(void) const {
-  return DataView(impl->view.get());
+DataTable ProgramTableInsertRegion::Table(void) const {
+  return DataTable(impl->table.get());
 }
 
-ProgramViewJoinRegion ProgramViewJoinRegion::From(
+ProgramTableJoinRegion ProgramTableJoinRegion::From(
     ProgramRegion region) noexcept {
   const auto op = region.impl->AsOperation();
   assert(op != nullptr);
-  const auto derived_impl = op->AsViewJoin();
+  const auto derived_impl = op->AsTableJoin();
   assert(derived_impl != nullptr);
-  return ProgramViewJoinRegion(derived_impl);
+  return ProgramTableJoinRegion(derived_impl);
 }
 
 // The body that conditionally executes for each joined result. Variable
 // bindings are applied.
-std::optional<ProgramRegion> ProgramViewJoinRegion::Body(void) const noexcept {
+std::optional<ProgramRegion> ProgramTableJoinRegion::Body(void) const noexcept {
   if (impl->body) {
     return ProgramRegion(impl->body.get());
   } else {
@@ -478,37 +498,66 @@ TypeKind DataVariable::Type(void) const noexcept {
       [[clang::fallthrough]];
     case VariableRole::kVectorVariable:
     case VariableRole::kLetBinding:
+    case VariableRole::kJoinPivot:
     case VariableRole::kJoinNonPivot:
       assert(!!impl->query_column);
       return impl->query_column->Type().Kind();
   }
 }
 
-unsigned DataView::Id(void) const noexcept {
+// Unique ID of this column.
+unsigned DataColumn::Id(void) const noexcept {
   return impl->id;
 }
 
-// List of column IDs represented by this view.
-const std::vector<unsigned> DataView::ColumnIds(void) const noexcept {
-  return impl->col_ids;
+// Index of this column within its table.
+unsigned DataColumn::Index(void) const noexcept {
+  return impl->index;
 }
 
-DataTable DataTable::Backing(DataView view) noexcept {
-  return DataTable(view.impl->viewed_table.get());
+// Type of this column.
+TypeKind DataColumn::Type(void) const noexcept {
+  return impl->type;
+}
+
+// Possible names that can be associated with this column.
+//
+// NOTE(pag): Multiple columns of the same table might have intersecting
+//            sets of possible names.
+const std::vector<Token> &DataColumn::PossibleNames(void) const noexcept {
+  return impl->names;
+}
+
+// Unique ID of this index.
+unsigned DataIndex::Id(void) const noexcept {
+  return impl->id;
+}
+
+// Columns from a table that are part of this index.
+UsedNodeRange<DataColumn> DataIndex::Columns(void) const {
+  return {impl->columns.begin(), impl->columns.end()};
+}
+
+DataTable DataTable::Containing(DataColumn col) noexcept {
+  return DataTable(col.impl->table.get());
+}
+
+DataTable DataTable::Backing(DataIndex index) noexcept {
+  return DataTable(index.impl->table.get());
 }
 
 unsigned DataTable::Id(void) const noexcept {
   return impl->id;
 }
 
-const std::vector<QueryColumn> &DataTable::Columns(void) const noexcept {
-  return impl->columns;
+DefinedNodeRange<DataColumn> DataTable::Columns(void) const {
+  return {DefinedNodeIterator<DataColumn>(impl->columns.begin()),
+          DefinedNodeIterator<DataColumn>(impl->columns.end())};
 }
 
-// Views into this table. Each view is logically a column.
-DefinedNodeRange<DataView> DataTable::Views(void) const {
-  return {DefinedNodeIterator<DataView>(impl->views.begin()),
-          DefinedNodeIterator<DataView>(impl->views.end())};
+DefinedNodeRange<DataIndex> DataTable::Indices(void) const {
+  return {DefinedNodeIterator<DataIndex>(impl->indices.begin()),
+          DefinedNodeIterator<DataIndex>(impl->indices.end())};
 }
 
 VectorKind DataVector::Kind(void) const noexcept {
@@ -581,8 +630,46 @@ ProgramRegion ProgramInductionRegion::FixpointLoop(void) const noexcept {
   return ProgramRegion(impl->cyclic_region.get());
 }
 
-ProgramRegion ProgramInductionRegion::Output(void) const noexcept {
-  return ProgramRegion(impl->output_region.get());
+std::optional<ProgramRegion>
+ProgramInductionRegion::Output(void) const noexcept {
+  if (impl->output_region) {
+    return ProgramRegion(impl->output_region.get());
+  } else {
+    return std::nullopt;
+  }
+}
+
+ProgramTupleCompareRegion
+ProgramTupleCompareRegion::From(ProgramRegion region) noexcept {
+  const auto op = region.impl->AsOperation();
+  assert(op != nullptr);
+  const auto derived_impl = op->AsTupleCompare();
+  assert(derived_impl != nullptr);
+  return ProgramTupleCompareRegion(derived_impl);
+}
+
+ComparisonOperator ProgramTupleCompareRegion::Operator(void) const noexcept {
+  return impl->op;
+}
+
+// Variables in the left-hand side tuple.
+UsedNodeRange<DataVariable> ProgramTupleCompareRegion::LHS(void) const {
+  return {impl->lhs_vars.begin(), impl->lhs_vars.end()};
+}
+
+// Variables in the right-hand side tuple.
+UsedNodeRange<DataVariable> ProgramTupleCompareRegion::RHS(void) const {
+  return {impl->rhs_vars.begin(), impl->rhs_vars.end()};
+}
+
+// Code conditionally executed if the comparison is true.
+std::optional<ProgramRegion>
+ProgramTupleCompareRegion::Body(void) const noexcept {
+  if (impl->body) {
+    return ProgramRegion(impl->body.get());
+  } else {
+    return std::nullopt;
+  }
 }
 
 // All persistent tables needed to store data.

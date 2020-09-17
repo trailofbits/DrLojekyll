@@ -41,32 +41,26 @@ class ProgramSeriesRegion;
 class DataIndex;
 class DataVariable;
 class DataTable;
-class DataView;
 class DataVector;
 
-// Represents a view into a table of data. Each view is basically the subset
-// of some data in a table that is specific to a `QueryView`. Thus, there is
-// a one-to-many relationship between individual rows of data in a table and
-// the views which identify those rows as containing the data.
+// A column within a table.
 template <>
-class Node<DataView> : public Def<Node<DataView>>, public User {
+class Node<DataColumn> : public Def<Node<DataColumn>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(Node<DataTable> *table_, unsigned id_, QueryView view_tag_,
-       std::vector<unsigned> col_ids_, std::string col_spec_);
-
-  // Get or create an index on the table.
-  Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
+  Node(unsigned id_, TypeKind type_, Node<DataTable> *table_);
 
   const unsigned id;
-  const QueryView view_tag;
-  const std::string col_spec;
-  const std::vector<unsigned> col_ids;
-  WeakUseRef<Node<DataTable>> viewed_table;
+  const unsigned index;
+  const TypeKind type;
+
+  std::vector<Token> names;
+
+  WeakUseRef<Node<DataTable>> table;
 };
 
-using DATAVIEW = Node<DataView>;
+using TABLECOLUMN = Node<DataColumn>;
 
 // Represents an index on some subset of columns in a table.
 template <>
@@ -74,15 +68,17 @@ class Node<DataIndex> : public Def<Node<DataIndex>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(Node<DataTable> *table_, std::vector<unsigned> col_ids_,
-       std::string column_spec_);
+  Node(unsigned id_, Node<DataTable> *table_, std::string column_spec_);
 
+  const unsigned id;
   const std::string column_spec;
-  const std::vector<unsigned> col_ids;
-  WeakUseRef<Node<DataTable>> indexed_table;
+
+  UseList<TABLECOLUMN> columns;
+
+  WeakUseRef<Node<DataTable>> table;
 };
 
-using INDEX = Node<DataIndex>;
+using TABLEINDEX = Node<DataIndex>;
 
 // Represents a table of data.
 //
@@ -96,45 +92,24 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
       : Def<Node<DataTable>>(this),
         User(this),
         id(id_),
-        views(this),
+        columns(this),
         indices(this) {}
 
   // Get or create a table in the program.
-  template <typename List>
-  static Node<DataView> *GetOrCreate(ProgramImpl *program,
-                                     List &&cols,
-                                     QueryView view_tag) {
-    std::vector<QueryColumn> col_list;
-    for (auto col : cols) {
-      col_list.push_back(col);
-    }
-
-    return GetOrCreateImpl(program, col_list, view_tag);
-  }
-
-  // Get or create a table in the program.
-  static Node<DataView> *GetOrCreateImpl(ProgramImpl *program,
-                                         const std::vector<QueryColumn> &cols,
-                                         QueryView view_tag);
+  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, QueryView view);
 
   // Get or create an index on the table.
-  Node<DataIndex> *GetOrCreateIndex(std::vector<QueryColumn> cols);
+  TABLEINDEX *GetOrCreateIndex(
+      ProgramImpl *impl, std::vector<unsigned> cols);
 
   const unsigned id;
 
-  // The sorted, uniqued columns (derived from `QueryColumn::Id`).
-  std::vector<QueryColumn> columns;
-
-  // The views into this table. A given row might belong to one or more views.
-  //
-  // The general idea here is that we can say that two sets of columns can
-  // belong to the same view if the arity of the rows will be the same, or if
-  // one will be a subset of the other.
-  DefList<DATAVIEW> views;
+  // List of defined columns.
+  DefList<TABLECOLUMN> columns;
 
   // Indexes that should be created on this table. By default, all tables have
   // a UNIQUE index.
-  DefList<INDEX> indices;
+  DefList<TABLEINDEX> indices;
 };
 
 using TABLE = Node<DataTable>;
@@ -267,7 +242,7 @@ enum class ProgramOperation {
   // choose to check if the insert is new or not). If the insert succeeds, then
   // execution descends into `body`. The table into which we are inserting is
   // `views[0]`.
-  kInsertIntoView,
+  kInsertIntoTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendInductionInputToVector,
@@ -282,8 +257,8 @@ enum class ProgramOperation {
 
   // Check if a row exists in a view. The tuple values are found in
   // `operands` and the table being used is `views[0]`.
-  kCheckTupleIsPresentInView,
-  kCheckTupleIsNotPresentInView,
+  kCheckTupleIsPresentInTable,
+  kCheckTupleIsNotPresentInTable,
 
   // JOIN-specific
 
@@ -293,8 +268,11 @@ enum class ProgramOperation {
   kLoopOverJoinPivots,
   kClearJoinPivotVector,
 
+  // Comparison between two tuples.
+  kCompareTuples,
+
   // Used to implement the cross-product of some tables.
-  kLoopOverView,
+  kLoopOverTable,
   kAppendProductInputToVector,
   kLoopOverProductInputVector,
   kAppendProductOutputToVector,
@@ -348,9 +326,10 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
-  virtual Node<ProgramViewInsertRegion> *AsViewInsert(void) noexcept;
-  virtual Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept;
+  virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
+  virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
   virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
+  virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
@@ -449,29 +428,25 @@ using VECTORCLEAR = Node<ProgramVectorClearRegion>;
 // An append of a tuple (specified in terms of `variables`) into a vector,
 // specified in terms of `tables[0]`.
 template <>
-class Node<ProgramViewInsertRegion> final
+class Node<ProgramTableInsertRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
   inline Node(Node<ProgramRegion> *parent_)
       : Node<ProgramOperationRegion>(
-            parent_, ProgramOperation::kInsertIntoView),
+            parent_, ProgramOperation::kInsertIntoTable),
         col_values(this) {}
 
-  Node<ProgramViewInsertRegion> *AsViewInsert(void) noexcept override;
+  Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept override;
 
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
-  // IDs of the columns in `col_values`. Optimization might change what actual
-  // variable IDs/column values are stored.
-  std::vector<unsigned> col_ids;
-
   // View into which the tuple is being inserted.
-  UseRef<DATAVIEW> view;
+  UseRef<TABLE> table;
 };
 
-using DATAVIEWINSERT = Node<ProgramViewInsertRegion>;
+using TABLEINSERT = Node<ProgramTableInsertRegion>;
 
 // Represents a positive or negative existence check.
 template <>
@@ -494,9 +469,9 @@ class Node<ProgramExistenceCheckRegion> final
 
 using EXISTS = Node<ProgramExistenceCheckRegion>;
 
-// An equi-join between two or more views.
+// An equi-join between two or more tables.
 template <>
-class Node<ProgramViewJoinRegion> final
+class Node<ProgramTableJoinRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
@@ -504,23 +479,47 @@ class Node<ProgramViewJoinRegion> final
       : Node<ProgramOperationRegion>(
             parent_, ProgramOperation::kJoinTables),
         query_join(query_join_),
-        views(this),
+        tables(this),
         indices(this) {}
 
   bool IsNoOp(void) const noexcept override;
 
-  Node<ProgramViewJoinRegion> *AsViewJoin(void) noexcept override;
+  Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept override;
 
   const QueryJoin query_join;
 
-  UseList<DATAVIEW> views;
-  UseList<INDEX> indices;
+  UseList<TABLE> tables;
+  UseList<TABLEINDEX> indices;
 
   DefList<VAR> output_pivot_vars;
   std::vector<DefList<VAR>> output_vars;
 };
 
-using DATAVIEWJOIN = Node<ProgramViewJoinRegion>;
+using TABLEJOIN = Node<ProgramTableJoinRegion>;
+
+// Comparison between two tuples.
+template <>
+class Node<ProgramTupleCompareRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_, ComparisonOperator op_)
+      : Node<ProgramOperationRegion>(
+            parent_, ProgramOperation::kCompareTuples),
+        op(op_),
+        lhs_vars(this),
+        rhs_vars(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
+
+  const ComparisonOperator op;
+  UseList<VAR> lhs_vars;
+  UseList<VAR> rhs_vars;
+};
+
+using TUPLECMP = Node<ProgramTupleCompareRegion>;
 
 // A procedure region. This represents some entrypoint of data into the program.
 template <>
@@ -577,8 +576,7 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
 
 using SERIES = Node<ProgramSeriesRegion>;
 
-// A region where multiple things can happen in parallel. Often when a DATAVIEW's
-// columns are needed by two or more other DATAVIEWs, we will have one of these.
+// A region where multiple things can happen in parallel.
 template <>
 class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
  public:
@@ -667,7 +665,6 @@ class ProgramImpl : public User {
   DefList<PARALLEL> parallel_regions;
   DefList<INDUCTION> induction_regions;
   DefList<OP> operation_regions;
-
   DefList<TABLE> tables;
   DefList<VAR> global_vars;
   unsigned next_id{0u};

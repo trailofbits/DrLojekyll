@@ -121,15 +121,18 @@ OutputStream &operator<<(OutputStream &os, ParsedAssignment assign) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
-  const char *op = "";
-  switch (compare.Operator()) {
-    case ComparisonOperator::kEqual: op = " = "; break;
-    case ComparisonOperator::kNotEqual: op = " != "; break;
-    case ComparisonOperator::kLessThan: op = " < "; break;
-    case ComparisonOperator::kGreaterThan: op = " > "; break;
+OutputStream &operator<<(OutputStream &os, ComparisonOperator op) {
+  switch (op) {
+    case ComparisonOperator::kEqual: os << '='; break;
+    case ComparisonOperator::kNotEqual: os << "!="; break;
+    case ComparisonOperator::kLessThan: os << '<'; break;
+    case ComparisonOperator::kGreaterThan: os << '>'; break;
   }
-  os << compare.LHS() << op << compare.RHS();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
+  os << compare.LHS() << ' ' << compare.Operator() << ' ' << compare.RHS();
   return os;
 }
 

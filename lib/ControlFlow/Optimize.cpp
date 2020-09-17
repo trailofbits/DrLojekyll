@@ -51,6 +51,16 @@ void ProgramImpl::Optimize(void) {
       }
     }
 
+    // Clear out empty output regions of inductions.
+    for (auto induction : induction_regions) {
+      if (induction->output_region &&
+          induction->output_region->IsNoOp()) {
+        induction->output_region->parent = nullptr;
+        UseRef<REGION>().Swap(induction->output_region);
+        changed = true;
+      }
+    }
+
     for (auto series : series_regions) {
       if (!series->IsUsed() || !series->parent) {
         continue;

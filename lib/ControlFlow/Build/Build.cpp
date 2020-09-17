@@ -87,21 +87,26 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
 // `view.NegativeConditions()` have elements.
 static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
                                           QueryView pred_view, QueryView view,
-                                          Context &context, OP *parent) {
+                                          Context &context, OP *parent,
+                                          TABLE *last_model) {
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      BuildEagerJoinRegion(impl, pred_view, join, context, parent);
+      BuildEagerJoinRegion(
+          impl, pred_view, join, context, parent, last_model);
     } else {
-      BuildEagerProductRegion(impl, pred_view, join, context, parent);
+      BuildEagerProductRegion(
+          impl, pred_view, join, context, parent, last_model);
     }
 
   } else if (view.IsMerge()) {
     const auto merge = QueryMerge::From(view);
     if (context.inductive_successors.count(view)) {
-      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent);
+      BuildEagerInductiveRegion(impl, pred_view, merge,
+                                context, parent, last_model);
     } else {
-      BuildEagerUnionRegion(impl, pred_view, merge, context, parent);
+      BuildEagerUnionRegion(impl, pred_view, merge,
+                            context, parent, last_model);
     }
 
   } else if (view.IsAggregate()) {
@@ -111,13 +116,15 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
   } else if (view.IsMap()) {
 
   } else if (view.IsCompare()) {
+    BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
 
   } else if (view.IsSelect() || view.IsTuple()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors());
+    BuildEagerSuccessorRegions(impl, view, context, parent,
+                               view.Successors(), last_model);
 
   } else if (view.IsInsert()) {
     BuildEagerInsertRegion(impl, pred_view, QueryInsert::From(view),
-                           context, parent);
+                           context, parent, last_model);
 
   } else {
     assert(false);
@@ -150,7 +157,7 @@ static void MapVariables(REGION *region) {
       for (auto var : loop->defined_vars) {
         var->defining_region = region;
       }
-    } else if (auto join = op->AsViewJoin(); join) {
+    } else if (auto join = op->AsTableJoin(); join) {
       for (const auto &var_list : join->output_vars) {
         for (auto var : var_list) {
           var->defining_region = region;
@@ -224,8 +231,9 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
       }
     }
 
-    BuildEagerSuccessorRegions(impl, receive, context, let,
-                               receive.Successors());
+    BuildEagerSuccessorRegions(
+        impl, receive, context, let,
+        receive.Successors(), nullptr);
   }
 
   while (!context.work_list.empty()) {
@@ -329,31 +337,92 @@ static void DiscoverInductions(const Query &query, Context &context) {
 // same backing storage. This doesn't mean that all views will be backed by
 // such storage, but when we need backing storage, we can maximally share it
 // among other places where it might be needed.
-void BuildDataModel(const Query &query, ProgramImpl *program) {
+static void BuildDataModel(const Query &query, ProgramImpl *program) {
   query.ForEachView([=](QueryView view) {
     auto model = new DataModel;
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
   });
 
-  query.ForEachView([=](QueryView view) {
-    const auto model = program->view_to_model[view];
-    if (auto preds = view.Predecessors(); preds.size() == 1) {
-      const auto pred_model = program->view_to_model[preds[0]];
-      if (view.IsCompare() || view.IsTuple() || view.IsInsert() ||
-          view.IsSelect()) {
-        DisjointSet::Union(model, pred_model);
+  auto all_cols_match = [] (auto cols, auto pred_cols) {
+    const auto num_cols = cols.size();
+    if (num_cols != pred_cols.size()) {
+      return false;
+    }
 
-      // This is really the only interesting case, and is the motivator for
-      // including `range` specifiers on functor declarations in the language.
-      // If a functor does not amplify the number of tuples, i.e. filters some
-      // out, or passes them through, perhaps adding in additional data, then
-      // we can have the `MapView` share the same backing storage as its only
-      // predecessor view.
-      } else if (view.IsMap()) {
-        const auto range = QueryMap::From(view).Functor().Range();
-        if (FunctorRange::kZeroOrOne == range ||
-            FunctorRange::kOneToOne == range) {
+    for (auto i = 0u; i < num_cols; ++i) {
+      if (cols[i].Id() != pred_cols[i].Id()) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // If the view tests any conditions then it can't share a data model
+  // with its predecessor.
+  //
+  // NOTE(pag): Conditions are a tire fire.
+  auto is_conditional = [] (QueryView view) {
+    return !view.NegativeConditions().empty() ||
+           !view.PositiveConditions().empty() ||
+           view.IsCompare() || view.IsMap();
+  };
+
+  query.ForEachView([=](QueryView view) {
+    if (is_conditional(view)) {
+      return;
+    }
+
+    const auto model = program->view_to_model[view];
+    const auto preds = view.Predecessors();
+
+    // UNIONs can share the data of any of their predecessors so long as
+    // those predecessors don't themselves have other successors, i.e. they
+    // only lead into the UNION.
+    if (view.IsMerge()) {
+      for (auto pred : preds) {
+        if (pred.Successors().size() == 1u) {
+          const auto pred_model = program->view_to_model[pred];
+          DisjointSet::Union(model, pred_model);
+        }
+      }
+
+    // If a TUPLE "perfectly" passes through its data, then it shares the
+    // same data model as its predecessor.
+    } else if (view.IsTuple()) {
+      if (preds.size() == 1u) {
+        const auto pred = preds[0];
+        if (all_cols_match(view.Columns(), pred.Columns())) {
+          const auto pred_model = program->view_to_model[pred];
+          DisjointSet::Union(model, pred_model);
+        }
+      }
+
+    // INSERTs have no output columns. If an insert has only a single
+    // predecessor (it should), and if all columns of the predecessor are
+    // used and in the same order, then this INSERT and its predecessor
+    // share the same data model.
+    } else if (view.IsInsert()) {
+      if (preds.size() == 1u) {
+        const auto insert = QueryInsert::From(view);
+        const auto cols = insert.InputColumns();
+        const auto pred_cols = preds[0].Columns();
+        if (all_cols_match(cols, pred_cols)) {
+          const auto pred_model = program->view_to_model[preds[0]];
+          DisjointSet::Union(model, pred_model);
+        }
+      }
+
+    // Select predecessors are INSERTs, which don't have output columns.
+    // In theory, there could be more than one INSERT. Selects always share
+    // the data model with their corresponding INSERTs.
+    //
+    // TODO(pag): This more about the interplay with conditional inserts.
+    } else if (view.IsSelect()) {
+      for (auto pred : preds) {
+        if (pred.IsInsert()) {
+          const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
       }
@@ -361,13 +430,13 @@ void BuildDataModel(const Query &query, ProgramImpl *program) {
   });
 }
 
-
 }  // namespace
 
 // Build an eager region. This guards the execution of the region in
 // conditionals if the view itself is conditional.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                      QueryView view, Context &usage, OP *parent) {
+                      QueryView view, Context &usage, OP *parent,
+                      TABLE *last_model) {
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
 
@@ -382,6 +451,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
 
     UseRef<REGION>(parent, test).Swap(parent->body);
     parent = test;
+    last_model = nullptr;
   }
 
   // Outermost test for positive conditions.
@@ -395,10 +465,11 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
 
     UseRef<REGION>(parent, test).Swap(parent->body);
     parent = test;
+    last_model = nullptr;
   }
 
   BuildUnconditionalEagerRegion(
-      impl, pred_view, view, usage, parent);
+      impl, pred_view, view, usage, parent, last_model);
 }
 
 WorkItem::~WorkItem(void) {}

@@ -730,6 +730,11 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   // given the same inputs, that it will produce the same outputs?
   bool IsPure(void) const noexcept;
 
+  // Is this a filter-like functor? This is `true` if the functor is `pure`
+  // and if the number of free parameters is zero and if the range is
+  // `FunctorRange::kZeroOrOne`.
+  bool IsFilter(void) const noexcept;
+
   NodeRange<ParsedFunctor> Redeclarations(void) const;
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 

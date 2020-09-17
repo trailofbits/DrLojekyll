@@ -9,9 +9,10 @@ Node<ProgramLetBindingRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
 Node<ProgramVectorClearRegion>::~Node(void) {}
-Node<ProgramViewInsertRegion>::~Node(void) {}
-Node<ProgramViewJoinRegion>::~Node(void) {}
+Node<ProgramTableInsertRegion>::~Node(void) {}
+Node<ProgramTableJoinRegion>::~Node(void) {}
 Node<ProgramExistenceCheckRegion>::~Node(void) {}
+Node<ProgramTupleCompareRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
@@ -42,18 +43,23 @@ Node<ProgramOperationRegion>::AsLetBinding(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramViewInsertRegion> *
-Node<ProgramOperationRegion>::AsViewInsert(void) noexcept {
+Node<ProgramTableInsertRegion> *
+Node<ProgramOperationRegion>::AsTableInsert(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramViewJoinRegion> *
-Node<ProgramOperationRegion>::AsViewJoin(void) noexcept {
+Node<ProgramTableJoinRegion> *
+Node<ProgramOperationRegion>::AsTableJoin(void) noexcept {
   return nullptr;
 }
 
 Node<ProgramExistenceCheckRegion> *
 Node<ProgramOperationRegion>::AsExistenceCheck(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramTupleCompareRegion> *
+Node<ProgramOperationRegion>::AsTupleCompare(void) noexcept {
   return nullptr;
 }
 
@@ -80,8 +86,8 @@ Node<ProgramVectorAppendRegion>::AsVectorAppend(void) noexcept {
   return this;
 }
 
-Node<ProgramViewInsertRegion> *
-Node<ProgramViewInsertRegion>::AsViewInsert(void) noexcept {
+Node<ProgramTableInsertRegion> *
+Node<ProgramTableInsertRegion>::AsTableInsert(void) noexcept {
   return this;
 }
 
@@ -94,8 +100,8 @@ Node<ProgramExistenceCheckRegion>::AsExistenceCheck(void) noexcept {
   return this;
 }
 
-Node<ProgramViewJoinRegion> *
-Node<ProgramViewJoinRegion>::AsViewJoin(void) noexcept {
+Node<ProgramTableJoinRegion> *
+Node<ProgramTableJoinRegion>::AsTableJoin(void) noexcept {
   return this;
 }
 
@@ -104,7 +110,16 @@ Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
   return this;
 }
 
-bool Node<ProgramViewJoinRegion>::IsNoOp(void) const noexcept {
+bool Node<ProgramTableJoinRegion>::IsNoOp(void) const noexcept {
+  return !body || body->IsNoOp();
+}
+
+Node<ProgramTupleCompareRegion> *
+Node<ProgramTupleCompareRegion>::AsTupleCompare(void) noexcept {
+  return this;
+}
+
+bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
   return !body || body->IsNoOp();
 }
 

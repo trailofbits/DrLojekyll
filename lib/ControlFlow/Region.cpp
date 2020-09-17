@@ -179,9 +179,8 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
 
 // Return a lexically available use of a variable.
 VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
-  if (col.IsConstant()) {
-    const auto const_val = QueryConstant::From(col);
-    return impl->const_to_var[const_val];
+  if (col.IsConstantOrConstantRef()) {
+    return impl->const_to_var[QueryConstant::From(col)];
   } else {
     return VariableForRec(col);
   }

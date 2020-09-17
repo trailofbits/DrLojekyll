@@ -108,7 +108,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  const auto join = impl->operation_regions.CreateDerived<DATAVIEWJOIN>(
+  const auto join = impl->operation_regions.CreateDerived<TABLEJOIN>(
       parent, join_view);
   UseRef<REGION>(parent, join).Swap(parent->body);
 
@@ -121,59 +121,82 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     clear->ExecuteAfter(impl, seq);
   }
 
-  std::vector<QueryColumn> pivot_cols;
+  std::vector<unsigned> pivot_cols;
 
   for (auto pred_view : view.Predecessors()) {
-    pivot_cols.clear();
-
-    auto &out_vars = join->output_vars.emplace_back(join);
 
     join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
                               std::optional<QueryColumn> out_col) {
-      if (out_col && QueryView::Containing(in_col) == pred_view) {
-        if (InputColumnRole::kJoinPivot == role) {
-          pivot_cols.push_back(in_col);
-
-        } else if (InputColumnRole::kJoinNonPivot == role) {
-          auto var = out_vars.Create(
-              out_col->Id(), VariableRole::kJoinNonPivot);
-          var->query_column = *out_col;
-          join->col_id_to_var.emplace(out_col->Id(), var);
-
-        } else {
-          assert(false);
-        }
+      if (out_col && QueryView::Containing(in_col) == pred_view &&
+        InputColumnRole::kJoinPivot == role) {
+        assert(!in_col.IsConstant());
+        pivot_cols.push_back(*(in_col.Index()));
       }
     });
 
-    const auto table = TABLE::GetOrCreate(impl, pred_view.Columns(), view);
-    const auto index = table->GetOrCreateIndex(pivot_cols);
-    join->views.AddUse(table);
+    auto i = 0u;
+    auto &out_vars = join->output_vars.emplace_back(join);
+
+    for (auto col : pred_view.Columns()) {
+
+      // Ugly way of figuring out if this was a pivot column.
+      auto role = VariableRole::kJoinNonPivot;
+      if (i < pivot_cols.size() && col.Index() == pivot_cols[i]) {
+        role = VariableRole::kJoinPivot;
+        ++i;
+      }
+
+      // Make a variable for each column of the input table, tagged as either
+      // a pivot or non-pivot.
+      const auto var = out_vars.Create(impl->next_id++, role);
+      var->query_column = col;
+      join->col_id_to_var.emplace(col.Id(), var);
+    }
+
+    const auto table = TABLE::GetOrCreate(impl, pred_view);
+    const auto index = table->GetOrCreateIndex(impl, std::move(pivot_cols));
+    join->tables.AddUse(table);
     join->indices.AddUse(index);
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, join, view.Successors());
+  join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                            std::optional<QueryColumn> out_col) {
+    if (out_col) {
+      const auto in_var = join->col_id_to_var[in_col.Id()];
+      assert(in_var != nullptr);
+      join->col_id_to_var.emplace(out_col->Id(), in_var);
+    }
+  });
+
+  BuildEagerSuccessorRegions(
+      impl, view, context, join, view.Successors(), nullptr);
 }
 
 }  // namespace
 
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
-                          QueryJoin view, Context &context, OP *parent) {
+                          QueryJoin view, Context &context, OP *parent,
+                          TABLE *last_model) {
 
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  const auto insert = impl->operation_regions.CreateDerived<DATAVIEWINSERT>(parent);
-  for (auto col : pred_view.Columns()) {
-    const auto var = parent->VariableFor(impl, col);
-    insert->col_values.AddUse(var);
-    insert->col_ids.push_back(col.Id());
-  }
+  if (const auto table = TABLE::GetOrCreate(impl, pred_view);
+      table != last_model) {
 
-  const auto table_view = TABLE::GetOrCreate(impl, pred_view.Columns(), view);
-  UseRef<DATAVIEW>(insert, table_view).Swap(insert->view);
-  UseRef<REGION>(parent, insert).Swap(parent->body);
+    const auto insert =
+        impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
+
+    for (auto col : pred_view.Columns()) {
+      const auto var = parent->VariableFor(impl, col);
+      insert->col_values.AddUse(var);
+    }
+
+    UseRef<TABLE>(insert, table).Swap(insert->table);
+    UseRef<REGION>(parent, insert).Swap(parent->body);
+    parent = insert;
+  }
 
   auto &action = context.view_to_work_item[view];
   if (!action) {
@@ -181,7 +204,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     context.work_list.emplace_back(action);
   }
 
-  dynamic_cast<ContinueJoinWorkItem *>(action)->inserts.push_back(insert);
+  dynamic_cast<ContinueJoinWorkItem *>(action)->inserts.push_back(parent);
 }
 
 }  // namespace hyde

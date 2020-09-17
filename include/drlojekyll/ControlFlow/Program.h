@@ -50,10 +50,10 @@ class ProgramNode {
 
 }  // namespace program
 
+class DataColumn;
 class DataTable;
 class DataVariable;
 class DataVector;
-class DataView;
 
 class ProgramExistenceCheckRegion;
 class ProgramInductionRegion;
@@ -64,8 +64,9 @@ class ProgramSeriesRegion;
 class ProgramVectorAppendRegion;
 class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
-class ProgramViewInsertRegion;
-class ProgramViewJoinRegion;
+class ProgramTableInsertRegion;
+class ProgramTableJoinRegion;
+class ProgramTupleCompareRegion;
 
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
@@ -78,19 +79,20 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramVectorAppendRegion &);
   ProgramRegion(const ProgramVectorClearRegion &);
   ProgramRegion(const ProgramVectorLoopRegion &);
-  ProgramRegion(const ProgramViewInsertRegion &);
-  ProgramRegion(const ProgramViewJoinRegion &);
+  ProgramRegion(const ProgramTableInsertRegion &);
+  ProgramRegion(const ProgramTableJoinRegion &);
 
   bool IsInduction(void) const noexcept;
   bool IsVectorLoop(void) const noexcept;
   bool IsVectorAppend(void) const noexcept;
   bool IsVectorClear(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
-  bool IsViewInsert(void) const noexcept;
-  bool IsViewJoin(void) const noexcept;
+  bool IsTableInsert(void) const noexcept;
+  bool IsTableJoin(void) const noexcept;
   bool IsSeries(void) const noexcept;
   bool IsExistenceCheck(void) const noexcept;
   bool IsParallel(void) const noexcept;
+  bool IsTupleCompare(void) const noexcept;
 
  private:
   friend class ProgramExistenceCheckRegion;
@@ -102,8 +104,9 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramVectorAppendRegion;
   friend class ProgramVectorClearRegion;
   friend class ProgramVectorLoopRegion;
-  friend class ProgramViewInsertRegion;
-  friend class ProgramViewJoinRegion;
+  friend class ProgramTableInsertRegion;
+  friend class ProgramTableJoinRegion;
+  friend class ProgramTupleCompareRegion;
 
   using program::ProgramNode<ProgramRegion>::ProgramNode;
 };
@@ -139,7 +142,8 @@ class ProgramParallelRegion
 
 
 enum class VariableRole : int {
-  kConditionRefCount, kConstant, kVectorVariable, kLetBinding, kJoinNonPivot
+  kConditionRefCount, kConstant, kVectorVariable, kLetBinding, kJoinPivot,
+  kJoinNonPivot
 };
 
 // A variable in the program.
@@ -173,33 +177,59 @@ enum class VectorKind : unsigned {
   kJoinPivots,
 };
 
-// A view into a table.
-class DataView : public program::ProgramNode<DataView> {
+// A column in a table.
+class DataColumn : public program::ProgramNode<DataColumn> {
  public:
+  // Unique ID of this column.
   unsigned Id(void) const noexcept;
 
-  // List of column IDs represented by this view.
-  const std::vector<unsigned> ColumnIds(void) const noexcept;
+  // Index of this column within its table.
+  unsigned Index(void) const noexcept;
+
+  // Type of this column.
+  TypeKind Type(void) const noexcept;
+
+  // Possible names that can be associated with this column.
+  //
+  // NOTE(pag): Multiple columns of the same table might have intersecting
+  //            sets of possible names.
+  const std::vector<Token> &PossibleNames(void) const noexcept;
 
  private:
   friend class DataTable;
 
-  using program::ProgramNode<DataView>::ProgramNode;
+  using program::ProgramNode<DataColumn>::ProgramNode;
+};
+
+// An index on a table.
+class DataIndex : public program::ProgramNode<DataIndex> {
+ public:
+  // Unique ID of this index.
+  unsigned Id(void) const noexcept;
+
+  // Columns from a table that are part of this index.
+  UsedNodeRange<DataColumn> Columns(void) const;
+
+ private:
+  friend class DataTable;
+
+  using program::ProgramNode<DataIndex>::ProgramNode;
 };
 
 // A persistent table, backed by some kind of data store / database.
 class DataTable : public program::ProgramNode<DataTable> {
  public:
-  static DataTable Backing(DataView view) noexcept;
+  static DataTable Containing(DataColumn col) noexcept;
+  static DataTable Backing(DataIndex index) noexcept;
 
   unsigned Id(void) const noexcept;
 
   // Columns in this table. The columns may be from different `QueryView`
   // nodes.
-  const std::vector<QueryColumn> &Columns(void) const noexcept;
+  DefinedNodeRange<DataColumn> Columns(void) const;
 
-  // Views into this table. Each view is logically a column.
-  DefinedNodeRange<DataView> Views(void) const;
+  // Indices on this table.
+  DefinedNodeRange<DataIndex> Indices(void) const;
 
  private:
   using program::ProgramNode<DataTable>::ProgramNode;
@@ -245,6 +275,9 @@ class ProgramLetBindingRegion
     : public program::ProgramNode<ProgramLetBindingRegion> {
  public:
   static ProgramLetBindingRegion From(ProgramRegion) noexcept;
+
+  DefinedNodeRange<DataVariable> DefinedVars(void) const;
+  UsedNodeRange<DataVariable> UsedVars(void) const;
 
   // Return the body to which the lexical scoping of the variables applies.
   std::optional<ProgramRegion> Body(void) const noexcept;
@@ -315,32 +348,31 @@ class ProgramVectorClearRegion
 };
 
 // Insert a tuple into a view.
-class ProgramViewInsertRegion
-    : public program::ProgramNode<ProgramViewInsertRegion> {
+class ProgramTableInsertRegion
+    : public program::ProgramNode<ProgramTableInsertRegion> {
  public:
-  static ProgramViewInsertRegion From(ProgramRegion) noexcept;
+  static ProgramTableInsertRegion From(ProgramRegion) noexcept;
 
   // The body that conditionally executes if the insert succeeds.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
-  unsigned NthColumnId(unsigned n) const noexcept;
 
   UsedNodeRange<DataVariable> TupleVariables(void) const;
 
-  DataView View(void) const;
+  DataTable Table(void) const;
 
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramViewInsertRegion>::ProgramNode;
+  using program::ProgramNode<ProgramTableInsertRegion>::ProgramNode;
 };
 
 // Perform an equi-join between two or more views, and iterate over the results.
-class ProgramViewJoinRegion
-    : public program::ProgramNode<ProgramViewJoinRegion> {
+class ProgramTableJoinRegion
+    : public program::ProgramNode<ProgramTableJoinRegion> {
  public:
-  static ProgramViewJoinRegion From(ProgramRegion) noexcept;
+  static ProgramTableJoinRegion From(ProgramRegion) noexcept;
 
   // The body that conditionally executes for each joined result. Variable
   // bindings are applied.
@@ -349,7 +381,7 @@ class ProgramViewJoinRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramViewJoinRegion>::ProgramNode;
+  using program::ProgramNode<ProgramTableJoinRegion>::ProgramNode;
 };
 
 // An inductive area in a program. An inductive area is split up into three
@@ -376,12 +408,35 @@ class ProgramInductionRegion
 
   ProgramRegion Initializer(void) const noexcept;
   ProgramRegion FixpointLoop(void) const noexcept;
-  ProgramRegion Output(void) const noexcept;
+  std::optional<ProgramRegion> Output(void) const noexcept;
 
  private:
   friend class ProgramRegion;
 
   using program::ProgramNode<ProgramInductionRegion>::ProgramNode;
+};
+
+// A comparison between two tuples.
+class ProgramTupleCompareRegion
+    : public program::ProgramNode<ProgramTupleCompareRegion> {
+ public:
+  static ProgramTupleCompareRegion From(ProgramRegion) noexcept;
+
+  ComparisonOperator Operator(void) const noexcept;
+
+  // Variables in the left-hand side tuple.
+  UsedNodeRange<DataVariable> LHS(void) const;
+
+  // Variables in the right-hand side tuple.
+  UsedNodeRange<DataVariable> RHS(void) const;
+
+  // Code conditionally executed if the comparison is true.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramTupleCompareRegion>::ProgramNode;
 };
 
 // A procedure in the program.

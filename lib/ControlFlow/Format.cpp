@@ -10,33 +10,72 @@
 #include <drlojekyll/Parse/Format.h>
 
 namespace hyde {
+namespace {
 
-OutputStream &operator<<(OutputStream &os, DataView view) {
-  os << "$view:" << view.Id() << "(";
-  auto sep = "";
-  for (auto col_id : view.ColumnIds()) {
-    os << sep << col_id;
-    sep = ", ";
+static void DefineTable(OutputStream &os, DataTable table) {
+  os << os.Indent() << "create " << table;
+  os.PushIndent();
+  for (auto col : table.Columns()) {
+    os << '\n';
+    os << os.Indent() << col.Type() << '\t' << col;
+    auto sep = "\t; ";
+    for (auto name : col.PossibleNames()) {
+      os << sep << name;
+      sep = ", ";
+    }
   }
-  os << ")";
+
+  auto index_sep = "\n\n";
+  for (auto index : table.Indices()) {
+    os << index_sep << os.Indent() << index;
+    auto sep = " on ";
+    for (auto col : index.Columns()) {
+      os << sep << col;
+      sep = ", ";
+    }
+    index_sep = "\n";
+  }
+
+  os.PopIndent();
+}
+
+}  // namespace
+
+OutputStream &operator<<(OutputStream &os, DataColumn col) {
+  os << "%col:" << col.Id();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, DataIndex index) {
+  os << "%index:" << index.Id();
+  auto sep = "[";
+  auto i = 0u;
+  for (auto col : index.Columns()) {
+    for (; i < col.Index(); ++i) {
+      os << sep << '_';
+      sep = ",";
+    }
+    os << sep << col.Type();
+    i = col.Index() + 1u;
+    sep = ",";
+  }
+  auto table = DataTable::Backing(index);
+  for (auto max_i = table.Columns().size(); i < max_i; ++i) {
+    os << sep << '_';
+    sep = ",";
+  }
+  os << ']';
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, DataTable table) {
-  os << os.Indent() << "create $table:" << table.Id() << " {\n";
-  os.PushIndent();
+  os << "%table:" << table.Id();
+  auto sep = "[";
   for (auto col : table.Columns()) {
-    os << os.Indent() << "col:" << col.Id() << ":" << col.Type().Kind()
-       << "  ; " << col.Variable() << '\n';
+    os << sep << col.Type();
+    sep = ",";
   }
-
-  os << '\n';
-  for (auto view : table.Views()) {
-    os << os.Indent() << "declare " << view << '\n';
-  }
-
-  os.PopIndent();
-  os << os.Indent() << '}';
+  os << ']';
   return os;
 }
 
@@ -64,7 +103,7 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
 }
 
 OutputStream &operator<<(OutputStream &os, DataVariable var) {
-  os << '$';
+  os << '@';
   if (auto name = var.Name();
       name.Lexeme() == Lexeme::kIdentifierAtom ||
       name.Lexeme() == Lexeme::kIdentifierVariable) {
@@ -74,9 +113,36 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os << os.Indent();
+    auto sep = "if-compare {";
+    for (auto var : region.LHS()) {
+      os << sep << var;
+      sep = ", ";
+    }
+
+    os << "} " << region.Operator();
+
+    sep = " {";
+    for (auto var : region.RHS()) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "}\n";
+
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-if";
+  }
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "exists-check ";
+    os << os.Indent() << "if-check ";
     if (region.CheckForNotZero()) {
       os << "not-zero";
     } else {
@@ -91,24 +157,38 @@ OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
 
     os << " {\n";
     os.PushIndent();
-    os << (*maybe_body) << '\n';
+    os << (*maybe_body);
     os.PopIndent();
-    os << os.Indent() << '}';
   } else {
-    os << os.Indent() << "empty-exists-checks";
+    os << os.Indent() << "empty-if";
   }
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "let-binding {\n";
-    os.PushIndent();
-    os << (*maybe_body) << '\n';
-    os.PopIndent();
-    os << os.Indent() << '}';
+    if (region.DefinedVars().empty()) {
+      os << (*maybe_body);
+      return os;
+    } else {
+      os << os.Indent();
+      auto sep = "let {";
+      for (auto var : region.DefinedVars()) {
+        os << sep << var;
+        sep = ", ";
+      }
+      sep = "} = {";
+      for (auto var : region.UsedVars()) {
+        os << sep << var;
+        sep = ", ";
+      }
+      os << "}\n";
+      os.PushIndent();
+      os << (*maybe_body);
+      os.PopIndent();
+    }
   } else {
-    os << os.Indent() << "empty-let-binding";
+    os << os.Indent() << "empty-let";
   }
   return os;
 }
@@ -121,11 +201,10 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
       os << sep << var;
       sep = ", ";
     }
-    os << "} over " << region.Vector() << " {\n";
+    os << "} over " << region.Vector() << '\n';
     os.PushIndent();
-    os << (*maybe_body) << '\n';
+    os << (*maybe_body);
     os.PopIndent();
-    os << os.Indent() << '}';
   } else {
     os << os.Indent() << "empty-vector-loop";
   }
@@ -148,42 +227,38 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramViewInsertRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramTableInsertRegion region) {
 
   os << os.Indent();
   if (region.Body()) {
     os << "if-";
   }
 
-  os << "insert-into-view {";
+  os << "insert-into-table {";
   auto sep = "";
-  auto i = 0u;
   for (auto var : region.TupleVariables()) {
-    const auto col_id = region.NthColumnId(i++);
-    os << sep << "col:" << col_id << '=' << var;
+    os << sep << var;
     sep = ", ";
   }
-  os << "} into " << region.View();
+  os << "} into " << region.Table();
 
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << " {\n";
+    os << '\n';
     os.PushIndent();
-    os << (*maybe_body) << '\n';
+    os << (*maybe_body);
     os.PopIndent();
-    os << os.Indent() << '}';
   }
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramViewJoinRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "equi-join {\n";
+    os << os.Indent() << "join-tables\n";
     os.PushIndent();
-    os << (*maybe_body) << '\n';
+    os << (*maybe_body);
     os.PopIndent();
-    os << os.Indent() << '}';
   } else {
-    os << os.Indent() << "empty-equi-join";
+    os << os.Indent() << "empty-join-tables";
   }
   return os;
 }
@@ -205,14 +280,15 @@ OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
   os << '\n';
 
   os.PushIndent();
-  os << region.FixpointLoop() << '\n';
+  os << region.FixpointLoop();
   os.PopIndent();
-  os << os.Indent() << "output\n";
-  os.PushIndent();
-  os << region.Output() << '\n';
+  if (auto output = region.Output(); output) {
+    os << '\n' << os.Indent() << "output\n";
+    os.PushIndent();
+    os << (*output);
+    os.PopIndent();
+  }
   os.PopIndent();
-  os.PopIndent();
-  os << os.Indent() << '}';
   return os;
 }
 
@@ -252,12 +328,14 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramVectorAppendRegion::From(region);
   } else if (region.IsVectorClear()) {
     os << ProgramVectorClearRegion::From(region);
-  } else if (region.IsViewInsert()) {
-    os << ProgramViewInsertRegion::From(region);
-  } else if (region.IsViewJoin()) {
-    os << ProgramViewJoinRegion::From(region);
+  } else if (region.IsTableInsert()) {
+    os << ProgramTableInsertRegion::From(region);
+  } else if (region.IsTableJoin()) {
+    os << ProgramTableJoinRegion::From(region);
   } else if (region.IsExistenceCheck()) {
     os << ProgramExistenceCheckRegion::From(region);
+  } else if (region.IsTupleCompare()) {
+    os << ProgramTupleCompareRegion::From(region);
   } else {
     assert(false);
     os << "<<unknown region>>";
@@ -279,7 +357,7 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
     os << sep << vec;
     sep = ", ";
   }
-  os << ") {\n";
+  os << ")\n";
   os.PushIndent();
 
   for (auto vec : proc.DefinedVectors()) {
@@ -288,19 +366,19 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
 
   os << proc.Body() << '\n';
   os.PopIndent();
-  os << '}';
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, Program program) {
   auto sep = "";
   for (auto var : program.Constants()) {
-    os << sep << os.Indent() << "const " << var << " = "
+    os << sep << os.Indent() << "const " << var.Type() << ' '<< var << " = "
        << *(var.Value());
     sep = "\n\n";
   }
   for (auto table : program.Tables()) {
-    os << sep << os.Indent() << table;
+    os << sep;
+    DefineTable(os, table);
     sep = "\n\n";
   }
   for (auto proc : program.Procedures()) {

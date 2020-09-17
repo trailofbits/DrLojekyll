@@ -104,10 +104,12 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   // Apply a function to each user.
   void ForEachUser(std::function<void(QueryView)> user_cb) const;
 
-  // Identifies the logical "value" behind this column. If two columns share
-  // the same `Id()` value then at runtime the same value will inhabit the two
-  // columns.
+  // Unique identifier for columns.
   unsigned Id(void) const noexcept;
+
+  // Index of this column in its defining view. Returns nothing if this column
+  // is a constant.
+  std::optional<unsigned> Index(void) const noexcept;
 
  private:
   using query::QueryNode<QueryColumn>::QueryNode;

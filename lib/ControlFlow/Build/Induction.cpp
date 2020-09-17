@@ -139,8 +139,10 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     OP * const cycle = induction->view_to_cycle_loop[merge]->AsOperation();
     assert(cycle != nullptr);
 
+    const auto table = TABLE::GetOrCreate(impl, merge);
     BuildEagerSuccessorRegions(
-        impl, merge, context, cycle, context.inductive_successors[merge]);
+        impl, merge, context, cycle, context.inductive_successors[merge],
+        table);
   }
 
   // Finally, add in an action to finish off this induction by processing
@@ -206,9 +208,10 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   for (auto merge : induction_set->merges) {
     OP * const cycle = induction->view_to_output_loop[merge]->AsOperation();
     assert(cycle != nullptr);
-
+    const auto table = TABLE::GetOrCreate(impl, merge);
     BuildEagerSuccessorRegions(
-        impl, merge, context, cycle, context.noninductive_successors[merge]);
+        impl, merge, context, cycle, context.noninductive_successors[merge],
+        table);
   }
 }
 
@@ -218,17 +221,26 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 // loop. This is interesting because we use a WorkItem as a kind of "barrier"
 // to accumulate everything leading into the inductions before proceeding.
 void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
-                               QueryMerge view, Context &context, OP *parent) {
+                               QueryMerge view, Context &context, OP *parent,
+                               TABLE *last_model) {
 
   PROC * const proc = parent->containing_procedure;
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  const auto insert = impl->operation_regions.CreateDerived<DATAVIEWINSERT>(parent);
+  const auto table = TABLE::GetOrCreate(impl, view);
+  if (last_model != table) {
+    const auto insert = impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
+    UseRef<TABLE>(insert, table).Swap(insert->table);
+    UseRef<REGION>(parent, insert).Swap(parent->body);
 
-  const auto table_view = TABLE::GetOrCreate(impl, view.Columns(), pred_view);
-  UseRef<DATAVIEW>(insert, table_view).Swap(insert->view);
-  UseRef<REGION>(parent, insert).Swap(parent->body);
+    for (auto col : view.Columns()) {
+      const auto var = parent->VariableFor(impl, col);
+      insert->col_values.AddUse(var);
+    }
+
+    parent = insert;
+  }
 
   // This is the first time seeing any MERGE associated with this induction.
   // We'll make an INDUCTION, and a work item that will let us explore the
@@ -257,17 +269,15 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Add a tuple to the input vector.
   const auto append_to_vec = impl->operation_regions.CreateDerived<VECTORAPPEND>(
-      insert, ProgramOperation::kAppendInductionInputToVector);
+      parent, ProgramOperation::kAppendInductionInputToVector);
 
   for (auto col : view.Columns()) {
     const auto var = parent->VariableFor(impl, col);
-    insert->col_values.AddUse(var);
-    insert->col_ids.push_back(col.Id());
     append_to_vec->tuple_vars.AddUse(var);
   }
 
   UseRef<VECTOR>(append_to_vec, vec.get()).Swap(append_to_vec->vector);
-  UseRef<REGION>(insert, append_to_vec).Swap(insert->body);
+  UseRef<REGION>(parent, append_to_vec).Swap(parent->body);
 
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:

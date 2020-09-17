@@ -1084,6 +1084,22 @@ bool ParsedFunctor::IsPure(void) const noexcept {
   return impl->is_pure;
 }
 
+// Is this a filter-like functor? This is `true` if the functor is `pure`
+// and if the number of free parameters is zero and if the range is
+// `FunctorRange::kZeroOrOne`.
+bool ParsedFunctor::IsFilter(void) const noexcept {
+  if (impl->is_pure && impl->range == FunctorRange::kZeroOrOne) {
+    for (const auto &param : impl->parameters) {
+      if (ParameterBinding::kFree == ParsedParameter(param.get()).Binding()) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
+
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
   assert(decl.IsFunctor());
   return reinterpret_cast<const ParsedFunctor &>(decl);

@@ -81,39 +81,49 @@ class Context {
 // Build an eager region. This guards the execution of the region in
 // conditionals if the view itself is conditional.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                      QueryView view, Context &context, OP *parent);
+                      QueryView view, Context &context, OP *parent,
+                      TABLE *last_model);
 
 // Build an eager region for a `QueryMerge` that is part of an inductive
 // loop. This is interesting because we use a WorkItem as a kind of "barrier"
 // to accumulate everything leading into the inductions before proceeding.
 void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
-                               QueryMerge view, Context &context, OP *parent);
+                               QueryMerge view, Context &context, OP *parent,
+                               TABLE *last_model);
 
 // Build an eager region for a `QueryMerge` that is NOT part of an inductive
 // loop, and thus passes on its data to the next thing down as long as that
 // data is unique.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
-                           QueryMerge view, Context &context, OP *parent);
+                           QueryMerge view, Context &context, OP *parent,
+                           TABLE *last_model);
 
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
-                            QueryInsert view, Context &context, OP *parent);
+                            QueryInsert view, Context &context, OP *parent,
+                            TABLE *last_model);
 
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
-                          QueryJoin view, Context &context, OP *parent);
+                          QueryJoin view, Context &context, OP *parent,
+                          TABLE *last_model);
 
 // Build an eager region for cross-product.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryJoin view, Context &context, OP *parent);
+                             QueryJoin view, Context &context, OP *parent,
+                             TABLE *last_model);
+
+// Build an eager region for performing a comparison.
+void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
+                              Context &context, OP *parent);
 
 // Add in all of the successors of a view inside of `parent`, which is
 // usually some kind of loop. The successors execute in parallel.
 template <typename List>
 void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
                                 Context &context, OP *parent,
-                                List &&successors) {
+                                List &&successors, TABLE *last_model) {
   const auto par = impl->parallel_regions.Create(parent);
   UseRef<REGION>(parent, par).Swap(parent->body);
 
@@ -122,21 +132,39 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
     let->ExecuteAlongside(impl, par);
 
-    succ_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole,
+    succ_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole role,
                               std::optional<QueryColumn> out_col) {
-      if (out_col && in_col.Id() != out_col->Id() &&
-          (QueryView::Containing(in_col) == view || in_col.IsConstant())) {
+      switch (role) {
+        case InputColumnRole::kPassThrough:
+        case InputColumnRole::kCopied:
+        case InputColumnRole::kJoinPivot:
+        case InputColumnRole::kJoinNonPivot:
+        case InputColumnRole::kMergedColumn:
+        case InputColumnRole::kIndexKey:
+        case InputColumnRole::kFunctorInput:
+        case InputColumnRole::kAggregateConfig:
+        case InputColumnRole::kAggregateGroup:
+          if (out_col && in_col.Id() != out_col->Id() &&
+              (QueryView::Containing(in_col) == view || in_col.IsConstant())) {
 
-        const auto src_var = par->VariableFor(impl, in_col);
-        let->used_vars.AddUse(src_var);
-        const auto dst_var = let->defined_vars.Create(
-            impl->next_id++, VariableRole::kLetBinding);
-        dst_var->query_column = *out_col;
-        let->col_id_to_var.emplace(out_col->Id(), dst_var);
+            const auto src_var = par->VariableFor(impl, in_col);
+            let->used_vars.AddUse(src_var);
+            const auto dst_var = let->defined_vars.Create(
+                impl->next_id++, VariableRole::kLetBinding);
+            dst_var->query_column = *out_col;
+            let->col_id_to_var.emplace(out_col->Id(), dst_var);
+          }
+          break;
+
+        case InputColumnRole::kIndexValue:
+        case InputColumnRole::kCompareLHS:
+        case InputColumnRole::kCompareRHS:
+        case InputColumnRole::kAggregatedColumn:
+          break;
       }
     });
 
-    BuildEagerRegion(impl, view, succ_view, context, let);
+    BuildEagerRegion(impl, view, succ_view, context, let, last_model);
   }
 }
 

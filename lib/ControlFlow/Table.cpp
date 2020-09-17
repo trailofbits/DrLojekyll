@@ -27,108 +27,98 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 
 }  // namespace
 
-Node<DataView>::~Node(void) {}
+Node<DataColumn>::~Node(void) {}
 Node<DataIndex>::~Node(void) {}
 Node<DataTable>::~Node(void) {}
 
-Node<DataView>::Node(Node<DataTable> *table_, unsigned id_, QueryView view_tag_,
-                     const std::vector<unsigned> col_ids_,
-                     std::string col_spec_)
-    : Def<Node<DataView>>(this),
+Node<DataColumn>::Node(unsigned id_, TypeKind type_, Node<DataTable> *table_)
+    : Def<Node<DataColumn>>(this),
       User(this),
       id(id_),
-      view_tag(view_tag_),
-      col_spec(std::move(col_spec_)),
-      col_ids(std::move(col_ids_)),
-      viewed_table(this, table_) {}
+      index(table_->columns.Size()),
+      type(type_),
+      table(this, table_) {}
 
-Node<DataIndex>::Node(Node<DataTable> *table_, std::vector<unsigned> col_ids_,
+Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
                       std::string column_spec_)
     : Def<Node<DataIndex>>(this),
       User(this),
+      id(id_),
       column_spec(column_spec_),
-      col_ids(std::move(col_ids_)),
-      indexed_table(this, table_) {}
+      columns(this),
+      table(this, table_) {}
 
 // Get or create a table in the program.
-Node<DataView> *Node<DataTable>::GetOrCreateImpl(
-    ProgramImpl *impl, const std::vector<QueryColumn> &cols, QueryView tag) {
+Node<DataTable> *Node<DataTable>::GetOrCreate(
+    ProgramImpl *impl, QueryView view) {
 
-  // TODO(pag): Make it so that the view has the right columns in the right
-  //            order, even if the table itself de-duplicates some of them.
-
-  std::vector<unsigned> col_ids;
-  DataModel *model = nullptr;
-  for (auto col : cols) {
-    auto view = QueryView::Containing(col);
-    auto view_model = impl->view_to_model[view]->FindAs<DataModel>();
-    if (!model) {
-      model = view_model;
-    } else {
-      assert(model == view_model);
+  std::vector<QueryColumn> cols;
+  if (view.IsInsert()) {
+    for (auto col : QueryInsert::From(view).InputColumns()) {
+      cols.push_back(col);
     }
-    col_ids.push_back(col.Id());
+  } else {
+    for (auto col : view.Columns()) {
+      cols.push_back(col);
+    }
   }
 
-  // TODO(pag): Could this happen with all `cols` being constant?
-  assert(model != nullptr);
-
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   if (!model->table) {
     model->table = impl->tables.Create(impl->next_id++);
-  }
 
-  const auto table = model->table;
-  auto &columns = table->columns;
-  for (auto col : cols) {
-    columns.push_back(col);
-  }
-
-  std::sort(columns.begin(), columns.end(), [] (QueryColumn a, QueryColumn b) {
-    return a.Id() < b.Id();
-  });
-  auto it = std::unique(columns.begin(), columns.end(),
-                        [] (QueryColumn a, QueryColumn b) {
-                          return a.Id() == b.Id();
-                        });
-  columns.erase(it, columns.end());
-
-  SortAndUnique(col_ids);
-
-  auto col_spec = ColumnSpec(col_ids);
-  for (auto view : table->views) {
-    if (view->view_tag == tag && view->col_spec == col_spec) {
-      return view;
+    for (auto col : cols) {
+      (void) model->table->columns.Create(
+          impl->next_id++, col.Type().Kind(), model->table);
     }
   }
 
-  return table->views.Create(table, impl->next_id++, tag, std::move(col_ids),
-                             std::move(col_spec));
-}
-
-// Get or create an index on the table.
-Node<DataIndex> *
-Node<DataView>::GetOrCreateIndex(std::vector<QueryColumn> cols) {
-  return viewed_table->GetOrCreateIndex(std::move(cols));
-}
-
-// Get or create an index on the table.
-Node<DataIndex> *
-Node<DataTable>::GetOrCreateIndex(std::vector<QueryColumn> cols) {
-
-  std::vector<unsigned> col_ids;
+  unsigned i = 0u;
   for (auto col : cols) {
-    col_ids.push_back(col.Id());
+    auto table_col = model->table->columns[i++];
+    auto name = col.Variable().Name();
+    switch (name.Lexeme()) {
+      case Lexeme::kIdentifierVariable:
+      case Lexeme::kIdentifierAtom: {
+        table_col->names.push_back(name);
+        std::sort(table_col->names.begin(), table_col->names.end(),
+                  [] (Token a, Token b) {
+                    return a.IdentifierId() < b.IdentifierId();
+                  });
+        auto it = std::unique(table_col->names.begin(), table_col->names.end(),
+                              [] (Token a, Token b) {
+                                return a.IdentifierId() == b.IdentifierId();
+                              });
+        table_col->names.erase(it, table_col->names.end());
+        break;
+      }
+      default:
+        break;
+    }
   }
 
-  SortAndUnique(col_ids);
-  auto col_spec = ColumnSpec(col_ids);
+  return model->table;
+}
+
+// Get or create an index on the table.
+TABLEINDEX *
+Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
+                                  std::vector<unsigned> col_indexes) {
+
+  SortAndUnique(col_indexes);
+  auto col_spec = ColumnSpec(col_indexes);
   for (auto index : indices) {
     if (index->column_spec == col_spec) {
       return index;
     }
   }
 
-  return indices.Create(this, std::move(col_ids), std::move(col_spec));
+  const auto index = indices.Create(impl->next_id++, this, std::move(col_spec));
+  for (auto col_index : col_indexes) {
+    index->columns.AddUse(columns[col_index]);
+  }
+
+  return index;
 }
 
 }  // namespace hyde

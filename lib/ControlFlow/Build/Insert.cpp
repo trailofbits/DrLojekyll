@@ -10,7 +10,8 @@ namespace {
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
-                            QueryInsert insert, Context &context, OP *parent) {
+                            QueryInsert insert, Context &context, OP *parent,
+                            TABLE *last_model) {
   const auto view = QueryView(insert);
   const auto cols = insert.InputColumns();
 
@@ -19,22 +20,22 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
-    const auto insert = impl->operation_regions.CreateDerived<DATAVIEWINSERT>(parent);
-    for (auto col : cols) {
-      const auto var = parent->VariableFor(impl, col);
-      insert->col_values.AddUse(var);
-      insert->col_ids.push_back(col.Id());
+    const auto table = TABLE::GetOrCreate(impl, view);
+    if (table != last_model) {
+      const auto insert =
+          impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
+      for (auto col : cols) {
+        const auto var = parent->VariableFor(impl, col);
+        insert->col_values.AddUse(var);
+      }
+
+      UseRef<TABLE>(insert, table).Swap(insert->table);
+      UseRef<REGION>(parent, insert).Swap(parent->body);
+      parent = insert;
     }
 
-    // TODO(pag): Think about eliminating `view` as a tag if there is only
-    //            one inserter into DATAVIEW.
-    const auto table_view = TABLE::GetOrCreate(impl, cols, view);
-
-    UseRef<DATAVIEW>(insert, table_view).Swap(insert->view);
-    UseRef<REGION>(parent, insert).Swap(parent->body);
-
     if (const auto succs = view.Successors(); succs.size()) {
-      BuildEagerSuccessorRegions(impl, view, context, insert, succs);
+      BuildEagerSuccessorRegions(impl, view, context, parent, succs, table);
     }
 
   } else {
