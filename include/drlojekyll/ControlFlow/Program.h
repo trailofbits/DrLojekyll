@@ -64,6 +64,7 @@ class ProgramSeriesRegion;
 class ProgramVectorAppendRegion;
 class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
+class ProgramVectorUniqueRegion;
 class ProgramTableInsertRegion;
 class ProgramTableJoinRegion;
 class ProgramTupleCompareRegion;
@@ -79,6 +80,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramVectorAppendRegion &);
   ProgramRegion(const ProgramVectorClearRegion &);
   ProgramRegion(const ProgramVectorLoopRegion &);
+  ProgramRegion(const ProgramVectorUniqueRegion &);
   ProgramRegion(const ProgramTableInsertRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
 
@@ -86,6 +88,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsVectorLoop(void) const noexcept;
   bool IsVectorAppend(void) const noexcept;
   bool IsVectorClear(void) const noexcept;
+  bool IsVectorUnique(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
   bool IsTableInsert(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
@@ -104,6 +107,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramVectorAppendRegion;
   friend class ProgramVectorClearRegion;
   friend class ProgramVectorLoopRegion;
+  friend class ProgramVectorUniqueRegion;
   friend class ProgramTableInsertRegion;
   friend class ProgramTableJoinRegion;
   friend class ProgramTupleCompareRegion;
@@ -332,20 +336,24 @@ class ProgramVectorAppendRegion
   using program::ProgramNode<ProgramVectorAppendRegion>::ProgramNode;
 };
 
+#define VECTOR_OP(name) \
+    class name : public program::ProgramNode<name> { \
+     public: \
+      static name From(ProgramRegion) noexcept; \
+      VectorUsage Usage(void) const noexcept; \
+      DataVector Vector(void) const noexcept; \
+     private: \
+      friend class ProgramRegion; \
+      using program::ProgramNode<name>::ProgramNode; \
+    }
+
 // Clear a vector.
-class ProgramVectorClearRegion
-    : public program::ProgramNode<ProgramVectorClearRegion> {
- public:
-  static ProgramVectorClearRegion From(ProgramRegion) noexcept;
+VECTOR_OP(ProgramVectorClearRegion);
 
-  VectorUsage Usage(void) const noexcept;
-  DataVector Vector(void) const noexcept;
+// Sort and unique the elements in a vector.
+VECTOR_OP(ProgramVectorUniqueRegion);
 
- private:
-  friend class ProgramRegion;
-
-  using program::ProgramNode<ProgramVectorClearRegion>::ProgramNode;
-};
+#undef VECTOR_OP
 
 // Insert a tuple into a view.
 class ProgramTableInsertRegion

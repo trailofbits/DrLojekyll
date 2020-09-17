@@ -351,7 +351,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     }
 
     for (auto i = 0u; i < num_cols; ++i) {
-      if (cols[i].Id() != pred_cols[i].Id()) {
+      if (cols[i].Index() != pred_cols[i].Index()) {
         return false;
       }
     }

@@ -267,6 +267,7 @@ enum class ProgramOperation {
   kAppendJoinPivotsToVector,
   kLoopOverJoinPivots,
   kClearJoinPivotVector,
+  kSortAndUniquePivotVector,
 
   // Comparison between two tuples.
   kCompareTuples,
@@ -325,6 +326,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
+  virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
@@ -424,6 +426,21 @@ class Node<ProgramVectorClearRegion> final
 };
 
 using VECTORCLEAR = Node<ProgramVectorClearRegion>;
+
+// Sort and unique a vector.
+template <>
+class Node<ProgramVectorUniqueRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  using Node<ProgramOperationRegion>::Node;
+
+  Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept override;
+
+  UseRef<VECTOR> vector;
+};
+
+using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
 
 // An append of a tuple (specified in terms of `variables`) into a vector,
 // specified in terms of `tables[0]`.

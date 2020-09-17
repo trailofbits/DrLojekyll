@@ -227,6 +227,11 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region) {
+  os << os.Indent() << "vector-unique " << region.Vector();
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramTableInsertRegion region) {
 
   os << os.Indent();
@@ -328,6 +333,8 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramVectorAppendRegion::From(region);
   } else if (region.IsVectorClear()) {
     os << ProgramVectorClearRegion::From(region);
+  } else if (region.IsVectorUnique()) {
+    os << ProgramVectorUniqueRegion::From(region);
   } else if (region.IsTableInsert()) {
     os << ProgramTableInsertRegion::From(region);
   } else if (region.IsTableJoin()) {

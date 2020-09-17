@@ -88,6 +88,13 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     ancestor->ReplaceAllUsesWith(seq);
     ancestor->ExecuteAfter(impl, seq);
 
+    // Sort and unique the pivot vector before looping.
+    const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
+        seq, ProgramOperation::kSortAndUniquePivotVector);
+    UseRef<VECTOR>(unique, pivot_vec).Swap(unique->vector);
+    unique->ExecuteAfter(impl, seq);
+
+    // Loop over the pivot vector.
     const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
         seq, ProgramOperation::kLoopOverJoinPivots);
 

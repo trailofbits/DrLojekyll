@@ -9,6 +9,7 @@ Node<ProgramLetBindingRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
 Node<ProgramVectorClearRegion>::~Node(void) {}
+Node<ProgramVectorUniqueRegion>::~Node(void) {}
 Node<ProgramTableInsertRegion>::~Node(void) {}
 Node<ProgramTableJoinRegion>::~Node(void) {}
 Node<ProgramExistenceCheckRegion>::~Node(void) {}
@@ -35,6 +36,11 @@ Node<ProgramOperationRegion>::AsVectorAppend(void) noexcept {
 
 Node<ProgramVectorClearRegion> *
 Node<ProgramOperationRegion>::AsVectorClear(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramVectorUniqueRegion> *
+Node<ProgramOperationRegion>::AsVectorUnique(void) noexcept {
   return nullptr;
 }
 
@@ -107,6 +113,11 @@ Node<ProgramTableJoinRegion>::AsTableJoin(void) noexcept {
 
 Node<ProgramVectorClearRegion> *
 Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
+  return this;
+}
+
+Node<ProgramVectorUniqueRegion> *
+Node<ProgramVectorUniqueRegion>::AsVectorUnique(void) noexcept {
   return this;
 }
 
