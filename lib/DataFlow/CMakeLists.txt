@@ -1,8 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 set(DataFlow_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Format.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow/Query.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/DataFlow.h"
 )
 
 set(DataFlow_SRCS

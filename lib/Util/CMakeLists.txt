@@ -1,11 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 set(Util_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/BitManipulation.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DefUse.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DisjointSet.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/EqualitySet.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Node.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util.h"
 )
 
 set(Util_SRCS

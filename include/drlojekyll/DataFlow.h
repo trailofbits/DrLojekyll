@@ -2,8 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Util/DefUse.h>
-#include <drlojekyll/Util/Node.h>
+#include <drlojekyll/Util.h>
 
 #include <functional>
 #include <memory>
@@ -13,8 +12,29 @@
 namespace hyde {
 
 class ErrorLog;
-class QueryImpl;
 class OutputStream;
+class ParsedDeclaration;
+class ParsedFunctor;
+class ParsedLiteral;
+class ParsedModule;
+class ParsedVariable;
+
+class QueryAggregate;
+
+class QueryConstant;
+class QueryConstraint;
+class QueryIO;
+class QueryImpl;
+class QueryInsert;
+class QueryJoin;
+class QueryKVIndex;
+class QueryMap;
+class QueryMerge;
+class QuerySelect;
+class QueryTuple;
+class QueryView;
+class TypeLoc;
+enum class ComparisonOperator : int;
 
 namespace query {
 
@@ -46,30 +66,6 @@ class QueryNode {
 };
 
 }  // namespace query
-
-enum class ComparisonOperator : int;
-class ParsedDeclaration;
-class ParsedFunctor;
-class ParsedLiteral;
-class ParsedMessage;
-class ParsedModule;
-class ParsedPredicate;
-class ParsedVariable;
-class TypeLoc;
-class QueryBuilder;
-class QueryBuilderImpl;
-class QueryColumn;
-class QueryConstant;
-class QueryConstraint;
-class QueryImpl;
-class QueryInsert;
-class QueryIO;
-class QueryJoin;
-class QueryMerge;
-class QueryRelation;
-class QuerySelect;
-class QueryStream;
-class QueryView;
 
 // A column. Columns may be derived from selections or from joins.
 class QueryColumn : public query::QueryNode<QueryColumn> {
@@ -224,13 +220,6 @@ class QueryIO : public query::QueryNode<QueryIO> {
   friend class QuerySelect;
   friend class QueryStream;
 };
-
-class ParsedExport;
-class QueryAggregate;
-class QueryMap;
-class QueryTuple;
-class QueryKVIndex;
-class QueryInsert;
 
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
@@ -741,7 +730,11 @@ class Query {
   std::shared_ptr<QueryImpl> impl;
 };
 
+OutputStream &operator<<(OutputStream &os, Query query);
+
 }  // namespace hyde
+
+
 namespace std {
 
 template <>

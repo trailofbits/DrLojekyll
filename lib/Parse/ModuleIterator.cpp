@@ -1,7 +1,5 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Parse/ModuleIterator.h>
-
 #include "Parse.h"
 
 namespace hyde {

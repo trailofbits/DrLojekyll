@@ -1,7 +1,7 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Lex/Token.h>
-#include <drlojekyll/Parse/Type.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
 
 namespace hyde {
 namespace {

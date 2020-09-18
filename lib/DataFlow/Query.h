@@ -2,10 +2,9 @@
 
 #pragma once
 
-#include <drlojekyll/DataFlow/Query.h>
-#include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/BitManipulation.h>
-#include <drlojekyll/Util/DefUse.h>
+#include <drlojekyll/DataFlow.h>
+#include <drlojekyll/Parse.h>
+#include <drlojekyll/Util.h>
 
 #include <cassert>
 #include <string>

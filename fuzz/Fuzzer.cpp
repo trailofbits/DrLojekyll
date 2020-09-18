@@ -1,9 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Parse/Parser.h>
+#include <drlojekyll/Parse.h>
 
 #include <cstdint>
 #include <cstdlib>

@@ -1,7 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse.h>
 
 #include <iomanip>
 #include <sstream>

@@ -1,6 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Runtime/Runtime.h>
+#include <drlojekyll/Runtime.h>
 
 #include <cinttypes>
 #include <cstdio>

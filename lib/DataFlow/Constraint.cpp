@@ -1,7 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Util/EqualitySet.h>
+#include <drlojekyll/Parse.h>
+#include <drlojekyll/Util.h>
 
 #include "Optimize.h"
 #include "Query.h"

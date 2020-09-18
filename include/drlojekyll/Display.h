@@ -11,16 +11,9 @@
 
 namespace hyde {
 
-class Display;
-class DisplayConfiguration;
 class DisplayImpl;
-class DisplayManager;
 class DisplayPosition;
 class DisplayRange;
-class DisplayReader;
-class Lexer;
-class Token;
-
 
 // A Display is an abstraction over a Dr. Lojekyll source input.
 //

@@ -1,7 +1,7 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Format.h>
+#include <drlojekyll/Lex.h>
 
 namespace hyde {
 

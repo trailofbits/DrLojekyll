@@ -12,7 +12,7 @@ include("${PROJECT_SOURCE_DIR}/cmake/git_watcher.cmake")
 
 # Create a library out of the compiled post-configure file.
 set(Version_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Version/Version.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Version.h"
 )
 
 set(Version_SRCS

@@ -3,13 +3,8 @@
 #pragma once
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Format.h>
-#include <drlojekyll/Lex/Lexer.h>
-#include <drlojekyll/Lex/StringPool.h>
-#include <drlojekyll/Lex/Token.h>
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Parse/Parser.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
 
 #include <cassert>
 #include <cstring>

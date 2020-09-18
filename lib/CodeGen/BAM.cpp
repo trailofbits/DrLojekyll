@@ -1,12 +1,11 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/CodeGen/BAM.h>
-#include <drlojekyll/DataFlow/Format.h>
+#include <drlojekyll/CodeGen.h>
+#include <drlojekyll/DataFlow.h>
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Format.h>
-#include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/Node.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
+#include <drlojekyll/Util.h>
 
 #include <algorithm>
 #include <bitset>

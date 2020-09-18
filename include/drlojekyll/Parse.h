@@ -1,22 +1,21 @@
-// Copyright 2019, Trail of Bits. All rights reserved.
+// Copyright 2020, Trail of Bits. All rights reserved.
 
 #pragma once
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Token.h>
-#include <drlojekyll/Parse/Type.h>
-#include <drlojekyll/Util/Node.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Util.h>
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <ostream>
 #include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace hyde {
-
-class DisplayManager;
-class Parser;
-class ParserImpl;
 
 namespace parse {
 
@@ -68,10 +67,76 @@ enum class ParameterBinding {
   kSummary
 };
 
-class ParsedAssignment;
-class ParsedClause;
-class ParsedComparison;
-class ParsedPredicate;
+enum class TypeKind {
+  kInvalid,
+  kSigned8,
+  kSigned16,
+  kSigned32,
+  kSigned64,
+  kUnsigned8,
+  kUnsigned16,
+  kUnsigned32,
+  kUnsigned64,
+  kFloat,
+  kDouble,
+  kBytes,
+  kASCII,
+  kUTF8,
+  kUUID
+};
+
+unsigned SizeInBits(TypeKind kind) noexcept;
+unsigned SizeInBytes(TypeKind kind) noexcept;
+const char *Spelling(TypeKind kind) noexcept;
+
+// Type and location of that type.
+class TypeLoc {
+ public:
+  TypeLoc(const Token &tok);
+  TypeLoc(TypeKind kind_, const DisplayRange &range_);
+  TypeLoc &operator=(const Token &tok) noexcept;
+
+  inline TypeKind Kind(void) const noexcept {
+    return kind;
+  }
+
+  inline DisplayPosition Position(void) const noexcept {
+    return range.From();
+  }
+
+  inline DisplayRange SpellingRange(void) const noexcept {
+    return range;
+  }
+
+  inline bool IsValid(void) const noexcept {
+    return kind != TypeKind::kInvalid;
+  }
+
+  inline bool IsInvalid(void) const noexcept {
+    return kind == TypeKind::kInvalid;
+  }
+
+  inline bool operator==(TypeLoc that) {
+    return kind == that.kind;
+  }
+
+  inline bool operator!=(TypeLoc that) {
+    return kind != that.kind;
+  }
+
+  inline const char *Spelling(void) const noexcept {
+    return ::hyde::Spelling(kind);
+  }
+
+ private:
+  template <typename>
+  friend class Node;
+
+  inline TypeLoc(void) : kind(TypeKind::kInvalid) {}
+
+  TypeKind kind;
+  DisplayRange range;
+};
 
 // Represents a literal.
 class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
@@ -137,6 +202,10 @@ class ParsedUse : public parse::ParsedNode<ParsedUse<T>> {
  protected:
   using parse::ParsedNode<ParsedUse<T>>::ParsedNode;
 };
+
+class ParsedAssignment;
+class ParsedComparison;
+class ParsedPredicate;
 
 using ParsedAssignmentUse = ParsedUse<ParsedAssignment>;
 using ParsedComparisonUse = ParsedUse<ParsedComparison>;
@@ -368,9 +437,6 @@ class ParsedParameter : public parse::ParsedNode<ParsedParameter> {
   using parse::ParsedNode<ParsedParameter>::ParsedNode;
 };
 
-class ParsedClauseHead;
-class ParsedClauseBody;
-
 // Represents a parsed clause, which defines either an internal or exported
 // predicate.
 class ParsedClause : public parse::ParsedNode<ParsedClause> {
@@ -451,11 +517,11 @@ class ParsedClauseBody {
 
 enum class DeclarationKind { kQuery, kMessage, kFunctor, kExport, kLocal };
 
-class ParsedQuery;
-class ParsedMessage;
-class ParsedFunctor;
 class ParsedExport;
+class ParsedFunctor;
 class ParsedLocal;
+class ParsedMessage;
+class ParsedQuery;
 
 // The head of a declaration. This includes the name of the clause.
 // Clause head names must be identifiers beginning with a lower case character.
@@ -787,7 +853,6 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 class ParsedImport;
 class ParsedInclude;
 class ParsedInline;
-class ParsedModuleIterator;
 
 // Represents a module parsed from a display.
 class ParsedModule {
@@ -877,7 +942,350 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
   using parse::ParsedNode<ParsedInline>::ParsedNode;
 };
 
+namespace parse {
+template <typename>
+class ParsedNode;
+}  // namespace parse
+
+enum class Color : unsigned char {
+  kNone,
+  kRed,
+  kGreen,
+  kGrey,
+  kYellow,
+  kBlue,
+  kPurple,
+  kBlack,
+  kWhite
+};
+
+// Color scheme for printing errors out to a terminal emulator.
+struct ErrorColorScheme {
+  Color background_color;
+  Color file_path_color;
+  Color line_color;
+  Color column_color;
+  Color error_category_color;
+  Color note_category_color;
+  Color message_color;
+  Color source_line_color;
+  Color disabled_source_line_color;
+  Color error_source_line_color;
+  Color error_background_color;
+  Color note_source_line_color;
+  Color note_background_color;
+  Color text_color;
+};
+
+// Used to stream in error information. This is a thing wrapper around a
+// `std::ostream`, with support to taking in tokens and getting their spellings
+// from a `DisplayManager`.
+class ErrorStream {
+ public:
+  ErrorStream(const ErrorStream &) = default;
+  ErrorStream(ErrorStream &&) noexcept = default;
+
+  // Stream in a token.
+  const ErrorStream &operator<<(const Token &token) const;
+
+  const ErrorStream &operator<<(const DisplayRange &range) const;
+
+  template <typename T1, typename... Rest>
+  const ErrorStream &operator<<(std::variant<T1, Rest...> options) const {
+    std::visit(
+        [=](auto &&arg) {
+          DisplayRange range = arg.SpellingRange();
+          (*this) << range;
+        },
+        options);
+    return *this;
+  }
+
+  struct node_tag {};
+  struct not_node_tag {};
+
+  static inline constexpr node_tag *kNode = nullptr;
+  static inline constexpr not_node_tag *kNotNode = nullptr;
+
+  template <typename T, typename std::enable_if<
+                            std::is_convertible_v<T *, parse::ParsedNode<T> *>,
+                            node_tag *>::type = kNode>
+  inline const ErrorStream &operator<<(T node) const {
+    (*this) << node.SpellingRange();
+    return *this;
+  }
+
+  template <typename T, typename std::enable_if<
+                            !std::is_convertible_v<T *, parse::ParsedNode<T> *>,
+                            not_node_tag *>::type = kNotNode>
+  inline const ErrorStream &operator<<(T data) const {
+    (*os) << data;
+    return *this;
+  }
+
+ private:
+  friend class Error;
+  friend class Note;
+
+  inline explicit ErrorStream(std::ostream *os_, const DisplayManager &dm_)
+      : os(os_),
+        dm(dm_) {}
+
+  std::ostream *const os;
+  const DisplayManager &dm;
+};
+
+class ErrorImpl;
+
+// A note is an addendum to an error that adds additional context. It is fully
+// owned by its corresponding error.
+class Note {
+ public:
+  template <typename T>
+  inline ErrorStream operator<<(T val) const {
+    return Stream() << val;
+  }
+
+ private:
+  friend class Error;
+
+  inline Note(ErrorImpl *impl_) : impl(impl_) {}
+
+  ErrorStream Stream(void) const;
+
+  ErrorImpl *const impl;
+};
+
+// Represents an error that was discovered during parsing or semantic analysis.
+class Error {
+ public:
+  ~Error(void);
+
+  // An error with no position information.
+  explicit Error(const DisplayManager &dm);
+
+  // An error message related to a line:column offset.
+  Error(const DisplayManager &dm, const DisplayPosition &pos);
+
+  // An error message related to a highlighted range of tokens.
+  Error(const DisplayManager &dm, const DisplayRange &range);
+
+  // An error message related to a highlighted range of tokens, with one
+  // character in particular being referenced.
+  Error(const DisplayManager &dm, const DisplayRange &range,
+        const DisplayPosition &pos_in_range);
+
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced.
+  Error(const DisplayManager &dm, const DisplayRange &range,
+        const DisplayRange &sub_range);
+
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced, where the error itself is at
+  // `pos_in_range`.
+  Error(const DisplayManager &dm, const DisplayRange &range,
+        const DisplayRange &sub_range, const DisplayPosition &pos_in_range);
+
+  template <typename T>
+  inline ErrorStream operator<<(T val) const {
+    return Stream() << val;
+  }
+
+  // Default color scheme for logging.
+  static const ErrorColorScheme kDefaultColorScheme;
+
+  // Render the formatted error to a stream, along with any attached notes.
+  void Render(std::ostream &os,
+              const ErrorColorScheme &color_scheme = kDefaultColorScheme) const;
+
+  // Attach an empty to the the error message.
+  ::hyde::Note Note(void) const;
+
+  // Attach a note to the original error.
+  ::hyde::Note Note(const DisplayPosition &pos) const;
+
+  // An note related to a highlighted range of tokens.
+  ::hyde::Note Note(const DisplayRange &range) const;
+
+  // A note related to a highlighted range of tokens, with one
+  // character in particular being referenced.
+  ::hyde::Note Note(const DisplayRange &range,
+                    const DisplayPosition &pos_in_range) const;
+
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced.
+  ::hyde::Note Note(const DisplayRange &range,
+                    const DisplayRange &sub_range) const;
+
+ private:
+  Error(void) = delete;
+
+  ErrorStream Stream(void) const;
+
+  std::shared_ptr<ErrorImpl> impl;
+};
+
+// Keeps track of a log of errors.
+class ErrorLog {
+ public:
+  ~ErrorLog(void);
+
+  explicit ErrorLog(const DisplayManager &dm_);
+
+  // An error message related to a line:column offset.
+  void Append(Error error) const;
+
+  // An error message related to a line:column offset.
+  Error Append(const DisplayPosition &pos) const;
+
+  // An error message related to a highlighted range of tokens.
+  Error Append(const DisplayRange &range) const;
+
+  // An error message related to a highlighted range of tokens, with one
+  // character in particular being referenced.
+  Error Append(const DisplayRange &range,
+               const DisplayPosition &pos_in_range) const;
+
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced.
+  Error Append(const DisplayRange &range, const DisplayRange &sub_range) const;
+
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced, where the error itself is at
+  // `pos_in_range`.
+  Error Append(const DisplayRange &range, const DisplayRange &sub_range,
+               const DisplayPosition &pos_in_range) const;
+
+  // Check if the log is empty.
+  bool IsEmpty(void) const;
+
+  // Returns the number of errors in the log.
+  unsigned Size(void) const;
+
+  // Render the formatted errors to a stream, along with any attached notes.
+  void Render(std::ostream &os, const ErrorColorScheme &color_scheme =
+                                    Error::kDefaultColorScheme) const;
+
+ private:
+  class Impl;
+
+  std::shared_ptr<Impl> impl;
+};
+
+class ParserImpl;
+
+// Manages all module parse trees and their memory.
+class Parser {
+ public:
+  ~Parser(void);
+
+  explicit Parser(const DisplayManager &display_manager,
+                  const ErrorLog &error_log);
+
+  // Parse a buffer.
+  //
+  // NOTE(pag): `data` must remain valid for the lifetime of the parser's
+  //            `display_manager`.
+  std::optional<ParsedModule>
+  ParseBuffer(std::string_view data, const DisplayConfiguration &config) const;
+
+  // Parse a file, specified by its path.
+  std::optional<ParsedModule>
+  ParsePath(std::string_view path, const DisplayConfiguration &config) const;
+
+  // Parse an input stream.
+  //
+  // NOTE(pag): `is` must remain a valid reference for the lifetime of the
+  //            parser's `display_manager`.
+  std::optional<ParsedModule>
+  ParseStream(std::istream &is, const DisplayConfiguration &config) const;
+
+  // Add a directory as a search path for modules.
+  void AddModuleSearchPath(std::string_view path) const;
+
+  enum IncludeSearchPathKind : unsigned { kSystemInclude, kUserInclude };
+
+  // Add a directory as a search path for includes.
+  void AddIncludeSearchPath(std::string_view path,
+                            IncludeSearchPathKind kind) const;
+
+ private:
+  Parser(void) = delete;
+
+  std::unique_ptr<ParserImpl> impl;
+};
+
+// An iterator for iterating over all transitively imported modules. This
+// iterates in the order of which module declarations are resolved, i.e. from
+// the deepest, earlier module, all the way out to the root module (last).
+class ParsedModuleIterator {
+ public:
+  class Impl;
+  class Iterator;
+
+  explicit ParsedModuleIterator(const ParsedModule &module);
+
+  Iterator begin(void) const;
+  Iterator end(void) const;
+
+ private:
+  ParsedModuleIterator(void) = delete;
+
+  const ParsedModule impl;
+};
+
+class ParsedModuleIterator::Iterator {
+ public:
+  ParsedModule operator*(void) const;
+
+  inline bool operator!=(const Iterator &that) const {
+    return index != that.index;
+  }
+
+  inline Iterator &operator++(void) {
+    ++index;
+    return *this;
+  }
+
+  inline Iterator operator++(int) {
+    auto ret = *this;
+    ++index;
+    return ret;
+  }
+
+ private:
+  friend class ParsedModuleIterator;
+
+  inline Iterator(const ParsedModule &impl_, unsigned index_)
+      : impl(impl_),
+        index(index_) {}
+
+  Iterator(void) = delete;
+
+  const ParsedModule impl;
+  unsigned index;
+};
+
+OutputStream &operator<<(OutputStream &os, TypeKind type);
+OutputStream &operator<<(OutputStream &os, TypeLoc type);
+OutputStream &operator<<(OutputStream &os, ParsedLiteral val);
+OutputStream &operator<<(OutputStream &os, ParsedParameter var);
+OutputStream &operator<<(OutputStream &os, ParsedVariable var);
+OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl);
+OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl);
+OutputStream &operator<<(OutputStream &os, ParsedPredicate pred);
+OutputStream &operator<<(OutputStream &os, ParsedAssignment assign);
+OutputStream &operator<<(OutputStream &os, ParsedComparison compare);
+OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate);
+OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause);
+OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause);
+OutputStream &operator<<(OutputStream &os, ParsedClause clause);
+OutputStream &operator<<(OutputStream &os, ParsedInclude include);
+OutputStream &operator<<(OutputStream &os, ParsedInline code);
+OutputStream &operator<<(OutputStream &os, ParsedModule module);
+
 }  // namespace hyde
+
 
 namespace std {
 

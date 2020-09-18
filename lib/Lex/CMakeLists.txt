@@ -1,10 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 set(Lex_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/Format.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/Lexer.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/StringPool.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex/Token.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Lex.h"
 )
 
 set(Lex_SRCS

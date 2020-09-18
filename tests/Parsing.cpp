@@ -2,8 +2,7 @@
 #include <string>
 
 #include "drlojekyll/Display.h"
-#include "drlojekyll/Parse/ErrorLog.h"
-#include "drlojekyll/Parse/Parser.h"
+#include "drlojekyll/Parse.h"
 #include "UnitTests.h"
 
 namespace fs = std::filesystem;

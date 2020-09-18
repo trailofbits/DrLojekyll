@@ -1,13 +1,10 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/DataFlow/Query.h>
+#include <drlojekyll/DataFlow.h>
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Format.h>
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Parse/Parse.h>
-#include <drlojekyll/Util/DisjointSet.h>
-#include <drlojekyll/Util/EqualitySet.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
+#include <drlojekyll/Util.h>
 
 #include <memory>
 #include <set>

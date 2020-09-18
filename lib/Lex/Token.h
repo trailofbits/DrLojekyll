@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Lex/Token.h>
+#include <drlojekyll/Lex.h>
 
 namespace hyde {
 namespace lex {

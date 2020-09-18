@@ -6,10 +6,82 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 namespace hyde {
 
+/// Rotate `val` to the right `rot` positions.
+inline static uint64_t RotateRight64(uint64_t val, unsigned rot) {
+// NOTE: if we ever move to C++20, there are builtin rotation functions in the
+//       standard library, which we should use instead.
+#ifdef __has_builtin
+#  if !__has_builtin(__builtin_rotateright64)
+#    define HYDE_NEEDS_ROR64 1
+#  else
+#    define HYDE_NEEDS_ROR64 0
+#  endif
+#elif !defined(__clang__)
+#  define HYDE_NEEDS_ROR64 1
+#endif
+
+#if HYDE_NEEDS_ROR64
+  if (!rot) return val;
+  return (val >> rot) | (val << (64u - (rot % 64u)));
+#else
+  return __builtin_rotateright64(val, rot);
+#endif
+}
+
+// Implements union-find.
+class DisjointSet {
+ private:
+  DisjointSet *parent;
+
+ public:
+  DisjointSet(unsigned id_ = 0);
+
+  static void Reparent(DisjointSet *set) {
+    set->parent = set;
+  }
+
+  DisjointSet *Find(void);
+
+  template <typename T>
+  inline T *FindAs(void) {
+    return reinterpret_cast<T *>(Find());
+  }
+
+  static DisjointSet *Union(DisjointSet *lhs, DisjointSet *rhs);
+
+  // Union `child` into `parent`, ignoring the default rule of preferring
+  // to union by
+  static void UnionInto(DisjointSet *child, DisjointSet *parent);
+
+  const unsigned id;
+};
+
+// Simple set for managing equality checks.
+class EqualitySet {
+ public:
+  EqualitySet(void);
+  ~EqualitySet(void);
+
+  void Insert(const void *a_, const void *b_) noexcept;
+  void Remove(const void *a_, const void *b_) noexcept;
+  bool Contains(const void *a_, const void *b_) const noexcept;
+  void Clear(void) noexcept;
+
+ private:
+  EqualitySet(const EqualitySet &) = delete;
+  EqualitySet &operator=(const EqualitySet &) = delete;
+
+  class Impl;
+  std::unique_ptr<Impl> impl;
+};
+
+// TODO(blarsen): all the use-def stuff should probably go somewhere else than
+//                in the Util library?
 class User {
  public:
   template <typename T>
@@ -889,7 +961,109 @@ struct DefinedNodeRange {
   const DefinedNodeIterator<T> end_;
 };
 
+template <typename T>
+class Node;
+
+template <typename T>
+class NodeIterator;
+
+template <typename T>
+class NodeRange;
+
+// Used for traversing nodes that are arranged in a list. Class based so that
+// the use of `Next` and `Prev` are privileged.
+class NodeTraverser {
+ private:
+  template <typename T>
+  friend class NodeIterator;
+
+  static void *Next(void *, intptr_t);
+};
+
+// Iterator over a chain of nodes.
+template <typename T>
+class NodeIterator {
+ public:
+  NodeIterator(const NodeIterator<T> &) noexcept = default;
+  NodeIterator(NodeIterator<T> &&) noexcept = default;
+
+  NodeIterator<T> &operator=(const NodeIterator<T> &) noexcept = default;
+  NodeIterator<T> &operator=(NodeIterator<T> &&) noexcept = default;
+
+  T operator*(void) const {
+    return T(impl);
+  }
+
+  T operator->(void) const = delete;
+
+  bool operator==(NodeIterator<T> that) const {
+    return impl == that.impl;
+  }
+
+  bool operator!=(NodeIterator<T> that) const {
+    return impl != that.impl;
+  }
+
+  inline NodeIterator<T> &operator++(void) {
+    impl = reinterpret_cast<Node<T> *>(NodeTraverser::Next(impl, offset));
+    return *this;
+  }
+
+  inline NodeIterator<T> operator++(int) const {
+    auto ret = *this;
+    impl = reinterpret_cast<Node<T> *>(NodeTraverser::Next(impl, offset));
+    return ret;
+  }
+
+ private:
+  friend class NodeRange<T>;
+
+  inline explicit NodeIterator(Node<T> *impl_, intptr_t offset_)
+      : impl(impl_),
+        offset(offset_) {}
+
+  NodeIterator(void) = default;
+
+  Node<T> *impl{nullptr};
+  intptr_t offset{0};
+};
+
+template <typename T>
+class NodeRange {
+ public:
+  NodeRange(void) = default;
+
+  inline explicit NodeRange(Node<T> *impl_, intptr_t offset_)
+      : impl(impl_),
+        offset(offset_) {}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+  template <typename U>
+  inline explicit NodeRange(Node<U> *impl_)
+      : impl(impl_),
+        offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
+#pragma GCC diagnostic pop
+
+  inline NodeIterator<T> begin(void) const {
+    return NodeIterator<T>(impl, offset);
+  }
+
+  inline NodeIterator<T> end(void) const {
+    return {};
+  }
+
+ private:
+  template <typename U>
+  friend class Node;
+
+  Node<T> *impl{nullptr};
+  intptr_t offset{0};
+};
+
 }  // namespace hyde
+
+
 namespace std {
 
 template <typename T>

@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Lex/StringPool.h>
+#include <drlojekyll/Lex.h>
 
 #include <string>
 #include <vector>

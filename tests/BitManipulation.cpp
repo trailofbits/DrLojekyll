@@ -1,4 +1,4 @@
-#include <drlojekyll/Util/BitManipulation.h>
+#include <drlojekyll/Util.h>
 
 #include "UnitTests.h"
 

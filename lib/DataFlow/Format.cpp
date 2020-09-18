@@ -1,9 +1,9 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/DataFlow/Format.h>
+#include <drlojekyll/DataFlow.h>
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Format.h>
-#include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
 
 #define DEBUG(...)
 

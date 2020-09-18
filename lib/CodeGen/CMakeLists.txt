@@ -1,7 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 set(CodeGen_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/BAM.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen.h"
 )
 
 set(CodeGen_SRCS

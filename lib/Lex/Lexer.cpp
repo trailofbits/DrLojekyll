@@ -1,8 +1,7 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Lexer.h>
-#include <drlojekyll/Lex/StringPool.h>
+#include <drlojekyll/Lex.h>
 
 #include <cctype>
 #include <string>

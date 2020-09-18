@@ -1,13 +1,7 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 set(Parse_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Error.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/ErrorLog.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Format.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/ModuleIterator.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parse.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Parser.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse/Type.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Parse.h"
 )
 
 set(Parse_SRCS

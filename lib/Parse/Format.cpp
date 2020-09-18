@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Lex/Format.h>
-#include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
 
 #include <cassert>
 

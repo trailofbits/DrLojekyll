@@ -1,13 +1,13 @@
-// Copyright 2019, Trail of Bits. All rights reserved.
+// Copyright 2020, Trail of Bits. All rights reserved.
 
 #pragma once
 
 #include <drlojekyll/Display.h>
 
-namespace hyde {
+#include <memory>
+#include <string_view>
 
-class Lexer;
-class ParserImpl;
+namespace hyde {
 
 // The type of a token.
 enum class Lexeme : uint8_t {
@@ -343,6 +343,54 @@ class Token {
 
   DisplayPosition position;
   uint64_t opaque_data{0};
+};
+
+OutputStream &operator<<(OutputStream &os, Token tok);
+
+// Basic string pool implementation. Used for body_variables, atoms, and strings.
+class StringPool {
+ public:
+  ~StringPool(void);
+  StringPool(void);
+
+  // Intern a code block into the pool, returning its ID.
+  unsigned InternCode(std::string_view code) const;
+
+  // Read out some code block given its ID.
+  bool TryReadCode(unsigned id, std::string_view *code_out) const;
+
+  // Intern a string into the pool, returning its offset in the pool.
+  unsigned InternString(std::string_view data, bool force = false) const;
+
+  // Read out some string given its index and length.
+  bool TryReadString(unsigned index, unsigned len,
+                     std::string_view *data_out) const;
+
+ private:
+  class Impl;
+
+  std::shared_ptr<Impl> impl;
+};
+
+class LexerImpl;
+
+// Reads one or more characters from a display, and then
+class Lexer {
+ public:
+  ~Lexer(void);
+
+  Lexer(void) = default;
+
+  // Read tokens from `reader`.
+  void ReadFromDisplay(const DisplayReader &reader);
+
+  // Try to read the next token from the lexer. If successful, returns `true`
+  // and updates `*tok_out`. If no more tokens can be produced, then `false` is
+  // returned. Error conditions are signalled via special lexemes.
+  bool TryGetNextToken(const StringPool &string_pool, Token *tok_out);
+
+ private:
+  std::shared_ptr<LexerImpl> impl;
 };
 
 }  // namespace hyde

@@ -3,7 +3,8 @@
 #pragma once
 
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Parse/Error.h>
+#include <drlojekyll/Lex.h>
+#include <drlojekyll/Parse.h>
 
 #include <cstddef>
 #include <sstream>

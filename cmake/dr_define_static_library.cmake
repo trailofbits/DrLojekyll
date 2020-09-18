@@ -50,6 +50,6 @@ function(dr_define_static_library libname)
       ARCHIVE
         DESTINATION "lib/${lower_project_name}"
       PUBLIC_HEADER
-        DESTINATION "include/${lower_project_name}/${libname}"
+        DESTINATION "include/${lower_project_name}"
     )
 endfunction()

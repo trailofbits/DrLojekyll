@@ -2,7 +2,7 @@
 
 #include "Optimize.h"
 
-#include <drlojekyll/Util/EqualitySet.h>
+#include <drlojekyll/Util.h>
 
 #include "Query.h"
 

@@ -1,6 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Util/DefUse.h>
+#include <drlojekyll/Util.h>
 
 namespace hyde {
 

@@ -1,13 +1,10 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/CodeGen/BAM.h>
-#include <drlojekyll/DataFlow/Format.h>
+#include <drlojekyll/CodeGen.h>
+#include <drlojekyll/DataFlow.h>
 #include <drlojekyll/Display.h>
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Parse/ModuleIterator.h>
-#include <drlojekyll/Parse/Parser.h>
-#include <drlojekyll/Version/Version.h>
+#include <drlojekyll/Parse.h>
+#include <drlojekyll/Version.h>
 
 #include <cassert>
 #include <cstdlib>

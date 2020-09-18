@@ -1,6 +1,6 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
-#include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse.h>
 
 #include "Query.h"
 
