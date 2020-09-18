@@ -12,6 +12,7 @@ Node<ProgramVectorClearRegion>::~Node(void) {}
 Node<ProgramVectorUniqueRegion>::~Node(void) {}
 Node<ProgramTableInsertRegion>::~Node(void) {}
 Node<ProgramTableJoinRegion>::~Node(void) {}
+Node<ProgramTableProductRegion>::~Node(void) {}
 Node<ProgramExistenceCheckRegion>::~Node(void) {}
 Node<ProgramTupleCompareRegion>::~Node(void) {}
 
@@ -56,6 +57,11 @@ Node<ProgramOperationRegion>::AsTableInsert(void) noexcept {
 
 Node<ProgramTableJoinRegion> *
 Node<ProgramOperationRegion>::AsTableJoin(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramTableProductRegion> *
+Node<ProgramOperationRegion>::AsTableProduct(void) noexcept {
   return nullptr;
 }
 
@@ -111,6 +117,11 @@ Node<ProgramTableJoinRegion>::AsTableJoin(void) noexcept {
   return this;
 }
 
+Node<ProgramTableProductRegion> *
+Node<ProgramTableProductRegion>::AsTableProduct(void) noexcept {
+  return this;
+}
+
 Node<ProgramVectorClearRegion> *
 Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
   return this;
@@ -122,6 +133,10 @@ Node<ProgramVectorUniqueRegion>::AsVectorUnique(void) noexcept {
 }
 
 bool Node<ProgramTableJoinRegion>::IsNoOp(void) const noexcept {
+  return !body || body->IsNoOp();
+}
+
+bool Node<ProgramTableProductRegion>::IsNoOp(void) const noexcept {
   return !body || body->IsNoOp();
 }
 

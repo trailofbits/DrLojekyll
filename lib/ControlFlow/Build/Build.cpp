@@ -4,9 +4,6 @@
 
 // IDEAS
 //
-//    - TODO: Find all constants used in the data flow and assign them to
-//            variables up-front in the function.
-//
 //    - born_on_same_day:
 //        -   We want both sides to contribute their data to the JOIN, but the
 //            actual execution of the JOIN should be deferred as a pipeline
@@ -214,6 +211,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   context.view_to_induction.clear();
   context.work_list.clear();
   context.view_to_work_item.clear();
+  context.product_vector.clear();
 
   for (auto receive : io.Receives()) {
     auto let = impl->operation_regions.CreateDerived<LET>(par);

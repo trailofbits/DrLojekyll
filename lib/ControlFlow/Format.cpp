@@ -91,7 +91,11 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kJoinPivots:
       os << "$pivots";
       break;
+    case VectorKind::kProductInput:
+      os << "$product";
+      break;
   }
+
   os << ':' << vec.Id();
   auto sep = "<";
   for (auto type_kind : vec.ColumnTypes()) {
@@ -289,6 +293,33 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os << os.Indent() << "cross-product\n";
+    os.PushIndent();
+    const auto tables = region.Tables();
+    for (auto i = 0u; i < tables.size(); ++i) {
+      auto table = tables[i];
+      auto vector = region.Vector(i);
+      auto outputs = region.OutputVariables(i);
+      os << os.Indent() << "from " << table << " and " << vector;
+      auto sep = " select {";
+      for (auto var : outputs) {
+        os << sep << var;
+        sep = ", ";
+      }
+      os << "}\n";
+    }
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-cross-product";
+  }
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
   os << os.Indent() << "induction\n";
   os.PushIndent();
@@ -360,6 +391,8 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramTableInsertRegion::From(region);
   } else if (region.IsTableJoin()) {
     os << ProgramTableJoinRegion::From(region);
+  } else if (region.IsTableProduct()) {
+    os << ProgramTableProductRegion::From(region);
   } else if (region.IsExistenceCheck()) {
     os << ProgramExistenceCheckRegion::From(region);
   } else if (region.IsTupleCompare()) {

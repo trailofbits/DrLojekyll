@@ -95,37 +95,13 @@ Program::Program(std::shared_ptr<ProgramImpl> impl_)
 
 Program::~Program(void) {}
 
-ProgramRegion::ProgramRegion(const ProgramExistenceCheckRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramLetBindingRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramVectorAppendRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramVectorClearRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramVectorUniqueRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramVectorLoopRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramTableInsertRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
-
-ProgramRegion::ProgramRegion(const ProgramTableJoinRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
 bool ProgramRegion::IsInduction(void) const noexcept {
@@ -140,6 +116,9 @@ bool ProgramRegion::IsParallel(void) const noexcept {
 }
 
 #define IS_OP(kind) \
+    ProgramRegion::ProgramRegion(const Program ## kind ## Region &region) \
+        : ProgramRegion(region.impl) {} \
+    \
     bool ProgramRegion::Is ## kind(void) const noexcept { \
       if (auto op = impl->AsOperation(); op) { \
         return op->As ## kind() != nullptr; \
@@ -155,6 +134,7 @@ IS_OP(VectorUnique)
 IS_OP(LetBinding)
 IS_OP(TableInsert)
 IS_OP(TableJoin)
+IS_OP(TableProduct)
 IS_OP(ExistenceCheck)
 IS_OP(TupleCompare)
 
@@ -196,6 +176,7 @@ OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)
 OPTIONAL_BODY(ProgramTableInsertRegion)
 OPTIONAL_BODY(ProgramTableJoinRegion)
+OPTIONAL_BODY(ProgramTableProductRegion)
 OPTIONAL_BODY(ProgramTupleCompareRegion)
 
 #undef OPTIONAL_BODY
@@ -216,6 +197,7 @@ FROM_OP(ProgramVectorClearRegion, AsVectorClear)
 FROM_OP(ProgramVectorUniqueRegion, AsVectorUnique)
 FROM_OP(ProgramTableInsertRegion, AsTableInsert)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
+FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 
 #undef FROM_OP
@@ -253,6 +235,8 @@ USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable, cond_vars
 USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
 USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
+USED_RANGE(ProgramTableProductRegion, Tables, DataTable, tables)
+USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vectors)
 
 #undef DEFINED_RANGE
 #undef USED_RANGE
@@ -275,12 +259,10 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kLoopOverJoinPivots:
     case ProgramOperation::kSortAndUniquePivotVector:
       return VectorUsage::kJoinPivots;
-    case ProgramOperation::kAppendProductInputToVector:
-    case ProgramOperation::kLoopOverProductInputVector:
+    case ProgramOperation::kAppendToProductInputVector:
+    case ProgramOperation::kSortAndUniqueProductInputVector:
+    case ProgramOperation::kClearProductInputVector:
       return VectorUsage::kProductInputVector;
-    case ProgramOperation::kAppendProductOutputToVector:
-    case ProgramOperation::kLoopOverProductOutputVector:
-      return VectorUsage::kProductOutputVector;
     default:
       assert(false);
       return VectorUsage::kInvalid;
@@ -370,6 +352,7 @@ TypeKind DataVariable::Type(void) const noexcept {
     case VariableRole::kLetBinding:
     case VariableRole::kJoinPivot:
     case VariableRole::kJoinNonPivot:
+    case VariableRole::kProductOutput:
       assert(!!impl->query_column);
       return impl->query_column->Type().Kind();
   }
@@ -502,6 +485,20 @@ ProgramTableJoinRegion::PivotVariables(unsigned table_index) const {
 
 DefinedNodeRange<DataVariable>
 ProgramTableJoinRegion::OutputVariables(unsigned table_index) const {
+  assert(table_index < impl->output_vars.size());
+  const auto &vars = impl->output_vars[table_index];
+  return {DefinedNodeIterator<DataVariable>(vars.begin()),
+          DefinedNodeIterator<DataVariable>(vars.end())};
+}
+
+// The index used by the Nth table scan.
+DataVector ProgramTableProductRegion::Vector(unsigned table_index) const noexcept {
+  assert(table_index < impl->input_vectors.Size());
+  return DataVector(impl->input_vectors[table_index]);
+}
+
+DefinedNodeRange<DataVariable>
+ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
   assert(table_index < impl->output_vars.size());
   const auto &vars = impl->output_vars[table_index];
   return {DefinedNodeIterator<DataVariable>(vars.begin()),

@@ -69,9 +69,12 @@ class Context {
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
   std::unordered_map<QueryView, INDUCTION *> view_to_induction;
 
-  // Boolean variable to test if we've ever produced anything for this product,
-  // and thus should push data through.
-  std::unordered_map<QueryView, VAR *> product_guard_var;
+  // Maps tables to their product input vectors.
+  std::unordered_map<TABLE *, VECTOR *> product_vector;
+
+//  // Boolean variable to test if we've ever produced anything for this product,
+//  // and thus should push data through.
+//  std::unordered_map<QueryView, VAR *> product_guard_var;
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;

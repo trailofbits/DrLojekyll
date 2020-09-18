@@ -67,6 +67,7 @@ class ProgramVectorLoopRegion;
 class ProgramVectorUniqueRegion;
 class ProgramTableInsertRegion;
 class ProgramTableJoinRegion;
+class ProgramTableProductRegion;
 class ProgramTupleCompareRegion;
 
 // A generic region of code nested inside of a procedure.
@@ -83,6 +84,8 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramVectorUniqueRegion &);
   ProgramRegion(const ProgramTableInsertRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
+  ProgramRegion(const ProgramTableProductRegion &);
+  ProgramRegion(const ProgramTupleCompareRegion &);
 
   bool IsInduction(void) const noexcept;
   bool IsVectorLoop(void) const noexcept;
@@ -92,6 +95,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsLetBinding(void) const noexcept;
   bool IsTableInsert(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
+  bool IsTableProduct(void) const noexcept;
   bool IsSeries(void) const noexcept;
   bool IsExistenceCheck(void) const noexcept;
   bool IsParallel(void) const noexcept;
@@ -110,6 +114,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramVectorUniqueRegion;
   friend class ProgramTableInsertRegion;
   friend class ProgramTableJoinRegion;
+  friend class ProgramTableProductRegion;
   friend class ProgramTupleCompareRegion;
 
   using program::ProgramNode<ProgramRegion>::ProgramNode;
@@ -144,10 +149,9 @@ class ProgramParallelRegion
   using program::ProgramNode<ProgramParallelRegion>::ProgramNode;
 };
 
-
 enum class VariableRole : int {
   kConditionRefCount, kConstant, kVectorVariable, kLetBinding, kJoinPivot,
-  kJoinNonPivot
+  kJoinNonPivot, kProductOutput
 };
 
 // A variable in the program.
@@ -179,6 +183,7 @@ enum class VectorKind : unsigned {
   kInput,
   kInduction,
   kJoinPivots,
+  kProductInput
 };
 
 // A column in a table.
@@ -297,7 +302,6 @@ enum class VectorUsage : unsigned {
   kUnionInputVector,
   kJoinPivots,
   kProductInputVector,
-  kProductOutputVector,
   kProcedureInputVector,
 };
 
@@ -376,7 +380,8 @@ class ProgramTableInsertRegion
   using program::ProgramNode<ProgramTableInsertRegion>::ProgramNode;
 };
 
-// Perform an equi-join between two or more views, and iterate over the results.
+// Perform an equi-join between two or more tables, and iterate over the
+// results.
 class ProgramTableJoinRegion
     : public program::ProgramNode<ProgramTableJoinRegion> {
  public:
@@ -407,6 +412,37 @@ class ProgramTableJoinRegion
   friend class ProgramRegion;
 
   using program::ProgramNode<ProgramTableJoinRegion>::ProgramNode;
+};
+
+// Perform an cross-product between two or more tables, and iterate
+// over the results.
+class ProgramTableProductRegion
+    : public program::ProgramNode<ProgramTableProductRegion> {
+ public:
+  static ProgramTableProductRegion From(ProgramRegion) noexcept;
+
+  // The body that conditionally executes for each produced result. Variable
+  // bindings are applied.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+  // The tables that are joined together. The same table may appear more than
+  // once.
+  UsedNodeRange<DataTable> Tables(void) const;
+
+  // The input vectors that need to be merged with all entries of the tables
+  // that don't correspond to the input vectors themselves.
+  UsedNodeRange<DataVector> Vectors(void) const;
+
+  // The index used by the Nth table scan.
+  DataVector Vector(unsigned table_index) const noexcept;
+
+  // These are the output variables from the Nth table scan.
+  DefinedNodeRange<DataVariable> OutputVariables(unsigned table_index) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramTableProductRegion>::ProgramNode;
 };
 
 // An inductive area in a program. An inductive area is split up into three

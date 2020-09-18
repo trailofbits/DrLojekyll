@@ -22,6 +22,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramTableInsertRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region);
+OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region);

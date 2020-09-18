@@ -273,11 +273,10 @@ enum class ProgramOperation {
   kCompareTuples,
 
   // Used to implement the cross-product of some tables.
-  kLoopOverTable,
-  kAppendProductInputToVector,
-  kLoopOverProductInputVector,
-  kAppendProductOutputToVector,
-  kLoopOverProductOutputVector,
+  kCrossProduct,
+  kAppendToProductInputVector,
+  kSortAndUniqueProductInputVector,
+  kClearProductInputVector,
 
   // Loop over a vector of inputs. The format of the vector is based off of
   // the variables in `variables`. The region `body` is executed for each
@@ -330,6 +329,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
+  virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
   virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
   virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
 
@@ -514,6 +514,32 @@ class Node<ProgramTableJoinRegion> final
 };
 
 using TABLEJOIN = Node<ProgramTableJoinRegion>;
+
+// A cross product between two or more tables.
+template <>
+class Node<ProgramTableProductRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_)
+      : Node<ProgramOperationRegion>(
+            parent_, ProgramOperation::kCrossProduct),
+        query_join(query_join_),
+        tables(this),
+        input_vectors(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept override;
+
+  const QueryJoin query_join;
+
+  UseList<TABLE> tables;
+  UseList<VECTOR> input_vectors;
+  std::vector<DefList<VAR>> output_vars;
+};
+
+using TABLEPRODUCT = Node<ProgramTableProductRegion>;
 
 // Comparison between two tuples.
 template <>
