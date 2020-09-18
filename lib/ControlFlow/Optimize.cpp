@@ -34,19 +34,74 @@ static bool OptimizeImpl(PARALLEL *par) {
     return true;
 
   // Erase any empty child regions.
-  } else {
-    auto changed = false;
-    par->regions.RemoveIf([&changed] (REGION *child_region) {
-      if (child_region->IsNoOp()) {
-        child_region->parent = nullptr;
-        changed = true;
-        return true;
-      } else {
-        return false;
-      }
-    });
-    return changed;
   }
+  auto changed = false;
+  par->regions.RemoveIf([&changed] (REGION *child_region) {
+    if (child_region->IsNoOp()) {
+      child_region->parent = nullptr;
+      changed = true;
+      return true;
+    } else {
+      return false;
+    }
+  });
+
+  if (changed) {
+    return true;
+  }
+
+  // The PARALLEL node is "canonical" as far as we can tell, so check to see
+  // if any of its child regions might be mergeable.
+
+  std::unordered_map<unsigned, std::vector<REGION *>> grouped_regions;
+  for (auto region : par->regions) {
+    unsigned index = 0u;
+    if (region->AsSeries()) {
+      index = ~0u;
+    } else if (region->AsInduction()) {
+      index = ~0u - 1u;
+    } else if (auto op = region->AsOperation(); op) {
+      index = static_cast<unsigned>(op->op);
+
+    // Don't bother trying to merge parallel regions until they've been
+    // flattened completely. It is also impossible to put a procedure inside
+    // of a parallel region.
+    } else {
+      return false;
+    }
+
+    grouped_regions[index].push_back(region);
+  }
+
+  // Go remove duplicate child regions.
+  EqualitySet eq;
+  for (const auto &[index, similar_regions] : grouped_regions) {
+    (void) index;
+    const auto num_similar_regions = similar_regions.size();
+    for (auto i = 1u; i < num_similar_regions; ++i) {
+      REGION *region1 = similar_regions[i - 1u];
+      if (!region1->parent) {
+        continue;  // Already removed;
+      }
+
+      for (auto j = i; j < num_similar_regions; ++j) {
+        REGION *region2 = similar_regions[j];
+        if (!region2->parent) {
+          continue;  // Already removed.
+        }
+
+        if (region1->Equals(eq, region2)) {
+          assert(region1 != region2);
+          par->regions.RemoveIf([=] (REGION *r) { return r == region2; });
+          region2->parent = nullptr;
+          changed = true;
+        }
+        eq.Clear();
+      }
+    }
+  }
+
+  return changed;
 }
 
 // Clear out empty output regions of inductions.

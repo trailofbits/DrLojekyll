@@ -52,6 +52,13 @@ bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
   return false;
 }
 
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramRegion>::Equals(
+    EqualitySet &, Node<ProgramRegion> *) const noexcept {
+  return false;
+}
+
 // Return the nearest enclosing region that is itself enclosed by an
 // induction.
 Node<ProgramRegion> *
