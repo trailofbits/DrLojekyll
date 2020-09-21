@@ -1,13 +1,12 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/ControlFlow/Format.h>
-
-#include "Program.h"
-
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
+
+#include "Program.h"
 
 namespace hyde {
 namespace {
@@ -82,18 +81,10 @@ OutputStream &operator<<(OutputStream &os, DataTable table) {
 OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
-    case VectorKind::kInput:
-      os << "$input";
-      break;
-    case VectorKind::kInduction:
-      os << "$induction";
-      break;
-    case VectorKind::kJoinPivots:
-      os << "$pivots";
-      break;
-    case VectorKind::kProductInput:
-      os << "$product";
-      break;
+    case VectorKind::kInput: os << "$input"; break;
+    case VectorKind::kInduction: os << "$induction"; break;
+    case VectorKind::kJoinPivots: os << "$pivots"; break;
+    case VectorKind::kProductInput: os << "$product"; break;
   }
 
   os << ':' << vec.Id();
@@ -108,9 +99,8 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
 OutputStream &operator<<(OutputStream &os, DataVariable var) {
   os << '@';
-  if (auto name = var.Name();
-      name.Lexeme() == Lexeme::kIdentifierAtom ||
-      name.Lexeme() == Lexeme::kIdentifierVariable) {
+  if (auto name = var.Name(); name.Lexeme() == Lexeme::kIdentifierAtom ||
+                              name.Lexeme() == Lexeme::kIdentifierVariable) {
     os << name << ':';
   }
   os << var.Id();
@@ -433,7 +423,7 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
 OutputStream &operator<<(OutputStream &os, Program program) {
   auto sep = "";
   for (auto var : program.Constants()) {
-    os << sep << os.Indent() << "const " << var.Type() << ' '<< var << " = "
+    os << sep << os.Indent() << "const " << var.Type() << ' ' << var << " = "
        << *(var.Value());
     sep = "\n\n";
   }

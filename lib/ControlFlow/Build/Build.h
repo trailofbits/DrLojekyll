@@ -2,11 +2,11 @@
 
 #pragma once
 
-#include <set>
-#include <unordered_set>
-
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DefUse.h>
+
+#include <set>
+#include <unordered_set>
 
 #include "../Program.h"
 
@@ -34,8 +34,7 @@ class WorkItem {
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
 
-  explicit WorkItem(unsigned order_)
-      : order(order_) {}
+  explicit WorkItem(unsigned order_) : order(order_) {}
 
   const unsigned order;
 };
@@ -46,19 +45,22 @@ using WorkItemPtr = std::unique_ptr<WorkItem>;
 // control flow representation.
 class Context {
  public:
-
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
 
   // Set of successors of a `QueryMerge` that may lead back to the merge
   // (inductive) and never lead back to the merge (noninductive), respectively.
-  std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_successors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_successors;
+  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+      inductive_successors;
+  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+      noninductive_successors;
 
   // Set of predecessors of a `QueryMerge` whose data transitively depends upon
   // an inductive
-  std::unordered_map<QueryView, std::unordered_set<QueryView>> inductive_predecessors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>> noninductive_predecessors;
+  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+      inductive_predecessors;
+  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+      noninductive_predecessors;
 
   // Set of regions that execute eagerly. In practice this means that these
   // regions are directly needed in order to produce an output message.
@@ -72,9 +74,9 @@ class Context {
   // Maps tables to their product input vectors.
   std::unordered_map<TABLE *, VECTOR *> product_vector;
 
-//  // Boolean variable to test if we've ever produced anything for this product,
-//  // and thus should push data through.
-//  std::unordered_map<QueryView, VAR *> product_guard_var;
+  //  // Boolean variable to test if we've ever produced anything for this product,
+  //  // and thus should push data through.
+  //  std::unordered_map<QueryView, VAR *> product_guard_var;
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
@@ -83,9 +85,8 @@ class Context {
 
 // Build an eager region. This guards the execution of the region in
 // conditionals if the view itself is conditional.
-void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                      QueryView view, Context &context, OP *parent,
-                      TABLE *last_model);
+void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
+                      Context &context, OP *parent, TABLE *last_model);
 
 // Build an eager region for a `QueryMerge` that is part of an inductive
 // loop. This is interesting because we use a WorkItem as a kind of "barrier"
@@ -125,8 +126,8 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
 // usually some kind of loop. The successors execute in parallel.
 template <typename List>
 void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
-                                Context &context, OP *parent,
-                                List &&successors, TABLE *last_model) {
+                                Context &context, OP *parent, List &&successors,
+                                TABLE *last_model) {
   const auto par = impl->parallel_regions.Create(parent);
   UseRef<REGION>(parent, par).Swap(parent->body);
 
@@ -135,8 +136,8 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
     let->ExecuteAlongside(impl, par);
 
-    succ_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole role,
-                              std::optional<QueryColumn> out_col) {
+    succ_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+                             std::optional<QueryColumn> out_col) {
       switch (role) {
         case InputColumnRole::kPassThrough:
         case InputColumnRole::kCopied:
@@ -162,8 +163,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
         case InputColumnRole::kIndexValue:
         case InputColumnRole::kCompareLHS:
         case InputColumnRole::kCompareRHS:
-        case InputColumnRole::kAggregatedColumn:
-          break;
+        case InputColumnRole::kAggregatedColumn: break;
       }
     });
 

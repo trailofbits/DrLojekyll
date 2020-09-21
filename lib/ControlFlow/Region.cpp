@@ -54,8 +54,8 @@ bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming).
-bool Node<ProgramRegion>::Equals(
-    EqualitySet &, Node<ProgramRegion> *) const noexcept {
+bool Node<ProgramRegion>::Equals(EqualitySet &,
+                                 Node<ProgramRegion> *) const noexcept {
   return false;
 }
 
@@ -72,8 +72,8 @@ Node<ProgramRegion>::NearestRegionEnclosedByInduction(void) noexcept {
 }
 
 // Find an ancestor node that's shared by both `this` and `that`.
-Node<ProgramRegion> *Node<ProgramRegion>::FindCommonAncestor(
-    Node<ProgramRegion> *that) noexcept {
+Node<ProgramRegion> *
+Node<ProgramRegion>::FindCommonAncestor(Node<ProgramRegion> *that) noexcept {
   auto self = this;
   auto self_depth = self->Depth();
   auto that_depth = that->Depth();
@@ -197,8 +197,8 @@ VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
 VAR *Node<ProgramRegion>::VariableForRec(QueryColumn col) {
   auto &var = col_id_to_var[col.Id()];
   if (!var && this != parent) {
-   var = parent->VariableForRec(col);
-   assert(var != nullptr);
+    var = parent->VariableForRec(col);
+    assert(var != nullptr);
   }
   return var;
 }

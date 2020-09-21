@@ -49,7 +49,6 @@ class UseListIterator;
 template <typename T>
 class Use {
  public:
-
 #ifndef NDEBUG
   inline ~Use(void) {
     def_being_used = nullptr;
@@ -202,9 +201,8 @@ class UseList {
       }
     }
 
-    auto it = std::remove_if(uses.begin(), uses.end(), [] (Use<T> *use) {
-      return !use;
-    });
+    auto it = std::remove_if(uses.begin(), uses.end(),
+                             [](Use<T> *use) { return !use; });
 
     uses.erase(it, uses.end());
   }
@@ -228,9 +226,8 @@ class UseList {
     }
 
     RemoveNull();
-    std::sort(uses.begin(), uses.end(), [] (Use<T> *a, Use<T> *b) {
-      return a->index < b->index;
-    });
+    std::sort(uses.begin(), uses.end(),
+              [](Use<T> *a, Use<T> *b) { return a->index < b->index; });
     Reindex();
   }
 

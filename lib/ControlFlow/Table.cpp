@@ -49,8 +49,8 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
       table(this, table_) {}
 
 // Get or create a table in the program.
-Node<DataTable> *Node<DataTable>::GetOrCreate(
-    ProgramImpl *impl, QueryView view) {
+Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
+                                              QueryView view) {
 
   std::vector<QueryColumn> cols;
   if (view.IsInsert()) {
@@ -68,8 +68,8 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(
     model->table = impl->tables.Create(impl->next_id++);
 
     for (auto col : cols) {
-      (void) model->table->columns.Create(
-          impl->next_id++, col.Type().Kind(), model->table);
+      (void) model->table->columns.Create(impl->next_id++, col.Type().Kind(),
+                                          model->table);
     }
   }
 
@@ -82,18 +82,17 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(
       case Lexeme::kIdentifierAtom: {
         table_col->names.push_back(name);
         std::sort(table_col->names.begin(), table_col->names.end(),
-                  [] (Token a, Token b) {
+                  [](Token a, Token b) {
                     return a.IdentifierId() < b.IdentifierId();
                   });
         auto it = std::unique(table_col->names.begin(), table_col->names.end(),
-                              [] (Token a, Token b) {
+                              [](Token a, Token b) {
                                 return a.IdentifierId() == b.IdentifierId();
                               });
         table_col->names.erase(it, table_col->names.end());
         break;
       }
-      default:
-        break;
+      default: break;
     }
   }
 

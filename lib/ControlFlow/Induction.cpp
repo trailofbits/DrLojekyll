@@ -45,7 +45,8 @@ bool Node<ProgramInductionRegion>::Equals(
   }
 
   return init_region->Equals(eq, that->init_region.get()) &&
-         cyclic_region->Equals(eq, that->cyclic_region.get());;
+         cyclic_region->Equals(eq, that->cyclic_region.get());
+  ;
 }
 
 }  // namespace hyde

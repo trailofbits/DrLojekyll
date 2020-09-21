@@ -992,8 +992,7 @@ struct hash<::hyde::parse::ParsedNode<T>> {
   using argument_type = ::hyde::parse::ParsedNode<T>;
   using result_type = uint64_t;
 
-  inline uint64_t
-  operator()(::hyde::parse::ParsedNode<T> node) const noexcept {
+  inline uint64_t operator()(::hyde::parse::ParsedNode<T> node) const noexcept {
     return node.Hash();
   }
 };

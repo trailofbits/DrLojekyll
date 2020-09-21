@@ -8,8 +8,6 @@ namespace hyde {
 // loop, and thus passes on its data to the next thing down as long as that
 // data is unique.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
-                           QueryMerge view, Context &usage, OP *parent) {
-
-}
+                           QueryMerge view, Context &usage, OP *parent) {}
 
 }  // namespace hyde

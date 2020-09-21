@@ -7,8 +7,8 @@ namespace hyde {
 // Build an eager region for performing a comparison.
 void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
                               Context &context, OP *parent) {
-  auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
-      parent, view.Operator());
+  auto cmp =
+      impl->operation_regions.CreateDerived<TUPLECMP>(parent, view.Operator());
 
   auto lhs_var = parent->VariableFor(impl, view.InputLHS());
   auto rhs_var = parent->VariableFor(impl, view.InputRHS());

@@ -27,7 +27,7 @@ class ContinueProductWorkItem final : public WorkItem {
 
 // Find the common ancestor of all insert regions.
 REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
-  PROC * const proc = appends[0]->containing_procedure;
+  PROC *const proc = appends[0]->containing_procedure;
   REGION *common_ancestor = nullptr;
 
   for (const auto append : appends) {
@@ -55,7 +55,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   context.view_to_work_item.erase(view);
 
   const auto join_view = QueryJoin::From(view);
-  PROC * const proc = appends[0]->containing_procedure;
+  PROC *const proc = appends[0]->containing_procedure;
 
   // Find the common ancestor of all of the appends associated with whatever
   // flows we saw into the PRODUCT node. We want to execute the ancestor
@@ -77,8 +77,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  const auto product = impl->operation_regions.CreateDerived<TABLEPRODUCT>(
-      seq, join_view);
+  const auto product =
+      impl->operation_regions.CreateDerived<TABLEPRODUCT>(seq, join_view);
   product->ExecuteAfter(impl, seq);
 
   // Clear out the input vectors that might have been filled up before the
@@ -95,7 +95,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     const auto table = TABLE::GetOrCreate(impl, pred_view);
     auto &vec = context.product_vector[table];
     if (!vec) {
-      vec = proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
+      vec =
+          proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
     }
 
     product->tables.AddUse(table);
@@ -104,16 +105,16 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     // Make a variable for each column of the input table.
     auto &out_vars = product->output_vars.emplace_back(product);
     for (auto col : pred_view.Columns()) {
-      const auto var = out_vars.Create(
-          impl->next_id++, VariableRole::kProductOutput);
+      const auto var =
+          out_vars.Create(impl->next_id++, VariableRole::kProductOutput);
       var->query_column = col;
       product->col_id_to_var.emplace(col.Id(), var);
     }
   }
 
   // Map the output column IDs of the product based on the input column IDs.
-  join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole,
-                            std::optional<QueryColumn> out_col) {
+  join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                           std::optional<QueryColumn> out_col) {
     if (out_col) {
       const auto in_var = product->col_id_to_var[in_col.Id()];
       assert(in_var != nullptr);
@@ -121,8 +122,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
   });
 
-  BuildEagerSuccessorRegions(
-      impl, view, context, product, view.Successors(), nullptr);
+  BuildEagerSuccessorRegions(impl, view, context, product, view.Successors(),
+                             nullptr);
 }
 
 }  // namespace

@@ -14,7 +14,7 @@ Node<ProgramParallelRegion>::AsParallel(void) noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming).
 bool Node<ProgramParallelRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that = that_->AsSeries();
   const auto num_regions = regions.Size();
   if (!that || num_regions != that->regions.Size()) {

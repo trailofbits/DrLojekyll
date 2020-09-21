@@ -89,21 +89,20 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      BuildEagerJoinRegion(
-          impl, pred_view, join, context, parent, last_model);
+      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_model);
     } else {
-      BuildEagerProductRegion(
-          impl, pred_view, join, context, parent, last_model);
+      BuildEagerProductRegion(impl, pred_view, join, context, parent,
+                              last_model);
     }
 
   } else if (view.IsMerge()) {
     const auto merge = QueryMerge::From(view);
     if (context.inductive_successors.count(view)) {
-      BuildEagerInductiveRegion(impl, pred_view, merge,
-                                context, parent, last_model);
+      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
+                                last_model);
     } else {
-      BuildEagerUnionRegion(impl, pred_view, merge,
-                            context, parent, last_model);
+      BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
+                            last_model);
     }
 
   } else if (view.IsAggregate()) {
@@ -116,12 +115,12 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
     BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
 
   } else if (view.IsSelect() || view.IsTuple()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent,
-                               view.Successors(), last_model);
+    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+                               last_model);
 
   } else if (view.IsInsert()) {
-    BuildEagerInsertRegion(impl, pred_view, QueryInsert::From(view),
-                           context, parent, last_model);
+    BuildEagerInsertRegion(impl, pred_view, QueryInsert::From(view), context,
+                           parent, last_model);
 
   } else {
     assert(false);
@@ -132,9 +131,8 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 static VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   auto &cond_var = impl->cond_ref_counts[cond];
   if (!cond_var) {
-    cond_var = impl->global_vars.Create(
-        impl->next_id++,
-        VariableRole::kConditionRefCount);
+    cond_var = impl->global_vars.Create(impl->next_id++,
+                                        VariableRole::kConditionRefCount);
     cond_var->query_cond = cond;
   }
   return cond_var;
@@ -188,18 +186,19 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     return;
   }
 
-  const auto proc = impl->procedure_regions.CreateDerived<PROC>(impl->next_id++);
+  const auto proc =
+      impl->procedure_regions.CreateDerived<PROC>(impl->next_id++);
   proc->io = io;
 
-  const auto vec = proc->VectorFor(
-      impl, VectorKind::kInput, receives[0].Columns());
+  const auto vec =
+      proc->VectorFor(impl, VectorKind::kInput, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
   auto par = impl->parallel_regions.Create(loop);
 
   for (auto col : receives[0].Columns()) {
-    const auto var = loop->defined_vars.Create(
-        impl->next_id++, VariableRole::kVectorVariable);
+    const auto var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
     var->query_column = col;
     loop->col_id_to_var.emplace(col.Id(), var);
   }
@@ -222,22 +221,21 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
       auto first_col = receives[0].Columns()[i++];
       if (col.Id() != first_col.Id()) {
         let->used_vars.AddUse(par->VariableFor(impl, first_col));
-        const auto var = let->defined_vars.Create(
-            impl->next_id++, VariableRole::kLetBinding);
+        const auto var = let->defined_vars.Create(impl->next_id++,
+                                                  VariableRole::kLetBinding);
         var->query_column = col;
         loop->col_id_to_var.emplace(col.Id(), var);
       }
     }
 
-    BuildEagerSuccessorRegions(
-        impl, receive, context, let,
-        receive.Successors(), nullptr);
+    BuildEagerSuccessorRegions(impl, receive, context, let,
+                               receive.Successors(), nullptr);
   }
 
   while (!context.work_list.empty()) {
-//    context.view_to_work_item.clear();
-    std::stable_sort(context.work_list.begin(),
-                     context.work_list.end(),
+
+    //    context.view_to_work_item.clear();
+    std::stable_sort(context.work_list.begin(), context.work_list.end(),
                      [](const WorkItemPtr &a, const WorkItemPtr &b) {
                        return a->order > b->order;
                      });
@@ -284,13 +282,15 @@ static void DiscoverInductions(const Query &query, Context &context) {
   std::vector<QueryView> frontier;
   std::set<std::pair<QueryView, QueryView>> disallowed_edges;
 
-  for (auto &[view, noninductive_predecessors] : context.noninductive_predecessors) {
+  for (auto &[view, noninductive_predecessors] :
+       context.noninductive_predecessors) {
     for (QueryView pred_view : noninductive_predecessors) {
       disallowed_edges.emplace(pred_view, view);
     }
   }
 
-  for (const auto &[view, inductive_successors] : context.inductive_successors) {
+  for (const auto &[view, inductive_successors] :
+       context.inductive_successors) {
     if (inductive_successors.empty()) {
       continue;
     }
@@ -342,7 +342,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     program->view_to_model.emplace(view, model);
   });
 
-  auto all_cols_match = [] (auto cols, auto pred_cols) {
+  auto all_cols_match = [](auto cols, auto pred_cols) {
     const auto num_cols = cols.size();
     if (num_cols != pred_cols.size()) {
       return false;
@@ -361,10 +361,10 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   // with its predecessor.
   //
   // NOTE(pag): Conditions are a tire fire.
-  auto is_conditional = [] (QueryView view) {
+  auto is_conditional = [](QueryView view) {
     return !view.NegativeConditions().empty() ||
-           !view.PositiveConditions().empty() ||
-           view.IsCompare() || view.IsMap();
+           !view.PositiveConditions().empty() || view.IsCompare() ||
+           view.IsMap();
   };
 
   query.ForEachView([=](QueryView view) {
@@ -432,9 +432,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
 
 // Build an eager region. This guards the execution of the region in
 // conditionals if the view itself is conditional.
-void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                      QueryView view, Context &usage, OP *parent,
-                      TABLE *last_model) {
+void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
+                      Context &usage, OP *parent, TABLE *last_model) {
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
 
@@ -466,8 +465,8 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view,
     last_model = nullptr;
   }
 
-  BuildUnconditionalEagerRegion(
-      impl, pred_view, view, usage, parent, last_model);
+  BuildUnconditionalEagerRegion(impl, pred_view, view, usage, parent,
+                                last_model);
 }
 
 WorkItem::~WorkItem(void) {}
@@ -502,9 +501,8 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
 
   // Create constant variables.
   for (auto const_val : query.Constants()) {
-    auto var = impl->const_vars.Create(
-        impl->next_id++,
-        VariableRole::kConstant);
+    const auto var =
+        impl->const_vars.Create(impl->next_id++, VariableRole::kConstant);
     var->query_const = const_val;
     impl->const_to_var.emplace(const_val, var);
   }

@@ -33,10 +33,10 @@ static bool OptimizeImpl(PARALLEL *par) {
     par->regions.Clear();
     return true;
 
-  // Erase any empty child regions.
+    // Erase any empty child regions.
   }
   auto changed = false;
-  par->regions.RemoveIf([&changed] (REGION *child_region) {
+  par->regions.RemoveIf([&changed](REGION *child_region) {
     if (child_region->IsNoOp()) {
       child_region->parent = nullptr;
       changed = true;
@@ -92,7 +92,7 @@ static bool OptimizeImpl(PARALLEL *par) {
 
         if (region1->Equals(eq, region2)) {
           assert(region1 != region2);
-          par->regions.RemoveIf([=] (REGION *r) { return r == region2; });
+          par->regions.RemoveIf([=](REGION *r) { return r == region2; });
           region2->parent = nullptr;
           changed = true;
         }
@@ -106,8 +106,7 @@ static bool OptimizeImpl(PARALLEL *par) {
 
 // Clear out empty output regions of inductions.
 static bool OptimizeImpl(INDUCTION *induction) {
-  if (induction->output_region &&
-      induction->output_region->IsNoOp()) {
+  if (induction->output_region && induction->output_region->IsNoOp()) {
     induction->output_region->parent = nullptr;
     UseRef<REGION>().Swap(induction->output_region);
     return true;
@@ -163,7 +162,7 @@ static bool OptimizeImpl(SERIES *series) {
   // Erase any empty child regions.
   } else {
     auto changed = false;
-    series->regions.RemoveIf([&changed] (REGION *child_region) {
+    series->regions.RemoveIf([&changed](REGION *child_region) {
       if (child_region->IsNoOp()) {
         child_region->parent = nullptr;
         changed = true;
@@ -267,7 +266,7 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
-  for (auto changed = true; changed; ) {
+  for (auto changed = true; changed;) {
     changed = false;
 
     for (auto par : parallel_regions) {

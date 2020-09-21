@@ -3,11 +3,11 @@
 #include <filesystem>
 #include <string>
 
+#include "UnitTests.h"
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/Parser.h"
-#include "UnitTests.h"
 
 namespace fs = std::filesystem;
 

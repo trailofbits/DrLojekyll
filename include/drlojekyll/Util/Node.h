@@ -93,7 +93,7 @@ class NodeRange {
         offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
 
 #if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
+#  pragma GCC diagnostic pop
 #endif
 
   inline NodeIterator<T> begin(void) const {

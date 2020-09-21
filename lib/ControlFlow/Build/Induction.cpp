@@ -29,8 +29,7 @@ class ContinueInductionWorkItem final : public WorkItem {
  public:
   virtual ~ContinueInductionWorkItem(void) {}
 
-  ContinueInductionWorkItem(INDUCTION *induction_,
-                            InductionSet *induction_set_)
+  ContinueInductionWorkItem(INDUCTION *induction_, InductionSet *induction_set_)
       : WorkItem(WorkItem::kContinueInductionOrder + MaxDepth(induction_set_)),
         induction(induction_),
         induction_set(induction_set_) {}
@@ -41,8 +40,8 @@ class ContinueInductionWorkItem final : public WorkItem {
   void Run(ProgramImpl *impl, Context &context) override;
 
  private:
-  INDUCTION * const induction;
-  InductionSet * const induction_set;
+  INDUCTION *const induction;
+  InductionSet *const induction_set;
 };
 
 // A work item whose `Run` method is invoked after all initialization and
@@ -51,8 +50,7 @@ class FinalizeInductionWorkItem final : public WorkItem {
  public:
   virtual ~FinalizeInductionWorkItem(void) {}
 
-  FinalizeInductionWorkItem(INDUCTION *induction_,
-                            InductionSet *induction_set_)
+  FinalizeInductionWorkItem(INDUCTION *induction_, InductionSet *induction_set_)
       : WorkItem(WorkItem::kFinalizeInductionOrder + MaxDepth(induction_set_)),
         induction(induction_),
         induction_set(induction_set_) {}
@@ -60,18 +58,18 @@ class FinalizeInductionWorkItem final : public WorkItem {
   void Run(ProgramImpl *impl, Context &context) override;
 
  private:
-  INDUCTION * const induction;
-  InductionSet * const induction_set;
+  INDUCTION *const induction;
+  InductionSet *const induction_set;
 };
 
 // Find the common ancestor of all initialization regions.
 REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
-  PROC * const proc = induction->containing_procedure;
+  PROC *const proc = induction->containing_procedure;
   REGION *common_ancestor = nullptr;
 
   auto num_init_appends = 0u;
   for (const auto &[view, init_appends] : induction->view_to_init_appends) {
-    for (REGION * const init_append : init_appends) {
+    for (REGION *const init_append : init_appends) {
       ++num_init_appends;
       if (!common_ancestor) {
         common_ancestor = init_append;
@@ -113,8 +111,8 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   for (auto merge : induction_set->merges) {
     auto &vec = induction->view_to_vec[merge];
     if (!vec) {
-      const auto incoming_vec = proc->VectorFor(
-          impl, VectorKind::kInduction, merge.Columns());
+      const auto incoming_vec =
+          proc->VectorFor(impl, VectorKind::kInduction, merge.Columns());
       UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
       induction->vectors.AddUse(incoming_vec);
     }
@@ -136,21 +134,19 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // Now that we have all of the regions arranged and the loops, add in the
   // inductive successors.
   for (auto merge : induction_set->merges) {
-    OP * const cycle = induction->view_to_cycle_loop[merge]->AsOperation();
+    OP *const cycle = induction->view_to_cycle_loop[merge]->AsOperation();
     assert(cycle != nullptr);
 
     const auto table = TABLE::GetOrCreate(impl, merge);
-    BuildEagerSuccessorRegions(
-        impl, merge, context, cycle, context.inductive_successors[merge],
-        table);
+    BuildEagerSuccessorRegions(impl, merge, context, cycle,
+                               context.inductive_successors[merge], table);
   }
 
   // Finally, add in an action to finish off this induction by processing
   // the outputs. It is possible that we're not actually done filling out
   // the INDUCTION's cycles, even after the above, due to WorkItems being
   // added by other nodes.
-  const auto action = new FinalizeInductionWorkItem(
-      induction, induction_set);
+  const auto action = new FinalizeInductionWorkItem(induction, induction_set);
   context.work_list.emplace_back(action);
 }
 
@@ -174,8 +170,8 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
     auto &vec = induction->view_to_vec[merge];
     if (!vec) {
-      const auto incoming_vec = proc->VectorFor(
-          impl, VectorKind::kInduction, merge.Columns());
+      const auto incoming_vec =
+          proc->VectorFor(impl, VectorKind::kInduction, merge.Columns());
       UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
       induction->vectors.AddUse(incoming_vec);
     }
@@ -200,18 +196,18 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
 
     UseRef<VECTOR>(cycle, vec.get()).Swap(cycle->vector);
-    UseRef<REGION>(induction, cycle).Swap(induction->view_to_output_loop[merge]);
+    UseRef<REGION>(induction, cycle)
+        .Swap(induction->view_to_output_loop[merge]);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // non-inductive successors.
   for (auto merge : induction_set->merges) {
-    OP * const cycle = induction->view_to_output_loop[merge]->AsOperation();
+    OP *const cycle = induction->view_to_output_loop[merge]->AsOperation();
     assert(cycle != nullptr);
     const auto table = TABLE::GetOrCreate(impl, merge);
-    BuildEagerSuccessorRegions(
-        impl, merge, context, cycle, context.noninductive_successors[merge],
-        table);
+    BuildEagerSuccessorRegions(impl, merge, context, cycle,
+                               context.noninductive_successors[merge], table);
   }
 }
 
@@ -224,13 +220,14 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
                                QueryMerge view, Context &context, OP *parent,
                                TABLE *last_model) {
 
-  PROC * const proc = parent->containing_procedure;
+  PROC *const proc = parent->containing_procedure;
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
   const auto table = TABLE::GetOrCreate(impl, view);
   if (last_model != table) {
-    const auto insert = impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
+    const auto insert =
+        impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
     UseRef<TABLE>(insert, table).Swap(insert->table);
     UseRef<REGION>(parent, insert).Swap(parent->body);
 
@@ -261,15 +258,16 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
   auto &vec = induction->view_to_vec[view];
   if (!vec) {
-    const auto incoming_vec = proc->VectorFor(
-        impl, VectorKind::kInduction, view.Columns());
+    const auto incoming_vec =
+        proc->VectorFor(impl, VectorKind::kInduction, view.Columns());
     UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
     induction->vectors.AddUse(incoming_vec);
   }
 
   // Add a tuple to the input vector.
-  const auto append_to_vec = impl->operation_regions.CreateDerived<VECTORAPPEND>(
-      parent, ProgramOperation::kAppendInductionInputToVector);
+  const auto append_to_vec =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          parent, ProgramOperation::kAppendInductionInputToVector);
 
   for (auto col : view.Columns()) {
     const auto var = parent->VariableFor(impl, col);
@@ -286,9 +284,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     case INDUCTION::kAccumulatingCycleRegions:
       induction->view_to_cycle_appends.find(view)->second.AddUse(append_to_vec);
       break;
-    default:
-      assert(false);
-      break;
+    default: assert(false); break;
   }
 }
 

@@ -13,8 +13,7 @@ class EqualitySet::Impl {
   std::set<std::pair<uintptr_t, uintptr_t>> equalities;
 };
 
-EqualitySet::EqualitySet(const EqualitySet &that, SuperSet)
-    : impl(new Impl) {
+EqualitySet::EqualitySet(const EqualitySet &that, SuperSet) : impl(new Impl) {
   impl->parent = that.impl.get();
 }
 

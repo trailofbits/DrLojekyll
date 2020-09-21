@@ -76,7 +76,7 @@ Node<ProgramOperationRegion>::AsTupleCompare(void) noexcept {
 }
 
 bool Node<ProgramVectorLoopRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
@@ -119,7 +119,7 @@ bool Node<ProgramLetBindingRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramLetBindingRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
@@ -151,7 +151,7 @@ bool Node<ProgramLetBindingRegion>::Equals(
 }
 
 bool Node<ProgramVectorAppendRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
@@ -182,7 +182,7 @@ Node<ProgramTableInsertRegion>::AsTableInsert(void) noexcept {
 }
 
 bool Node<ProgramTableInsertRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
@@ -207,7 +207,7 @@ bool Node<ProgramExistenceCheckRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramExistenceCheckRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op || this->OP::op != that_op->OP::op) {
     return false;
@@ -251,7 +251,7 @@ Node<ProgramTableProductRegion>::AsTableProduct(void) noexcept {
 }
 
 bool Node<ProgramVectorClearRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
@@ -271,7 +271,7 @@ Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
 }
 
 bool Node<ProgramVectorUniqueRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
@@ -295,7 +295,7 @@ bool Node<ProgramTableJoinRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramTableJoinRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     return false;
@@ -350,7 +350,7 @@ bool Node<ProgramTableProductRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramTableProductRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     return false;
@@ -400,15 +400,14 @@ bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramTupleCompareRegion>::Equals(
-   EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     return false;
   }
   const auto num_vars = lhs_vars.Size();
   const auto that = op->AsTupleCompare();
-  if (!that || cmp_op != that->cmp_op ||
-      num_vars != that->lhs_vars.Size() ||
+  if (!that || cmp_op != that->cmp_op || num_vars != that->lhs_vars.Size() ||
       (!this->OP::body.get()) != (!that->OP::body.get())) {
     return false;
   }

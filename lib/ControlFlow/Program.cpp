@@ -90,8 +90,7 @@ ProgramImpl::~ProgramImpl(void) {
   }
 }
 
-Program::Program(std::shared_ptr<ProgramImpl> impl_)
-    : impl(std::move(impl_)) {}
+Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
 
@@ -116,16 +115,16 @@ bool ProgramRegion::IsParallel(void) const noexcept {
 }
 
 #define IS_OP(kind) \
-    ProgramRegion::ProgramRegion(const Program ## kind ## Region &region) \
-        : ProgramRegion(region.impl) {} \
-    \
-    bool ProgramRegion::Is ## kind(void) const noexcept { \
-      if (auto op = impl->AsOperation(); op) { \
-        return op->As ## kind() != nullptr; \
-      } else { \
-        return false; \
-      } \
-    }
+  ProgramRegion::ProgramRegion(const Program##kind##Region &region) \
+      : ProgramRegion(region.impl) {} \
+\
+  bool ProgramRegion::Is##kind(void) const noexcept { \
+    if (auto op = impl->AsOperation(); op) { \
+      return op->As##kind() != nullptr; \
+    } else { \
+      return false; \
+    } \
+  }
 
 IS_OP(VectorLoop)
 IS_OP(VectorAppend)
@@ -140,15 +139,14 @@ IS_OP(TupleCompare)
 
 #undef IS_OP
 
-ProgramSeriesRegion ProgramSeriesRegion::From(
-    ProgramRegion region) noexcept {
+ProgramSeriesRegion ProgramSeriesRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = region.impl->AsSeries();
   assert(derived_impl != nullptr);
   return ProgramSeriesRegion(derived_impl);
 }
 
-ProgramParallelRegion ProgramParallelRegion::From(
-    ProgramRegion region) noexcept {
+ProgramParallelRegion
+ProgramParallelRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = region.impl->AsParallel();
   assert(derived_impl != nullptr);
   return ProgramParallelRegion(derived_impl);
@@ -163,13 +161,13 @@ bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
 }
 
 #define OPTIONAL_BODY(name) \
-    std::optional<ProgramRegion> name::Body(void) const noexcept { \
-      if (impl->body) { \
-        return ProgramRegion(impl->body.get()); \
-      } else { \
-        return std::nullopt; \
-      } \
-    }
+  std::optional<ProgramRegion> name::Body(void) const noexcept { \
+    if (impl->body) { \
+      return ProgramRegion(impl->body.get()); \
+    } else { \
+      return std::nullopt; \
+    } \
+  }
 
 OPTIONAL_BODY(ProgramExistenceCheckRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
@@ -182,13 +180,13 @@ OPTIONAL_BODY(ProgramTupleCompareRegion)
 #undef OPTIONAL_BODY
 
 #define FROM_OP(name, as) \
-    name name::From(ProgramRegion region) noexcept { \
-      const auto op = region.impl->AsOperation(); \
-      assert(op != nullptr); \
-      const auto derived_impl = op->as(); \
-      assert(derived_impl != nullptr); \
-      return name(derived_impl); \
-    }
+  name name::From(ProgramRegion region) noexcept { \
+    const auto op = region.impl->AsOperation(); \
+    assert(op != nullptr); \
+    const auto derived_impl = op->as(); \
+    assert(derived_impl != nullptr); \
+    return name(derived_impl); \
+  }
 
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
 FROM_OP(ProgramVectorLoopRegion, AsVectorLoop)
@@ -203,18 +201,19 @@ FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 #undef FROM_OP
 
 #define DEFINED_RANGE(name, method, type, access) \
-    DefinedNodeRange<type> name::method(void) const { \
-      return {DefinedNodeIterator<type>(impl->access.begin()), \
-              DefinedNodeIterator<type>(impl->access.end())}; \
-    }
+  DefinedNodeRange<type> name::method(void) const { \
+    return {DefinedNodeIterator<type>(impl->access.begin()), \
+            DefinedNodeIterator<type>(impl->access.end())}; \
+  }
 
 #define USED_RANGE(name, method, type, access) \
-    UsedNodeRange<type> name::method(void) const { \
-      return {impl->access.begin(), impl->access.end()}; \
-    }
+  UsedNodeRange<type> name::method(void) const { \
+    return {impl->access.begin(), impl->access.end()}; \
+  }
 
 DEFINED_RANGE(ProgramLetBindingRegion, DefinedVars, DataVariable, defined_vars)
-DEFINED_RANGE(ProgramVectorLoopRegion, TupleVariables, DataVariable, defined_vars)
+DEFINED_RANGE(ProgramVectorLoopRegion, TupleVariables, DataVariable,
+              defined_vars)
 DEFINED_RANGE(DataTable, Columns, DataColumn, columns)
 DEFINED_RANGE(DataTable, Indices, DataIndex, indices)
 DEFINED_RANGE(ProgramProcedure, InputVectors, DataVector, input_vectors)
@@ -231,7 +230,8 @@ USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
 USED_RANGE(ProgramTupleCompareRegion, RHS, DataVariable, rhs_vars)
 USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
 USED_RANGE(ProgramParallelRegion, Regions, ProgramRegion, regions)
-USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable, cond_vars)
+USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
+           cond_vars)
 USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
 USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
@@ -263,9 +263,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kSortAndUniqueProductInputVector:
     case ProgramOperation::kClearProductInputVector:
       return VectorUsage::kProductInputVector;
-    default:
-      assert(false);
-      return VectorUsage::kInvalid;
+    default: assert(false); return VectorUsage::kInvalid;
   }
 }
 
@@ -341,8 +339,7 @@ std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
 // Type of this variable.
 TypeKind DataVariable::Type(void) const noexcept {
   switch (impl->role) {
-    case VariableRole::kConditionRefCount:
-      return TypeKind::kUnsigned64;
+    case VariableRole::kConditionRefCount: return TypeKind::kUnsigned64;
     case VariableRole::kConstant:
       if (impl->query_const) {
         return impl->query_const->Literal().Type().Kind();
@@ -353,9 +350,12 @@ TypeKind DataVariable::Type(void) const noexcept {
     case VariableRole::kJoinPivot:
     case VariableRole::kJoinNonPivot:
     case VariableRole::kProductOutput:
-      assert(!!impl->query_column);
-      return impl->query_column->Type().Kind();
+      if (impl->query_column) {
+        return impl->query_column->Type().Kind();
+      }
   }
+  assert(false);
+  return TypeKind::kInvalid;
 }
 
 // Unique ID of this column.
@@ -492,7 +492,8 @@ ProgramTableJoinRegion::OutputVariables(unsigned table_index) const {
 }
 
 // The index used by the Nth table scan.
-DataVector ProgramTableProductRegion::Vector(unsigned table_index) const noexcept {
+DataVector
+ProgramTableProductRegion::Vector(unsigned table_index) const noexcept {
   assert(table_index < impl->input_vectors.Size());
   return DataVector(impl->input_vectors[table_index]);
 }

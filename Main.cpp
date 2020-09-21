@@ -43,6 +43,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
     if (auto program_opt = Program::Build(*query_opt, error_log); program_opt) {
       if (gCodeStream) {
         (*gCodeStream) << *program_opt;
+
         //GenerateCode(module, *query_opt, *gCodeStream);
         gCodeStream->Flush();
       }

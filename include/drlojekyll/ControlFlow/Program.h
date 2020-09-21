@@ -150,8 +150,13 @@ class ProgramParallelRegion
 };
 
 enum class VariableRole : int {
-  kConditionRefCount, kConstant, kVectorVariable, kLetBinding, kJoinPivot,
-  kJoinNonPivot, kProductOutput
+  kConditionRefCount,
+  kConstant,
+  kVectorVariable,
+  kLetBinding,
+  kJoinPivot,
+  kJoinNonPivot,
+  kProductOutput
 };
 
 // A variable in the program.
@@ -341,15 +346,16 @@ class ProgramVectorAppendRegion
 };
 
 #define VECTOR_OP(name) \
-    class name : public program::ProgramNode<name> { \
-     public: \
-      static name From(ProgramRegion) noexcept; \
-      VectorUsage Usage(void) const noexcept; \
-      DataVector Vector(void) const noexcept; \
-     private: \
-      friend class ProgramRegion; \
-      using program::ProgramNode<name>::ProgramNode; \
-    }
+  class name : public program::ProgramNode<name> { \
+   public: \
+    static name From(ProgramRegion) noexcept; \
+    VectorUsage Usage(void) const noexcept; \
+    DataVector Vector(void) const noexcept; \
+\
+   private: \
+    friend class ProgramRegion; \
+    using program::ProgramNode<name>::ProgramNode; \
+  }
 
 // Clear a vector.
 VECTOR_OP(ProgramVectorClearRegion);

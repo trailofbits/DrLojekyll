@@ -3,9 +3,7 @@
 #include "Build.h"
 
 namespace hyde {
-namespace {
-
-}  // namespace
+namespace {}  // namespace
 
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
@@ -16,7 +14,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto cols = insert.InputColumns();
 
   if (insert.IsStream()) {
-    assert(!"TODO");
+    assert(false && "TODO");
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
