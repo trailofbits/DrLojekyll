@@ -62,14 +62,18 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
 
   auto try_add_waypoint = [this](void) {
     if (!(data.size() % kWayPointIndex)) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
       display::PositionInterpreter interpreter = {};
       interpreter.position.index = data.size();
       interpreter.position.line = next_line;
       interpreter.position.column = next_column;
       interpreter.position.display_id = id;
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
       const DisplayPosition waypoint(interpreter.flat);
       waypoints.emplace_back(waypoint);
     }

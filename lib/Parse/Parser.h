@@ -203,8 +203,10 @@ class ParserImpl {
                                            const DisplayConfiguration &config);
 };
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
@@ -280,7 +282,9 @@ void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
   }
 }
 
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.
@@ -299,6 +303,49 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     const auto prev_decl = reinterpret_cast<Node<T> *>(redecls.front());
     assert(prev_decl->parameters.size() == num_params);
 
+    // The range specifications don't match.
+    if (prev_decl->range != decl->range) {
+      DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
+                                   prev_decl->range_end_opt.NextPosition());
+
+      DisplayRange curr_range_spec(decl->range_begin_opt.Position(),
+                                   decl->range_end_opt.NextPosition());
+
+      if (prev_decl->range_begin_opt.IsValid() &&
+          decl->range_begin_opt.IsValid()) {
+        auto err = context->error_log.Append(scope_range, curr_range_spec);
+        err << "Functor range specifier differs from prior range specifier";
+
+        auto note = err.Note(T(prev_decl).SpellingRange(), prev_range_spec);
+        note << "Previous range specifier is here";
+
+      } else if (prev_decl->range_begin_opt.IsValid()) {
+        auto err = context->error_log.Append(scope_range);
+        err << "Functor uses default zero-or-more range specifier, but prior "
+            << "declaration explicitly changes the range";
+
+        auto note = err.Note(T(prev_decl).SpellingRange(), prev_range_spec);
+        note << "Previous range specifier is here";
+
+      } else if (decl->range_begin_opt.IsValid()) {
+        auto err = context->error_log.Append(scope_range, curr_range_spec);
+        err << "Functor explicitly specifies a non-default range specifier "
+            << "that is different than the implicit zero-or-more specification";
+
+        auto note = err.Note(T(prev_decl).SpellingRange());
+        note << "Previous declaration uses the implicit zero-or-more range "
+             << "specification";
+
+      } else {
+        assert(false);
+      }
+
+      RemoveDecl(std::move(decl));
+      return;
+    }
+
+    // Make sure all parameters bindings, types, merge declarations, etc. match
+    // across all re-declarations.
     for (size_t i = 0; i < num_params; ++i) {
       const auto prev_param = prev_decl->parameters[i].get();
       const auto curr_param = decl->parameters[i].get();

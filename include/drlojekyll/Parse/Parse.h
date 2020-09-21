@@ -671,6 +671,13 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
   ParsedDeclaration Declaration(void) const;
 };
 
+enum class FunctorRange {
+  kZeroOrMore,  // Default.
+  kZeroOrOne,
+  kOneToOne,
+  kOneOrMore
+};
+
 // Represents a rule that is supplied by a plugin. These rules must have
 // globally unique names, and follow similar declaration rules as exports.
 //
@@ -680,13 +687,6 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 //
 // The above example feasibly adds one to `Pred`, subtracts one from `Succ`, or
 // checks that `Pred+1 == Succ`.
-//
-// The `unordered` qualifier in the below functor declaration tells the
-// optimizer that if a value is feeding into `A` and a value is feeding into
-// `B`, then it is free to swap the order of those values, usually so that it
-// can merge two separate uses in the data flow graph.
-//
-//    #functor add(bound i32 A, bound i32 B, free i32 Res) unordered(A, B)
 //
 // The `impure` qualifier in the below example tells Dr. Lojekyll that it can't
 // trust a functor to produce the same outputs given the same inputs. This
@@ -701,6 +701,12 @@ class ParsedLocal : public parse::ParsedNode<ParsedLocal> {
 // `A=0` on the first use. At a later time, it produces `A=1`. The implication
 // is that the data flow node will have to produce a deletion record of
 // `-(10, 0)` before it produces an insertion record `+(10, 1)`.
+//
+// The `range` qualified in the below example tells Dr. Lojekyll whether or not
+// a functor will output zero-or-one, zero-or-more (default), or one-or-more
+// outputs given its inputs. If all parameters to a functor are bound, then the
+// range of the functor is fixed as zero-or-one, i.e. treated like a filter
+// function.
 class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
  public:
   static const ParsedFunctor &From(const ParsedDeclaration &decl);
@@ -713,18 +719,28 @@ class ParsedFunctor : public parse::ParsedNode<ParsedFunctor> {
   ParsedParameter NthParameter(unsigned n) const noexcept;
   NodeRange<ParsedParameter> Parameters(void) const;
 
+  // Is this an aggregating functor?
   bool IsAggregate(void) const noexcept;
 
+  // Is this functor used to merge values in a `mutable`-attributed parameter?
+  // If so, it has three parameters (prev value, proposed value, merged value).
+  bool IsMerge(void) const noexcept;
+
+  // Is this a "pure" functor? That is, do we expect that if we re-execute it
+  // given the same inputs, that it will produce the same outputs?
   bool IsPure(void) const noexcept;
+
+  // Is this a filter-like functor? This is `true` if the functor is `pure`
+  // and if the number of free parameters is zero and if the range is
+  // `FunctorRange::kZeroOrOne`.
+  bool IsFilter(void) const noexcept;
 
   NodeRange<ParsedFunctor> Redeclarations(void) const;
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
 
-  unsigned NumUnorderedParameterSets(void) const noexcept;
-
-  NodeRange<ParsedParameter> NthUnorderedSet(unsigned n) const;
+  FunctorRange Range(void) const noexcept;
 
   inline unsigned NumNegatedUses(void) const noexcept {
     return 0;
@@ -883,6 +899,8 @@ namespace std {
 
 template <>
 struct hash<::hyde::ParsedParameter> {
+  using argument_type = ::hyde::ParsedParameter;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedParameter param) const noexcept {
     return param.UniqueId();
   }
@@ -890,6 +908,8 @@ struct hash<::hyde::ParsedParameter> {
 
 template <>
 struct hash<::hyde::ParsedModule> {
+  using argument_type = ::hyde::ParsedModule;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedModule module) const noexcept {
     return module.Id();
   }
@@ -897,6 +917,8 @@ struct hash<::hyde::ParsedModule> {
 
 template <>
 struct hash<::hyde::ParsedVariable> {
+  using argument_type = ::hyde::ParsedVariable;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedVariable var) const noexcept {
     return var.Id();
   }
@@ -904,6 +926,8 @@ struct hash<::hyde::ParsedVariable> {
 
 template <>
 struct hash<::hyde::ParsedDeclaration> {
+  using argument_type = ::hyde::ParsedDeclaration;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedDeclaration decl) const noexcept {
     return decl.Id();
   }
@@ -911,6 +935,8 @@ struct hash<::hyde::ParsedDeclaration> {
 
 template <>
 struct hash<::hyde::ParsedFunctor> {
+  using argument_type = ::hyde::ParsedFunctor;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedFunctor decl) const noexcept {
     return decl.Id();
   }
@@ -918,6 +944,8 @@ struct hash<::hyde::ParsedFunctor> {
 
 template <>
 struct hash<::hyde::ParsedMessage> {
+  using argument_type = ::hyde::ParsedMessage;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedMessage decl) const noexcept {
     return decl.Id();
   }
@@ -925,6 +953,8 @@ struct hash<::hyde::ParsedMessage> {
 
 template <>
 struct hash<::hyde::ParsedQuery> {
+  using argument_type = ::hyde::ParsedQuery;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedQuery decl) const noexcept {
     return decl.Id();
   }
@@ -932,6 +962,8 @@ struct hash<::hyde::ParsedQuery> {
 
 template <>
 struct hash<::hyde::ParsedExport> {
+  using argument_type = ::hyde::ParsedExport;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedExport decl) const noexcept {
     return decl.Id();
   }
@@ -939,6 +971,8 @@ struct hash<::hyde::ParsedExport> {
 
 template <>
 struct hash<::hyde::ParsedLocal> {
+  using argument_type = ::hyde::ParsedLocal;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedLocal decl) const noexcept {
     return decl.Id();
   }
@@ -946,6 +980,8 @@ struct hash<::hyde::ParsedLocal> {
 
 template <>
 struct hash<::hyde::ParsedPredicate> {
+  using argument_type = ::hyde::ParsedPredicate;
+  using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedPredicate pred) const noexcept {
     return pred.UniqueId();
   }
@@ -953,8 +989,10 @@ struct hash<::hyde::ParsedPredicate> {
 
 template <typename T>
 struct hash<::hyde::parse::ParsedNode<T>> {
-  inline uintptr_t
-  operator()(::hyde::parse::ParsedNode<T> node) const noexcept {
+  using argument_type = ::hyde::parse::ParsedNode<T>;
+  using result_type = uint64_t;
+
+  inline uint64_t operator()(::hyde::parse::ParsedNode<T> node) const noexcept {
     return node.Hash();
   }
 };

@@ -94,15 +94,17 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
     if (!functor.IsPure()) {
       os << " impure";
     }
-    for (auto i = 0u; i < functor.NumUnorderedParameterSets(); ++i) {
-      os << " unordered(";
-      comma = "";
-      for (auto param : functor.NthUnorderedSet(i)) {
-        os << comma << param.Name();
-        comma = ", ";
+    if (!functor.IsAggregate() && !functor.IsMerge()) {
+      os << " range(";
+      switch (functor.Range()) {
+        case FunctorRange::kOneOrMore: os << "+"; break;
+        case FunctorRange::kZeroOrMore: os << "*"; break;
+        case FunctorRange::kZeroOrOne: os << "?"; break;
+        case FunctorRange::kOneToOne: os << "."; break;
       }
       os << ")";
     }
+
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " inline";
   }
@@ -119,15 +121,18 @@ OutputStream &operator<<(OutputStream &os, ParsedAssignment assign) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
-  const char *op = "";
-  switch (compare.Operator()) {
-    case ComparisonOperator::kEqual: op = " = "; break;
-    case ComparisonOperator::kNotEqual: op = " != "; break;
-    case ComparisonOperator::kLessThan: op = " < "; break;
-    case ComparisonOperator::kGreaterThan: op = " > "; break;
+OutputStream &operator<<(OutputStream &os, ComparisonOperator op) {
+  switch (op) {
+    case ComparisonOperator::kEqual: os << '='; break;
+    case ComparisonOperator::kNotEqual: os << "!="; break;
+    case ComparisonOperator::kLessThan: os << '<'; break;
+    case ComparisonOperator::kGreaterThan: os << '>'; break;
   }
-  os << compare.LHS() << op << compare.RHS();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedComparison compare) {
+  os << compare.LHS() << ' ' << compare.Operator() << ' ' << compare.RHS();
   return os;
 }
 

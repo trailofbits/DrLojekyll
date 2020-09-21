@@ -383,6 +383,10 @@ void ParserImpl::ParseLocalExport(
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
+    if (local) {
+      local->last_tok = tok;
+    }
+
     const auto lexeme = tok.Lexeme();
     const auto tok_range = tok.SpellingRange();
 
@@ -515,12 +519,18 @@ void ParserImpl::ParseLocalExport(
 
       case 6:
         if (Lexeme::kIdentifierAtom == lexeme) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
           parse::IdInterpreter interpreter = {};
           interpreter.info.atom_name_id = tok.IdentifierId();
           interpreter.info.arity = 3;  // Old val, proposed val, new val.
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
           const auto id = interpreter.flat;
           if (!context->declarations.count(id)) {
@@ -539,7 +549,29 @@ void ParserImpl::ParseLocalExport(
           }
 
           param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
+          param->opt_merge->is_merge = true;
           assert(param->opt_merge->parameters.size() == 3);
+
+          // Make sure the `range` specification of the merge functor is sane.
+          if (decl->range_begin_opt.IsValid()) {
+            if (decl->range != FunctorRange::kOneToOne) {
+              DisplayRange range_spec(decl->range_begin_opt.Position(),
+                                      decl->range_end_opt.NextPosition());
+
+              auto err = context->error_log.Append(scope_range, tok_range);
+
+              err << "Merge functor '" << decl->name << "/3' declared with "
+                  << "explicit, non-one-to-one range specification, but must "
+                  << "be one-to-one, i.e. 'range(.)'";
+
+              err.Note(ParsedFunctor(param->opt_merge).SpellingRange(),
+                       range_spec)
+                  << "Incorrect range specification specification is here";
+              return;
+            }
+          } else {
+            decl->range = FunctorRange::kOneToOne;
+          }
 
           param->opt_type =
               TypeLoc(param->opt_merge->parameters[0]->opt_type.Kind(),
@@ -710,12 +742,18 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
     return false;
   }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
   interpreter.info.arity = clause->head_variables.size();
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   const auto id = interpreter.flat;
 
@@ -802,13 +840,18 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
 // Try to match a clause with a declaration.
 bool ParserImpl::TryMatchPredicateWithDecl(Node<ParsedModule> *module,
                                            Node<ParsedPredicate> *pred) {
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = pred->name.IdentifierId();
   interpreter.info.arity = pred->argument_uses.size();
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   const auto id = interpreter.flat;
 

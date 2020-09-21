@@ -11,8 +11,11 @@
 
 #include "Token.h"
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
 namespace hyde {
 namespace {
@@ -166,6 +169,24 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     case '=':
       interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncEqual);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '?':
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncQuestion);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '*':
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncStar);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
+
+    case '+':
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncPlus);
       interpreter.basic.spelling_width = 1;
       ret.opaque_data = interpreter.flat;
       return true;
@@ -553,6 +574,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kTypeASCII);
             interpreter.type.spelling_width = 5;
             interpreter.type.type_width = 128;
+
+          } else if (impl->data == "range") {
+            interpreter.basic.spelling_width = 5;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kKeywordRange);
           }
           break;
         case 6:
@@ -631,11 +657,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.spelling_width = 9;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordAggregate);
-
-          } else if (impl->data == "unordered") {
-            interpreter.basic.spelling_width = 9;
-            interpreter.basic.lexeme =
-                static_cast<uint8_t>(Lexeme::kKeywordUnordered);
           }
           break;
 
@@ -965,6 +986,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
   }
 }
 
-#pragma GCC diagnostic pop
-
 }  // namespace hyde
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif

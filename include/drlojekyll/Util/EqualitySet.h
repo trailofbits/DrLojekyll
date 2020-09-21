@@ -6,11 +6,14 @@
 
 namespace hyde {
 
+struct SuperSet {};
+
 // Simple set for managing equality checks.
 class EqualitySet {
  public:
   EqualitySet(void);
   ~EqualitySet(void);
+  EqualitySet(const EqualitySet &that, SuperSet);
 
   void Insert(const void *a_, const void *b_) noexcept;
   void Remove(const void *a_, const void *b_) noexcept;
@@ -18,7 +21,6 @@ class EqualitySet {
   void Clear(void) noexcept;
 
  private:
-  EqualitySet(const EqualitySet &) = delete;
   EqualitySet &operator=(const EqualitySet &) = delete;
 
   class Impl;

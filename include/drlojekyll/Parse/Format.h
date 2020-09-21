@@ -17,6 +17,7 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl);
 OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl);
 OutputStream &operator<<(OutputStream &os, ParsedPredicate pred);
 OutputStream &operator<<(OutputStream &os, ParsedAssignment assign);
+OutputStream &operator<<(OutputStream &os, ComparisonOperator op);
 OutputStream &operator<<(OutputStream &os, ParsedComparison compare);
 OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate);
 OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause);

@@ -1,3 +1,5 @@
+# Copyright 2020, Trail of Bits, Inc. All rights reserved.
+
 # `drlojekyll`
 add_executable(drlojekyll
     drlojekyll/Main.cpp)
@@ -9,7 +11,7 @@ target_link_libraries(drlojekyll PRIVATE
     Lex
     Parse
     DataFlow
-    CodeGen
+    ControlFlow
     Version
 )
 install(TARGETS drlojekyll)

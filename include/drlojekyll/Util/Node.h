@@ -83,13 +83,18 @@ class NodeRange {
       : impl(impl_),
         offset(offset_) {}
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
   template <typename U>
   inline explicit NodeRange(Node<U> *impl_)
       : impl(impl_),
         offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   inline NodeIterator<T> begin(void) const {
     return NodeIterator<T>(impl, offset);

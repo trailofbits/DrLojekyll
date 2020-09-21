@@ -5,8 +5,10 @@
 #include <cassert>
 #include <cstring>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
 
 namespace hyde {
 namespace parse {
@@ -55,9 +57,11 @@ const char *Node<ParsedDeclaration>::KindName(void) const {
   return "";
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Woverflow"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#  pragma GCC diagnostic ignored "-Woverflow"
+#endif
 
 // Compute a unique identifier for this declaration.
 uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
@@ -84,7 +88,10 @@ uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
   id.info.arity = parameters.size();
   return id.flat;
 }
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
 // Return a list of clauses associated with this declaration.
 NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
@@ -133,8 +140,11 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
     return id.flat;
   }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+
   const auto clause = context->clause;
   id.flat = clause->Id();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
@@ -150,7 +160,10 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
   }
 
   assert(0 < id.info.var_id);
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   return id.flat;
 }
@@ -524,9 +537,10 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
+    auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
     return DisplayRange(impl->directive_pos.IsValid() ? impl->directive_pos
                                                       : impl->name.Position(),
-                        impl->rparen.NextPosition());
+                        last_tok.NextPosition());
   } else {
     return impl->name.SpellingRange();
   }
@@ -846,9 +860,10 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
-                      impl->dot.NextPosition());
+                      last_tok.NextPosition());
 }
 
 // Returns the arity of this clause.
@@ -948,7 +963,8 @@ const ParsedQuery &ParsedQuery::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedQuery::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedQuery> ParsedQuery::Redeclarations(void) const {
@@ -984,7 +1000,8 @@ const ParsedExport &ParsedExport::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedExport::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedExport> ParsedExport::Redeclarations(void) const {
@@ -1020,7 +1037,8 @@ const ParsedLocal &ParsedLocal::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedLocal::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedLocal> ParsedLocal::Redeclarations(void) const {
@@ -1058,8 +1076,28 @@ bool ParsedFunctor::IsAggregate(void) const noexcept {
   return impl->is_aggregate;
 }
 
+bool ParsedFunctor::IsMerge(void) const noexcept {
+  return impl->is_merge;
+}
+
 bool ParsedFunctor::IsPure(void) const noexcept {
   return impl->is_pure;
+}
+
+// Is this a filter-like functor? This is `true` if the functor is `pure`
+// and if the number of free parameters is zero and if the range is
+// `FunctorRange::kZeroOrOne`.
+bool ParsedFunctor::IsFilter(void) const noexcept {
+  if (impl->is_pure && impl->range == FunctorRange::kZeroOrOne) {
+    for (const auto &param : impl->parameters) {
+      if (ParameterBinding::kFree == ParsedParameter(param.get()).Binding()) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    return false;
+  }
 }
 
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {
@@ -1073,7 +1111,8 @@ const ParsedFunctor ParsedFunctor::MergeOperatorOf(ParsedParameter param) {
 }
 
 DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedFunctor> ParsedFunctor::Redeclarations(void) const {
@@ -1099,16 +1138,8 @@ unsigned ParsedFunctor::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
 }
 
-unsigned ParsedFunctor::NumUnorderedParameterSets(void) const noexcept {
-  return static_cast<unsigned>(impl->unordered_sets.size());
-}
-
-NodeRange<ParsedParameter> ParsedFunctor::NthUnorderedSet(unsigned n) const {
-  assert(n < impl->unordered_sets.size());
-  const auto &uset = impl->unordered_sets[n];
-  return NodeRange<ParsedParameter>(
-      uset.params.front(), static_cast<intptr_t>(__builtin_offsetof(
-                               Node<ParsedParameter>, next_unordered)));
+FunctorRange ParsedFunctor::Range(void) const noexcept {
+  return impl->range;
 }
 
 const ParsedMessage &ParsedMessage::From(const ParsedDeclaration &decl) {
@@ -1117,7 +1148,8 @@ const ParsedMessage &ParsedMessage::From(const ParsedDeclaration &decl) {
 }
 
 DisplayRange ParsedMessage::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->rparen.NextPosition());
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+  return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
 NodeRange<ParsedMessage> ParsedMessage::Redeclarations(void) const {
@@ -1151,16 +1183,23 @@ DisplayRange ParsedModule::SpellingRange(void) const noexcept {
 
 // Return the ID of this module. Returns `~0u` if not valid.
 uint64_t ParsedModule::Id(void) const noexcept {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Woverflow"
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#  pragma GCC diagnostic ignored "-Woverflow"
+#endif
+
   parse::IdInterpreter interpreter = {};
   interpreter.info.module_id = impl->first.DisplayId();
   interpreter.info.atom_name_id = ~0u;
   interpreter.info.var_id = ~0u;
   interpreter.info.arity = ~0u;
   return interpreter.flat;
-#pragma GCC diagnostic pop
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 }
 
 NodeRange<ParsedQuery> ParsedModule::Queries(void) const {
@@ -1286,4 +1325,6 @@ std::string_view ParsedInline::CodeToInline(void) const noexcept {
 
 }  // namespace hyde
 
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif

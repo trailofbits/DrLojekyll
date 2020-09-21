@@ -154,7 +154,10 @@ maybe_inline:
 functor_decl: "#functor" atom "(" param_list_2 ")" constraints "\n"
 
 constraints:
-constraints: "unordered" "(" param_list_3 ")" constraints
+constraints: "range" "(" "." ")" constraints
+constraints: "range" "(" "+" ")" constraints
+constraints: "range" "(" "*" ")" constraints
+constraints: "range" "(" "?" ")" constraints
 constraints: "impure" constraints
 
 param_list_0: type named_var "," param_list_0
@@ -169,8 +172,6 @@ param_list_1: named_var
 param_list_2: binding_specifier_2 type named_var "," param_list_2
 param_list_2: binding_specifier_2 type named_var
 
-param_list_3: named_var "," param_list_3
-param_list_3: named_var "," named_var
 
 type: "i8"
 type: "i16"

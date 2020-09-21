@@ -230,7 +230,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
     ret |= selects.RemoveUnused() | tuples.RemoveUnused() |
            kv_indices.RemoveUnused() | joins.RemoveUnused() |
            maps.RemoveUnused() | aggregates.RemoveUnused() |
-           merges.RemoveUnused() | constraints.RemoveUnused() |
+           merges.RemoveUnused() | compares.RemoveUnused() |
            inserts.RemoveUnused();
     all_ret |= ret;
   } while (ret);
@@ -239,7 +239,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
       [](REL *rel) { return rel->inserts.Empty() && rel->selects.Empty(); });
 
   all_ret |= ios.RemoveIf(
-      [](IO *io) { return io->receives.Empty() && io->sends.Empty(); });
+      [](IO *io) { return io->receives.Empty() && io->transmits.Empty(); });
 
   return 0 != all_ret;
 }
@@ -383,7 +383,7 @@ bool QueryImpl::ShrinkConditions(void) {
       cond->positive_users.Clear();
       cond->negative_users.Clear();
 
-    } else if (CMP *cmp = setter->AsConstraint(); cmp) {
+    } else if (CMP *cmp = setter->AsCompare(); cmp) {
       (void) cmp;
     }
   }

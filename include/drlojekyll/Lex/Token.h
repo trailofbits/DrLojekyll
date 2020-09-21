@@ -173,17 +173,28 @@ enum class Lexeme : uint8_t {
   // Keyword for aggregation over some relation.
   kKeywordOver,
 
-  // Used when specifying that some subset of the `bound`-attributed parameters
-  // to a functor can be re-ordered for the sake of optimization. For example:
+  // Used to specify the range or amplification of a functor. For example,
   //
   //      #functor add_i32(
   //          bound i32 LHS,
   //          bound i32 RHS,
-  //          free i32 Sum) unordered(LHS, RHS)
+  //          free i32 Sum) range(.)
   //
-  // This lets us say that the optimizer is permitted to reorder the `LHS`
-  // and `RHS` parameters.
-  kKeywordUnordered,
+  // Here we say that the range of `add_i32` is one-to-one. That is we will
+  // produce one and only one output for each input.
+  //
+  // Possible variations and their meanings are:
+  //
+  //      range(?)      Zero-or-one
+  //      range(*)      Zero-or-more
+  //      range(.)      One-to-one
+  //      range(+)      One-or-more
+  //
+  // The default range for a functor is conservatively assumed to be
+  // zero-or-more. If a functor has no `free` parameters then it implicitly
+  // has a zero-or-one range. Finally, an aggregating functor is not allowed
+  // to have a range specifier, though you can think of it as many-to-one.
+  kKeywordRange,
 
   // Used with functors to tell the compiler that the outputs (free variables)
   // of the functor, which in this case is like a map, are not pure with respect
@@ -212,7 +223,9 @@ enum class Lexeme : uint8_t {
   kPuncPeriod,
   kPuncComma,
   kPuncColon,
-
+  kPuncQuestion,
+  kPuncPlus,
+  kPuncStar,
   kPuncEqual,
 
   // NOTE(pag): We don't supports things like `<=` or `>=` because dealing
