@@ -17,6 +17,6 @@ target_link_libraries(ext_test PRIVATE
     DrLojekyll::Lex
     DrLojekyll::Parse
     DrLojekyll::DataFlow
-    DrLojekyll::CodeGen
+    DrLojekyll::ControlFlow
     DrLojekyll::Version
 )
