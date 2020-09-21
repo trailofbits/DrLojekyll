@@ -137,14 +137,14 @@ jobs:
           mkdir -p fuzz-run/Debug
           cp -r data/examples fuzz-run/Debug/corpus
           cd fuzz-run/Debug
-          if ../../build/fuzz/Debug/fuzzer \
-               -max_total_time=3 \
-               -timeout=1 \
-               -max_len=400 \
-               -print_final_stats=1 \
-               -dict=../../fuzz/dict.txt \
-               -exact_artifact_path=boom.txt \
-               corpus; then
+          if ! ../../build/fuzz/Debug/fuzzer \
+                 -max_total_time=3 \
+                 -timeout=1 \
+                 -max_len=400 \
+                 -print_final_stats=1 \
+                 -dict=../../fuzz/dict.txt \
+                 -exact_artifact_path=boom.txt \
+                 corpus; then
             echo >&2 "Fuzzing smoke test failed!"
             echo >&2 "Base64-encoded input that triggered the failure:"
             base64 boom.txt >&2
