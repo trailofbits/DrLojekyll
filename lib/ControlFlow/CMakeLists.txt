@@ -1,7 +1,5 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-# Copyright 2020, Trail of Bits, Inc. All rights reserved.
-
 set(ControlFlow_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/ControlFlow/Format.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/ControlFlow/Program.h"
