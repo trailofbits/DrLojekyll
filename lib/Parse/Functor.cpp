@@ -288,6 +288,13 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     }
   }
 
+  if (state != 6) {
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete functor declaration; the declaration must be "
+        << "placed entirely on one line";
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+  }
+
   // If this is a filter functor then change the default range behavior.
   if (functor->range_begin_opt.IsInvalid() && !num_free_params) {
     functor->range = FunctorRange::kZeroOrOne;
@@ -298,14 +305,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   DisplayRange range_spec(functor->range_begin_opt.Position(),
                           functor->range_end_opt.NextPosition());
 
-  if (state != 6) {
-    context->error_log.Append(scope_range, next_pos)
-        << "Incomplete functor declaration; the declaration must be "
-        << "placed entirely on one line";
-    RemoveDecl<ParsedFunctor>(std::move(functor));
-
   // Aggregating functors can't have range specifiers.
-  } else if (is_aggregate && functor->range_begin_opt.IsValid()) {
+  if (is_aggregate && functor->range_begin_opt.IsValid()) {
     context->error_log.Append(scope_range, range_spec)
         << "Aggregating functors are not allowed to have range specifiers";
 
