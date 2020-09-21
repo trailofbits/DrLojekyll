@@ -293,6 +293,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         << "Incomplete functor declaration; the declaration must be "
         << "placed entirely on one line";
     RemoveDecl<ParsedFunctor>(std::move(functor));
+    return;
   }
 
   // If this is a filter functor then change the default range behavior.
