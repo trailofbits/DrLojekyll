@@ -113,7 +113,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.FUZZ_RUN_DIR }}
-          key: fuzz_run_dir-${{ github.sha }}
+          key: fuzz_run_dir-${{ github.run_id }}
           restore-keys: fuzz_run_dir-
 
       - name: Prepare for fuzzing
