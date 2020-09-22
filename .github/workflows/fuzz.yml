@@ -105,8 +105,10 @@ jobs:
       #
       #       This could be simplified if GitHub Actions cache mechanism had a
       #       way of explicitly forcing the cache to be updated upon job
-      #       completion.  Alternatively, we may want to switch to some other
-      #       mechanism for persisting the corpus, such as an S3 bucket.
+      #       completion.  (Relevant: a fork of the cache action that does this: https://github.com/pat-s/always-upload-cache)
+      #
+      #       Alternatively, we may want to switch to some other mechanism for
+      #       persisting the corpus, such as an S3 bucket.
       #
       #       See #76.
       - name: Cache fuzzer artifacts
@@ -165,6 +167,9 @@ jobs:
       # GitHub UI if needed
       - name: Archive fuzzer artifacts
         uses: actions/upload-artifact@v2
+        # We want to always upload artifacts, especially in the case of
+        # failure, to aid in reproducing problems detected through fuzzing.
+        if: ${{ always() }}
         with:
           name: fuzzer-artifacts
           path: ${{ env.FUZZ_RUN_DIR }}
