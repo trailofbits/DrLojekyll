@@ -1,4 +1,5 @@
 [![Continuous Integration](https://github.com/trailofbits/DrLojekyll/workflows/Continuous%20Integration/badge.svg?branch=master)](https://github.com/trailofbits/DrLojekyll/actions?query=workflow%3A%22Continuous+Integration%22+branch%3Amaster)
+[![Fuzz Testing](https://github.com/trailofbits/DrLojekyll/workflows/Fuzz%20Testing/badge.svg?branch=master)](https://github.com/trailofbits/DrLojekyll/actions?query=workflow%3A%22Fuzz+Testing%22+branch%3Amaster)
 
 # Dr. Lojekyll
 
