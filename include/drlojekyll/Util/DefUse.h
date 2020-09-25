@@ -510,6 +510,7 @@ class Def {
   inline void ForEachUse(CB cb) const {
     for (const auto &use : uses) {
       if (use) {
+        assert(self == use->def_being_used);
         if (auto user = dynamic_cast<U *>(use->user); user) {
           cb(user, use->def_being_used);
         }
@@ -753,7 +754,7 @@ class DefList {
   }
 
   T *operator[](size_t index) const noexcept {
-    return defs[index]->self;
+    return dynamic_cast<T *>(defs[index]->self);
   }
 
   unsigned Size(void) const noexcept {
