@@ -303,6 +303,16 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     const auto prev_decl = reinterpret_cast<Node<T> *>(redecls.front());
     assert(prev_decl->parameters.size() == num_params);
 
+    // The first usage of a functor in a `mutable` attribute marks it as
+    // being a merge functor and forces a `1:1` range.
+    if (prev_decl->range != decl->range &&
+        prev_decl->range == FunctorRange::kOneToOne &&
+        prev_decl->is_merge) {
+      assert(!decl->is_merge);
+      decl->is_merge = true;
+      decl->range = FunctorRange::kOneToOne;
+    }
+
     // The range specifications don't match.
     if (prev_decl->range != decl->range) {
       DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
@@ -336,6 +346,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
         note << "Previous declaration uses the implicit zero-or-more range "
              << "specification";
 
+      // Neither is valid.
       } else {
         assert(false);
       }
