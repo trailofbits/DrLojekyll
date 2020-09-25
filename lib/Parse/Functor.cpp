@@ -310,6 +310,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
   if (is_aggregate && functor->range_begin_opt.IsValid()) {
     context->error_log.Append(scope_range, range_spec)
         << "Aggregating functors are not allowed to have range specifiers";
+    RemoveDecl<ParsedFunctor>(std::move(functor));
 
   // Filter functors, i.e. functors taking in only bound parameters, must have
   // a zero-or-one range.
@@ -317,6 +318,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     context->error_log.Append(scope_range, range_spec)
         << "Invalid range specified on filter functor (having only bound "
         << "parameters); range must be 'range(?)`, i.e. zero-or-one";
+    RemoveDecl<ParsedFunctor>(std::move(functor));
 
   // If we have a summary argument, then require us to have an aggregate
   // argument.
