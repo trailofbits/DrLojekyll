@@ -15,26 +15,26 @@ class ErrorLog {
  public:
   explicit ErrorLog(const DisplayManager &dm_);
 
-  // An error message related to a line:column offset.
+  // Add the given error message.
   void Append(Error error) const;
 
-  // An error message related to a line:column offset.
+  // Add a new error message related to a line:column offset.
   Error Append(const DisplayPosition &pos) const;
 
-  // An error message related to a highlighted range of tokens.
+  // Add a new error message related to a highlighted range of tokens.
   Error Append(const DisplayRange &range) const;
 
-  // An error message related to a highlighted range of tokens, with one
+  // Add a new error message related to a highlighted range of tokens, with one
   // character in particular being referenced.
   Error Append(const DisplayRange &range,
                const DisplayPosition &pos_in_range) const;
 
-  // An error message related to a highlighted range of tokens, with a sub-range
-  // in particular being referenced.
+  // Add an new error message related to a highlighted range of tokens, with a
+  // sub-range in particular being referenced.
   Error Append(const DisplayRange &range, const DisplayRange &sub_range) const;
 
-  // An error message related to a highlighted range of tokens, with a sub-range
-  // in particular being referenced, where the error itself is at
+  // Add a new error message related to a highlighted range of tokens, with a
+  // sub-range in particular being referenced, where the error itself is at
   // `pos_in_range`.
   Error Append(const DisplayRange &range, const DisplayRange &sub_range,
                const DisplayPosition &pos_in_range) const;
