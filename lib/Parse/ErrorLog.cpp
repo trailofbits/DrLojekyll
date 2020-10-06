@@ -57,6 +57,12 @@ void ErrorLog::Append(Error error) const {
   impl->errors.emplace_back(std::move(error));
 }
 
+Error ErrorLog::Append() const {
+  Error err(impl->dm);
+  impl->errors.push_back(err);
+  return err;
+}
+
 bool ErrorLog::IsEmpty(void) const {
   return impl->errors.empty();
 }

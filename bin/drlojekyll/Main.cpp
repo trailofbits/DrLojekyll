@@ -191,10 +191,9 @@ extern "C" int main(int argc, const char *argv[]) {
     if (!strcmp(argv[i], "-o")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '-o' must be followed by a file path for "
-            << "C++ code output";
-        error_log.Append(std::move(err));
+        error_log.Append()
+          << "Command-line argument '-o' must be followed by a file path for "
+          << "C++ code output";
       } else {
         cpp_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gCodeStream = &(cpp_out->os);
@@ -206,11 +205,10 @@ extern "C" int main(int argc, const char *argv[]) {
                !strcmp(argv[i], "-amalgamation")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '" << argv[i - 1]
+        error_log.Append()
+            << "Command-line argument '" << argv[i - 1]
             << "' must be followed by a file path for "
             << "alamgamated Datalog output";
-        error_log.Append(std::move(err));
       } else {
         dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDRStream = &(dr_out->os);
@@ -220,11 +218,10 @@ extern "C" int main(int argc, const char *argv[]) {
     } else if (!strcmp(argv[i], "--dot") || !strcmp(argv[i], "-dot")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '" << argv[i - 1]
+        error_log.Append()
+            << "Command-line argument '" << argv[i - 1]
             << "' must be followed by a file path for "
             << "GraphViz DOT digraph output";
-        error_log.Append(std::move(err));
       } else {
         dot_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDOTStream = &(dot_out->os);
@@ -233,9 +230,8 @@ extern "C" int main(int argc, const char *argv[]) {
     // Datalog module file search path.
     } else if (strstr(argv[i], "-M")) {
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '-M' must be followed by a directory path";
-        error_log.Append(std::move(err));
+        error_log.Append()
+          << "Command-line argument '-M' must be followed by a directory path";
         continue;
       }
       const char *path = argv[++i];
@@ -246,10 +242,8 @@ extern "C" int main(int argc, const char *argv[]) {
     } else if (!strcmp(argv[i], "-isystem")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '-isystem' must be followed by a directory path";
-        error_log.Append(std::move(err));
-
+        error_log.Append()
+          << "Command-line argument '-isystem' must be followed by a directory path";
       } else {
         parser.AddIncludeSearchPath(argv[i], hyde::Parser::kSystemInclude);
       }
@@ -257,9 +251,8 @@ extern "C" int main(int argc, const char *argv[]) {
     // Include file search path.
     } else if (strstr(argv[i], "-I")) {
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '-I' must be followed by a directory path";
-        error_log.Append(std::move(err));
+        error_log.Append()
+          << "Command-line argument '-I' must be followed by a directory path";
         continue;
       }
       const char *path = argv[++i];
@@ -279,9 +272,8 @@ extern "C" int main(int argc, const char *argv[]) {
     // Does this look like a command-line option?
     } else if (strstr(argv[i], "--") == argv[i] ||
                strchr(argv[i], '-') == argv[i]) {
-      hyde::Error err(display_manager);
-      err << "Unrecognized command-line argument '" << argv[i] << "'";
-      error_log.Append(std::move(err));
+      error_log.Append()
+        << "Unrecognized command-line argument '" << argv[i] << "'";
       continue;
 
     // Input datalog file, add it to the list of paths to parse.
@@ -315,9 +307,7 @@ extern "C" int main(int argc, const char *argv[]) {
   auto code = EXIT_FAILURE;
 
   if (!num_input_paths) {
-    hyde::Error err(display_manager);
-    err << "No input files to parse";
-    error_log.Append(std::move(err));
+    error_log.Append() << "No input files to parse";
 
   // Parse a single module.
   } else if (1 == num_input_paths) {
