@@ -35,7 +35,7 @@ OutputStream *gCodeStream = nullptr;
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
 
-  if (auto query_opt = Query::Build(module, error_log); query_opt) {
+  if (auto query_opt = Query::Build(module, error_log)) {
     if (gDOTStream) {
       (*gDOTStream) << *query_opt;
       gDOTStream->Flush();
@@ -49,7 +49,6 @@ static int CompileModule(hyde::DisplayManager display_manager,
     }
 
     return EXIT_SUCCESS;
-
   } else {
     return EXIT_FAILURE;
   }
@@ -98,7 +97,9 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   return CompileModule(display_manager, error_log, module);
 }
 
-// Our current clang-format configuration reformats the long lines in following function into something very hard to read...
+// Our current clang-format configuration reformats the long lines in following
+// function into something very hard to read, so explicitly disable
+// clang-format for this bit.
 //
 // clang-format off
 static int HelpMessage(const char *argv[]) {
