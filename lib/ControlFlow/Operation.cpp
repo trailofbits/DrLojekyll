@@ -320,18 +320,34 @@ bool Node<ProgramTableJoinRegion>::Equals(
   }
 
   for (auto i = 0u; i < num_tables; ++i) {
-    auto &vars_1 = pivot_vars[i];
-    auto &vars_2 = that->pivot_vars[i];
-    for (auto j = 0u, max_j = vars_1.Size(); j < max_j; ++j) {
-      if (!eq.Contains(vars_1[j], vars_2[j])) {
+    const auto &cols_1 = pivot_cols[i];
+    const auto &cols_2 = that->pivot_cols[i];
+    for (auto j = 0u, max_j = cols_1.Size(); j < max_j; ++j) {
+      if (!eq.Contains(cols_1[j], cols_2[j])) {
         return false;
       }
     }
   }
 
   for (auto i = 0u; i < num_tables; ++i) {
-    auto &vars_1 = output_vars[i];
-    auto &vars_2 = that->output_vars[i];
+    const auto &cols_1 = output_cols[i];
+    const auto &cols_2 = that->output_cols[i];
+    for (auto j = 0u, max_j = cols_1.Size(); j < max_j; ++j) {
+      if (!eq.Contains(cols_1[j], cols_2[j])) {
+        return false;
+      }
+    }
+  }
+
+  const auto &pivot_vars_1 = pivot_vars;
+  const auto &pivot_vars_2 = that->pivot_vars;
+  for (auto j = 0u, max_j = pivot_vars_1.Size(); j < max_j; ++j) {
+    eq.Insert(pivot_vars_1[j], pivot_vars_2[j]);
+  }
+
+  for (auto i = 0u; i < num_tables; ++i) {
+    const auto &vars_1 = output_vars[i];
+    const auto &vars_2 = that->output_vars[i];
     for (auto j = 0u, max_j = vars_1.Size(); j < max_j; ++j) {
       eq.Insert(vars_1[j], vars_2[j]);
     }

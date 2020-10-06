@@ -270,7 +270,6 @@ enum class ProgramOperation {
   // A JOIN over some tables.
   kJoinTables,
   kAppendJoinPivotsToVector,
-  kLoopOverJoinPivots,
   kClearJoinPivotVector,
   kSortAndUniquePivotVector,
 
@@ -535,7 +534,9 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kJoinTables),
         query_join(query_join_),
         tables(this),
-        indices(this) {}
+        indices(this),
+        pivot_vars(this),
+        pivot_cols() {}
 
   bool IsNoOp(void) const noexcept override;
 
@@ -550,10 +551,15 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
 
   UseList<TABLE> tables;
   UseList<TABLEINDEX> indices;
+  UseRef<VECTOR> pivot_vec;
 
-  std::vector<UseList<VAR>> pivot_vars;
+  // There is a `1:N` correspondence bween `pivot_vars` and `pivot_cols`.
+  DefList<VAR> pivot_vars;
+  std::vector<UseList<TABLECOLUMN>> pivot_cols;
 
+  // There is a 1:1 correspondence between `output_vars` and `output_cols`.
   std::vector<DefList<VAR>> output_vars;
+  std::vector<UseList<TABLECOLUMN>> output_cols;
 };
 
 using TABLEJOIN = Node<ProgramTableJoinRegion>;

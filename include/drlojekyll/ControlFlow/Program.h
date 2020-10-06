@@ -397,6 +397,10 @@ class ProgramTableJoinRegion
   // bindings are applied.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
+  // The pivot vector that contains the join pivots. The elements of this
+  // pivot vector are in the same order as `OutputPivotVariables()`.
+  DataVector PivotVector(void) const noexcept;
+
   // The tables that are joined together. The same table may appear more than
   // once.
   UsedNodeRange<DataTable> Tables(void) const;
@@ -404,14 +408,23 @@ class ProgramTableJoinRegion
   // The indices on the tables.
   UsedNodeRange<DataIndex> Indices(void) const;
 
+  // The columns used in the scan of the Nth table. These are in the same
+  // order as the entries in `PivotVector()` and `OutputPivotVariables()`.
+  UsedNodeRange<DataColumn> IndexedColumns(unsigned table_index) const;
+
+  // These are the output columns associated with the Nth table scan. These
+  // do NOT include pivot columns.
+  UsedNodeRange<DataColumn> SelectedColumns(unsigned table_index) const;
+
   // The index used by the Nth table scan.
   DataIndex Index(unsigned table_index) const noexcept;
 
-  // These are the input variables that are used for scanning from the Nth
-  // table. They are in the correct order for the index.
-  UsedNodeRange<DataVariable> PivotVariables(unsigned table_index) const;
+  // These are the output variables for the pivot columns. These are in the same
+  // order as the entries in the pivot vector.
+  DefinedNodeRange<DataVariable> OutputPivotVariables(void) const;
 
-  // These are the output variables from the Nth table scan.
+  // These are the output variables from the Nth table scan. These do NOT include
+  // pivot variables.
   DefinedNodeRange<DataVariable> OutputVariables(unsigned table_index) const;
 
  private:

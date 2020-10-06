@@ -72,8 +72,13 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto view_join = op->AsTableJoin(); view_join) {
       view_join->tables.ClearWithoutErasure();
       view_join->indices.ClearWithoutErasure();
-      for (auto &pivot_vars : view_join->pivot_vars) {
-        pivot_vars.ClearWithoutErasure();
+      view_join->pivot_vec.ClearWithoutErasure();
+      for (auto &cols : view_join->pivot_cols) {
+        cols.ClearWithoutErasure();
+      }
+
+      for (auto &cols : view_join->output_cols) {
+        cols.ClearWithoutErasure();
       }
 
     } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
@@ -256,7 +261,6 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
       return VectorUsage::kUnionInputVector;
     case ProgramOperation::kAppendJoinPivotsToVector:
     case ProgramOperation::kClearJoinPivotVector:
-    case ProgramOperation::kLoopOverJoinPivots:
     case ProgramOperation::kSortAndUniquePivotVector:
       return VectorUsage::kJoinPivots;
     case ProgramOperation::kAppendToProductInputVector:
@@ -476,11 +480,35 @@ DataIndex ProgramTableJoinRegion::Index(unsigned table_index) const noexcept {
   return DataIndex(impl->indices[table_index]);
 }
 
-UsedNodeRange<DataVariable>
-ProgramTableJoinRegion::PivotVariables(unsigned table_index) const {
-  assert(table_index < impl->pivot_vars.size());
-  const auto &vars = impl->pivot_vars[table_index];
-  return {vars.begin(), vars.end()};
+// The pivot vector that contains the join pivots. The elements of this
+// pivot vector are in the same order as `OutputPivotVariables()`.
+DataVector ProgramTableJoinRegion::PivotVector(void) const noexcept {
+  return DataVector(impl->pivot_vec.get());
+}
+
+DefinedNodeRange<DataVariable>
+ProgramTableJoinRegion::OutputPivotVariables(void) const {
+  const auto &vars = impl->pivot_vars;
+  return {DefinedNodeIterator<DataVariable>(vars.begin()),
+          DefinedNodeIterator<DataVariable>(vars.end())};
+}
+
+// The columns used in the scan of the Nth table. These are in the same
+// order as the entries in `PivotVector()` and `OutputPivotVariables()`.
+UsedNodeRange<DataColumn>
+ProgramTableJoinRegion::IndexedColumns(unsigned table_index) const {
+  assert(table_index < impl->pivot_cols.size());
+  const auto &cols = impl->pivot_cols[table_index];
+  return {cols.begin(), cols.end()};
+}
+
+// These are the output columns associated with the Nth table scan. These
+// do NOT include pivot columns.
+UsedNodeRange<DataColumn>
+ProgramTableJoinRegion::SelectedColumns(unsigned table_index) const {
+  assert(table_index < impl->output_cols.size());
+  const auto &cols = impl->output_cols[table_index];
+  return {cols.begin(), cols.end()};
 }
 
 DefinedNodeRange<DataVariable>
