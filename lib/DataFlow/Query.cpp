@@ -593,7 +593,9 @@ UsedNodeRange<QueryView> QueryJoin::JoinedViews(void) const noexcept {
   return {impl->joined_views.begin(), impl->joined_views.end()};
 }
 
-// Returns the set of pivot columns proposed by the Nth incoming view.
+// Returns the input columns corresponding with the Nth output pivot column.
+// All of the input columns must have matching values in order for the
+// JOIN to succeed.
 UsedNodeRange<QueryColumn>
 QueryJoin::NthInputPivotSet(unsigned n) const noexcept {
   assert(n < impl->num_pivots);

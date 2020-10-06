@@ -254,24 +254,41 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
     os << os.Indent() << "join-tables\n";
     os.PushIndent();
+    os << os.Indent();
+    auto sep = "vector-loop {";
+    const auto pivot_vars = region.OutputPivotVariables();
+    for (auto var : pivot_vars) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "} over " << region.PivotVector() << '\n';
+
     const auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
       auto table = tables[i];
       auto index = region.Index(i);
-      auto pivots = region.PivotVariables(i);
-      auto outputs = region.OutputVariables(i);
-      os << os.Indent() << "from " << table << " using " << index;
-      auto sep = " with {";
-      for (auto var : pivots) {
-        os << sep << var;
+      os << os.Indent();
+
+      sep = "select {";
+      auto end = "select {} from ";
+      auto cols = region.SelectedColumns(i);
+      auto j = 0u;
+      for (auto var : region.OutputVariables(i)) {
+        os << sep << cols[j++] << " as " << var;
         sep = ", ";
+        end = "} from ";
       }
-      sep = "} select {";
-      for (auto var : outputs) {
-        os << sep << var;
-        sep = ", ";
+
+      os << end << table << " using " << index;
+
+      sep = " where ";
+      j = 0u;
+      for (auto col : region.IndexedColumns(i)) {
+        os << sep << col << " = " << pivot_vars[j++];
+        sep = " and ";
       }
-      os << "}\n";
+
+      os << '\n';
     }
     os.PushIndent();
     os << (*maybe_body);

@@ -406,7 +406,9 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   // Returns the `nth` pivot output column.
   QueryColumn NthOutputPivotColumn(unsigned n) const noexcept;
 
-  // Returns the set of pivot columns proposed by the Nth incoming view.
+  // Returns the input columns corresponding with the Nth output pivot column.
+  // All of the input columns must have matching values in order for the
+  // JOIN to succeed.
   UsedNodeRange<QueryColumn> NthInputPivotSet(unsigned n) const noexcept;
 
   // Returns the `nth` joined output column. This column is not a pivot.

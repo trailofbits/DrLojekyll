@@ -153,6 +153,9 @@ static void MapVariables(REGION *region) {
         var->defining_region = region;
       }
     } else if (auto join = op->AsTableJoin(); join) {
+      for (auto var : join->pivot_vars) {
+        var->defining_region = region;
+      }
       for (const auto &var_list : join->output_vars) {
         for (auto var : var_list) {
           var->defining_region = region;
