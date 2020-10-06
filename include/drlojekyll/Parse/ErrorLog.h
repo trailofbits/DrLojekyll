@@ -13,8 +13,6 @@ class DisplayRange;
 // Keeps track of a log of errors.
 class ErrorLog {
  public:
-  ~ErrorLog(void);
-
   explicit ErrorLog(const DisplayManager &dm_);
 
   // An error message related to a line:column offset.

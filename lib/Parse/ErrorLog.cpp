@@ -17,8 +17,6 @@ class ErrorLog::Impl {
   std::vector<Error> errors;
 };
 
-ErrorLog::~ErrorLog(void) {}
-
 ErrorLog::ErrorLog(const DisplayManager &dm_)
     : impl(std::make_shared<Impl>(dm_)) {}
 
