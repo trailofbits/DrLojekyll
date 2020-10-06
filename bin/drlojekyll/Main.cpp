@@ -230,19 +230,14 @@ extern "C" int main(int argc, const char *argv[]) {
       }
 
     // Datalog module file search path.
-    } else if (argv[i] == strstr(argv[i], "-M")) {
-      const char *path = nullptr;
-      if (strlen(argv[i]) == 2) {
-        path = &(argv[i][2]);
-      } else {
-        if (i >= argc) {
-          hyde::Error err(display_manager);
-          err << "Command-line argument '-M' must be followed by a directory path";
-          error_log.Append(std::move(err));
-          continue;
-        }
-        path = argv[++i];
+    } else if (strstr(argv[i], "-M")) {
+      if (i >= argc) {
+        hyde::Error err(display_manager);
+        err << "Command-line argument '-M' must be followed by a directory path";
+        error_log.Append(std::move(err));
+        continue;
       }
+      const char *path = argv[++i];
 
       parser.AddModuleSearchPath(path);
 
@@ -259,19 +254,14 @@ extern "C" int main(int argc, const char *argv[]) {
       }
 
     // Include file search path.
-    } else if (!strcmp(argv[i], "-I")) {
-      const char *path = nullptr;
-      if (strlen(argv[i]) == 2) {
-        path = &(argv[i][2]);
-      } else {
-        if (i >= argc) {
-          hyde::Error err(display_manager);
-          err << "Command-line argument '-I' must be followed by a directory path";
-          error_log.Append(std::move(err));
-          continue;
-        }
-        path = argv[++i];
+    } else if (strstr(argv[i], "-I")) {
+      if (i >= argc) {
+        hyde::Error err(display_manager);
+        err << "Command-line argument '-I' must be followed by a directory path";
+        error_log.Append(std::move(err));
+        continue;
       }
+      const char *path = argv[++i];
 
       parser.AddIncludeSearchPath(path, hyde::Parser::kUserInclude);
 
