@@ -41,8 +41,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
       gDOTStream->Flush();
     }
 
-    if (auto program_opt = Program::Build(*query_opt, error_log); program_opt) {
-      (void) program_opt;
+    if (auto program_opt = Program::Build(*query_opt, error_log)) {
       if (gCodeStream) {
         (*gCodeStream) << *program_opt;
         gCodeStream->Flush();
