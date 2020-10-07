@@ -244,6 +244,15 @@ uint64_t QueryView::Hash(void) const noexcept {
   return impl->hash ? impl->hash : impl->Hash();
 }
 
+// What condition this view sets, if any.
+std::optional<QueryCondition> QueryView::SetCondition(void) const noexcept {
+  if (impl->sets_condition) {
+    return QueryCondition(impl->sets_condition.get());
+  } else {
+    return std::nullopt;
+  }
+}
+
 // Positive conditions, i.e. zero-argument predicates, that must be true
 // for tuples to be accepted into this node.
 UsedNodeRange<QueryCondition>

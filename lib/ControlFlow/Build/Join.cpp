@@ -56,8 +56,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto join_view = QueryJoin::From(view);
   PROC *const proc = inserts[0]->containing_procedure;
 
-  auto pivot_vec = proc->VectorFor(impl, VectorKind::kJoinPivots,
-                              join_view.PivotColumns());
+  auto pivot_vec =
+      proc->VectorFor(impl, VectorKind::kJoinPivots, join_view.PivotColumns());
 
   for (auto insert : inserts) {
     const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
@@ -107,7 +107,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Fill in the pivot variables/columns.
   for (auto pivot_col : join_view.PivotColumns()) {
-    auto var = join->pivot_vars.Create(impl->next_id++, VariableRole::kJoinPivot);
+    auto var =
+        join->pivot_vars.Create(impl->next_id++, VariableRole::kJoinPivot);
     var->query_column = pivot_col;
     if (pivot_col.IsConstantRef()) {
       var->query_const = QueryConstant::From(pivot_col);
@@ -139,7 +140,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
 
     const auto table = TABLE::GetOrCreate(impl, pred_view);
-    const auto index = table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
+    const auto index =
+        table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
     join->tables.AddUse(table);
     join->indices.AddUse(index);
 
@@ -157,7 +159,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
         }
       }
       assert(false);
-      matched_pivot_col:
+    matched_pivot_col:
       continue;
     }
   }

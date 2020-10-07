@@ -794,6 +794,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             << "Mutable parameter is here";
       }
       return;
+
+    // We don't allow negation of zero-argument predicates, because if they
+    // are dataflow dependent, then there's no real way to "merge" multiple
+    // positive and negative flows.
+    } else if (clause->head_variables.empty()) {
+      context->error_log.Append(scope_range, negation_tok_range)
+          << "Deletion clauses cannot be specified on zero-argument predicates";
+      return;
     }
 
     // Check that all other insertions depend on messages? The key here is to

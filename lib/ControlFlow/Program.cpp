@@ -84,9 +84,19 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
       exists_check->cond_vars.ClearWithoutErasure();
 
+    } else if (auto exists_assert = op->AsExistenceAssertion(); exists_assert) {
+      exists_assert->cond_vars.ClearWithoutErasure();
+
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
       cmp->rhs_vars.ClearWithoutErasure();
+
+    } else if (auto gen = op->AsGenerate(); gen) {
+      gen->used_vars.ClearWithoutErasure();
+
+    } else if (auto call = op->AsCall(); call) {
+      call->arg_vars.ClearWithoutErasure();
+      call->arg_vecs.ClearWithoutErasure();
     }
   }
 
@@ -131,16 +141,19 @@ bool ProgramRegion::IsParallel(void) const noexcept {
     } \
   }
 
-IS_OP(VectorLoop)
-IS_OP(VectorAppend)
-IS_OP(VectorClear)
-IS_OP(VectorUnique)
+IS_OP(Call)
+IS_OP(ExistenceAssertion)
+IS_OP(ExistenceCheck)
+IS_OP(Generate)
 IS_OP(LetBinding)
 IS_OP(TableInsert)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
-IS_OP(ExistenceCheck)
 IS_OP(TupleCompare)
+IS_OP(VectorLoop)
+IS_OP(VectorAppend)
+IS_OP(VectorClear)
+IS_OP(VectorUnique)
 
 #undef IS_OP
 
@@ -165,6 +178,14 @@ bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
   return impl->op == ProgramOperation::kTestAllNonZero;
 }
 
+bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
+  return impl->op == ProgramOperation::kIncrementAll;
+}
+
+bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
+  return impl->op == ProgramOperation::kDecrementAll;
+}
+
 #define OPTIONAL_BODY(name) \
   std::optional<ProgramRegion> name::Body(void) const noexcept { \
     if (impl->body) { \
@@ -175,6 +196,7 @@ bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
   }
 
 OPTIONAL_BODY(ProgramExistenceCheckRegion)
+OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)
 OPTIONAL_BODY(ProgramTableInsertRegion)
@@ -193,15 +215,18 @@ OPTIONAL_BODY(ProgramTupleCompareRegion)
     return name(derived_impl); \
   }
 
+FROM_OP(ProgramCallRegion, AsCall)
+FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
+FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
+FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
+FROM_OP(ProgramTableInsertRegion, AsTableInsert)
+FROM_OP(ProgramTableJoinRegion, AsTableJoin)
+FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramVectorLoopRegion, AsVectorLoop)
 FROM_OP(ProgramVectorAppendRegion, AsVectorAppend)
 FROM_OP(ProgramVectorClearRegion, AsVectorClear)
 FROM_OP(ProgramVectorUniqueRegion, AsVectorUnique)
-FROM_OP(ProgramTableInsertRegion, AsTableInsert)
-FROM_OP(ProgramTableJoinRegion, AsTableJoin)
-FROM_OP(ProgramTableProductRegion, AsTableProduct)
-FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 
 #undef FROM_OP
 
@@ -216,18 +241,29 @@ FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
     return {impl->access.begin(), impl->access.end()}; \
   }
 
-DEFINED_RANGE(ProgramLetBindingRegion, DefinedVars, DataVariable, defined_vars)
-DEFINED_RANGE(ProgramVectorLoopRegion, TupleVariables, DataVariable,
-              defined_vars)
+// clang-format off
+DEFINED_RANGE(ProgramLetBindingRegion, DefinedVariables, DataVariable, defined_vars)
+DEFINED_RANGE(ProgramGenerateRegion, OutputVariables, DataVariable, defined_vars)
+DEFINED_RANGE(ProgramVectorLoopRegion, TupleVariables, DataVariable, defined_vars)
 DEFINED_RANGE(DataTable, Columns, DataColumn, columns)
 DEFINED_RANGE(DataTable, Indices, DataIndex, indices)
-DEFINED_RANGE(ProgramProcedure, InputVectors, DataVector, input_vectors)
+DEFINED_RANGE(ProgramProcedure, VectorParameters, DataVector, input_vectors)
+DEFINED_RANGE(ProgramProcedure, VariableParameters, DataVariable, input_vars)
 DEFINED_RANGE(ProgramProcedure, DefinedVectors, DataVector, vectors)
 DEFINED_RANGE(Program, Tables, DataTable, tables)
 DEFINED_RANGE(Program, Constants, DataVariable, const_vars)
+DEFINED_RANGE(Program, GlobalVariables, DataVariable, global_vars)
 DEFINED_RANGE(Program, Procedures, ProgramProcedure, procedure_regions)
+DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_vars)
 
-USED_RANGE(ProgramLetBindingRegion, UsedVars, DataVariable, used_vars)
+USED_RANGE(ProgramCallRegion, ArgumentVariables, DataVariable, arg_vars)
+USED_RANGE(ProgramCallRegion, ArgumentVectors, DataVector, arg_vecs)
+USED_RANGE(ProgramExistenceAssertionRegion, ReferenceCounts, DataVariable,
+           cond_vars)
+USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
+           cond_vars)
+USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
+USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
 USED_RANGE(ProgramTableInsertRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, Columns, DataColumn, columns)
@@ -235,13 +271,13 @@ USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
 USED_RANGE(ProgramTupleCompareRegion, RHS, DataVariable, rhs_vars)
 USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
 USED_RANGE(ProgramParallelRegion, Regions, ProgramRegion, regions)
-USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
-           cond_vars)
 USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
 USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
 USED_RANGE(ProgramTableProductRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vectors)
+
+// clang-format on
 
 #undef DEFINED_RANGE
 #undef USED_RANGE
@@ -287,6 +323,28 @@ VECTOR_OPS(ProgramVectorClearRegion)
 VECTOR_OPS(ProgramVectorUniqueRegion)
 
 #undef VECTOR_OPS
+
+// Does this functor application behave like a filter function?
+bool ProgramGenerateRegion::IsFilter(void) const noexcept {
+  return impl->op == ProgramOperation::kCallFilterFunctor;
+}
+
+// Returns `true` if repeated executions of the function given the same
+// inputs generate the same outputs.
+bool ProgramGenerateRegion::IsPure(void) const noexcept {
+  return impl->functor.IsPure();
+}
+
+// Returns `true` if repeated executions of the function given the same
+// inputs are not guaranteed to generate the same outputs.
+bool ProgramGenerateRegion::IsImpure(void) const noexcept {
+  return !impl->functor.IsPure();
+}
+
+// Returns the functor to be applied.
+ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
+  return impl->functor;
+}
 
 unsigned ProgramTableInsertRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
@@ -354,6 +412,7 @@ TypeKind DataVariable::Type(void) const noexcept {
     case VariableRole::kJoinPivot:
     case VariableRole::kJoinNonPivot:
     case VariableRole::kProductOutput:
+    case VariableRole::kFunctorOutput:
       if (impl->query_column) {
         return impl->query_column->Type().Kind();
       }
@@ -423,6 +482,11 @@ unsigned ProgramProcedure::Id(void) const noexcept {
   return impl->id;
 }
 
+// What type of procedure is this?
+ProcedureKind ProgramProcedure::Kind(void) const noexcept {
+  return impl->kind;
+}
+
 // The message received and handled by this procedure.
 std::optional<ParsedMessage> ProgramProcedure::Message(void) const noexcept {
   if (impl->io) {
@@ -486,13 +550,6 @@ DataVector ProgramTableJoinRegion::PivotVector(void) const noexcept {
   return DataVector(impl->pivot_vec.get());
 }
 
-DefinedNodeRange<DataVariable>
-ProgramTableJoinRegion::OutputPivotVariables(void) const {
-  const auto &vars = impl->pivot_vars;
-  return {DefinedNodeIterator<DataVariable>(vars.begin()),
-          DefinedNodeIterator<DataVariable>(vars.end())};
-}
-
 // The columns used in the scan of the Nth table. These are in the same
 // order as the entries in `PivotVector()` and `OutputPivotVariables()`.
 UsedNodeRange<DataColumn>
@@ -532,6 +589,10 @@ ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
   const auto &vars = impl->output_vars[table_index];
   return {DefinedNodeIterator<DataVariable>(vars.begin()),
           DefinedNodeIterator<DataVariable>(vars.end())};
+}
+
+ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
+  return ProgramProcedure(impl->called_proc);
 }
 
 }  // namespace hyde

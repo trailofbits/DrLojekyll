@@ -110,6 +110,7 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
   } else if (view.IsKVIndex()) {
 
   } else if (view.IsMap()) {
+    BuildEagerGenerateRegion(impl, QueryMap::From(view), context, parent);
 
   } else if (view.IsCompare()) {
     BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
@@ -125,17 +126,6 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
   } else {
     assert(false);
   }
-}
-
-// Returns a global reference count variable associated with a query condition.
-static VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
-  auto &cond_var = impl->cond_ref_counts[cond];
-  if (!cond_var) {
-    cond_var = impl->global_vars.Create(impl->next_id++,
-                                        VariableRole::kConditionRefCount);
-    cond_var->query_cond = cond;
-  }
-  return cond_var;
 }
 
 // Map all variables to their defining regions.
@@ -189,8 +179,8 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     return;
   }
 
-  const auto proc =
-      impl->procedure_regions.CreateDerived<PROC>(impl->next_id++);
+  const auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kMessageHandler);
   proc->io = io;
 
   const auto vec =
@@ -235,18 +225,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
                                receive.Successors(), nullptr);
   }
 
-  while (!context.work_list.empty()) {
-
-    //    context.view_to_work_item.clear();
-    std::stable_sort(context.work_list.begin(), context.work_list.end(),
-                     [](const WorkItemPtr &a, const WorkItemPtr &b) {
-                       return a->order > b->order;
-                     });
-
-    WorkItemPtr action = std::move(context.work_list.back());
-    context.work_list.pop_back();
-    action->Run(impl, context);
-  }
+  CompleteProcedure(impl, proc, context);
 }
 
 // Analyze the MERGE/UNION nodes and figure out which ones are inductive.
@@ -433,6 +412,33 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
 
 }  // namespace
 
+// Returns a global reference count variable associated with a query condition.
+VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
+  auto &cond_var = impl->cond_ref_counts[cond];
+  if (!cond_var) {
+    cond_var = impl->global_vars.Create(impl->next_id++,
+                                        VariableRole::kConditionRefCount);
+    cond_var->query_cond = cond;
+  }
+  return cond_var;
+}
+
+// Complete a procedure by exhausting the work list.
+void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
+  while (!context.work_list.empty()) {
+
+    //    context.view_to_work_item.clear();
+    std::stable_sort(context.work_list.begin(), context.work_list.end(),
+                     [](const WorkItemPtr &a, const WorkItemPtr &b) {
+                       return a->order > b->order;
+                     });
+
+    WorkItemPtr action = std::move(context.work_list.back());
+    context.work_list.pop_back();
+    action->Run(impl, context);
+  }
+}
+
 // Build an eager region. This guards the execution of the region in
 // conditionals if the view itself is conditional.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
@@ -514,6 +520,8 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   // predecessors and successors in terms of which ones are inductive and
   // which aren't.
   DiscoverInductions(query, context);
+
+  BuildInitProcedure(program, context);
 
   for (auto io : query.IOs()) {
     BuildEagerProcedure(program, io, context);

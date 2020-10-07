@@ -11,6 +11,10 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryMerge view, Context &usage, OP *parent,
                            TABLE *last_model) {
   assert(false && "TODO!");
+
+  // TODO(pag): Think about whether or not we need to actually de-duplicate
+  //            anything. It could be that we only need to dedup if we're on
+  //            the edge between eager/lazy, or if we're in lazy.
 }
 
 }  // namespace hyde
