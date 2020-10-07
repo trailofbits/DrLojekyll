@@ -57,7 +57,7 @@ void ErrorLog::Append(Error error) const {
   impl->errors.emplace_back(std::move(error));
 }
 
-Error ErrorLog::Append() const {
+Error ErrorLog::Append(void) const {
   Error err(impl->dm);
   impl->errors.push_back(err);
   return err;

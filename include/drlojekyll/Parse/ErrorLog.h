@@ -19,7 +19,7 @@ class ErrorLog {
   void Append(Error error) const;
 
   // Add a new error message constructed from this `ErrorLog`'s `DisplayManager`.
-  Error Append() const;
+  Error Append(void) const;
 
   // Add a new error message related to a line:column offset.
   Error Append(const DisplayPosition &pos) const;
