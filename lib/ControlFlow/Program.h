@@ -296,6 +296,9 @@ enum class ProgramOperation {
   // generated, then descend into `body`.
   kCallFunctor,
 
+  // Publish a message.
+  kPublishMessage,
+
   // Creates a let binding, which assigns uses of variables to definitions of
   // variables. In practice, let bindings are eliminated during the process
   // of optimization.
@@ -337,6 +340,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   AsExistenceAssertion(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
+  virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
   virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
   virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
@@ -508,7 +512,6 @@ class Node<ProgramTableInsertRegion> final
 
 using TABLEINSERT = Node<ProgramTableInsertRegion>;
 
-
 // A call of one procedure from within another.
 template <>
 class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
@@ -541,6 +544,34 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
 };
 
 using CALL = Node<ProgramCallRegion>;
+
+// A call of one procedure from within another.
+template <>
+class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_)
+      : Node<ProgramOperationRegion>(parent_,
+                                     ProgramOperation::kPublishMessage),
+        message(message_),
+        arg_vars(this) {}
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramPublishRegion> *AsPublish(void) noexcept override;
+
+  // Message being published.
+  const ParsedMessage message;
+
+  // Variables passed as arguments.
+  UseList<VAR> arg_vars;
+};
+
+using PUBLISH = Node<ProgramPublishRegion>;
 
 // Represents a positive or negative existence check.
 template <>

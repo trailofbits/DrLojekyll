@@ -13,6 +13,7 @@ OutputStream &operator<<(OutputStream &os, DataIndex index);
 OutputStream &operator<<(OutputStream &os, DataTable table);
 OutputStream &operator<<(OutputStream &os, DataVector vec);
 OutputStream &operator<<(OutputStream &os, DataVariable var);
+OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region);
 OutputStream &operator<<(OutputStream &os,

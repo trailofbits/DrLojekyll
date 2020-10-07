@@ -971,7 +971,13 @@ void QueryMerge::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
     const auto out_col = impl->columns[i];
     for (auto view : impl->merged_views) {
-      const auto in_col = view->columns[i];
+      COL *in_col = nullptr;
+      if (auto insert = view->AsInsert(); insert) {
+        in_col = view->input_columns[i];
+      } else {
+        in_col = view->columns[i];
+      }
+
       with_col(QueryColumn(in_col), InputColumnRole::kMergedColumn,
                QueryColumn(out_col));
     }

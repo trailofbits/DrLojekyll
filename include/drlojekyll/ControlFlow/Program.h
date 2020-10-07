@@ -63,6 +63,7 @@ class ProgramInductionRegion;
 class ProgramLetBindingRegion;
 class ProgramParallelRegion;
 class ProgramProcedure;
+class ProgramPublishRegion;
 class ProgramSeriesRegion;
 class ProgramVectorAppendRegion;
 class ProgramVectorClearRegion;
@@ -83,6 +84,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramInductionRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
   ProgramRegion(const ProgramParallelRegion &);
+  ProgramRegion(const ProgramPublishRegion &);
   ProgramRegion(const ProgramSeriesRegion &);
   ProgramRegion(const ProgramVectorAppendRegion &);
   ProgramRegion(const ProgramVectorClearRegion &);
@@ -108,6 +110,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsTableProduct(void) const noexcept;
   bool IsSeries(void) const noexcept;
   bool IsParallel(void) const noexcept;
+  bool IsPublish(void) const noexcept;
   bool IsTupleCompare(void) const noexcept;
 
  private:
@@ -119,6 +122,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramLetBindingRegion;
   friend class ProgramParallelRegion;
   friend class ProgramProcedure;
+  friend class ProgramPublishRegion;
   friend class ProgramSeriesRegion;
   friend class ProgramVectorAppendRegion;
   friend class ProgramVectorClearRegion;
@@ -594,6 +598,22 @@ class ProgramTupleCompareRegion
   using program::ProgramNode<ProgramTupleCompareRegion>::ProgramNode;
 };
 
+// Publishes a message to the pub/sub.
+class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
+ public:
+  static ProgramPublishRegion From(ProgramRegion) noexcept;
+
+  ParsedMessage Message(void) const noexcept;
+
+  // List of variables being published.
+  UsedNodeRange<DataVariable> VariableArguments(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramPublishRegion>::ProgramNode;
+};
+
 enum class ProcedureKind : unsigned { kInitializer, kMessageHandler };
 
 // A procedure in the program.
@@ -634,10 +654,10 @@ class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
   ProgramProcedure CalledProcedure(void) const noexcept;
 
   // List of variables passed as arguments to the procedure.
-  UsedNodeRange<DataVariable> ArgumentVariables(void) const;
+  UsedNodeRange<DataVariable> VariableArguments(void) const;
 
   // List of vectors passed as arguments to the procedure.
-  UsedNodeRange<DataVector> ArgumentVectors(void) const;
+  UsedNodeRange<DataVector> VectorArguments(void) const;
 
  private:
   friend class ProgramRegion;
