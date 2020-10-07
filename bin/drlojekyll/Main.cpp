@@ -30,6 +30,7 @@ namespace {
 OutputStream *gDOTStream = nullptr;
 OutputStream *gDRStream = nullptr;
 OutputStream *gCodeStream = nullptr;
+OutputStream *gIRStream = nullptr;
 
 
 static int CompileModule(hyde::DisplayManager display_manager,
@@ -42,8 +43,13 @@ static int CompileModule(hyde::DisplayManager display_manager,
     }
 
     if (auto program_opt = Program::Build(*query_opt, error_log)) {
+      if (gIRStream) {
+        (*gIRStream) << *program_opt;
+        gIRStream->Flush();
+      }
+
       if (gCodeStream) {
-        (*gCodeStream) << *program_opt;
+        // (*gCodeStream) << *program_opt;
         gCodeStream->Flush();
       }
     }
@@ -106,18 +112,23 @@ static int HelpMessage(const char *argv[]) {
   std::cout
       << "OVERVIEW: Dr. Lojekyll compiler" << std::endl
       << std::endl
-      << "USAGE: " << argv[0] << " [options] file..." << std::endl
+      << "USAGE: " << argv[0] << " [options] <DATALOG_PATH>..." << std::endl
       << std::endl
-      << "OPTIONS:" << std::endl
-      << "  -version              Show version number and exit." << std::endl
-      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++." << std::endl
-      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively" << std::endl
-      << "                        imported modules amalgamated into a single Datalog module." << std::endl
-      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph." << std::endl
+      << "OUTPUT OPTIONS:" << std::endl
+      << "  -ir-out <PATH>        Emit IR output to PATH." << std::endl
+      << "  -cpp-out <PATH>       Emit transpiled C++ output to PATH." << std::endl
+      << "  -amalgamation <PATH>  Emit an amalgamation of all the input and transitively" << std::endl
+      << "                        imported modules to PATH." << std::endl
+      << "  -dot <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
+      << std::endl
+      << "COMPILATION OPTIONS:" << std::endl
       << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
       << "  -isystem <PATH>       Directory where system C++ include files can be found." << std::endl
       << "  -I <PATH>             Directory where user C++ include files can be found." << std::endl
-      << "  <PATH>                Path to an input Datalog module to parse and transpile." << std::endl
+      << std::endl
+      << "OTHER OPTIONS:" << std::endl
+      << "  -help, -h             Show help and exit." << std::endl
+      << "  -version              Show version number and exit." << std::endl
       << std::endl;
 
   return EXIT_SUCCESS;
@@ -173,7 +184,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::string input_path;
 
   std::string file_path;
-  auto num_input_paths = 0;
+  int num_input_paths = 0;
 
   std::stringstream linked_module;
 
@@ -182,21 +193,33 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
+  std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
   // Parse the command-line arguments.
   for (auto i = 1; i < argc; ++i) {
 
     // C++ output file of the transpiled from the Dr. Lojekyll source code.
-    if (!strcmp(argv[i], "-o")) {
+    if (!strcmp(argv[i], "-cpp-out") || !strcmp(argv[i], "--cpp-out")) {
       ++i;
       if (i >= argc) {
         error_log.Append()
-            << "Command-line argument '-o' must be followed by a file path for "
-            << "C++ code output";
+            << "Command-line argument " << argv[i]
+            << " must be followed by a file path for C++ code output";
       } else {
         cpp_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gCodeStream = &(cpp_out->os);
+      }
+
+    } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument " << argv[i]
+            << " must be followed by a file path for IR output";
+      } else {
+        ir_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gIRStream = &(ir_out->os);
       }
 
     // Option to output a single Dr. Lojekyll Datalog file that is equivalent
@@ -302,9 +325,12 @@ extern "C" int main(int argc, const char *argv[]) {
     }
   }
 
-  auto code = EXIT_FAILURE;
+  int code = EXIT_FAILURE;
 
-  if (!num_input_paths) {
+  // Exit early if command-line option parsing failed.
+  if (!error_log.IsEmpty()) {
+
+  } else if (!num_input_paths) {
     error_log.Append() << "No input files to parse";
 
   // Parse a single module.
@@ -335,6 +361,8 @@ extern "C" int main(int argc, const char *argv[]) {
 
   if (code) {
     error_log.Render(std::cerr);
+  } else {
+    assert(error_log.IsEmpty());
   }
 
   return code;
