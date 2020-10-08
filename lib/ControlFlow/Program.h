@@ -265,16 +265,14 @@ enum class ProgramOperation {
   kCheckTupleIsPresentInTable,
   kCheckTupleIsNotPresentInTable,
 
-  // JOIN-specific
+  // Pairwise comparison between variables in two tuples.
+  kCompareTuples,
 
-  // A JOIN over some tables.
+  // Used by operations related to equi-joins over one or more tables.
   kJoinTables,
   kAppendJoinPivotsToVector,
-  kClearJoinPivotVector,
   kSortAndUniquePivotVector,
-
-  // Comparison between two tuples.
-  kCompareTuples,
+  kClearJoinPivotVector,
 
   // Used to implement the cross-product of some tables.
   kCrossProduct,
@@ -287,36 +285,46 @@ enum class ProgramOperation {
   // loop iteration.
   kLoopOverInputVector,
 
-  // Merge two values into an updated value when using `mutable`-attributed
-  // parameters.
-  kCallMergeFunctor,
-
-  // Call a filter function, stored in `functor`, that is a functor where all
+  // Call a filter functor, stored in `functor`, that is a functor where all
   // parameters are `bound`-attributed. These functors are interpreted as
   // predicates returning `true` or `false`. If `true` is returned, then
   // descend into `body`.
   kCallFilterFunctor,
 
-  // Compare two variables using `compare_operator`. `variables[0]` is the
-  // left-hand side operand, and `variables[1]` is the right-hand side operand
-  // of the comparison operator. If the comparison is `true` then descend into
-  // `body`.
-  kCompareVariables,
+  // Call a normal functor, stored in `functor`, where there is at least one
+  // free parameter to the functor that it must generate. If anything is
+  // generated, then descend into `body`.
+  kCallFunctor,
 
-  // Creates a let binding, such that `variables[2*n]` is the newly bound
-  // variable, and `variables[2*n + 1]` is the value being bound.
+  // Publish a message.
+  kPublishMessage,
+
+  // Creates a let binding, which assigns uses of variables to definitions of
+  // variables. In practice, let bindings are eliminated during the process
+  // of optimization.
   kLetBinding,
 
   // Used to test reference count variables associated with `QueryCondition`
   // nodes in the data flow.
   kTestAllNonZero,
   kTestAllZero,
+  kIncrementAll,
+  kDecrementAll,
+
+  // Call another procedure.
+  kCallProcedure,
+
+  // TODO: use in future.
 
   // Test/set a global boolean variable to `true`. The variable is
   // `variables[0]`. The usage is for cross products. If we've ever executed a
   // lazy cross-product, then we must always visit it.
   kTestGlobalVariableIsTrue,
   kSetGlobalVariableToTrue,
+
+  // Merge two values into an updated value when using `mutable`-attributed
+  // parameters.
+  kCallMergeFunctor,
 };
 
 // A generic operation.
@@ -326,16 +334,21 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual ~Node(void);
   explicit Node(REGION *parent_, ProgramOperation op_);
 
+  virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
+  virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
+  virtual Node<ProgramExistenceAssertionRegion> *
+  AsExistenceAssertion(void) noexcept;
+  virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
+  virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
+  virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
+  virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
+  virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
+  virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
+  virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
   virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
   virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
-  virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
-  virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
-  virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
-  virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
-  virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
-  virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
@@ -499,6 +512,67 @@ class Node<ProgramTableInsertRegion> final
 
 using TABLEINSERT = Node<ProgramTableInsertRegion>;
 
+// A call of one procedure from within another.
+template <>
+class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_)
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCallProcedure),
+        called_proc(called_proc_),
+        arg_vars(this),
+        arg_vecs(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramCallRegion> *AsCall(void) noexcept override;
+
+  // Procedure being called.
+  Node<ProgramProcedure> *const called_proc;
+
+  // Variables passed as arguments.
+  UseList<VAR> arg_vars;
+
+  // Vectors passed as arguments.
+  UseList<VECTOR> arg_vecs;
+};
+
+using CALL = Node<ProgramCallRegion>;
+
+// A call of one procedure from within another.
+template <>
+class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_)
+      : Node<ProgramOperationRegion>(parent_,
+                                     ProgramOperation::kPublishMessage),
+        message(message_),
+        arg_vars(this) {}
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramPublishRegion> *AsPublish(void) noexcept override;
+
+  // Message being published.
+  const ParsedMessage message;
+
+  // Variables passed as arguments.
+  UseList<VAR> arg_vars;
+};
+
+using PUBLISH = Node<ProgramPublishRegion>;
+
 // Represents a positive or negative existence check.
 template <>
 class Node<ProgramExistenceCheckRegion> final
@@ -524,6 +598,33 @@ class Node<ProgramExistenceCheckRegion> final
 };
 
 using EXISTS = Node<ProgramExistenceCheckRegion>;
+
+// Represents a positive or negative existence check.
+template <>
+class Node<ProgramExistenceAssertionRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
+      : Node<ProgramOperationRegion>(parent_, op_),
+        cond_vars(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramExistenceAssertionRegion> *
+  AsExistenceAssertion(void) noexcept override;
+
+  // Variables associated with these existence checks.
+  UseList<VAR> cond_vars;
+};
+
+using ASSERT = Node<ProgramExistenceAssertionRegion>;
 
 // An equi-join between two or more tables.
 template <>
@@ -622,16 +723,54 @@ class Node<ProgramTupleCompareRegion> final
 
 using TUPLECMP = Node<ProgramTupleCompareRegion>;
 
+// Calling a functor.
+template <>
+class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_)
+      : Node<ProgramOperationRegion>(
+            parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
+                                         : ProgramOperation::kCallFunctor),
+        functor(functor_),
+        defined_vars(this),
+        used_vars(this) {}
+
+  Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
+
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  const ParsedFunctor functor;
+
+  // Free variables that are generated from the application of the functor.
+  DefList<VAR> defined_vars;
+
+  // Bound variables passed in as arguments to the functor.
+  UseList<VAR> used_vars;
+};
+
+using GENERATOR = Node<ProgramGenerateRegion>;
+
 // A procedure region. This represents some entrypoint of data into the program.
 template <>
 class Node<ProgramProcedure> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  inline Node(unsigned id_)
+  inline Node(unsigned id_, ProcedureKind kind_)
       : Node<ProgramRegion>(this),
         id(id_),
+        kind(kind_),
         tables(this) {}
+
+
+  // Returns `true` if this region is a no-op.
+  bool IsNoOp(void) const noexcept override;
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
@@ -640,6 +779,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
                     DefinedNodeRange<QueryColumn> cols);
 
   const unsigned id;
+  const ProcedureKind kind;
 
   std::optional<QueryIO> io;
 
@@ -657,6 +797,10 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // Vectors defined in this procedure. If this is a vector procedure then
   // the first vector is the input vector.
   DefList<VECTOR> vectors;
+
+  // Are we currently checking if this procedure is being used? This is to
+  // avoid infinite recursion when doing a procedure call NoOp checks.
+  mutable bool checking_if_nop{false};
 };
 
 using PROC = Node<ProgramProcedure>;
@@ -787,8 +931,17 @@ class ProgramImpl : public User {
   unsigned next_id{0u};
 
   DefList<VAR> const_vars;
+
+  // Maps constants to their global variables.
   std::unordered_map<QueryConstant, VAR *> const_to_var;
+
+  // Maps query conditions to the reference counts associated with them.
   std::unordered_map<QueryCondition, VAR *> cond_ref_counts;
+
+  // Maps views whose outputs are all constants or constant references to
+  // condition variables that tracker whether or not we need to actually re-
+  // execute the successors.
+  std::unordered_map<QueryView, VAR *> const_view_to_var;
 
   // We build up "data models" of views that can share the same backing storage.
   std::vector<std::unique_ptr<DataModel>> models;

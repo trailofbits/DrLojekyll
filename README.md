@@ -204,6 +204,8 @@ binding_specifier_2: "summary"
 
 clause: atom "(" named_var_list ")" "."
 clause: atom "(" named_var_list ")" ":" conjunct_list "."
+clause: "!" atom "(" named_var_list ")" "."
+clause: "!" atom "(" named_var_list ")" ":" conjunct_list "."
 clause: atom ":" conjunct_list "."
 
 named_var_list: named_var "," named_var_list

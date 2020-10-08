@@ -107,6 +107,38 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
+  auto message = region.Message();
+  os << os.Indent() << "publish " << message.Name() << '/' << message.Arity();
+  auto sep = "(";
+  auto end = "";
+  for (auto arg : region.VariableArguments()) {
+    os << sep << arg;
+    sep = ", ";
+    end = ")";
+  }
+  os << end;
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
+  os << os.Indent() << "call " << region.CalledProcedure();
+  auto sep = "(";
+  auto end = "";
+  for (auto arg : region.VectorArguments()) {
+    os << sep << arg;
+    sep = ", ";
+    end = ")";
+  }
+  for (auto arg : region.VariableArguments()) {
+    os << sep << arg;
+    sep = ", ";
+    end = ")";
+  }
+  os << end;
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
     os << os.Indent();
@@ -129,14 +161,30 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-if";
+    os << os.Indent() << "empty";
   }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os,
+                         ProgramExistenceAssertionRegion region) {
+  os << os.Indent();
+  auto sep = "increment ";
+  if (region.IsDecrement()) {
+    sep = "decrement ";
+  }
+
+  for (auto var : region.ReferenceCounts()) {
+    os << sep << var;
+    sep = ", ";
+  }
+
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "if-check ";
+    os << os.Indent() << "test ";
     if (region.CheckForNotZero()) {
       os << "not-zero";
     } else {
@@ -149,30 +197,77 @@ OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
       sep = ", ";
     }
 
-    os << " {\n";
+    os << "\n";
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-if";
+    os << os.Indent() << "empty";
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
+  auto functor = region.Functor();
+  os << os.Indent();
+  if (region.IsFilter()) {
+    os << "if ";
+  } else {
+    const char *sep = nullptr;
+    switch (functor.Range()) {
+      case FunctorRange::kZeroOrOne: sep = "assign-if {"; break;
+      case FunctorRange::kOneToOne: sep = "assign {"; break;
+      default: sep = "assign-each {"; break;
+    }
+    for (auto var : region.OutputVariables()) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "} from ";
+  }
+
+  os << functor.Name();
+
+  auto sep = "(";
+  auto i = 0u;
+  auto input_vars = region.InputVariables();
+
+  for (auto param : functor.Parameters()) {
+    if (param.Binding() == ParameterBinding::kFree) {
+      os << sep << '_';
+    } else {
+      os << sep << input_vars[i++];
+    }
+    sep = ", ";
+  }
+
+  os << ")\n";
+
+
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty";
   }
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
-    if (region.DefinedVars().empty()) {
+    if (region.DefinedVariables().empty()) {
       os << (*maybe_body);
       return os;
     } else {
       os << os.Indent();
       auto sep = "let {";
-      for (auto var : region.DefinedVars()) {
+      for (auto var : region.DefinedVariables()) {
         os << sep << var;
         sep = ", ";
       }
       sep = "} = {";
-      for (auto var : region.UsedVars()) {
+      for (auto var : region.UsedVariables()) {
         os << sep << var;
         sep = ", ";
       }
@@ -182,7 +277,7 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
       os.PopIndent();
     }
   } else {
-    os << os.Indent() << "empty-let";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -200,7 +295,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-vector-loop";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -295,7 +390,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
     os.PopIndent();
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-join-tables";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -322,7 +417,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region) {
     os.PopIndent();
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-cross-product";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -366,14 +461,18 @@ OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
-  auto sep = "";
-  os << os.Indent() << "par\n";
-  os.PushIndent();
-  for (auto sub_region : region.Regions()) {
-    os << sep << sub_region;
-    sep = "\n";
+  if (auto regions = region.Regions(); !regions.empty()) {
+    auto sep = "";
+    os << os.Indent() << "par\n";
+    os.PushIndent();
+    for (auto sub_region : regions) {
+      os << sep << sub_region;
+      sep = "\n";
+    }
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty";
   }
-  os.PopIndent();
   return os;
 }
 
@@ -402,8 +501,16 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramTableProductRegion::From(region);
   } else if (region.IsExistenceCheck()) {
     os << ProgramExistenceCheckRegion::From(region);
+  } else if (region.IsExistenceAssertion()) {
+    os << ProgramExistenceAssertionRegion::From(region);
   } else if (region.IsTupleCompare()) {
     os << ProgramTupleCompareRegion::From(region);
+  } else if (region.IsGenerate()) {
+    os << ProgramGenerateRegion::From(region);
+  } else if (region.IsCall()) {
+    os << ProgramCallRegion::From(region);
+  } else if (region.IsPublish()) {
+    os << ProgramPublishRegion::From(region);
   } else {
     assert(false);
     os << "<<unknown region>>";
@@ -413,27 +520,17 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
 
+  if (proc.Kind() == ProcedureKind::kInitializer) {
+    os << "init ";
+  }
+
   os << "proc ";
   if (auto message = proc.Message(); message) {
     os << message->Name() << '/' << message->Arity() << ':' << proc.Id();
   } else {
     os << '$' << proc.Id();
   }
-  os << '(';
-  auto sep = "";
-  for (auto vec : proc.InputVectors()) {
-    os << sep << vec;
-    sep = ", ";
-  }
-  os << ")\n";
-  os.PushIndent();
 
-  for (auto vec : proc.DefinedVectors()) {
-    os << os.Indent() << "vector-define " << vec << '\n';
-  }
-
-  os << proc.Body() << '\n';
-  os.PopIndent();
   return os;
 }
 
@@ -444,13 +541,39 @@ OutputStream &operator<<(OutputStream &os, Program program) {
        << *(var.Value());
     sep = "\n\n";
   }
+  for (auto var : program.GlobalVariables()) {
+    os << sep << os.Indent() << "global " << var.Type() << ' ' << var;
+    sep = "\n\n";
+  }
   for (auto table : program.Tables()) {
     os << sep;
     DefineTable(os, table);
     sep = "\n\n";
   }
+
   for (auto proc : program.Procedures()) {
     os << sep << os.Indent() << proc;
+
+    os << '(';
+    auto param_sep = "";
+    for (auto vec : proc.VectorParameters()) {
+      os << param_sep << vec;
+      sep = ", ";
+    }
+    for (auto var : proc.VariableParameters()) {
+      os << param_sep << var;
+      sep = ", ";
+    }
+    os << ")\n";
+    os.PushIndent();
+
+    for (auto vec : proc.DefinedVectors()) {
+      os << os.Indent() << "vector-define " << vec << '\n';
+    }
+
+    os << proc.Body();
+    os.PopIndent();
+
     sep = "\n\n";
   }
   return os;

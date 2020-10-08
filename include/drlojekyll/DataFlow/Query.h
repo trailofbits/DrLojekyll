@@ -152,6 +152,8 @@ class QueryCondition : public query::QueryNode<QueryCondition> {
   unsigned Depth(void) const noexcept;
 
  private:
+  friend class QueryView;
+
   using query::QueryNode<QueryCondition>::QueryNode;
 };
 
@@ -316,6 +318,9 @@ class QueryView : public query::QueryNode<QueryView> {
 
   // Get a hash of this view.
   uint64_t Hash(void) const noexcept;
+
+  // What condition this view sets, if any.
+  std::optional<QueryCondition> SetCondition(void) const noexcept;
 
   // Conditions, i.e. zero-argument predicates, that must be true (or false)
   // for tuples to be accepted into this node.

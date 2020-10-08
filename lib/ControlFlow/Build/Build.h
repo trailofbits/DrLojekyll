@@ -123,14 +123,112 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
                               Context &context, OP *parent);
 
+// Build an eager region for a `QueryMap`.
+void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
+                              Context &context, OP *parent);
+
+// Builds an initialization function which does any work that depends purely
+// on constants.
+void BuildInitProcedure(ProgramImpl *impl, Context &context);
+
+// Complete a procedure by exhausting the work list.
+void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
+
+// Returns a global reference count variable associated with a query condition.
+VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
+
 // Add in all of the successors of a view inside of `parent`, which is
 // usually some kind of loop. The successors execute in parallel.
 template <typename List>
 void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
                                 Context &context, OP *parent, List &&successors,
                                 TABLE *last_model) {
-  const auto par = impl->parallel_regions.Create(parent);
-  UseRef<REGION>(parent, par).Swap(parent->body);
+
+  // Proving this `view` might set a condition. If we set a condition, then
+  // we need to make sure than a TABLEINSERT actually happened. That could
+  // mean re-parenting all successors within an TABLEINSERT.
+  if (auto set_cond = view.SetCondition(); set_cond) {
+    if (const auto table = TABLE::GetOrCreate(impl, view);
+        table != last_model) {
+      last_model = table;
+      const auto insert =
+          impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
+
+      for (auto col : view.Columns()) {
+        const auto var = parent->VariableFor(impl, col);
+        insert->col_values.AddUse(var);
+      }
+
+      UseRef<TABLE>(insert, table).Swap(insert->table);
+      UseRef<REGION>(parent, insert).Swap(parent->body);
+      parent = insert;
+    }
+
+    const auto seq = impl->series_regions.Create(parent);
+    UseRef<REGION>(parent, seq).Swap(parent->body);
+
+    // Now that we know that the data has been dealt with, we increment the
+    // condition variable.
+    const auto set = impl->operation_regions.CreateDerived<ASSERT>(
+        seq, ProgramOperation::kIncrementAll);
+    set->cond_vars.AddUse(ConditionVariable(impl, *set_cond));
+    set->ExecuteAfter(impl, seq);
+
+    // Create a dummy/empty LET binding so that we have an `OP *` as a parent
+    // going forward.
+    parent = impl->operation_regions.CreateDerived<LET>(seq);
+    parent->ExecuteAfter(impl, seq);
+  }
+
+  // Check if all outputs are constant or references to constants (i.e. constant
+  // if reached by data flow).
+  bool all_const = true;
+  for (auto col : view.Columns()) {
+    if (!col.IsConstantOrConstantRef()) {
+      all_const = false;
+      break;
+    }
+  }
+
+  // All successors execute in a PARALLEL region, even if there are zero or
+  // one successors. Empty and trivial PARALLEL regions are optimized out later.
+  //
+  // A key benefit of PARALLEL regions is that within them, CSE can be performed
+  // to identify and eliminate repeated branches.
+  PARALLEL *par = nullptr;
+
+  // If all outputs are constant and if this is always an insert-only view,
+  // then we shouldn't re-execute it if we've previously done it.
+  if (all_const && !view.CanProduceDeletions()) {
+    auto &ref_count = impl->const_view_to_var[view];
+    if (!ref_count) {
+      ref_count = impl->global_vars.Create(impl->next_id++,
+                                           VariableRole::kConditionRefCount);
+    }
+
+    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
+        parent, ProgramOperation::kTestAllZero);
+    UseRef<REGION>(parent, test).Swap(parent->body);
+
+    const auto seq = impl->series_regions.Create(test);
+    UseRef<REGION>(test, seq).Swap(test->body);
+
+    const auto set = impl->operation_regions.CreateDerived<ASSERT>(
+        seq, ProgramOperation::kIncrementAll);
+
+    test->cond_vars.AddUse(ref_count);
+    set->cond_vars.AddUse(ref_count);
+
+    last_model = nullptr;
+    par = impl->parallel_regions.Create(seq);
+    set->ExecuteAfter(impl, seq);
+    par->ExecuteAfter(impl, seq);
+
+  } else {
+    par = impl->parallel_regions.Create(parent);
+    UseRef<REGION>(parent, par).Swap(parent->body);
+  }
+
 
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);

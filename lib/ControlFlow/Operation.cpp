@@ -5,16 +5,20 @@
 namespace hyde {
 
 Node<ProgramOperationRegion>::~Node(void) {}
+Node<ProgramCallRegion>::~Node(void) {}
+Node<ProgramExistenceAssertionRegion>::~Node(void) {}
+Node<ProgramExistenceCheckRegion>::~Node(void) {}
+Node<ProgramGenerateRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
+Node<ProgramPublishRegion>::~Node(void) {}
+Node<ProgramTableInsertRegion>::~Node(void) {}
+Node<ProgramTableJoinRegion>::~Node(void) {}
+Node<ProgramTableProductRegion>::~Node(void) {}
+Node<ProgramTupleCompareRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
 Node<ProgramVectorClearRegion>::~Node(void) {}
 Node<ProgramVectorUniqueRegion>::~Node(void) {}
-Node<ProgramTableInsertRegion>::~Node(void) {}
-Node<ProgramTableJoinRegion>::~Node(void) {}
-Node<ProgramTableProductRegion>::~Node(void) {}
-Node<ProgramExistenceCheckRegion>::~Node(void) {}
-Node<ProgramTupleCompareRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
@@ -23,6 +27,15 @@ Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
 Node<ProgramOperationRegion> *
 Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
+}
+
+Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramPublishRegion> *
+Node<ProgramOperationRegion>::AsPublish(void) noexcept {
+  return nullptr;
 }
 
 Node<ProgramVectorLoopRegion> *
@@ -70,6 +83,16 @@ Node<ProgramOperationRegion>::AsExistenceCheck(void) noexcept {
   return nullptr;
 }
 
+Node<ProgramExistenceAssertionRegion> *
+Node<ProgramOperationRegion>::AsExistenceAssertion(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramGenerateRegion> *
+Node<ProgramOperationRegion>::AsGenerate(void) noexcept {
+  return nullptr;
+}
+
 Node<ProgramTupleCompareRegion> *
 Node<ProgramOperationRegion>::AsTupleCompare(void) noexcept {
   return nullptr;
@@ -88,11 +111,12 @@ bool Node<ProgramVectorLoopRegion>::Equals(
     return false;
   }
 
-  for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
-    eq.Insert(defined_vars[i], that->defined_vars[i]);
-  }
-
   if (auto that_body = that->OP::body.get(); that_body) {
+
+    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+      eq.Insert(defined_vars[i], that->defined_vars[i]);
+    }
+
     return this->OP::body->Equals(eq, that_body);
 
   } else {
@@ -138,11 +162,11 @@ bool Node<ProgramLetBindingRegion>::Equals(
     }
   }
 
-  for (auto i = 0u; i < num_vars; ++i) {
-    eq.Insert(defined_vars[i], that->defined_vars[i]);
-  }
-
   if (auto that_body = that->OP::body.get(); that_body) {
+    for (auto i = 0u; i < num_vars; ++i) {
+      eq.Insert(defined_vars[i], that->defined_vars[i]);
+    }
+
     return this->OP::body->Equals(eq, that_body);
 
   } else {
@@ -237,6 +261,39 @@ bool Node<ProgramExistenceCheckRegion>::Equals(
 
 Node<ProgramExistenceCheckRegion> *
 Node<ProgramExistenceCheckRegion>::AsExistenceCheck(void) noexcept {
+  return this;
+}
+
+bool Node<ProgramExistenceAssertionRegion>::IsNoOp(void) const noexcept {
+  return cond_vars.Empty();
+}
+
+bool Node<ProgramExistenceAssertionRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto that_op = that_->AsOperation();
+  if (!that_op || this->OP::op != that_op->OP::op) {
+    return false;
+  }
+
+  const auto num_conds = cond_vars.Size();
+  const auto that = that_op->AsExistenceAssertion();
+  if (!that || num_conds != that->cond_vars.Size()) {
+    return false;
+  }
+
+  // NOTE(pag): Condition variables are global, so we do equality checks.
+  for (auto i = 0u; i < num_conds; ++i) {
+    if (cond_vars[i] != that->cond_vars[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+Node<ProgramExistenceAssertionRegion> *
+Node<ProgramExistenceAssertionRegion>::AsExistenceAssertion(void) noexcept {
   return this;
 }
 
@@ -339,21 +396,21 @@ bool Node<ProgramTableJoinRegion>::Equals(
     }
   }
 
-  const auto &pivot_vars_1 = pivot_vars;
-  const auto &pivot_vars_2 = that->pivot_vars;
-  for (auto j = 0u, max_j = pivot_vars_1.Size(); j < max_j; ++j) {
-    eq.Insert(pivot_vars_1[j], pivot_vars_2[j]);
-  }
-
-  for (auto i = 0u; i < num_tables; ++i) {
-    const auto &vars_1 = output_vars[i];
-    const auto &vars_2 = that->output_vars[i];
-    for (auto j = 0u, max_j = vars_1.Size(); j < max_j; ++j) {
-      eq.Insert(vars_1[j], vars_2[j]);
-    }
-  }
-
   if (auto that_body = that->OP::body.get(); that_body) {
+    const auto &pivot_vars_1 = pivot_vars;
+    const auto &pivot_vars_2 = that->pivot_vars;
+    for (auto j = 0u, max_j = pivot_vars_1.Size(); j < max_j; ++j) {
+      eq.Insert(pivot_vars_1[j], pivot_vars_2[j]);
+    }
+
+    for (auto i = 0u; i < num_tables; ++i) {
+      const auto &vars_1 = output_vars[i];
+      const auto &vars_2 = that->output_vars[i];
+      for (auto j = 0u, max_j = vars_1.Size(); j < max_j; ++j) {
+        eq.Insert(vars_1[j], vars_2[j]);
+      }
+    }
+
     return this->OP::body->Equals(eq, that_body);
 
   } else {
@@ -390,15 +447,16 @@ bool Node<ProgramTableProductRegion>::Equals(
     }
   }
 
-  for (auto i = 0u; i < num_tables; ++i) {
-    auto &vars_1 = output_vars[i];
-    auto &vars_2 = that->output_vars[i];
-    for (auto j = 0u, max_j = vars_1.Size(); j < max_j; ++j) {
-      eq.Insert(vars_1[j], vars_2[j]);
-    }
-  }
-
   if (auto that_body = that->OP::body.get(); that_body) {
+
+    for (auto i = 0u; i < num_tables; ++i) {
+      auto &vars_1 = output_vars[i];
+      auto &vars_2 = that->output_vars[i];
+      for (auto j = 0u, max_j = vars_1.Size(); j < max_j; ++j) {
+        eq.Insert(vars_1[j], vars_2[j]);
+      }
+    }
+
     return this->OP::body->Equals(eq, that_body);
 
   } else {
@@ -441,6 +499,146 @@ bool Node<ProgramTupleCompareRegion>::Equals(
   } else {
     return true;
   }
+}
+
+Node<ProgramGenerateRegion> *
+Node<ProgramGenerateRegion>::AsGenerate(void) noexcept {
+  return this;
+}
+
+bool Node<ProgramGenerateRegion>::IsNoOp(void) const noexcept {
+  if (functor.IsPure()) {
+    return !this->OP::body || this->OP::body->IsNoOp();
+
+  } else {
+    return false;
+  }
+}
+
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramGenerateRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsGenerate();
+  if (!that || this->OP::op != that->OP::op || functor != that->functor ||
+      (!this->OP::body.get()) != (!that->OP::body.get())) {
+    return false;
+  }
+
+  for (auto i = 0u, max_i = used_vars.Size(); i < max_i; ++i) {
+    if (!eq.Contains(used_vars[i], that->used_vars[i])) {
+      return false;
+    }
+  }
+
+  if (auto that_body = that->OP::body.get(); that_body) {
+    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+      eq.Insert(defined_vars[i], that->defined_vars[i]);
+    }
+
+    return this->OP::body->Equals(eq, that_body);
+
+  } else {
+    return true;
+  }
+}
+
+Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
+  return this;
+}
+
+bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
+  return called_proc->IsNoOp();
+}
+
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramCallRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsCall();
+  if (!that) {
+    return false;
+  }
+
+  for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
+    if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
+      return false;
+    }
+  }
+
+  for (auto i = 0u, max_i = arg_vecs.Size(); i < max_i; ++i) {
+    if (!eq.Contains(arg_vecs[i], that->arg_vecs[i])) {
+      return false;
+    }
+  }
+
+  if (called_proc == that->called_proc) {
+    return true;
+
+  } else if (eq.Contains(called_proc, that->called_proc)) {
+    return true;
+
+  } else {
+
+    if (!called_proc->body && !that->called_proc->body) {
+      return true;
+
+    } else if (!called_proc->body != !that->called_proc->body) {
+      return false;
+
+    } else {
+      eq.Insert(called_proc, that->called_proc);
+
+      for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
+        eq.Insert(called_proc->input_vars[i], that->called_proc->input_vars[i]);
+      }
+
+      for (auto i = 0u, max_i = arg_vecs.Size(); i < max_i; ++i) {
+        eq.Insert(called_proc->input_vectors[i],
+                  that->called_proc->input_vectors[i]);
+      }
+
+      return called_proc->body->Equals(eq, that->called_proc->body.get());
+    }
+  }
+}
+
+Node<ProgramPublishRegion> *
+Node<ProgramPublishRegion>::AsPublish(void) noexcept {
+  return this;
+}
+
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramPublishRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsPublish();
+  if (!that || message != that->message) {
+    return false;
+  }
+
+  for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
+    if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 }  // namespace hyde
