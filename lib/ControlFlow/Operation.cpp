@@ -10,6 +10,7 @@ Node<ProgramExistenceAssertionRegion>::~Node(void) {}
 Node<ProgramExistenceCheckRegion>::~Node(void) {}
 Node<ProgramGenerateRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
+Node<ProgramPublishRegion>::~Node(void) {}
 Node<ProgramTableInsertRegion>::~Node(void) {}
 Node<ProgramTableJoinRegion>::~Node(void) {}
 Node<ProgramTableProductRegion>::~Node(void) {}
@@ -29,6 +30,11 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
 }
 
 Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramPublishRegion> *
+Node<ProgramOperationRegion>::AsPublish(void) noexcept {
   return nullptr;
 }
 
@@ -605,6 +611,34 @@ bool Node<ProgramCallRegion>::Equals(
       return called_proc->body->Equals(eq, that->called_proc->body.get());
     }
   }
+}
+
+Node<ProgramPublishRegion> *
+Node<ProgramPublishRegion>::AsPublish(void) noexcept {
+  return this;
+}
+
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramPublishRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsPublish();
+  if (!that || message != that->message) {
+    return false;
+  }
+
+  for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
+    if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 }  // namespace hyde

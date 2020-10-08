@@ -107,17 +107,30 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
+  auto message = region.Message();
+  os << os.Indent() << "publish " << message.Name() << '/' << message.Arity();
+  auto sep = "(";
+  auto end = "";
+  for (auto arg : region.VariableArguments()) {
+    os << sep << arg;
+    sep = ", ";
+    end = ")";
+  }
+  os << end;
+  return os;
+}
 
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
   os << os.Indent() << "call " << region.CalledProcedure();
   auto sep = "(";
   auto end = "";
-  for (auto arg : region.ArgumentVectors()) {
+  for (auto arg : region.VectorArguments()) {
     os << sep << arg;
     sep = ", ";
     end = ")";
   }
-  for (auto arg : region.ArgumentVariables()) {
+  for (auto arg : region.VariableArguments()) {
     os << sep << arg;
     sep = ", ";
     end = ")";
@@ -148,7 +161,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-if";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -189,7 +202,7 @@ OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-if";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -264,7 +277,7 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
       os.PopIndent();
     }
   } else {
-    os << os.Indent() << "empty-let";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -282,7 +295,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-vector-loop";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -377,7 +390,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
     os.PopIndent();
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-join-tables";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -404,7 +417,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region) {
     os.PopIndent();
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty-cross-product";
+    os << os.Indent() << "empty";
   }
   return os;
 }
@@ -496,6 +509,8 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramGenerateRegion::From(region);
   } else if (region.IsCall()) {
     os << ProgramCallRegion::From(region);
+  } else if (region.IsPublish()) {
+    os << ProgramPublishRegion::From(region);
   } else {
     assert(false);
     os << "<<unknown region>>";
@@ -540,13 +555,13 @@ OutputStream &operator<<(OutputStream &os, Program program) {
     os << sep << os.Indent() << proc;
 
     os << '(';
-    auto sep = "";
+    auto param_sep = "";
     for (auto vec : proc.VectorParameters()) {
-      os << sep << vec;
+      os << param_sep << vec;
       sep = ", ";
     }
     for (auto var : proc.VariableParameters()) {
-      os << sep << var;
+      os << param_sep << var;
       sep = ", ";
     }
     os << ")\n";
@@ -556,7 +571,7 @@ OutputStream &operator<<(OutputStream &os, Program program) {
       os << os.Indent() << "vector-define " << vec << '\n';
     }
 
-    os << proc.Body() << '\n';
+    os << proc.Body();
     os.PopIndent();
 
     sep = "\n\n";

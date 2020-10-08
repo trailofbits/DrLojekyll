@@ -14,22 +14,36 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto cols = insert.InputColumns();
 
   if (insert.IsStream()) {
-    assert(false && "TODO");
+    assert(!insert.IsDelete() && "TODO?");
+    assert(!view.SetCondition());  // TODO(pag): Is this possible?
+    auto stream = insert.Stream();
+    assert(stream.IsIO());
+    auto io = QueryIO::From(stream);
+
+    const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
+        parent, ParsedMessage::From(io.Declaration()));
+    UseRef<REGION>(parent, message_publish).Swap(parent->body);
+
+    for (auto col : cols) {
+      const auto var = parent->VariableFor(impl, col);
+      message_publish->arg_vars.AddUse(var);
+    }
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
     const auto table = TABLE::GetOrCreate(impl, view);
     if (table != last_model) {
-      const auto insert =
+      const auto table_insert =
           impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
       for (auto col : cols) {
         const auto var = parent->VariableFor(impl, col);
-        insert->col_values.AddUse(var);
+        table_insert->col_values.AddUse(var);
       }
 
-      UseRef<TABLE>(insert, table).Swap(insert->table);
-      UseRef<REGION>(parent, insert).Swap(parent->body);
-      parent = insert;
+      UseRef<TABLE>(table_insert, table).Swap(table_insert->table);
+      UseRef<REGION>(parent, table_insert).Swap(parent->body);
+      parent = table_insert;
+      last_model = table;
     }
 
     // If we're setting a condition then we also need to see if any constant
@@ -64,8 +78,12 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
       parent->ExecuteAfter(impl, seq);
     }
 
-    if (const auto succs = view.Successors(); succs.size()) {
-      BuildEagerSuccessorRegions(impl, view, context, parent, succs, table);
+    if (insert.IsDelete()) {
+      assert(false && "TODO");
+
+    } else if (const auto succs = view.Successors(); succs.size()) {
+      BuildEagerSuccessorRegions(impl, view, context, parent, succs,
+                                 last_model);
     }
 
   } else {

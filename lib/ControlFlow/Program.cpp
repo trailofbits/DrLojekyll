@@ -97,6 +97,9 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto call = op->AsCall(); call) {
       call->arg_vars.ClearWithoutErasure();
       call->arg_vecs.ClearWithoutErasure();
+
+    } else if (auto pub = op->AsPublish(); pub) {
+      pub->arg_vars.ClearWithoutErasure();
     }
   }
 
@@ -146,6 +149,7 @@ IS_OP(ExistenceAssertion)
 IS_OP(ExistenceCheck)
 IS_OP(Generate)
 IS_OP(LetBinding)
+IS_OP(Publish)
 IS_OP(TableInsert)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
@@ -220,6 +224,7 @@ FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
 FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
+FROM_OP(ProgramPublishRegion, AsPublish)
 FROM_OP(ProgramTableInsertRegion, AsTableInsert)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
@@ -256,8 +261,9 @@ DEFINED_RANGE(Program, GlobalVariables, DataVariable, global_vars)
 DEFINED_RANGE(Program, Procedures, ProgramProcedure, procedure_regions)
 DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_vars)
 
-USED_RANGE(ProgramCallRegion, ArgumentVariables, DataVariable, arg_vars)
-USED_RANGE(ProgramCallRegion, ArgumentVectors, DataVector, arg_vecs)
+USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
+USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
+USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramExistenceAssertionRegion, ReferenceCounts, DataVariable,
            cond_vars)
 USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
@@ -593,6 +599,10 @@ ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
 
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
   return ProgramProcedure(impl->called_proc);
+}
+
+ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
+  return impl->message;
 }
 
 }  // namespace hyde
