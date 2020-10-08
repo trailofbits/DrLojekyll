@@ -296,12 +296,14 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     return;
   }
 
+  const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
+
   // If this is a filter functor then change the default range behavior.
-  if (functor->range_begin_opt.IsInvalid() && !num_free_params) {
+  if (functor->range_begin_opt.IsInvalid() && !num_free_params &&
+      !is_aggregate) {
     functor->range = FunctorRange::kZeroOrOne;
   }
 
-  const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
 
   DisplayRange range_spec(functor->range_begin_opt.Position(),
                           functor->range_end_opt.NextPosition());
