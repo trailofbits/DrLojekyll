@@ -306,8 +306,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     // The first usage of a functor in a `mutable` attribute marks it as
     // being a merge functor and forces a `1:1` range.
     if (prev_decl->range != decl->range &&
-        prev_decl->range == FunctorRange::kOneToOne &&
-        prev_decl->is_merge) {
+        prev_decl->range == FunctorRange::kOneToOne && prev_decl->is_merge) {
       assert(!decl->is_merge);
       decl->is_merge = true;
       decl->range = FunctorRange::kOneToOne;

@@ -8,9 +8,15 @@ namespace hyde {
 // loop, and thus passes on its data to the next thing down as long as that
 // data is unique.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
-                           QueryMerge view, Context &usage, OP *parent,
+                           QueryMerge view, Context &context, OP *parent,
                            TABLE *last_model) {
-  assert(false && "TODO!");
+
+  BuildEagerSuccessorRegions(impl, view, context, parent,
+                             QueryView(view).Successors(), last_model);
+
+  // TODO(pag): Think about whether or not we need to actually de-duplicate
+  //            anything. It could be that we only need to dedup if we're on
+  //            the edge between eager/lazy, or if we're in lazy.
 }
 
 }  // namespace hyde

@@ -296,12 +296,14 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     return;
   }
 
+  const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
+
   // If this is a filter functor then change the default range behavior.
-  if (functor->range_begin_opt.IsInvalid() && !num_free_params) {
+  if (functor->range_begin_opt.IsInvalid() && !num_free_params &&
+      !is_aggregate) {
     functor->range = FunctorRange::kZeroOrOne;
   }
 
-  const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
 
   DisplayRange range_spec(functor->range_begin_opt.Position(),
                           functor->range_end_opt.NextPosition());
@@ -314,7 +316,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
   // Filter functors, i.e. functors taking in only bound parameters, must have
   // a zero-or-one range.
-  } else if (!num_free_params && functor->range != FunctorRange::kZeroOrOne) {
+  } else if (!is_aggregate && !num_free_params &&
+             functor->range != FunctorRange::kZeroOrOne) {
     context->error_log.Append(scope_range, range_spec)
         << "Invalid range specified on filter functor (having only bound "
         << "parameters); range must be 'range(?)`, i.e. zero-or-one";

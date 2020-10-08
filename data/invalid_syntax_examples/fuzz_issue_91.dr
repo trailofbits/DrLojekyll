@@ -1,0 +1,5 @@
+; This example was found by the fuzzer and is expected to fail gracefully
+; Reference issue #91
+
+#functor a(aggregate i16 Va0, summary i32 MinVal)
+#functor a(bound i32 OldMMin, free i32 NewMin)
