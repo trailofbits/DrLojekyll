@@ -117,9 +117,9 @@ static int HelpMessage(const char *argv[]) {
       << "OUTPUT OPTIONS:" << std::endl
       << "  -ir-out <PATH>        Emit IR output to PATH." << std::endl
       << "  -cpp-out <PATH>       Emit transpiled C++ output to PATH." << std::endl
-      << "  -amalgamation <PATH>  Emit an amalgamation of all the input and transitively" << std::endl
+      << "  -dr-out <PATH>        Emit an amalgamation of all the input and transitively" << std::endl
       << "                        imported modules to PATH." << std::endl
-      << "  -dot <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
+      << "  -dot-out <PATH>       Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
       << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
@@ -224,8 +224,8 @@ extern "C" int main(int argc, const char *argv[]) {
 
     // Option to output a single Dr. Lojekyll Datalog file that is equivalent
     // to the amalagamation of all input files, and transitively imported files.
-    } else if (!strcmp(argv[i], "--amalgamation") ||
-               !strcmp(argv[i], "-amalgamation")) {
+    } else if (!strcmp(argv[i], "--dr-out") ||
+               !strcmp(argv[i], "-dr-out")) {
       ++i;
       if (i >= argc) {
         error_log.Append() << "Command-line argument '" << argv[i - 1]
@@ -237,7 +237,7 @@ extern "C" int main(int argc, const char *argv[]) {
       }
 
     // GraphViz DOT digraph output, which is useful for debugging the data flow.
-    } else if (!strcmp(argv[i], "--dot") || !strcmp(argv[i], "-dot")) {
+    } else if (!strcmp(argv[i], "--dot-out") || !strcmp(argv[i], "-dot-out")) {
       ++i;
       if (i >= argc) {
         error_log.Append() << "Command-line argument '" << argv[i - 1]
