@@ -316,7 +316,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
   // Filter functors, i.e. functors taking in only bound parameters, must have
   // a zero-or-one range.
-  } else if (!num_free_params && functor->range != FunctorRange::kZeroOrOne) {
+  } else if (!is_aggregate && !num_free_params &&
+             functor->range != FunctorRange::kZeroOrOne) {
     context->error_log.Append(scope_range, range_spec)
         << "Invalid range specified on filter functor (having only bound "
         << "parameters); range must be 'range(?)`, i.e. zero-or-one";
