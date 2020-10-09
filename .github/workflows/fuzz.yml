@@ -66,7 +66,7 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
-          sudo apt-get install ninja-build clang-10
+          sudo apt-get install clang-10 ninja-build creduce
 
       - name: Configure
         run: >
@@ -140,14 +140,24 @@ jobs:
 
         run: |
           set -xu
-          build/fuzz/fuzzer \
-            -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
-            -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
-            -max_len="${MAX_LENGTH:-${MAX_LENGTH_DEFAULT}}" \
-            -print_final_stats=1 \
-            -artifact_prefix="$FUZZ_RUN_DIR/artifacts/" \
-            -dict="$FUZZ_RUN_DIR/dict.txt" \
-            "$FUZZ_RUN_DIR/corpus"
+          if ! build/fuzz/fuzzer \
+                 -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
+                 -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
+                 -max_len="${MAX_LENGTH:-${MAX_LENGTH_DEFAULT}}" \
+                 -print_final_stats=1 \
+                 -exact_artifact_path=crasher.dr \
+                 -dict=dict.txt \
+                 corpus"; then
+            echo >&2 "Crash detected during fuzzing!"
+            echo >&2 "Crashing input written to crasher.dr."
+            echo >&2 "Base64-encoded crashing input:"
+            base64 >&2 crasher.dr
+            echo >&2 "Minimizing crashing input..."
+            scripts/minimize-fuzz-crasher crasher.dr
+            echo >&2 "Base64-encoded minimized crashing input:"
+            base64 >&2 crasher.dr
+            exit 1
+          fi
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
           # Note: `export` doesn't work here; you must use this special form.
           #       See https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable

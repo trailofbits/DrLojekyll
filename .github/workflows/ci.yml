@@ -147,7 +147,7 @@ jobs:
                  corpus; then
             echo >&2 "Fuzzing smoke test failed!"
             echo >&2 "Base64-encoded input that triggered the failure:"
-            base64 boom.txt >&2
+            base64 >&2 boom.txt
             exit 1
           fi
 

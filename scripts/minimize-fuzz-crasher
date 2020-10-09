@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -euo pipefail
+
+usage_and_exit() {
+    echo >&2 "Usage: $0 DRLOJEKYLL_INPUT"
+    echo >&2
+    echo >&2 "Minimizes a Dr. Lojekyll input that causes the fuzzer to crash."
+    echo >&2 "The minimized output will be written to DRLOJEKYLL_INPUT."
+    echo >&2 "The original file will be renamed DRLOJEKYLL_INPUT.orig."
+    exit 1
+}
+
+(( $# != 1 )) && usage_and_exit
+case $1 in
+    -h|--help|-help) usage_and_exit ;;
+    *) CRASHING_INPUT="$1" ;;
+esac
+
+if [[ ! -r $CRASHING_INPUT ]]; then
+    echo >&2 "$0: error: crashing input '$CRASHING_INPUT' is not readable"
+    exit 1
+fi
+
+MINIMIZE_SCRIPT=''
+cleanup() {
+    [[ -n $MINIMIZE_SCRIPT ]] && rm -f "$MINIMIZE_SCRIPT"
+}
+trap cleanup EXIT
+
+MINIMIZE_SCRIPT=$(mktemp -t minimize-fuzz-crasher.XXXXXXXX)
+
+cat <<EOF >"$MINIMIZE_SCRIPT"
+#!/bin/bash
+set -uo pipefail
+"$PWD/build/fuzz/fuzzer" "$CRASHING_INPUT"
+if (( \$? == 77 )); then
+    exit 0
+else
+    exit 1
+fi
+EOF
+chmod +x "$MINIMIZE_SCRIPT"
+
+creduce --not-c "$MINIMIZE_SCRIPT" "$CRASHING_INPUT"
