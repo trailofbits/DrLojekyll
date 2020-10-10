@@ -1,0 +1,16 @@
+
+#message add_edge(i64 From, i64 To)
+#message remove_edge(i64 From, i64 To)
+#query reachable_from(bound i64 From, free i64 To)
+#query reaching_to(free i64 From, bound i64 To)
+#local tc(From, To)
+#local edge(From, To)
+
+reachable_from(From, To) : tc(From, To).
+reaching_to(From, To) : tc(From, To).
+
+edge(From, To) : add_edge(From, To).
+!edge(From, To) : remove_edge(From, To).
+
+tc(From, To) : tc(From, X), tc(X, To).
+tc(From, To) : edge(From, To).

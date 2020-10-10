@@ -122,7 +122,15 @@ OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
-  os << os.Indent() << "call " << region.CalledProcedure();
+  os << os.Indent();
+
+  const auto conditional = region.ExecuteBodyIfReturnIsTrue() ||
+                           region.ExecuteBodyIfReturnIsFalse();
+  if (conditional) {
+    os << "if ";
+  }
+
+  os << "call " << region.CalledProcedure();
   auto sep = "(";
   auto end = "";
   for (auto arg : region.VectorArguments()) {
@@ -136,6 +144,34 @@ OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
     end = ")";
   }
   os << end;
+
+  if (region.ExecuteBodyIfReturnIsTrue()) {
+    os << " returns true";
+  } else if (region.ExecuteBodyIfReturnIsFalse()) {
+    os << " returns false";
+  }
+
+  if (auto body = region.Body(); body) {
+    assert(conditional);
+
+    os << '\n';
+    os.PushIndent();
+    os << *body;
+    os.PopIndent();
+
+  } else {
+    assert(!conditional);
+  }
+
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramReturnRegion region) {
+  auto ret = "return-false";
+  if (region.ReturnsTrue()) {
+    ret = "return-true";
+  }
+  os << os.Indent() << ret;
   return os;
 }
 
@@ -321,20 +357,49 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramTableInsertRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramTransitionStateRegion region) {
 
   os << os.Indent();
   if (region.Body()) {
     os << "if-";
   }
 
-  os << "insert-into-table {";
+  os << "transition-state {";
+
   auto sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
     sep = ", ";
   }
-  os << "} into " << region.Table();
+  os << "} in " << region.Table() << " from ";
+
+  switch (region.FromState()) {
+    case TupleState::kPresent:
+      os << "present to ";
+      break;
+    case TupleState::kAbsent:
+      os << "absent to ";
+      break;
+    case TupleState::kUnknown:
+      os << "unknown to ";
+      break;
+    case TupleState::kAbsentOrUnknown:
+      os << "absent|unknown to ";
+      break;
+  }
+
+  switch (region.ToState()) {
+    case TupleState::kPresent:
+      os << "present";
+      break;
+    case TupleState::kAbsent:
+      os << "absent";
+      break;
+    case TupleState::kUnknown:
+    case TupleState::kAbsentOrUnknown:
+      os << "unknown";
+      break;
+  }
 
   if (auto maybe_body = region.Body(); maybe_body) {
     os << '\n';
@@ -342,6 +407,41 @@ OutputStream &operator<<(OutputStream &os, ProgramTableInsertRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramCheckStateRegion region) {
+  os << os.Indent() << "check-state {";
+  auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table();
+
+  os.PushIndent();
+  if (auto maybe_body = region.IfPresent(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-present\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  if (auto maybe_body = region.IfAbsent(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-absent\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  if (auto maybe_body = region.IfUnknown(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-unknown\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  os.PopIndent();
   return os;
 }
 
@@ -493,8 +593,8 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramVectorClearRegion::From(region);
   } else if (region.IsVectorUnique()) {
     os << ProgramVectorUniqueRegion::From(region);
-  } else if (region.IsTableInsert()) {
-    os << ProgramTableInsertRegion::From(region);
+  } else if (region.IsTransitionState()) {
+    os << ProgramTransitionStateRegion::From(region);
   } else if (region.IsTableJoin()) {
     os << ProgramTableJoinRegion::From(region);
   } else if (region.IsTableProduct()) {
@@ -509,8 +609,12 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramGenerateRegion::From(region);
   } else if (region.IsCall()) {
     os << ProgramCallRegion::From(region);
+  } else if (region.IsReturn()) {
+    os << ProgramReturnRegion::From(region);
   } else if (region.IsPublish()) {
     os << ProgramPublishRegion::From(region);
+  } else if (region.IsCheckState()) {
+    os << ProgramCheckStateRegion::From(region);
   } else {
     assert(false);
     os << "<<unknown region>>";
@@ -519,17 +623,24 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
-
-  if (proc.Kind() == ProcedureKind::kInitializer) {
-    os << "init ";
+  switch (proc.Kind()) {
+    case ProcedureKind::kInitializer:
+      os << "^init:";
+      break;
+    case ProcedureKind::kMessageHandler:
+      os << "^receive:";
+      if (auto message = proc.Message(); message) {
+        os << message->Name() << '/' << message->Arity() << ':';
+      }
+      break;
+    case ProcedureKind::kTupleFinder:
+      os << "^find:";
+      break;
+    case ProcedureKind::kTupleRemover:
+      os << "^remove:";
+      break;
   }
-
-  os << "proc ";
-  if (auto message = proc.Message(); message) {
-    os << message->Name() << '/' << message->Arity() << ':' << proc.Id();
-  } else {
-    os << '$' << proc.Id();
-  }
+  os << proc.Id();
 
   return os;
 }
@@ -552,17 +663,22 @@ OutputStream &operator<<(OutputStream &os, Program program) {
   }
 
   for (auto proc : program.Procedures()) {
-    os << sep << os.Indent() << proc;
+    os << sep << os.Indent();
+    if (proc.Kind() == ProcedureKind::kInitializer) {
+      os << "init ";
+    }
+
+    os << "proc " << proc;
 
     os << '(';
     auto param_sep = "";
     for (auto vec : proc.VectorParameters()) {
       os << param_sep << vec;
-      sep = ", ";
+      param_sep = ", ";
     }
     for (auto var : proc.VariableParameters()) {
       os << param_sep << var;
-      sep = ", ";
+      param_sep = ", ";
     }
     os << ")\n";
     os.PushIndent();

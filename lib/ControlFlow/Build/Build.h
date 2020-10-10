@@ -96,6 +96,11 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
                                QueryMerge view, Context &context, OP *parent,
                                TABLE *last_model);
 
+// Build a top-down checker on an induction. This applies to inductions as
+// well as differential unions.
+void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
+                                  PROC *proc, QueryMerge view);
+
 // Build an eager region for a `QueryMerge` that is NOT part of an inductive
 // loop, and thus passes on its data to the next thing down as long as that
 // data is unique.
@@ -103,11 +108,20 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryMerge view, Context &context, OP *parent,
                            TABLE *last_model);
 
+// Build a top-down checker on a union. This applies to non-differential
+// unions.
+void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context,
+                              PROC *proc, QueryMerge view);
+
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryInsert view, Context &context, OP *parent,
                             TABLE *last_model);
+
+// Build an eager region for deleting it.
+void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView pred_view,
+                            QueryInsert view, Context &context, OP *parent);
 
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
@@ -127,6 +141,18 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
 void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
                               Context &context, OP *parent);
 
+// Build an eager region for tuple. If the tuple can receive differential
+// updates then its data needs to be saved.
+void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
+                           QueryTuple tuple, Context &context, OP *parent,
+                           TABLE *last_model);
+
+// Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
+// recovering "lost" columns, and possibly re-orders arguments before calling
+// down to the tuple's predecessor's checker.
+void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context,
+                              PROC *proc, QueryTuple tuple);
+
 // Builds an initialization function which does any work that depends purely
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context);
@@ -137,6 +163,51 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 
+// Build a top-down checker that tries to figure out if some tuple (passed as
+// arguments to this function) is present or not.
+PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
+                                QueryView view);
+
+// Build a bottom-up tuple remover, which marks tuples as being in the
+// UNKNOWN state (for later top-down checking).
+PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
+                                 QueryView view, TABLE *table);
+
+// Build a check for inserting into a view.
+template <typename Columns>
+OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
+                     OP *parent, TABLE *table, bool differential,
+                     Columns &&columns) {
+
+  // If we can receive deletions, then we need to call a functor that will
+  // tell us if this tuple doesn't actually exist.
+  if (differential) {
+    const auto check = impl->operation_regions.CreateDerived<CALL>(
+        parent, GetOrCreateTopDownChecker(impl, context, view),
+        ProgramOperation::kCallProcedureCheckFalse);
+
+    for (auto col : columns) {
+      const auto var = parent->VariableFor(impl, col);
+      check->arg_vars.AddUse(var);
+    }
+
+    UseRef<REGION>(parent, check).Swap(parent->body);
+    parent = check;
+  }
+
+  const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
+      parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+
+  for (auto col : columns) {
+    const auto var = parent->VariableFor(impl, col);
+    insert->col_values.AddUse(var);
+  }
+
+  UseRef<TABLE>(insert, table).Swap(insert->table);
+  UseRef<REGION>(parent, insert).Swap(parent->body);
+  return insert;
+}
+
 // Add in all of the successors of a view inside of `parent`, which is
 // usually some kind of loop. The successors execute in parallel.
 template <typename List>
@@ -145,14 +216,14 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
                                 TABLE *last_model) {
 
   // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a TABLEINSERT actually happened. That could
-  // mean re-parenting all successors within an TABLEINSERT.
+  // we need to make sure than a CHANGESTATE actually happened. That could
+  // mean re-parenting all successors within an CHANGESTATE.
   if (auto set_cond = view.SetCondition(); set_cond) {
     if (const auto table = TABLE::GetOrCreate(impl, view);
         table != last_model) {
       last_model = table;
-      const auto insert =
-          impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
+      const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
+          parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
 
       for (auto col : view.Columns()) {
         const auto var = parent->VariableFor(impl, col);

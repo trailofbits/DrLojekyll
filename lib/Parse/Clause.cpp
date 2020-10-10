@@ -732,6 +732,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
     } else {
       prev_message = used_pred.get();
+
+      // Keep track of whether or not any clause for this decl uses messages.
+      clause->depends_on_messages = true;
     }
 
     // We might rewrite queries into a kind of request/response message pattern,
@@ -773,7 +776,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     // Negation (i.e. removal) clauses must have a direct dependency on a
     // message. This keeps removal in the control of external users, and means
     // that, absent external messages, the system won't get into trivial cycles
-    // that preven fixpoints.
+    // that prevent fixpoints.
     } else if (!prev_message) {
       context->error_log.Append(scope_range, negation_tok_range)
           << "The explicit deletion clause for " << decl->name << '/'
@@ -796,34 +799,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       return;
 
     // We don't allow negation of zero-argument predicates, because if they
-    // are dataflow dependent, then there's no real way to "merge" multiple
+    // are dataflow-dependent, then there's no real way to "merge" multiple
     // positive and negative flows.
     } else if (clause->head_variables.empty()) {
       context->error_log.Append(scope_range, negation_tok_range)
           << "Deletion clauses cannot be specified on zero-argument predicates";
-      return;
-    }
-
-    // Check that all other insertions depend on messages? The key here is to
-    // not permit a situation where you ask to remove a tuple, but where that
-    // tuple is independently provable via multiple "paths" (that don't use
-    // messages). Because a message is ultimately ephemeral, there is no prior
-    // record of its receipt per se, and so there is no prior evidence to re-
-    // prove a clause head that we're asking to remove.
-    auto has_errors = false;
-    for (const auto &clause : decl->context->clauses) {
-      if (!clause->depends_on_messages) {
-        auto err =
-            context->error_log.Append(scope_range, negation_tok.Position());
-        err << "All positive clauses of " << decl->name << '/'
-            << decl->parameters.size() << " must directly depend on a message "
-            << "because of the presence of a deletion clause";
-
-        auto note = err.Note(ParsedClause(clause.get()).SpellingRange());
-        note << "Clause without a direct message dependency is here";
-      }
-    }
-    if (has_errors) {
       return;
     }
 
@@ -841,6 +821,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           << "Message receipt is here";
     }
 
+  // We've found a positive clause definition, and there are negative clause
+  // definitions, and this positive clause definition does not actually use
+  // any messages.
   } else if (!prev_message && !decl->context->deletion_clauses.empty()) {
     auto err = context->error_log.Append(scope_range, negation_tok.Position());
     err << "All positive clauses of " << decl->name << '/'
@@ -851,9 +834,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     auto note = err.Note(ParsedClause(del_clause).SpellingRange());
     note << "First deletion clause is here";
   }
-
-  // Keep track of whether or not any clause for this decl uses messages.
-  clause->depends_on_messages = true;
 
   // Link all positive predicate uses into their respective declarations.
   for (auto &used_pred : clause->positive_predicates) {

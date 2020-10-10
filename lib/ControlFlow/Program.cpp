@@ -52,6 +52,7 @@ ProgramImpl::~ProgramImpl(void) {
 
   for (auto op : operation_regions) {
     op->body.ClearWithoutErasure();
+
     if (auto let = op->AsLetBinding(); let) {
       let->used_vars.ClearWithoutErasure();
 
@@ -65,7 +66,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto vec_clear = op->AsVectorClear(); vec_clear) {
       vec_clear->vector.ClearWithoutErasure();
 
-    } else if (auto view_insert = op->AsTableInsert(); view_insert) {
+    } else if (auto view_insert = op->AsTransitionState(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
 
@@ -97,6 +98,12 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto call = op->AsCall(); call) {
       call->arg_vars.ClearWithoutErasure();
       call->arg_vecs.ClearWithoutErasure();
+
+    } else if (auto check = op->AsCheckState(); check) {
+      check->col_values.ClearWithoutErasure();
+      check->table.ClearWithoutErasure();
+      check->absent_body.ClearWithoutErasure();
+      check->unknown_body.ClearWithoutErasure();
 
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
@@ -145,12 +152,14 @@ bool ProgramRegion::IsParallel(void) const noexcept {
   }
 
 IS_OP(Call)
+IS_OP(Return)
 IS_OP(ExistenceAssertion)
 IS_OP(ExistenceCheck)
 IS_OP(Generate)
 IS_OP(LetBinding)
 IS_OP(Publish)
-IS_OP(TableInsert)
+IS_OP(TransitionState)
+IS_OP(CheckState)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TupleCompare)
@@ -203,10 +212,11 @@ OPTIONAL_BODY(ProgramExistenceCheckRegion)
 OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)
-OPTIONAL_BODY(ProgramTableInsertRegion)
+OPTIONAL_BODY(ProgramTransitionStateRegion)
 OPTIONAL_BODY(ProgramTableJoinRegion)
 OPTIONAL_BODY(ProgramTableProductRegion)
 OPTIONAL_BODY(ProgramTupleCompareRegion)
+OPTIONAL_BODY(ProgramCallRegion)
 
 #undef OPTIONAL_BODY
 
@@ -220,12 +230,14 @@ OPTIONAL_BODY(ProgramTupleCompareRegion)
   }
 
 FROM_OP(ProgramCallRegion, AsCall)
+FROM_OP(ProgramReturnRegion, AsReturn)
 FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
 FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
 FROM_OP(ProgramPublishRegion, AsPublish)
-FROM_OP(ProgramTableInsertRegion, AsTableInsert)
+FROM_OP(ProgramTransitionStateRegion, AsTransitionState)
+FROM_OP(ProgramCheckStateRegion, AsCheckState)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramVectorLoopRegion, AsVectorLoop)
@@ -271,7 +283,8 @@ USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
-USED_RANGE(ProgramTableInsertRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramTransitionStateRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckStateRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, Columns, DataColumn, columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
 USED_RANGE(ProgramTupleCompareRegion, RHS, DataVariable, rhs_vars)
@@ -352,12 +365,55 @@ ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
 }
 
-unsigned ProgramTableInsertRegion::Arity(void) const noexcept {
+unsigned ProgramTransitionStateRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramTableInsertRegion::Table(void) const {
+DataTable ProgramTransitionStateRegion::Table(void) const {
   return DataTable(impl->table.get());
+}
+
+TupleState ProgramTransitionStateRegion::FromState(void) const noexcept {
+  return impl->from_state;
+}
+
+TupleState ProgramTransitionStateRegion::ToState(void) const noexcept {
+  return impl->to_state;
+}
+
+unsigned ProgramCheckStateRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
+}
+
+DataTable ProgramCheckStateRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+std::optional<ProgramRegion>
+ProgramCheckStateRegion::IfPresent(void) const noexcept {
+  if (auto body = impl->body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramCheckStateRegion::IfAbsent(void) const noexcept {
+  if (auto body = impl->absent_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramCheckStateRegion::IfUnknown(void) const noexcept {
+  if (auto body = impl->unknown_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
 }
 
 VariableRole DataVariable::DefiningRole(void) const noexcept {
@@ -413,12 +469,7 @@ TypeKind DataVariable::Type(void) const noexcept {
         return impl->query_const->Literal().Type().Kind();
       }
       [[clang::fallthrough]];
-    case VariableRole::kVectorVariable:
-    case VariableRole::kLetBinding:
-    case VariableRole::kJoinPivot:
-    case VariableRole::kJoinNonPivot:
-    case VariableRole::kProductOutput:
-    case VariableRole::kFunctorOutput:
+    default:
       if (impl->query_column) {
         return impl->query_column->Type().Kind();
       }
@@ -599,6 +650,24 @@ ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
 
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
   return ProgramProcedure(impl->called_proc);
+}
+
+// Should we execute the body if the called procedure returns `true`?
+bool ProgramCallRegion::ExecuteBodyIfReturnIsTrue(void) const noexcept {
+  return impl->op == ProgramOperation::kCallProcedureCheckTrue;
+}
+
+// Should we execute the body if the called procedure returns `false`?
+bool ProgramCallRegion::ExecuteBodyIfReturnIsFalse(void) const noexcept {
+  return impl->op == ProgramOperation::kCallProcedureCheckFalse;
+}
+
+bool ProgramReturnRegion::ReturnsTrue(void) const noexcept {
+  return impl->op == ProgramOperation::kReturnTrueFromProcedure;
+}
+
+bool ProgramReturnRegion::ReturnsFalse(void) const noexcept {
+  return impl->op == ProgramOperation::kReturnFalseFromProcedure;
 }
 
 ParsedMessage ProgramPublishRegion::Message(void) const noexcept {

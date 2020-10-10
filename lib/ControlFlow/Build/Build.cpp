@@ -106,8 +106,10 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
     }
 
   } else if (view.IsAggregate()) {
+    assert(false && "TODO");
 
   } else if (view.IsKVIndex()) {
+    assert(false && "TODO");
 
   } else if (view.IsMap()) {
     BuildEagerGenerateRegion(impl, QueryMap::From(view), context, parent);
@@ -115,14 +117,23 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
   } else if (view.IsCompare()) {
     BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
 
-  } else if (view.IsSelect() || view.IsTuple()) {
+  } else if (view.IsSelect()) {
     BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
                                last_model);
 
-  } else if (view.IsInsert()) {
-    BuildEagerInsertRegion(impl, pred_view, QueryInsert::From(view), context,
-                           parent, last_model);
+  } else if (view.IsTuple()) {
+    BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
+                          parent, last_model);
 
+  } else if (view.IsInsert()) {
+    const auto insert = QueryInsert::From(view);
+    if (insert.IsDelete()) {
+      BuildEagerDeleteRegion(impl, pred_view, insert, context,
+                             parent);
+    } else {
+      BuildEagerInsertRegion(impl, pred_view, insert, context,
+                             parent, last_model);
+    }
   } else {
     assert(false);
   }
@@ -410,6 +421,26 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   });
 }
 
+// Add tuple parameters to a new procedure.
+static void AddParametersToProc(ProgramImpl *impl, PROC *proc, QueryView view) {
+  auto add_col = [=] (QueryColumn col) {
+    const auto var = proc->input_vars.Create(
+        impl->next_id++, VariableRole::kParameter);
+    var->query_column = col;
+    proc->col_id_to_var.emplace(col.Id(), var);
+  };
+
+  if (view.IsInsert()) {
+    for (auto col : QueryInsert::From(view).InputColumns()) {
+      add_col(col);
+    }
+  } else {
+    for (auto col : view.Columns()) {
+      add_col(col);
+    }
+  }
+}
+
 }  // namespace
 
 // Returns a global reference count variable associated with a query condition.
@@ -421,6 +452,112 @@ VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
     cond_var->query_cond = cond;
   }
   return cond_var;
+}
+
+// Build a top-down checker that tries to figure out if some tuple (passed as
+// arguments to this function) is present or not.
+PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
+                                QueryView view) {
+  auto &proc = impl->view_to_top_down_checker[view];
+  if (proc) {
+    return proc;
+  }
+
+  proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kTupleFinder);
+
+  AddParametersToProc(impl, proc, view);
+
+  if (view.IsJoin()) {
+    const auto join = QueryJoin::From(view);
+    if (join.NumPivotColumns()) {
+      assert(false && "TODO");
+
+    } else {
+      assert(false && "TODO");
+    }
+
+  } else if (view.IsMerge()) {
+    const auto merge = QueryMerge::From(view);
+    if (context.inductive_successors.count(view)) {
+      BuildTopDownInductionChecker(impl, context, proc, merge);
+
+    } else {
+      BuildTopDownUnionChecker(impl, context, proc, merge);
+    }
+
+  } else if (view.IsAggregate()) {
+    assert(false && "TODO");
+
+  } else if (view.IsKVIndex()) {
+    assert(false && "TODO");
+
+  } else if (view.IsMap()) {
+    assert(false && "TODO");
+
+  } else if (view.IsCompare()) {
+    assert(false && "TODO");
+
+  } else if (view.IsSelect()) {
+    const auto select = QuerySelect::From(view);
+
+    // The base case is that we get to a SELECT from a a stream. We treat
+    // data received as ephemeral, and so there is no way to actually check
+    // if the tuple exists, and so we treat it as not existing.
+    if (select.IsStream()) {
+      // Nothing to do.
+
+    } else {
+      assert(false && "TODO");
+    }
+
+  } else if (view.IsTuple()) {
+    BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view));
+
+  } else if (view.IsInsert()) {
+    const auto insert = QueryInsert::From(view);
+
+    // The base case is that we get to an INSERT that's actually a DELETE,
+    // i.e. a deletion clause head.
+    if (insert.IsDelete() || insert.IsStream()) {
+      assert(!insert.IsStream());  // Impossible.
+      // Nothing to do.
+
+    } else {
+      assert(false && "TODO");
+    }
+
+  // Not possible?
+  } else {
+    assert(false);
+  }
+
+  const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
+
+  return proc;
+}
+
+// Build a bottom-up tuple remover, which marks tuples as being in the
+// UNKNOWN state (for later top-down checking).
+PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
+                                 QueryView view, TABLE *table) {
+  auto &proc = impl->view_to_bottom_up_remover[view];
+  if (proc) {
+    return proc;
+  }
+
+  proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kTupleRemover);
+
+  AddParametersToProc(impl, proc, view);
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
+
+  return proc;
 }
 
 // Complete a procedure by exhausting the work list.
@@ -437,6 +574,11 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
     context.work_list.pop_back();
     action->Run(impl, context);
   }
+
+  // Add a default `return false` at the end of normal procedures.
+  const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
 }
 
 // Build an eager region. This guards the execution of the region in

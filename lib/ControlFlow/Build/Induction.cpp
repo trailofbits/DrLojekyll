@@ -224,19 +224,12 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  const auto table = TABLE::GetOrCreate(impl, view);
-  if (last_model != table) {
-    const auto insert =
-        impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
-    UseRef<TABLE>(insert, table).Swap(insert->table);
-    UseRef<REGION>(parent, insert).Swap(parent->body);
-
-    for (auto col : view.Columns()) {
-      const auto var = parent->VariableFor(impl, col);
-      insert->col_values.AddUse(var);
-    }
-
-    parent = insert;
+  if (const auto table = TABLE::GetOrCreate(impl, view);
+      last_model != table) {
+    parent = BuildInsertCheck(impl, view, context, parent, table,
+                              QueryView(view).CanReceiveDeletions(),
+                              view.Columns());
+    last_model = table;
   }
 
   // This is the first time seeing any MERGE associated with this induction.
@@ -285,6 +278,69 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
       induction->view_to_cycle_appends.find(view)->second.AddUse(append_to_vec);
       break;
     default: assert(false); break;
+  }
+}
+
+// Build a top-down checker on an induction.
+void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
+                                  PROC *proc, QueryMerge view) {
+
+  const auto table = TABLE::GetOrCreate(impl, view);
+  const auto check = impl->operation_regions.CreateDerived<CHECKSTATE>(proc);
+  for (auto col : view.Columns()) {
+    const auto var = proc->VariableFor(impl, col);
+    check->col_values.AddUse(var);
+  }
+
+  UseRef<TABLE>(check, table).Swap(check->table);
+  UseRef<REGION>(proc, check).Swap(proc->body);
+
+  // If the tuple is present, then return `true`.
+  const auto present = impl->operation_regions.CreateDerived<RETURN>(
+      check, ProgramOperation::kReturnTrueFromProcedure);
+  UseRef<REGION>(check, present).Swap(check->OP::body);
+
+  // If the tuple is absent, then we want to return false. We know that `proc`
+  // ends with a `return-false` so we'll just use that one.
+
+  // If this merge can't receive deletions, then there's nothing else to do
+  // because if it's not present here, then it won't be present in any of
+  // the children.
+  if (!QueryView::From(view).CanReceiveDeletions()) {
+    const auto unknown = impl->operation_regions.CreateDerived<RETURN>(
+        check, ProgramOperation::kReturnFalseFromProcedure);
+    UseRef<REGION>(check, unknown).Swap(check->unknown_body);
+    return;
+  }
+
+  // If the tuple is unknown, then we need to try to prove it. The base case
+  // to ensure this terminates is that, in trying to prove it, we will also
+  // mark it as absent.
+  const auto seq = impl->series_regions.Create(check);
+  UseRef<REGION>(check, seq).Swap(check->unknown_body);
+
+
+  // Now that we've established the base case (marking the tuple absent), we
+  // need to go and actually check all the possibilities.
+  const auto par = impl->parallel_regions.Create(seq);
+  par->ExecuteAfter(impl, seq);
+
+  for (auto pred : view.MergedViews()) {
+    const auto rec_check = impl->operation_regions.CreateDerived<CALL>(
+        par, GetOrCreateTopDownChecker(impl, context, pred),
+        ProgramOperation::kCallProcedureCheckTrue);
+
+    for (auto col : view.Columns()) {
+      const auto var = proc->VariableFor(impl, col);
+      rec_check->arg_vars.AddUse(var);
+    }
+
+    rec_check->ExecuteAlongside(impl, par);
+
+    // If the tuple is present, then return `true`.
+    const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
+        check, ProgramOperation::kReturnTrueFromProcedure);
+    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
   }
 }
 

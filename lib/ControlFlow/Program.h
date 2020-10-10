@@ -245,9 +245,13 @@ enum class ProgramOperation {
 
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then
-  // execution descends into `body`. The table into which we are inserting is
-  // `views[0]`.
+  // execution descends into `body`.
   kInsertIntoTable,
+
+  // Check the state of a tuple from a table. This executes one of three
+  // bodies: `body` if the tuple is present, `absent_body` if the tuple is
+  // absent, and `unknown_body` if the tuple may have been deleted.
+  kCheckStateInTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendInductionInputToVector,
@@ -313,6 +317,12 @@ enum class ProgramOperation {
 
   // Call another procedure.
   kCallProcedure,
+  kCallProcedureCheckTrue,
+  kCallProcedureCheckFalse,
+
+  // Return from a procedure.
+  kReturnTrueFromProcedure,
+  kReturnFalseFromProcedure,
 
   // TODO: use in future.
 
@@ -335,13 +345,15 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   explicit Node(REGION *parent_, ProgramOperation op_);
 
   virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
+  virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
   virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
   virtual Node<ProgramExistenceAssertionRegion> *
   AsExistenceAssertion(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
-  virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
+  virtual Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept;
+  virtual Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
   virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
   virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
@@ -361,7 +373,8 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
 using OP = Node<ProgramOperationRegion>;
 
-// A let binding, i.e. an assignment of zero or more variables.
+// A let binding, i.e. an assignment of zero or more variables. Variables
+// are assigned pairwise from `used_vars` into `defined_vars`.
 template <>
 class Node<ProgramLetBindingRegion> final
     : public Node<ProgramOperationRegion> {
@@ -389,8 +402,8 @@ class Node<ProgramLetBindingRegion> final
 
 using LET = Node<ProgramLetBindingRegion>;
 
-// A loop over a vector, specified in `tables[0]`. This also performs variable
-// binding into the variables specified in `variables`.
+// Loop over the vector `vector` and bind the extracted tuple elements into
+// the variables specified in `defined_vars`.
 template <>
 class Node<ProgramVectorLoopRegion> final
     : public Node<ProgramOperationRegion> {
@@ -419,8 +432,8 @@ class Node<ProgramVectorLoopRegion> final
 
 using VECTORLOOP = Node<ProgramVectorLoopRegion>;
 
-// An append of a tuple (specified in terms of `variables`) into a vector,
-// specified in terms of `tables[0]`.
+// Append a tuple into a vector. The elements in the tuple must match the
+// element/column types of the vector.
 template <>
 class Node<ProgramVectorAppendRegion> final
     : public Node<ProgramOperationRegion> {
@@ -484,19 +497,27 @@ class Node<ProgramVectorUniqueRegion> final
 
 using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
 
-// An append of a tuple (specified in terms of `variables`) into a vector,
-// specified in terms of `tables[0]`.
+// Set the state of a tuple in a view. In the simplest case, this behaves like
+// a SQL `INSERT` statement: it says that some data exists in a relation. There
+// are two other states that can be set: absent, which is like a `DELETE`, and
+// unknown, which has no SQL equivalent, but it like a tentative `DELETE`. An
+// unknown tuple is one which has been speculatively marked as deleted, and
+// needs to be re-proven in order via alternate means in order for it to be
+// used.
 template <>
-class Node<ProgramTableInsertRegion> final
+class Node<ProgramTransitionStateRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_)
+  inline Node(Node<ProgramRegion> *parent_, TupleState from_state_,
+              TupleState to_state_)
       : Node<ProgramOperationRegion>(parent_,
                                      ProgramOperation::kInsertIntoTable),
-        col_values(this) {}
+        col_values(this),
+        from_state(from_state_),
+        to_state(to_state_) {}
 
-  Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept override;
+  Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -508,18 +529,65 @@ class Node<ProgramTableInsertRegion> final
 
   // View into which the tuple is being inserted.
   UseRef<TABLE> table;
+
+  const TupleState from_state;
+  const TupleState to_state;
 };
 
-using TABLEINSERT = Node<ProgramTableInsertRegion>;
+using CHANGESTATE = Node<ProgramTransitionStateRegion>;
 
-// A call of one procedure from within another.
+// Check the state of a tuple. This is sort of like asking if something exists,
+// but has three conditionally executed children, based off of the state.
+// One state is that the tuple os missing from a view. The second state is
+// that the tuple is present in the view. The final state is that we are
+// not sure if the tuple is present or absent, because it has been marked
+// as a candidate for deletion, and thus we need to re-prove it.
+template <>
+class Node<ProgramCheckStateRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_)
+      : Node<ProgramOperationRegion>(parent_,
+                                     ProgramOperation::kCheckStateInTable),
+        col_values(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  // Variables that make up the tuple.
+  UseList<VAR> col_values;
+
+  // View into which the tuple is being inserted.
+  UseRef<TABLE> table;
+
+  // Region that is conditionally executed if the tuple is not present.
+  UseRef<REGION> absent_body;
+
+  // Region that is conditionally executed if the tuple was deleted and hasn't
+  // been re-checked.
+  UseRef<REGION> unknown_body;
+};
+
+using CHECKSTATE = Node<ProgramCheckStateRegion>;
+
+// Calls another IR procedure. All IR procedures return `true` or `false`. This
+// return value can be tested, and if it is, a body can be conditionally
+// executed based off of the result of that test.
 template <>
 class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_)
-      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCallProcedure),
+  Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_,
+       ProgramOperation op_=ProgramOperation::kCallProcedure)
+      : Node<ProgramOperationRegion>(parent_, op_),
         called_proc(called_proc_),
         arg_vars(this),
         arg_vecs(this) {}
@@ -545,7 +613,25 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
 
 using CALL = Node<ProgramCallRegion>;
 
-// A call of one procedure from within another.
+// Returns true/false from a procedure.
+template <>
+class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
+      : Node<ProgramOperationRegion>(parent_, op_){}
+
+  bool IsNoOp(void) const noexcept override;
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramReturnRegion> *AsReturn(void) noexcept override;
+};
+
+using RETURN = Node<ProgramReturnRegion>;
+
+// Publishes a message to the pub/sub.
 template <>
 class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
  public:
@@ -946,6 +1032,15 @@ class ProgramImpl : public User {
   // We build up "data models" of views that can share the same backing storage.
   std::vector<std::unique_ptr<DataModel>> models;
   std::unordered_map<QueryView, DataModel *> view_to_model;
+
+  // Maps views to procedures for top-down execution. The top-down executors
+  // exist to determine if a tuple is actually PRESENT (returning false if so),
+  // converting unprovable UNKNOWNs into ABSENTs.
+  std::unordered_map<QueryView, PROC *> view_to_top_down_checker;
+
+  // Maps views to procedures for bottom-up proving that goes and removes
+  // tuples. Removal of tuples changes their state from PRESENT to UNKNOWN.
+  std::unordered_map<QueryView, PROC *> view_to_bottom_up_remover;
 };
 
 }  // namespace hyde
