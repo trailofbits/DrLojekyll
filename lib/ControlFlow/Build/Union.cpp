@@ -14,7 +14,7 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  if (QueryView(view).CanReceiveDeletions()) {
+  if (MayNeedToBePersisted(view)) {
     if (const auto table = TABLE::GetOrCreate(impl, view);
         table != last_model) {
       parent = BuildInsertCheck(impl, view, context, parent, table,

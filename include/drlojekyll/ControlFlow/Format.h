@@ -30,6 +30,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTransitionStateRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramCheckStateRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region);
+OutputStream &operator<<(OutputStream &os, ProgramTableScanRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region);

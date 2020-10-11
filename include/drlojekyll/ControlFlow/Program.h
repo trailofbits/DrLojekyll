@@ -74,6 +74,7 @@ class ProgramTransitionStateRegion;
 class ProgramCheckStateRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
+class ProgramTableScanRegion;
 class ProgramTupleCompareRegion;
 
 // A generic region of code nested inside of a procedure.
@@ -97,6 +98,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramCheckStateRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
   ProgramRegion(const ProgramTableProductRegion &);
+  ProgramRegion(const ProgramTableScanRegion &);
   ProgramRegion(const ProgramTupleCompareRegion &);
 
   bool IsCall(void) const noexcept;
@@ -114,6 +116,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsCheckState(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
   bool IsTableProduct(void) const noexcept;
+  bool IsTableScan(void) const noexcept;
   bool IsSeries(void) const noexcept;
   bool IsParallel(void) const noexcept;
   bool IsPublish(void) const noexcept;
@@ -139,6 +142,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramCheckStateRegion;
   friend class ProgramTableJoinRegion;
   friend class ProgramTableProductRegion;
+  friend class ProgramTableScanRegion;
   friend class ProgramTupleCompareRegion;
 
   using program::ProgramNode<ProgramRegion>::ProgramNode;
@@ -181,6 +185,7 @@ enum class VariableRole : int {
   kJoinPivot,
   kJoinNonPivot,
   kProductOutput,
+  kScanOutput,
   kFunctorOutput,
   kParameter
 };
@@ -214,7 +219,8 @@ enum class VectorKind : unsigned {
   kInput,
   kInduction,
   kJoinPivots,
-  kProductInput
+  kProductInput,
+  kTableScan
 };
 
 // A column in a table.
@@ -404,6 +410,7 @@ enum class VectorUsage : unsigned {
   kJoinPivots,
   kProductInputVector,
   kProcedureInputVector,
+  kTableScan
 };
 
 // Loop over a vector.
@@ -605,6 +612,43 @@ class ProgramTableProductRegion
   friend class ProgramRegion;
 
   using program::ProgramNode<ProgramTableProductRegion>::ProgramNode;
+};
+
+// Perform a scan over a table, possibly using an index. If an index is being
+// used the input variables are provided to perform equality matching against
+// column values. The results of the scan fill a vector.
+class ProgramTableScanRegion
+    : public program::ProgramNode<ProgramTableScanRegion> {
+ public:
+  static ProgramTableScanRegion From(ProgramRegion) noexcept;
+
+  // The table being scanned.
+  DataTable Table(void) const noexcept;
+
+  // Optional index being scanned.
+  std::optional<DataIndex> Index(void) const noexcept;
+
+  // The columns used to constrain the scan of the table. These are in the same
+  // order as the entries in `InputVariables()`. This is empty if an index isn't
+  // being used.
+  UsedNodeRange<DataColumn> IndexedColumns(void) const;
+
+  // These are the output columns associated with the table scan. These
+  // do NOT include any indexed columns.
+  UsedNodeRange<DataColumn> SelectedColumns(void) const;
+
+  // The variables being provided for each of the `IndexedColumns()`, which are
+  // used to constrain the scan of the table. This is empty if an index isn't
+  // being used.
+  UsedNodeRange<DataVariable> InputVariables(void) const;
+
+  // The scanned results are filled into this vector.
+  DataVector FilledVector(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramTableScanRegion>::ProgramNode;
 };
 
 // An inductive area in a program. An inductive area is split up into three

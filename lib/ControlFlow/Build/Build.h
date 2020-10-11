@@ -173,6 +173,16 @@ PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, TABLE *table);
 
+// Returns `true` if `view` might need to have its data persisted for the
+// sake of supporting differential updates / verification.
+bool MayNeedToBePersisted(QueryView view);
+
+using ColPair = std::pair<QueryColumn, QueryColumn>;
+
+// Get a mapping of `(input_col, output_col)` where the columns are in order
+// of `input_col`, and no input columns are repeated.
+std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view);
+
 // Build a check for inserting into a view.
 template <typename Columns>
 OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,

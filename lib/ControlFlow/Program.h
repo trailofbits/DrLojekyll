@@ -136,6 +136,8 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
     }
   }
 
+  bool IsRead(void) const;
+
   const unsigned id;
   const VectorKind kind;
   std::vector<TypeKind> col_types;
@@ -284,6 +286,11 @@ enum class ProgramOperation {
   kSortAndUniqueProductInputVector,
   kClearProductInputVector,
 
+  // Used to implement table/index scanning.
+  kScanTable,
+  kLoopOverScanVector,
+  kClearScanVector,
+
   // Loop over a vector of inputs. The format of the vector is based off of
   // the variables in `variables`. The region `body` is executed for each
   // loop iteration.
@@ -356,6 +363,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
   virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
+  virtual Node<ProgramTableScanRegion> *AsTableScan(void) noexcept;
   virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
   virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
@@ -781,6 +789,42 @@ class Node<ProgramTableProductRegion> final
 
 using TABLEPRODUCT = Node<ProgramTableProductRegion>;
 
+// Perform a scan over a table, possibly using an index. If an index is being
+// used the input variables are provided to perform equality matching against
+// column values. The results of the scan fill a vector.
+template <>
+class Node<ProgramTableScanRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  inline Node(Node<ProgramRegion> *parent_)
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kScanTable),
+        out_cols(this),
+        in_cols(this),
+        in_vars(this) {}
+
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramTableScanRegion> *AsTableScan(void) noexcept override;
+
+
+  UseRef<TABLE> table;
+  UseList<TABLECOLUMN> out_cols;
+
+  UseRef<TABLEINDEX> index;
+  UseList<TABLECOLUMN> in_cols;
+  UseList<VAR> in_vars;
+
+  UseRef<VECTOR> output_vector;
+};
+
+using TABLESCAN = Node<ProgramTableScanRegion>;
+
 // Comparison between two tuples.
 template <>
 class Node<ProgramTupleCompareRegion> final
@@ -853,7 +897,6 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
         id(id_),
         kind(kind_),
         tables(this) {}
-
 
   // Returns `true` if this region is a no-op.
   bool IsNoOp(void) const noexcept override;

@@ -20,6 +20,7 @@ set(ControlFlow_SRCS
     "Build/Tuple.cpp"
     "Build/Union.cpp"
     
+    "Data.cpp"
     "Format.cpp"
     "Induction.cpp"
     "Operation.cpp"
@@ -29,7 +30,6 @@ set(ControlFlow_SRCS
     "Program.cpp"
     "Region.cpp"
     "Series.cpp"
-    "Table.cpp"
 )
 
 set(ControlFlow_PRIV_DEPS

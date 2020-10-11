@@ -82,6 +82,17 @@ ProgramImpl::~ProgramImpl(void) {
         cols.ClearWithoutErasure();
       }
 
+    } else if (auto view_product = op->AsTableProduct(); view_product) {
+      view_product->tables.ClearWithoutErasure();
+      view_product->input_vectors.ClearWithoutErasure();
+
+    } else if (auto view_scan = op->AsTableScan(); view_scan) {
+      view_scan->index.ClearWithoutErasure();
+      view_scan->in_cols.ClearWithoutErasure();
+      view_scan->in_vars.ClearWithoutErasure();
+      view_scan->output_vector.ClearWithoutErasure();
+      view_scan->table.ClearWithoutErasure();
+
     } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
       exists_check->cond_vars.ClearWithoutErasure();
 
@@ -162,6 +173,7 @@ IS_OP(TransitionState)
 IS_OP(CheckState)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
+IS_OP(TableScan)
 IS_OP(TupleCompare)
 IS_OP(VectorLoop)
 IS_OP(VectorAppend)
@@ -240,6 +252,7 @@ FROM_OP(ProgramTransitionStateRegion, AsTransitionState)
 FROM_OP(ProgramCheckStateRegion, AsCheckState)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
+FROM_OP(ProgramTableScanRegion, AsTableScan)
 FROM_OP(ProgramVectorLoopRegion, AsVectorLoop)
 FROM_OP(ProgramVectorAppendRegion, AsVectorAppend)
 FROM_OP(ProgramVectorClearRegion, AsVectorClear)
@@ -295,6 +308,9 @@ USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
 USED_RANGE(ProgramTableProductRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vectors)
+USED_RANGE(ProgramTableScanRegion, IndexedColumns, DataColumn, in_cols)
+USED_RANGE(ProgramTableScanRegion, SelectedColumns, DataColumn, out_cols)
+USED_RANGE(ProgramTableScanRegion, InputVariables, DataVariable, in_vars)
 
 // clang-format on
 
@@ -322,6 +338,10 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kSortAndUniqueProductInputVector:
     case ProgramOperation::kClearProductInputVector:
       return VectorUsage::kProductInputVector;
+    case ProgramOperation::kScanTable:
+    case ProgramOperation::kLoopOverScanVector:
+    case ProgramOperation::kClearScanVector:
+      return VectorUsage::kTableScan;
     default: assert(false); return VectorUsage::kInvalid;
   }
 }
@@ -646,6 +666,25 @@ ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
   const auto &vars = impl->output_vars[table_index];
   return {DefinedNodeIterator<DataVariable>(vars.begin()),
           DefinedNodeIterator<DataVariable>(vars.end())};
+}
+
+// The table being scanned.
+DataTable ProgramTableScanRegion::Table(void) const noexcept {
+  return DataTable(impl->table.get());
+}
+
+// Optional index being scanned.
+std::optional<DataIndex> ProgramTableScanRegion::Index(void) const noexcept {
+  if (impl->index) {
+    return DataIndex(impl->index.get());
+  } else {
+    return std::nullopt;
+  }
+}
+
+// The scanned results are filled into this vector.
+DataVector ProgramTableScanRegion::FilledVector(void) const {
+  return DataVector(impl->output_vector.get());
 }
 
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {

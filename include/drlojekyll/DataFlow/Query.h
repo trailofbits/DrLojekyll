@@ -308,6 +308,14 @@ class QueryView : public query::QueryNode<QueryView> {
   // Can this view produce outputs that should logically "delete" entries?
   bool CanProduceDeletions(void) const noexcept;
 
+  // Returns `true` if all users of this view use all the columns of this
+  // view.
+  bool AllUsersUseAllColumns(void) const noexcept;
+
+  // Returns `true` if this view has a single predecessor, and if all of the
+  // columns of that predecessor are used.
+  bool AllColumnsOfSinglePredecessorAreUsed(void) const noexcept;
+
   // Returns the depth of this node in the graph. This is defined as depth
   // from an input (associated with a message receive) node, where the deepest
   // nodes are typically responses to queries, or message publications.

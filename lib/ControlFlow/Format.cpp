@@ -85,6 +85,7 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kInduction: os << "$induction"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
+    case VectorKind::kTableScan: os << "$scan"; break;
   }
 
   os << ':' << vec.Id();
@@ -522,6 +523,38 @@ OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region) {
   return os;
 }
 
+
+OutputStream &operator<<(OutputStream &os, ProgramTableScanRegion region) {
+  os << os.Indent() << "scan";
+  if (region.Index()) {
+    os << "-index";
+  } else {
+    os << "-table";
+  }
+
+  auto sep = "";
+  os << " select {";
+  for (auto col : region.SelectedColumns()) {
+    os << sep << col;
+    sep = ", ";
+  }
+
+  os << "} from " << region.Table();
+
+  if (auto index = region.Index(); index) {
+    os << " where {";
+    sep = "";
+    for (auto var : region.InputVariables()) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "} in " << *index;
+  }
+
+  os << " into " << region.FilledVector();
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
   os << os.Indent() << "induction\n";
   os.PushIndent();
@@ -599,6 +632,8 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
     os << ProgramTableJoinRegion::From(region);
   } else if (region.IsTableProduct()) {
     os << ProgramTableProductRegion::From(region);
+  } else if (region.IsTableScan()) {
+    os << ProgramTableScanRegion::From(region);
   } else if (region.IsExistenceCheck()) {
     os << ProgramExistenceCheckRegion::From(region);
   } else if (region.IsExistenceAssertion()) {

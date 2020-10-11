@@ -319,6 +319,18 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
   const auto seq = impl->series_regions.Create(check);
   UseRef<REGION>(check, seq).Swap(check->unknown_body);
 
+  // Change the tuple's state to mark it as deleted so that we can't use it
+  // as its own base case.
+  const auto table_remove =
+      impl->operation_regions.CreateDerived<CHANGESTATE>(
+          seq, TupleState::kUnknown, TupleState::kAbsent);
+  UseRef<TABLE>(table_remove, table).Swap(table_remove->table);
+  for (auto col : view.Columns()) {
+    const auto var = proc->VariableFor(impl, col);
+    table_remove->col_values.AddUse(var);
+  }
+
+  table_remove->ExecuteAfter(impl, seq);
 
   // Now that we've established the base case (marking the tuple absent), we
   // need to go and actually check all the possibilities.
@@ -337,10 +349,23 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
 
     rec_check->ExecuteAlongside(impl, par);
 
+    // Change the tuple's state to mark it as present now that we've proven
+    // it true via one of the paths into this node.
+    const auto table_insert =
+        impl->operation_regions.CreateDerived<CHANGESTATE>(
+            rec_check, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+    UseRef<TABLE>(table_insert, table).Swap(table_insert->table);
+    for (auto col : view.Columns()) {
+      const auto var = proc->VariableFor(impl, col);
+      table_insert->col_values.AddUse(var);
+    }
+
+    UseRef<REGION>(rec_check, table_insert).Swap(rec_check->body);
+
     // If the tuple is present, then return `true`.
     const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
         check, ProgramOperation::kReturnTrueFromProcedure);
-    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
+    rec_present->ExecuteAfter(impl, table_insert);
   }
 }
 

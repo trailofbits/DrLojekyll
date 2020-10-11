@@ -441,6 +441,42 @@ static void AddParametersToProc(ProgramImpl *impl, PROC *proc, QueryView view) {
   }
 }
 
+// Returns `true` if all paths through `region` ends with a `return` region.
+static bool EndsWithReturn(REGION *region) {
+  if (!region) {
+    return false;
+
+  } else if (auto proc = region->AsProcedure(); proc) {
+    return EndsWithReturn(proc->body.get());
+
+  } else if (auto series = region->AsSeries(); series) {
+    if (auto num_regions = series->regions.Empty(); num_regions) {
+      return EndsWithReturn(series->regions[num_regions - 1u]);
+    }
+
+  } else if (auto par = region->AsParallel(); par) {
+    for (auto sub_region : par->regions) {
+      if (!EndsWithReturn(sub_region)) {
+        return false;
+      }
+    }
+
+    return !par->regions.Empty();
+
+  } else if (auto op = region->AsOperation(); op) {
+    if (op->AsReturn()) {
+      return true;
+
+    } else if (auto cs = op->AsCheckState(); cs) {
+      return EndsWithReturn(cs->body.get()) &&
+             EndsWithReturn(cs->absent_body.get()) &&
+             EndsWithReturn(cs->unknown_body.get());
+    }
+  }
+
+  return false;
+}
+
 }  // namespace
 
 // Returns a global reference count variable associated with a query condition.
@@ -471,7 +507,7 @@ PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      assert(false && "TODO");
+      //assert(false && "TODO");
 
     } else {
       assert(false && "TODO");
@@ -532,9 +568,11 @@ PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
     assert(false);
   }
 
-  const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
+  if (!EndsWithReturn(proc)) {
+    const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+        proc, ProgramOperation::kReturnFalseFromProcedure);
+    ret->ExecuteAfter(impl, proc);
+  }
 
   return proc;
 }
@@ -558,6 +596,54 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
   ret->ExecuteAfter(impl, proc);
 
   return proc;
+}
+
+// Returns `true` if `view` might need to have its data persisted for the
+// sake of supporting differential updates / verification.
+bool MayNeedToBePersisted(QueryView view) {
+
+  if (view.CanReceiveDeletions() || view.CanProduceDeletions()) {
+    return true;
+  }
+
+  // If any successor of `view` can receive a deletion, then we may need to
+  // support re-proving of a tuple in `succ`, but to do so, we may need to
+  // also do a top-down execution into `view`, and have `view` provide the
+  // base case.
+  for (auto succ : view.Successors()) {
+    if (succ.CanReceiveDeletions()) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Get a mapping of `(input_col, output_col)` where the columns are in order
+// of `input_col`, and no input columns are repeated.
+std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view) {
+  std::vector<ColPair> inout_cols;
+
+  // We need to call the checker for the next
+  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                      std::optional<QueryColumn> out_col) {
+    if (out_col && QueryView::Containing(in_col) == pred_view) {
+      inout_cols.emplace_back(in_col, *out_col);
+    }
+  });
+
+  std::sort(inout_cols.begin(), inout_cols.end(),
+            [] (ColPair a, ColPair b) {
+              return a.first.Index() < b.first.Index();
+            });
+
+  auto it = std::unique(inout_cols.begin(), inout_cols.end(),
+                        [] (ColPair a, ColPair b) {
+                          return a.first.Index() == b.first.Index();
+                        });
+  inout_cols.erase(it, inout_cols.end());
+
+  return inout_cols;
 }
 
 // Complete a procedure by exhausting the work list.

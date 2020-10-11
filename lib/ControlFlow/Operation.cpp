@@ -16,6 +16,7 @@ Node<ProgramTransitionStateRegion>::~Node(void) {}
 Node<ProgramCheckStateRegion>::~Node(void) {}
 Node<ProgramTableJoinRegion>::~Node(void) {}
 Node<ProgramTableProductRegion>::~Node(void) {}
+Node<ProgramTableScanRegion>::~Node(void) {}
 Node<ProgramTupleCompareRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
@@ -86,6 +87,11 @@ Node<ProgramOperationRegion>::AsTableJoin(void) noexcept {
 
 Node<ProgramTableProductRegion> *
 Node<ProgramOperationRegion>::AsTableProduct(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramTableScanRegion> *
+Node<ProgramOperationRegion>::AsTableScan(void) noexcept {
   return nullptr;
 }
 
@@ -318,6 +324,11 @@ Node<ProgramTableProductRegion>::AsTableProduct(void) noexcept {
   return this;
 }
 
+Node<ProgramTableScanRegion> *
+Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
+  return this;
+}
+
 bool Node<ProgramVectorClearRegion>::Equals(
     EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -473,6 +484,39 @@ bool Node<ProgramTableProductRegion>::Equals(
   } else {
     return true;
   }
+}
+
+bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
+  return !output_vector->IsRead();
+}
+
+bool Node<ProgramTableScanRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsTableScan();
+  if (!that || table.get() != that->table.get() ||
+      index.get() != that->index.get() ||
+      (!this->OP::body.get()) != (!that->OP::body.get())) {
+    return false;
+  }
+
+  const auto num_vars = this->in_vars.Size();
+  if (that->in_vars.Size() != num_vars) {
+    assert(false);
+    return false;
+  }
+
+  for (auto i = 0u; i < num_vars; ++i) {
+    if (!eq.Contains(this->in_vars[i], that->in_vars[i])) {
+      return false;
+    }
+  }
+
+  return eq.Contains(this->output_vector.get(), that->output_vector.get());
 }
 
 Node<ProgramTupleCompareRegion> *
