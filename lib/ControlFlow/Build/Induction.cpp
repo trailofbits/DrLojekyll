@@ -283,90 +283,51 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on an induction.
 void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMerge view) {
+                                  PROC *proc, QueryView succ_view,
+                                  QueryMerge view) {
 
   const auto table = TABLE::GetOrCreate(impl, view);
-  const auto check = impl->operation_regions.CreateDerived<CHECKSTATE>(proc);
-  for (auto col : view.Columns()) {
-    const auto var = proc->VariableFor(impl, col);
-    check->col_values.AddUse(var);
-  }
 
-  UseRef<TABLE>(check, table).Swap(check->table);
-  UseRef<REGION>(proc, check).Swap(proc->body);
+  auto build_rule_checks = [=, &context] (PARALLEL *par) {
+    for (auto pred_view : view.MergedViews()) {
+      const auto rec_check = CallPredecessorTopDownChecker(
+          impl, context, par, view, pred_view,
+          ProgramOperation::kCallProcedureCheckTrue);
 
-  // If the tuple is present, then return `true`.
-  const auto present = impl->operation_regions.CreateDerived<RETURN>(
-      check, ProgramOperation::kReturnTrueFromProcedure);
-  UseRef<REGION>(check, present).Swap(check->OP::body);
+      rec_check->ExecuteAlongside(impl, par);
 
-  // If the tuple is absent, then we want to return false. We know that `proc`
-  // ends with a `return-false` so we'll just use that one.
+      // Change the tuple's state to mark it as present now that we've proven
+      // it true via one of the paths into this node.
+      const auto table_insert = BuildChangeState(
+            impl, table, rec_check, view.Columns(),
+            TupleState::kAbsentOrUnknown, TupleState::kPresent);
+      UseRef<REGION>(rec_check, table_insert).Swap(rec_check->body);
 
-  // If this merge can't receive deletions, then there's nothing else to do
-  // because if it's not present here, then it won't be present in any of
-  // the children.
-  if (!QueryView::From(view).CanReceiveDeletions()) {
-    const auto unknown = impl->operation_regions.CreateDerived<RETURN>(
-        check, ProgramOperation::kReturnFalseFromProcedure);
-    UseRef<REGION>(check, unknown).Swap(check->unknown_body);
-    return;
-  }
+      // If the tuple is present, then return `true`.
+      const auto rec_present = BuildStateCheckCaseReturnTrue(
+          impl, table_insert);
+      rec_present->ExecuteAfter(impl, table_insert);
+    }
+  };
 
-  // If the tuple is unknown, then we need to try to prove it. The base case
-  // to ensure this terminates is that, in trying to prove it, we will also
-  // mark it as absent.
-  const auto seq = impl->series_regions.Create(check);
-  UseRef<REGION>(check, seq).Swap(check->unknown_body);
+  auto build_unknown = [=] (ProgramImpl *, REGION *parent) -> REGION * {
 
-  // Change the tuple's state to mark it as deleted so that we can't use it
-  // as its own base case.
-  const auto table_remove =
-      impl->operation_regions.CreateDerived<CHANGESTATE>(
-          seq, TupleState::kUnknown, TupleState::kAbsent);
-  UseRef<TABLE>(table_remove, table).Swap(table_remove->table);
-  for (auto col : view.Columns()) {
-    const auto var = proc->VariableFor(impl, col);
-    table_remove->col_values.AddUse(var);
-  }
-
-  table_remove->ExecuteAfter(impl, seq);
-
-  // Now that we've established the base case (marking the tuple absent), we
-  // need to go and actually check all the possibilities.
-  const auto par = impl->parallel_regions.Create(seq);
-  par->ExecuteAfter(impl, seq);
-
-  for (auto pred : view.MergedViews()) {
-    const auto rec_check = impl->operation_regions.CreateDerived<CALL>(
-        par, GetOrCreateTopDownChecker(impl, context, pred),
-        ProgramOperation::kCallProcedureCheckTrue);
-
-    for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
-      rec_check->arg_vars.AddUse(var);
+    // If this induction can't receive deletions, then there's nothing else to
+    // do because if it's not present here, then it won't be present in any of
+    // the children.
+    if (!QueryView::From(view).CanReceiveDeletions()) {
+      return BuildStateCheckCaseReturnFalse(impl, parent);
     }
 
-    rec_check->ExecuteAlongside(impl, par);
+    return BuildTopDownCheckerResetAndProve(
+        impl, table, parent, view.Columns(), build_rule_checks);
+  };
 
-    // Change the tuple's state to mark it as present now that we've proven
-    // it true via one of the paths into this node.
-    const auto table_insert =
-        impl->operation_regions.CreateDerived<CHANGESTATE>(
-            rec_check, TupleState::kAbsentOrUnknown, TupleState::kPresent);
-    UseRef<TABLE>(table_insert, table).Swap(table_insert->table);
-    for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
-      table_insert->col_values.AddUse(var);
-    }
-
-    UseRef<REGION>(rec_check, table_insert).Swap(rec_check->body);
-
-    // If the tuple is present, then return `true`.
-    const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
-        check, ProgramOperation::kReturnTrueFromProcedure);
-    rec_present->ExecuteAfter(impl, table_insert);
-  }
+  BuildTopDownCheckerStateCheck(
+      impl, proc, table, view.Columns(),
+      BuildStateCheckCaseReturnTrue,
+      BuildStateCheckCaseNothing,
+      build_unknown);
 }
 
 }  // namespace hyde

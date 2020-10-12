@@ -73,6 +73,8 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
     }
   }
 
+  // Add additional names to the columns; this is helpful in debugging
+  // output.
   unsigned i = 0u;
   for (auto col : cols) {
     auto table_col = model->table->columns[i++];

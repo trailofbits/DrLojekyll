@@ -34,32 +34,84 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
 void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context,
-                              PROC *proc, QueryMerge view) {
-  if (QueryView(view).CanReceiveDeletions()) {
-    BuildTopDownInductionChecker(impl, context, proc, view);
-    return;
+                              PROC *proc, QueryView succ_view,
+                              QueryMerge merge) {
+  QueryView view(merge);
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+
+  // Call the predecessors.
+  auto call_pred =
+      [=, &context] (REGION *parent, QueryView pred_view) -> REGION * {
+        const auto check = impl->operation_regions.CreateDerived<CALL>(
+            parent, GetOrCreateTopDownChecker(impl, context, view, pred_view),
+            ProgramOperation::kCallProcedureCheckTrue);
+
+        const auto inout_cols = GetColumnMap(view, pred_view);
+        for (auto [pred_col, view_col] : inout_cols) {
+          const auto in_var = parent->VariableFor(impl, view_col);
+          check->arg_vars.AddUse(in_var);
+        }
+
+        const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+        UseRef<REGION>(check, ret_true).Swap(check->body);
+
+        return check;
+      };
+
+  // This union has persistent backing; go check it, and then check the
+  // predecessors.
+  if (model->table) {
+    const auto region = BuildMaybeScanPartial(
+        impl, succ_view, view, model->table, proc,
+        [&] (REGION *parent) -> REGION * {
+          return BuildTopDownCheckerStateCheck(
+              impl, parent, model->table, view.Columns(),
+              BuildStateCheckCaseReturnTrue,
+              BuildStateCheckCaseNothing,
+              [&] (ProgramImpl *, REGION *parent) -> REGION * {
+                return BuildTopDownCheckerResetAndProve(
+                    impl, model->table, parent, view.Columns(),
+                    [&] (PARALLEL *par) {
+                      for (QueryView pred_view : view.Predecessors()) {
+                        call_pred(par, pred_view)->ExecuteAlongside(impl, par);
+                      }
+                    });
+              });
+        });
+
+    UseRef<REGION>(proc, region).Swap(proc->body);
+
+  // This unions doesn't have persistent backing.
+  } else {
+
   }
-
-  const auto par = impl->parallel_regions.Create(proc);
-  par->ExecuteAfter(impl, proc);
-
-  for (auto pred : view.MergedViews()) {
-    const auto rec_check = impl->operation_regions.CreateDerived<CALL>(
-        par, GetOrCreateTopDownChecker(impl, context, pred),
-        ProgramOperation::kCallProcedureCheckTrue);
-
-    for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
-      rec_check->arg_vars.AddUse(var);
-    }
-
-    rec_check->ExecuteAlongside(impl, par);
-
-    // If the tuple is present, then return `true`.
-    const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
-        rec_check, ProgramOperation::kReturnTrueFromProcedure);
-    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
-  }
+//
+//
+//  if (QueryView(view).CanReceiveDeletions()) {
+//    BuildTopDownInductionChecker(impl, context, proc, succ_view, view);
+//    return;
+//  }
+//
+//  const auto par = impl->parallel_regions.Create(proc);
+//  par->ExecuteAfter(impl, proc);
+//
+//  for (auto pred_view : view.MergedViews()) {
+//    const auto rec_check = impl->operation_regions.CreateDerived<CALL>(
+//        par, GetOrCreateTopDownChecker(impl, context, view, pred_view),
+//        ProgramOperation::kCallProcedureCheckTrue);
+//
+//    for (auto col : view.Columns()) {
+//      const auto var = proc->VariableFor(impl, col);
+//      rec_check->arg_vars.AddUse(var);
+//    }
+//
+//    rec_check->ExecuteAlongside(impl, par);
+//
+//    // If the tuple is present, then return `true`.
+//    const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
+//        rec_check, ProgramOperation::kReturnTrueFromProcedure);
+//    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
+//  }
 }
 
 }  // namespace hyde

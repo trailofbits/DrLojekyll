@@ -421,26 +421,6 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   });
 }
 
-// Add tuple parameters to a new procedure.
-static void AddParametersToProc(ProgramImpl *impl, PROC *proc, QueryView view) {
-  auto add_col = [=] (QueryColumn col) {
-    const auto var = proc->input_vars.Create(
-        impl->next_id++, VariableRole::kParameter);
-    var->query_column = col;
-    proc->col_id_to_var.emplace(col.Id(), var);
-  };
-
-  if (view.IsInsert()) {
-    for (auto col : QueryInsert::From(view).InputColumns()) {
-      add_col(col);
-    }
-  } else {
-    for (auto col : view.Columns()) {
-      add_col(col);
-    }
-  }
-}
-
 // Returns `true` if all paths through `region` ends with a `return` region.
 static bool EndsWithReturn(REGION *region) {
   if (!region) {
@@ -477,6 +457,89 @@ static bool EndsWithReturn(REGION *region) {
   return false;
 }
 
+// Build out all the top-down checkers. We want to do this after building all
+// bottom-up provers so that we can know which views correspond with which
+// tables.
+static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
+
+  while (!context.top_down_checker_work_list.empty()) {
+    const auto [succ_view, view, proc] = \
+        context.top_down_checker_work_list.back();
+    context.top_down_checker_work_list.pop_back();
+
+    if (view.IsJoin()) {
+      const auto join = QueryJoin::From(view);
+      if (join.NumPivotColumns()) {
+        //assert(false && "TODO");
+
+      } else {
+        assert(false && "TODO");
+      }
+
+    } else if (view.IsMerge()) {
+      const auto merge = QueryMerge::From(view);
+      if (context.inductive_successors.count(view)) {
+        BuildTopDownInductionChecker(impl, context, proc, succ_view, merge);
+
+      } else {
+        BuildTopDownUnionChecker(impl, context, proc, succ_view, merge);
+      }
+
+    } else if (view.IsAggregate()) {
+      assert(false && "TODO");
+
+    } else if (view.IsKVIndex()) {
+      assert(false && "TODO");
+
+    } else if (view.IsMap()) {
+      assert(false && "TODO");
+
+    } else if (view.IsCompare()) {
+      assert(false && "TODO");
+
+    } else if (view.IsSelect()) {
+      const auto select = QuerySelect::From(view);
+
+      // The base case is that we get to a SELECT from a a stream. We treat
+      // data received as ephemeral, and so there is no way to actually check
+      // if the tuple exists, and so we treat it as not existing.
+      if (select.IsStream()) {
+        // Nothing to do.
+
+      } else {
+        assert(false && "TODO");
+      }
+
+    } else if (view.IsTuple()) {
+      BuildTopDownTupleChecker(impl, context, proc, succ_view,
+                               QueryTuple::From(view));
+
+    } else if (view.IsInsert()) {
+      const auto insert = QueryInsert::From(view);
+
+      // The base case is that we get to an INSERT that's actually a DELETE,
+      // i.e. a deletion clause head.
+      if (insert.IsDelete() || insert.IsStream()) {
+        assert(!insert.IsStream());  // Impossible.
+        // Nothing to do.
+
+      } else {
+        assert(false && "TODO");
+      }
+
+    // Not possible?
+    } else {
+      assert(false);
+    }
+
+    if (!EndsWithReturn(proc)) {
+      const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+          proc, ProgramOperation::kReturnFalseFromProcedure);
+      ret->ExecuteAfter(impl, proc);
+    }
+  }
+}
+
 }  // namespace
 
 // Returns a global reference count variable associated with a query condition.
@@ -490,88 +553,72 @@ VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   return cond_var;
 }
 
+OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent) {
+  return impl->operation_regions.CreateDerived<RETURN>(
+      parent, ProgramOperation::kReturnFalseFromProcedure);
+}
+
+OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent) {
+  return impl->operation_regions.CreateDerived<RETURN>(
+      parent, ProgramOperation::kReturnTrueFromProcedure);
+}
+
+OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
+  return nullptr;
+}
+
+// Call the top-down checker of `pred_view` from the context of `view`.
+CALL *CallPredecessorTopDownChecker(ProgramImpl *impl, Context &context,
+                                    REGION *parent, QueryView view,
+                                    QueryView pred_view,
+                                    ProgramOperation call_op) {
+
+  const auto check = impl->operation_regions.CreateDerived<CALL>(
+      parent, GetOrCreateTopDownChecker(impl, context, view, pred_view),
+      call_op);
+
+  const auto inout_cols = GetColumnMap(view, pred_view);
+  for (auto [pred_col, view_col] : inout_cols) {
+    const auto in_var = parent->VariableFor(impl, view_col);
+    check->arg_vars.AddUse(in_var);
+  }
+
+  return check;
+}
+
 // Build a top-down checker that tries to figure out if some tuple (passed as
 // arguments to this function) is present or not.
 PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
-                                QueryView view) {
-  auto &proc = impl->view_to_top_down_checker[view];
-  if (proc) {
-    return proc;
-  }
+                                QueryView succ_view, QueryView view) {
 
-  proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kTupleFinder);
 
-  AddParametersToProc(impl, proc, view);
+  auto &proc = context.view_to_top_down_checker[std::make_pair(view, succ_view)];
+  if (!proc) {
+    proc = impl->procedure_regions.Create(
+        impl->next_id++, ProcedureKind::kTupleFinder);
 
-  if (view.IsJoin()) {
-    const auto join = QueryJoin::From(view);
-    if (join.NumPivotColumns()) {
-      //assert(false && "TODO");
-
-    } else {
-      assert(false && "TODO");
-    }
-
-  } else if (view.IsMerge()) {
-    const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view)) {
-      BuildTopDownInductionChecker(impl, context, proc, merge);
+    if (succ_view != view) {
+      const auto inout_cols = GetColumnMap(succ_view, view);
+      for (auto [view_col, succ_view_col] : inout_cols) {
+        const auto var = proc->input_vars.Create(
+            impl->next_id++, VariableRole::kParameter);
+        var->query_column = view_col;
+        proc->col_id_to_var.emplace(succ_view_col.Id(), var);
+        proc->col_id_to_var.emplace(view_col.Id(), var);
+      }
 
     } else {
-      BuildTopDownUnionChecker(impl, context, proc, merge);
+      for (auto view_col : view.Columns()) {
+        const auto var = proc->input_vars.Create(
+            impl->next_id++, VariableRole::kParameter);
+        var->query_column = view_col;
+        proc->col_id_to_var.emplace(view_col.Id(), var);
+      }
     }
 
-  } else if (view.IsAggregate()) {
-    assert(false && "TODO");
+    // TODO(pag): Is it possible for some parameters to be missing?
 
-  } else if (view.IsKVIndex()) {
-    assert(false && "TODO");
-
-  } else if (view.IsMap()) {
-    assert(false && "TODO");
-
-  } else if (view.IsCompare()) {
-    assert(false && "TODO");
-
-  } else if (view.IsSelect()) {
-    const auto select = QuerySelect::From(view);
-
-    // The base case is that we get to a SELECT from a a stream. We treat
-    // data received as ephemeral, and so there is no way to actually check
-    // if the tuple exists, and so we treat it as not existing.
-    if (select.IsStream()) {
-      // Nothing to do.
-
-    } else {
-      assert(false && "TODO");
-    }
-
-  } else if (view.IsTuple()) {
-    BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view));
-
-  } else if (view.IsInsert()) {
-    const auto insert = QueryInsert::From(view);
-
-    // The base case is that we get to an INSERT that's actually a DELETE,
-    // i.e. a deletion clause head.
-    if (insert.IsDelete() || insert.IsStream()) {
-      assert(!insert.IsStream());  // Impossible.
-      // Nothing to do.
-
-    } else {
-      assert(false && "TODO");
-    }
-
-  // Not possible?
-  } else {
-    assert(false);
-  }
-
-  if (!EndsWithReturn(proc)) {
-    const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-        proc, ProgramOperation::kReturnFalseFromProcedure);
-    ret->ExecuteAfter(impl, proc);
+    context.top_down_checker_work_list.emplace_back(view, succ_view, proc);
   }
 
   return proc;
@@ -589,7 +636,8 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
   proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kTupleRemover);
 
-  AddParametersToProc(impl, proc, view);
+  // TODO(pag): Add parameters!
+//  AddParametersToProc(impl, proc, view);
 
   auto ret = impl->operation_regions.CreateDerived<RETURN>(
       proc, ProgramOperation::kReturnFalseFromProcedure);
@@ -616,6 +664,96 @@ bool MayNeedToBePersisted(QueryView view) {
     }
   }
 
+  return false;
+}
+
+// Decides whether or not `view` can depend on `pred_view` for persistence
+// of its data.
+bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
+                                     QueryView view, QueryView pred_view) {
+
+  // Check out cache; we may have already determined this.
+  auto &det = context.can_defer_to_predecessor[std::make_pair(view, pred_view)];
+  if (det != Context::kDeferUnknown) {
+    return det == Context::kCanDeferToPredecessor;
+  }
+
+  // If this tuple can receive deletions, then whatever is providing data is
+  // sending deletions, so we can depend on how it handles persistence.
+  if (view.CanReceiveDeletions()) {
+    det = Context::kCanDeferToPredecessor;
+    return true;
+  }
+
+  // NOTE(pag): The special casing on JOINs here is a kind of optimization.
+  //            If this TUPLE's predecessor is a JOIN, then it must be using
+  //            at least one of the output columns, which is related to one or
+  //            more of the views feeding the JOIN, and thus we can recover
+  //            the tuple based off of partial information from the JOIN's
+  //            data.
+  //
+  // NOTE(pag): The special casing on a MERGE and SELECT is similar to the
+  //            JOIN case, where we know that the MERGE will be persisted.
+  if (pred_view.IsJoin() || pred_view.IsMerge() || pred_view.IsSelect()) {
+    det = Context::kCanDeferToPredecessor;
+    return true;
+  }
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+
+  // If the data model of `view` and `pred_view` match, then we can defer
+  // to `pred_model`.
+  if (model == pred_model) {
+    det = Context::kCanDeferToPredecessor;
+    return true;
+  }
+
+  // The data models of `view` and `pred_view` don't match, so we want to
+  // figure out if `pred_view` will be persisted.
+  for (auto succ_of_pred : pred_view.Successors()) {
+
+    // If one of the successors of `pred_view` is a JOIN then all of
+    // `pred_view` is persisted, and thus we can depend upon it. This applies
+    // to both equi-joins and cross-products.
+    if (succ_of_pred.IsJoin()) {
+      det = Context::kCanDeferToPredecessor;
+      return true;
+
+    // If one of the successors of `pred_view` is a merge then we have to
+    // figure out if `succ_of_pred` is an induction or just a plain old
+    // union. If it's an induction, then we know that `pred_view` will
+    // be persisted.
+    } else if (succ_of_pred.IsMerge()) {
+
+      // It's an induction, and thus `pred_view` and `succ_of_pred` should
+      // both share the same data model, but further, it should be persisted.
+      if (context.inductive_predecessors.count(succ_of_pred)) {
+        det = Context::kCanDeferToPredecessor;
+        return true;
+
+      // It's a union, and it will persist the data.
+      } else if (MayNeedToBePersisted(succ_of_pred)) {
+        det = Context::kCanDeferToPredecessor;
+        return true;
+      }
+
+    // If one of the successors of `pred_view` inserts into a relation, and if
+    // that INSERT's data model is the same as our predecessor's data model,
+    // then we can use it.
+    } else if (succ_of_pred.IsInsert() &&
+               QueryInsert::From(succ_of_pred).IsRelation()) {
+      const auto succ_of_pred_model = \
+          impl->view_to_model[pred_view]->FindAs<DataModel>();
+
+      if (succ_of_pred_model == pred_model) {
+        det = Context::kCanDeferToPredecessor;
+        return true;
+      }
+    }
+  }
+
+  det = Context::kCantDeferToPredecessor;
   return false;
 }
 
@@ -749,11 +887,17 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   // which aren't.
   DiscoverInductions(query, context);
 
+  // Build the initialization procedure, needed to start data flows from
+  // things like constant tuples.
   BuildInitProcedure(program, context);
 
+  // Build bottom-up procedures starting from message receives.
   for (auto io : query.IOs()) {
     BuildEagerProcedure(program, io, context);
   }
+
+  // Build top-down provers.
+  BuildTopDownCheckers(program, context);
 
   impl->Optimize();
 

@@ -1076,11 +1076,6 @@ class ProgramImpl : public User {
   std::vector<std::unique_ptr<DataModel>> models;
   std::unordered_map<QueryView, DataModel *> view_to_model;
 
-  // Maps views to procedures for top-down execution. The top-down executors
-  // exist to determine if a tuple is actually PRESENT (returning false if so),
-  // converting unprovable UNKNOWNs into ABSENTs.
-  std::unordered_map<QueryView, PROC *> view_to_top_down_checker;
-
   // Maps views to procedures for bottom-up proving that goes and removes
   // tuples. Removal of tuples changes their state from PRESENT to UNKNOWN.
   std::unordered_map<QueryView, PROC *> view_to_bottom_up_remover;
