@@ -1,5 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
@@ -49,8 +50,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
       }
 
       if (gCodeStream) {
-        // (*gCodeStream) << *program_opt;
-        gCodeStream->Flush();
+        hyde::GenerateCode(*program_opt, *gCodeStream);
       }
     }
 
@@ -197,7 +197,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::unique_ptr<hyde::FileStream> dr_out;
 
   // Parse the command-line arguments.
-  for (auto i = 1; i < argc; ++i) {
+  for (int i = 1; i < argc; ++i) {
 
     // C++ output file of the transpiled from the Dr. Lojekyll source code.
     if (!strcmp(argv[i], "-cpp-out") || !strcmp(argv[i], "--cpp-out")) {

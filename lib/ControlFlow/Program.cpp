@@ -112,6 +112,23 @@ Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
 
+void Program::Accept(ProgramVisitor &visitor) const {
+  // for (const auto &table : Tables()) {
+  //   table.Accept(visitor)
+  // }
+  // for (const auto &var : Constants()) {
+  //   var.Accept(visitor);
+  // }
+  // for (const auto &var : GlobalVariables()) {
+  //   var.Accept(visitor);
+  // }
+  // for (const auto &proc : Procedures()) {
+  //   proc.Accept(visitor);
+  // }
+  visitor.Visit(*this);
+}
+
+
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
@@ -466,6 +483,15 @@ DataTable DataTable::Backing(DataIndex index) noexcept {
 unsigned DataTable::Id(void) const noexcept {
   return impl->id;
 }
+
+// void DataTable::Accept(ProgramVisitor &visitor) const {
+//   for (const auto &col : Columns()) {
+//     visitor.Visit(col);
+//   }
+//   for (const auto &idx : Indices()) {
+//     visitor.Visit(idx);
+//   }
+// }
 
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;

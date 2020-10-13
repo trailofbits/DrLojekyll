@@ -13,14 +13,13 @@
 
 namespace hyde {
 
-class ErrorLog;
 class ProgramImpl;
-class Query;
 
-enum class TypeKind : int;
+class ProgramVisitor;
 
 namespace program {
 
+// A superclass of (most) kinds of IR program nodes.
 template <typename T>
 class ProgramNode {
  public:
@@ -42,6 +41,9 @@ class ProgramNode {
     return reinterpret_cast<uintptr_t>(impl);
   }
 
+  // Non-mutating visitor acceptor
+  // virtual void Accept(ProgramVisitor &visitor) const = 0;
+
  protected:
   friend class ::hyde::ProgramImpl;
 
@@ -51,10 +53,12 @@ class ProgramNode {
 }  // namespace program
 
 class DataColumn;
+class DataIndex;
 class DataTable;
 class DataVariable;
 class DataVector;
 
+class Program;
 class ProgramCallRegion;
 class ProgramExistenceAssertionRegion;
 class ProgramExistenceCheckRegion;
@@ -73,6 +77,38 @@ class ProgramTableInsertRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTupleCompareRegion;
+
+// A depth-first program visitor.
+class ProgramVisitor {
+ public:
+  // virtual void Visit(const DataColumn &val) = 0;
+  // virtual void Visit(const DataIndex &val) = 0;
+  // virtual void Visit(const DataTable &val) = 0;
+  // virtual void Visit(const DataVariable &val) = 0;
+  // virtual void Visit(const DataVector &val) = 0;
+
+  // virtual void Visit(const ProgramCallRegion &val) = 0;
+  // virtual void Visit(const ProgramExistenceAssertionRegion &val) = 0;
+  // virtual void Visit(const ProgramExistenceCheckRegion &val) = 0;
+  // virtual void Visit(const ProgramGenerateRegion &val) = 0;
+  // virtual void Visit(const ProgramInductionRegion &val) = 0;
+  // virtual void Visit(const ProgramLetBindingRegion &val) = 0;
+  // virtual void Visit(const ProgramParallelRegion &val) = 0;
+  // virtual void Visit(const ProgramProcedure &val) = 0;
+  // virtual void Visit(const ProgramPublishRegion &val) = 0;
+  // virtual void Visit(const ProgramSeriesRegion &val) = 0;
+  // virtual void Visit(const ProgramVectorAppendRegion &val) = 0;
+  // virtual void Visit(const ProgramVectorClearRegion &val) = 0;
+  // virtual void Visit(const ProgramVectorLoopRegion &val) = 0;
+  // virtual void Visit(const ProgramVectorUniqueRegion &val) = 0;
+  // virtual void Visit(const ProgramTableInsertRegion &val) = 0;
+  // virtual void Visit(const ProgramTableJoinRegion &val) = 0;
+  // virtual void Visit(const ProgramTableProductRegion &val) = 0;
+  // virtual void Visit(const ProgramTupleCompareRegion &val) = 0;
+
+  virtual void Visit(const Program &val) = 0;
+};
+
 
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
@@ -113,6 +149,8 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsPublish(void) const noexcept;
   bool IsTupleCompare(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramCallRegion;
   friend class ProgramExistenceAssertionRegion;
@@ -144,6 +182,8 @@ class ProgramSeriesRegion : public program::ProgramNode<ProgramSeriesRegion> {
   // The sequence of regions nested inside this series.
   UsedNodeRange<ProgramRegion> Regions(void) const;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -158,6 +198,8 @@ class ProgramParallelRegion
 
   // The set of regions nested inside this series.
   UsedNodeRange<ProgramRegion> Regions(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -197,6 +239,8 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   // Type of this variable.
   TypeKind Type(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   using program::ProgramNode<DataVariable>::ProgramNode;
 };
@@ -226,6 +270,8 @@ class DataColumn : public program::ProgramNode<DataColumn> {
   //            sets of possible names.
   const std::vector<Token> &PossibleNames(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class DataTable;
 
@@ -240,6 +286,8 @@ class DataIndex : public program::ProgramNode<DataIndex> {
 
   // Columns from a table that are part of this index.
   UsedNodeRange<DataColumn> Columns(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class DataTable;
@@ -262,6 +310,8 @@ class DataTable : public program::ProgramNode<DataTable> {
   // Indices on this table.
   DefinedNodeRange<DataIndex> Indices(void) const;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   using program::ProgramNode<DataTable>::ProgramNode;
 };
@@ -273,6 +323,8 @@ class DataVector : public program::ProgramNode<DataVector> {
   unsigned Id(void) const noexcept;
   bool IsInputVector(void) const noexcept;
   const std::vector<TypeKind> ColumnTypes(void) const noexcept;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   using program::ProgramNode<DataVector>::ProgramNode;
@@ -295,6 +347,8 @@ class ProgramExistenceCheckRegion
   // variables are either all zero, or all non-zero.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -313,6 +367,8 @@ class ProgramExistenceAssertionRegion
 
   // List of reference count variables that are mutated.
   UsedNodeRange<DataVariable> ReferenceCounts(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -357,6 +413,8 @@ class ProgramGenerateRegion
   // (as represented by `OutputVariables()`).
   std::optional<ProgramRegion> Body(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -374,6 +432,8 @@ class ProgramLetBindingRegion
 
   // Return the body to which the lexical scoping of the variables applies.
   std::optional<ProgramRegion> Body(void) const noexcept;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -402,6 +462,8 @@ class ProgramVectorLoopRegion
   DataVector Vector(void) const noexcept;
   DefinedNodeRange<DataVariable> TupleVariables(void) const;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -417,6 +479,8 @@ class ProgramVectorAppendRegion
   VectorUsage Usage(void) const noexcept;
   DataVector Vector(void) const noexcept;
   UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -458,6 +522,8 @@ class ProgramTableInsertRegion
   UsedNodeRange<DataVariable> TupleVariables(void) const;
 
   DataTable Table(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -506,6 +572,8 @@ class ProgramTableJoinRegion
   // pivot variables.
   DefinedNodeRange<DataVariable> OutputVariables(unsigned table_index) const;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -536,6 +604,8 @@ class ProgramTableProductRegion
 
   // These are the output variables from the Nth table scan.
   DefinedNodeRange<DataVariable> OutputVariables(unsigned table_index) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -569,6 +639,8 @@ class ProgramInductionRegion
   ProgramRegion FixpointLoop(void) const noexcept;
   std::optional<ProgramRegion> Output(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -592,6 +664,8 @@ class ProgramTupleCompareRegion
   // Code conditionally executed if the comparison is true.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramRegion;
 
@@ -607,6 +681,8 @@ class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
 
   // List of variables being published.
   UsedNodeRange<DataVariable> VariableArguments(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -640,6 +716,8 @@ class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
   // Return the region contained by this procedure.
   ProgramRegion Body(void) const noexcept;
 
+  // void Accept(ProgramVisitor &visitor) const override;
+
  private:
   friend class ProgramCallRegion;
 
@@ -658,6 +736,8 @@ class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
 
   // List of vectors passed as arguments to the procedure.
   UsedNodeRange<DataVector> VectorArguments(void) const;
+
+  // void Accept(ProgramVisitor &visitor) const override;
 
  private:
   friend class ProgramRegion;
@@ -689,6 +769,8 @@ class Program {
   Program(Program &&) noexcept = default;
   Program &operator=(const Program &) = default;
   Program &operator=(Program &&) noexcept = default;
+
+  void Accept(ProgramVisitor &visitor) const;
 
  private:
   Program(std::shared_ptr<ProgramImpl> impl_);
