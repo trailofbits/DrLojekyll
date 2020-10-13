@@ -118,6 +118,9 @@ jobs:
           key: fuzz_run_dir-${{ github.run_id }}
           restore-keys: fuzz_run_dir-
 
+      # FIXME(blarsen): the next few steps should all be combined into a script
+      #                 under scripts/, which can be easily invoked from a
+      #                 working copy of the repo
       - name: Prepare for fuzzing
         run: |
           set -xu
@@ -145,17 +148,17 @@ jobs:
                  -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
                  -max_len="${MAX_LENGTH:-${MAX_LENGTH_DEFAULT}}" \
                  -print_final_stats=1 \
-                 -exact_artifact_path=crasher.dr \
-                 -dict=dict.txt \
-                 corpus; then
+                 -exact_artifact_path="$FUZZ_RUN_DIR/crasher.dr" \
+                 -dict="$FUZZ_RUN_DIR/dict.txt" \
+                 "$FUZZ_RUN_DIR/corpus"; then
             echo >&2 "Crash detected during fuzzing!"
             echo >&2 "Crashing input written to crasher.dr."
             echo >&2 "Base64-encoded crashing input:"
-            base64 >&2 crasher.dr
+            base64 >&2 "$FUZZ_RUN_DIR/crasher.dr"
             echo >&2 "Minimizing crashing input..."
-            scripts/minimize-fuzz-crasher crasher.dr
+            scripts/minimize-fuzz-crasher "$FUZZ_RUN_DIR/crasher.dr"
             echo >&2 "Base64-encoded minimized crashing input:"
-            base64 >&2 crasher.dr
+            base64 >&2 "$FUZZ_RUN_DIR/crasher.dr"
             exit 1
           fi
           NUM_CORPUS_ITEMS=$(find "$FUZZ_RUN_DIR/corpus" -type f | wc -l | tr -d '[:blank:]')
