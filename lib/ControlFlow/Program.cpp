@@ -2,11 +2,6 @@
 
 #include "Program.h"
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
-
 namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
@@ -632,7 +627,3 @@ ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
 }
 
 }  // namespace hyde
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
