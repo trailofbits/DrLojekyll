@@ -28,7 +28,7 @@ class QueryNode {
   }
 
   inline bool operator!=(const QueryNode<T> &that) const noexcept {
-    return impl == that.impl;
+    return impl != that.impl;
   }
 
   inline bool operator<(const QueryNode<T> &that) const noexcept {

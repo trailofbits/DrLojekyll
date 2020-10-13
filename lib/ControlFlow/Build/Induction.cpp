@@ -282,31 +282,25 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 }
 
 // Build a top-down checker on an induction.
-void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryView succ_view,
-                                  QueryMerge view) {
+void BuildTopDownInductionChecker(
+    ProgramImpl *impl, Context &context, PROC *proc,
+    QueryMerge view, std::vector<QueryColumn> &view_cols,
+    TABLE *) {
 
   const auto table = TABLE::GetOrCreate(impl, view);
 
   auto build_rule_checks = [=, &context] (PARALLEL *par) {
     for (auto pred_view : view.MergedViews()) {
-      const auto rec_check = CallPredecessorTopDownChecker(
-          impl, context, par, view, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue);
+      // If it's a DELETE, then we can't really
+      if (pred_view.IsInsert() && QueryInsert::From(pred_view).IsDelete()) {
+        continue;
+      }
+
+      const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+            impl, context, proc, view, view_cols, table, pred_view,
+            table);
 
       rec_check->ExecuteAlongside(impl, par);
-
-      // Change the tuple's state to mark it as present now that we've proven
-      // it true via one of the paths into this node.
-      const auto table_insert = BuildChangeState(
-            impl, table, rec_check, view.Columns(),
-            TupleState::kAbsentOrUnknown, TupleState::kPresent);
-      UseRef<REGION>(rec_check, table_insert).Swap(rec_check->body);
-
-      // If the tuple is present, then return `true`.
-      const auto rec_present = BuildStateCheckCaseReturnTrue(
-          impl, table_insert);
-      rec_present->ExecuteAfter(impl, table_insert);
     }
   };
 
@@ -323,11 +317,19 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
         impl, table, parent, view.Columns(), build_rule_checks);
   };
 
-  BuildTopDownCheckerStateCheck(
-      impl, proc, table, view.Columns(),
-      BuildStateCheckCaseReturnTrue,
-      BuildStateCheckCaseNothing,
-      build_unknown);
+  const auto region = BuildMaybeScanPartial(
+      impl, view, view_cols, table, proc,
+      [&] (REGION *parent) -> REGION * {
+
+    return BuildTopDownCheckerStateCheck(
+        impl, proc, table, view.Columns(),
+        BuildStateCheckCaseReturnTrue,
+        BuildStateCheckCaseNothing,
+        build_unknown);
+  });
+
+
+  UseRef<REGION>(proc, region).Swap(proc->body);
 }
 
 }  // namespace hyde

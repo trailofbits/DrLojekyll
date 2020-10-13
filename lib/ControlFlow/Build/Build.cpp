@@ -2,6 +2,9 @@
 
 #include "Build.h"
 
+#include <algorithm>
+#include <sstream>
+
 // IDEAS
 //
 //    - born_on_same_day:
@@ -463,9 +466,11 @@ static bool EndsWithReturn(REGION *region) {
 static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
   while (!context.top_down_checker_work_list.empty()) {
-    const auto [succ_view, view, proc] = \
+    auto [view, view_cols, proc, already_checked] =
         context.top_down_checker_work_list.back();
     context.top_down_checker_work_list.pop_back();
+
+    assert(!view_cols.empty());
 
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
@@ -479,10 +484,12 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     } else if (view.IsMerge()) {
       const auto merge = QueryMerge::From(view);
       if (context.inductive_successors.count(view)) {
-        BuildTopDownInductionChecker(impl, context, proc, succ_view, merge);
+        BuildTopDownInductionChecker(impl, context, proc, merge, view_cols,
+                                     already_checked);
 
       } else {
-        BuildTopDownUnionChecker(impl, context, proc, succ_view, merge);
+        BuildTopDownUnionChecker(impl, context, proc, merge, view_cols,
+                                 already_checked);
       }
 
     } else if (view.IsAggregate()) {
@@ -511,8 +518,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       }
 
     } else if (view.IsTuple()) {
-      BuildTopDownTupleChecker(impl, context, proc, succ_view,
-                               QueryTuple::From(view));
+      BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view),
+                               view_cols, already_checked);
 
     } else if (view.IsInsert()) {
       const auto insert = QueryInsert::From(view);
@@ -567,61 +574,153 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
   return nullptr;
 }
 
-// Call the top-down checker of `pred_view` from the context of `view`.
-CALL *CallPredecessorTopDownChecker(ProgramImpl *impl, Context &context,
-                                    REGION *parent, QueryView view,
-                                    QueryView pred_view,
-                                    ProgramOperation call_op) {
+// Calls a top-down checker that tries to figure out if some tuple (passed as
+// arguments to this function) is present or not.
+//
+// The idea is that we have the output columns of `succ_view`, and we want to
+// check if a tuple on `view` exists.
+CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
+                         QueryView succ_view, QueryView view,
+                         ProgramOperation call_op) {
 
-  const auto check = impl->operation_regions.CreateDerived<CALL>(
-      parent, GetOrCreateTopDownChecker(impl, context, view, pred_view),
-      call_op);
+  assert(!(view.IsInsert() && QueryInsert::From(view).IsDelete()));
+  assert(!succ_view.IsInsert());
 
-  const auto inout_cols = GetColumnMap(view, pred_view);
-  for (auto [pred_col, view_col] : inout_cols) {
-    const auto in_var = parent->VariableFor(impl, view_col);
-    check->arg_vars.AddUse(in_var);
+  std::vector<QueryColumn> succ_cols;
+  for (auto succ_view_col : succ_view.Columns()) {
+    succ_cols.push_back(succ_view_col);
   }
 
-  return check;
+  return CallTopDownChecker(impl, context, parent, succ_view,
+                            succ_cols, view, call_op);
 }
 
-// Build a top-down checker that tries to figure out if some tuple (passed as
-// arguments to this function) is present or not.
-PROC *GetOrCreateTopDownChecker(ProgramImpl *impl, Context &context,
-                                QueryView succ_view, QueryView view) {
+// We want to call the checker for `view`, but we only have the columns
+// `succ_cols` available for use.
+CALL *CallTopDownChecker(
+    ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
+    const std::vector<QueryColumn> &succ_cols, QueryView view,
+    ProgramOperation call_op, TABLE *already_checked) {
 
+  assert(!succ_view.IsInsert());
 
-  auto &proc = context.view_to_top_down_checker[std::make_pair(view, succ_view)];
+  std::vector<bool> available_cols_map(succ_view.Columns().size());
+  for (auto succ_view_col : succ_cols) {
+    available_cols_map[*(succ_view_col.Index())] = true;
+  }
+
+  std::vector<QueryColumn> available_cols;
+  std::unordered_map<QueryColumn, QueryColumn> inout_map;
+
+  if (view != succ_view) {
+    succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
+                             std::optional<QueryColumn> succ_view_col) {
+      if (succ_view_col && QueryView::Containing(view_col) == view &&
+          available_cols_map[*(succ_view_col->Index())]) {
+        available_cols.push_back(view_col);
+        inout_map.emplace(view_col, *succ_view_col);
+      }
+    });
+
+    std::sort(available_cols.begin(), available_cols.end(),
+              [] (QueryColumn a, QueryColumn b) {
+                return *(a.Index()) < *(b.Index());
+              });
+
+    auto it = std::unique(available_cols.begin(), available_cols.end(),
+                          [] (QueryColumn a, QueryColumn b) {
+                            return *(a.Index()) == *(b.Index());
+                          });
+
+    available_cols.erase(it, available_cols.end());
+
+  // Everything is available, yay!
+  } else {
+    for (auto col : view.Columns()) {
+      if (available_cols_map[*(col.Index())]) {
+        available_cols.push_back(col);
+        inout_map.emplace(col, col);
+      }
+    }
+  }
+
+  assert(!available_cols.empty());
+
+  // Make up a string that captures what we have available.
+  std::stringstream ss;
+  ss << view.UniqueId();
+  for (auto view_col : available_cols) {
+    ss << ',' << view_col.Id();
+  }
+  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+
+  // We haven't made this procedure before; so we'll declare it now and
+  // enqueue it for building. We enqueue all such procedures for building so
+  // that we can build top-down checkers afte all bottom-up provers have been
+  // created. Doing so lets us determine which views, and thus data models,
+  // are backed by what tables.
+  auto &proc = context.view_to_top_down_checker[ss.str()];
   if (!proc) {
     proc = impl->procedure_regions.Create(
         impl->next_id++, ProcedureKind::kTupleFinder);
 
-    if (succ_view != view) {
-      const auto inout_cols = GetColumnMap(succ_view, view);
-      for (auto [view_col, succ_view_col] : inout_cols) {
-        const auto var = proc->input_vars.Create(
-            impl->next_id++, VariableRole::kParameter);
-        var->query_column = view_col;
-        proc->col_id_to_var.emplace(succ_view_col.Id(), var);
-        proc->col_id_to_var.emplace(view_col.Id(), var);
-      }
-
-    } else {
-      for (auto view_col : view.Columns()) {
-        const auto var = proc->input_vars.Create(
-            impl->next_id++, VariableRole::kParameter);
-        var->query_column = view_col;
-        proc->col_id_to_var.emplace(view_col.Id(), var);
-      }
+    for (auto param_col : available_cols) {
+      const auto var = proc->input_vars.Create(
+          impl->next_id++, VariableRole::kParameter);
+      var->query_column = param_col;
+      proc->col_id_to_var.emplace(param_col.Id(), var);
     }
 
-    // TODO(pag): Is it possible for some parameters to be missing?
-
-    context.top_down_checker_work_list.emplace_back(view, succ_view, proc);
+    context.top_down_checker_work_list.emplace_back(
+        view, available_cols, proc, already_checked);
   }
 
-  return proc;
+  // Now call the checker procedure.
+  const auto check = impl->operation_regions.CreateDerived<CALL>(
+      parent, proc, call_op);
+
+  assert(!available_cols.empty());
+  for (auto col : available_cols) {
+    const auto var = parent->VariableFor(impl, inout_map.find(col)->second);
+    assert(var != nullptr);
+    check->arg_vars.AddUse(var);
+  }
+
+  assert(check->arg_vars.Size() == proc->input_vars.Size());
+  return check;
+}
+
+// Call the predecessor view's checker function, and if it succeeds, return
+// `true`. If we have a persistent table then update the tuple's state in that
+// table.
+CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+    ProgramImpl *impl, Context &context, REGION *parent,
+    QueryView view, const std::vector<QueryColumn> &view_cols, TABLE *table,
+    QueryView pred_view, TABLE *already_checked) {
+
+  const auto check = CallTopDownChecker(
+      impl, context, parent, view, view_cols, pred_view,
+      ProgramOperation::kCallProcedureCheckTrue, already_checked);
+
+  // Change the tuple's state to mark it as present now that we've proven
+  // it true via one of the paths into this node.
+  if (table) {
+    assert(view_cols.size() == view.Columns().size());
+    auto change_state = BuildChangeState(
+        impl, table, check, view_cols,
+        TupleState::kAbsentOrUnknown, TupleState::kPresent);
+    UseRef<REGION>(check, change_state).Swap(check->body);
+
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+    ret_true->ExecuteAfter(impl, change_state);
+
+  // No table, just return `true` to the caller.
+  } else {
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+    UseRef<REGION>(check, ret_true).Swap(check->body);
+  }
+
+  return check;
 }
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
@@ -757,32 +856,32 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
   return false;
 }
 
-// Get a mapping of `(input_col, output_col)` where the columns are in order
-// of `input_col`, and no input columns are repeated.
-std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view) {
-  std::vector<ColPair> inout_cols;
-
-  // We need to call the checker for the next
-  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                      std::optional<QueryColumn> out_col) {
-    if (out_col && QueryView::Containing(in_col) == pred_view) {
-      inout_cols.emplace_back(in_col, *out_col);
-    }
-  });
-
-  std::sort(inout_cols.begin(), inout_cols.end(),
-            [] (ColPair a, ColPair b) {
-              return a.first.Index() < b.first.Index();
-            });
-
-  auto it = std::unique(inout_cols.begin(), inout_cols.end(),
-                        [] (ColPair a, ColPair b) {
-                          return a.first.Index() == b.first.Index();
-                        });
-  inout_cols.erase(it, inout_cols.end());
-
-  return inout_cols;
-}
+//// Get a mapping of `(input_col, output_col)` where the columns are in order
+//// of `input_col`, and no input columns are repeated.
+//std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view) {
+//  std::vector<ColPair> inout_cols;
+//
+//  // We need to call the checker for the next
+//  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+//                      std::optional<QueryColumn> out_col) {
+//    if (out_col && QueryView::Containing(in_col) == pred_view) {
+//      inout_cols.emplace_back(in_col, *out_col);
+//    }
+//  });
+//
+//  std::sort(inout_cols.begin(), inout_cols.end(),
+//            [] (ColPair a, ColPair b) {
+//              return *(a.first.Index()) < *(b.first.Index());
+//            });
+//
+//  auto it = std::unique(inout_cols.begin(), inout_cols.end(),
+//                        [] (ColPair a, ColPair b) {
+//                          return *(a.first.Index()) == *(b.first.Index());
+//                        });
+//  inout_cols.erase(it, inout_cols.end());
+//
+//  return inout_cols;
+//}
 
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {

@@ -33,60 +33,75 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
-void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context,
-                              PROC *proc, QueryView succ_view,
-                              QueryMerge merge) {
+void BuildTopDownUnionChecker(
+    ProgramImpl *impl, Context &context, PROC *proc, QueryMerge merge,
+    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+
   QueryView view(merge);
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-
-  // Call the predecessors.
-  auto call_pred =
-      [=, &context] (REGION *parent, QueryView pred_view) -> REGION * {
-        const auto check = impl->operation_regions.CreateDerived<CALL>(
-            parent, GetOrCreateTopDownChecker(impl, context, view, pred_view),
-            ProgramOperation::kCallProcedureCheckTrue);
-
-        const auto inout_cols = GetColumnMap(view, pred_view);
-        for (auto [pred_col, view_col] : inout_cols) {
-          const auto in_var = parent->VariableFor(impl, view_col);
-          check->arg_vars.AddUse(in_var);
-        }
-
-        const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-        UseRef<REGION>(check, ret_true).Swap(check->body);
-
-        return check;
-      };
 
   // This union has persistent backing; go check it, and then check the
   // predecessors.
   if (model->table) {
+
+    // Call all of the predecessors.
+    auto call_preds = [&] (PARALLEL *par) {
+      for (QueryView pred_view : view.Predecessors()) {
+        if (pred_view.IsInsert() &&
+            QueryInsert::From(pred_view).IsDelete()) {
+          continue;
+        }
+        const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+            impl, context, par, view, view_cols, model->table, pred_view,
+            already_checked);
+        check->ExecuteAlongside(impl, par);
+      }
+    };
+
     const auto region = BuildMaybeScanPartial(
-        impl, succ_view, view, model->table, proc,
+        impl, view, view_cols, model->table, proc,
         [&] (REGION *parent) -> REGION * {
-          return BuildTopDownCheckerStateCheck(
-              impl, parent, model->table, view.Columns(),
-              BuildStateCheckCaseReturnTrue,
-              BuildStateCheckCaseNothing,
-              [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                return BuildTopDownCheckerResetAndProve(
-                    impl, model->table, parent, view.Columns(),
-                    [&] (PARALLEL *par) {
-                      for (QueryView pred_view : view.Predecessors()) {
-                        call_pred(par, pred_view)->ExecuteAlongside(impl, par);
-                      }
-                    });
-              });
+          if (already_checked != model->table) {
+            already_checked = model->table;
+            return BuildTopDownCheckerStateCheck(
+                impl, parent, model->table, view.Columns(),
+                BuildStateCheckCaseReturnTrue,
+                BuildStateCheckCaseNothing,
+                [&] (ProgramImpl *, REGION *parent) -> REGION * {
+                  return BuildTopDownCheckerResetAndProve(
+                      impl, model->table, parent, view.Columns(),
+                      [&] (PARALLEL *par) {
+                        call_preds(par);
+                      });
+                });
+          } else {
+            const auto par = impl->parallel_regions.Create(parent);
+            call_preds(par);
+            return parent;
+          }
         });
 
     UseRef<REGION>(proc, region).Swap(proc->body);
 
-  // This unions doesn't have persistent backing.
+  // This union doesn't have persistent backing, so we have to call down to
+  // each predecessor. If any of them returns true then we can return true.
   } else {
+    auto par = impl->parallel_regions.Create(proc);
+    UseRef<REGION>(proc, par).Swap(proc->body);
 
+    for (QueryView pred_view : view.Predecessors()) {
+
+      // NOTE(pag): We don't need to handle the `DELETE` (really, and insert)
+      //            case, as otherwise this union would have persistent backing.
+
+      const auto check = CallTopDownChecker(
+          impl, context, par, view, view_cols, pred_view,
+          ProgramOperation::kCallProcedureCheckTrue, nullptr);
+      check->ExecuteAlongside(impl, par);
+    }
   }
-//
-//
+
+
 //  if (QueryView(view).CanReceiveDeletions()) {
 //    BuildTopDownInductionChecker(impl, context, proc, succ_view, view);
 //    return;

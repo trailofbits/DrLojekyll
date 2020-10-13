@@ -31,7 +31,7 @@ class ProgramNode {
   }
 
   inline bool operator!=(ProgramNode<T> that) const {
-    return impl == that.impl;
+    return impl != that.impl;
   }
 
   inline bool operator<(ProgramNode<T> that) const {
