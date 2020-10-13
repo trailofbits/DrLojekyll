@@ -142,7 +142,7 @@ jobs:
           CORPUS_PRUNE_THRESHOLD: ${{ github.event.inputs.corpus_prune_threshold }}
 
         run: |
-          set -xu
+          set -u
           if ! build/fuzz/fuzzer \
                  -max_total_time="${FUZZ_SECONDS:-${FUZZ_SECONDS_DEFAULT}}" \
                  -timeout="${TIMEOUT_SECONDS:-${TIMEOUT_SECONDS_DEFAULT}}" \
@@ -153,10 +153,10 @@ jobs:
                  "$FUZZ_RUN_DIR/corpus"; then
             echo >&2 "Crash detected during fuzzing!"
             echo >&2 "Crashing input written to crasher.dr."
-            echo >&2 "Base64-encoded crashing input:"
-            base64 >&2 "$FUZZ_RUN_DIR/crasher.dr"
             echo >&2 "Minimizing crashing input..."
             scripts/minimize-fuzz-crasher "$FUZZ_RUN_DIR/crasher.dr"
+            echo >&2 "Base64-encoded crashing input:"
+            base64 >&2 "$FUZZ_RUN_DIR/crasher.dr.orig"
             echo >&2 "Base64-encoded minimized crashing input:"
             base64 >&2 "$FUZZ_RUN_DIR/crasher.dr"
             exit 1
