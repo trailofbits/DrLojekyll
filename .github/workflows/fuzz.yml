@@ -147,7 +147,7 @@ jobs:
                  -print_final_stats=1 \
                  -exact_artifact_path=crasher.dr \
                  -dict=dict.txt \
-                 corpus"; then
+                 corpus; then
             echo >&2 "Crash detected during fuzzing!"
             echo >&2 "Crashing input written to crasher.dr."
             echo >&2 "Base64-encoded crashing input:"
