@@ -428,7 +428,7 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
   QueryColumn NthOutputMergedColumn(unsigned n) const noexcept;
 
   // Returns the input column corresponding to the `n`th output column, where
-  // this input column is not itself assocated with a pivot set.
+  // this input column is not itself associated with a pivot set.
   QueryColumn NthInputMergedColumn(unsigned n) const noexcept;
 
   OutputStream &DebugString(OutputStream &) const noexcept;

@@ -253,6 +253,34 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
     }
   }
 
+  // There are variables being compared.
+  if (max_i) {
+    bool all_same = true;
+    for (auto i = 0u; i < max_i; ++i) {
+      if (cmp->lhs_vars[i] != cmp->rhs_vars[i]) {
+        all_same = false;
+        break;
+      }
+    }
+
+    if (all_same) {
+      // The comparison is trivially true; eliminate it.
+      if (ComparisonOperator::kEqual == cmp->cmp_op) {
+        max_i = 0;
+        cmp->lhs_vars.Clear();
+        cmp->rhs_vars.Clear();
+
+      // The comparison is unsatisfiable.
+      } else if (ComparisonOperator::kNotEqual == cmp->cmp_op ||
+                 ComparisonOperator::kLessThan == cmp->cmp_op ||
+                 ComparisonOperator::kGreaterThan == cmp->cmp_op) {
+        changed = true;
+        cmp->lhs_vars.Clear();
+        cmp->rhs_vars.Clear();
+      }
+    }
+  }
+
   // This compare has no variables being compared, so replace it with its
   // body.
   if (!max_i) {

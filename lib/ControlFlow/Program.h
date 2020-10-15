@@ -278,6 +278,7 @@ enum class ProgramOperation {
   kJoinTables,
   kAppendJoinPivotsToVector,
   kSortAndUniquePivotVector,
+  kLoopOverJoinPivotVector,
   kClearJoinPivotVector,
 
   // Used to implement the cross-product of some tables.

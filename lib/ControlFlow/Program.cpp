@@ -333,6 +333,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kAppendJoinPivotsToVector:
     case ProgramOperation::kClearJoinPivotVector:
     case ProgramOperation::kSortAndUniquePivotVector:
+    case ProgramOperation::kLoopOverJoinPivotVector:
       return VectorUsage::kJoinPivots;
     case ProgramOperation::kAppendToProductInputVector:
     case ProgramOperation::kSortAndUniqueProductInputVector:

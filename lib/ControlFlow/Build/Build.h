@@ -279,39 +279,6 @@ static REGION *BuildMaybeScanPartial(
   auto in_loop = cb(loop);
   UseRef<REGION>(loop, in_loop).Swap(loop->body);
 
-//  const auto sub_seq = impl->series_regions.Create(check);
-//  UseRef<REGION>(check, sub_seq).Swap(check->body);
-//
-//  // Clear out the scan vector if we've proven the tuple.
-//  const auto clear_found = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-//      sub_seq, ProgramOperation::kClearScanVector);
-//  UseRef<VECTOR>(clear_found, vec).Swap(clear_found->vector);
-//  clear_found->ExecuteAfter(impl, sub_seq);
-//
-//  // Change the tuple's state if we've proven it.
-//  const auto table_insert =
-//      impl->operation_regions.CreateDerived<CHANGESTATE>(
-//          sub_seq, TupleState::kAbsentOrUnknown, TupleState::kPresent);
-//  for (auto col : tuple.Columns()) {
-//    const auto var = proc->VariableFor(impl, col);
-//    table_insert->col_values.AddUse(var);
-//  }
-//
-//  UseRef<TABLE>(table_insert, table).Swap(table_insert->table);
-//  table_insert->ExecuteAfter(impl, sub_seq);
-//
-//  // Return `true` if we've proven the tuple.
-//  const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-//      sub_seq, ProgramOperation::kReturnTrueFromProcedure);
-//  ret->ExecuteAfter(impl, sub_seq);
-//
-//  // Clear out the scan vector after the loop. We'll let the caller inject
-//  // a `return-false`.
-//  const auto clear_notfound = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-//      seq, ProgramOperation::kClearScanVector);
-//  UseRef<VECTOR>(clear_notfound, vec).Swap(clear_notfound->vector);
-//  clear_notfound->ExecuteAfter(impl, seq);
-
   return seq;
 }
 
@@ -366,6 +333,12 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
                              QueryJoin view, Context &context, OP *parent,
                              TABLE *last_model);
+
+// Build a top-down checker on an induction.
+void BuildTopDownJoinOrProductChecker(
+    ProgramImpl *impl, Context &context, PROC *proc,
+    QueryJoin view, std::vector<QueryColumn> &view_cols,
+    TABLE *already_checked);
 
 // Build an eager region for performing a comparison.
 void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,

@@ -359,7 +359,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   // NOTE(pag): Conditions are a tire fire.
   auto is_conditional = [](QueryView view) {
     return !view.NegativeConditions().empty() ||
-           !view.PositiveConditions().empty() || view.IsCompare() ||
+           !view.PositiveConditions().empty() ||
+           view.IsCompare() ||
            view.IsMap();
   };
 
@@ -474,12 +475,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
-      if (join.NumPivotColumns()) {
-        //assert(false && "TODO");
-
-      } else {
-        assert(false && "TODO");
-      }
+      BuildTopDownJoinOrProductChecker(impl, context, proc, join, view_cols,
+                                       already_checked);
 
     } else if (view.IsMerge()) {
       const auto merge = QueryMerge::From(view);
@@ -642,8 +639,10 @@ CALL *CallTopDownChecker(
         inout_map.emplace(col, col);
       }
     }
+    assert(inout_map.size() == succ_cols.size());
   }
 
+  assert(!inout_map.empty());
   assert(!available_cols.empty());
 
   // Make up a string that captures what we have available.
