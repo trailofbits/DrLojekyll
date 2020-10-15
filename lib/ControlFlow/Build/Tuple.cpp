@@ -56,55 +56,62 @@ void BuildTopDownTupleChecker(
   // This tuple was persisted, thus we can check it.
   if (model->table) {
 
-    // If the predecessor persists the same data then we'll call the
-    // predecessor's checker.
-    if (model->table == pred_model->table) {
-      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, model->table, pred_view,
+    // The caller has done a state transition on `model->table` and it will
+    // do the marking of present.
+    if (already_checked == model->table) {
+      assert(view_cols.size() == view.Columns().size());
+
+      const auto check = ReturnTrueIfPredecessorCallSucceeds(
+          impl, context, proc, view, view_cols, pred_view,
           already_checked);
 
       UseRef<REGION>(proc, check).Swap(proc->body);
 
+    // If the predecessor persists the same data then we'll call the
+    // predecessor's checker.
+    } else if (model->table == pred_model->table) {
+      const auto check = ReturnTrueIfPredecessorCallSucceeds(
+          impl, context, proc, view, view_cols, pred_view,
+          nullptr  /* Let the predecessor do the check & set. */);
+
+      UseRef<REGION>(proc, check).Swap(proc->body);
+
+    // We have a model and it hasn't been checked yet; we need to transition.
     // The predecessor persists different data, so we'll check in the tuple,
     // and if it's not present, /then/ we'll call the predecessor handler.
     } else {
       auto call_pred = [&] (REGION *parent) -> REGION * {
         return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, parent, view, view_cols,
-            model->table, pred_view, already_checked);
+            model->table, pred_view);
+      };
+
+      auto do_unknown = [&] (ProgramImpl *, REGION *parent) -> REGION * {
+        return BuildTopDownCheckerResetAndProve(
+            impl, model->table, parent, view.Columns(),
+            [&] (PARALLEL *par) {
+              call_pred(par)->ExecuteAlongside(impl, par);
+            });
       };
 
       const auto region = BuildMaybeScanPartial(
           impl, view, view_cols, model->table, proc,
           [&] (REGION *parent) -> REGION * {
-            if (already_checked != model->table) {
-              already_checked = model->table;
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseNothing,
-                  [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                    return BuildTopDownCheckerResetAndProve(
-                        impl, model->table, parent, view.Columns(),
-                        [&] (PARALLEL *par) {
-                          call_pred(par)->ExecuteAlongside(impl, par);
-                        });
-                  });
-
-            } else {
-              return call_pred(parent);
-            }
+            return BuildTopDownCheckerStateCheck(
+                impl, parent, model->table, view.Columns(),
+                BuildStateCheckCaseReturnTrue,
+                BuildStateCheckCaseNothing,
+                do_unknown);
           });
 
       UseRef<REGION>(proc, region).Swap(proc->body);
     }
 
-  // Out best option at this point is to just call the predecessor; this tuple's
+  // Our best option at this point is to just call the predecessor; this tuple's
   // data is not persisted.
   } else {
-    const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, nullptr, pred_view,
-          nullptr);
+    const auto check = ReturnTrueIfPredecessorCallSucceeds(
+        impl, context, proc, view, view_cols, pred_view, nullptr);
     UseRef<REGION>(proc, check).Swap(proc->body);
   }
 }

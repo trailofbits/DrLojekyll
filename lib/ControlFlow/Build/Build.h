@@ -385,7 +385,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context,
 CALL *CallTopDownChecker(
     ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
     const std::vector<QueryColumn> &succ_cols, QueryView view,
-    ProgramOperation call_op, TABLE *already_checked=nullptr);
+    ProgramOperation call_op, TABLE *already_checked);
 
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
@@ -393,7 +393,15 @@ CALL *CallTopDownChecker(
 CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     ProgramImpl *impl, Context &context, REGION *parent,
     QueryView view, const std::vector<QueryColumn> &view_cols, TABLE *table,
-    QueryView pred_view, TABLE *already_checked=nullptr);
+    QueryView pred_view);
+
+// Call the predecessor view's checker function, and if it succeeds, return
+// `true`. If we have a persistent table then update the tuple's state in that
+// table.
+CALL *ReturnTrueIfPredecessorCallSucceeds(
+    ProgramImpl *impl, Context &context, REGION *parent,
+    QueryView view, const std::vector<QueryColumn> &view_cols,
+    QueryView pred_view, TABLE *already_checked);
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).

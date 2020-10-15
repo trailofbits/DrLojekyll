@@ -280,22 +280,22 @@ void BuildTopDownJoinOrProductChecker(
       REGION *first_check = nullptr;
       CALL *parent_check = nullptr;
 
-      std::vector<QueryColumn> pred_columns;
+      std::vector<QueryColumn> call_cols;
       for (auto pred_view : view.Predecessors()) {
 
         // Figure out the columns to pass to the `pred_view` checker, and
         // make sure all the variables associated with `pred_view`'s columns
         // are mapped.
-        pred_columns.clear();
+        call_cols.clear();
         for (auto in_col : pred_view.Columns()) {
-          pred_columns.push_back(in_col);
+          call_cols.push_back(in_col);
           auto out_col = in_to_out_cols.find(in_col)->second;
           parent->col_id_to_var.emplace(
               in_col.Id(), parent->VariableFor(impl, out_col));
         }
 
         const auto check = CallTopDownChecker(
-            impl, context, parent, pred_view, pred_columns, pred_view,
+            impl, context, parent, pred_view, call_cols, pred_view,
             ProgramOperation::kCallProcedureCheckTrue, nullptr);
 
         if (!first_check) {
@@ -308,35 +308,62 @@ void BuildTopDownJoinOrProductChecker(
         parent = check;
       }
 
-      const auto ret_true = BuildStateCheckCaseReturnTrue(impl, parent_check);
-      UseRef<REGION>(parent_check, ret_true).Swap(parent_check->OP::body);
+      // The caller will do the state change for us.
+      if (model->table == already_checked) {
+        const auto ret_true = BuildStateCheckCaseReturnTrue(impl, parent_check);
+        UseRef<REGION>(parent_check, ret_true).Swap(parent_check->OP::body);
+
+      // We need to do the state change.
+      } else {
+
+        call_cols.clear();
+        for (auto out_col : view.Columns()) {
+          call_cols.push_back(out_col);
+        }
+
+        auto change_state = BuildChangeState(
+            impl, model->table, parent_check, call_cols,
+            TupleState::kAbsentOrUnknown, TupleState::kPresent);
+        UseRef<REGION>(parent_check, change_state).Swap(parent_check->body);
+
+        const auto ret_true = BuildStateCheckCaseReturnTrue(
+            impl, change_state);
+        ret_true->ExecuteAfter(impl, change_state);
+      }
 
       return first_check;
     };
 
-    const auto region = BuildMaybeScanPartial(
-        impl, view, view_cols, model->table, proc,
-        [&] (REGION *parent) -> REGION * {
-          if (already_checked != model->table) {
-            already_checked = model->table;
+    // The caller has done a state transition on `model->table` and it will
+    // do the marking of present.
+    if (model->table == already_checked) {
+      assert(view_cols.size() == view.Columns().size());
+
+
+    // The caller didn't check the same model, so we need to do the state
+    // checking and transitioning ourselves.
+    } else {
+      auto do_unknown = [&] (ProgramImpl *, REGION *parent) -> REGION * {
+        return BuildTopDownCheckerResetAndProve(
+            impl, model->table, parent, view.Columns(),
+            [&] (PARALLEL *par) {
+              check_preds(par)->ExecuteAlongside(impl, par);
+            });
+      };
+
+      const auto region = BuildMaybeScanPartial(
+          impl, view, view_cols, model->table, proc,
+          [&] (REGION *parent) -> REGION * {
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
                 BuildStateCheckCaseNothing,
-                [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                  return BuildTopDownCheckerResetAndProve(
-                      impl, model->table, parent, view.Columns(),
-                      [&] (PARALLEL *par) {
-                        check_preds(par)->ExecuteAlongside(impl, par);
-                      });
-                });
+                do_unknown);
+          });
 
-          } else {
-            return check_preds(parent);
-          }
-        });
+      UseRef<REGION>(proc, region).Swap(proc->body);
+    }
 
-    UseRef<REGION>(proc, region).Swap(proc->body);
     return;
   }
 

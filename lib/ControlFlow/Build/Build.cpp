@@ -589,7 +589,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
   }
 
   return CallTopDownChecker(impl, context, parent, succ_view,
-                            succ_cols, view, call_op);
+                            succ_cols, view, call_op, nullptr);
 }
 
 // We want to call the checker for `view`, but we only have the columns
@@ -688,36 +688,47 @@ CALL *CallTopDownChecker(
   assert(check->arg_vars.Size() == proc->input_vars.Size());
   return check;
 }
-
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
 // table.
 CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     ProgramImpl *impl, Context &context, REGION *parent,
     QueryView view, const std::vector<QueryColumn> &view_cols, TABLE *table,
+    QueryView pred_view) {
+
+  const auto check = CallTopDownChecker(
+      impl, context, parent, view, view_cols, pred_view,
+      ProgramOperation::kCallProcedureCheckTrue, table);
+
+  // Change the tuple's state to mark it as present now that we've proven
+  // it true via one of the paths into this node.
+
+  assert(view_cols.size() == view.Columns().size());
+  auto change_state = BuildChangeState(
+      impl, table, check, view_cols,
+      TupleState::kAbsentOrUnknown, TupleState::kPresent);
+  UseRef<REGION>(check, change_state).Swap(check->body);
+
+  const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+  ret_true->ExecuteAfter(impl, change_state);
+
+  return check;
+}
+
+// Call the predecessor view's checker function, and if it succeeds, return
+// `true`. If we have a persistent table then update the tuple's state in that
+// table.
+CALL *ReturnTrueIfPredecessorCallSucceeds(
+    ProgramImpl *impl, Context &context, REGION *parent,
+    QueryView view, const std::vector<QueryColumn> &view_cols,
     QueryView pred_view, TABLE *already_checked) {
 
   const auto check = CallTopDownChecker(
       impl, context, parent, view, view_cols, pred_view,
       ProgramOperation::kCallProcedureCheckTrue, already_checked);
 
-  // Change the tuple's state to mark it as present now that we've proven
-  // it true via one of the paths into this node.
-  if (table) {
-    assert(view_cols.size() == view.Columns().size());
-    auto change_state = BuildChangeState(
-        impl, table, check, view_cols,
-        TupleState::kAbsentOrUnknown, TupleState::kPresent);
-    UseRef<REGION>(check, change_state).Swap(check->body);
-
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    ret_true->ExecuteAfter(impl, change_state);
-
-  // No table, just return `true` to the caller.
-  } else {
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    UseRef<REGION>(check, ret_true).Swap(check->body);
-  }
+  const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+  UseRef<REGION>(check, ret_true).Swap(check->body);
 
   return check;
 }

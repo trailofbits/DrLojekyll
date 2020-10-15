@@ -284,49 +284,76 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 // Build a top-down checker on an induction.
 void BuildTopDownInductionChecker(
     ProgramImpl *impl, Context &context, PROC *proc,
-    QueryMerge view, std::vector<QueryColumn> &view_cols,
-    TABLE *) {
+    QueryMerge merge, std::vector<QueryColumn> &view_cols,
+    TABLE *already_checked) {
 
-  const auto table = TABLE::GetOrCreate(impl, view);
+  const QueryView view(merge);
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  assert(model->table != nullptr);
 
-  auto build_rule_checks = [=, &context] (PARALLEL *par) {
-    for (auto pred_view : view.MergedViews()) {
+  // The caller has done a state transition on `model->table` and it will
+  // do the marking of present.
+  if (model->table == already_checked) {
+    assert(view_cols.size() == view.Columns().size());
+
+    auto par = impl->parallel_regions.Create(proc);
+    UseRef<REGION>(proc, par).Swap(proc->body);
+
+    for (QueryView pred_view : view.Predecessors()) {
+      if (pred_view.IsInsert() &&
+          QueryInsert::From(pred_view).IsDelete()) {
+        continue;
+      }
+
+      const auto check = ReturnTrueIfPredecessorCallSucceeds(
+          impl, context, par, view, view_cols, pred_view, already_checked);
+      check->ExecuteAlongside(impl, par);
+    }
+    return;
+  }
+
+  // Okay, the interesting case!
+
+  auto call_preds = [&] (PARALLEL *par) {
+    for (auto pred_view : merge.MergedViews()) {
       // If it's a DELETE, then we can't really
       if (pred_view.IsInsert() && QueryInsert::From(pred_view).IsDelete()) {
         continue;
       }
 
       const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, proc, view, view_cols, table, pred_view,
-            table);
+            impl, context, proc, view, view_cols, model->table, pred_view);
 
       rec_check->ExecuteAlongside(impl, par);
     }
   };
 
-  auto build_unknown = [=] (ProgramImpl *, REGION *parent) -> REGION * {
+  auto do_unknown = [&] (ProgramImpl *, REGION *parent) -> REGION * {
 
-    // If this induction can't receive deletions, then there's nothing else to
-    // do because if it's not present here, then it won't be present in any of
-    // the children.
-    if (!QueryView::From(view).CanReceiveDeletions()) {
-      return BuildStateCheckCaseReturnFalse(impl, parent);
-    }
+    // TODO(pag): Think about re-enabloing this or not. Is `CanReceiveDeletions`
+    //            sensitive to condition variables changing?
+    //
+//    // If this induction can't receive deletions, then there's nothing else to
+//    // do because if it's not present here, then it won't be present in any of
+//    // the children.
+//    if (!view.CanReceiveDeletions()) {
+//      return BuildStateCheckCaseReturnFalse(impl, parent);
+//    }
 
     return BuildTopDownCheckerResetAndProve(
-        impl, table, parent, view.Columns(), build_rule_checks);
+        impl, model->table, parent, view.Columns(), call_preds);
   };
 
   const auto region = BuildMaybeScanPartial(
-      impl, view, view_cols, table, proc,
+      impl, view, view_cols, model->table, proc,
       [&] (REGION *parent) -> REGION * {
 
-    return BuildTopDownCheckerStateCheck(
-        impl, proc, table, view.Columns(),
-        BuildStateCheckCaseReturnTrue,
-        BuildStateCheckCaseNothing,
-        build_unknown);
-  });
+        return BuildTopDownCheckerStateCheck(
+            impl, proc, model->table, view.Columns(),
+            BuildStateCheckCaseReturnTrue,
+            BuildStateCheckCaseNothing,
+            do_unknown);
+      });
 
 
   UseRef<REGION>(proc, region).Swap(proc->body);

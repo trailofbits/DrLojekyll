@@ -44,44 +44,62 @@ void BuildTopDownUnionChecker(
   // predecessors.
   if (model->table) {
 
-    // Call all of the predecessors.
-    auto call_preds = [&] (PARALLEL *par) {
+    // The caller has done a state transition on `model->table` and it will
+    // do the marking of present.
+    if (already_checked == model->table) {
+      assert(view_cols.size() == view.Columns().size());
+
+      auto par = impl->parallel_regions.Create(proc);
+      UseRef<REGION>(proc, par).Swap(proc->body);
+
       for (QueryView pred_view : view.Predecessors()) {
         if (pred_view.IsInsert() &&
             QueryInsert::From(pred_view).IsDelete()) {
           continue;
         }
-        const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, par, view, view_cols, model->table, pred_view,
-            already_checked);
+
+        const auto check = ReturnTrueIfPredecessorCallSucceeds(
+            impl, context, par, view, view_cols, pred_view, already_checked);
         check->ExecuteAlongside(impl, par);
       }
-    };
 
-    const auto region = BuildMaybeScanPartial(
-        impl, view, view_cols, model->table, proc,
-        [&] (REGION *parent) -> REGION * {
-          if (already_checked != model->table) {
-            already_checked = model->table;
+    // Our caller didn't check this union, so we need to go do it.
+    } else {
+
+      // Call all of the predecessors.
+      auto call_preds = [&] (PARALLEL *par) {
+        for (QueryView pred_view : view.Predecessors()) {
+          if (pred_view.IsInsert() &&
+              QueryInsert::From(pred_view).IsDelete()) {
+            continue;
+          }
+
+          const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+              impl, context, par, view, view_cols, model->table, pred_view);
+          check->ExecuteAlongside(impl, par);
+        }
+      };
+
+      auto do_unknown = [&] (ProgramImpl *, REGION *parent) -> REGION * {
+        return BuildTopDownCheckerResetAndProve(
+            impl, model->table, parent, view.Columns(),
+            [&] (PARALLEL *par) {
+              call_preds(par);
+            });
+      };
+
+      const auto region = BuildMaybeScanPartial(
+          impl, view, view_cols, model->table, proc,
+          [&] (REGION *parent) -> REGION * {
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
                 BuildStateCheckCaseNothing,
-                [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                  return BuildTopDownCheckerResetAndProve(
-                      impl, model->table, parent, view.Columns(),
-                      [&] (PARALLEL *par) {
-                        call_preds(par);
-                      });
-                });
-          } else {
-            const auto par = impl->parallel_regions.Create(parent);
-            call_preds(par);
-            return parent;
-          }
-        });
+                do_unknown);
+          });
 
-    UseRef<REGION>(proc, region).Swap(proc->body);
+      UseRef<REGION>(proc, region).Swap(proc->body);
+    }
 
   // This union doesn't have persistent backing, so we have to call down to
   // each predecessor. If any of them returns true then we can return true.
@@ -90,43 +108,16 @@ void BuildTopDownUnionChecker(
     UseRef<REGION>(proc, par).Swap(proc->body);
 
     for (QueryView pred_view : view.Predecessors()) {
+      if (pred_view.IsInsert() &&
+          QueryInsert::From(pred_view).IsDelete()) {
+        continue;
+      }
 
-      // NOTE(pag): We don't need to handle the `DELETE` (really, and insert)
-      //            case, as otherwise this union would have persistent backing.
-
-      const auto check = CallTopDownChecker(
-          impl, context, par, view, view_cols, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue, nullptr);
+      const auto check = ReturnTrueIfPredecessorCallSucceeds(
+          impl, context, par, view, view_cols, pred_view, nullptr);
       check->ExecuteAlongside(impl, par);
     }
   }
-
-
-//  if (QueryView(view).CanReceiveDeletions()) {
-//    BuildTopDownInductionChecker(impl, context, proc, succ_view, view);
-//    return;
-//  }
-//
-//  const auto par = impl->parallel_regions.Create(proc);
-//  par->ExecuteAfter(impl, proc);
-//
-//  for (auto pred_view : view.MergedViews()) {
-//    const auto rec_check = impl->operation_regions.CreateDerived<CALL>(
-//        par, GetOrCreateTopDownChecker(impl, context, view, pred_view),
-//        ProgramOperation::kCallProcedureCheckTrue);
-//
-//    for (auto col : view.Columns()) {
-//      const auto var = proc->VariableFor(impl, col);
-//      rec_check->arg_vars.AddUse(var);
-//    }
-//
-//    rec_check->ExecuteAlongside(impl, par);
-//
-//    // If the tuple is present, then return `true`.
-//    const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
-//        rec_check, ProgramOperation::kReturnTrueFromProcedure);
-//    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
-//  }
 }
 
 }  // namespace hyde
