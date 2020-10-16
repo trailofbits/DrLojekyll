@@ -108,18 +108,6 @@ Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 Program::~Program(void) {}
 
 void Program::Accept(ProgramVisitor &visitor) const {
-  // for (const auto &table : Tables()) {
-  //   table.Accept(visitor)
-  // }
-  // for (const auto &var : Constants()) {
-  //   var.Accept(visitor);
-  // }
-  // for (const auto &var : GlobalVariables()) {
-  //   var.Accept(visitor);
-  // }
-  // for (const auto &proc : Procedures()) {
-  //   proc.Accept(visitor);
-  // }
   visitor.Visit(*this);
 }
 
@@ -142,6 +130,50 @@ bool ProgramRegion::IsSeries(void) const noexcept {
 
 bool ProgramRegion::IsParallel(void) const noexcept {
   return impl->AsParallel() != nullptr;
+}
+
+void ProgramRegion::Accept(ProgramVisitor &visitor) const {
+
+  // FIXME(blarsen): we have to do this if-else case analysis here, and
+  // dispatch appropriately, because all the various `Program*Region`
+  // "subclasses" aren't C++ subclasses of `ProgramRegion`.
+  if (this->IsSeries()) {
+    ProgramSeriesRegion::From(*this).Accept(visitor);
+  } else if (this->IsParallel()) {
+    ProgramParallelRegion::From(*this).Accept(visitor);
+  } else if (this->IsLetBinding()) {
+    ProgramLetBindingRegion::From(*this).Accept(visitor);
+  } else if (this->IsInduction()) {
+    ProgramInductionRegion::From(*this).Accept(visitor);
+  } else if (this->IsVectorLoop()) {
+    ProgramVectorLoopRegion::From(*this).Accept(visitor);
+  } else if (this->IsVectorAppend()) {
+    ProgramVectorAppendRegion::From(*this).Accept(visitor);
+  } else if (this->IsVectorClear()) {
+    ProgramVectorClearRegion::From(*this).Accept(visitor);
+  } else if (this->IsVectorUnique()) {
+    ProgramVectorUniqueRegion::From(*this).Accept(visitor);
+  } else if (this->IsTableInsert()) {
+    ProgramTableInsertRegion::From(*this).Accept(visitor);
+  } else if (this->IsTableJoin()) {
+    ProgramTableJoinRegion::From(*this).Accept(visitor);
+  } else if (this->IsTableProduct()) {
+    ProgramTableProductRegion::From(*this).Accept(visitor);
+  } else if (this->IsExistenceCheck()) {
+    ProgramExistenceCheckRegion::From(*this).Accept(visitor);
+  } else if (this->IsExistenceAssertion()) {
+    ProgramExistenceAssertionRegion::From(*this).Accept(visitor);
+  } else if (this->IsTupleCompare()) {
+    ProgramTupleCompareRegion::From(*this).Accept(visitor);
+  } else if (this->IsGenerate()) {
+    ProgramGenerateRegion::From(*this).Accept(visitor);
+  } else if (this->IsCall()) {
+    ProgramCallRegion::From(*this).Accept(visitor);
+  } else if (this->IsPublish()) {
+    ProgramPublishRegion::From(*this).Accept(visitor);
+  } else {
+    assert(false && "<<unknown region>>");
+  }
 }
 
 #define IS_OP(kind) \
@@ -179,11 +211,19 @@ ProgramSeriesRegion ProgramSeriesRegion::From(ProgramRegion region) noexcept {
   return ProgramSeriesRegion(derived_impl);
 }
 
+void ProgramSeriesRegion::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
+}
+
 ProgramParallelRegion
 ProgramParallelRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = region.impl->AsParallel();
   assert(derived_impl != nullptr);
   return ProgramParallelRegion(derived_impl);
+}
+
+void ProgramParallelRegion::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
 }
 
 bool ProgramExistenceCheckRegion::CheckForZero(void) const noexcept {
@@ -229,6 +269,9 @@ OPTIONAL_BODY(ProgramTupleCompareRegion)
     const auto derived_impl = op->as(); \
     assert(derived_impl != nullptr); \
     return name(derived_impl); \
+  } \
+  void name::Accept(ProgramVisitor &visitor) const { \
+    visitor.Visit(*this); \
   }
 
 FROM_OP(ProgramCallRegion, AsCall)
@@ -391,6 +434,10 @@ unsigned DataVariable::Id(void) const noexcept {
   return impl->id;
 }
 
+void DataVariable::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
+}
+
 // Name of this variable, if any. There might not be a name.
 Token DataVariable::Name(void) const noexcept {
   if (impl->query_column) {
@@ -454,6 +501,10 @@ TypeKind DataColumn::Type(void) const noexcept {
   return impl->type;
 }
 
+void DataColumn::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
+}
+
 // Possible names that can be associated with this column.
 //
 // NOTE(pag): Multiple columns of the same table might have intersecting
@@ -465,6 +516,10 @@ const std::vector<Token> &DataColumn::PossibleNames(void) const noexcept {
 // Unique ID of this index.
 unsigned DataIndex::Id(void) const noexcept {
   return impl->id;
+}
+
+void DataIndex::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
 }
 
 DataTable DataTable::Containing(DataColumn col) noexcept {
@@ -479,14 +534,9 @@ unsigned DataTable::Id(void) const noexcept {
   return impl->id;
 }
 
-// void DataTable::Accept(ProgramVisitor &visitor) const {
-//   for (const auto &col : Columns()) {
-//     visitor.Visit(col);
-//   }
-//   for (const auto &idx : Indices()) {
-//     visitor.Visit(idx);
-//   }
-// }
+void DataTable::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
+}
 
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;
@@ -494,6 +544,10 @@ VectorKind DataVector::Kind(void) const noexcept {
 
 unsigned DataVector::Id(void) const noexcept {
   return impl->id;
+}
+
+void DataVector::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
 }
 
 bool DataVector::IsInputVector(void) const noexcept {
@@ -507,6 +561,10 @@ const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
 // Unique ID of this procedure.
 unsigned ProgramProcedure::Id(void) const noexcept {
   return impl->id;
+}
+
+void ProgramProcedure::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
 }
 
 // What type of procedure is this?
@@ -535,6 +593,10 @@ ProgramInductionRegion::From(ProgramRegion region) noexcept {
   return ProgramInductionRegion(derived_impl);
 }
 
+void ProgramInductionRegion::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
+}
+
 ProgramRegion ProgramInductionRegion::Initializer(void) const noexcept {
   return ProgramRegion(impl->init_region.get());
 }
@@ -559,6 +621,10 @@ ProgramTupleCompareRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = op->AsTupleCompare();
   assert(derived_impl != nullptr);
   return ProgramTupleCompareRegion(derived_impl);
+}
+
+void ProgramTupleCompareRegion::Accept(ProgramVisitor &visitor) const {
+  visitor.Visit(*this);
 }
 
 ComparisonOperator ProgramTupleCompareRegion::Operator(void) const noexcept {
