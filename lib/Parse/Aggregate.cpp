@@ -186,7 +186,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected variable name here  for parameter to inline "
+              << "Expected variable name here for parameter to inline "
               << "aggregate clause, but got '" << tok << "' instead";
           return false;
         }

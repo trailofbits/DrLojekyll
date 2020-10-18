@@ -1,0 +1,10 @@
+; The use of an aggregating functor can be paired with a predicate or an
+; inline-defined predicate. When using an inline-defined predicate, the type
+; names need to be specified.
+
+#functor sum(aggregate i32 X, summary i32 Y)
+
+#message input(i32 X)
+#message output(i32 X)
+
+output(Y) : sum(X, Y) over (X) { input(X) }.

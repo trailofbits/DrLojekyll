@@ -1,0 +1,11 @@
+; The use of an aggregating functor can be paired with a predicate or an
+; inline-defined predicate. The variable over which the aggregating functor
+; is aggregating must be interpreted as being a stream of values. Thus, we
+; should not be passing in a `bound`-attributed parameter of any kind.
+
+#functor sum(aggregate i32 X, summary i32 Y)
+#query input(bound i32 X)
+
+#message output(i32 X)
+output(Y) : sum(X, Y) over input(X).
+

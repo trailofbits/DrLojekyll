@@ -1,0 +1,8 @@
+; The same variable name should not appear as both an aggregate (input) argument
+; and summary (output) argument.
+
+#functor sum(aggregate i32 A, summary i32 B)
+#message input(i32 X)
+#message output(i32 X)
+
+output(C) : sum(C, C) over input(C).
