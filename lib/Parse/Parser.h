@@ -312,7 +312,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
       decl->range = FunctorRange::kOneToOne;
     }
 
-    // The range specifications don't match.
+    // The inferred range specifications don't match.
     if (prev_decl->range != decl->range) {
       DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
                                    prev_decl->range_end_opt.NextPosition());
@@ -320,6 +320,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
       DisplayRange curr_range_spec(decl->range_begin_opt.Position(),
                                    decl->range_end_opt.NextPosition());
 
+      // Examine the concrete syntax to produce a meaningful error message.
       if (prev_decl->range_begin_opt.IsValid() &&
           decl->range_begin_opt.IsValid()) {
         auto err = context->error_log.Append(scope_range, curr_range_spec);
@@ -345,9 +346,13 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
         note << "Previous declaration uses the implicit zero-or-more range "
              << "specification";
 
-      // Neither is valid.
+      // Neither functor has explicit `range` syntax, and they disagree.
       } else {
-        assert(false);
+        auto err = context->error_log.Append(scope_range);
+        err << "Inferred functor range differs from prior inferred range";
+
+        auto note = err.Note(T(prev_decl).SpellingRange());
+        note << "Previous declaration is here";
       }
 
       RemoveDecl(std::move(decl));

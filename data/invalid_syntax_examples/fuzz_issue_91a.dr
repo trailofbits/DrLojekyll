@@ -1,0 +1,5 @@
+; This example shows an invalid functor redeclaration.
+; The first declares `a` as an aggregate; the second
+; declares `a` as a filter.
+#functor a(aggregate i32 V1, summary i64 V2)
+#functor a(bound i32 V1, bound i32 V2)
