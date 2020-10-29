@@ -19,7 +19,7 @@ namespace {
   return json{
       {"type", "record"},
       {"namespace", AVRO_DRLOG_NAMESPACE},
-      {"name", name.data()},
+      {"name", name},
       {"fields", fields},
   };
 }
@@ -49,7 +49,8 @@ namespace {
                                            const ParsedParameter &parameter,
                                            const ErrorLog &err) {
   std::string_view msg_str;
-  (void) display_manager.TryReadData(parameter.SpellingRange(), &msg_str);
+  (void) display_manager.TryReadData(parameter.Name().SpellingRange(),
+                                     &msg_str);
   return {{"name", msg_str},
           {"type", parse_parameter_type(parameter.Type(), err)}};
 }
