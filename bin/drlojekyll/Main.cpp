@@ -1,5 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
@@ -28,6 +29,7 @@ OutputStream *gOut = nullptr;
 namespace {
 
 OutputStream *gDOTStream = nullptr;
+OutputStream *gMSGStream = nullptr;
 OutputStream *gDRStream = nullptr;
 OutputStream *gCodeStream = nullptr;
 
@@ -67,6 +69,17 @@ static int ProcessModule(hyde::DisplayManager display_manager,
       (*gDRStream) << module;
     }
     gDRStream->Flush();
+  }
+
+  // Output all message serializations.
+  if (gMSGStream) {
+    for (auto module : ParsedModuleIterator(module)) {
+      for (auto schema :
+           GenerateAvroMessageSchemas(display_manager, module, error_log)) {
+        (*gMSGStream) << schema.dump(2) << '\n';
+      }
+    }
+    gMSGStream->Flush();
   }
 
   // Round-trip test of the parser.
@@ -181,6 +194,7 @@ extern "C" int main(int argc, const char *argv[]) {
   hyde::gOut = &os;
 
   std::unique_ptr<hyde::FileStream> dot_out;
+  std::unique_ptr<hyde::FileStream> msg_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -214,6 +228,21 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDRStream = &(dr_out->os);
+      }
+
+    // Serialize messages to an output file
+    } else if (!strcmp(argv[i], "--messages") ||
+               !strcmp(argv[i], "-messages")) {
+      ++i;
+      if (i >= argc) {
+        hyde::Error err(display_manager);
+        err << "Command-line argument '" << argv[i - 1]
+            << "' must be followed by a file path for "
+            << "message serialization output";
+        error_log.Append(std::move(err));
+      } else {
+        msg_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gMSGStream = &(msg_out->os);
       }
 
     // GraphViz DOT digraph output, which is useful for debugging the data flow.

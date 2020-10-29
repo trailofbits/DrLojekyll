@@ -1,0 +1,85 @@
+// Copyright 2020, Trail of Bits. All rights reserved.
+
+#include <drlojekyll/CodeGen/MessageSerialization.h>
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse/Parse.h>
+
+#include <nlohmann/json.hpp>
+#include <sstream>
+#include <vector>
+
+using json = nlohmann::json;
+
+namespace hyde {
+namespace {
+
+[[nodiscard]] json build_avro_record(const std::string_view &name,
+                                     json::array_t &fields) {
+  return json{
+      {"type", "record"},
+      {"namespace", AVRO_DRLOG_NAMESPACE},
+      {"name", name.data()},
+      {"fields", fields},
+  };
+}
+
+[[nodiscard]] std::string_view parse_parameter_type(const TypeLoc &type,
+                                                    const ErrorLog &err) {
+  switch (type.Kind()) {
+    case TypeKind::kSigned8:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kUnsigned32: return "int";
+    case TypeKind::kFloat: return "float";
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned64: return "long";
+    case TypeKind::kDouble: return "double";
+    case TypeKind::kBytes: return "bytes";
+    case TypeKind::kASCII:
+    case TypeKind::kUTF8:
+    case TypeKind::kUUID: return "string";
+    case TypeKind::kInvalid: return "null";
+  }
+}
+
+[[nodiscard]] json parse_message_parameter(DisplayManager display_manager,
+                                           const ParsedParameter &parameter,
+                                           const ErrorLog &err) {
+  std::string_view msg_str;
+  (void) display_manager.TryReadData(parameter.SpellingRange(), &msg_str);
+  return {{"name", msg_str},
+          {"type", parse_parameter_type(parameter.Type(), err)}};
+}
+
+[[nodiscard]] json generate_message_schema(DisplayManager display_manager,
+                                           const ParsedMessage &message,
+                                           const ErrorLog &err) {
+  json::array_t fields = json::array();
+  for (auto parameter : message.Parameters()) {
+    fields.emplace_back(
+        parse_message_parameter(display_manager, parameter, err));
+  }
+  std::string_view msg_str;
+  (void) display_manager.TryReadData(message.Name().SpellingRange(), &msg_str);
+  return build_avro_record(msg_str, fields);
+}
+
+}  // namespace
+
+[[nodiscard]] std::vector<json>
+GenerateAvroMessageSchemas(DisplayManager display_manager,
+                           const ParsedModule &module, const ErrorLog &err) {
+  std::vector<json> avro_schemas{};
+
+  for (auto message : module.Messages()) {
+    avro_schemas.emplace_back(
+        generate_message_schema(display_manager, message, err));
+  }
+
+  return avro_schemas;
+}
+
+}  // namespace hyde

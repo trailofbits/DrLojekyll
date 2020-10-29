@@ -1152,6 +1152,14 @@ DisplayRange ParsedMessage::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
+NodeRange<ParsedParameter> ParsedMessage::Parameters(void) const {
+  if (impl->parameters.empty()) {
+    return NodeRange<ParsedParameter>();
+  } else {
+    return NodeRange<ParsedParameter>(impl->parameters.front().get());
+  }
+}
+
 NodeRange<ParsedMessage> ParsedMessage::Redeclarations(void) const {
   return NodeRange<ParsedMessage>(reinterpret_cast<Node<ParsedMessage> *>(
                                       impl->context->redeclarations.front()),

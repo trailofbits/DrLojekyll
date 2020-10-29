@@ -7,6 +7,7 @@ target_link_libraries(drlojekyll PRIVATE
     settings_private
     settings_public
     Util
+    CodeGen
     Display
     Lex
     Parse
