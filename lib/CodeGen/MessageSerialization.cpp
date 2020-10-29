@@ -42,6 +42,7 @@ namespace {
     case TypeKind::kUTF8:
     case TypeKind::kUUID: return "string";
     case TypeKind::kInvalid: return "null";
+    default: assert(false); return "null";
   }
 }
 
