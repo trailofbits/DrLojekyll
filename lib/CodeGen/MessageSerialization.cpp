@@ -14,14 +14,15 @@ using json = nlohmann::json;
 namespace hyde {
 namespace {
 
-[[nodiscard]] json BuildAvroRecord(const std::string_view &name,
-                                   json::array_t &fields) {
-  return json{
-      {"type", "record"},
-      {"namespace", AVRO_DRLOG_NAMESPACE},
-      {"name", name},
-      {"fields", fields},
-  };
+[[nodiscard]] AvroMessageInfo BuildAvroRecord(const std::string_view &name,
+                                              json::array_t &fields) {
+  return AvroMessageInfo{std::string{name},
+                         json{
+                             {"type", "record"},
+                             {"namespace", AVRO_DRLOG_NAMESPACE},
+                             {"name", name},
+                             {"fields", fields},
+                         }};
 }
 
 [[nodiscard]] std::string_view ParseParameterType(const TypeLoc &type,
@@ -56,9 +57,9 @@ namespace {
           {"type", ParseParameterType(parameter.Type(), err)}};
 }
 
-[[nodiscard]] json GenerateMessageSchema(DisplayManager display_manager,
-                                         const ParsedMessage &message,
-                                         const ErrorLog &err) {
+[[nodiscard]] AvroMessageInfo
+GenerateMessageSchema(DisplayManager display_manager,
+                      const ParsedMessage &message, const ErrorLog &err) {
   json::array_t fields = json::array();
   for (auto parameter : message.Parameters()) {
     fields.emplace_back(ParseMessageParameter(display_manager, parameter, err));
@@ -70,10 +71,10 @@ namespace {
 
 }  // namespace
 
-[[nodiscard]] std::vector<json>
+[[nodiscard]] std::vector<AvroMessageInfo>
 GenerateAvroMessageSchemas(DisplayManager display_manager,
                            const ParsedModule &module, const ErrorLog &err) {
-  std::vector<json> avro_schemas{};
+  std::vector<AvroMessageInfo> avro_schemas{};
 
   for (auto message : module.Messages()) {
     avro_schemas.emplace_back(

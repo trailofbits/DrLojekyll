@@ -15,6 +15,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -22,14 +23,25 @@
 #include <type_traits>
 #include <unordered_map>
 
+namespace fs = std::filesystem;
+
 namespace hyde {
 
 OutputStream *gOut = nullptr;
 
+struct FileStream {
+  FileStream(hyde::DisplayManager &dm_, const char *path_)
+      : fs(path_),
+        os(dm_, fs) {}
+
+  std::ofstream fs;
+  hyde::OutputStream os;
+};
+
 namespace {
 
 OutputStream *gDOTStream = nullptr;
-OutputStream *gMSGStream = nullptr;
+fs::path *gMSGDir = nullptr;
 OutputStream *gDRStream = nullptr;
 OutputStream *gCodeStream = nullptr;
 
@@ -72,14 +84,18 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   }
 
   // Output all message serializations.
-  if (gMSGStream) {
+  if (gMSGDir) {
+    std::unique_ptr<FileStream> msg_out;
     for (auto module : ParsedModuleIterator(module)) {
-      for (auto schema :
+      for (auto schema_info :
            GenerateAvroMessageSchemas(display_manager, module, error_log)) {
-        (*gMSGStream) << schema.dump(2) << '\n';
+        msg_out.reset(new FileStream(
+            display_manager,
+            (*gMSGDir / (schema_info.message_name + ".avsc")).c_str()));
+        msg_out->os << schema_info.schema.dump(2);
+        msg_out->os.Flush();
       }
     }
-    gMSGStream->Flush();
   }
 
   // Round-trip test of the parser.
@@ -166,15 +182,6 @@ static int VersionMessage(void) {
   return EXIT_SUCCESS;
 }
 
-struct FileStream {
-  FileStream(hyde::DisplayManager &dm_, const char *path_)
-      : fs(path_),
-        os(dm_, fs) {}
-
-  std::ofstream fs;
-  hyde::OutputStream os;
-};
-
 }  // namespace
 }  // namespace hyde
 
@@ -194,7 +201,6 @@ extern "C" int main(int argc, const char *argv[]) {
   hyde::gOut = &os;
 
   std::unique_ptr<hyde::FileStream> dot_out;
-  std::unique_ptr<hyde::FileStream> msg_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -231,18 +237,20 @@ extern "C" int main(int argc, const char *argv[]) {
       }
 
     // Serialize messages to an output file
-    } else if (!strcmp(argv[i], "--messages") ||
-               !strcmp(argv[i], "-messages")) {
+    } else if (!strcmp(argv[i], "--messages-dir") ||
+               !strcmp(argv[i], "-messages-dir")) {
       ++i;
       if (i >= argc) {
         hyde::Error err(display_manager);
         err << "Command-line argument '" << argv[i - 1]
-            << "' must be followed by a file path for "
+            << "' must be followed by a directory path for "
             << "message serialization output";
         error_log.Append(std::move(err));
       } else {
-        msg_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gMSGStream = &(msg_out->os);
+        hyde::gMSGDir = new fs::path(argv[i]);
+
+        // TODO(ek): Error handling
+        fs::create_directories(*hyde::gMSGDir);
       }
 
     // GraphViz DOT digraph output, which is useful for debugging the data flow.
