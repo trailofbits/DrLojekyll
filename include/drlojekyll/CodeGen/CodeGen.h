@@ -8,6 +8,6 @@
 namespace hyde {
 
 // Emits transpiled C++ code for the given program to `os`.
-void GenerateCode(const Program &module, OutputStream &os);
+void GenerateCode(Program &module, OutputStream &os);
 
 }  // namespace hyde
