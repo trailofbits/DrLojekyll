@@ -9,99 +9,99 @@ class CPPCodeGenVisitor : public ProgramVisitor {
     os.Flush();
   }
 
-  void Visit(const DataColumn &val) override {
+  void Visit(DataColumn &val) override {
     os << "DataColumn\n";
   }
 
-  void Visit(const DataIndex &val) override {
+  void Visit(DataIndex &val) override {
     os << "DataIndex\n";
   }
 
-  void Visit(const DataTable &val) override {
+  void Visit(DataTable &val) override {
     os << "DataTable\n";
   }
 
-  void Visit(const DataVariable &val) override {
+  void Visit(DataVariable &val) override {
     os << "DataVariable\n";
   }
 
-  void Visit(const DataVector &val) override {
+  void Visit(DataVector &val) override {
     os << "DataVector\n";
   }
 
-  void Visit(const ProgramCallRegion &val) override {
+  void Visit(ProgramCallRegion &val) override {
     os << "ProgramCallRegion\n";
   }
 
-  void Visit(const ProgramExistenceAssertionRegion &val) override {
+  void Visit(ProgramExistenceAssertionRegion &val) override {
     os << "ProgramExistenceAssertionRegion\n";
   }
 
-  void Visit(const ProgramExistenceCheckRegion &val) override {
+  void Visit(ProgramExistenceCheckRegion &val) override {
     os << "ProgramExistenceCheckRegion\n";
   }
 
-  void Visit(const ProgramGenerateRegion &val) override {
+  void Visit(ProgramGenerateRegion &val) override {
     os << "ProgramGenerateRegion\n";
   }
 
-  void Visit(const ProgramInductionRegion &val) override {
+  void Visit(ProgramInductionRegion &val) override {
     os << "ProgramInductionRegion\n";
   }
 
-  void Visit(const ProgramLetBindingRegion &val) override {
+  void Visit(ProgramLetBindingRegion &val) override {
     os << "ProgramLetBindingRegion\n";
   }
 
-  void Visit(const ProgramParallelRegion &val) override {
+  void Visit(ProgramParallelRegion &val) override {
     os << "ProgramParallelRegion\n";
   }
 
-  void Visit(const ProgramProcedure &val) override {
+  void Visit(ProgramProcedure &val) override {
     os << "ProgramProcedure\n";
   }
 
-  void Visit(const ProgramPublishRegion &val) override {
+  void Visit(ProgramPublishRegion &val) override {
     os << "ProgramPublishRegion\n";
   }
 
-  void Visit(const ProgramSeriesRegion &val) override {
+  void Visit(ProgramSeriesRegion &val) override {
     os << "ProgramSeriesRegion\n";
   }
 
-  void Visit(const ProgramVectorAppendRegion &val) override {
+  void Visit(ProgramVectorAppendRegion &val) override {
     os << "ProgramVectorAppendRegion\n";
   }
 
-  void Visit(const ProgramVectorClearRegion &val) override {
+  void Visit(ProgramVectorClearRegion &val) override {
     os << "ProgramVectorClearRegion\n";
   }
 
-  void Visit(const ProgramVectorLoopRegion &val) override {
+  void Visit(ProgramVectorLoopRegion &val) override {
     os << "ProgramVectorLoopRegion\n";
   }
 
-  void Visit(const ProgramVectorUniqueRegion &val) override {
+  void Visit(ProgramVectorUniqueRegion &val) override {
     os << "ProgramVectorUniqueRegion\n";
   }
 
-  void Visit(const ProgramTableInsertRegion &val) override {
+  void Visit(ProgramTableInsertRegion &val) override {
     os << "ProgramTableInsertRegion\n";
   }
 
-  void Visit(const ProgramTableJoinRegion &val) override {
+  void Visit(ProgramTableJoinRegion &val) override {
     os << "ProgramTableJoinRegion\n";
   }
 
-  void Visit(const ProgramTableProductRegion &val) override {
+  void Visit(ProgramTableProductRegion &val) override {
     os << "ProgramTableProductRegion\n";
   }
 
-  void Visit(const ProgramTupleCompareRegion &val) override {
+  void Visit(ProgramTupleCompareRegion &val) override {
     os << "ProgramTupleCompareRegion\n";
   }
 
-  void Visit(const Program &val) override {
+  void Visit(Program &val) override {
     os << "Program\n";
   }
 
@@ -109,7 +109,7 @@ class CPPCodeGenVisitor : public ProgramVisitor {
   OutputStream &os;
 };
 
-void GenerateCode(const Program &program, OutputStream &os)
+void GenerateCode(Program &program, OutputStream &os)
 {
   CPPCodeGenVisitor visitor(os);
   program.Accept(visitor);
