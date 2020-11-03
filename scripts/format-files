@@ -161,13 +161,28 @@ def main():
     cxx_files = list(os.path.abspath(cxx_file) for cxx_file in cxx_files)
 
   if not cxx_files:
-    cxx_header_files = pathlib.Path(source_dir).rglob("*.h")
-    cxx_source_files = pathlib.Path(source_dir).rglob("*.cpp")
-    cxx_files = itertools.chain(cxx_header_files, cxx_source_files)
+    def track_file(path):
+      # String should be path from repo root
+      ignore_dirs = { pathlib.Path('vendor') }
+      for ignore_dir in ignore_dirs:
+        if path.startswith(str(ignore_dir) + os.sep):
+          return False
+
+      format_suffixes = {'.h', '.cpp'}
+      for suffix in format_suffixes:
+        if path.endswith(suffix):
+          return True
+
+      return False
+
+    ALL_TRACKED_FILES_CMD=["git", "ls-files"]
+    all_tracked_files = subprocess.run(ALL_TRACKED_FILES_CMD, capture_output=True, text=True).stdout.split('\n')
+    cxx_files = [f for f in all_tracked_files if track_file(f)]
 
   in_place_files = []
   for cxx_file_ in cxx_files:
     cxx_file = os.path.abspath(cxx_file_)
+    # print(f"Formatting {cxx_file}")
     if not (cxx_file.endswith(".h") or cxx_file.endswith(".cpp")):
       continue
 
