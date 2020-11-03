@@ -266,8 +266,17 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         hyde::gMSGDir = fs::path(argv[i]);
 
-        // TODO(ek): Error handling
-        fs::create_directories(*hyde::gMSGDir);
+        if (!fs::is_directory(*hyde::gMSGDir) || !fs::exists(*hyde::gMSGDir)) {
+          std::error_code errcode;
+          if (!fs::create_directories(*hyde::gMSGDir, errcode)) {
+            hyde::Error err(display_manager);
+            err << "Directory '" << argv[i] << "' could not be created. "
+                << "(" << errcode.message() << ")";
+            error_log.Append(std::move(err));
+
+            hyde::gMSGDir = std::nullopt;
+          }
+        }
       }
 
     // GraphViz DOT digraph output, which is useful for debugging the data flow.
