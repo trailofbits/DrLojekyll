@@ -231,9 +231,8 @@ extern "C" int main(int argc, const char *argv[]) {
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
       ++i;
       if (i >= argc) {
-        error_log.Append()
-            << "Command-line argument " << argv[i]
-            << " must be followed by a file path for IR output";
+        error_log.Append() << "Command-line argument " << argv[i]
+                           << " must be followed by a file path for IR output";
       } else {
         ir_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gIRStream = &(ir_out->os);
@@ -241,8 +240,7 @@ extern "C" int main(int argc, const char *argv[]) {
 
     // Option to output a single Dr. Lojekyll Datalog file that is equivalent
     // to the amalagamation of all input files, and transitively imported files.
-    } else if (!strcmp(argv[i], "--dr-out") ||
-               !strcmp(argv[i], "-dr-out")) {
+    } else if (!strcmp(argv[i], "--dr-out") || !strcmp(argv[i], "-dr-out")) {
       ++i;
       if (i >= argc) {
         error_log.Append() << "Command-line argument '" << argv[i - 1]
