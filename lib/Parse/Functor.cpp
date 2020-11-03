@@ -250,6 +250,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         }
 
       case 8:
+
         // Infer functor range based on what was explicitly provided in the
         // syntax.
         if (Lexeme::kPuncPeriod == lexeme) {

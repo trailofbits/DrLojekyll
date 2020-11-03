@@ -109,8 +109,7 @@ class CPPCodeGenVisitor : public ProgramVisitor {
   OutputStream &os;
 };
 
-void GenerateCode(Program &program, OutputStream &os)
-{
+void GenerateCode(Program &program, OutputStream &os) {
   CPPCodeGenVisitor visitor(os);
   program.Accept(visitor);
 }
