@@ -253,7 +253,7 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gDRStream = &(dr_out->os);
       }
 
-    // Serialize messages to an output file
+    // Write message schemas to an output directory
     } else if (!strcmp(argv[i], "--messages-dir") ||
                !strcmp(argv[i], "-messages-dir")) {
       ++i;

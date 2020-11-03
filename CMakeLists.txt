@@ -47,7 +47,7 @@ endif()
 # --------------------------------------------
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if(DRLOG_USE_EXTERNAL_JSON)
-  find_package(nlohmann_json 3.9.0 REQUIRED)
+  find_package(nlohmann_json 3.9.0 CONFIG REQUIRED)
 else()
   set(JSON_BuildTests OFF CACHE INTERNAL "")
   add_subdirectory(vendor/nlohmann_json)
