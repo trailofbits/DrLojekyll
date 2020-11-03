@@ -30,7 +30,7 @@ namespace hyde {
 OutputStream *gOut = nullptr;
 
 struct FileStream {
-  FileStream(hyde::DisplayManager &dm_, const char *path_)
+  FileStream(hyde::DisplayManager &dm_, const fs::path path_)
       : fs(path_),
         os(dm_, fs) {}
 
@@ -41,9 +41,9 @@ struct FileStream {
 namespace {
 
 OutputStream *gDOTStream = nullptr;
-fs::path *gMSGDir = nullptr;
 OutputStream *gDRStream = nullptr;
 OutputStream *gCodeStream = nullptr;
+std::optional<fs::path> gMSGDir = std::nullopt;
 
 
 static int CompileModule(hyde::DisplayManager display_manager,
@@ -85,15 +85,12 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   // Output all message serializations.
   if (gMSGDir) {
-    std::unique_ptr<FileStream> msg_out;
     for (auto module : ParsedModuleIterator(module)) {
       for (auto schema_info :
            GenerateAvroMessageSchemas(display_manager, module, error_log)) {
-        msg_out.reset(new FileStream(
-            display_manager,
-            (*gMSGDir / (schema_info.message_name + ".avsc")).c_str()));
-        msg_out->os << schema_info.schema.dump(2);
-        msg_out->os.Flush();
+        FileStream schema_stream(
+            display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
+        schema_stream.os << schema_info.schema.dump(2);
       }
     }
   }
@@ -247,7 +244,7 @@ extern "C" int main(int argc, const char *argv[]) {
             << "message serialization output";
         error_log.Append(std::move(err));
       } else {
-        hyde::gMSGDir = new fs::path(argv[i]);
+        hyde::gMSGDir = fs::path(argv[i]);
 
         // TODO(ek): Error handling
         fs::create_directories(*hyde::gMSGDir);
