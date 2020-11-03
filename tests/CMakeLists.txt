@@ -25,6 +25,7 @@ target_link_libraries(unittests PRIVATE
     settings_public
 
     Util
+    CodeGen
     Display
     Lex
     Parse
