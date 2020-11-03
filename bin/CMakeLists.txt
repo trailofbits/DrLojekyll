@@ -9,13 +9,14 @@ target_link_libraries(drlojekyll PRIVATE
     settings_private
     settings_public
     std::filesystem
-    Util
+
+    ControlFlow
     CodeGen
+    DataFlow
     Display
     Lex
     Parse
-    DataFlow
-    ControlFlow
+    Util
     Version
 )
 install(TARGETS drlojekyll)

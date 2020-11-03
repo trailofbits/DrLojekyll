@@ -1,6 +1,14 @@
-cmake-build-debug
+.DS_Store
+.cproject
 .idea
 .project
-.cproject
 .settings
 
+*.code-workspace
+
+cmake-build-debug
+
+/build
+/fuzz-run
+/install
+/venv

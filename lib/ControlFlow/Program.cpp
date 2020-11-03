@@ -2,11 +2,6 @@
 
 #include "Program.h"
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
-
 namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
@@ -111,6 +106,10 @@ ProgramImpl::~ProgramImpl(void) {
 Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
+
+void Program::Accept(ProgramVisitor &visitor) {
+  visitor.Visit(*this);
+}
 
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
@@ -606,7 +605,3 @@ ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
 }
 
 }  // namespace hyde
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif

@@ -116,8 +116,6 @@ const ErrorStream &ErrorStream::operator<<(const Token &token) const {
   return *this;
 }
 
-Error::~Error(void) {}
-
 // An error with no position information.
 Error::Error(const DisplayManager &dm)
     : impl(std::make_shared<ErrorImpl>(dm)) {}

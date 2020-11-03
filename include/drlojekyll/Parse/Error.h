@@ -134,8 +134,6 @@ class Note {
 // Represents an error that was discovered during parsing or semantic analysis.
 class Error {
  public:
-  ~Error(void);
-
   // An error with no position information.
   explicit Error(const DisplayManager &dm);
 
@@ -193,8 +191,6 @@ class Error {
                     const DisplayRange &sub_range) const;
 
  private:
-  Error(void) = delete;
-
   ErrorStream Stream(void) const;
 
   std::shared_ptr<ErrorImpl> impl;
