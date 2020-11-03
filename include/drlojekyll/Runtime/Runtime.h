@@ -375,13 +375,13 @@ class Aggregate<AggregatorType, NoConfigVars, NoGroupVars> {
 template <typename AggregatorType, typename... ConfigVarTypes>
 class Aggregate<AggregatorType, ConfigVars<ConfigVarTypes...>, NoGroupVars> {
  public:
-  AggregatorType *Get(ConfigVarTypes &&... config_vars) noexcept {}
+  AggregatorType *Get(ConfigVarTypes &&...config_vars) noexcept {}
 };
 
 template <typename AggregatorType, typename... GroupVarTypes>
 class Aggregate<AggregatorType, NoConfigVars, GroupVars<GroupVarTypes...>> {
  public:
-  AggregatorType *Get(GroupVarTypes &&... group_vars) noexcept {}
+  AggregatorType *Get(GroupVarTypes &&...group_vars) noexcept {}
 };
 
 template <typename AggregatorType, typename... GroupVarTypes,
@@ -389,8 +389,8 @@ template <typename AggregatorType, typename... GroupVarTypes,
 class Aggregate<AggregatorType, ConfigVars<GroupVarTypes...>,
                 GroupVars<ConfigVarTypes...>> {
  public:
-  AggregatorType *Get(GroupVarTypes &&... group_vars,
-                      ConfigVarTypes &&... config_vars) noexcept {}
+  AggregatorType *Get(GroupVarTypes &&...group_vars,
+                      ConfigVarTypes &&...config_vars) noexcept {}
 };
 
 template <typename... Keys>
@@ -502,7 +502,7 @@ template <typename... Keys>
 class Set {
  public:
   // Returns `true` if the entry was added.
-  bool Add(Keys &&... keys) {
+  bool Add(Keys &&...keys) {
     return true;  // TODO(pag): Implement me.
   }
 };
@@ -513,12 +513,12 @@ template <typename RC, typename... Keys>
 class DifferentialSet {
  public:
   // Returns `true` if the entry was added.
-  bool Add(Keys &&... keys, RC insert) {
+  bool Add(Keys &&...keys, RC insert) {
     return true;  // TODO(pag): Implement me.
   }
 
   // Returns `true` if the entry was deleted.
-  bool Remove(Keys &&... keys, RC clear) {
+  bool Remove(Keys &&...keys, RC clear) {
     return true;  // TODO(pag): Implement me.
   }
 };
