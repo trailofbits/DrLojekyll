@@ -47,7 +47,8 @@ ${PYTHON3_EXE} "${SCRIPTS_DIR}/format-files" \
     --source_dir "${SOURCE_DIR}" \
     --format_exe "${CLANG_FORMAT_EXE}" \
     --files ${STAGED_FILES} \
-    --check
+    --check \
+    $@
 
 if [[ "$?" == 0 ]] ; then
   for staged_file in ${STAGED_FILES} ; do
