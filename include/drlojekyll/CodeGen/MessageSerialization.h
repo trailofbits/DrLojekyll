@@ -21,7 +21,7 @@ struct AvroMessageInfo {
 
 // Generates Avro schemas corresponding to all messages in the Datalog module.
 [[nodiscard]] std::vector<AvroMessageInfo>
-GenerateAvroMessageSchemas(DisplayManager display_manager, const ParsedModule &,
+GenerateAvroMessageSchemas(const DisplayManager &, const ParsedModule &,
                            const ErrorLog &);
 
 }  // namespace hyde

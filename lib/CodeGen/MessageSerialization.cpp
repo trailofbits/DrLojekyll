@@ -14,9 +14,9 @@ using json = nlohmann::json;
 namespace hyde {
 namespace {
 
-[[nodiscard]] AvroMessageInfo BuildAvroRecord(const std::string_view &name,
-                                              json::array_t &fields) {
-  return AvroMessageInfo{std::string{name},
+[[nodiscard]] auto BuildAvroRecord(std::string_view name,
+                                   json::array_t &fields) {
+  return AvroMessageInfo{std::string(name),
                          json{
                              {"type", "record"},
                              {"namespace", AVRO_DRLOG_NAMESPACE},
@@ -25,8 +25,8 @@ namespace {
                          }};
 }
 
-[[nodiscard]] std::string_view ParseParameterType(const TypeLoc &type,
-                                                  const ErrorLog &err) {
+[[nodiscard]] auto ParseParameterType(const TypeLoc &type,
+                                      const ErrorLog &err) {
   switch (type.Kind()) {
     case TypeKind::kSigned8:
     case TypeKind::kUnsigned8:
@@ -47,19 +47,19 @@ namespace {
   }
 }
 
-[[nodiscard]] json ParseMessageParameter(DisplayManager display_manager,
+[[nodiscard]] auto ParseMessageParameter(const DisplayManager &display_manager,
                                          const ParsedParameter &parameter,
                                          const ErrorLog &err) {
   std::string_view msg_str;
   (void) display_manager.TryReadData(parameter.Name().SpellingRange(),
                                      &msg_str);
-  return {{"name", msg_str},
-          {"type", ParseParameterType(parameter.Type(), err)}};
+  return json{{"name", std::string(msg_str)},
+              {"type", ParseParameterType(parameter.Type(), err)}};
 }
 
-[[nodiscard]] AvroMessageInfo
-GenerateMessageSchema(DisplayManager display_manager,
-                      const ParsedMessage &message, const ErrorLog &err) {
+[[nodiscard]] auto GenerateMessageSchema(const DisplayManager &display_manager,
+                                         const ParsedMessage &message,
+                                         const ErrorLog &err) {
   json::array_t fields = json::array();
   for (auto parameter : message.Parameters()) {
     fields.emplace_back(ParseMessageParameter(display_manager, parameter, err));
@@ -72,7 +72,7 @@ GenerateMessageSchema(DisplayManager display_manager,
 }  // namespace
 
 [[nodiscard]] std::vector<AvroMessageInfo>
-GenerateAvroMessageSchemas(DisplayManager display_manager,
+GenerateAvroMessageSchemas(const DisplayManager &display_manager,
                            const ParsedModule &module, const ErrorLog &err) {
   std::vector<AvroMessageInfo> avro_schemas{};
 
