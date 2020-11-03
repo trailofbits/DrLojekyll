@@ -13,14 +13,13 @@
 
 namespace hyde {
 
-class ErrorLog;
 class ProgramImpl;
-class Query;
 
-enum class TypeKind : int;
+class ProgramVisitor;
 
 namespace program {
 
+// A superclass of (most) kinds of IR program nodes.
 template <typename T>
 class ProgramNode {
  public:
@@ -42,6 +41,10 @@ class ProgramNode {
     return reinterpret_cast<uintptr_t>(impl);
   }
 
+  void Accept(ProgramVisitor &visitor) {
+    impl->Accept(visitor);
+  }
+
  protected:
   friend class ::hyde::ProgramImpl;
 
@@ -51,10 +54,12 @@ class ProgramNode {
 }  // namespace program
 
 class DataColumn;
+class DataIndex;
 class DataTable;
 class DataVariable;
 class DataVector;
 
+class Program;
 class ProgramCallRegion;
 class ProgramExistenceAssertionRegion;
 class ProgramExistenceCheckRegion;
@@ -73,6 +78,42 @@ class ProgramTableInsertRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTupleCompareRegion;
+
+// A bare-bones program IR visitor.
+// The corresponding `.Accept()` methods _only_ do visitor pattern
+// double-dispatch, and _don't_ do any recursion on their own.
+// Each subclass of the `ProgramVisitor` class is responsible for controlling
+// the traversal order.
+class ProgramVisitor {
+ public:
+  virtual void Visit(DataColumn &val) = 0;
+  virtual void Visit(DataIndex &val) = 0;
+  virtual void Visit(DataTable &val) = 0;
+  virtual void Visit(DataVariable &val) = 0;
+  virtual void Visit(DataVector &val) = 0;
+
+  virtual void Visit(ProgramCallRegion &val) = 0;
+  virtual void Visit(ProgramExistenceAssertionRegion &val) = 0;
+  virtual void Visit(ProgramExistenceCheckRegion &val) = 0;
+  virtual void Visit(ProgramGenerateRegion &val) = 0;
+  virtual void Visit(ProgramInductionRegion &val) = 0;
+  virtual void Visit(ProgramLetBindingRegion &val) = 0;
+  virtual void Visit(ProgramParallelRegion &val) = 0;
+  virtual void Visit(ProgramProcedure &val) = 0;
+  virtual void Visit(ProgramPublishRegion &val) = 0;
+  virtual void Visit(ProgramSeriesRegion &val) = 0;
+  virtual void Visit(ProgramVectorAppendRegion &val) = 0;
+  virtual void Visit(ProgramVectorClearRegion &val) = 0;
+  virtual void Visit(ProgramVectorLoopRegion &val) = 0;
+  virtual void Visit(ProgramVectorUniqueRegion &val) = 0;
+  virtual void Visit(ProgramTableInsertRegion &val) = 0;
+  virtual void Visit(ProgramTableJoinRegion &val) = 0;
+  virtual void Visit(ProgramTableProductRegion &val) = 0;
+  virtual void Visit(ProgramTupleCompareRegion &val) = 0;
+
+  virtual void Visit(Program &val) = 0;
+};
+
 
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
@@ -94,6 +135,8 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramTableJoinRegion &);
   ProgramRegion(const ProgramTableProductRegion &);
   ProgramRegion(const ProgramTupleCompareRegion &);
+
+  virtual ~ProgramRegion() {}
 
   bool IsCall(void) const noexcept;
   bool IsExistenceCheck(void) const noexcept;
@@ -683,12 +726,14 @@ class Program {
   // List of all procedures.
   DefinedNodeRange<ProgramProcedure> Procedures(void) const;
 
-  ~Program(void);
+  virtual ~Program(void);
 
   Program(const Program &) = default;
   Program(Program &&) noexcept = default;
   Program &operator=(const Program &) = default;
   Program &operator=(Program &&) noexcept = default;
+
+  void Accept(ProgramVisitor &visitor);
 
  private:
   Program(std::shared_ptr<ProgramImpl> impl_);
