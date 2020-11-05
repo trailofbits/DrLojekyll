@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -euo pipefail
+
+usage_and_exit() {
+    echo >&2 "Usage: $0 CRASHING_INPUT"
+    echo >&2
+    echo >&2 "Minimizes a Dr. Lojekyll input that causes the fuzzer to crash."
+    echo >&2 "The minimized output will be written to CRASHING_INPUT."
+    echo >&2 "The original input file will be renamed CRASHING_INPUT.orig."
+    exit 1
+}
+
+# Parse arguments
+(( $# != 1 )) && usage_and_exit
+case $1 in
+    -h|--help|-help) usage_and_exit ;;
+    *) CRASHING_INPUT="$1" ;;
+esac
+
+if [[ ! -r $CRASHING_INPUT ]]; then
+    echo >&2 "$0: error: crashing input '$CRASHING_INPUT' is not readable"
+    exit 1
+fi
+
+# Need to generate a couple temp files to run c-reduce.  Let's clean up after ourselves.
+MINIMIZE_SCRIPT=''
+TMP_CRASHING_INPUT=''
+cleanup() {
+    [[ -n $MINIMIZE_SCRIPT ]] && rm -f "$MINIMIZE_SCRIPT"
+    [[ -n $TMP_CRASHING_INPUT ]] && rm -f "$TMP_CRASHING_INPUT"
+}
+trap cleanup EXIT
+
+MINIMIZE_SCRIPT=$(mktemp -t minimize-fuzz-crasher.XXXXXXXX)
+# Note: TMP_CRASHING_INPUT must be a relative path for c-reduce
+TMP_CRASHING_INPUT=minimize-fuzz-crasher.crashing-input.tmp
+# Copy to permit user-supplied crashing input to possibly be outside of $PWD
+cp "$CRASHING_INPUT" "$TMP_CRASHING_INPUT"
+
+# Generate the "interestingness test" that c-reduce requires
+cat <<EOF >"$MINIMIZE_SCRIPT"
+#!/bin/bash
+set -uo pipefail
+"$PWD/build/fuzz/fuzzer" "$TMP_CRASHING_INPUT"
+if (( \$? == 77 )); then
+    exit 0
+else
+    exit 1
+fi
+EOF
+chmod +x "$MINIMIZE_SCRIPT"
+cat "$MINIMIZE_SCRIPT"
+
+# Now, finally run c-reduce
+cp "$CRASHING_INPUT" "$CRASHING_INPUT.orig"
+creduce --tidy --not-c "$MINIMIZE_SCRIPT" "$TMP_CRASHING_INPUT"
+cp "$TMP_CRASHING_INPUT" "$CRASHING_INPUT"

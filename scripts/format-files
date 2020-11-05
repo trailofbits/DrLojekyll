@@ -113,6 +113,13 @@ def main():
 
   arg_parser = argparse.ArgumentParser()
 
+  arg_parser.add_argument(
+      '--verbose',
+      '-v',
+      help='Verbosity level',
+      action='count',
+      default=0)
+
   if clang_format_exe:
     arg_parser.add_argument(
         '--format_exe',
@@ -154,6 +161,13 @@ def main():
     print("'{}' passed to --format_exe does not exist".format(args.format_exe))
     return 1
 
+  if args.verbose:
+    print(f"Using format executable {args.format_exe}")
+    format_version = subprocess.run([args.format_exe, '--version'],
+                                    stdout=subprocess.PIPE,
+                                    universal_newlines=True).stdout.strip()
+    print(f"\tVersion: {format_version}")
+
   # NOTE(pag): Go get the abs paths of the files here before we change the current
   #            working directory.
   cxx_files = args.files
@@ -161,13 +175,31 @@ def main():
     cxx_files = list(os.path.abspath(cxx_file) for cxx_file in cxx_files)
 
   if not cxx_files:
-    cxx_header_files = pathlib.Path(source_dir).rglob("*.h")
-    cxx_source_files = pathlib.Path(source_dir).rglob("*.cpp")
-    cxx_files = itertools.chain(cxx_header_files, cxx_source_files)
+    def track_file(path):
+      # String should be path from repo root
+      ignore_dirs = { pathlib.Path('vendor') }
+      for ignore_dir in ignore_dirs:
+        if path.startswith(str(ignore_dir) + os.sep):
+          return False
+
+      format_suffixes = {'.h', '.cpp'}
+      for suffix in format_suffixes:
+        if path.endswith(suffix):
+          return True
+
+      return False
+
+    ALL_TRACKED_FILES_CMD=["git", "ls-files"]
+    all_tracked_files = subprocess.run(ALL_TRACKED_FILES_CMD,
+                                       stdout=subprocess.PIPE,
+                                       universal_newlines=True).stdout.splitlines()
+    cxx_files = [f for f in all_tracked_files if track_file(f)]
 
   in_place_files = []
   for cxx_file_ in cxx_files:
     cxx_file = os.path.abspath(cxx_file_)
+    if args.verbose > 1:
+      print(f"Formatting {cxx_file}")
     if not (cxx_file.endswith(".h") or cxx_file.endswith(".cpp")):
       continue
 
