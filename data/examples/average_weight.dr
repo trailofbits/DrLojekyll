@@ -2,7 +2,6 @@
 ; aggregates behave w.r.t. joins of their inner selects, and joins of their
 ; results.
 
-#functor latest_i32(bound i32 OldVal, bound i32 ProposedVal, free i32 NewVal)
 #functor div_i32(bound i32 LHS, bound i32 RHS, free i32 Res)
 #functor sum_i32(aggregate i32 Val, summary i32 Sum)
 #functor count_i32(aggregate i32 Val, summary i32 Count)

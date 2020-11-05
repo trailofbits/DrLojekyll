@@ -727,6 +727,7 @@ OutputStream &operator<<(OutputStream &os, Program program) {
 
     sep = "\n\n";
   }
+  os << sep;
   return os;
 }
 
