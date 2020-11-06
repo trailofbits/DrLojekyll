@@ -609,51 +609,51 @@ OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
   return os;
 }
 
+namespace {
+
+class FormatDispatcher final : public ProgramVisitor {
+ public:
+  virtual ~FormatDispatcher(void) = default;
+
+  explicit FormatDispatcher(OutputStream &os_)
+      : os(os_) {}
+
+#define MAKE_VISITOR(cls) \
+    void Visit(cls region) override { \
+      os << region; \
+    } \
+
+  MAKE_VISITOR(ProgramCallRegion)
+  MAKE_VISITOR(ProgramReturnRegion)
+  MAKE_VISITOR(ProgramExistenceAssertionRegion)
+  MAKE_VISITOR(ProgramExistenceCheckRegion)
+  MAKE_VISITOR(ProgramGenerateRegion)
+  MAKE_VISITOR(ProgramInductionRegion)
+  MAKE_VISITOR(ProgramLetBindingRegion)
+  MAKE_VISITOR(ProgramParallelRegion)
+  MAKE_VISITOR(ProgramProcedure)
+  MAKE_VISITOR(ProgramPublishRegion)
+  MAKE_VISITOR(ProgramSeriesRegion)
+  MAKE_VISITOR(ProgramVectorAppendRegion)
+  MAKE_VISITOR(ProgramVectorClearRegion)
+  MAKE_VISITOR(ProgramVectorLoopRegion)
+  MAKE_VISITOR(ProgramVectorUniqueRegion)
+  MAKE_VISITOR(ProgramTransitionStateRegion)
+  MAKE_VISITOR(ProgramCheckStateRegion)
+  MAKE_VISITOR(ProgramTableJoinRegion)
+  MAKE_VISITOR(ProgramTableProductRegion)
+  MAKE_VISITOR(ProgramTableScanRegion)
+  MAKE_VISITOR(ProgramTupleCompareRegion)
+
+ private:
+  OutputStream &os;
+};
+
+}  // namespace
+
 OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
-  if (region.IsSeries()) {
-    os << ProgramSeriesRegion::From(region);
-  } else if (region.IsParallel()) {
-    os << ProgramParallelRegion::From(region);
-  } else if (region.IsLetBinding()) {
-    os << ProgramLetBindingRegion::From(region);
-  } else if (region.IsInduction()) {
-    os << ProgramInductionRegion::From(region);
-  } else if (region.IsVectorLoop()) {
-    os << ProgramVectorLoopRegion::From(region);
-  } else if (region.IsVectorAppend()) {
-    os << ProgramVectorAppendRegion::From(region);
-  } else if (region.IsVectorClear()) {
-    os << ProgramVectorClearRegion::From(region);
-  } else if (region.IsVectorUnique()) {
-    os << ProgramVectorUniqueRegion::From(region);
-  } else if (region.IsTransitionState()) {
-    os << ProgramTransitionStateRegion::From(region);
-  } else if (region.IsTableJoin()) {
-    os << ProgramTableJoinRegion::From(region);
-  } else if (region.IsTableProduct()) {
-    os << ProgramTableProductRegion::From(region);
-  } else if (region.IsTableScan()) {
-    os << ProgramTableScanRegion::From(region);
-  } else if (region.IsExistenceCheck()) {
-    os << ProgramExistenceCheckRegion::From(region);
-  } else if (region.IsExistenceAssertion()) {
-    os << ProgramExistenceAssertionRegion::From(region);
-  } else if (region.IsTupleCompare()) {
-    os << ProgramTupleCompareRegion::From(region);
-  } else if (region.IsGenerate()) {
-    os << ProgramGenerateRegion::From(region);
-  } else if (region.IsCall()) {
-    os << ProgramCallRegion::From(region);
-  } else if (region.IsReturn()) {
-    os << ProgramReturnRegion::From(region);
-  } else if (region.IsPublish()) {
-    os << ProgramPublishRegion::From(region);
-  } else if (region.IsCheckState()) {
-    os << ProgramCheckStateRegion::From(region);
-  } else {
-    assert(false);
-    os << "<<unknown region>>";
-  }
+  FormatDispatcher dispatcher(os);
+  region.Accept(dispatcher);
   return os;
 }
 

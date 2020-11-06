@@ -2,106 +2,118 @@
 
 namespace hyde {
 
-class CPPCodeGenVisitor : public ProgramVisitor {
+class CPPCodeGenVisitor final : public ProgramVisitor {
  public:
   CPPCodeGenVisitor(OutputStream &os) : os(os) {}
   ~CPPCodeGenVisitor(void) {
     os.Flush();
   }
 
-  void Visit(DataColumn &val) override {
+  void Visit(DataColumn val) override {
     os << "DataColumn\n";
   }
 
-  void Visit(DataIndex &val) override {
+  void Visit(DataIndex val) override {
     os << "DataIndex\n";
   }
 
-  void Visit(DataTable &val) override {
+  void Visit(DataTable val) override {
     os << "DataTable\n";
   }
 
-  void Visit(DataVariable &val) override {
+  void Visit(DataVariable val) override {
     os << "DataVariable\n";
   }
 
-  void Visit(DataVector &val) override {
+  void Visit(DataVector val) override {
     os << "DataVector\n";
   }
 
-  void Visit(ProgramCallRegion &val) override {
+  void Visit(ProgramCallRegion val) override {
     os << "ProgramCallRegion\n";
   }
 
-  void Visit(ProgramExistenceAssertionRegion &val) override {
+  void Visit(ProgramReturnRegion val) override {
+    os << "ProgramReturnRegion\n";
+  }
+
+  void Visit(ProgramExistenceAssertionRegion val) override {
     os << "ProgramExistenceAssertionRegion\n";
   }
 
-  void Visit(ProgramExistenceCheckRegion &val) override {
+  void Visit(ProgramExistenceCheckRegion val) override {
     os << "ProgramExistenceCheckRegion\n";
   }
 
-  void Visit(ProgramGenerateRegion &val) override {
+  void Visit(ProgramGenerateRegion val) override {
     os << "ProgramGenerateRegion\n";
   }
 
-  void Visit(ProgramInductionRegion &val) override {
+  void Visit(ProgramInductionRegion val) override {
     os << "ProgramInductionRegion\n";
   }
 
-  void Visit(ProgramLetBindingRegion &val) override {
+  void Visit(ProgramLetBindingRegion val) override {
     os << "ProgramLetBindingRegion\n";
   }
 
-  void Visit(ProgramParallelRegion &val) override {
+  void Visit(ProgramParallelRegion val) override {
     os << "ProgramParallelRegion\n";
   }
 
-  void Visit(ProgramProcedure &val) override {
+  void Visit(ProgramProcedure val) override {
     os << "ProgramProcedure\n";
   }
 
-  void Visit(ProgramPublishRegion &val) override {
+  void Visit(ProgramPublishRegion val) override {
     os << "ProgramPublishRegion\n";
   }
 
-  void Visit(ProgramSeriesRegion &val) override {
+  void Visit(ProgramSeriesRegion val) override {
     os << "ProgramSeriesRegion\n";
   }
 
-  void Visit(ProgramVectorAppendRegion &val) override {
+  void Visit(ProgramVectorAppendRegion val) override {
     os << "ProgramVectorAppendRegion\n";
   }
 
-  void Visit(ProgramVectorClearRegion &val) override {
+  void Visit(ProgramVectorClearRegion val) override {
     os << "ProgramVectorClearRegion\n";
   }
 
-  void Visit(ProgramVectorLoopRegion &val) override {
+  void Visit(ProgramVectorLoopRegion val) override {
     os << "ProgramVectorLoopRegion\n";
   }
 
-  void Visit(ProgramVectorUniqueRegion &val) override {
+  void Visit(ProgramVectorUniqueRegion val) override {
     os << "ProgramVectorUniqueRegion\n";
   }
 
-  void Visit(ProgramTableInsertRegion &val) override {
-    os << "ProgramTableInsertRegion\n";
+  void Visit(ProgramTransitionStateRegion val) override {
+    os << "ProgramTransitionStateRegion\n";
   }
 
-  void Visit(ProgramTableJoinRegion &val) override {
+  void Visit(ProgramCheckStateRegion val) override {
+    os << "ProgramCheckStateRegion\n";
+  }
+
+  void Visit(ProgramTableJoinRegion val) override {
     os << "ProgramTableJoinRegion\n";
   }
 
-  void Visit(ProgramTableProductRegion &val) override {
+  void Visit(ProgramTableProductRegion val) override {
     os << "ProgramTableProductRegion\n";
   }
 
-  void Visit(ProgramTupleCompareRegion &val) override {
+  void Visit(ProgramTableScanRegion val) override {
+    os << "ProgramTableScanRegion\n";
+  }
+
+  void Visit(ProgramTupleCompareRegion val) override {
     os << "ProgramTupleCompareRegion\n";
   }
 
-  void Visit(Program &val) override {
+  void Visit(Program val) {
     os << "Program\n";
   }
 
@@ -111,7 +123,7 @@ class CPPCodeGenVisitor : public ProgramVisitor {
 
 void GenerateCode(Program &program, OutputStream &os) {
   CPPCodeGenVisitor visitor(os);
-  program.Accept(visitor);
+  visitor.Visit(program);
 }
 
 }  // namespace hyde

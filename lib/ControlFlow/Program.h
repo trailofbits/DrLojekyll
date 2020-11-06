@@ -40,10 +40,7 @@ class Node<DataColumn> final : public Def<Node<DataColumn>>, public User {
 
   Node(unsigned id_, TypeKind type_, Node<DataTable> *table_);
 
-  void Accept(ProgramVisitor &visitor) {
-    DataColumn val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor);
 
   const unsigned id;
   const unsigned index;
@@ -64,10 +61,7 @@ class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
 
   Node(unsigned id_, Node<DataTable> *table_, std::string column_spec_);
 
-  void Accept(ProgramVisitor &visitor) {
-    DataIndex val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor);
 
   const unsigned id;
   const std::string column_spec;
@@ -94,10 +88,7 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
         columns(this),
         indices(this) {}
 
-  void Accept(ProgramVisitor &visitor) {
-    DataTable val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor);
 
   // Get or create a table in the program.
   static Node<DataTable> *GetOrCreate(ProgramImpl *impl, QueryView view);
@@ -140,11 +131,8 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
   }
 
   bool IsRead(void) const;
-  
-  void Accept(ProgramVisitor &visitor) override {
-    DataVector val(this);
-    visitor.Visit(val);
-  }
+
+  void Accept(ProgramVisitor &visitor);
 
   const unsigned id;
   const VectorKind kind;
@@ -163,10 +151,7 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
         role(role_),
         id(id_) {}
 
-  virtual void Accept(ProgramVisitor &visitor) {
-    DataVariable val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor);
 
   const VariableRole role;
 
@@ -404,10 +389,7 @@ class Node<ProgramLetBindingRegion> final
  public:
   virtual ~Node(void);
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramLetBindingRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -438,10 +420,7 @@ class Node<ProgramVectorLoopRegion> final
  public:
   virtual ~Node(void);
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramVectorLoopRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   inline Node(REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
@@ -473,10 +452,7 @@ class Node<ProgramVectorAppendRegion> final
  public:
   virtual ~Node(void);
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramVectorAppendRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   inline Node(REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
@@ -503,10 +479,7 @@ class Node<ProgramVectorClearRegion> final
   virtual ~Node(void);
   using Node<ProgramOperationRegion>::Node;
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramVectorClearRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -528,10 +501,7 @@ class Node<ProgramVectorUniqueRegion> final
   virtual ~Node(void);
   using Node<ProgramOperationRegion>::Node;
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramVectorUniqueRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -566,10 +536,7 @@ class Node<ProgramTransitionStateRegion> final
         from_state(from_state_),
         to_state(to_state_) {}
   
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramTransitionStateRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
 
@@ -607,14 +574,11 @@ class Node<ProgramCheckStateRegion> final
                                      ProgramOperation::kCheckStateInTable),
         col_values(this) {}
 
+  void Accept(ProgramVisitor &visitor) override;
+
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept override;
-
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramCheckStateRegion val(this);
-    visitor.Visit(val);
-  }
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -652,10 +616,7 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
         arg_vars(this),
         arg_vecs(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramCallRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -687,11 +648,7 @@ class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
   Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramReturnRegion val(this);
-    visitor.Visit(val);
-  }
-  
+  void Accept(ProgramVisitor &visitor) override;
   bool IsNoOp(void) const noexcept override;
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
@@ -713,10 +670,7 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
         message(message_),
         arg_vars(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramPublishRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -745,10 +699,7 @@ class Node<ProgramExistenceCheckRegion> final
       : Node<ProgramOperationRegion>(parent_, op_),
         cond_vars(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramExistenceCheckRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -776,10 +727,7 @@ class Node<ProgramExistenceAssertionRegion> final
       : Node<ProgramOperationRegion>(parent_, op_),
         cond_vars(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramExistenceAssertionRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -810,10 +758,7 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
         pivot_vars(this),
         pivot_cols() {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramTableJoinRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -853,10 +798,7 @@ class Node<ProgramTableProductRegion> final
         tables(this),
         input_vectors(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramTableProductRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -891,10 +833,7 @@ class Node<ProgramTableScanRegion> final
         in_cols(this),
         in_vars(this) {}
   
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramTableScanRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -929,10 +868,7 @@ class Node<ProgramTupleCompareRegion> final
         lhs_vars(this),
         rhs_vars(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramTupleCompareRegion val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -963,12 +899,7 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
         defined_vars(this),
         used_vars(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramGenerateRegion val(this);
-    visitor.Visit(val);
-  }
-
-  Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
+  void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;
 
@@ -976,6 +907,8 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
 
   const ParsedFunctor functor;
 
@@ -1000,12 +933,8 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
         kind(kind_),
         tables(this) {}
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramProcedure val(this);
-    visitor.Visit(val);
-  }
+  void Accept(ProgramVisitor &visitor) override;
 
-  // Returns `true` if this region is a no-op.
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
@@ -1050,18 +979,15 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
 
   virtual ~Node(void);
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramSeriesRegion val(this);
-    visitor.Visit(val);
-  }
-
-  Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
+  void Accept(ProgramVisitor &visitor) override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
 };
@@ -1076,12 +1002,7 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
 
   virtual ~Node(void);
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramParallelRegion val(this);
-    visitor.Visit(val);
-  }
-
-  Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
+  void Accept(ProgramVisitor &visitor) override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -1089,6 +1010,8 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
               Node<ProgramRegion> *that) const noexcept override;
 
   bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
 };
@@ -1104,12 +1027,7 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  void Accept(ProgramVisitor &visitor) override {
-    ProgramInductionRegion val(this);
-    visitor.Visit(val);
-  }
-
-  Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
+  void Accept(ProgramVisitor &visitor) override;
 
   explicit Node(ProgramImpl *impl, REGION *parent_);
 
@@ -1117,6 +1035,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
 
   // Initial regions that fill up one or more of the inductive vectors.
   UseRef<REGION> init_region;
@@ -1172,7 +1092,7 @@ class ProgramImpl : public User {
 
   void Optimize(void);
 
-  // The dataflow from which this was created.
+  // The data flow representation from which this was created.
   const Query query;
 
   DefList<PROC> procedure_regions;

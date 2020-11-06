@@ -125,10 +125,6 @@ Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
 
-void Program::Accept(ProgramVisitor &visitor) {
-  visitor.Visit(*this);
-}
-
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 

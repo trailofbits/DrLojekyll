@@ -30,6 +30,7 @@ set(ControlFlow_SRCS
     "Program.cpp"
     "Region.cpp"
     "Series.cpp"
+    "Visitor.cpp"
 )
 
 set(ControlFlow_PRIV_DEPS
