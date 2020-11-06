@@ -292,9 +292,15 @@ class DataTable : public program::ProgramNode<DataTable> {
 class DataVector : public program::ProgramNode<DataVector> {
  public:
   VectorKind Kind(void) const noexcept;
+
   unsigned Id(void) const noexcept;
+
   bool IsInputVector(void) const noexcept;
+
   const std::vector<TypeKind> ColumnTypes(void) const noexcept;
+
+  // Visit the users of this vector.
+  void VisitUsers(ProgramVisitor &visitor);
 
  private:
   using program::ProgramNode<DataVector>::ProgramNode;

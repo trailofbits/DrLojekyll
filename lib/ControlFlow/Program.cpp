@@ -549,6 +549,14 @@ const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
   return impl->col_types;
 }
 
+// Visit the users of this vector.
+void DataVector::VisitUsers(ProgramVisitor &visitor) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&] (Node<ProgramRegion> *region, Node<DataVector> *) {
+        region->Accept(visitor);
+      });
+}
+
 // Unique ID of this procedure.
 unsigned ProgramProcedure::Id(void) const noexcept {
   return impl->id;
