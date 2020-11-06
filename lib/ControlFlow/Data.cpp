@@ -73,6 +73,8 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
     }
   }
 
+  // Add additional names to the columns; this is helpful in debugging
+  // output.
   unsigned i = 0u;
   for (auto col : cols) {
     auto table_col = model->table->columns[i++];
@@ -118,6 +120,19 @@ Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
   }
 
   return index;
+}
+
+bool Node<DataVector>::IsRead(void) const {
+  auto is_used = false;
+  ForEachUse<OP>([&] (OP *op, VECTOR *) {
+    if (dynamic_cast<VECTORLOOP *>(op) ||
+        dynamic_cast<TABLEJOIN *>(op) ||
+        dynamic_cast<INDUCTION *>(op) ||
+        dynamic_cast<CALL *>(op)) {
+      is_used = true;
+    }
+  });
+  return is_used;
 }
 
 }  // namespace hyde

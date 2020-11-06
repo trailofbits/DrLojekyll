@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <functional>
+#include <utility>
+
 #include <drlojekyll/Display/DisplayPosition.h>
 
 namespace hyde {
@@ -309,6 +312,9 @@ class Token {
     return position.Column();
   }
 
+  // Returns a hash of this token.
+  uint64_t Hash(void) const noexcept;
+
   // Return the ID of the corresponding code, or `0` if not a string.
   unsigned CodeId(void) const;
 
@@ -332,6 +338,16 @@ class Token {
 
   // Return a fake token at `range`.
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
+
+  inline bool operator==(const Token that) const noexcept {
+    return opaque_data == that.opaque_data &&
+           position == that.position;
+  }
+
+  inline bool operator!=(const Token that) const noexcept {
+    return opaque_data != that.opaque_data ||
+           position != that.position;
+  }
 
  private:
   friend class Lexer;
@@ -359,3 +375,15 @@ class Token {
 };
 
 }  // namespace hyde
+namespace std {
+
+template <>
+struct hash<::hyde::Token> {
+  using argument_type = ::hyde::Token;
+  using result_type = uint64_t;
+  inline uint64_t operator()(::hyde::Token tok) const noexcept {
+    return tok.Hash();
+  }
+};
+
+}  // namespace std

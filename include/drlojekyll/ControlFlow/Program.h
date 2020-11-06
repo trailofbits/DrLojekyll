@@ -30,7 +30,7 @@ class ProgramNode {
   }
 
   inline bool operator!=(ProgramNode<T> that) const {
-    return impl == that.impl;
+    return impl != that.impl;
   }
 
   inline bool operator<(ProgramNode<T> that) const {
@@ -61,6 +61,7 @@ class DataVector;
 
 class Program;
 class ProgramCallRegion;
+class ProgramReturnRegion;
 class ProgramExistenceAssertionRegion;
 class ProgramExistenceCheckRegion;
 class ProgramGenerateRegion;
@@ -74,51 +75,18 @@ class ProgramVectorAppendRegion;
 class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
 class ProgramVectorUniqueRegion;
-class ProgramTableInsertRegion;
+class ProgramTransitionStateRegion;
+class ProgramCheckStateRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
+class ProgramTableScanRegion;
 class ProgramTupleCompareRegion;
-
-// A bare-bones program IR visitor.
-// The corresponding `.Accept()` methods _only_ do visitor pattern
-// double-dispatch, and _don't_ do any recursion on their own.
-// Each subclass of the `ProgramVisitor` class is responsible for controlling
-// the traversal order.
-class ProgramVisitor {
- public:
-  virtual void Visit(DataColumn &val) = 0;
-  virtual void Visit(DataIndex &val) = 0;
-  virtual void Visit(DataTable &val) = 0;
-  virtual void Visit(DataVariable &val) = 0;
-  virtual void Visit(DataVector &val) = 0;
-
-  virtual void Visit(ProgramCallRegion &val) = 0;
-  virtual void Visit(ProgramExistenceAssertionRegion &val) = 0;
-  virtual void Visit(ProgramExistenceCheckRegion &val) = 0;
-  virtual void Visit(ProgramGenerateRegion &val) = 0;
-  virtual void Visit(ProgramInductionRegion &val) = 0;
-  virtual void Visit(ProgramLetBindingRegion &val) = 0;
-  virtual void Visit(ProgramParallelRegion &val) = 0;
-  virtual void Visit(ProgramProcedure &val) = 0;
-  virtual void Visit(ProgramPublishRegion &val) = 0;
-  virtual void Visit(ProgramSeriesRegion &val) = 0;
-  virtual void Visit(ProgramVectorAppendRegion &val) = 0;
-  virtual void Visit(ProgramVectorClearRegion &val) = 0;
-  virtual void Visit(ProgramVectorLoopRegion &val) = 0;
-  virtual void Visit(ProgramVectorUniqueRegion &val) = 0;
-  virtual void Visit(ProgramTableInsertRegion &val) = 0;
-  virtual void Visit(ProgramTableJoinRegion &val) = 0;
-  virtual void Visit(ProgramTableProductRegion &val) = 0;
-  virtual void Visit(ProgramTupleCompareRegion &val) = 0;
-
-  virtual void Visit(Program &val) = 0;
-};
-
 
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  public:
   ProgramRegion(const ProgramCallRegion &);
+  ProgramRegion(const ProgramReturnRegion &);
   ProgramRegion(const ProgramExistenceAssertionRegion &);
   ProgramRegion(const ProgramExistenceCheckRegion &);
   ProgramRegion(const ProgramGenerateRegion &);
@@ -131,14 +99,17 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramVectorClearRegion &);
   ProgramRegion(const ProgramVectorLoopRegion &);
   ProgramRegion(const ProgramVectorUniqueRegion &);
-  ProgramRegion(const ProgramTableInsertRegion &);
+  ProgramRegion(const ProgramTransitionStateRegion &);
+  ProgramRegion(const ProgramCheckStateRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
   ProgramRegion(const ProgramTableProductRegion &);
+  ProgramRegion(const ProgramTableScanRegion &);
   ProgramRegion(const ProgramTupleCompareRegion &);
 
   virtual ~ProgramRegion() {}
 
   bool IsCall(void) const noexcept;
+  bool IsReturn(void) const noexcept;
   bool IsExistenceCheck(void) const noexcept;
   bool IsExistenceAssertion(void) const noexcept;
   bool IsGenerate(void) const noexcept;
@@ -148,9 +119,11 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsVectorClear(void) const noexcept;
   bool IsVectorUnique(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
-  bool IsTableInsert(void) const noexcept;
+  bool IsTransitionState(void) const noexcept;
+  bool IsCheckState(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
   bool IsTableProduct(void) const noexcept;
+  bool IsTableScan(void) const noexcept;
   bool IsSeries(void) const noexcept;
   bool IsParallel(void) const noexcept;
   bool IsPublish(void) const noexcept;
@@ -158,6 +131,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
 
  private:
   friend class ProgramCallRegion;
+  friend class ProgramReturnRegion;
   friend class ProgramExistenceAssertionRegion;
   friend class ProgramExistenceCheckRegion;
   friend class ProgramGenerateRegion;
@@ -171,9 +145,11 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramVectorClearRegion;
   friend class ProgramVectorLoopRegion;
   friend class ProgramVectorUniqueRegion;
-  friend class ProgramTableInsertRegion;
+  friend class ProgramTransitionStateRegion;
+  friend class ProgramCheckStateRegion;
   friend class ProgramTableJoinRegion;
   friend class ProgramTableProductRegion;
+  friend class ProgramTableScanRegion;
   friend class ProgramTupleCompareRegion;
 
   using program::ProgramNode<ProgramRegion>::ProgramNode;
@@ -216,7 +192,9 @@ enum class VariableRole : int {
   kJoinPivot,
   kJoinNonPivot,
   kProductOutput,
-  kFunctorOutput
+  kScanOutput,
+  kFunctorOutput,
+  kParameter
 };
 
 // A variable in the program.
@@ -248,7 +226,8 @@ enum class VectorKind : unsigned {
   kInput,
   kInduction,
   kJoinPivots,
-  kProductInput
+  kProductInput,
+  kTableScan
 };
 
 // A column in a table.
@@ -313,9 +292,15 @@ class DataTable : public program::ProgramNode<DataTable> {
 class DataVector : public program::ProgramNode<DataVector> {
  public:
   VectorKind Kind(void) const noexcept;
+
   unsigned Id(void) const noexcept;
+
   bool IsInputVector(void) const noexcept;
+
   const std::vector<TypeKind> ColumnTypes(void) const noexcept;
+
+  // Visit the users of this vector.
+  void VisitUsers(ProgramVisitor &visitor);
 
  private:
   using program::ProgramNode<DataVector>::ProgramNode;
@@ -323,6 +308,10 @@ class DataVector : public program::ProgramNode<DataVector> {
 
 // A zero or not-zero check on some reference counters that track whether or
 // not some set of tuples exists.
+//
+// This is called an existence check because it models a `there-exists` clause,
+// e.g. `exists : foo(A).` says that if there is any `A` such that `foo(A)` is
+// `true`, then `exists` will have a non-zero value.
 class ProgramExistenceCheckRegion
     : public program::ProgramNode<ProgramExistenceCheckRegion> {
  public:
@@ -346,6 +335,10 @@ class ProgramExistenceCheckRegion
 
 // Increment or decrement a reference counter, asserting that some set of tuples
 // exists or does not exist.
+//
+// This is related to a there-exists clause, and the assertion here is to say
+// "something definitely exits" (i.e. increment), or "something may no longer
+// exist" (i.e. decrement).
 class ProgramExistenceAssertionRegion
     : public program::ProgramNode<ProgramExistenceAssertionRegion> {
  public:
@@ -430,6 +423,7 @@ enum class VectorUsage : unsigned {
   kJoinPivots,
   kProductInputVector,
   kProcedureInputVector,
+  kTableScan
 };
 
 // Loop over a vector.
@@ -487,11 +481,24 @@ VECTOR_OP(ProgramVectorUniqueRegion);
 
 #undef VECTOR_OP
 
-// Insert a tuple into a view.
-class ProgramTableInsertRegion
-    : public program::ProgramNode<ProgramTableInsertRegion> {
+enum class TupleState : unsigned {
+  kPresent,
+  kAbsent,
+  kUnknown,
+  kAbsentOrUnknown
+};
+
+// Set the state of a tuple in a view. In the simplest case, this behaves like
+// a SQL `INSERT` statement: it says that some data exists in a relation. There
+// are two other states that can be set: absent, which is like a `DELETE`, and
+// unknown, which has no SQL equivalent, but it like a tentative `DELETE`. An
+// unknown tuple is one which has been speculatively marked as deleted, and
+// needs to be re-proven in order via alternate means in order for it to be
+// used.
+class ProgramTransitionStateRegion
+    : public program::ProgramNode<ProgramTransitionStateRegion> {
  public:
-  static ProgramTableInsertRegion From(ProgramRegion) noexcept;
+  static ProgramTransitionStateRegion From(ProgramRegion) noexcept;
 
   // The body that conditionally executes if the insert succeeds.
   std::optional<ProgramRegion> Body(void) const noexcept;
@@ -502,10 +509,44 @@ class ProgramTableInsertRegion
 
   DataTable Table(void) const;
 
+  // We check if the tuple's current state is this.
+  TupleState FromState(void) const noexcept;
+
+  // If the tuple's prior state matches `FromState()`, then we change the state
+  // to `ToState()`.
+  TupleState ToState(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTableInsertRegion>::ProgramNode;
+  using program::ProgramNode<ProgramTransitionStateRegion>::ProgramNode;
+};
+
+// Check the state of a tuple. This is sort of like asking if something exists,
+// but has three conditionally executed children, based off of the state.
+// One state is that the tuple os missing from a view. The second state is
+// that the tuple is present in the view. The final state is that we are
+// not sure if the tuple is present or absent, because it has been marked
+// as a candidate for deletion, and thus we need to re-prove it.
+class ProgramCheckStateRegion
+    : public program::ProgramNode<ProgramCheckStateRegion> {
+ public:
+  static ProgramCheckStateRegion From(ProgramRegion) noexcept;
+
+  std::optional<ProgramRegion> IfPresent(void) const noexcept;
+  std::optional<ProgramRegion> IfAbsent(void) const noexcept;
+  std::optional<ProgramRegion> IfUnknown(void) const noexcept;
+
+  unsigned Arity(void) const noexcept;
+
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  DataTable Table(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramCheckStateRegion>::ProgramNode;
 };
 
 // Perform an equi-join between two or more tables, and iterate over the
@@ -586,6 +627,43 @@ class ProgramTableProductRegion
   using program::ProgramNode<ProgramTableProductRegion>::ProgramNode;
 };
 
+// Perform a scan over a table, possibly using an index. If an index is being
+// used the input variables are provided to perform equality matching against
+// column values. The results of the scan fill a vector.
+class ProgramTableScanRegion
+    : public program::ProgramNode<ProgramTableScanRegion> {
+ public:
+  static ProgramTableScanRegion From(ProgramRegion) noexcept;
+
+  // The table being scanned.
+  DataTable Table(void) const noexcept;
+
+  // Optional index being scanned.
+  std::optional<DataIndex> Index(void) const noexcept;
+
+  // The columns used to constrain the scan of the table. These are in the same
+  // order as the entries in `InputVariables()`. This is empty if an index isn't
+  // being used.
+  UsedNodeRange<DataColumn> IndexedColumns(void) const;
+
+  // These are the output columns associated with the table scan. These
+  // do NOT include any indexed columns.
+  UsedNodeRange<DataColumn> SelectedColumns(void) const;
+
+  // The variables being provided for each of the `IndexedColumns()`, which are
+  // used to constrain the scan of the table. This is empty if an index isn't
+  // being used.
+  UsedNodeRange<DataVariable> InputVariables(void) const;
+
+  // The scanned results are filled into this vector.
+  DataVector FilledVector(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramTableScanRegion>::ProgramNode;
+};
+
 // An inductive area in a program. An inductive area is split up into three
 // regions:
 //
@@ -657,9 +735,28 @@ class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
   using program::ProgramNode<ProgramPublishRegion>::ProgramNode;
 };
 
-enum class ProcedureKind : unsigned { kInitializer, kMessageHandler };
+enum class ProcedureKind : unsigned {
+  // Function to initialize all relations. If any relation takes a purely
+  // constant tuple as input, then this function initializes those flows.
+  kInitializer,
 
-// A procedure in the program.
+  // Process an input vector of zero-or-more tuples received from the
+  // network. This is a kind of bottom-up execution of the dataflow.
+  kMessageHandler,
+
+  // Given a tuple as input, return `true` if that tuple is present in the
+  // database. This may do top-down execution of the data flows to re-prove
+  // the tuple.
+  kTupleFinder,
+
+  // Given a tuple as input, this procedure removes it, then tries to prove
+  // everything provable from it, and recursively remove those things. Removal
+  // in this case is really a form of marking, i.e. marking the discovered
+  // tuples as being in an unknown state.
+  kTupleRemover
+};
+
+// A procedure in the program. All procedures return either `true` or `false`.
 class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
  public:
   // Unique ID of this procedure.
@@ -689,7 +786,9 @@ class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
   using program::ProgramNode<ProgramProcedure>::ProgramNode;
 };
 
-// Calls another IR procedure.
+// Calls another IR procedure. All IR procedures return `true` or `false`. This
+// return value can be tested, and if it is, a body can be conditionally
+// executed based off of the result of that test.
 class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
  public:
   static ProgramCallRegion From(ProgramRegion) noexcept;
@@ -702,10 +801,34 @@ class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
   // List of vectors passed as arguments to the procedure.
   UsedNodeRange<DataVector> VectorArguments(void) const;
 
+  // Conditionally executed body, based on how the return value of the
+  // procedure is tested.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+  // Should we execute the body if the called procedure returns `true`?
+  bool ExecuteBodyIfReturnIsTrue(void) const noexcept;
+
+  // Should we execute the body if the called procedure returns `false`?
+  bool ExecuteBodyIfReturnIsFalse(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 
   using program::ProgramNode<ProgramCallRegion>::ProgramNode;
+};
+
+// Returns `true` or `false` from a procedure.
+class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
+ public:
+  static ProgramReturnRegion From(ProgramRegion) noexcept;
+
+  bool ReturnsTrue(void) const noexcept;
+  bool ReturnsFalse(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramReturnRegion>::ProgramNode;
 };
 
 // A program in its entirety.
@@ -732,13 +855,45 @@ class Program {
   Program(Program &&) noexcept = default;
   Program &operator=(const Program &) = default;
   Program &operator=(Program &&) noexcept = default;
-
-  void Accept(ProgramVisitor &visitor);
-
  private:
   Program(std::shared_ptr<ProgramImpl> impl_);
 
   std::shared_ptr<ProgramImpl> impl;
+};
+
+// `ProgramRegion` instances have an `Accept` method that will dispatch to the
+// appropriate method in this class.
+//
+// NOTE(brad): This class only does dispatching, it doesn't do traversal.
+class ProgramVisitor {
+ public:
+  virtual ~ProgramVisitor(void);
+  virtual void Visit(DataColumn val);
+  virtual void Visit(DataIndex val);
+  virtual void Visit(DataTable val);
+  virtual void Visit(DataVariable val);
+  virtual void Visit(DataVector val);
+  virtual void Visit(ProgramCallRegion val);
+  virtual void Visit(ProgramReturnRegion val);
+  virtual void Visit(ProgramExistenceAssertionRegion val);
+  virtual void Visit(ProgramExistenceCheckRegion val);
+  virtual void Visit(ProgramGenerateRegion val);
+  virtual void Visit(ProgramInductionRegion val);
+  virtual void Visit(ProgramLetBindingRegion val);
+  virtual void Visit(ProgramParallelRegion val);
+  virtual void Visit(ProgramProcedure val);
+  virtual void Visit(ProgramPublishRegion val);
+  virtual void Visit(ProgramSeriesRegion val);
+  virtual void Visit(ProgramVectorAppendRegion val);
+  virtual void Visit(ProgramVectorClearRegion val);
+  virtual void Visit(ProgramVectorLoopRegion val);
+  virtual void Visit(ProgramVectorUniqueRegion val);
+  virtual void Visit(ProgramTransitionStateRegion val);
+  virtual void Visit(ProgramCheckStateRegion val);
+  virtual void Visit(ProgramTableJoinRegion val);
+  virtual void Visit(ProgramTableProductRegion val);
+  virtual void Visit(ProgramTableScanRegion val);
+  virtual void Visit(ProgramTupleCompareRegion val);
 };
 
 }  // namespace hyde

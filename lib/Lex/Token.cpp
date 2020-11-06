@@ -140,6 +140,11 @@ bool Token::IsType(void) const {
   }
 }
 
+// Returns a hash of this token.
+uint64_t Token::Hash(void) const noexcept {
+  return opaque_data ^ position.Index();
+}
+
 // Return the ID of the corresponding string, or `0` if not a string.
 unsigned Token::CodeId(void) const {
   if (Lexeme() == ::hyde::Lexeme::kLiteralCode) {

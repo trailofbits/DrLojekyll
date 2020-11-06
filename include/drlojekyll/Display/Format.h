@@ -21,6 +21,10 @@ class OutputStream {
     indent.reserve(16);
   }
 
+  OutputStream &DisplayNameOr(DisplayPosition pos, std::string_view);
+  OutputStream &LineNumberOr(DisplayPosition pos, std::string_view);
+  OutputStream &ColumnNumberOr(DisplayPosition pos, std::string_view);
+
   OutputStream &operator<<(DisplayRange range);
 
   inline OutputStream &operator<<(OutputStream &that) {

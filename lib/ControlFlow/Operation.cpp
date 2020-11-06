@@ -6,14 +6,17 @@ namespace hyde {
 
 Node<ProgramOperationRegion>::~Node(void) {}
 Node<ProgramCallRegion>::~Node(void) {}
+Node<ProgramReturnRegion>::~Node(void) {}
 Node<ProgramExistenceAssertionRegion>::~Node(void) {}
 Node<ProgramExistenceCheckRegion>::~Node(void) {}
 Node<ProgramGenerateRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
 Node<ProgramPublishRegion>::~Node(void) {}
-Node<ProgramTableInsertRegion>::~Node(void) {}
+Node<ProgramTransitionStateRegion>::~Node(void) {}
+Node<ProgramCheckStateRegion>::~Node(void) {}
 Node<ProgramTableJoinRegion>::~Node(void) {}
 Node<ProgramTableProductRegion>::~Node(void) {}
+Node<ProgramTableScanRegion>::~Node(void) {}
 Node<ProgramTupleCompareRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
@@ -30,6 +33,10 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
 }
 
 Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramReturnRegion> *Node<ProgramOperationRegion>::AsReturn(void) noexcept {
   return nullptr;
 }
 
@@ -63,8 +70,13 @@ Node<ProgramOperationRegion>::AsLetBinding(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramTableInsertRegion> *
-Node<ProgramOperationRegion>::AsTableInsert(void) noexcept {
+Node<ProgramTransitionStateRegion> *
+Node<ProgramOperationRegion>::AsTransitionState(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramCheckStateRegion> *
+Node<ProgramOperationRegion>::AsCheckState(void) noexcept {
   return nullptr;
 }
 
@@ -75,6 +87,11 @@ Node<ProgramOperationRegion>::AsTableJoin(void) noexcept {
 
 Node<ProgramTableProductRegion> *
 Node<ProgramOperationRegion>::AsTableProduct(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramTableScanRegion> *
+Node<ProgramOperationRegion>::AsTableScan(void) noexcept {
   return nullptr;
 }
 
@@ -200,19 +217,19 @@ Node<ProgramVectorAppendRegion>::AsVectorAppend(void) noexcept {
   return this;
 }
 
-Node<ProgramTableInsertRegion> *
-Node<ProgramTableInsertRegion>::AsTableInsert(void) noexcept {
+Node<ProgramTransitionStateRegion> *
+Node<ProgramTransitionStateRegion>::AsTransitionState(void) noexcept {
   return this;
 }
 
-bool Node<ProgramTableInsertRegion>::Equals(
+bool Node<ProgramTransitionStateRegion>::Equals(
     EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     return false;
   }
 
-  const auto that = that_op->AsTableInsert();
+  const auto that = that_op->AsTransitionState();
   if (!that || table.get() != that->table.get()) {
     return false;
   }
@@ -304,6 +321,11 @@ Node<ProgramTableJoinRegion>::AsTableJoin(void) noexcept {
 
 Node<ProgramTableProductRegion> *
 Node<ProgramTableProductRegion>::AsTableProduct(void) noexcept {
+  return this;
+}
+
+Node<ProgramTableScanRegion> *
+Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
   return this;
 }
 
@@ -464,6 +486,39 @@ bool Node<ProgramTableProductRegion>::Equals(
   }
 }
 
+bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
+  return !output_vector->IsRead();
+}
+
+bool Node<ProgramTableScanRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsTableScan();
+  if (!that || table.get() != that->table.get() ||
+      index.get() != that->index.get() ||
+      (!this->OP::body.get()) != (!that->OP::body.get())) {
+    return false;
+  }
+
+  const auto num_vars = this->in_vars.Size();
+  if (that->in_vars.Size() != num_vars) {
+    assert(false);
+    return false;
+  }
+
+  for (auto i = 0u; i < num_vars; ++i) {
+    if (!eq.Contains(this->in_vars[i], that->in_vars[i])) {
+      return false;
+    }
+  }
+
+  return eq.Contains(this->output_vector.get(), that->output_vector.get());
+}
+
 Node<ProgramTupleCompareRegion> *
 Node<ProgramTupleCompareRegion>::AsTupleCompare(void) noexcept {
   return this;
@@ -570,6 +625,10 @@ bool Node<ProgramCallRegion>::Equals(
     return false;
   }
 
+  if (!body != !that->body) {
+    return false;
+  }
+
   for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
     if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
       return false;
@@ -580,6 +639,11 @@ bool Node<ProgramCallRegion>::Equals(
     if (!eq.Contains(arg_vecs[i], that->arg_vecs[i])) {
       return false;
     }
+  }
+
+  // This function tests the true/false return value of the called procedure.
+  if (body && !body->Equals(eq, that->body.get())) {
+    return false;
   }
 
   if (called_proc == that->called_proc) {
@@ -636,6 +700,93 @@ bool Node<ProgramPublishRegion>::Equals(
     if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
       return false;
     }
+  }
+
+  return true;
+}
+
+
+Node<ProgramReturnRegion> *Node<ProgramReturnRegion>::AsReturn(void) noexcept {
+  return this;
+}
+
+bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
+  return false;
+}
+
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramReturnRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsReturn();
+  if (!that) {
+    return false;
+  }
+
+  return this->OP::op == that->OP::op;
+}
+
+Node<ProgramCheckStateRegion> *
+Node<ProgramCheckStateRegion>::AsCheckState(void) noexcept {
+  return this;
+}
+
+bool Node<ProgramCheckStateRegion>::IsNoOp(void) const noexcept {
+  if (body && !body->IsNoOp()) {
+    return false;
+  }
+
+  if (absent_body && !absent_body->IsNoOp()) {
+    return false;
+  }
+
+  if (unknown_body && !unknown_body->IsNoOp()) {
+    return false;
+  }
+
+  return true;
+}
+
+// Returns `true` if `this` and `that` are structurally equivalent (after
+// variable renaming).
+bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
+            Node<ProgramRegion> *that_) const noexcept {
+  const auto op = that_->AsOperation();
+  if (!op) {
+    return false;
+  }
+
+  const auto that = op->AsCheckState();
+  if (!that) {
+    return false;
+  }
+
+  if (this->table != that->table) {
+    return false;
+  }
+
+  if (!this->body != !that->body ||
+      !this->absent_body != !that->absent_body ||
+      !this->unknown_body != !that->unknown_body) {
+    return false;
+  }
+
+  const auto num_cols = this->col_values.Size();
+  for (auto i = 0u; i < num_cols; ++i) {
+    if (!eq.Contains(this->col_values[i], that->col_values[i])) {
+      return false;
+    }
+  }
+
+  if ((body && !body->Equals(eq, that->body.get())) ||
+      (absent_body && !absent_body->Equals(eq, that->absent_body.get())) ||
+      (unknown_body && !unknown_body->Equals(eq, that->unknown_body.get()))) {
+    return false;
   }
 
   return true;

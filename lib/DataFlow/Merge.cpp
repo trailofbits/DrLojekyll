@@ -111,9 +111,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     }
 
     // If we're merging a merge, then copy the lower merge into this one.
-    if (auto incoming_merge = view->AsMerge();
-        incoming_merge &&
-        is_equivalence_class == incoming_merge->is_equivalence_class) {
+    if (auto incoming_merge = view->AsMerge(); incoming_merge) {
       non_local_changes = true;
       is_canonical = false;
 
@@ -150,6 +148,15 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     is_canonical = true;
     hash = 0;
     return non_local_changes;
+  }
+
+  // Path compression.
+  if (non_local_changes) {
+    UseList<VIEW> new_merged_views(this);
+    for (auto view : unique_merged_views) {
+      new_merged_views.AddUse(view);
+    }
+    merged_views.Swap(new_merged_views);
   }
 
   // There's an unused column; go and guard the incoming views with TUPLEs that

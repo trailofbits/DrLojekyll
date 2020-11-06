@@ -769,10 +769,6 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
-
-  // Should all the incoming merged views be treated as an equivalence class?
-  // That is, only one of them should actually be used.
-  bool is_equivalence_class{false};
 };
 
 using MERGE = Node<QueryMerge>;

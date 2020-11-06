@@ -204,17 +204,10 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   if (const auto table = TABLE::GetOrCreate(impl, pred_view);
       table != last_model) {
 
-    const auto insert =
-        impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
-
-    for (auto col : pred_view.Columns()) {
-      const auto var = parent->VariableFor(impl, col);
-      insert->col_values.AddUse(var);
-    }
-
-    UseRef<TABLE>(insert, table).Swap(insert->table);
-    UseRef<REGION>(parent, insert).Swap(parent->body);
-    parent = insert;
+    parent = BuildInsertCheck(impl, pred_view, context, parent, table,
+                              QueryView(view).CanReceiveDeletions(),
+                              pred_view.Columns());
+    last_model = table;
   }
 
   auto &action = context.view_to_work_item[view];

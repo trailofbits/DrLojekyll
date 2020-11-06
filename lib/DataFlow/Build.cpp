@@ -708,7 +708,7 @@ static COL *FindColVarInView(ClauseContext &context, VIEW *view,
   return context.col_id_to_constant[id];
 }
 
-// Propose `view` as being a source of data for the clause head. This means
+// Propose `view` as being a source of data for the clause head.
 static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
                                 ClauseContext &context, const ErrorLog &log,
                                 VIEW *view, bool report = false) {
@@ -769,10 +769,10 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
     context.result = tuple;
 
   } else if (tuple_hash == context.result->Hash()) {
+    assert(false && "TODO: What was this??");
 
   } else if (auto other_tuple = context.result->AsTuple(); other_tuple) {
     MERGE *merge = query->merges.Create();
-    merge->is_equivalence_class = true;
     merge->merged_views.AddUse(tuple);
     merge->merged_views.AddUse(other_tuple);
 
@@ -1042,7 +1042,6 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       assert(out_view->columns.Size() == result->columns.Size());
 
       auto merge = query->merges.Create();
-      merge->is_equivalence_class = true;
 
       // Create output columns for the merge.
       for (auto col : result->columns) {

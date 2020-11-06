@@ -67,11 +67,7 @@ const char *Node<QueryAggregate>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryMerge>::KindName(void) const noexcept {
-  if (is_equivalence_class) {
-    return "EQ-CLASS";
-  } else {
-    return "UNION";
-  }
+  return "UNION";
 }
 
 const char *Node<QueryCompare>::KindName(void) const noexcept {

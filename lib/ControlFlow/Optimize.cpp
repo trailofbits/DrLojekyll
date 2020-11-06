@@ -5,6 +5,10 @@
 namespace hyde {
 namespace {
 
+// TODO(pag): Implement an optimization that checks to see if two
+//            `ProgramCheckStateRegion` operate on the same tuple in
+//            parallel, and if so, merge their bodies.
+
 static bool OptimizeImpl(PARALLEL *par) {
   if (!par->IsUsed() || !par->parent) {
     return false;
