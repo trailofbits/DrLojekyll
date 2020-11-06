@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <functional>
 #include <utility>
 
 #include <drlojekyll/Display/DisplayPosition.h>
