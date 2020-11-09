@@ -6,8 +6,9 @@ set(CodeGen_PUBLIC_H
 )
 
 set(CodeGen_SRCS
-    "CodeGen.cpp"
+    "CPlusPlus.cpp"
     "MessageSerialization.cpp"
+    "Python.cpp"
 )
 
 set(CodeGen_PRIV_DEPS

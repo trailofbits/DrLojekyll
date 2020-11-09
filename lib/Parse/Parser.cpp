@@ -1000,13 +1000,6 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       // Specify that the generated C++ code should contain a pre-processor
       // include of some file.
-      case Lexeme::kHashIncludeStmt:
-        ReadLine();
-        ParseInclude(module);
-        continue;
-
-      // Specify that the generated C++ code should contain a pre-processor
-      // include of some file.
       //
       //    #inline <!
       //    ...
@@ -1540,13 +1533,6 @@ Parser::ParseStream(std::istream &is,
 // Add a directory as a search path for files.
 void Parser::AddModuleSearchPath(std::string_view path) const {
   impl->context->import_search_paths.emplace_back(path);
-}
-
-// Add a directory as a search path for includes.
-void Parser::AddIncludeSearchPath(std::string_view path,
-                                  IncludeSearchPathKind kind) const {
-  unsigned ukind = static_cast<unsigned>(kind);
-  impl->context->include_search_paths[ukind].emplace_back(path);
 }
 
 }  // namespace hyde

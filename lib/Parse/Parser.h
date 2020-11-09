@@ -35,14 +35,10 @@ class SharedParserContext {
     // FIXME(blarsen): grabbing the current path in parser construction is a hidden dependency
     std::filesystem::path cwd = std::filesystem::current_path();
     import_search_paths.push_back(cwd);
-    include_search_paths[1].push_back(cwd);
   }
 
   // Search paths for looking for imports.
   std::vector<std::filesystem::path> import_search_paths;
-
-  // Search paths for looking for includes.
-  std::vector<std::filesystem::path> include_search_paths[2];
 
   // All parsed modules.
   Node<ParsedModule> *root_module{nullptr};

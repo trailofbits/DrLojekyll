@@ -643,11 +643,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               interpreter.basic.spelling_width = 8;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashFunctorDecl);
-
-            } else if (impl->data == "#include") {
-              interpreter.basic.spelling_width = 8;
-              interpreter.basic.lexeme =
-                  static_cast<uint8_t>(Lexeme::kHashIncludeStmt);
             }
           }
           break;

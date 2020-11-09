@@ -108,12 +108,6 @@ enum class Lexeme : uint8_t {
   // store of state.
   kHashFunctorDecl,
 
-  // Used to include a C/C++ header our source file. This is translated down
-  // into an equivalent include statement in generated C++ code.
-  //
-  //    #include "path"
-  kHashIncludeStmt,
-
   // Used to insert some C/C++ code "inline" into the Datalog code. This is
   // an alternative to `#include`, and may itself contain `#include`s. The
   // usage looks like:
