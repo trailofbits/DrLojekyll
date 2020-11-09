@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace hyde {
 
@@ -284,6 +285,12 @@ class DataTable : public program::ProgramNode<DataTable> {
   // Indices on this table.
   DefinedNodeRange<DataIndex> Indices(void) const;
 
+  // Visit the users of this table.
+  void VisitUsers(ProgramVisitor &visitor);
+
+  // Apply a function to each user.
+  void ForEachUser(std::function<void(ProgramRegion)> cb);
+
  private:
   using program::ProgramNode<DataTable>::ProgramNode;
 };
@@ -301,6 +308,9 @@ class DataVector : public program::ProgramNode<DataVector> {
 
   // Visit the users of this vector.
   void VisitUsers(ProgramVisitor &visitor);
+
+  // Apply a function to each user.
+  void ForEachUser(std::function<void(ProgramRegion)> cb);
 
  private:
   using program::ProgramNode<DataVector>::ProgramNode;
@@ -897,3 +907,51 @@ class ProgramVisitor {
 };
 
 }  // namespace hyde
+namespace std {
+
+template <>
+struct hash<::hyde::DataVariable> {
+  using argument_type = ::hyde::DataVariable;
+  using result_type = unsigned;
+  inline unsigned operator()(::hyde::DataVariable var) const noexcept {
+    return var.Id();
+  }
+};
+
+template <>
+struct hash<::hyde::DataVector> {
+  using argument_type = ::hyde::DataVector;
+  using result_type = unsigned;
+  inline unsigned operator()(::hyde::DataVector vec) const noexcept {
+    return vec.Id();
+  }
+};
+
+template <>
+struct hash<::hyde::DataColumn> {
+  using argument_type = ::hyde::DataColumn;
+  using result_type = unsigned;
+  inline unsigned operator()(::hyde::DataColumn col) const noexcept {
+    return col.Id();
+  }
+};
+
+template <>
+struct hash<::hyde::DataTable> {
+  using argument_type = ::hyde::DataTable;
+  using result_type = unsigned;
+  inline unsigned operator()(::hyde::DataTable table) const noexcept {
+    return table.Id();
+  }
+};
+
+template <>
+struct hash<::hyde::DataIndex> {
+  using argument_type = ::hyde::DataIndex;
+  using result_type = unsigned;
+  inline unsigned operator()(::hyde::DataIndex index) const noexcept {
+    return index.Id();
+  }
+};
+
+}  // namespace std

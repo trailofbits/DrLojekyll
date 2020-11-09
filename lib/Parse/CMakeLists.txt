@@ -22,7 +22,6 @@ set(Parse_SRCS
     "Format.cpp"
     "Functor.cpp"
     "Import.cpp"
-    "Include.cpp"
     "Inline.cpp"
     "Message.cpp"
     "ModuleIterator.cpp"

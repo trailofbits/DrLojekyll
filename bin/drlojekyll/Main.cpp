@@ -30,9 +30,9 @@ namespace {
 
 OutputStream *gDOTStream = nullptr;
 OutputStream *gDRStream = nullptr;
-OutputStream *gCodeStream = nullptr;
+OutputStream *gCxxCodeStream = nullptr;
+OutputStream *gPyCodeStream = nullptr;
 OutputStream *gIRStream = nullptr;
-
 
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
@@ -49,8 +49,11 @@ static int CompileModule(hyde::DisplayManager display_manager,
         gIRStream->Flush();
       }
 
-      if (gCodeStream) {
-        hyde::GenerateCode(*program_opt, *gCodeStream);
+      if (gCxxCodeStream) {
+        hyde::GenerateCxxCode(*program_opt, *gCxxCodeStream);
+      }
+      if (gPyCodeStream) {
+        hyde::GeneratePythonCode(*program_opt, *gPyCodeStream);
       }
     }
 
@@ -117,14 +120,13 @@ static int HelpMessage(const char *argv[]) {
       << "OUTPUT OPTIONS:" << std::endl
       << "  -ir-out <PATH>        Emit IR output to PATH." << std::endl
       << "  -cpp-out <PATH>       Emit transpiled C++ output to PATH." << std::endl
+      << "  -py-out <PATH>        Emit transpiled Python output to PATH." << std::endl
       << "  -dr-out <PATH>        Emit an amalgamation of all the input and transitively" << std::endl
       << "                        imported modules to PATH." << std::endl
       << "  -dot-out <PATH>       Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
       << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
-      << "  -isystem <PATH>       Directory where system C++ include files can be found." << std::endl
-      << "  -I <PATH>             Directory where user C++ include files can be found." << std::endl
       << std::endl
       << "OTHER OPTIONS:" << std::endl
       << "  -help, -h             Show help and exit." << std::endl
@@ -193,6 +195,7 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
+  std::unique_ptr<hyde::FileStream> py_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -208,7 +211,19 @@ extern "C" int main(int argc, const char *argv[]) {
             << " must be followed by a file path for C++ code output";
       } else {
         cpp_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gCodeStream = &(cpp_out->os);
+        hyde::gCxxCodeStream = &(cpp_out->os);
+      }
+
+    // C++ output file of the transpiled from the Dr. Lojekyll source code.
+    } else if (!strcmp(argv[i], "-py-out") || !strcmp(argv[i], "--py-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument " << argv[i]
+            << " must be followed by a file path for Python code output";
+      } else {
+        py_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gPyCodeStream = &(py_out->os);
       }
 
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
@@ -256,27 +271,6 @@ extern "C" int main(int argc, const char *argv[]) {
       const char *path = argv[++i];
 
       parser.AddModuleSearchPath(path);
-
-    // Include file search path.
-    } else if (!strcmp(argv[i], "-isystem")) {
-      ++i;
-      if (i >= argc) {
-        error_log.Append()
-            << "Command-line argument '-isystem' must be followed by a directory path";
-      } else {
-        parser.AddIncludeSearchPath(argv[i], hyde::Parser::kSystemInclude);
-      }
-
-    // Include file search path.
-    } else if (strstr(argv[i], "-I")) {
-      if (i >= argc) {
-        error_log.Append()
-            << "Command-line argument '-I' must be followed by a directory path";
-        continue;
-      }
-      const char *path = argv[++i];
-
-      parser.AddIncludeSearchPath(path, hyde::Parser::kUserInclude);
 
     // Help message :-)
     } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||

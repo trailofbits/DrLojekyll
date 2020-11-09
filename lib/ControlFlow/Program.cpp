@@ -533,6 +533,22 @@ unsigned DataTable::Id(void) const noexcept {
   return impl->id;
 }
 
+// Visit the users of this vector.
+void DataTable::VisitUsers(ProgramVisitor &visitor) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&] (Node<ProgramRegion> *region, Node<DataTable> *) {
+        region->Accept(visitor);
+      });
+}
+
+// Apply a function to each user.
+void DataTable::ForEachUser(std::function<void(ProgramRegion)> cb) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&] (Node<ProgramRegion> *region, Node<DataTable> *) {
+        cb(region);
+      });
+}
+
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;
 }
@@ -554,6 +570,14 @@ void DataVector::VisitUsers(ProgramVisitor &visitor) {
   impl->ForEachUse<Node<ProgramRegion>>(
       [&] (Node<ProgramRegion> *region, Node<DataVector> *) {
         region->Accept(visitor);
+      });
+}
+
+// Apply a function to each user.
+void DataVector::ForEachUser(std::function<void(ProgramRegion)> cb) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&] (Node<ProgramRegion> *region, Node<DataVector> *) {
+        cb(region);
       });
 }
 
