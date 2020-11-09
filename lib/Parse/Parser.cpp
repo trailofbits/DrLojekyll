@@ -1392,6 +1392,40 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
   return prev_num_errors == log.Size();
 }
 
+// Check that if we have any deletion clause, i.e. `!foo(...) : bar(...).`, that
+// all positive clauses of `foo(...)` depend directly on a message.
+static bool CheckDeletions(Node<ParsedModule> *root_module,
+                           const ErrorLog &log) {
+
+  auto all_good = true;
+  for (auto module : root_module->all_modules) {
+    for (auto del_clause : module->deletion_clauses) {
+      const auto decl = del_clause->declaration;
+
+      // Check that all other insertions depend on messages? The key here is to
+      // not permit a situation where you ask to remove a tuple, but where that
+      // tuple is independently provable via multiple "paths" (that don't use
+      // messages). Because a message is ultimately ephemeral, there is no prior
+      // record of its receipt per se, and so there is no prior evidence to re-
+      // prove a clause head that we're asking to remove.
+      for (const auto &clause : decl->context->clauses) {
+        if (!clause->depends_on_messages) {
+          auto err = log.Append(ParsedClause(del_clause).SpellingRange(),
+                                del_clause->negation.Position());
+          err << "All positive clauses of " << decl->name << '/'
+              << decl->parameters.size() << " must directly depend on a message"
+              << " because of the presence of a deletion clause";
+
+          auto note = err.Note(ParsedClause(clause.get()).SpellingRange());
+          note << "Clause without a direct message dependency is here";
+          all_good = false;
+        }
+      }
+    }
+  }
+  return all_good;
+}
+
 // Parse a display, returning the parsed module.
 //
 // NOTE(pag): Due to display caching, this may return a prior parsed module,
@@ -1442,7 +1476,8 @@ ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   // Only do usage and type checking when we're done parsing the root module.
   if (module->root_module == module.get()) {
     if (!AllDeclarationsAreDefined(module.get(), context->error_log) ||
-        !AssignTypes(module.get())) {
+        !AssignTypes(module.get()) ||
+        !CheckDeletions(module.get(), context->error_log)) {
       return std::nullopt;
     }
   }

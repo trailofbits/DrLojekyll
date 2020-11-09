@@ -49,11 +49,11 @@ class DisplayPosition {
     return !IsValid();
   }
 
-  inline bool operator==(DisplayPosition that) const {
+  inline bool operator==(DisplayPosition that) const noexcept {
     return opaque_data == that.opaque_data;
   }
 
-  inline bool operator!=(DisplayPosition that) const {
+  inline bool operator!=(DisplayPosition that) const noexcept {
     return opaque_data != that.opaque_data;
   }
 

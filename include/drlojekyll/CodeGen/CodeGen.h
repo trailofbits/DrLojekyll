@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include <drlojekyll/ControlFlow/Program.h>
-#include <drlojekyll/Display/Format.h>
-
 namespace hyde {
+
+class Program;
+class OutputStream;
 
 // Emits transpiled C++ code for the given program to `os`.
 void GenerateCode(Program &module, OutputStream &os);

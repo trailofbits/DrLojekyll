@@ -6,8 +6,6 @@ set(CodeGen_PUBLIC_H
 )
 
 set(CodeGen_SRCS
-    "CodeGen.h"
-
     "CodeGen.cpp"
     "MessageSerialization.cpp"
 )

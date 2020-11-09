@@ -224,19 +224,12 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  const auto table = TABLE::GetOrCreate(impl, view);
-  if (last_model != table) {
-    const auto insert =
-        impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
-    UseRef<TABLE>(insert, table).Swap(insert->table);
-    UseRef<REGION>(parent, insert).Swap(parent->body);
-
-    for (auto col : view.Columns()) {
-      const auto var = parent->VariableFor(impl, col);
-      insert->col_values.AddUse(var);
-    }
-
-    parent = insert;
+  if (const auto table = TABLE::GetOrCreate(impl, view);
+      last_model != table) {
+    parent = BuildInsertCheck(impl, view, context, parent, table,
+                              QueryView(view).CanReceiveDeletions(),
+                              view.Columns());
+    last_model = table;
   }
 
   // This is the first time seeing any MERGE associated with this induction.
@@ -286,6 +279,57 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
       break;
     default: assert(false); break;
   }
+}
+
+// Build a top-down checker on an induction.
+void BuildTopDownInductionChecker(
+    ProgramImpl *impl, Context &context, PROC *proc,
+    QueryMerge view, std::vector<QueryColumn> &view_cols,
+    TABLE *) {
+
+  const auto table = TABLE::GetOrCreate(impl, view);
+
+  auto build_rule_checks = [=, &context] (PARALLEL *par) {
+    for (auto pred_view : view.MergedViews()) {
+      // If it's a DELETE, then we can't really
+      if (pred_view.IsInsert() && QueryInsert::From(pred_view).IsDelete()) {
+        continue;
+      }
+
+      const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+            impl, context, proc, view, view_cols, table, pred_view,
+            table);
+
+      rec_check->ExecuteAlongside(impl, par);
+    }
+  };
+
+  auto build_unknown = [=] (ProgramImpl *, REGION *parent) -> REGION * {
+
+    // If this induction can't receive deletions, then there's nothing else to
+    // do because if it's not present here, then it won't be present in any of
+    // the children.
+    if (!QueryView::From(view).CanReceiveDeletions()) {
+      return BuildStateCheckCaseReturnFalse(impl, parent);
+    }
+
+    return BuildTopDownCheckerResetAndProve(
+        impl, table, parent, view.Columns(), build_rule_checks);
+  };
+
+  const auto region = BuildMaybeScanPartial(
+      impl, view, view_cols, table, proc,
+      [&] (REGION *parent) -> REGION * {
+
+    return BuildTopDownCheckerStateCheck(
+        impl, proc, table, view.Columns(),
+        BuildStateCheckCaseReturnTrue,
+        BuildStateCheckCaseNothing,
+        build_unknown);
+  });
+
+
+  UseRef<REGION>(proc, region).Swap(proc->body);
 }
 
 }  // namespace hyde

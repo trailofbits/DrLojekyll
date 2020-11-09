@@ -227,6 +227,69 @@ bool QueryView::CanProduceDeletions(void) const noexcept {
   return impl->can_produce_deletions;
 }
 
+// Returns `true` if all users of this view use all the columns of this
+// view.
+bool QueryView::AllUsersUseAllColumns(void) const noexcept {
+  const auto is_insert = IsInsert();
+  auto num_cols = Columns().size();
+  if (is_insert) {
+    num_cols = QueryInsert::From(*this).NumInputColumns();
+  }
+
+  std::vector<bool> used_cols(num_cols);
+  for (auto succ : Successors()) {
+    succ.ForEachUse([&] (QueryColumn in_col, InputColumnRole,
+                         std::optional<QueryColumn> out_col) {
+      if (QueryView::Containing(in_col) == *this) {
+        if (is_insert) {  // `out_col` is a select.
+          used_cols[*(out_col->Index())] = true;
+        } else {
+
+          used_cols[*(in_col.Index())] = true;
+        }
+      }
+    });
+
+    for (auto i = 0u; i < num_cols; ++i) {
+      auto is_used_ref = used_cols[i];
+      if (!is_used_ref) {
+        return false;  // Found an unused column for `succ`.
+      }
+
+      // Reset for the next successor.
+      is_used_ref = false;
+    }
+  }
+
+  return true;
+}
+
+// Returns `true` if this view has a single predecessor, and if all of the
+// columns of that predecessor are used.
+bool QueryView::AllColumnsOfSinglePredecessorAreUsed(void) const noexcept {
+  const auto preds = Predecessors();
+  if (preds.size() != 1) {
+    return false;
+  }
+
+  const auto pred = preds[0];
+  std::vector<bool> is_used(pred.Columns().size());
+  this->ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                       std::optional<QueryColumn>) {
+    if (QueryView::Containing(in_col) == pred) {
+      is_used[*(in_col.Index())] = true;
+    }
+  });
+
+  for (auto col_is_used : is_used) {
+    if (!col_is_used) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Returns the depth of this node in the graph. This is defined as depth
 // from an input (associated with a message receive) node, where the deepest
 // nodes are typically responses to queries, or message publications.
