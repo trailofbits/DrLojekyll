@@ -134,6 +134,10 @@ ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
+void ProgramRegion::Accept(ProgramVisitor &visitor) const {
+  impl->Accept(visitor);
+}
+
 bool ProgramRegion::IsInduction(void) const noexcept {
   return impl->AsInduction() != nullptr;
 }
@@ -294,6 +298,7 @@ USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
 USED_RANGE(ProgramTransitionStateRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramCheckStateRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, Columns, DataColumn, columns)
+USED_RANGE(DataIndex, MappedColumns, DataColumn, mapped_columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
 USED_RANGE(ProgramTupleCompareRegion, RHS, DataVariable, rhs_vars)
 USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
@@ -335,8 +340,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
       return VectorUsage::kProductInputVector;
     case ProgramOperation::kScanTable:
     case ProgramOperation::kLoopOverScanVector:
-    case ProgramOperation::kClearScanVector:
-      return VectorUsage::kTableScan;
+    case ProgramOperation::kClearScanVector: return VectorUsage::kTableScan;
     default: assert(false); return VectorUsage::kInvalid;
   }
 }
@@ -536,7 +540,7 @@ unsigned DataTable::Id(void) const noexcept {
 // Visit the users of this vector.
 void DataTable::VisitUsers(ProgramVisitor &visitor) {
   impl->ForEachUse<Node<ProgramRegion>>(
-      [&] (Node<ProgramRegion> *region, Node<DataTable> *) {
+      [&](Node<ProgramRegion> *region, Node<DataTable> *) {
         region->Accept(visitor);
       });
 }
@@ -544,9 +548,7 @@ void DataTable::VisitUsers(ProgramVisitor &visitor) {
 // Apply a function to each user.
 void DataTable::ForEachUser(std::function<void(ProgramRegion)> cb) {
   impl->ForEachUse<Node<ProgramRegion>>(
-      [&] (Node<ProgramRegion> *region, Node<DataTable> *) {
-        cb(region);
-      });
+      [&](Node<ProgramRegion> *region, Node<DataTable> *) { cb(region); });
 }
 
 VectorKind DataVector::Kind(void) const noexcept {
@@ -568,7 +570,7 @@ const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
 // Visit the users of this vector.
 void DataVector::VisitUsers(ProgramVisitor &visitor) {
   impl->ForEachUse<Node<ProgramRegion>>(
-      [&] (Node<ProgramRegion> *region, Node<DataVector> *) {
+      [&](Node<ProgramRegion> *region, Node<DataVector> *) {
         region->Accept(visitor);
       });
 }
@@ -576,9 +578,7 @@ void DataVector::VisitUsers(ProgramVisitor &visitor) {
 // Apply a function to each user.
 void DataVector::ForEachUser(std::function<void(ProgramRegion)> cb) {
   impl->ForEachUse<Node<ProgramRegion>>(
-      [&] (Node<ProgramRegion> *region, Node<DataVector> *) {
-        cb(region);
-      });
+      [&](Node<ProgramRegion> *region, Node<DataVector> *) { cb(region); });
 }
 
 // Unique ID of this procedure.
