@@ -777,6 +777,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
+  NodeRange<ParsedParameter> Parameters(void) const;
   NodeRange<ParsedMessage> Redeclarations(void) const;
   NodeRange<ParsedClause> Clauses(void) const;
   NodeRange<ParsedPredicate> PositiveUses(void) const;

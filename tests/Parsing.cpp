@@ -4,9 +4,11 @@
 #include <string>
 
 #include "UnitTests.h"
+#include "drlojekyll/CodeGen/MessageSerialization.h"
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
 #include "drlojekyll/Parse/ErrorLog.h"
+#include "drlojekyll/Parse/ModuleIterator.h"
 #include "drlojekyll/Parse/Parser.h"
 
 namespace fs = std::filesystem;
@@ -46,6 +48,14 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   auto mmod = parser.ParsePath(path, display_cfg);
   EXPECT_TRUE(mmod.has_value());
   EXPECT_TRUE(err_log.IsEmpty()) << "Parsing failed:" << std::endl << err_log;
+
+  // CodeGen for message schemas
+  for (auto module : hyde::ParsedModuleIterator(*mmod)) {
+    (void) hyde::GenerateAvroMessageSchemas(display_mgr, module, err_log);
+    EXPECT_TRUE(err_log.IsEmpty())
+        << "Message schema generation failed:" << std::endl
+        << err_log;
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(ValidExampleParsing, PassingExamplesParsingSuite,

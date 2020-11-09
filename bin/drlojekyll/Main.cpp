@@ -1,6 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
+#include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
@@ -15,6 +16,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -22,9 +24,20 @@
 #include <type_traits>
 #include <unordered_map>
 
+namespace fs = std::filesystem;
+
 namespace hyde {
 
 OutputStream *gOut = nullptr;
+
+struct FileStream {
+  FileStream(hyde::DisplayManager &dm_, const fs::path path_)
+      : fs(path_),
+        os(dm_, fs) {}
+
+  std::ofstream fs;
+  hyde::OutputStream os;
+};
 
 namespace {
 
@@ -33,6 +46,7 @@ OutputStream *gDRStream = nullptr;
 OutputStream *gCxxCodeStream = nullptr;
 OutputStream *gPyCodeStream = nullptr;
 OutputStream *gIRStream = nullptr;
+std::optional<fs::path> gMSGDir = std::nullopt;
 
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
@@ -74,6 +88,18 @@ static int ProcessModule(hyde::DisplayManager display_manager,
       (*gDRStream) << module;
     }
     gDRStream->Flush();
+  }
+
+  // Output all message serializations.
+  if (gMSGDir) {
+    for (auto module : ParsedModuleIterator(module)) {
+      for (auto schema_info :
+           GenerateAvroMessageSchemas(display_manager, module, error_log)) {
+        FileStream schema_stream(
+            display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
+        schema_stream.os << schema_info.schema.dump(2);
+      }
+    }
   }
 
   // Round-trip test of the parser.
@@ -166,15 +192,6 @@ static int VersionMessage(void) {
   return EXIT_SUCCESS;
 }
 
-struct FileStream {
-  FileStream(hyde::DisplayManager &dm_, const char *path_)
-      : fs(path_),
-        os(dm_, fs) {}
-
-  std::ofstream fs;
-  hyde::OutputStream os;
-};
-
 }  // namespace
 }  // namespace hyde
 
@@ -247,6 +264,32 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDRStream = &(dr_out->os);
+      }
+
+    // Write message schemas to an output directory
+    } else if (!strcmp(argv[i], "--messages-dir") ||
+               !strcmp(argv[i], "-messages-dir")) {
+      ++i;
+      if (i >= argc) {
+        hyde::Error err(display_manager);
+        err << "Command-line argument '" << argv[i - 1]
+            << "' must be followed by a directory path for "
+            << "message serialization output";
+        error_log.Append(std::move(err));
+      } else {
+        hyde::gMSGDir = fs::path(argv[i]);
+
+        if (!fs::is_directory(*hyde::gMSGDir) || !fs::exists(*hyde::gMSGDir)) {
+          std::error_code errcode;
+          if (!fs::create_directories(*hyde::gMSGDir, errcode)) {
+            hyde::Error err(display_manager);
+            err << "Directory '" << argv[i] << "' could not be created. "
+                << "(" << errcode.message() << ")";
+            error_log.Append(std::move(err));
+
+            hyde::gMSGDir = std::nullopt;
+          }
+        }
       }
 
     // GraphViz DOT digraph output, which is useful for debugging the data flow.

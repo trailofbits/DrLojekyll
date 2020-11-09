@@ -2,10 +2,12 @@
 
 set(CodeGen_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/CodeGen.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/MessageSerialization.h"
 )
 
 set(CodeGen_SRCS
     "CPlusPlus.cpp"
+    "MessageSerialization.cpp"
     "Python.cpp"
 )
 
@@ -13,6 +15,7 @@ set(CodeGen_PRIV_DEPS
 )
 
 set(CodeGen_DEPS
+    nlohmann_json::nlohmann_json
     ControlFlow
     DataFlow
     Display
