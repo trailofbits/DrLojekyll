@@ -67,6 +67,7 @@ class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
   const std::string column_spec;
 
   UseList<TABLECOLUMN> columns;
+  UseList<TABLECOLUMN> mapped_columns;
 
   WeakUseRef<Node<DataTable>> table;
 };
@@ -535,7 +536,7 @@ class Node<ProgramTransitionStateRegion> final
         col_values(this),
         from_state(from_state_),
         to_state(to_state_) {}
-  
+
   void Accept(ProgramVisitor &visitor) override;
 
   Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
@@ -610,7 +611,7 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   virtual ~Node(void);
 
   Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_,
-       ProgramOperation op_=ProgramOperation::kCallProcedure)
+       ProgramOperation op_ = ProgramOperation::kCallProcedure)
       : Node<ProgramOperationRegion>(parent_, op_),
         called_proc(called_proc_),
         arg_vars(this),
@@ -822,8 +823,7 @@ using TABLEPRODUCT = Node<ProgramTableProductRegion>;
 // used the input variables are provided to perform equality matching against
 // column values. The results of the scan fill a vector.
 template <>
-class Node<ProgramTableScanRegion> final
-    : public Node<ProgramOperationRegion> {
+class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
@@ -832,7 +832,7 @@ class Node<ProgramTableScanRegion> final
         out_cols(this),
         in_cols(this),
         in_vars(this) {}
-  
+
   void Accept(ProgramVisitor &visitor) override;
 
   bool IsNoOp(void) const noexcept override;

@@ -46,6 +46,7 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
       id(id_),
       column_spec(column_spec_),
       columns(this),
+      mapped_columns(this),
       table(this, table_) {}
 
 // Get or create a table in the program.
@@ -119,16 +120,25 @@ Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
     index->columns.AddUse(columns[col_index]);
   }
 
+  auto i = 0u;
+  for (auto col_index : col_indexes) {
+    for (; i < col_index; ++i) {
+      index->mapped_columns.AddUse(columns[i]);
+    }
+    i = col_index + 1u;
+  }
+  for (auto max_i = columns.Size(); i < max_i; ++i) {
+    index->mapped_columns.AddUse(columns[i]);
+  }
+
   return index;
 }
 
 bool Node<DataVector>::IsRead(void) const {
   auto is_used = false;
-  ForEachUse<OP>([&] (OP *op, VECTOR *) {
-    if (dynamic_cast<VECTORLOOP *>(op) ||
-        dynamic_cast<TABLEJOIN *>(op) ||
-        dynamic_cast<INDUCTION *>(op) ||
-        dynamic_cast<CALL *>(op)) {
+  ForEachUse<OP>([&](OP *op, VECTOR *) {
+    if (dynamic_cast<VECTORLOOP *>(op) || dynamic_cast<TABLEJOIN *>(op) ||
+        dynamic_cast<INDUCTION *>(op) || dynamic_cast<CALL *>(op)) {
       is_used = true;
     }
   });

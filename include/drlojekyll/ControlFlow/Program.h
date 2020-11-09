@@ -42,10 +42,6 @@ class ProgramNode {
     return reinterpret_cast<uintptr_t>(impl);
   }
 
-  void Accept(ProgramVisitor &visitor) {
-    impl->Accept(visitor);
-  }
-
  protected:
   friend class ::hyde::ProgramImpl;
 
@@ -107,7 +103,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramTableScanRegion &);
   ProgramRegion(const ProgramTupleCompareRegion &);
 
-  virtual ~ProgramRegion() {}
+  void Accept(ProgramVisitor &visitor) const;
 
   bool IsCall(void) const noexcept;
   bool IsReturn(void) const noexcept;
@@ -263,6 +259,9 @@ class DataIndex : public program::ProgramNode<DataIndex> {
 
   // Columns from a table that are part of this index.
   UsedNodeRange<DataColumn> Columns(void) const;
+
+  // Columns from a table that are part of this index.
+  UsedNodeRange<DataColumn> MappedColumns(void) const;
 
  private:
   friend class DataTable;
@@ -447,6 +446,8 @@ class ProgramVectorLoopRegion
 
   VectorUsage Usage(void) const noexcept;
   DataVector Vector(void) const noexcept;
+
+  // Variables extracted from the vector during each iteration of the loop
   DefinedNodeRange<DataVariable> TupleVariables(void) const;
 
  private:
@@ -746,6 +747,7 @@ class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
 };
 
 enum class ProcedureKind : unsigned {
+
   // Function to initialize all relations. If any relation takes a purely
   // constant tuple as input, then this function initializes those flows.
   kInitializer,
@@ -865,6 +867,7 @@ class Program {
   Program(Program &&) noexcept = default;
   Program &operator=(const Program &) = default;
   Program &operator=(Program &&) noexcept = default;
+
  private:
   Program(std::shared_ptr<ProgramImpl> impl_);
 
