@@ -459,10 +459,10 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
     DefineProcedure(os, proc);
   }
 
-  os << "if __name__ == \"__main__\":\n"
-     << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-     << "  for edge, state in table_7.items():\n"
-     << "    print(edge)\n";
+  // os << "if __name__ == \"__main__\":\n"
+  //    << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
+  //    << "  for edge, state in table_7.items():\n"
+  //    << "    print(edge)\n";
 }
 
 }  // namespace hyde
