@@ -36,7 +36,7 @@ static const char *TypeName(TypeKind kind) {
 }
 
 // Declare a set to hold the table.
-static void DeclareTable(OutputStream &os, DataTable table) {
+static void DefineTable(OutputStream &os, DataTable table) {
   os << "table_" << table.Id() << ": DefaultDict[Tuple[";
   auto sep = "";
   for (auto col : table.Columns()) {
@@ -45,20 +45,22 @@ static void DeclareTable(OutputStream &os, DataTable table) {
   }
   os << "], int] = defaultdict(int)\n";
 
+  // We represent indices as mappings to vectors so that we can concurrently
+  // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
     os << "index_" << index.Id() << ": DefaultDict[Tuple[";
     sep = "";
-    for (auto col : index.Columns()) {
+    for (auto col : index.KeyColumns()) {
       os << TypeName(col.Type()) << sep;
       sep = ", ";
     }
-    os << "], Set[Tuple[";
+    os << "], List[Tuple[";
     sep = "";
-    for (auto col : index.MappedColumns()) {
+    for (auto col : index.ValueColumns()) {
       os << TypeName(col.Type()) << sep;
       sep = ", ";
     }
-    os << "]]] = defaultdict(set)\n";
+    os << "]]] = defaultdict(list)\n";
   }
   os << "\n";
 }
@@ -67,134 +69,134 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
  public:
   explicit PythonCodeGenVisitor(OutputStream &os_) : os(os_) {}
 
-  void Visit(ProgramCallRegion val) override {
-    os << "ProgramCallRegion\n";
+  void Visit(ProgramCallRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramCallRegion\n";
   }
 
-  void Visit(ProgramReturnRegion val) override {
-    os << os.Indent() << "return " << (val.ReturnsFalse() ? "False" : "True")
+  void Visit(ProgramReturnRegion region) override {
+    os << os.Indent() << "return " << (region.ReturnsFalse() ? "False" : "True")
        << "\n";
   }
 
-  void Visit(ProgramExistenceAssertionRegion val) override {
-    os << "ProgramExistenceAssertionRegion\n";
+  void Visit(ProgramExistenceAssertionRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramExistenceAssertionRegion\n";
   }
 
-  void Visit(ProgramExistenceCheckRegion val) override {
-    os << "ProgramExistenceCheckRegion\n";
+  void Visit(ProgramExistenceCheckRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramExistenceCheckRegion\n";
   }
 
-  void Visit(ProgramGenerateRegion val) override {
-    os << "ProgramGenerateRegion\n";
+  void Visit(ProgramGenerateRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramGenerateRegion\n";
   }
 
-  void Visit(ProgramInductionRegion val) override {
+  void Visit(ProgramInductionRegion region) override {
 
     // Base case
-    val.Initializer().Accept(*this);
+    region.Initializer().Accept(*this);
 
     // Induction
     os << os.Indent() << "while ";
     auto sep = "";
-    for (auto vec : val.Vectors()) {
-      os << sep << "index_vec_" << vec.Id() << " < len(vec_" << vec.Id() << ")";
+    for (auto vec : region.Vectors()) {
+      os << sep << "index_" << vec.Id() << " < len(vec_" << vec.Id() << ")";
       sep = " or ";
     }
     os << ":\n";
 
     os.PushIndent();
-    val.FixpointLoop().Accept(*this);
+    region.FixpointLoop().Accept(*this);
     os.PopIndent();
 
     // Output
-    if (auto output = val.Output(); output) {
+    if (auto output = region.Output(); output) {
       output->Accept(*this);
     }
   }
 
-  void Visit(ProgramLetBindingRegion val) override {
-    os << "ProgramLetBindingRegion\n";
+  void Visit(ProgramLetBindingRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramLetBindingRegion\n";
   }
 
-  void Visit(ProgramParallelRegion val) override {
+  void Visit(ProgramParallelRegion region) override {
 
     // Same as SeriesRegion
-    for (auto region : val.Regions()) {
-      region.Accept(*this);
+    for (auto sub_region : region.Regions()) {
+      sub_region.Accept(*this);
     }
   }
 
-  void Visit(ProgramProcedure val) override {
-    os << "ProgramProcedure\n";
+  void Visit(ProgramProcedure region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramProcedure\n";
   }
 
-  void Visit(ProgramPublishRegion val) override {
-    os << "ProgramPublishRegion\n";
+  void Visit(ProgramPublishRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramPublishRegion\n";
   }
 
-  void Visit(ProgramSeriesRegion val) override {
-    for (auto region : val.Regions()) {
-      region.Accept(*this);
+  void Visit(ProgramSeriesRegion region) override {
+    for (auto sub_region : region.Regions()) {
+      sub_region.Accept(*this);
     }
   }
 
-  void Visit(ProgramVectorAppendRegion val) override {
-    os << os.Indent() << "vec_" << val.Vector().Id() << ".append((";
-    for (auto var : val.TupleVariables()) {
+  void Visit(ProgramVectorAppendRegion region) override {
+    os << os.Indent() << "vec_" << region.Vector().Id() << ".append((";
+    for (auto var : region.TupleVariables()) {
       os << "var_" << var.Id() << ", ";
     }
     os << "))\n";
   }
 
-  void Visit(ProgramVectorClearRegion val) override {
-    os << os.Indent() << "del vec_" << val.Vector().Id() << "[:]\n";
-    os << os.Indent() << "index_vec_" << val.Vector().Id() << " = 0\n";
+  void Visit(ProgramVectorClearRegion region) override {
+    os << os.Indent() << "del vec_" << region.Vector().Id() << "[:]\n";
+    os << os.Indent() << "index_" << region.Vector().Id() << " = 0\n";
   }
 
-  void Visit(ProgramVectorLoopRegion val) override {
-    auto vec = val.Vector();
-    os << os.Indent() << "while index_vec_" << vec.Id() << " < len(vec_"
+  void Visit(ProgramVectorLoopRegion region) override {
+    auto vec = region.Vector();
+    os << os.Indent() << "while index_" << vec.Id() << " < len(vec_"
        << vec.Id() << "):\n";
     os.PushIndent();
     os << os.Indent();
-    for (auto var : val.TupleVariables()) {
+    for (auto var : region.TupleVariables()) {
       os << "var_" << var.Id() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[index_vec_" << vec.Id() << "]\n";
+    os << "= vec_" << vec.Id() << "[index_" << vec.Id() << "]\n";
 
-    os << os.Indent() << "index_vec_" << vec.Id() << " += 1\n";
+    os << os.Indent() << "index_" << vec.Id() << " += 1\n";
 
-    if (auto body = val.Body(); body) {
+    if (auto body = region.Body(); body) {
       body->Accept(*this);
     }
     os.PopIndent();
   }
 
-  void Visit(ProgramVectorUniqueRegion val) override {
-    os << os.Indent() << "vec_" << val.Vector().Id() << " = list(set(vec_"
-       << val.Vector().Id() << "))\n";
-    os << os.Indent() << "index_vec_" << val.Vector().Id() << " = 0\n";
+  void Visit(ProgramVectorUniqueRegion region) override {
+    os << os.Indent() << "vec_" << region.Vector().Id() << " = list(set(vec_"
+       << region.Vector().Id() << "))\n";
+    os << os.Indent() << "index_" << region.Vector().Id() << " = 0\n";
   }
 
-  void Visit(ProgramTransitionStateRegion val) override {
+  void Visit(ProgramTransitionStateRegion region) override {
     std::stringstream tuple;
     tuple << "tuple";
-    for (auto tuple_var : val.TupleVariables()) {
+    for (auto tuple_var : region.TupleVariables()) {
       tuple << "_" << tuple_var.Id();
     }
 
     auto tuple_var = tuple.str();
     os << os.Indent() << tuple_var << " = (";
-    for (auto var : val.TupleVariables()) {
+    for (auto var : region.TupleVariables()) {
       os << "var_" << var.Id() << ", ";
     }
     os << ")\n";
 
-    os << os.Indent() << "state = table_" << val.Table().Id() << "["
+    os << os.Indent() << "state = table_" << region.Table().Id() << "["
        << tuple_var << "]\n";
 
     os << os.Indent() << "if ";
-    switch (val.FromState()) {
+    switch (region.FromState()) {
       case TupleState::kAbsent: os << "state == 0:\n"; break;
       case TupleState::kPresent: os << "state == 1:\n"; break;
       case TupleState::kUnknown: os << "state == 2:\n"; break;
@@ -203,9 +205,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         break;
     }
     os.PushIndent();
-    os << os.Indent() << "table_" << val.Table().Id() << "[" << tuple_var
+    os << os.Indent() << "table_" << region.Table().Id() << "[" << tuple_var
        << "] = ";
-    switch (val.ToState()) {
+    switch (region.ToState()) {
       case TupleState::kAbsent: os << "0\n"; break;
       case TupleState::kPresent: os << "1\n"; break;
       case TupleState::kUnknown: os << "2\n"; break;
@@ -215,96 +217,142 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         break;
     }
 
-    for (auto index : val.Table().Indices()) {
+    for (auto index : region.Table().Indices()) {
       os << os.Indent() << "index_" << index.Id() << "[(";
-      for (auto indexed_col : index.Columns()) {
+      for (auto indexed_col : index.KeyColumns()) {
         os << tuple_var << "[" << indexed_col.Index() << "], ";
       }
-      os << ")].add((";
-      for (auto mapped_col : index.MappedColumns()) {
+      os << ")].append((";
+      for (auto mapped_col : index.ValueColumns()) {
         os << tuple_var << "[" << mapped_col.Index() << "], ";
       }
       os << "))\n";
     }
 
-    if (auto body = val.Body(); body) {
+    if (auto body = region.Body(); body) {
       body->Accept(*this);
     }
     os.PopIndent();
   }
 
-  void Visit(ProgramCheckStateRegion val) override {
-    os << "ProgramCheckStateRegion\n";
+  void Visit(ProgramCheckStateRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramCheckStateRegion\n";
   }
 
-  void Visit(ProgramTableJoinRegion val) override {
+  void Visit(ProgramTableJoinRegion region) override {
 
     // Nested loop join
-    auto vec = val.PivotVector();
-    os << os.Indent() << "while index_vec_" << vec.Id() << " < len(vec_"
+    auto vec = region.PivotVector();
+    os << os.Indent() << "while index_" << vec.Id() << " < len(vec_"
        << vec.Id() << "):\n";
     os.PushIndent();
     os << os.Indent();
+
     std::vector<std::string> var_names;
-    for (auto var : val.OutputPivotVariables()) {
+    for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
       var_name << "var_" << var.Id();
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[index_vec_" << vec.Id() << "]\n";
+    os << "= vec_" << vec.Id() << "[index_" << vec.Id() << "]\n";
 
-    os << os.Indent() << "index_vec_" << vec.Id() << " += 1\n";
+    os << os.Indent() << "index_" << vec.Id() << " += 1\n";
 
-    auto tables = val.Tables();
+    auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
-      auto index = val.Index(i);
-      os << os.Indent() << "for tuple_" << val.UniqueId() << "_" << i
-         << " in set(index_" << index.Id() << "[(";
-      for (auto var : index.Columns()) {
+      auto index = region.Index(i);
+
+      // We don't want to have to make a temporary copy of the current state
+      // of the index, so instead what we do is we capture a reference to the
+      // list of tuples in the index, and we also create an index variable
+      // that tracks which tuple we can next look at. This allows us to observe
+      // writes into the index as they happen.
+      os << os.Indent() << "tuple_" << region.Id() << "_" << i
+         << "_index : int = 0\n"
+         << os.Indent() << "tuple_" << region.Id() << "_" << i
+         << "_vec : List[";
+
+      auto sep = "";
+      for (auto col : index.ValueColumns()) {
+        os << sep << TypeName(col.Type());
+        sep = ", ";
+      }
+
+      os << "] = index_" << index.Id() << "[(";
+
+      // This is a bit ugly, but basically: we want to index into the
+      // Python representation of this index, e.g. via `index_10[(a, b)]`,
+      // where `a` and `b` are pivot variables. However, the pivot vector
+      // might have the tuple entries in the order `(b, a)`. To easy matching
+      // between pivot variables and indexed columns, `region.IndexedColumns`
+      // exposes columns in the same order as the pivot variables, which as we
+      // see, might not match the order of the columns in the index. Thus we
+      // need to re-order our usage of variables so that they match the
+      // order expected by `index_10[...]`.
+      for (auto index_col : index.KeyColumns()) {
         auto j = 0u;
-        for (auto idx_col : val.IndexedColumns(i)) {
-          if (idx_col == var) {
+        for (auto used_col : region.IndexedColumns(i)) {
+          if (used_col == index_col) {
             os << var_names[j] << ", ";
           }
           ++j;
         }
       }
-      os << ")]):\n";
+
+      os << ")]\n";
+
+      os << os.Indent() << "while tuple_" << region.Id() << "_" << i
+         << "_index < len(tuple_" << region.Id() << "_" << i
+         << "_vec):\n";
+
+      // We increase indentation here, and the corresponding `PopIndent()`
+      // only comes *after* visiting the `region.Body()`.
       os.PushIndent();
-      auto out_vars = val.OutputVariables(i);
+
+      os << os.Indent() << "tuple_" << region.Id() << "_" << i << " = "
+         << "tuple_" << region.Id() << "_" << i
+         << "_vec[tuple_" << region.Id() << "_" << i
+         << "_index]\n"
+         << os.Indent() << "tuple_" << region.Id() << "_" << i
+         << "_index += 1\n";
+
+      auto out_vars = region.OutputVariables(i);
       if (!out_vars.empty()) {
         os << os.Indent();
         for (auto var : out_vars) {
           os << "var_" << var.Id() << ", ";
         }
-        os << "= tuple_" << val.UniqueId() << "_" << i << "\n";
+        os << "= tuple_" << region.Id() << "_" << i << "\n";
       }
     }
 
-    if (auto body = val.Body(); body) {
+    if (auto body = region.Body(); body) {
       body->Accept(*this);
     } else {
       os << os.Indent() << "pass\n";
     }
 
+    // Outdent for each nested for loop over an index.
     for (auto table : tables) {
       (void) table;
       os.PopIndent();
     }
+
+    // Output of the loop over the pivot vector.
     os.PopIndent();
   }
 
-  void Visit(ProgramTableProductRegion val) override {
-    os << "ProgramTableProductRegion\n";
+  void Visit(ProgramTableProductRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramTableProductRegion\n";
   }
 
-  void Visit(ProgramTableScanRegion val) override {
-    os << "ProgramTableScanRegion\n";
+  void Visit(ProgramTableScanRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramTableScanRegion\n";
   }
 
-  void Visit(ProgramTupleCompareRegion val) override {
-    os << "ProgramTupleCompareRegion\n";
+  void Visit(ProgramTupleCompareRegion region) override {
+    os << os.Indent() << "# TODO(ekilmer): ProgramTupleCompareRegion\n";
   }
 
  private:
@@ -316,12 +364,12 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
   auto param_sep = "";
 
-  // All vector params before all variable params
-  for (auto param : proc.VectorParameters()) {
-    os << param_sep << "vec_" << param.Id() << ": List[Tuple[";
+  // First, declare all vector parameters.
+  for (auto vec : proc.VectorParameters()) {
+    os << param_sep << "vec_" << vec.Id() << ": List[Tuple[";
 
     auto type_sep = "";
-    for (auto type : param.ColumnTypes()) {
+    for (auto type : vec.ColumnTypes()) {
       os << type_sep << TypeName(type);
       type_sep = ", ";
     }
@@ -330,20 +378,35 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     param_sep = ", ";
   }
 
+  // Then, declare all variable parameters.
   for (auto param : proc.VariableParameters()) {
     os << param_sep << "var_" << param.Id() << ": " << TypeName(param.Type());
     param_sep = ", ";
   }
 
+  // Every procedure has a boolean return type. A lot of the time the return
+  // type is not used, but for top-down checkers (which try to prove whether or
+  // not a tuple in an unknown state is either present or absent) it is used.
   os << ") -> bool:\n";
 
   os.PushIndent();
-  for (auto param : proc.VectorParameters()) {
-    os << os.Indent() << "index_vec_" << param.Id() << ": int = 0\n";
-  }
-
   os << os.Indent() << "state: int = 0\n";
 
+  // Every vector, including parameter vectors, has a variable tracking the
+  // current index into that vector.
+  //
+  // TODO(pag, ekilmer): Consider passing these as arguments... hrmm. This may
+  //                     be relevant if we factor out common sub-regions into
+  //                     procedures. Then there would need to be implied return
+  //                     values of all of the updated index positions that would
+  //                     turn the return value of the procedures from a `bool`
+  //                     to a `tuple`. :-/
+  for (auto vec : proc.VectorParameters()) {
+    os << os.Indent() << "index_" << vec.Id() << ": int = 0\n";
+  }
+
+  // Define the vectors that will be created and used within this procedure.
+  // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
     os << os.Indent() << "vec_" << vec.Id() << ": List[Tuple[";
 
@@ -354,9 +417,13 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     }
 
     os << "]] = list()\n";
-    os << os.Indent() << "index_vec_" << vec.Id() << ": int = 0\n";
+
+    // Tracking variable for the vector.
+    os << os.Indent() << "index_" << vec.Id() << ": int = 0\n";
   }
-  // Body
+
+  // Visit the body of the procedure. Procedure bodies are never empty; the
+  // most trivial procedure body contains a `return False`.
   PythonCodeGenVisitor visitor(os);
   proc.Body().Accept(visitor);
 
@@ -369,28 +436,28 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
 // Emits Python code for the given program to `os`.
 void GeneratePythonCode(Program &program, OutputStream &os) {
-  os << "# Auto-generated file \n\n";
+  os << "# Auto-generated file\n\n";
 
   os << "from collections import defaultdict\n";
   os << "from typing import *\n\n";
 
   for (auto table : program.Tables()) {
-    DeclareTable(os, table);
+    DefineTable(os, table);
   }
 
   // TODO(ekilmer): Global variables
   //   Single type, bool=false, int=0
+  os << os.Indent() << "# TODO(ekilmer): Global variables\n";
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, proc);
   }
 
-  /*
-  os << "if __name__ == \"__main__\":\n"
-     << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-     << "  for edge, state in table_7.items():\n"
-     << "    print(edge)\n";
-  */
+//  os << "if __name__ == \"__main__\":\n"
+//     << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
+//     << "  for edge, state in table_7.items():\n"
+//     << "    print(edge)\n";
+
 }
 
 }  // namespace hyde

@@ -55,7 +55,7 @@ static void DeclareColumn(OutputStream &os, DataTable table, DataColumn col) {
   // Calculate the number of indices in which this column participates.
   auto num_indices = 0;
   for (auto index : table.Indices()) {
-    for (auto index_col : index.Columns()) {
+    for (auto index_col : index.KeyColumns()) {
       if (index_col == col) {
         ++num_indices;
       }
@@ -213,10 +213,10 @@ static void FindCover(std::vector<DataIndex> &work_list,
 
     // Figure out if `maybe_subset` is a subset of `cols`.
     auto i = 0u;
-    for (auto col : maybe_subset_index.Columns()) {
+    for (auto col : maybe_subset_index.KeyColumns()) {
 
       const auto col_index = col.Index();
-      const auto match_col_index = curr_index.Columns()[i].Index();
+      const auto match_col_index = curr_index.KeyColumns()[i].Index();
 
       if (col_index == match_col_index) {
         ++i;
@@ -253,7 +253,7 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
   // We don't want to represent indices that map all columns separately from
   // the table itself so we'll strip those out.
   for (auto index : indices) {
-    if (index.Columns().size() < table.Columns().size()) {
+    if (index.KeyColumns().size() < table.Columns().size()) {
       work_list.push_back(index);
 
     // TODO(pag): Decide on how to declare these.
@@ -265,7 +265,7 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
   // Put biggest indices last.
   std::sort(work_list.begin(), work_list.end(),
             [](DataIndex a, DataIndex b) {
-              return a.Columns().size() < b.Columns().size();
+              return a.KeyColumns().size() < b.KeyColumns().size();
             });
 
   // Pop off the biggest index, then merge into it the next smallest index
@@ -292,7 +292,7 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
        << os.Indent() << "using Spec = KeyValues<Columns<";
     auto sep = "";
     for (auto index : indices) {
-      for (auto col : index.Columns()) {
+      for (auto col : index.KeyColumns()) {
         if (seen_cols.count(col)) {
           continue;
         }

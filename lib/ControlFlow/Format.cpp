@@ -28,7 +28,7 @@ static void DefineTable(OutputStream &os, DataTable table) {
   for (auto index : table.Indices()) {
     os << index_sep << os.Indent() << index;
     auto sep = " on ";
-    for (auto col : index.Columns()) {
+    for (auto col : index.KeyColumns()) {
       os << sep << col;
       sep = ", ";
     }
@@ -49,7 +49,7 @@ OutputStream &operator<<(OutputStream &os, DataIndex index) {
   os << "%index:" << index.Id();
   auto sep = "[";
   auto i = 0u;
-  for (auto col : index.Columns()) {
+  for (auto col : index.KeyColumns()) {
     for (; i < col.Index(); ++i) {
       os << sep << '_';
       sep = ",";

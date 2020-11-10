@@ -297,8 +297,8 @@ USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
 USED_RANGE(ProgramTransitionStateRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramCheckStateRegion, TupleVariables, DataVariable, col_values)
-USED_RANGE(DataIndex, Columns, DataColumn, columns)
-USED_RANGE(DataIndex, MappedColumns, DataColumn, mapped_columns)
+USED_RANGE(DataIndex, KeyColumns, DataColumn, columns)
+USED_RANGE(DataIndex, ValueColumns, DataColumn, mapped_columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
 USED_RANGE(ProgramTupleCompareRegion, RHS, DataVariable, rhs_vars)
 USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
@@ -640,6 +640,11 @@ ProgramTupleCompareRegion::From(ProgramRegion region) noexcept {
 
 ComparisonOperator ProgramTupleCompareRegion::Operator(void) const noexcept {
   return impl->cmp_op;
+}
+
+// Unique ID for this join.
+unsigned ProgramTableJoinRegion::Id(void) const noexcept {
+  return impl->id;
 }
 
 // The index used by the Nth table scan.

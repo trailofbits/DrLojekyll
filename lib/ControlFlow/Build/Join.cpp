@@ -90,8 +90,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  const auto join =
-      impl->operation_regions.CreateDerived<TABLEJOIN>(seq, join_view);
+  const auto join = impl->operation_regions.CreateDerived<TABLEJOIN>(
+      seq, join_view, impl->next_id++);
   join->ExecuteAfter(impl, seq);
 
   // The JOIN internalizes the loop over its pivot vector. This is so that

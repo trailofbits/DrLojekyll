@@ -751,9 +751,11 @@ template <>
 class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_,
+              unsigned id_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kJoinTables),
         query_join(query_join_),
+        id(id_),
         tables(this),
         indices(this),
         pivot_vars(this),
@@ -771,6 +773,7 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
   Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept override;
 
   const QueryJoin query_join;
+  const unsigned id;
 
   UseList<TABLE> tables;
   UseList<TABLEINDEX> indices;

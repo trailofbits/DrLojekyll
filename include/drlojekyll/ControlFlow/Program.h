@@ -258,10 +258,10 @@ class DataIndex : public program::ProgramNode<DataIndex> {
   unsigned Id(void) const noexcept;
 
   // Columns from a table that are part of this index.
-  UsedNodeRange<DataColumn> Columns(void) const;
+  UsedNodeRange<DataColumn> KeyColumns(void) const;
 
   // Columns from a table that are part of this index.
-  UsedNodeRange<DataColumn> MappedColumns(void) const;
+  UsedNodeRange<DataColumn> ValueColumns(void) const;
 
  private:
   friend class DataTable;
@@ -566,6 +566,9 @@ class ProgramTableJoinRegion
     : public program::ProgramNode<ProgramTableJoinRegion> {
  public:
   static ProgramTableJoinRegion From(ProgramRegion) noexcept;
+
+  // Unique ID for this join.
+  unsigned Id(void) const noexcept;
 
   // The body that conditionally executes for each joined result. Variable
   // bindings are applied.
