@@ -108,13 +108,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     region.FixpointLoop().Accept(*this);
     os.PopIndent();
 
-    sep = "";
-    os << os.Indent();
     for (auto vec : region.Vectors()) {
-      os << sep << "vec_index_" << vec.Id();
-      sep = ", ";
+      os << os.Indent() << "vec_index_" << vec.Id() << " = 0\n";
     }
-    os << " = 0\n";
 
     // Output
     if (auto output = region.Output(); output) {
