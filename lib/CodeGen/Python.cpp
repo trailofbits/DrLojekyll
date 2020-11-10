@@ -108,6 +108,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     region.FixpointLoop().Accept(*this);
     os.PopIndent();
 
+    for (auto vec : region.Vectors()) {
+      os << os.Indent() << "vec_index_" << vec.Id() << " = 0\n";
+    }
+
     // Output
     if (auto output = region.Output(); output) {
       output->Accept(*this);
@@ -303,17 +307,15 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << ")]\n";
 
       os << os.Indent() << "while tuple_" << region.Id() << "_" << i
-         << "_index < len(tuple_" << region.Id() << "_" << i
-         << "_vec):\n";
+         << "_index < len(tuple_" << region.Id() << "_" << i << "_vec):\n";
 
       // We increase indentation here, and the corresponding `PopIndent()`
       // only comes *after* visiting the `region.Body()`.
       os.PushIndent();
 
       os << os.Indent() << "tuple_" << region.Id() << "_" << i << " = "
-         << "tuple_" << region.Id() << "_" << i
-         << "_vec[tuple_" << region.Id() << "_" << i
-         << "_index]\n"
+         << "tuple_" << region.Id() << "_" << i << "_vec[tuple_" << region.Id()
+         << "_" << i << "_index]\n"
          << os.Indent() << "tuple_" << region.Id() << "_" << i
          << "_index += 1\n";
 
@@ -453,11 +455,10 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
     DefineProcedure(os, proc);
   }
 
-//  os << "if __name__ == \"__main__\":\n"
-//     << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-//     << "  for edge, state in table_7.items():\n"
-//     << "    print(edge)\n";
-
+  // os << "if __name__ == \"__main__\":\n"
+  //    << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
+  //    << "  for edge, state in table_7.items():\n"
+  //    << "    print(edge)\n";
 }
 
 }  // namespace hyde
