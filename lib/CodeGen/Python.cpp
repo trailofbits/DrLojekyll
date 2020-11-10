@@ -99,7 +99,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << "index_" << vec.Id() << " < len(vec_" << vec.Id() << ")";
+      os << sep << "vec_index_" << vec.Id() << " < len(vec_" << vec.Id() << ")";
       sep = " or ";
     }
     os << ":\n";
@@ -155,16 +155,16 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorLoopRegion region) override {
     auto vec = region.Vector();
-    os << os.Indent() << "while index_" << vec.Id() << " < len(vec_"
+    os << os.Indent() << "while vec_index_" << vec.Id() << " < len(vec_"
        << vec.Id() << "):\n";
     os.PushIndent();
     os << os.Indent();
     for (auto var : region.TupleVariables()) {
       os << "var_" << var.Id() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[index_" << vec.Id() << "]\n";
+    os << "= vec_" << vec.Id() << "[vec_index_" << vec.Id() << "]\n";
 
-    os << os.Indent() << "index_" << vec.Id() << " += 1\n";
+    os << os.Indent() << "vec_index_" << vec.Id() << " += 1\n";
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -243,7 +243,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "while index_" << vec.Id() << " < len(vec_"
+    os << os.Indent() << "while vec_index_" << vec.Id() << " < len(vec_"
        << vec.Id() << "):\n";
     os.PushIndent();
     os << os.Indent();
@@ -255,9 +255,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[index_" << vec.Id() << "]\n";
+    os << "= vec_" << vec.Id() << "[vec_index_" << vec.Id() << "]\n";
 
-    os << os.Indent() << "index_" << vec.Id() << " += 1\n";
+    os << os.Indent() << "vec_index_" << vec.Id() << " += 1\n";
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
@@ -271,7 +271,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << os.Indent() << "tuple_" << region.Id() << "_" << i
          << "_index : int = 0\n"
          << os.Indent() << "tuple_" << region.Id() << "_" << i
-         << "_vec : List[";
+         << "_vec : List[Tuple[";
 
       auto sep = "";
       for (auto col : index.ValueColumns()) {
@@ -279,7 +279,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         sep = ", ";
       }
 
-      os << "] = index_" << index.Id() << "[(";
+      os << "]] = index_" << index.Id() << "[(";
 
       // This is a bit ugly, but basically: we want to index into the
       // Python representation of this index, e.g. via `index_10[(a, b)]`,
@@ -402,7 +402,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   //                     turn the return value of the procedures from a `bool`
   //                     to a `tuple`. :-/
   for (auto vec : proc.VectorParameters()) {
-    os << os.Indent() << "index_" << vec.Id() << ": int = 0\n";
+    os << os.Indent() << "vec_index_" << vec.Id() << ": int = 0\n";
   }
 
   // Define the vectors that will be created and used within this procedure.
@@ -419,7 +419,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     os << "]] = list()\n";
 
     // Tracking variable for the vector.
-    os << os.Indent() << "index_" << vec.Id() << ": int = 0\n";
+    os << os.Indent() << "vec_index_" << vec.Id() << ": int = 0\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
