@@ -150,7 +150,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorClearRegion region) override {
     os << os.Indent() << "del vec_" << region.Vector().Id() << "[:]\n";
-    os << os.Indent() << "index_" << region.Vector().Id() << " = 0\n";
+    os << os.Indent() << "vec_index_" << region.Vector().Id() << " = 0\n";
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
@@ -175,7 +175,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramVectorUniqueRegion region) override {
     os << os.Indent() << "vec_" << region.Vector().Id() << " = list(set(vec_"
        << region.Vector().Id() << "))\n";
-    os << os.Indent() << "index_" << region.Vector().Id() << " = 0\n";
+    os << os.Indent() << "vec_index_" << region.Vector().Id() << " = 0\n";
   }
 
   void Visit(ProgramTransitionStateRegion region) override {
