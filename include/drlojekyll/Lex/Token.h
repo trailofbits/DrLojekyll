@@ -21,6 +21,8 @@ enum class Lexeme : uint8_t {
   kInvalidEscapeInString,
   kInvalidUnterminatedString,
   kInvalidUnterminatedCode,
+  kInvalidUnterminatedCxxCode,
+  kInvalidUnterminatedPythonCode,
   kInvalidStreamOrDisplay,
   kInvalidTypeName,
   kInvalidUnknown,
@@ -242,6 +244,8 @@ enum class Lexeme : uint8_t {
   //
   // <! ... stuff here ... !>
   kLiteralCode,
+  kLiteralCxxCode,
+  kLiteralPythonCode,
 
   // Identifiers, e.g. for atoms, functors, messages, etc.
   kIdentifierAtom,

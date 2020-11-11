@@ -13,6 +13,8 @@ bool Token::IsValid(void) const {
     case ::hyde::Lexeme::kInvalidEscapeInString:
     case ::hyde::Lexeme::kInvalidUnterminatedString:
     case ::hyde::Lexeme::kInvalidUnterminatedCode:
+    case ::hyde::Lexeme::kInvalidUnterminatedCxxCode:
+    case ::hyde::Lexeme::kInvalidUnterminatedPythonCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
     case ::hyde::Lexeme::kInvalidUnknown: return false;
@@ -66,6 +68,8 @@ DisplayPosition Token::NextPosition(void) const {
       break;
 
     case ::hyde::Lexeme::kLiteralCode:
+    case ::hyde::Lexeme::kLiteralCxxCode:
+    case ::hyde::Lexeme::kLiteralPythonCode:
       index += token_interpreter.code.num_bytes;
       line += token_interpreter.code.disp_lines;
       column = token_interpreter.code.next_cols;
@@ -77,6 +81,8 @@ DisplayPosition Token::NextPosition(void) const {
     case ::hyde::Lexeme::kInvalidEscapeInString:
     case ::hyde::Lexeme::kInvalidUnterminatedString:
     case ::hyde::Lexeme::kInvalidUnterminatedCode:
+    case ::hyde::Lexeme::kInvalidUnterminatedCxxCode:
+    case ::hyde::Lexeme::kInvalidUnterminatedPythonCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
     case ::hyde::Lexeme::kInvalidUnknown: return ErrorPosition();
@@ -100,10 +106,14 @@ unsigned Token::SpellingWidth(void) const {
     case ::hyde::Lexeme::kInvalidEscapeInString:
     case ::hyde::Lexeme::kInvalidUnterminatedString:
     case ::hyde::Lexeme::kInvalidUnterminatedCode:
+    case ::hyde::Lexeme::kInvalidUnterminatedCxxCode:
+    case ::hyde::Lexeme::kInvalidUnterminatedPythonCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
     case ::hyde::Lexeme::kInvalidUnknown:
-    case ::hyde::Lexeme::kLiteralCode: {
+    case ::hyde::Lexeme::kLiteralCode:
+    case ::hyde::Lexeme::kLiteralCxxCode:
+    case ::hyde::Lexeme::kLiteralPythonCode: {
       int num_lines = 0;
       int num_cols = 0;
       if (Position().TryComputeDistanceTo(NextPosition(), nullptr, &num_lines,
@@ -147,11 +157,15 @@ uint64_t Token::Hash(void) const noexcept {
 
 // Return the ID of the corresponding string, or `0` if not a string.
 unsigned Token::CodeId(void) const {
-  if (Lexeme() == ::hyde::Lexeme::kLiteralCode) {
-    const lex::TokenInterpreter interpreter = {opaque_data};
-    return interpreter.code.id;
-  } else {
-    return 0;
+  switch (Lexeme()) {
+    case ::hyde::Lexeme::kLiteralCode:
+    case ::hyde::Lexeme::kLiteralCxxCode:
+    case ::hyde::Lexeme::kLiteralPythonCode: {
+      const lex::TokenInterpreter interpreter = {opaque_data};
+      return interpreter.code.id;
+    }
+    default:
+      return 0;
   }
 }
 

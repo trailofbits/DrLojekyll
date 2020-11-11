@@ -127,7 +127,9 @@ clause_list
 import: "#import" <double quoted string literal>
 
 // Single and multi-line inline statements.
-inline_code: "#inline" "<!" <anything...> "!>"
+inline_code: "#inline" "```" <anything...> "```"
+inline_code: "#inline" "```c++" <anything...> "```"
+inline_code: "#inline" "```python" <anything...> "```"
 inline_code: "#inline" <double quoted string literal>
 
 // Decls generally must fit inside a single line. They are allowed

@@ -466,15 +466,17 @@ class Node<ParsedInclude> {
 template <>
 class Node<ParsedInline> {
  public:
-  inline Node(DisplayRange range_, std::string_view code_)
+  inline Node(DisplayRange range_, std::string_view code_, Language language_)
       : range(range_),
-        code(code_) {}
+        code(code_),
+        language(language_) {}
 
   // Next inline in this module.
   Node<ParsedInline> *next{nullptr};
 
   const DisplayRange range;
   const std::string code;
+  const Language language;
 };
 
 template <>

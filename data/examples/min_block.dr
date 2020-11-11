@@ -2,7 +2,7 @@
 ; #include <climits>
 
 #functor min(aggregate i32 Val, summary i32 MinVal)
-#inline <!
+#inline ```c++
 
 CONFIGURE_AGGREGATOR(min, as) {
   self.MinVal = INT_MAX;
@@ -12,16 +12,16 @@ UPDATE_AGGREGATOR(min, as, i32 Val) {
   self.MinVal = std::min<i32>(self.MinVal, Val);
 }
 
-!>
+```
 
 #functor min(bound i32 OldMin, bound i32 ProposedMin, free i32 NewMin)
-#inline <!
+#inline ```c++
 
 MERGE_VALUES(min, i32, OldMin, ProposedMin) {
   return std::min<i32>(OldMin, ProposedMin);
-} 
-
-!>
+}
+ 
+```
 
 #query first_block(free i32 Address)
 #message add_basic_block(i32 BlockAddress)

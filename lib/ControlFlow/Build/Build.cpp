@@ -946,7 +946,8 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
 WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
-std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
+std::optional<Program> Program::Build(const ::hyde::Query &query,
+                                      const ErrorLog &) {
   auto impl = std::make_shared<ProgramImpl>(query);
   const auto program = impl.get();
 
@@ -964,7 +965,7 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   }
 
   // Transmits are messages that we send out "ASAP," i.e. when new data is
-  // injested by a receive, we want to compute stuff and send out messages
+  // ingested by a receive, we want to compute stuff and send out messages
   // (e.g. for making orchestration decisions).
   for (auto io : query.IOs()) {
     for (auto transmit : io.Transmits()) {

@@ -22,6 +22,7 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
   }
 
   std::string_view code;
+  auto language = Language::kUnknown;
 
   const auto tok_range = tok.SpellingRange();
 
@@ -33,6 +34,24 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
           << "Empty or invalid code literal in inline statement";
       return;
     }
+
+  } else if (Lexeme::kLiteralCxxCode == tok.Lexeme()) {
+    const auto code_id = tok.CodeId();
+    if (!context->string_pool.TryReadCode(code_id, &code)) {
+      context->error_log.Append(scope_range, tok_range)
+          << "Empty or invalid C++ code literal in inline statement";
+      return;
+    }
+    language = Language::kCxx;
+
+  } else if (Lexeme::kLiteralPythonCode == tok.Lexeme()) {
+    const auto code_id = tok.CodeId();
+    if (!context->string_pool.TryReadCode(code_id, &code)) {
+      context->error_log.Append(scope_range, tok_range)
+          << "Empty or invalid Python code literal in inline statement";
+      return;
+    }
+    language = Language::kPython;
 
   // Parse out a string literal, e.g. `#inline "..."`.
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {
@@ -56,7 +75,7 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
     return;
   }
 
-  const auto inline_node = new Node<ParsedInline>(scope_range, code);
+  const auto inline_node = new Node<ParsedInline>(scope_range, code, language);
   if (!module->inlines.empty()) {
     module->inlines.back()->next = inline_node;
   }

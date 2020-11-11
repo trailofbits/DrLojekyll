@@ -443,6 +443,12 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "from collections import defaultdict\n";
   os << "from typing import *\n\n";
 
+  for (auto code : program.ParsedModule().Inlines()) {
+    if (code.Language() == Language::kPython) {
+      os << code.CodeToInline() << '\n';
+    }
+  }
+
   for (auto table : program.Tables()) {
     DefineTable(os, table);
   }
