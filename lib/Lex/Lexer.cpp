@@ -978,7 +978,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Unknown, accumulate character up until a stop character.
     default:
-    invalid_char:
       interpreter.error.invalid_char = ch;
 
       if (kStopChars.find(ch) == std::string::npos) {
