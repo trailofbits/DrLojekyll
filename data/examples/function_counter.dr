@@ -1,7 +1,7 @@
 ; The purpose of this example is to figure out what it means to do differential
 ; tracking of relations with mutable columns.
 
-#inline <!
+#inline ```c++
 
 MERGE(add_u32, u32, LHS, RHS) {
   return LHS + RHS;
@@ -11,7 +11,7 @@ MAP(u64_to_bool_u32, bf, u32 Val) {
   Emit(u32(!!Val));
 }
 
-!>
+```
 
 #functor u64_to_bool_u32(bound u64 Val, free u32 Bool)
 #functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res)

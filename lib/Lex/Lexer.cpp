@@ -209,71 +209,85 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       return true;
 
     case '<':
-      if (impl->reader.TryReadChar(&ch)) {
-        if (ch == '!') {  // Read it as an inline code literal.
+      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncLess);
+      interpreter.basic.spelling_width = 1;
+      ret.opaque_data = interpreter.flat;
+      return true;
 
-          auto done = false;
-          auto seen_exclaim = false;
-          auto error_offset = 2u;
-          impl->data.clear();
+    case '`':
+      if (!impl->reader.TryReadChar(&ch) || ch != '`' ||
+          !impl->reader.TryReadChar(&ch) || ch != '`') {
+      return_invalid_code:
+        auto error_pos = impl->reader.CurrentPosition();
+        interpreter.error.error_offset = error_pos.Index() -
+                                         ret.position.Index();
+        interpreter.error.error_col = error_pos.Column();
+        interpreter.error.disp_lines =
+            error_pos.Line() - ret.position.Line();
+        interpreter.error.lexeme =
+            static_cast<uint8_t>(Lexeme::kInvalidUnterminatedCode);
+        ret.opaque_data = interpreter.flat;
+        return true;
 
-          while (impl->reader.TryReadChar(&ch)) {
-            ++error_offset;
-            if ('!' == ch) {
-              if (seen_exclaim) {
-                impl->data.push_back('!');
-              } else {
-                seen_exclaim = true;
-              }
-            } else if ('>' == ch) {
-              if (seen_exclaim) {
-                done = true;
-                break;
-              } else {
-                impl->data.push_back(ch);
-              }
-            } else if (seen_exclaim) {
-              seen_exclaim = false;
-              impl->data.push_back('!');
-              impl->data.push_back(ch);
+      } else {
+        impl->data.clear();
+        while (impl->reader.TryReadChar(&ch)) {
+          if (ch != '`') {
+            impl->data.push_back(ch);
 
-            } else {
-              impl->data.push_back(ch);
-            }
-          }
+          } else if (!impl->reader.TryReadChar(&ch)) {
+            goto return_invalid_code;
 
-          const auto after_pos = impl->reader.CurrentPosition();
+          } else if (ch != '`') {
+            impl->data.push_back(ch);
 
-          if (!done) {
-            interpreter.error.error_offset = error_offset;
-            interpreter.error.error_col = after_pos.Column();
-            interpreter.error.disp_lines =
+          } else if (!impl->reader.TryReadChar(&ch)) {
+            goto return_invalid_code;
+
+          } else if (ch != '`') {
+            impl->data.push_back(ch);
+
+          } else if (!impl->data.find("c++")) {
+            impl->data.erase(impl->data.begin(), impl->data.begin() + 3u);
+            const auto after_pos = impl->reader.CurrentPosition();
+            interpreter.code.num_bytes = impl->data.size() + 9;
+            interpreter.code.next_cols = after_pos.Column();
+            interpreter.code.disp_lines =
                 after_pos.Line() - ret.position.Line();
-            interpreter.error.lexeme =
-                static_cast<uint8_t>(Lexeme::kInvalidUnterminatedCode);
+            interpreter.code.id = string_pool.InternCode(impl->data);
+            interpreter.code.lexeme =
+                static_cast<uint8_t>(Lexeme::kLiteralCxxCode);
+            ret.opaque_data = interpreter.flat;
+            return true;
+
+          } else if (!impl->data.find("python")) {
+            impl->data.erase(impl->data.begin(), impl->data.begin() + 6u);
+            const auto after_pos = impl->reader.CurrentPosition();
+            interpreter.code.num_bytes = impl->data.size() + 12;
+            interpreter.code.next_cols = after_pos.Column();
+            interpreter.code.disp_lines =
+                after_pos.Line() - ret.position.Line();
+            interpreter.code.id = string_pool.InternCode(impl->data);
+            interpreter.code.lexeme =
+                static_cast<uint8_t>(Lexeme::kLiteralPythonCode);
+            ret.opaque_data = interpreter.flat;
+            return true;
 
           } else {
-            interpreter.code.num_bytes = impl->data.size() + 4;
+            const auto after_pos = impl->reader.CurrentPosition();
+            interpreter.code.num_bytes = impl->data.size() + 6;
             interpreter.code.next_cols = after_pos.Column();
             interpreter.code.disp_lines =
                 after_pos.Line() - ret.position.Line();
             interpreter.code.id = string_pool.InternCode(impl->data);
             interpreter.code.lexeme =
                 static_cast<uint8_t>(Lexeme::kLiteralCode);
+            ret.opaque_data = interpreter.flat;
+            return true;
           }
-
-          ret.opaque_data = interpreter.flat;
-          return true;
-
-        } else {
-          impl->reader.UnreadChar();
         }
+        goto return_invalid_code;
       }
-
-      interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncLess);
-      interpreter.basic.spelling_width = 1;
-      ret.opaque_data = interpreter.flat;
-      return true;
 
     case '>':
       interpreter.basic.lexeme = static_cast<uint8_t>(Lexeme::kPuncGreater);
@@ -964,6 +978,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Unknown, accumulate character up until a stop character.
     default:
+    invalid_char:
       interpreter.error.invalid_char = ch;
 
       if (kStopChars.find(ch) == std::string::npos) {

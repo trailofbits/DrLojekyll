@@ -1331,6 +1331,10 @@ std::string_view ParsedInline::CodeToInline(void) const noexcept {
   return impl->code;
 }
 
+::hyde::Language ParsedInline::Language(void) const noexcept {
+  return impl->language;
+}
+
 }  // namespace hyde
 
 #if defined(__GNUC__) || defined(__clang__)

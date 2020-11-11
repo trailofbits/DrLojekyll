@@ -204,7 +204,14 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
     return os;
   }
 
-  os << "#inline <!";
+  os << "#inline ```";
+  if (code_.Language() == Language::kCxx) {
+    os << "c++";
+
+  } else if (code_.Language() == Language::kPython) {
+    os << "python";
+  }
+
   if (code.front() == '\n' && code.back() == '\n') {
     os << code;
   } else if (code.front() == '\n') {
@@ -212,7 +219,7 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   } else if (code.back() == '\n') {
     os << '\n' << code;
   }
-  os << "!>";
+  os << "```";
   return os;
 }
 

@@ -139,7 +139,21 @@ void ParserImpl::LexAllTokens(Display display) {
           break;
 
         case Lexeme::kInvalidUnterminatedCode:
-          err << "Unterminated code literal";
+          err << "Unterminated code literal of unknown language";
+          ignore_line = true;
+
+          // NOTE(pag): No recovery, i.e. exclude the token.
+          break;
+
+        case Lexeme::kInvalidUnterminatedCxxCode:
+          err << "Unterminated C++ code literal";
+          ignore_line = true;
+
+          // NOTE(pag): No recovery, i.e. exclude the token.
+          break;
+
+        case Lexeme::kInvalidUnterminatedPythonCode:
+          err << "Unterminated Python code literal";
           ignore_line = true;
 
           // NOTE(pag): No recovery, i.e. exclude the token.
@@ -220,7 +234,8 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalidNewLineInString:
       case Lexeme::kInvalidEscapeInString:
       case Lexeme::kInvalidUnterminatedString:
-      case Lexeme::kInvalidUnterminatedCode:
+      case Lexeme::kInvalidUnterminatedCxxCode:
+      case Lexeme::kInvalidUnterminatedPythonCode:
       case Lexeme::kComment: continue;
 
       // We pass these through so that we can report more meaningful

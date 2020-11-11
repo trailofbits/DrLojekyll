@@ -881,6 +881,10 @@ class ParsedInclude : public parse::ParsedNode<ParsedInclude> {
   using parse::ParsedNode<ParsedInclude>::ParsedNode;
 };
 
+enum class Language : unsigned {
+  kUnknown, kCxx, kPython
+};
+
 // Represents a parsed `#inline` statement, that lets us write C/C++ code
 // directly inside of a datalog module and have it pasted directly into
 // generated C/C++ code. This can be useful for making sure that certain
@@ -889,6 +893,7 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
   std::string_view CodeToInline(void) const noexcept;
+  ::hyde::Language Language(void) const noexcept;
 
  protected:
   using parse::ParsedNode<ParsedInline>::ParsedNode;
