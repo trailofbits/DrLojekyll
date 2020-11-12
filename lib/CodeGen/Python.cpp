@@ -44,7 +44,7 @@ static const char *TypeDefaultValue(TypeKind kind) {
     case TypeKind::kUnsigned8:
     case TypeKind::kUnsigned16:
     case TypeKind::kUnsigned32:
-    case TypeKind::kUnsigned64: return "0";
+    case TypeKind::kUnsigned64: return "int()";
     case TypeKind::kFloat:
     case TypeKind::kDouble: return "float()";
     case TypeKind::kBytes: return "bytes()";
