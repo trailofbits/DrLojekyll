@@ -35,7 +35,41 @@ static const char *TypeName(TypeKind kind) {
   }
 }
 
-static const char *TypeDefaultValue(TypeKind kind) {
+static std::string TypeValueOrDefault(TypeKind kind,
+                                      std::optional<ParsedLiteral> val) {
+
+  // Create a valid representation if value exists
+  if (val) {
+    std::stringstream repr;
+    switch (kind) {
+      case TypeKind::kSigned8:
+      case TypeKind::kSigned16:
+      case TypeKind::kSigned32:
+      case TypeKind::kSigned64:
+      case TypeKind::kUnsigned8:
+      case TypeKind::kUnsigned16:
+      case TypeKind::kUnsigned32:
+      case TypeKind::kUnsigned64: return std::string(val->Spelling());
+      case TypeKind::kFloat:
+      case TypeKind::kDouble: {
+        repr << "float(" << val->Spelling() << ")";
+        return repr.str();
+      }
+      case TypeKind::kBytes: {
+        repr << "b\"" << val->Spelling() << "\"";
+        return repr.str();
+      }
+      case TypeKind::kASCII:
+      case TypeKind::kUTF8:
+      case TypeKind::kUUID: {
+        repr << "\"" << val->Spelling() << "\"";
+        return repr.str();
+      }
+      default: assert(false); return "None";
+    }
+  }
+
+  // Default value
   switch (kind) {
     case TypeKind::kSigned8:
     case TypeKind::kSigned16:
@@ -88,11 +122,7 @@ static void DefineTable(OutputStream &os, DataTable table) {
 static void DefineGlobal(OutputStream &os, DataVariable global) {
   auto type = global.Type();
   os << os.Indent() << "var_" << global.Id() << ": " << TypeName(type) << " = ";
-  if (auto val = global.Value(); val) {
-    os << *val << "\n";
-  } else {
-    os << TypeDefaultValue(type) << "\n";
-  }
+  os << TypeValueOrDefault(type, global.Value()) << "\n";
   os << "\n";
 }
 
