@@ -35,6 +35,26 @@ static const char *TypeName(TypeKind kind) {
   }
 }
 
+static const char *TypeDefaultValue(TypeKind kind) {
+  switch (kind) {
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64: return "0";
+    case TypeKind::kFloat:
+    case TypeKind::kDouble: return "float()";
+    case TypeKind::kBytes: return "bytes()";
+    case TypeKind::kASCII:
+    case TypeKind::kUTF8:
+    case TypeKind::kUUID: return "str()";
+    default: assert(false); return "None";
+  }
+}
+
 // Declare a set to hold the table.
 static void DefineTable(OutputStream &os, DataTable table) {
   os << "table_" << table.Id() << ": DefaultDict[Tuple[";
@@ -61,6 +81,17 @@ static void DefineTable(OutputStream &os, DataTable table) {
       sep = ", ";
     }
     os << "]]] = defaultdict(list)\n";
+  }
+  os << "\n";
+}
+
+static void DefineGlobal(OutputStream &os, DataVariable global) {
+  auto type = global.Type();
+  os << os.Indent() << "var_" << global.Id() << ": " << TypeName(type) << " = ";
+  if (auto val = global.Value(); val) {
+    os << *val << "\n";
+  } else {
+    os << TypeDefaultValue(type) << "\n";
   }
   os << "\n";
 }
@@ -453,9 +484,9 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
     DefineTable(os, table);
   }
 
-  // TODO(ekilmer): Global variables
-  //   Single type, bool=false, int=0
-  os << os.Indent() << "# TODO(ekilmer): Global variables\n";
+  for (auto global : program.GlobalVariables()) {
+    DefineGlobal(os, global);
+  }
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, proc);
