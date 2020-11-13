@@ -37,37 +37,8 @@ static const char *TypeName(TypeKind kind) {
 
 static std::string TypeValueOrDefault(TypeKind kind,
                                       std::optional<ParsedLiteral> val) {
-
-  // Create a valid representation if value exists
-  if (val) {
-    std::stringstream repr;
-    switch (kind) {
-      case TypeKind::kSigned8:
-      case TypeKind::kSigned16:
-      case TypeKind::kSigned32:
-      case TypeKind::kSigned64:
-      case TypeKind::kUnsigned8:
-      case TypeKind::kUnsigned16:
-      case TypeKind::kUnsigned32:
-      case TypeKind::kUnsigned64: return std::string(val->Spelling());
-      case TypeKind::kFloat:
-      case TypeKind::kDouble: {
-        repr << "float(" << val->Spelling() << ")";
-        return repr.str();
-      }
-      case TypeKind::kBytes: {
-        repr << "b\"" << val->Spelling() << "\"";
-        return repr.str();
-      }
-      case TypeKind::kASCII:
-      case TypeKind::kUTF8:
-      case TypeKind::kUUID: {
-        repr << "\"" << val->Spelling() << "\"";
-        return repr.str();
-      }
-      default: assert(false); return "None";
-    }
-  }
+  auto prefix = "";
+  auto suffix = "";
 
   // Default value
   switch (kind) {
@@ -78,15 +49,35 @@ static std::string TypeValueOrDefault(TypeKind kind,
     case TypeKind::kUnsigned8:
     case TypeKind::kUnsigned16:
     case TypeKind::kUnsigned32:
-    case TypeKind::kUnsigned64: return "int()";
+    case TypeKind::kUnsigned64:
+      prefix = "int(";
+      suffix = ")";
+      break;
     case TypeKind::kFloat:
-    case TypeKind::kDouble: return "float()";
-    case TypeKind::kBytes: return "bytes()";
+    case TypeKind::kDouble:
+      prefix = "float(";
+      suffix = ")";
+      break;
+    case TypeKind::kBytes:
+      prefix = "b\"";
+      suffix = "\"";
+      break;
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
-    case TypeKind::kUUID: return "str()";
-    default: assert(false); return "None";
+    case TypeKind::kUUID:
+      prefix = "\"";
+      suffix = "\"";
+      break;
+    default: assert(false); prefix = "None";
   }
+
+  std::stringstream value;
+  value << prefix;
+  if (val) {
+    value << val->Spelling();
+  }
+  value << suffix;
+  return value.str();
 }
 
 // Declare a set to hold the table.
