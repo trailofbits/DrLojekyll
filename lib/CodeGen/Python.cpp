@@ -100,10 +100,16 @@ static void DefineTable(OutputStream &os, DataTable table) {
       sep = ", ";
     }
     os << "], List[Tuple[";
-    sep = "";
-    for (auto col : index.ValueColumns()) {
-      os << TypeName(col.Type()) << sep;
-      sep = ", ";
+    if (!index.ValueColumns().empty()) {
+      sep = "";
+      for (auto col : index.ValueColumns()) {
+        os << TypeName(col.Type()) << sep;
+        sep = ", ";
+      }
+
+    // Valid syntax for empty Tuple
+    } else {
+      os << "()";
     }
     os << "]]] = defaultdict(list)\n";
   }
@@ -329,9 +335,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
          << "_vec : List[Tuple[";
 
       auto sep = "";
-      for (auto col : index.ValueColumns()) {
-        os << sep << TypeName(col.Type());
-        sep = ", ";
+      if (!index.ValueColumns().empty()) {
+        for (auto col : index.ValueColumns()) {
+          os << sep << TypeName(col.Type());
+          sep = ", ";
+        }
+      } else {
+        os << "()";
       }
 
       os << "]] = index_" << index.Id() << "[(";
