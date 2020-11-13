@@ -68,7 +68,7 @@ static std::string TypeValueOrDefault(TypeKind kind,
       prefix = "\"";
       suffix = "\"";
       break;
-    default: assert(false); prefix = "None";
+    default: assert(false); prefix = "None  #";
   }
 
   std::stringstream value;
