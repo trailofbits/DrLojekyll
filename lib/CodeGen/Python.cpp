@@ -35,6 +35,51 @@ static const char *TypeName(TypeKind kind) {
   }
 }
 
+static std::string TypeValueOrDefault(TypeKind kind,
+                                      std::optional<ParsedLiteral> val) {
+  auto prefix = "";
+  auto suffix = "";
+
+  // Default value
+  switch (kind) {
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64:
+      prefix = "int(";
+      suffix = ")";
+      break;
+    case TypeKind::kFloat:
+    case TypeKind::kDouble:
+      prefix = "float(";
+      suffix = ")";
+      break;
+    case TypeKind::kBytes:
+      prefix = "b\"";
+      suffix = "\"";
+      break;
+    case TypeKind::kASCII:
+    case TypeKind::kUTF8:
+    case TypeKind::kUUID:
+      prefix = "\"";
+      suffix = "\"";
+      break;
+    default: assert(false); prefix = "None  #";
+  }
+
+  std::stringstream value;
+  value << prefix;
+  if (val) {
+    value << val->Spelling();
+  }
+  value << suffix;
+  return value.str();
+}
+
 // Declare a set to hold the table.
 static void DefineTable(OutputStream &os, DataTable table) {
   os << "table_" << table.Id() << ": DefaultDict[Tuple[";
@@ -63,6 +108,12 @@ static void DefineTable(OutputStream &os, DataTable table) {
     os << "]]] = defaultdict(list)\n";
   }
   os << "\n";
+}
+
+static void DefineGlobal(OutputStream &os, DataVariable global) {
+  auto type = global.Type();
+  os << os.Indent() << "var_" << global.Id() << ": " << TypeName(type) << " = "
+     << TypeValueOrDefault(type, global.Value()) << "\n\n";
 }
 
 class PythonCodeGenVisitor final : public ProgramVisitor {
@@ -453,9 +504,9 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
     DefineTable(os, table);
   }
 
-  // TODO(ekilmer): Global variables
-  //   Single type, bool=false, int=0
-  os << os.Indent() << "# TODO(ekilmer): Global variables\n";
+  for (auto global : program.GlobalVariables()) {
+    DefineGlobal(os, global);
+  }
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, proc);
