@@ -112,9 +112,8 @@ static void DefineTable(OutputStream &os, DataTable table) {
 
 static void DefineGlobal(OutputStream &os, DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << "var_" << global.Id() << ": " << TypeName(type) << " = ";
-  os << TypeValueOrDefault(type, global.Value()) << "\n";
-  os << "\n";
+  os << os.Indent() << "var_" << global.Id() << ": " << TypeName(type) << " = "
+     << TypeValueOrDefault(type, global.Value()) << "\n\n";
 }
 
 class PythonCodeGenVisitor final : public ProgramVisitor {
