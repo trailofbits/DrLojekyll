@@ -175,7 +175,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       for (auto setter : cond->setters) {
         if (setter) {
           removed_conds = true;
-          WeakUseRef<COND>().Swap(setter->sets_condition);
+          setter->sets_condition.Clear();
         }
       }
       cond->setters.Clear();

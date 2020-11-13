@@ -117,14 +117,127 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView pred_view,
     // We don't permit `!foo : message(...).`
     assert(!view.SetCondition());
 
+    std::vector<QueryColumn> cols;
+    insert.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                          std::optional<QueryColumn> out_col) {
+      assert(role == InputColumnRole::kDeleted);
+      assert(out_col);
+      (void) role;
+
+      cols.push_back(*out_col);
+    });
+
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        parent, GetOrCreateBottomUpRemover(impl, context, view, nullptr));
+        parent, GetOrCreateBottomUpRemover(impl, context, view, view));
+
+    for (auto col : insert.InputColumns()) {
+      const auto var = parent->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+    }
 
     UseRef<REGION>(parent, call).Swap(parent->body);
 
   } else {
     assert(false);
   }
+}
+
+// Processing a DELETE node, which is implemented in terms of an INSERT node.
+// The interesting thing with DELETEs is that they don't have a data model;
+// whereas an INSERT might share its data model with its corresponding SELECTs,
+// as well as with the node feeding it, a DELETE is more a signal saying "my
+// successor must delete this data from /its/ model."
+void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
+                                 QueryView view, PROC *proc) {
+  auto insert = QueryInsert::From(view);
+  for (auto succ_view : view.Successors()) {
+    assert(succ_view.IsMerge());
+
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        proc, GetOrCreateBottomUpRemover(impl, context, succ_view, succ_view));
+
+    for (auto col : insert.InputColumns()) {
+      const auto var = proc->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+    }
+
+    call->ExecuteAlongside(impl, proc);
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
+}
+
+// A bottom-up insert remover is not a DELETE; instead it is that the relation
+// that backs this INSERT is somehow subject to differential updates, e.g.
+// because it is downstream from an aggregate or kvindex.
+void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
+                                 QueryView view, PROC *proc,
+                                 TABLE *already_checked) {
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  PARALLEL *parent = nullptr;
+
+  if (model->table) {
+
+    // We've already transitioned for this table, so our job is just to pass
+    // the buck along, and then eventually we'll temrinate recursion.
+    if (already_checked == model->table) {
+
+      parent = impl->parallel_regions.Create(proc);
+      UseRef<REGION>(proc, parent).Swap(proc->body);
+
+    // The caller didn't already do a state transition, so we cn do it.
+    } else {
+      auto remove = BuildBottomUpTryMarkUnknown(
+          impl, model->table, proc, view.Columns(),
+          [&] (PARALLEL *par) {
+            parent = par;
+          });
+
+      UseRef<REGION>(proc, remove).Swap(proc->body);
+
+      already_checked = model->table;
+    }
+
+  // This insert isn't associated with any persistent storage. That is unusual.
+  } else {
+    assert(false);
+
+    already_checked = nullptr;
+    parent = impl->parallel_regions.Create(proc);
+    UseRef<REGION>(proc, parent).Swap(proc->body);
+  }
+
+  const auto insert_cols = QueryInsert::From(view).InputColumns();
+  for (auto succ_view : view.Successors()) {
+    assert(succ_view.IsSelect());
+
+    const auto sel_cols = succ_view.Columns();
+    assert(sel_cols.size() == insert_cols.size());
+
+    for (auto sel_succ : succ_view.Successors()) {
+
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          parent, GetOrCreateBottomUpRemover(impl, context, succ_view, sel_succ,
+                                             already_checked));
+
+      for (auto sel_col : sel_cols) {
+        const auto var = proc->VariableFor(
+            impl, insert_cols[*(sel_col.Index())]);
+        assert(var != nullptr);
+        call->arg_vars.AddUse(var);
+      }
+
+      parent->regions.AddUse(call);
+    }
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, parent);
 }
 
 }  // namespace hyde

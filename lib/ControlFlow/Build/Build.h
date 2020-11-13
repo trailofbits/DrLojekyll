@@ -89,6 +89,10 @@ class Context {
   std::unordered_map<std::string, PROC *>
       view_to_top_down_checker;
 
+  // Maps views to procedures for bottom-up proving that goes and removes
+  // tuples. Removal of tuples changes their state from PRESENT to UNKNOWN.
+  std::unordered_map<std::string, PROC *> view_to_bottom_up_remover;
+
   enum DeferDetermination {
     kDeferUnknown,
     kCanDeferToPredecessor,
@@ -102,6 +106,10 @@ class Context {
   // A work list of top-down checkers to build.
   std::vector<std::tuple<QueryView, std::vector<QueryColumn>, PROC *, TABLE *>>
       top_down_checker_work_list;
+
+  // A work list of bottom-up provers (that remove tuples) to build.
+  std::vector<std::tuple<QueryView, QueryView, PROC *, TABLE *>>
+      bottom_up_removers_work_list;
 };
 
 //using ColPair = std::pair<QueryColumn, QueryColumn>;
@@ -162,7 +170,7 @@ static CHANGESTATE *BuildChangeState(
 }
 
 template <typename Cols, typename AfterChangeState>
-static CHANGESTATE *BuildTopDownCheckerResetAndProve(
+static CHANGESTATE *BuildTopDownTryMarkAbsent(
     ProgramImpl *impl, TABLE *table, REGION *parent,
     Cols &&cols, AfterChangeState with_par_node) {
 
@@ -181,6 +189,25 @@ static CHANGESTATE *BuildTopDownCheckerResetAndProve(
   return table_remove;
 }
 
+template <typename Cols, typename AfterChangeState>
+static CHANGESTATE *BuildBottomUpTryMarkUnknown(
+    ProgramImpl *impl, TABLE *table, REGION *parent,
+    Cols &&cols, AfterChangeState with_par_node) {
+
+  // Change the tuple's state to mark it as deleted so that we can't use it
+  // as its own base case.
+  const auto table_remove = BuildChangeState(
+      impl, table, parent, cols, TupleState::kPresent, TupleState::kUnknown);
+
+  // Now that we've established the base case (marking the tuple absent), we
+  // need to go and actually check all the possibilities.
+  const auto par = impl->parallel_regions.Create(table_remove);
+  UseRef<REGION>(table_remove, par).Swap(table_remove->OP::body);
+
+  with_par_node(par);
+
+  return table_remove;
+}
 
 // We know that `view`s data is persistently backed by `table`, and that we
 // want to check for a tuple with values available in `view_cols`. The issue
@@ -278,39 +305,6 @@ static REGION *BuildMaybeScanPartial(
 
   auto in_loop = cb(loop);
   UseRef<REGION>(loop, in_loop).Swap(loop->body);
-
-//  const auto sub_seq = impl->series_regions.Create(check);
-//  UseRef<REGION>(check, sub_seq).Swap(check->body);
-//
-//  // Clear out the scan vector if we've proven the tuple.
-//  const auto clear_found = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-//      sub_seq, ProgramOperation::kClearScanVector);
-//  UseRef<VECTOR>(clear_found, vec).Swap(clear_found->vector);
-//  clear_found->ExecuteAfter(impl, sub_seq);
-//
-//  // Change the tuple's state if we've proven it.
-//  const auto table_insert =
-//      impl->operation_regions.CreateDerived<CHANGESTATE>(
-//          sub_seq, TupleState::kAbsentOrUnknown, TupleState::kPresent);
-//  for (auto col : tuple.Columns()) {
-//    const auto var = proc->VariableFor(impl, col);
-//    table_insert->col_values.AddUse(var);
-//  }
-//
-//  UseRef<TABLE>(table_insert, table).Swap(table_insert->table);
-//  table_insert->ExecuteAfter(impl, sub_seq);
-//
-//  // Return `true` if we've proven the tuple.
-//  const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-//      sub_seq, ProgramOperation::kReturnTrueFromProcedure);
-//  ret->ExecuteAfter(impl, sub_seq);
-//
-//  // Clear out the scan vector after the loop. We'll let the caller inject
-//  // a `return-false`.
-//  const auto clear_notfound = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-//      seq, ProgramOperation::kClearScanVector);
-//  UseRef<VECTOR>(clear_notfound, vec).Swap(clear_notfound->vector);
-//  clear_notfound->ExecuteAfter(impl, seq);
 
   return seq;
 }
@@ -425,7 +419,24 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, TABLE *table);
+                                 QueryView from_view, QueryView to_view,
+                                 TABLE *already_checked=nullptr);
+
+void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
+                                 QueryView view, PROC *proc);
+
+
+void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
+                                 QueryView view, PROC *proc,
+                                 TABLE *already_checked);
+
+void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
+                                QueryView view, PROC *proc,
+                                TABLE *already_checked);
+
+void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
+                                QueryView view, PROC *proc,
+                                TABLE *already_checked);
 
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
@@ -474,7 +485,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
   // Proving this `view` might set a condition. If we set a condition, then
   // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within an CHANGESTATE.
+  // mean re-parenting all successors within a CHANGESTATE.
   if (auto set_cond = view.SetCondition(); set_cond) {
     if (const auto table = TABLE::GetOrCreate(impl, view);
         table != last_model) {
@@ -566,7 +577,17 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     succ_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                              std::optional<QueryColumn> out_col) {
       switch (role) {
-        case InputColumnRole::kPassThrough:
+        case InputColumnRole::kCompareLHS:
+        case InputColumnRole::kCompareRHS:
+          switch (QueryCompare::From(QueryView::Containing(*out_col)).Operator()) {
+            case ComparisonOperator::kEqual:
+              return;
+            case ComparisonOperator::kGreaterThan:
+            case ComparisonOperator::kLessThan:
+            case ComparisonOperator::kNotEqual:
+              break;
+          }
+          [[clang::fallthrough]];
         case InputColumnRole::kCopied:
         case InputColumnRole::kJoinPivot:
         case InputColumnRole::kJoinNonPivot:
@@ -575,6 +596,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
         case InputColumnRole::kFunctorInput:
         case InputColumnRole::kAggregateConfig:
         case InputColumnRole::kAggregateGroup:
+        case InputColumnRole::kMaterialized:
           if (out_col && in_col.Id() != out_col->Id() &&
               (QueryView::Containing(in_col) == view || in_col.IsConstant())) {
 
@@ -585,12 +607,13 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
             dst_var->query_column = *out_col;
             let->col_id_to_var.emplace(out_col->Id(), dst_var);
           }
-          break;
+          return;
 
         case InputColumnRole::kIndexValue:
-        case InputColumnRole::kCompareLHS:
-        case InputColumnRole::kCompareRHS:
-        case InputColumnRole::kAggregatedColumn: break;
+        case InputColumnRole::kAggregatedColumn:
+        case InputColumnRole::kPublished:
+        case InputColumnRole::kDeleted:
+          return;
       }
     });
 

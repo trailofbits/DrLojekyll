@@ -63,17 +63,22 @@ void BuildTopDownUnionChecker(
         [&] (REGION *parent) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
+
+            // TODO(pag): We should be able to optimize
+            //            `BuildTopDownTryMarkAbsent` to not actually
+            //            have to check during its state change, but oh well.
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
                 BuildStateCheckCaseNothing,
                 [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                  return BuildTopDownCheckerResetAndProve(
+                  return BuildTopDownTryMarkAbsent(
                       impl, model->table, parent, view.Columns(),
                       [&] (PARALLEL *par) {
                         call_preds(par);
                       });
                 });
+
           } else {
             const auto par = impl->parallel_regions.Create(parent);
             call_preds(par);
@@ -127,6 +132,63 @@ void BuildTopDownUnionChecker(
 //        rec_check, ProgramOperation::kReturnTrueFromProcedure);
 //    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
 //  }
+}
+
+void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
+                                QueryView view, PROC *proc,
+                                TABLE *already_checked) {
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  PARALLEL *parent = nullptr;
+
+  if (model->table) {
+
+    // We've already transitioned for this table, so our job is just to pass
+    // the buck along, and then eventually we'll temrinate recursion.
+    if (already_checked == model->table) {
+
+      parent = impl->parallel_regions.Create(proc);
+      UseRef<REGION>(proc, parent).Swap(proc->body);
+
+    // The caller didn't already do a state transition, so we cn do it.
+    } else {
+      auto remove = BuildBottomUpTryMarkUnknown(
+          impl, model->table, proc, view.Columns(),
+          [&] (PARALLEL *par) {
+            parent = par;
+          });
+
+      UseRef<REGION>(proc, remove).Swap(proc->body);
+
+      already_checked = model->table;
+    }
+
+  // This merge isn't associated with any persistent storage.
+  } else {
+    already_checked = nullptr;
+    parent = impl->parallel_regions.Create(proc);
+    UseRef<REGION>(proc, parent).Swap(proc->body);
+  }
+
+  for (auto succ_view : view.Successors()) {
+    assert(!succ_view.IsMerge());
+
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                           already_checked));
+
+    for (auto col : view.Columns()) {
+      const auto var = proc->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+    }
+
+    parent->regions.AddUse(call);
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, parent);
 }
 
 }  // namespace hyde

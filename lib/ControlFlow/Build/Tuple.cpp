@@ -84,7 +84,7 @@ void BuildTopDownTupleChecker(
                   BuildStateCheckCaseReturnTrue,
                   BuildStateCheckCaseNothing,
                   [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                    return BuildTopDownCheckerResetAndProve(
+                    return BuildTopDownTryMarkAbsent(
                         impl, model->table, parent, view.Columns(),
                         [&] (PARALLEL *par) {
                           call_pred(par)->ExecuteAlongside(impl, par);
@@ -107,6 +107,62 @@ void BuildTopDownTupleChecker(
           nullptr);
     UseRef<REGION>(proc, check).Swap(proc->body);
   }
+}
+
+void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
+                                QueryView view, PROC *proc,
+                                TABLE *already_checked) {
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  PARALLEL *parent = nullptr;
+
+  if (model->table) {
+
+    // We've already transitioned for this table, so our job is just to pass
+    // the buck along, and then eventually we'll temrinate recursion.
+    if (already_checked == model->table) {
+
+      parent = impl->parallel_regions.Create(proc);
+      UseRef<REGION>(proc, parent).Swap(proc->body);
+
+    // The caller didn't already do a state transition, so we can do it.
+    } else {
+      auto remove = BuildBottomUpTryMarkUnknown(
+          impl, model->table, proc, view.Columns(),
+          [&] (PARALLEL *par) {
+            parent = par;
+          });
+
+      UseRef<REGION>(proc, remove).Swap(proc->body);
+
+      already_checked = model->table;
+    }
+
+  // This tuple isn't associated with any persistent storage.
+  } else {
+    already_checked = nullptr;
+    parent = impl->parallel_regions.Create(proc);
+    UseRef<REGION>(proc, parent).Swap(proc->body);
+  }
+
+  for (auto succ_view : view.Successors()) {
+
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                           already_checked));
+
+    for (auto col : view.Columns()) {
+      const auto var = proc->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+    }
+
+    parent->regions.AddUse(call);
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, parent);
 }
 
 }  // namespace hyde

@@ -27,7 +27,7 @@ VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl, VectorKind kind,
                                           DefinedNodeRange<QueryColumn> cols) {
   const auto next_id = impl->next_id++;
   if (VectorKind::kInput == kind) {
-    return input_vectors.Create(next_id, kind, cols);
+    return input_vecs.Create(next_id, kind, cols);
   } else {
     return vectors.Create(next_id, kind, cols);
   }

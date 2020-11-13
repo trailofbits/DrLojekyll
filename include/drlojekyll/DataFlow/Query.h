@@ -242,19 +242,61 @@ class QueryInsert;
 // NOTE(pag): There is no `kSelected` because `SELECT` / `RECV` nodes have no
 //            input columns.
 enum class InputColumnRole {
-  kPassThrough,
+  // The input column is copied to the output column, and it has no additional
+  // semantic meaning.
   kCopied,
+
+  // The input column is a pivot column in a join node.
   kJoinPivot,
+
+  // The input column is a non-pivot column in a join node.
   kJoinNonPivot,
+
+  // The input column is on the left-hand side of a binary comparison operator.
   kCompareLHS,
+
+  // The input column is on the right-hand side of a binary comparison operator.
   kCompareRHS,
+
+  // The input column corresponds with a non-`mutable`-attributed parameter of a
+  // relation that has at least one `mutable`-attributed parameter. It behaves
+  // like a key in a key-value mapping.
   kIndexKey,
+
+  // The input column corresponds to the proposed new value to pass to
+  // a merged functor, which corresponds with a `mutable`-attributed parameter
+  // of a relation. It behaves like a value in a key-value mapping.
   kIndexValue,
+
+  // The input column corresponds to a `bound`-attributed parameter of
+  // a normal functor.
   kFunctorInput,
+
+  // The input column corresponds to a `bound`-attributed parameter of
+  // an aggregating functor. It behaves both as a grouping column and as
+  // a value which can configure/change the behavior of the aggregating functor.
   kAggregateConfig,
+
+  // The input column is part of the parameter list of the relation over which
+  // an aggregating functor is applied. However, this parameter is not itself
+  // passed as an argument to the aggregating functor.
   kAggregateGroup,
+
+  // The input column corresponds to a `aggregate`-attributed parameter of
+  // an aggregating functor.
   kAggregatedColumn,
-  kMergedColumn
+
+  // The input column passes through a merge/union node.
+  kMergedColumn,
+
+  // The input column is inserted into a persistent relation.
+  kMaterialized,
+
+  // The input column is published into a message.
+  kPublished,
+
+  // The input column is deleted from the relation containing the output column.
+  kDeleted
 };
 
 // A view into a collection of rows. The rows may be derived from a selection
@@ -301,6 +343,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMerge(void) const noexcept;
   bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
+  bool IsInsertThatDeletes(void) const noexcept;
 
   // Can this view receive inputs that should logically "delete" entries?
   bool CanReceiveDeletions(void) const noexcept;

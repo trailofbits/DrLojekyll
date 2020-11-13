@@ -375,10 +375,7 @@ bool QueryImpl::ShrinkConditions(void) {
         }
       }
 
-      do {
-        WeakUseRef<COND>().Swap(tuple->sets_condition);
-      } while (false);
-
+      tuple->sets_condition.Clear();
       cond->setters.Clear();
       cond->positive_users.Clear();
       cond->negative_users.Clear();

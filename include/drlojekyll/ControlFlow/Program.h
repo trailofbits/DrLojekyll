@@ -191,7 +191,7 @@ enum class VariableRole : int {
   kProductOutput,
   kScanOutput,
   kFunctorOutput,
-  kParameter
+  kParameter,
 };
 
 // A variable in the program.

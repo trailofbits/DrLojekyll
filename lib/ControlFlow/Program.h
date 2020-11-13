@@ -167,6 +167,16 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
     return id;
   }
 
+  inline bool IsGlobal(void) const noexcept {
+    switch (role) {
+      case VariableRole::kConditionRefCount:
+      case VariableRole::kConstant:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   std::optional<QueryConstant> query_const;
   std::optional<QueryColumn> query_column;
   std::optional<QueryCondition> query_cond;
@@ -373,7 +383,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
-  const ProgramOperation op;
+  ProgramOperation op;
 
   // If this operation does something conditional then this is the body it
   // executes.
@@ -611,11 +621,7 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   virtual ~Node(void);
 
   Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_,
-       ProgramOperation op_ = ProgramOperation::kCallProcedure)
-      : Node<ProgramOperationRegion>(parent_, op_),
-        called_proc(called_proc_),
-        arg_vars(this),
-        arg_vecs(this) {}
+       ProgramOperation op_ = ProgramOperation::kCallProcedure);
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -629,7 +635,7 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
 
   // Procedure being called.
-  Node<ProgramProcedure> *const called_proc;
+  UseRef<Node<ProgramProcedure>, REGION> called_proc;
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
@@ -800,7 +806,7 @@ class Node<ProgramTableProductRegion> final
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCrossProduct),
         query_join(query_join_),
         tables(this),
-        input_vectors(this) {}
+        input_vecs(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -816,7 +822,7 @@ class Node<ProgramTableProductRegion> final
   const QueryJoin query_join;
 
   UseList<TABLE> tables;
-  UseList<VECTOR> input_vectors;
+  UseList<VECTOR> input_vecs;
   std::vector<DefList<VAR>> output_vars;
 };
 
@@ -959,7 +965,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   UseRef<REGION> body;
 
   // Input vectors and variables.
-  DefList<VECTOR> input_vectors;
+  DefList<VECTOR> input_vecs;
   DefList<VAR> input_vars;
 
   // Vectors defined in this procedure. If this is a vector procedure then
@@ -1123,10 +1129,6 @@ class ProgramImpl : public User {
   // We build up "data models" of views that can share the same backing storage.
   std::vector<std::unique_ptr<DataModel>> models;
   std::unordered_map<QueryView, DataModel *> view_to_model;
-
-  // Maps views to procedures for bottom-up proving that goes and removes
-  // tuples. Removal of tuples changes their state from PRESENT to UNKNOWN.
-  std::unordered_map<QueryView, PROC *> view_to_bottom_up_remover;
 };
 
 }  // namespace hyde

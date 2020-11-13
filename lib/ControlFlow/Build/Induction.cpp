@@ -313,7 +313,7 @@ void BuildTopDownInductionChecker(
       return BuildStateCheckCaseReturnFalse(impl, parent);
     }
 
-    return BuildTopDownCheckerResetAndProve(
+    return BuildTopDownTryMarkAbsent(
         impl, table, parent, view.Columns(), build_rule_checks);
   };
 

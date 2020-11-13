@@ -28,22 +28,22 @@ class User {
   uint64_t timestamp{0u};
 };
 
-template <typename T>
+template <typename>
 class Use;
 
-template <typename T>
+template <typename, typename>
 class UseRef;
 
-template <typename T>
+template <typename>
 class WeakUseRef;
 
-template <typename T>
+template <typename>
 class Def;
 
-template <typename T>
+template <typename>
 class UseList;
 
-template <typename T>
+template <typename>
 class UseListIterator;
 
 template <typename T>
@@ -70,7 +70,7 @@ class Use {
   }
 
  private:
-  template <typename>
+  template <typename, typename>
   friend class UseRef;
 
   template <typename>
@@ -403,6 +403,8 @@ class DefListIterator {
   const std::unique_ptr<T> *it;
 };
 
+class DefBase {};
+
 // CRTP class for definitions of `T`. `Use<T>::def_being_used` should point to
 // a `T`, which is derived from `Def<T>`.
 template <typename T>
@@ -522,7 +524,7 @@ class Def {
   template <typename>
   friend class Use;
 
-  template <typename>
+  template <typename, typename>
   friend class UseRef;
 
   template <typename>
@@ -607,10 +609,11 @@ void UseList<T>::AddUse(Def<T> *def) {
   }
 }
 
-template <typename T>
+template <typename T, typename Tbase=T>
 class UseRef {
  public:
-  UseRef(User *user, Def<T> *def) : use(def ? def->CreateUse(user) : nullptr) {}
+  UseRef(User *user, Def<Tbase> *def)
+      : use(def ? def->CreateUse(user) : nullptr) {}
 
   void Swap(UseRef<T> &that) {
     if (use && that.use) {
@@ -622,31 +625,55 @@ class UseRef {
   UseRef(void) = default;
 
   ~UseRef(void) {
-    if (use) {
-      const auto use_copy = use;
-      use = nullptr;
-      use_copy->def_being_used->EraseUse(use_copy);
-    }
+    Clear();
   }
 
   T *operator->(void) const noexcept {
-    return use->def_being_used;
+    if constexpr (std::is_same_v<T, Tbase>) {
+      return use->def_being_used;
+    } else {
+      return dynamic_cast<T *>(use->def_being_used);
+    }
   }
 
   T &operator*(void) const noexcept {
-    return *(use->def_being_used);
+    if constexpr (std::is_same_v<T, Tbase>) {
+      return *(use->def_being_used);
+    } else {
+      return *dynamic_cast<T *>(use->def_being_used);
+    }
   }
 
   T *get(void) const noexcept {
-    return use ? use->def_being_used : nullptr;
+    if constexpr (std::is_same_v<T, Tbase>) {
+      return use ? use->def_being_used : nullptr;
+    } else {
+      return use ? dynamic_cast<T *>(use->def_being_used) : nullptr;
+    }
   }
 
   operator bool(void) const noexcept {
     return !!use;
   }
 
+  inline bool operator==(const UseRef<T> &that) const noexcept {
+    return use == that.use;
+  }
+
+  inline bool operator!=(const UseRef<T> &that) const noexcept {
+    return use != that.use;
+  }
+
   void ClearWithoutErasure(void) {
     use = nullptr;
+  }
+
+  void Clear(void) {
+    if (use) {
+      const auto use_copy = use;
+      use = nullptr;
+      use_copy->def_being_used->EraseUse(use_copy);
+    }
   }
 
  private:
@@ -655,7 +682,7 @@ class UseRef {
   UseRef<T> &operator=(const UseRef<T> &) = delete;
   UseRef<T> &operator=(UseRef<T> &&) noexcept = delete;
 
-  Use<T> *use{nullptr};
+  Use<Tbase> *use{nullptr};
 };
 
 template <typename T>

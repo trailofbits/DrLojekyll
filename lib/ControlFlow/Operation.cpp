@@ -32,6 +32,14 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 
+Node<ProgramCallRegion>::Node(Node<ProgramRegion> *parent_,
+                              Node<ProgramProcedure> *called_proc_,
+                              ProgramOperation op_)
+    : Node<ProgramOperationRegion>(parent_, op_),
+      called_proc(this, called_proc_),
+      arg_vars(this),
+      arg_vecs(this) {}
+
 Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
   return nullptr;
 }
@@ -464,7 +472,7 @@ bool Node<ProgramTableProductRegion>::Equals(
   }
 
   for (auto i = 0u; i < num_tables; ++i) {
-    if (!eq.Contains(input_vectors[i], that->input_vectors[i])) {
+    if (!eq.Contains(input_vecs[i], that->input_vecs[i])) {
       return false;
     }
   }
@@ -608,7 +616,7 @@ Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
 }
 
 bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
-  return called_proc->IsNoOp();
+  return !called_proc || called_proc->IsNoOp();
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -646,33 +654,39 @@ bool Node<ProgramCallRegion>::Equals(
     return false;
   }
 
-  if (called_proc == that->called_proc) {
+  const auto this_called_proc = called_proc.get();
+  const auto that_called_proc = that->called_proc.get();
+
+  if (this_called_proc == that_called_proc) {
     return true;
 
-  } else if (eq.Contains(called_proc, that->called_proc)) {
+  } else if (eq.Contains(this_called_proc, that_called_proc)) {
     return true;
 
+  // Different functions are being called, check to see if their function bodies
+  // are the same.
   } else {
 
-    if (!called_proc->body && !that->called_proc->body) {
+    if (!this_called_proc->body && !that_called_proc->body) {
       return true;
 
-    } else if (!called_proc->body != !that->called_proc->body) {
+    } else if (!this_called_proc->body != !that_called_proc->body) {
       return false;
 
     } else {
-      eq.Insert(called_proc, that->called_proc);
+      eq.Insert(this_called_proc, that_called_proc);
 
       for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
-        eq.Insert(called_proc->input_vars[i], that->called_proc->input_vars[i]);
+        eq.Insert(this_called_proc->input_vars[i],
+                  that_called_proc->input_vars[i]);
       }
 
       for (auto i = 0u, max_i = arg_vecs.Size(); i < max_i; ++i) {
-        eq.Insert(called_proc->input_vectors[i],
-                  that->called_proc->input_vectors[i]);
+        eq.Insert(this_called_proc->input_vecs[i],
+                  that_called_proc->input_vecs[i]);
       }
 
-      return called_proc->body->Equals(eq, that->called_proc->body.get());
+      return this_called_proc->body->Equals(eq, that_called_proc->body.get());
     }
   }
 }

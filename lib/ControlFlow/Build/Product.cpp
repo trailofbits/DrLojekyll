@@ -100,7 +100,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
 
     product->tables.AddUse(table);
-    product->input_vectors.AddUse(vec);
+    product->input_vecs.AddUse(vec);
 
     // Make a variable for each column of the input table.
     auto &out_vars = product->output_vars.emplace_back(product);

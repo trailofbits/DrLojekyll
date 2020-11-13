@@ -502,7 +502,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
   negative_conditions.Clear();
 
   if (auto cond = sets_condition.get(); cond) {
-    WeakUseRef<COND>().Swap(sets_condition);
+    sets_condition.Clear();
     cond->setters.RemoveIf(is_this_view);
   }
 
@@ -521,7 +521,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
   } else if (auto select = AsSelect(); select) {
     if (auto stream = select->stream.get(); stream) {
-      WeakUseRef<STREAM>().Swap(select->stream);
+      select->stream.Clear();
       if (auto io = stream->AsIO(); io) {
         io->receives.RemoveIf(is_this_view);
       } else {
@@ -529,13 +529,13 @@ bool Node<QueryView>::PrepareToDelete(void) {
       }
 
     } else if (auto rel = select->relation.get(); rel) {
-      WeakUseRef<REL>().Swap(select->relation);
+      select->relation.Clear();
       rel->selects.RemoveIf(is_this_view);
     }
 
   } else if (auto insert = AsInsert(); insert) {
     if (auto stream = insert->stream.get(); stream) {
-      WeakUseRef<STREAM>().Swap(insert->stream);
+      insert->stream.Clear();
       if (auto io = stream->AsIO(); io) {
         io->transmits.RemoveIf(is_this_view);
       } else {
@@ -543,7 +543,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
       }
 
     } else if (auto rel = insert->relation.get(); rel) {
-      WeakUseRef<REL>().Swap(insert->relation);
+      insert->relation.Clear();
       rel->inserts.RemoveIf(is_this_view);
     }
   }
@@ -617,7 +617,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
         that->is_canonical = false;
       }
 
-      WeakUseRef<COND>().Swap(sets_condition);
+      sets_condition.Clear();
     }
   }
 }

@@ -8,7 +8,7 @@ namespace hyde {
 void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
                               Context &context, OP *parent) {
   const auto functor = view.Functor();
-  assert(functor.IsPure() && "TODO!");
+  assert(functor.IsPure());
 
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;

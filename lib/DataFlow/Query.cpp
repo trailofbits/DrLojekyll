@@ -217,6 +217,14 @@ bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
 }
 
+bool QueryView::IsInsertThatDeletes(void) const noexcept {
+  if (auto insert = impl->AsInsert(); insert) {
+    return !insert->is_insert;
+  } else {
+    return false;
+  }
+}
+
 // Can this view receive inputs that should logically "delete" entries?
 bool QueryView::CanReceiveDeletions(void) const noexcept {
   return impl->can_receive_deletions;
@@ -619,7 +627,7 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
     for (auto i = 0u; i < max_i; ++i) {
       const auto out_col = impl->columns[i];
       const auto in_col = view->columns[i];
-      with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+      with_col(QueryColumn(in_col), InputColumnRole::kCopied,
                QueryColumn(out_col));
     }
   }
@@ -1187,8 +1195,46 @@ OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
 void QueryInsert::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                 std::optional<QueryColumn>)>
                                  with_col) const {
-  for (auto in_col : impl->input_columns) {
-    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough, std::nullopt);
+  if (IsStream()) {
+    for (auto in_col : impl->input_columns) {
+      with_col(QueryColumn(in_col), InputColumnRole::kPublished, std::nullopt);
+    }
+
+  } else if (IsDelete()) {
+    for (auto user : impl->successors) {
+      if (user->AsMerge() || user->AsSelect()) {
+        for (auto out_col : user->columns) {
+          auto in_col = impl->input_columns[out_col->index];
+          with_col(QueryColumn(in_col), InputColumnRole::kDeleted,
+                   QueryColumn(out_col));
+        }
+      } else {
+        assert(false);
+      }
+    }
+
+  } else if (IsRelation()) {
+    if (impl->successors.Empty()) {
+      for (auto in_col : impl->input_columns) {
+        with_col(QueryColumn(in_col), InputColumnRole::kMaterialized,
+                 std::nullopt);
+      }
+    } else {
+      for (auto user : impl->successors) {
+        if (user->AsMerge() || user->AsSelect()) {
+          for (auto out_col : user->columns) {
+            auto in_col = impl->input_columns[out_col->index];
+            with_col(QueryColumn(in_col), InputColumnRole::kMaterialized,
+                     QueryColumn(out_col));
+          }
+        } else {
+          assert(false);
+        }
+      }
+    }
+
+  } else {
+    assert(false);
   }
 }
 
@@ -1237,7 +1283,7 @@ void QueryTuple::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
     const auto out_col = impl->columns[i];
     const auto in_col = impl->input_columns[i];
-    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
              QueryColumn(out_col));
   }
 }
