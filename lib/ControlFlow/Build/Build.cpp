@@ -501,9 +501,10 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     } else if (to_view.IsJoin()) {
       auto join = QueryJoin::From(to_view);
       if (join.NumPivotColumns()) {
-
+        CreateBottomUpJoinRemover(impl, context, from_view, join,
+                                  proc, already_checked);
       } else {
-
+        assert(false && "TODO: Cross-products!");
       }
     } else if (to_view.IsAggregate()) {
       assert(false && "TODO Aggregates!");
@@ -515,11 +516,16 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       auto map = QueryMap::From(to_view);
       auto functor = map.Functor();
       if (functor.IsPure()) {
+        CreateBottomUpGenerateRemover(impl, context, map, functor, proc);
 
       } else {
         assert(false && "TODO Impure Functors!");
       }
+
+    // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
+    //            removers jump past SELECTs.
     } else if (to_view.IsSelect()) {
+      assert(false);
 
     } else {
       assert(false);

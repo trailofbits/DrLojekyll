@@ -3,18 +3,15 @@
 #include "Build.h"
 
 namespace hyde {
+namespace {
 
-// Build an eager region for a `QueryMap`.
-void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
-                              Context &context, OP *parent) {
-  const auto functor = view.Functor();
-  assert(functor.IsPure());
-
+static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
+                                      ParsedFunctor functor,
+                                      Context &context, REGION *parent) {
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
   auto gen = impl->operation_regions.CreateDerived<GENERATOR>(parent, functor);
-  UseRef<REGION>(parent, gen).Swap(parent->body);
   auto i = 0u;
 
   // Deal with the functor inputs and outputs.
@@ -60,8 +57,54 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
     gen->col_id_to_var.emplace(out_col.Id(), in_var);
   }
 
+  return gen;
+}
+
+}  // namespace
+
+// Build an eager region for a `QueryMap`.
+void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
+                              Context &context, OP *parent) {
+  const auto functor = view.Functor();
+  assert(functor.IsPure());
+
+  const auto gen = CreateGeneratorCall(impl, view, functor, context, parent);
+  UseRef<REGION>(parent, gen).Swap(parent->body);
+
   BuildEagerSuccessorRegions(impl, view, context, gen,
                              QueryView(view).Successors(), nullptr);
+}
+
+// Build a bottom-up remover for generator calls.
+void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
+                                   QueryMap map, ParsedFunctor functor,
+                                   PROC *proc) {
+  QueryView view(map);
+  const auto gen = CreateGeneratorCall(impl, map, functor, context, proc);
+  UseRef<REGION>(proc, gen).Swap(proc->body);
+
+  const auto parent = impl->parallel_regions.Create(gen);
+  UseRef<REGION>(gen, parent).Swap(gen->body);
+
+  for (auto succ_view : view.Successors()) {
+    assert(!succ_view.IsMerge());
+
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                           nullptr));
+
+    for (auto col : view.Columns()) {
+      const auto var = proc->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+    }
+
+    parent->regions.AddUse(call);
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

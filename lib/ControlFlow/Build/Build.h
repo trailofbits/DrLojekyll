@@ -430,6 +430,10 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc,
                                  TABLE *already_checked);
 
+void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
+                                   QueryMap map, ParsedFunctor functor,
+                                   PROC *proc);
+
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, PROC *proc,
                                 TABLE *already_checked);
@@ -437,6 +441,10 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, PROC *proc,
                                 TABLE *already_checked);
+
+void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
+                               QueryView from_view, QueryJoin join,
+                               PROC *proc, TABLE *already_checked);
 
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.

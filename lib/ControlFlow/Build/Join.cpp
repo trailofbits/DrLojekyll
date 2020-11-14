@@ -219,4 +219,213 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   dynamic_cast<ContinueJoinWorkItem *>(action)->inserts.push_back(parent);
 }
 
+// Build a bottom-up join remover.
+void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
+                               QueryView from_view, QueryJoin join_view,
+                               PROC *proc, TABLE *already_checked) {
+  assert(join_view.NumPivotColumns());
+
+  const QueryView view(join_view);
+
+  auto parent = impl->series_regions.Create(proc);
+  UseRef<REGION>(proc, parent).Swap(proc->body);
+
+  // First, and somewhat unlike other bottom-up removers, we will make sure that
+  // the data is gone in the data model associated with this particular
+  // predecessor. This is because JOINs require that their predecessors all
+  // have backing storage.
+  const auto pred_model = impl->view_to_model[from_view]->FindAs<DataModel>();
+  assert(pred_model->table != nullptr);
+  if (already_checked != pred_model->table) {
+
+    const auto table_remove = BuildChangeState(
+        impl, pred_model->table, parent, from_view.Columns(),
+        TupleState::kPresent, TupleState::kUnknown);
+
+    parent->regions.AddUse(table_remove);
+
+    // Make a new series region inside of the state change check.
+    parent = impl->series_regions.Create(table_remove);
+    UseRef<REGION>(table_remove, parent).Swap(table_remove->body);
+  }
+
+  // Okay, now we can proceed with the join, knowing that we've cleared out
+  // the base case.
+
+  std::unordered_map<QueryView, std::vector<QueryColumn>> pivot_cols;
+  std::unordered_map<QueryView, std::vector<unsigned>> pivot_col_indices;
+  std::unordered_map<QueryView, std::vector<QueryColumn>> non_pivot_cols;
+
+  join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
+    const auto in_view = QueryView::Containing(in_col);
+    if (InputColumnRole::kJoinPivot == role) {
+      pivot_cols[in_view].push_back(in_col);
+      pivot_col_indices[in_view].push_back(*(in_col.Index()));
+
+    } else if (InputColumnRole::kJoinNonPivot == role) {
+      assert(out_col);
+      if (out_col && !in_col.IsConstantOrConstantRef() &&
+          !out_col->IsConstantOrConstantRef()) {
+        non_pivot_cols[in_view].push_back(in_col);
+      }
+
+    } else {
+      assert(false);
+    }
+  });
+
+  // Make sure that we have variable bindings for all the pivot columns across
+  // all joined tables.
+  const auto pred_views = view.Predecessors();
+  const auto num_pivots = join_view.NumPivotColumns();
+  const auto &from_view_pivots = pivot_cols[from_view];
+  assert(from_view_pivots.size() == num_pivots);
+
+  for (auto pred_view : pred_views) {
+    if (pred_view != from_view) {
+      const auto &pred_pivots = pivot_cols[pred_view];
+      assert(pred_pivots.size() == num_pivots);
+
+      for (auto i = 0u; i < num_pivots; ++i) {
+        const auto param_var = proc->VariableFor(impl, from_view_pivots[i]);
+        assert(param_var != nullptr);
+        proc->col_id_to_var.emplace(pred_pivots[i].Id(), param_var);
+      }
+    }
+  }
+
+  // Called within the context of a join on an index scan.
+  auto with_join = [&] (REGION *join) -> REGION * {
+    join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                             std::optional<QueryColumn> out_col) {
+      if (auto in_var = join->VariableFor(impl, in_col); in_var && out_col) {
+        join->col_id_to_var.emplace(out_col->Id(), in_var);
+      }
+    });
+
+    auto par = impl->parallel_regions.Create(join);
+    for (auto succ_view : view.Successors()) {
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                             nullptr));
+
+      for (auto col : view.Columns()) {
+        const auto var = join->VariableFor(impl, col);
+        assert(var != nullptr);
+        call->arg_vars.AddUse(var);
+      }
+
+      par->regions.AddUse(call);
+    }
+    return par;
+  };
+
+  // If this is more than a two-way join then we're going to make a join region
+  // so as not to prescribe a join order/strategy (e.g. nested loop join) onto
+  // the code.
+  if (2u < pred_views.size()) {
+
+    // Create a pivot vector, which is needed by a join region.
+    const auto pivot_vec = proc->vectors.Create(
+        impl->next_id++, VectorKind::kJoinPivots, from_view_pivots);
+
+    // Create the region that will add the tuple to-be-removed to the pivot
+    // vector.
+    const auto add_to_vec = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+        parent, ProgramOperation::kAppendJoinPivotsToVector);
+    parent->regions.AddUse(add_to_vec);
+
+    for (auto in_col : from_view_pivots) {
+      auto pivot_var = proc->VariableFor(impl, in_col);
+      assert(pivot_var != nullptr);
+      add_to_vec->tuple_vars.AddUse(pivot_var);
+    }
+
+    // Now we want to join every other table other than `from_view`.
+    const auto join = impl->operation_regions.CreateDerived<TABLEJOIN>(
+        parent, join_view, impl->next_id++);
+    parent->regions.AddUse(join);
+
+    UseRef<VECTOR>(join, pivot_vec).Swap(join->pivot_vec);
+
+    for (auto pred_view : pred_views) {
+
+      // We have a concrete tuple for `from_view`, encoded in the parameters
+      // of this function, so we don't want to actually join against this
+      // table.
+      if (pred_view == from_view) {
+        continue;
+      }
+
+      const auto &pred_pivots = pivot_cols[pred_view];
+      const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+      const auto table = pred_model->table;
+      assert(table != nullptr);
+      const auto index =
+          table->GetOrCreateIndex(impl, std::move(pivot_col_indices[pred_view]));
+
+      join->tables.AddUse(table);
+      join->indices.AddUse(index);
+      join->pivot_cols.emplace_back(join);
+      join->output_cols.emplace_back(join);
+      join->output_vars.emplace_back(join);
+
+      auto &pivot_table_cols = join->pivot_cols.back();
+      for (auto pivot_col : pred_pivots) {
+        for (auto indexed_col : index->columns) {
+          if (pivot_col.Index() && indexed_col->index == *(pivot_col.Index())) {
+            pivot_table_cols.AddUse(indexed_col);
+            goto matched_pivot_col;
+          }
+        }
+        assert(false);
+      matched_pivot_col:
+        continue;
+      }
+    }
+
+    // Now add non-pivots.
+    auto pred_view_idx = 0u;
+    for (const auto &[pred_view, in_cols] : non_pivot_cols) {
+      if (pred_view == from_view) {
+        continue;
+      }
+
+      const auto table = join->tables[pred_view_idx];
+      auto &out_cols = join->output_cols.at(pred_view_idx);
+      auto &out_vars = join->output_vars.at(pred_view_idx);
+
+      for (auto in_col : in_cols) {
+        out_cols.AddUse(table->columns[*(in_col.Index())]);
+        auto var = out_vars.Create(impl->next_id++, VariableRole::kJoinNonPivot);
+        var->query_column = in_col;
+        join->col_id_to_var.emplace(in_col.Id(), var);
+      }
+
+      ++pred_view_idx;
+    }
+
+    auto res = with_join(join);
+    UseRef<REGION>(join, res).Swap(join->body);
+
+  // JOINing two tables; all we can do is an index-scan of the other table; no
+  // need for a join region.
+  } else if (2u == pred_views.size()) {
+    const auto other_view = pred_views[unsigned(pred_views[0] == from_view)];
+    const auto other_model = impl->view_to_model[other_view]->FindAs<DataModel>();
+    assert(other_model->table != nullptr);
+    parent->regions.AddUse(BuildMaybeScanPartial(
+        impl, other_view, pivot_cols[other_view], other_model->table, parent,
+        with_join));
+
+  } else {
+    assert(false);
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
+}
+
 }  // namespace hyde
