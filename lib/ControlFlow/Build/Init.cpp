@@ -13,7 +13,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
   const auto init_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kInitializer);
   const auto par = impl->parallel_regions.Create(init_proc);
-  UseRef<REGION>(init_proc, par).Swap(init_proc->body);
+  init_proc->body.Emplace(init_proc, par);
 
   // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
   // as those are dataflow dependent.

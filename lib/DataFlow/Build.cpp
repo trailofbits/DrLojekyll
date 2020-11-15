@@ -1633,7 +1633,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     if (!cond) {
       cond = query->conditions.Create(export_decl);
     }
-    WeakUseRef<COND>(insert, cond).Swap(insert->sets_condition);
+
+    insert->sets_condition.Emplace(insert, cond);
     cond->setters.AddUse(insert);
   }
 

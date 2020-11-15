@@ -216,9 +216,9 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     loop->col_id_to_var.emplace(col.Id(), var);
   }
 
-  UseRef<REGION>(loop, par).Swap(loop->body);
-  UseRef<VECTOR>(loop, vec).Swap(loop->vector);
-  UseRef<REGION>(proc, loop).Swap(proc->body);
+  loop->body.Emplace(loop, par);
+  loop->vector.Emplace(loop, vec);
+  proc->body.Emplace(proc, loop);
 
   context.view_to_induction.clear();
   context.work_list.clear();
@@ -380,9 +380,14 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // UNIONs can share the data of any of their predecessors so long as
     // those predecessors don't themselves have other successors, i.e. they
     // only lead into the UNION.
+    //
+    // We also have to be careful about merges that receive deletions. If so,
+    // then we need to be able to distinguish where data is from. This is
+    // especially important for comparisons or maps leading into merges.
     if (view.IsMerge()) {
+      const auto can_receive_deletions = !view.CanReceiveDeletions();
       for (auto pred : preds) {
-        if (pred.Successors().size() == 1u) {
+        if (pred.Successors().size() == 1u && can_receive_deletions) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -484,6 +489,7 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
 
     } else if (to_view.IsCompare()) {
+      CreateBottomUpCompareRemover(impl, context, to_view, proc, already_checked);
 
     } else if (to_view.IsInsert()) {
       if (to_view.IsInsertThatDeletes()) {
@@ -581,7 +587,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       assert(false && "TODO");
 
     } else if (view.IsCompare()) {
-      assert(false && "TODO");
+      BuildTopDownCompareChecker(impl, context, proc, QueryCompare::From(view),
+                                 view_cols, already_checked);
 
     } else if (view.IsSelect()) {
       const auto select = QuerySelect::From(view);
@@ -788,7 +795,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     auto change_state = BuildChangeState(
         impl, table, check, view_cols,
         TupleState::kAbsentOrUnknown, TupleState::kPresent);
-    UseRef<REGION>(check, change_state).Swap(check->body);
+    check->body.Emplace(check, change_state);
 
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
     ret_true->ExecuteAfter(impl, change_state);
@@ -796,7 +803,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   // No table, just return `true` to the caller.
   } else {
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    UseRef<REGION>(check, ret_true).Swap(check->body);
+    check->body.Emplace(check, ret_true);
   }
 
   return check;
@@ -1050,7 +1057,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       test->cond_vars.AddUse(ConditionVariable(impl, cond));
     }
 
-    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent->body.Emplace(parent, test);
     parent = test;
     last_model = nullptr;
   }
@@ -1064,7 +1071,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       test->cond_vars.AddUse(ConditionVariable(impl, cond));
     }
 
-    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent->body.Emplace(parent, test);
     parent = test;
     last_model = nullptr;
   }

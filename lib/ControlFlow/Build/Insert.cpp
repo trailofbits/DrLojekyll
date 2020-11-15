@@ -32,7 +32,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
     const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
         parent, ParsedMessage::From(io.Declaration()));
-    UseRef<REGION>(parent, message_publish).Swap(parent->body);
+    parent->body.Emplace(parent, message_publish);
 
     for (auto col : cols) {
       const auto var = parent->VariableFor(impl, col);
@@ -52,8 +52,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
         table_insert->col_values.AddUse(var);
       }
 
-      UseRef<TABLE>(table_insert, table).Swap(table_insert->table);
-      UseRef<REGION>(parent, table_insert).Swap(parent->body);
+      table_insert->table.Emplace(table_insert, table);
+      parent->body.Emplace(parent, table_insert);
       parent = table_insert;
       last_model = table;
     }
@@ -62,7 +62,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
     // tuples depend on that condition.
     if (auto set_cond = view.SetCondition(); set_cond) {
       const auto seq = impl->series_regions.Create(parent);
-      UseRef<REGION>(parent, seq).Swap(parent->body);
+      parent->body.Emplace(parent, seq);
 
       // Now that we know that the data has been dealt with, we increment the
       // condition variable.
@@ -136,7 +136,7 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView pred_view,
       call->arg_vars.AddUse(var);
     }
 
-    UseRef<REGION>(parent, call).Swap(parent->body);
+    parent->body.Emplace(parent, call);
 
   } else {
     assert(false);
@@ -177,6 +177,8 @@ void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc,
                                  TABLE *already_checked) {
+  const auto insert_cols = QueryInsert::From(view).InputColumns();
+
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   PARALLEL *parent = nullptr;
 
@@ -187,17 +189,17 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
     if (already_checked == model->table) {
 
       parent = impl->parallel_regions.Create(proc);
-      UseRef<REGION>(proc, parent).Swap(proc->body);
+      proc->body.Emplace(proc, parent);
 
     // The caller didn't already do a state transition, so we cn do it.
     } else {
       auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, view.Columns(),
+          impl, model->table, proc, insert_cols,
           [&] (PARALLEL *par) {
             parent = par;
           });
 
-      UseRef<REGION>(proc, remove).Swap(proc->body);
+      proc->body.Emplace(proc, remove);
 
       already_checked = model->table;
     }
@@ -208,10 +210,9 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
     already_checked = nullptr;
     parent = impl->parallel_regions.Create(proc);
-    UseRef<REGION>(proc, parent).Swap(proc->body);
+    proc->body.Emplace(proc, parent);
   }
 
-  const auto insert_cols = QueryInsert::From(view).InputColumns();
   for (auto succ_view : view.Successors()) {
     assert(succ_view.IsSelect());
 
@@ -237,7 +238,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
   auto ret = impl->operation_regions.CreateDerived<RETURN>(
       proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, parent);
+  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

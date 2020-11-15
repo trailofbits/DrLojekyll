@@ -68,8 +68,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       append->tuple_vars.AddUse(var);
     }
 
-    UseRef<VECTOR>(append, pivot_vec).Swap(append->vector);
-    UseRef<REGION>(insert, append).Swap(insert->body);
+    append->vector.Emplace(append, pivot_vec);
+    insert->body.Emplace(insert, append);
   }
 
   // Find the common ancestor of all of the `kInsertIntoView` associated with
@@ -84,7 +84,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // Sort and unique the pivot vector before looping.
   const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
       seq, ProgramOperation::kSortAndUniquePivotVector);
-  UseRef<VECTOR>(unique, pivot_vec).Swap(unique->vector);
+  unique->vector.Emplace(unique, pivot_vec);
   unique->ExecuteAfter(impl, seq);
 
   // We're now either looping over pivots in a pivot vector, or there was only
@@ -97,12 +97,12 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // The JOIN internalizes the loop over its pivot vector. This is so that
   // it can have visibility into the sortedness, and choose what to do based
   // of of runs of sorted elements.
-  UseRef<VECTOR>(join, pivot_vec).Swap(join->pivot_vec);
+  join->pivot_vec.Emplace(join, pivot_vec);
 
   // After running the join, clear out the pivot vector.
   const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
       seq, ProgramOperation::kClearJoinPivotVector);
-  UseRef<VECTOR>(clear, pivot_vec).Swap(clear->vector);
+  clear->vector.Emplace(clear, pivot_vec);
   clear->ExecuteAfter(impl, seq);
 
   // Fill in the pivot variables/columns.
@@ -228,7 +228,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   const QueryView view(join_view);
 
   auto parent = impl->series_regions.Create(proc);
-  UseRef<REGION>(proc, parent).Swap(proc->body);
+  proc->body.Emplace(proc, parent);
 
   // First, and somewhat unlike other bottom-up removers, we will make sure that
   // the data is gone in the data model associated with this particular
@@ -246,7 +246,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
 
     // Make a new series region inside of the state change check.
     parent = impl->series_regions.Create(table_remove);
-    UseRef<REGION>(table_remove, parent).Swap(table_remove->body);
+    table_remove->body.Emplace(table_remove, parent);
   }
 
   // Okay, now we can proceed with the join, knowing that we've cleared out
@@ -336,6 +336,8 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
         parent, ProgramOperation::kAppendJoinPivotsToVector);
     parent->regions.AddUse(add_to_vec);
 
+    add_to_vec->vector.Emplace(add_to_vec, pivot_vec);
+
     for (auto in_col : from_view_pivots) {
       auto pivot_var = proc->VariableFor(impl, in_col);
       assert(pivot_var != nullptr);
@@ -347,7 +349,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
         parent, join_view, impl->next_id++);
     parent->regions.AddUse(join);
 
-    UseRef<VECTOR>(join, pivot_vec).Swap(join->pivot_vec);
+    join->pivot_vec.Emplace(join, pivot_vec);
 
     for (auto pred_view : pred_views) {
 
@@ -385,6 +387,17 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       }
     }
 
+    // Fill in the pivot variables/columns.
+    for (auto pivot_col : join_view.PivotColumns()) {
+      auto var =
+          join->pivot_vars.Create(impl->next_id++, VariableRole::kJoinPivot);
+      var->query_column = pivot_col;
+      if (pivot_col.IsConstantRef()) {
+        var->query_const = QueryConstant::From(pivot_col);
+      }
+      join->col_id_to_var.emplace(pivot_col.Id(), var);
+    }
+
     // Now add non-pivots.
     auto pred_view_idx = 0u;
     for (const auto &[pred_view, in_cols] : non_pivot_cols) {
@@ -406,8 +419,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       ++pred_view_idx;
     }
 
-    auto res = with_join(join);
-    UseRef<REGION>(join, res).Swap(join->body);
+    join->body.Emplace(join, with_join(join));
 
   // JOINing two tables; all we can do is an index-scan of the other table; no
   // need for a join region.

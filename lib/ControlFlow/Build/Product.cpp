@@ -70,7 +70,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   for (auto vec : vectors) {
     const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
         seq, ProgramOperation::kSortAndUniqueProductInputVector);
-    UseRef<VECTOR>(unique, vec).Swap(unique->vector);
+    unique->vector.Emplace(unique, vec);
     unique->ExecuteAfter(impl, seq);
   }
 
@@ -86,7 +86,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   for (auto vec : vectors) {
     auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
         seq, ProgramOperation::kClearProductInputVector);
-    UseRef<VECTOR>(clear, vec).Swap(clear->vector);
+    clear->vector.Emplace(clear, vec);
     clear->ExecuteAfter(impl, seq);
   }
 
@@ -159,8 +159,8 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     append->tuple_vars.AddUse(var);
   }
 
-  UseRef<VECTOR>(append, vec).Swap(append->vector);
-  UseRef<REGION>(parent, append).Swap(parent->body);
+  append->vector.Emplace(append, vec);
+  parent->body.Emplace(parent, append);
 
   auto &action = context.view_to_work_item[view];
   if (!action) {

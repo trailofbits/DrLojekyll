@@ -785,7 +785,7 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
   UseList<TABLEINDEX> indices;
   UseRef<VECTOR> pivot_vec;
 
-  // There is a `1:N` correspondence bween `pivot_vars` and `pivot_cols`.
+  // There is a `1:N` correspondence between `pivot_vars` and `pivot_cols`.
   DefList<VAR> pivot_vars;
   std::vector<UseList<TABLECOLUMN>> pivot_cols;
 

@@ -28,6 +28,9 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
     //            is deliberate.
     if (const auto table = TABLE::GetOrCreate(impl, pred_view);
         table != last_model) {
+
+      // TODO(pag): Why did I pass `true` to the `differential` parameter here?
+      //            It could be the case that `tuple.SetCondition()` is present.
       parent = BuildInsertCheck(impl, pred_view, context, parent, table,
                                 true, pred_view.Columns());
       last_model = table;
@@ -63,7 +66,7 @@ void BuildTopDownTupleChecker(
           impl, context, proc, view, view_cols, model->table, pred_view,
           already_checked);
 
-      UseRef<REGION>(proc, check).Swap(proc->body);
+      proc->body.Emplace(proc, check);
 
     // The predecessor persists different data, so we'll check in the tuple,
     // and if it's not present, /then/ we'll call the predecessor handler.
@@ -96,7 +99,7 @@ void BuildTopDownTupleChecker(
             }
           });
 
-      UseRef<REGION>(proc, region).Swap(proc->body);
+      proc->body.Emplace(proc, region);
     }
 
   // Out best option at this point is to just call the predecessor; this tuple's
@@ -105,7 +108,7 @@ void BuildTopDownTupleChecker(
     const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, proc, view, view_cols, nullptr, pred_view,
           nullptr);
-    UseRef<REGION>(proc, check).Swap(proc->body);
+    proc->body.Emplace(proc, check);
   }
 }
 
@@ -123,7 +126,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
     if (already_checked == model->table) {
 
       parent = impl->parallel_regions.Create(proc);
-      UseRef<REGION>(proc, parent).Swap(proc->body);
+      proc->body.Emplace(proc, parent);
 
     // The caller didn't already do a state transition, so we can do it.
     } else {
@@ -133,7 +136,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
             parent = par;
           });
 
-      UseRef<REGION>(proc, remove).Swap(proc->body);
+      proc->body.Emplace(proc, remove);
 
       already_checked = model->table;
     }
@@ -142,7 +145,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
   } else {
     already_checked = nullptr;
     parent = impl->parallel_regions.Create(proc);
-    UseRef<REGION>(proc, parent).Swap(proc->body);
+    proc->body.Emplace(proc, parent);
   }
 
   for (auto succ_view : view.Successors()) {

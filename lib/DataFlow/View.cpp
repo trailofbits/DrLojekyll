@@ -886,7 +886,7 @@ COND *Node<QueryView>::CreateOrInheritConditionOnView(QueryImpl *query,
     //    }
 
     assert(!view->sets_condition);
-    WeakUseRef<COND>(view, condition).Swap(view->sets_condition);
+    view->sets_condition.Emplace(view, condition);
 
     condition->setters.AddUse(view);
   }

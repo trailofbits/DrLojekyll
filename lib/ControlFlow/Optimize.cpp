@@ -514,6 +514,11 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
   return false;
 }
 
+// Perform dead argument elimination.
+static bool OptimizeImpl(PROC *proc) {
+  return false;
+}
+
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
@@ -561,6 +566,10 @@ void ProgramImpl::Optimize(void) {
         op->body.Clear();
         changed = true;
       }
+    }
+
+    for (auto proc : procedure_regions) {
+      changed = OptimizeImpl(proc) | changed;
     }
   }
 

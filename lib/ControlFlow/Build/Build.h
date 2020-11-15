@@ -133,18 +133,18 @@ static CHECKSTATE *BuildTopDownCheckerStateCheck(
     check->col_values.AddUse(var);
   }
 
-  UseRef<TABLE>(check, table).Swap(check->table);
+  check->table.Emplace(check, table);
 
   if (REGION *present_op = if_present_cb(impl, check); present_op) {
-    UseRef<REGION>(check, present_op).Swap(check->OP::body);
+    check->OP::body.Emplace(check, present_op);
   }
 
   if (REGION *absent_op = if_absent_cb(impl, check); absent_op) {
-    UseRef<REGION>(check, absent_op).Swap(check->absent_body);
+    check->absent_body.Emplace(check, absent_op);
   }
 
   if (REGION *unknown_op = if_unknown_cb(impl, check); unknown_op) {
-    UseRef<REGION>(check, unknown_op).Swap(check->unknown_body);
+    check->unknown_body.Emplace(check, unknown_op);
   }
 
   return check;
@@ -160,7 +160,7 @@ static CHANGESTATE *BuildChangeState(
       impl->operation_regions.CreateDerived<CHANGESTATE>(
           parent, from_state, to_state);
 
-  UseRef<TABLE>(state_change, table).Swap(state_change->table);
+  state_change->table.Emplace(state_change, table);
   for (auto col : cols) {
     const auto var = parent->VariableFor(impl, col);
     state_change->col_values.AddUse(var);
@@ -182,7 +182,7 @@ static CHANGESTATE *BuildTopDownTryMarkAbsent(
   // Now that we've established the base case (marking the tuple absent), we
   // need to go and actually check all the possibilities.
   const auto par = impl->parallel_regions.Create(table_remove);
-  UseRef<REGION>(table_remove, par).Swap(table_remove->OP::body);
+  table_remove->OP::body.Emplace(table_remove, par);
 
   with_par_node(par);
 
@@ -202,7 +202,7 @@ static CHANGESTATE *BuildBottomUpTryMarkUnknown(
   // Now that we've established the base case (marking the tuple absent), we
   // need to go and actually check all the possibilities.
   const auto par = impl->parallel_regions.Create(table_remove);
-  UseRef<REGION>(table_remove, par).Swap(table_remove->OP::body);
+  table_remove->OP::body.Emplace(table_remove, par);
 
   with_par_node(par);
 
@@ -223,6 +223,15 @@ static REGION *BuildMaybeScanPartial(
     ProgramImpl *impl, QueryView view,
     std::vector<QueryColumn> &view_cols,
     TABLE *table, REGION *parent, ForEachTuple cb) {
+
+  // Sort and unique out the relevant columns.
+  std::sort(view_cols.begin(), view_cols.end(),
+            [] (QueryColumn a, QueryColumn b) {
+              return *(a.Index()) < *(b.Index());
+            });
+
+  auto it = std::unique(view_cols.begin(), view_cols.end());
+  view_cols.erase(it, view_cols.end());
 
   // Figure out if we even need an index scan; if we've got all the columns
   // then we can just use `cb`, which assumes the availability of all columns.
@@ -259,9 +268,9 @@ static REGION *BuildMaybeScanPartial(
   // from the tuple's predecessor.
   const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
   scan->ExecuteAfter(impl, seq);
-  UseRef<TABLE>(scan, table).Swap(scan->table);
-  UseRef<TABLEINDEX>(scan, index).Swap(scan->index);
-  UseRef<VECTOR>(scan, vec).Swap(scan->output_vector);
+  scan->table.Emplace(scan, table);
+  scan->index.Emplace(scan, index);
+  scan->output_vector.Emplace(scan, vec);
 
   for (auto view_col : view_cols) {
     const auto in_var = parent->VariableFor(impl, view_col);
@@ -281,7 +290,7 @@ static REGION *BuildMaybeScanPartial(
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       seq, ProgramOperation::kLoopOverScanVector);
   loop->ExecuteAfter(impl, seq);
-  UseRef<VECTOR>(loop, vec).Swap(loop->vector);
+  loop->vector.Emplace(loop, vec);
 
   for (auto col : selected_cols) {
     const auto var = loop->defined_vars.Create(
@@ -304,7 +313,7 @@ static REGION *BuildMaybeScanPartial(
   }
 
   auto in_loop = cb(loop);
-  UseRef<REGION>(loop, in_loop).Swap(loop->body);
+  loop->body.Emplace(loop, in_loop);
 
   return seq;
 }
@@ -382,6 +391,11 @@ void BuildTopDownTupleChecker(
     ProgramImpl *impl, Context &context, PROC *proc, QueryTuple tuple,
     std::vector<QueryColumn> &available_cols, TABLE *already_checked);
 
+// Build a top-down checker on a compare.
+void BuildTopDownCompareChecker(
+    ProgramImpl *impl, Context &context, PROC *proc, QueryCompare cmp,
+    std::vector<QueryColumn> &available_cols, TABLE *already_checked);
+
 // Builds an initialization function which does any work that depends purely
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context);
@@ -425,7 +439,6 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
 void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc);
 
-
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc,
                                  TABLE *already_checked);
@@ -441,6 +454,10 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, PROC *proc,
                                 TABLE *already_checked);
+
+void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
+                                  QueryView view, PROC *proc,
+                                  TABLE *already_checked);
 
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
                                QueryView from_view, QueryJoin join,
@@ -467,7 +484,7 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
     const auto check = CallTopDownChecker(
         impl, context, parent, view, view,
         ProgramOperation::kCallProcedureCheckFalse);
-    UseRef<REGION>(parent, check).Swap(parent->body);
+    parent->body.Emplace(parent, check);
     parent = check;
   }
 
@@ -479,8 +496,8 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
     insert->col_values.AddUse(var);
   }
 
-  UseRef<TABLE>(insert, table).Swap(insert->table);
-  UseRef<REGION>(parent, insert).Swap(parent->body);
+  insert->table.Emplace(insert, table);
+  parent->body.Emplace(parent, insert);
   return insert;
 }
 
@@ -506,13 +523,13 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
         insert->col_values.AddUse(var);
       }
 
-      UseRef<TABLE>(insert, table).Swap(insert->table);
-      UseRef<REGION>(parent, insert).Swap(parent->body);
+      insert->table.Emplace(insert, table);
+      parent->body.Emplace(parent, insert);
       parent = insert;
     }
 
     const auto seq = impl->series_regions.Create(parent);
-    UseRef<REGION>(parent, seq).Swap(parent->body);
+    parent->body.Emplace(parent, seq);
 
     // Now that we know that the data has been dealt with, we increment the
     // condition variable.
@@ -555,10 +572,10 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
     const auto test = impl->operation_regions.CreateDerived<EXISTS>(
         parent, ProgramOperation::kTestAllZero);
-    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent->body.Emplace(parent, test);
 
     const auto seq = impl->series_regions.Create(test);
-    UseRef<REGION>(test, seq).Swap(test->body);
+    test->body.Emplace(test, seq);
 
     const auto set = impl->operation_regions.CreateDerived<ASSERT>(
         seq, ProgramOperation::kIncrementAll);
@@ -573,9 +590,8 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
   } else {
     par = impl->parallel_regions.Create(parent);
-    UseRef<REGION>(parent, par).Swap(parent->body);
+    parent->body.Emplace(parent, par);
   }
-
 
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);

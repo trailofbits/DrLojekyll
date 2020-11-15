@@ -69,7 +69,7 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
   assert(functor.IsPure());
 
   const auto gen = CreateGeneratorCall(impl, view, functor, context, parent);
-  UseRef<REGION>(parent, gen).Swap(parent->body);
+  parent->body.Emplace(parent, gen);
 
   BuildEagerSuccessorRegions(impl, view, context, gen,
                              QueryView(view).Successors(), nullptr);
@@ -81,10 +81,10 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    PROC *proc) {
   QueryView view(map);
   const auto gen = CreateGeneratorCall(impl, map, functor, context, proc);
-  UseRef<REGION>(proc, gen).Swap(proc->body);
+  proc->body.Emplace(proc, gen);
 
   const auto parent = impl->parallel_regions.Create(gen);
-  UseRef<REGION>(gen, parent).Swap(gen->body);
+  gen->body.Emplace(gen, parent);
 
   for (auto succ_view : view.Successors()) {
     assert(!succ_view.IsMerge());

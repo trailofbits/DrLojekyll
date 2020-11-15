@@ -106,7 +106,6 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
 TABLEINDEX *
 Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
                                   std::vector<unsigned> col_indexes) {
-
   SortAndUnique(col_indexes);
   auto col_spec = ColumnSpec(col_indexes);
   for (auto index : indices) {

@@ -612,7 +612,7 @@ void UseList<T>::AddUse(Def<T> *def) {
 template <typename T, typename Tbase=T>
 class UseRef {
  public:
-  UseRef(User *user, Def<Tbase> *def)
+  explicit UseRef(User *user, Def<Tbase> *def)
       : use(def ? def->CreateUse(user) : nullptr) {}
 
   void Swap(UseRef<T> &that) {
@@ -620,6 +620,10 @@ class UseRef {
       assert(use->user == that.use->user);
     }
     std::swap(use, that.use);
+  }
+
+  void Emplace(User *user, Def<Tbase> *def) {
+    UseRef<T>(user, def).Swap(*this);
   }
 
   UseRef(void) = default;
@@ -688,11 +692,15 @@ class UseRef {
 template <typename T>
 class WeakUseRef {
  public:
-  WeakUseRef(User *user, Def<T> *def)
+  explicit WeakUseRef(User *user, Def<T> *def)
       : use(def ? def->CreateWeakUse(user) : nullptr) {}
 
   void Swap(WeakUseRef<T> &that) {
     std::swap(use, that.use);
+  }
+
+  void Emplace(User *user, Def<T> *def) {
+    WeakUseRef<T>(user, def).Swap(*this);
   }
 
   void Clear(void) {

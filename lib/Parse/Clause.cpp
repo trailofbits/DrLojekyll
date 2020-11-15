@@ -736,20 +736,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       // Keep track of whether or not any clause for this decl uses messages.
       clause->depends_on_messages = true;
     }
-
-    // We might rewrite queries into a kind of request/response message pattern,
-    // and so to make our lives easier later on, we restrict query clause bodies
-    // to not be allowed to contain messages.
-    //
-    // TODO(pag): This restriction can be eliminated by rewriting messages used
-    //            by queries to be proxied by locals. Do that then remove this
-    //            issue.
-    if (is_query_clause) {
-      const auto err_range = ParsedPredicate(used_pred.get()).SpellingRange();
-      context->error_log.Append(scope_range, err_range)
-          << "Queries cannot depend directly on messages";
-      return;
-    }
   }
 
   if (negation_tok.IsValid()) {
