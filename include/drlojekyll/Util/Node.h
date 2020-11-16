@@ -104,6 +104,10 @@ class NodeRange {
     return {};
   }
 
+  inline bool empty(void) const noexcept {
+    return impl != nullptr;
+  }
+
  private:
   template <typename U>
   friend class Node;

@@ -85,6 +85,45 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     is_canonical = false;
   }
 
+  // Check to see if this comparison is redundant, i.e. it does the same
+  // thing as its predecessor. This can be an artifact of the way we apply
+  // inequality comparisons in the builder.
+  //
+  // TODO(pag): We should probably re-think the repeated application of
+  //            inequality comparisons as they might introduce extra data
+  //            dependencies.
+  const auto incoming_view = GetIncomingView(input_columns, attached_columns);
+  CMP * const incoming_cmp = incoming_view ? incoming_view->AsCompare() : nullptr;
+  const auto num_cols = columns.Size();
+  if (incoming_cmp && incoming_cmp->op == this->op &&
+      incoming_cmp->columns.Size() == num_cols &&
+      !sets_condition && positive_conditions.Empty() &&
+      negative_conditions.Empty()) {
+
+    bool is_redundant = true;
+    auto i = 0u;
+    for (auto max_i = input_columns.Size(); i < max_i; ++i) {
+      if (input_columns[i] != incoming_cmp->columns[i]) {
+        is_redundant = false;
+        break;
+      }
+    }
+    for (auto a = 0u; is_redundant && i < num_cols; ++a, ++i) {
+      if (attached_columns[a] != incoming_cmp->columns[i]) {
+        is_redundant = false;
+        break;
+      }
+    }
+
+    // This comparison is redundant; it does exactly the same thing as its
+    // predecessor.
+    if (is_redundant) {
+      ReplaceAllUsesWith(incoming_cmp);
+      PrepareToDelete();
+      return true;
+    }
+  }
+
   if (is_canonical) {
     return non_local_changes;
   }
@@ -194,7 +233,6 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     rhs_out_col->ReplaceAllUsesWith(new_rhs_out);
   }
 
-  const auto num_cols = columns.Size();
   assert(i == 1u || i == 2u);
   assert((num_cols - i) == attached_columns.Size());
 

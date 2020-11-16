@@ -1346,7 +1346,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
 // Make the INSERT conditional on any zero-argument predicates.
 static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
-                                  INSERT *insert) {
+                                  VIEW *insert) {
   std::vector<COND *> conds;
 
   auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses) {
@@ -1602,12 +1602,46 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   const auto decl = ParsedDeclaration::Of(clause);
   INSERT *insert = nullptr;
 
+  auto view = context.result;
+  assert(view->columns.Size() == clause.Arity());
+
+  // Add the conditions tested.
+  if (!clause.PositivePredicates().empty() ||
+      !clause.NegatedPredicates().empty()) {
+    auto col_index = 0u;
+    auto cond_guard = query->tuples.Create();
+    for (auto var : clause.Parameters()) {
+      cond_guard->input_columns.AddUse(view->columns[col_index]);
+      (void) cond_guard->columns.Create(
+          var, cond_guard, VarId(context, var), col_index);
+      ++col_index;
+    }
+
+    AddConditionsToInsert(query, clause, cond_guard);
+    view = cond_guard;
+  }
+
+  // The data in `view` must be deleted in our successor.
+  if (clause.IsDeletion()) {
+    auto col_index = 0u;
+    auto del = query->deletes.Create();
+    for (auto var : clause.Parameters()) {
+      del->input_columns.AddUse(view->columns[col_index]);
+      (void) del->columns.Create(
+          var, del, VarId(context, var), col_index);
+      ++col_index;
+    }
+
+    assert(0u < col_index);
+    view = del;
+  }
+
   if (decl.IsMessage()) {
     auto &stream = query->decl_to_input[decl];
     if (!stream) {
       stream = query->ios.Create(decl);
     }
-    insert = query->inserts.Create(stream, decl, !clause.IsDeletion());
+    insert = query->inserts.Create(stream, decl);
     stream->transmits.AddUse(insert);
 
   } else {
@@ -1615,15 +1649,17 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     if (!rel) {
       rel = query->relations.Create(decl);
     }
-    insert = query->inserts.Create(rel, decl, !clause.IsDeletion());
+    insert = query->inserts.Create(rel, decl);
     rel->inserts.AddUse(insert);
   }
 
-  for (auto col : context.result->columns) {
-    insert->input_columns.AddUse(col);
+  if (clause.IsDeletion()) {
+    insert->can_receive_deletions = true;
   }
 
-  AddConditionsToInsert(query, clause, insert);
+  for (auto col : view->columns) {
+    insert->input_columns.AddUse(col);
+  }
 
   // We just proved a zero-argument predicate, i.e. a condition.
   if (!decl.Arity()) {
@@ -1669,6 +1705,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
   impl->TrackDifferentialUpdates();
+
   impl->Simplify(log);
   if (num_errors != log.Size()) {
     return std::nullopt;
@@ -1685,6 +1722,7 @@ std::optional<Query> Query::Build(const ParsedModule &module,
   }
 
   //  impl->SinkConditions();
+  impl->RemoveUnusedViews();
   impl->TrackDifferentialUpdates();
   impl->FinalizeColumnIDs();
   impl->LinkViews();

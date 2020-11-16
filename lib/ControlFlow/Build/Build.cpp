@@ -136,13 +136,12 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
-    if (insert.IsDelete()) {
-      BuildEagerDeleteRegion(impl, pred_view, insert, context,
-                             parent);
-    } else {
-      BuildEagerInsertRegion(impl, pred_view, insert, context,
-                             parent, last_model);
-    }
+    BuildEagerInsertRegion(impl, pred_view, insert, context,
+                                 parent, last_model);
+
+  } else if (view.IsDelete()) {
+    BuildEagerDeleteRegion(impl, view, context, parent);
+
   } else {
     assert(false);
   }
@@ -385,9 +384,11 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // then we need to be able to distinguish where data is from. This is
     // especially important for comparisons or maps leading into merges.
     if (view.IsMerge()) {
-      const auto can_receive_deletions = !view.CanReceiveDeletions();
+      const auto can_receive_deletions = view.CanReceiveDeletions();
       for (auto pred : preds) {
-        if (pred.Successors().size() == 1u && can_receive_deletions) {
+        if (!pred.IsDelete() &&
+            pred.Successors().size() == 1u &&
+            !can_receive_deletions) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -398,7 +399,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     } else if (view.IsTuple()) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
-        if (all_cols_match(view.Columns(), pred.Columns())) {
+        if (!pred.IsDelete() &&
+            all_cols_match(view.Columns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -408,13 +410,27 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // predecessor (it should), and if all columns of the predecessor are
     // used and in the same order, then this INSERT and its predecessor
     // share the same data model.
-    //
+    } else if (view.IsInsert()) {
+      if (preds.size() == 1u) {
+        const auto pred = preds[0];
+        const auto insert = QueryInsert::From(view);
+        const auto cols = insert.InputColumns();
+        const auto pred_cols = pred.Columns();
+        if (!pred.IsDelete() && all_cols_match(cols, pred_cols)) {
+          const auto pred_model = program->view_to_model[pred];
+          DisjointSet::Union(model, pred_model);
+        }
+      }
+
     // NOTE(pag): DELETE nodes don't have a data model per se. They exist
     //            to delete things in the data model of their /successor/,
     //            they can't delete anything in the model of their predecessor.
-    } else if (view.IsInsert()) {
-      if (preds.size() == 1u && !view.IsInsertThatDeletes()) {
-        const auto insert = QueryInsert::From(view);
+    //
+    // NOTE(pag): If a DELETE flows into a DELETE then we permit them to
+    //            share a data model, for whatever that's worth.
+    } else if (view.IsDelete()) {
+      if (preds.size() == 1u) {
+        const auto insert = QueryDelete::From(view);
         const auto cols = insert.InputColumns();
         const auto pred_cols = preds[0].Columns();
         if (all_cols_match(cols, pred_cols)) {
@@ -492,12 +508,11 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       CreateBottomUpCompareRemover(impl, context, to_view, proc, already_checked);
 
     } else if (to_view.IsInsert()) {
-      if (to_view.IsInsertThatDeletes()) {
-        CreateBottomUpDeleteRemover(impl, context, to_view, proc);
-      } else {
-        CreateBottomUpInsertRemover(impl, context, to_view, proc,
-                                    already_checked);
-      }
+      CreateBottomUpInsertRemover(impl, context, to_view, proc,
+                                  already_checked);
+
+    } else if (to_view.IsDelete()) {
+      CreateBottomUpDeleteRemover(impl, context, to_view, proc);
 
     // NOTE(pag): We don't need to distinguish between unions that are inductions
     //            and unions that are merges.
@@ -610,15 +625,15 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     } else if (view.IsInsert()) {
       const auto insert = QueryInsert::From(view);
 
-      // The base case is that we get to an INSERT that's actually a DELETE,
-      // i.e. a deletion clause head.
-      if (insert.IsDelete() || insert.IsStream()) {
-        assert(!insert.IsStream());  // Impossible.
+      if (insert.IsStream()) {
         // Nothing to do.
 
       } else {
         assert(false && "TODO");
       }
+
+    } else if (view.IsDelete()) {
+      // Nothing to do.
 
     // Not possible?
     } else {
@@ -668,8 +683,7 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
 CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                          QueryView succ_view, QueryView view,
                          ProgramOperation call_op) {
-
-  assert(!(view.IsInsert() && QueryInsert::From(view).IsDelete()));
+  assert(!view.IsDelete());
   assert(!succ_view.IsInsert());
 
   std::vector<QueryColumn> succ_cols;
@@ -816,7 +830,7 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
                                  TABLE *already_checked) {
   std::vector<QueryColumn> available_cols;
 
-  // Inserts/Deletes are annoying because they don't have output columns.
+  // Inserts are annoying because they don't have output columns.
   if (to_view.IsInsert()) {
     for (auto col : QueryInsert::From(to_view).InputColumns()) {
       available_cols.push_back(col);

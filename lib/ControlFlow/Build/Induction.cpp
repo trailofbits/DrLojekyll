@@ -291,8 +291,12 @@ void BuildTopDownInductionChecker(
 
   auto build_rule_checks = [=, &context] (PARALLEL *par) {
     for (auto pred_view : view.MergedViews()) {
-      // If it's a DELETE, then we can't really
-      if (pred_view.IsInsert() && QueryInsert::From(pred_view).IsDelete()) {
+
+      // Deletes signal to their successors that data should be deleted, thus
+      // there isn't much we can do in terms of actually checking if something
+      // is there or not because if we've made it down here, then it *isn't*
+      // there.
+      if (pred_view.IsDelete()) {
         continue;
       }
 

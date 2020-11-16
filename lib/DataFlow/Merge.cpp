@@ -150,10 +150,13 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     return non_local_changes;
   }
 
+  const auto num_cols = columns.Size();
+
   // Path compression.
   if (non_local_changes) {
     UseList<VIEW> new_merged_views(this);
     for (auto view : unique_merged_views) {
+      assert(view->columns.Size() == num_cols);
       new_merged_views.AddUse(view);
     }
     merged_views.Swap(new_merged_views);
@@ -162,9 +165,8 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
   // There's an unused column; go and guard the incoming views with TUPLEs that
   // don't use that column.
   if (has_unused_col && opt.can_remove_unused_columns) {
-    UseList<VIEW> new_merged_views(this);
 
-    const auto num_cols = columns.Size();
+    UseList<VIEW> new_merged_views(this);
 
     for (auto view : unique_merged_views) {
       assert(view->columns.Size() == num_cols);
@@ -178,7 +180,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
 
       for (auto i = 0u; i < num_cols; ++i) {
         if (columns[i]->IsUsed()) {
-          auto out_col = view->columns[i];
+          const auto out_col = view->columns[i];
           auto guard_out_col = guarded_view->columns.Create(
               out_col->var, guarded_view, out_col->id);
           guarded_view->input_columns.AddUse(out_col);
@@ -186,11 +188,29 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
         }
       }
 
+      assert(num_cols > guarded_view->columns.Size());
       new_merged_views.AddUse(guarded_view);
     }
 
-    merged_views.Swap(new_merged_views);
+    DefList<COL> new_columns;
+
+    // Create the new columns and replace all uses of old columns with the
+    // new columns.
+    for (auto i = 0u; i < num_cols; ++i) {
+      const auto out_col = columns[i];
+      if (out_col->IsUsed()) {
+        auto new_out_col = new_columns.Create(
+            out_col->var, this, out_col->id);
+        new_out_col->CopyConstant(out_col);
+        out_col->ReplaceAllUsesWith(new_out_col);
+      }
+    }
+
+    assert(new_columns.Size() < num_cols);
+
     non_local_changes = true;
+    merged_views.Swap(new_merged_views);
+    columns.Swap(new_columns);
   }
 
   hash = 0;

@@ -319,6 +319,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // beyond the scope of this view.
   virtual bool Canonicalize(QueryImpl *query, const OptimizationContext &opt);
 
+  virtual Node<QueryDelete> *AsDelete(void) noexcept;
   virtual Node<QuerySelect> *AsSelect(void) noexcept;
   virtual Node<QueryTuple> *AsTuple(void) noexcept;
   virtual Node<QueryKVIndex> *AsKVIndex(void) noexcept;
@@ -806,27 +807,13 @@ class Node<QueryInsert> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_,
-              bool is_insert_ = true)
+  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
       : relation(this, relation_),
-        declaration(decl_),
-        is_insert(is_insert_) {
+        declaration(decl_) {}
 
-    if (!is_insert) {
-      this->can_produce_deletions = true;
-    }
-  }
-
-  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_,
-              bool is_insert_ = true)
+  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_)
       : stream(this, stream_),
-        declaration(decl_),
-        is_insert(is_insert_) {
-
-    if (!is_insert) {
-      this->can_produce_deletions = true;
-    }
-  }
+        declaration(decl_) {}
 
   const char *KindName(void) const noexcept override;
   Node<QueryInsert> *AsInsert(void) noexcept override;
@@ -838,10 +825,31 @@ class Node<QueryInsert> : public Node<QueryView> {
   WeakUseRef<REL> relation;
   WeakUseRef<STREAM> stream;
   const ParsedDeclaration declaration;
-  bool is_insert;
 };
 
 using INSERT = Node<QueryInsert>;
+
+// Deletes are tuple-like nodes. They exist to signal that some data should be
+// forwarded as a deletion.
+template <>
+class Node<QueryDelete> : public Node<QueryView> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(void)
+      : Node<QueryView>() {
+    can_produce_deletions = true;
+  }
+
+  const char *KindName(void) const noexcept override;
+  Node<QueryDelete> *AsDelete(void) noexcept override;
+
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+};
+
+using DELETE = Node<QueryDelete>;
 
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
@@ -886,6 +894,9 @@ class QueryImpl {
     for (auto view : inserts) {
       views.push_back(view);
     }
+    for (auto view : deletes) {
+      views.push_back(view);
+    }
 
     for (auto view : views) {
       do_view(view);
@@ -919,6 +930,9 @@ class QueryImpl {
       do_view(view);
     }
     for (auto view : inserts) {
+      do_view(view);
+    }
+    for (auto view : deletes) {
       do_view(view);
     }
   }
@@ -959,6 +973,10 @@ class QueryImpl {
       views.push_back(view);
     }
     for (auto view : inserts) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : deletes) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -1007,6 +1025,10 @@ class QueryImpl {
       views.push_back(view);
     }
     for (auto view : inserts) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : deletes) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -1100,6 +1122,7 @@ class QueryImpl {
   DefList<MERGE> merges;
   DefList<CMP> compares;
   DefList<INSERT> inserts;
+  DefList<DELETE> deletes;
 };
 
 }  // namespace hyde

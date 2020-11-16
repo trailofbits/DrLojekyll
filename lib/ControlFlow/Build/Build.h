@@ -357,8 +357,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
                             TABLE *last_model);
 
 // Build an eager region for deleting it.
-void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView pred_view,
-                            QueryInsert view, Context &context, OP *parent);
+void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
+                            OP *parent);
 
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
@@ -621,6 +621,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
         case InputColumnRole::kAggregateConfig:
         case InputColumnRole::kAggregateGroup:
         case InputColumnRole::kMaterialized:
+        case InputColumnRole::kDeleted:
           if (out_col && in_col.Id() != out_col->Id() &&
               (QueryView::Containing(in_col) == view || in_col.IsConstant())) {
 
@@ -636,7 +637,6 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
         case InputColumnRole::kIndexValue:
         case InputColumnRole::kAggregatedColumn:
         case InputColumnRole::kPublished:
-        case InputColumnRole::kDeleted:
           return;
       }
     });

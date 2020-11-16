@@ -59,24 +59,22 @@ void BuildTopDownTupleChecker(
   // This tuple was persisted, thus we can check it.
   if (model->table) {
 
+    auto call_pred = [&] (REGION *parent) -> REGION * {
+      return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+          impl, context, parent, view, view_cols,
+          model->table, pred_view, already_checked);
+    };
+
     // If the predecessor persists the same data then we'll call the
     // predecessor's checker.
     if (model->table == pred_model->table) {
-      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, model->table, pred_view,
-          already_checked);
-
-      proc->body.Emplace(proc, check);
+      proc->body.Emplace(proc, BuildMaybeScanPartial(
+          impl, view, view_cols, model->table, proc,
+          call_pred));
 
     // The predecessor persists different data, so we'll check in the tuple,
     // and if it's not present, /then/ we'll call the predecessor handler.
     } else {
-      auto call_pred = [&] (REGION *parent) -> REGION * {
-        return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, parent, view, view_cols,
-            model->table, pred_view, already_checked);
-      };
-
       const auto region = BuildMaybeScanPartial(
           impl, view, view_cols, model->table, proc,
           [&] (REGION *parent) -> REGION * {

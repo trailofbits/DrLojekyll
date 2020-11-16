@@ -59,6 +59,7 @@ class TypeLoc;
 class QueryColumn;
 class QueryConstant;
 class QueryCompare;
+class QueryDelete;
 class QueryImpl;
 class QueryInsert;
 class QueryIO;
@@ -116,6 +117,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   friend class QueryConstant;
   friend class QueryCompare;
+  friend class QueryDelete;
   friend class QueryInsert;
   friend class QueryJoin;
   friend class QueryMap;
@@ -308,6 +310,7 @@ class QueryView : public query::QueryNode<QueryView> {
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
   QueryView(const QueryView &view);
+  QueryView(const QueryDelete &view);
   QueryView(const QuerySelect &view);
   QueryView(const QueryTuple &view);
   QueryView(const QueryKVIndex &view);
@@ -322,6 +325,7 @@ class QueryView : public query::QueryNode<QueryView> {
     return view;
   }
 
+  static QueryView From(QueryDelete &view) noexcept;
   static QueryView From(QuerySelect &view) noexcept;
   static QueryView From(QueryTuple &view) noexcept;
   static QueryView From(QueryKVIndex &view) noexcept;
@@ -334,6 +338,7 @@ class QueryView : public query::QueryNode<QueryView> {
 
   const char *KindName(void) const noexcept;
 
+  bool IsDelete(void) const noexcept;
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
   bool IsKVIndex(void) const noexcept;
@@ -343,7 +348,6 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMerge(void) const noexcept;
   bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
-  bool IsInsertThatDeletes(void) const noexcept;
 
   // Can this view receive inputs that should logically "delete" entries?
   bool CanReceiveDeletions(void) const noexcept;
@@ -686,7 +690,6 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 
   ParsedDeclaration Declaration(void) const noexcept;
 
-  bool IsDelete(void) const noexcept;
   bool IsRelation(void) const noexcept;
   bool IsStream(void) const noexcept;
 
@@ -706,6 +709,32 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
 
  private:
   using query::QueryNode<QueryInsert>::QueryNode;
+
+  friend class QueryView;
+};
+
+// A node that signals that its data should be deleted from its successor nodes.
+class QueryDelete : public query::QueryNode<QueryDelete> {
+ public:
+  static QueryDelete From(QueryView view);
+
+  // The deleted columns.
+  DefinedNodeRange<QueryColumn> Columns(void) const;
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+
+  OutputStream &DebugString(OutputStream &) const noexcept;
+
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                      with_col) const;
+
+ private:
+  using query::QueryNode<QueryDelete>::QueryNode;
 
   friend class QueryView;
 };
@@ -796,6 +825,7 @@ class Query {
   DefinedNodeRange<QueryKVIndex> KVIndices(void) const;
   DefinedNodeRange<QueryRelation> Relations(void) const;
   DefinedNodeRange<QueryInsert> Inserts(void) const;
+  DefinedNodeRange<QueryDelete> Deletes(void) const;
   DefinedNodeRange<QueryMap> Maps(void) const;
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
   DefinedNodeRange<QueryMerge> Merges(void) const;
@@ -838,6 +868,10 @@ class Query {
     }
 
     for (auto view : Inserts()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Deletes()) {
       cb(QueryView::From(view));
     }
   }

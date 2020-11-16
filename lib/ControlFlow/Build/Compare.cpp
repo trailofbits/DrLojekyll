@@ -58,7 +58,7 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
       if (succ.IsJoin()) {
         should_persist = true;
         break;
-      } else if (succ.IsMerge() && succ.CanReceiveDeletions()) {
+      } else if (succ.CanReceiveDeletions()) {
         should_persist = true;
         break;
       }

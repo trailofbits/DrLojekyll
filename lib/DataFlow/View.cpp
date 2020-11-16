@@ -74,6 +74,10 @@ const char *Node<QueryCompare>::KindName(void) const noexcept {
   return "COMPARE";
 }
 
+const char *Node<QueryDelete>::KindName(void) const noexcept {
+  return "DELETE";
+}
+
 const char *Node<QueryInsert>::KindName(void) const noexcept {
   if (declaration.Kind() == DeclarationKind::kQuery) {
     return "MATERIALIZE";
@@ -81,20 +85,17 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
   } else if (declaration.Kind() == DeclarationKind::kMessage) {
     return "TRANSMIT";
 
-  } else if (is_insert) {
+  } else {
     if (declaration.Arity()) {
       return "INSERT";
     } else {
       return "INCREMENT";
     }
-
-  } else {
-    if (declaration.Arity()) {
-      return "DELETE";
-    } else {
-      return "DECREMENT";
-    }
   }
+}
+
+Node<QueryDelete> *Node<QueryView>::AsDelete(void) noexcept {
+  return nullptr;
 }
 
 Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {

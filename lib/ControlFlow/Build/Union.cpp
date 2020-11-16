@@ -48,10 +48,13 @@ void BuildTopDownUnionChecker(
     // Call all of the predecessors.
     auto call_preds = [&] (PARALLEL *par) {
       for (QueryView pred_view : view.Predecessors()) {
-        if (pred_view.IsInsert() &&
-            QueryInsert::From(pred_view).IsDelete()) {
+
+        // Deletes have no backing data; they signal to their successors that
+        // data should be deleted from their successor models.
+        if (pred_view.IsDelete()) {
           continue;
         }
+
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, model->table, pred_view,
             already_checked);

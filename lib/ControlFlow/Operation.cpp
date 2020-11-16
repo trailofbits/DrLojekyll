@@ -637,13 +637,20 @@ bool Node<ProgramCallRegion>::Equals(
     return false;
   }
 
-  for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
+  const auto num_arg_vars = arg_vars.Size();
+  const auto num_arg_vecs = arg_vecs.Size();
+  if (num_arg_vars != that->arg_vars.Size() ||
+      num_arg_vecs != that->arg_vecs.Size()) {
+    return false;
+  }
+
+  for (auto i = 0u, max_i = num_arg_vars; i < max_i; ++i) {
     if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
       return false;
     }
   }
 
-  for (auto i = 0u, max_i = arg_vecs.Size(); i < max_i; ++i) {
+  for (auto i = 0u, max_i = num_arg_vecs; i < max_i; ++i) {
     if (!eq.Contains(arg_vecs[i], that->arg_vecs[i])) {
       return false;
     }
@@ -676,12 +683,12 @@ bool Node<ProgramCallRegion>::Equals(
     } else {
       eq.Insert(this_called_proc, that_called_proc);
 
-      for (auto i = 0u, max_i = arg_vars.Size(); i < max_i; ++i) {
+      for (auto i = 0u; i < num_arg_vars; ++i) {
         eq.Insert(this_called_proc->input_vars[i],
                   that_called_proc->input_vars[i]);
       }
 
-      for (auto i = 0u, max_i = arg_vecs.Size(); i < max_i; ++i) {
+      for (auto i = 0u; i < num_arg_vecs; ++i) {
         eq.Insert(this_called_proc->input_vecs[i],
                   that_called_proc->input_vecs[i]);
       }
