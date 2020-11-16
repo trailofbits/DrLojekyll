@@ -15,6 +15,21 @@
 namespace hyde {
 namespace {
 
+// NOTE(ekilmer): Classes are named all the same for now
+constexpr auto gClassName = "Database";
+
+static OutputStream &Index(OutputStream &os, const DataIndex index) {
+  return os << "self.index_" << index.Id();
+}
+
+static OutputStream &Table(OutputStream &os, const DataTable table) {
+  return os << "self.table_" << table.Id();
+}
+
+static OutputStream &Var(OutputStream &os, const DataVariable var) {
+  return os << "self.var_" << var.Id();
+}
+
 static const char *TypeName(TypeKind kind) {
   switch (kind) {
     case TypeKind::kSigned8:
@@ -82,7 +97,7 @@ static std::string TypeValueOrDefault(TypeKind kind,
 
 // Declare a set to hold the table.
 static void DefineTable(OutputStream &os, DataTable table) {
-  os << "table_" << table.Id() << ": DefaultDict[Tuple[";
+  os << os.Indent() << Table(os, table) << ": DefaultDict[Tuple[";
   auto sep = "";
   for (auto col : table.Columns()) {
     os << sep << TypeName(col.Type());
@@ -93,7 +108,7 @@ static void DefineTable(OutputStream &os, DataTable table) {
   // We represent indices as mappings to vectors so that we can concurrently
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
-    os << "index_" << index.Id() << ": DefaultDict[Tuple[";
+    os << os.Indent() << Index(os, index) << ": DefaultDict[Tuple[";
     sep = "";
     for (auto col : index.KeyColumns()) {
       os << TypeName(col.Type()) << sep;
@@ -118,7 +133,7 @@ static void DefineTable(OutputStream &os, DataTable table) {
 
 static void DefineGlobal(OutputStream &os, DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << "var_" << global.Id() << ": " << TypeName(type) << " = "
+  os << os.Indent() << Var(os, global) << ": " << TypeName(type) << " = "
      << TypeValueOrDefault(type, global.Value()) << "\n\n";
 }
 
@@ -253,7 +268,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
     os << ")\n";
 
-    os << os.Indent() << "state = table_" << region.Table().Id() << "["
+    os << os.Indent() << "state = " << Table(os, region.Table()) << "["
        << tuple_var << "]\n";
 
     os << os.Indent() << "if ";
@@ -266,7 +281,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         break;
     }
     os.PushIndent();
-    os << os.Indent() << "table_" << region.Table().Id() << "[" << tuple_var
+    os << os.Indent() << Table(os, region.Table()) << "[" << tuple_var
        << "] = ";
     switch (region.ToState()) {
       case TupleState::kAbsent: os << "0\n"; break;
@@ -279,7 +294,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     for (auto index : region.Table().Indices()) {
-      os << os.Indent() << "index_" << index.Id() << "[(";
+      os << os.Indent() << Index(os, index) << "[(";
       for (auto indexed_col : index.KeyColumns()) {
         os << tuple_var << "[" << indexed_col.Index() << "], ";
       }
@@ -344,7 +359,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         os << "()";
       }
 
-      os << "]] = index_" << index.Id() << "[(";
+      os << "]] = " << Index(os, index) << "[(";
 
       // This is a bit ugly, but basically: we want to index into the
       // Python representation of this index, e.g. via `index_10[(a, b)]`,
@@ -423,9 +438,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 };
 
 static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
-  os << "def proc_" << proc.Id() << "(";
+  os << os.Indent() << "def proc_" << proc.Id() << "(self";
 
-  auto param_sep = "";
+  auto param_sep = ", ";
 
   // First, declare all vector parameters.
   for (auto vec : proc.VectorParameters()) {
@@ -510,6 +525,12 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
     }
   }
 
+  // A program gets its own class
+  os << "class " << gClassName << ":\n\n";
+  os.PushIndent();
+
+  os << os.Indent() << "def __init__(self):\n";
+  os.PushIndent();
   for (auto table : program.Tables()) {
     DefineTable(os, table);
   }
@@ -517,14 +538,18 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   for (auto global : program.GlobalVariables()) {
     DefineGlobal(os, global);
   }
+  os.PopIndent();
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, proc);
   }
 
+  os.PopIndent();
+
   // os << "if __name__ == \"__main__\":\n"
-  //    << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-  //    << "  for edge, state in table_7.items():\n"
+  //    << "  db = Database()\n"
+  //    << "  db.proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
+  //    << "  for edge, state in db.table_7.items():\n"
   //    << "    print(edge)\n";
 }
 
