@@ -18,16 +18,24 @@ namespace {
 // NOTE(ekilmer): Classes are named all the same for now
 constexpr auto gClassName = "Database";
 
-static OutputStream &Index(OutputStream &os, const DataIndex index) {
-  return os << "self.index_" << index.Id();
-}
-
 static OutputStream &Table(OutputStream &os, const DataTable table) {
   return os << "self.table_" << table.Id();
 }
 
+static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
+  return os << "self.index_" << index.Id();
+}
+
 static OutputStream &Var(OutputStream &os, const DataVariable var) {
   return os << "self.var_" << var.Id();
+}
+
+static OutputStream &Vector(OutputStream &os, const DataVector vec) {
+  return os << "vec_" << vec.Id();
+}
+
+static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
+  return os << "vec_index" << vec.Id();
 }
 
 static const char *TypeName(TypeKind kind) {
@@ -108,7 +116,7 @@ static void DefineTable(OutputStream &os, DataTable table) {
   // We represent indices as mappings to vectors so that we can concurrently
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
-    os << os.Indent() << Index(os, index) << ": DefaultDict[Tuple[";
+    os << os.Indent() << TableIndex(os, index) << ": DefaultDict[Tuple[";
     sep = "";
     for (auto col : index.KeyColumns()) {
       os << TypeName(col.Type()) << sep;
@@ -171,7 +179,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << "vec_index_" << vec.Id() << " < len(vec_" << vec.Id() << ")";
+      os << sep << VectorIndex(os, vec) << " < len(" << Vector(os, vec) << ")";
       sep = " or ";
     }
     os << ":\n";
@@ -181,7 +189,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os.PopIndent();
 
     for (auto vec : region.Vectors()) {
-      os << os.Indent() << "vec_index_" << vec.Id() << " = 0\n";
+      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
     }
 
     // Output
@@ -217,7 +225,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorAppendRegion region) override {
-    os << os.Indent() << "vec_" << region.Vector().Id() << ".append((";
+    os << os.Indent() << Vector(os, region.Vector()) << ".append((";
     for (auto var : region.TupleVariables()) {
       os << "var_" << var.Id() << ", ";
     }
@@ -225,22 +233,22 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorClearRegion region) override {
-    os << os.Indent() << "del vec_" << region.Vector().Id() << "[:]\n";
-    os << os.Indent() << "vec_index_" << region.Vector().Id() << " = 0\n";
+    os << os.Indent() << "del " << Vector(os, region.Vector()) << "[:]\n";
+    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
     auto vec = region.Vector();
-    os << os.Indent() << "while vec_index_" << vec.Id() << " < len(vec_"
-       << vec.Id() << "):\n";
+    os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+       << Vector(os, vec) << "):\n";
     os.PushIndent();
     os << os.Indent();
     for (auto var : region.TupleVariables()) {
       os << "var_" << var.Id() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[vec_index_" << vec.Id() << "]\n";
+    os << "= " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
 
-    os << os.Indent() << "vec_index_" << vec.Id() << " += 1\n";
+    os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -249,9 +257,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorUniqueRegion region) override {
-    os << os.Indent() << "vec_" << region.Vector().Id() << " = list(set(vec_"
-       << region.Vector().Id() << "))\n";
-    os << os.Indent() << "vec_index_" << region.Vector().Id() << " = 0\n";
+    os << os.Indent() << Vector(os, region.Vector()) << " = list(set("
+       << Vector(os, region.Vector()) << "))\n";
+    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
   void Visit(ProgramTransitionStateRegion region) override {
@@ -294,7 +302,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     for (auto index : region.Table().Indices()) {
-      os << os.Indent() << Index(os, index) << "[(";
+      os << os.Indent() << TableIndex(os, index) << "[(";
       for (auto indexed_col : index.KeyColumns()) {
         os << tuple_var << "[" << indexed_col.Index() << "], ";
       }
@@ -319,8 +327,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "while vec_index_" << vec.Id() << " < len(vec_"
-       << vec.Id() << "):\n";
+    os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+       << Vector(os, vec) << "):\n";
     os.PushIndent();
     os << os.Indent();
 
@@ -331,9 +339,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[vec_index_" << vec.Id() << "]\n";
+    os << "= vec_" << vec.Id() << "[" << VectorIndex(os, vec) << "]\n";
 
-    os << os.Indent() << "vec_index_" << vec.Id() << " += 1\n";
+    os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
@@ -359,7 +367,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         os << "()";
       }
 
-      os << "]] = " << Index(os, index) << "[(";
+      os << "]] = " << TableIndex(os, index) << "[(";
 
       // This is a bit ugly, but basically: we want to index into the
       // Python representation of this index, e.g. via `index_10[(a, b)]`,
@@ -443,7 +451,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
   // First, declare all vector parameters.
   for (auto vec : proc.VectorParameters()) {
-    os << ", vec_" << vec.Id() << ": List[Tuple[";
+    os << ", " << Vector(os, vec) << ": List[Tuple[";
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
@@ -477,13 +485,13 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   //                     turn the return value of the procedures from a `bool`
   //                     to a `tuple`. :-/
   for (auto vec : proc.VectorParameters()) {
-    os << os.Indent() << "vec_index_" << vec.Id() << ": int = 0\n";
+    os << os.Indent() << VectorIndex(os, vec) << ": int = 0\n";
   }
 
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    os << os.Indent() << "vec_" << vec.Id() << ": List[Tuple[";
+    os << os.Indent() << Vector(os, vec) << ": List[Tuple[";
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
@@ -494,7 +502,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     os << "]] = list()\n";
 
     // Tracking variable for the vector.
-    os << os.Indent() << "vec_index_" << vec.Id() << ": int = 0\n";
+    os << os.Indent() << VectorIndex(os, vec) << ": int = 0\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
