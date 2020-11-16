@@ -440,11 +440,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   os << os.Indent() << "def proc_" << proc.Id() << "(self";
 
-  auto param_sep = ", ";
 
   // First, declare all vector parameters.
   for (auto vec : proc.VectorParameters()) {
-    os << param_sep << "vec_" << vec.Id() << ": List[Tuple[";
+    os << ", vec_" << vec.Id() << ": List[Tuple[";
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
@@ -453,13 +452,11 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     }
 
     os << "]]";
-    param_sep = ", ";
   }
 
   // Then, declare all variable parameters.
   for (auto param : proc.VariableParameters()) {
-    os << param_sep << "var_" << param.Id() << ": " << TypeName(param.Type());
-    param_sep = ", ";
+    os << ", var_" << param.Id() << ": " << TypeName(param.Type());
   }
 
   // Every procedure has a boolean return type. A lot of the time the return
