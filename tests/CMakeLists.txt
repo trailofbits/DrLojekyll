@@ -14,23 +14,22 @@ add_executable(unittests
     Parsing.cpp
     )
 
-find_package(Python3 3.8 COMPONENTS Interpreter)
-if(Python3_FOUND)
-  # Setup Python virtualenv and install requirements.txt
-  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/setup_venv.cmake")
+option(DISABLE_MYPY_TEST_CHECKS "Disables using mypy to check generated Python code" OFF)
+if (NOT DISABLE_MYPY_TEST_CHECKS)
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    # Setup Python virtualenv and install requirements.txt
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/setup_venv.cmake")
 
-  add_custom_target(
-    Mypy
-    DEPENDS requirements.txt
-    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt"
-    COMMENT "Python Mypy")
+    add_custom_target(
+        Mypy
+        DEPENDS requirements.txt
+        SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt"
+        COMMENT "Python Mypy")
 
-  # Tell our tests that we can use mypy on PATH
-  target_compile_definitions(unittests PUBLIC
-    MYPY_PATH="${VIRTUALENV_EXE_DIRECTORY}/mypy${CMAKE_EXECUTABLE_SUFFIX}")
-  add_dependencies(unittests Mypy)
-else()
-  message(WARNING "Could not find Python 3.8+ interpreter for testing Python CodeGen validation")
+    # Tell our tests that we can use mypy on PATH
+    target_compile_definitions(unittests PUBLIC
+        MYPY_PATH="${VIRTUALENV_EXE_DIRECTORY}/mypy${CMAKE_EXECUTABLE_SUFFIX}")
+    add_dependencies(unittests Mypy)
 endif()
 
 target_include_directories(unittests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
