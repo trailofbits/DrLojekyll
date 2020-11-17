@@ -507,6 +507,11 @@ TypeKind DataVariable::Type(void) const noexcept {
   return TypeKind::kInvalid;
 }
 
+// Whether this variable is global.
+bool DataVariable::IsGlobal(void) const noexcept {
+  return DefiningRegion() ? false : true;
+}
+
 // Unique ID of this column.
 unsigned DataColumn::Id(void) const noexcept {
   return impl->id;

@@ -18,6 +18,10 @@ namespace {
 // NOTE(ekilmer): Classes are named all the same for now
 constexpr auto gClassName = "Database";
 
+static OutputStream &Procedure(OutputStream &os, const ProgramProcedure proc) {
+  return os << "def proc_" << proc.Id();
+}
+
 static OutputStream &Table(OutputStream &os, const DataTable table) {
   return os << "self.table_" << table.Id();
 }
@@ -27,7 +31,10 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
 }
 
 static OutputStream &Var(OutputStream &os, const DataVariable var) {
-  return os << "self.var_" << var.Id();
+  if (var.IsGlobal()) {
+    os << "self.";
+  }
+  return os << "var_" << var.Id();
 }
 
 static OutputStream &Vector(OutputStream &os, const DataVector vec) {
@@ -227,7 +234,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramVectorAppendRegion region) override {
     os << os.Indent() << Vector(os, region.Vector()) << ".append((";
     for (auto var : region.TupleVariables()) {
-      os << "var_" << var.Id() << ", ";
+      os << Var(os, var) << ", ";
     }
     os << "))\n";
   }
@@ -244,7 +251,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
     os << os.Indent();
     for (auto var : region.TupleVariables()) {
-      os << "var_" << var.Id() << ", ";
+      os << Var(os, var) << ", ";
     }
     os << "= " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
 
@@ -272,7 +279,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     auto tuple_var = tuple.str();
     os << os.Indent() << tuple_var << " = (";
     for (auto var : region.TupleVariables()) {
-      os << "var_" << var.Id() << ", ";
+      os << Var(os, var) << ", ";
     }
     os << ")\n";
 
@@ -335,11 +342,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     std::vector<std::string> var_names;
     for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
+
+      // HELP: What can I do here?
       var_name << "var_" << var.Id();
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[" << VectorIndex(os, vec) << "]\n";
+    os << "= " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
 
     os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
 
@@ -407,7 +416,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       if (!out_vars.empty()) {
         os << os.Indent();
         for (auto var : out_vars) {
-          os << "var_" << var.Id() << ", ";
+          os << Var(os, var) << ", ";
         }
         os << "= tuple_" << region.Id() << "_" << i << "\n";
       }
@@ -446,8 +455,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 };
 
 static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
-  os << os.Indent() << "def proc_" << proc.Id() << "(self";
-
+  os << os.Indent() << Procedure(os, proc) << "(self";
 
   // First, declare all vector parameters.
   for (auto vec : proc.VectorParameters()) {
@@ -464,7 +472,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
   // Then, declare all variable parameters.
   for (auto param : proc.VariableParameters()) {
-    os << ", var_" << param.Id() << ": " << TypeName(param.Type());
+    os << ", " << Var(os, param) << ": " << TypeName(param.Type());
   }
 
   // Every procedure has a boolean return type. A lot of the time the return
