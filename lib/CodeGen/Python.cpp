@@ -30,7 +30,8 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
   return os << "self.index_" << index.Id();
 }
 
-static OutputStream &Var(OutputStream &os, const DataVariable var) {
+template <typename Stream>
+static Stream &Var(Stream &os, const DataVariable var) {
   if (var.IsGlobal()) {
     os << "self.";
   }
@@ -342,9 +343,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     std::vector<std::string> var_names;
     for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
-
-      // HELP: What can I do here?
-      var_name << "var_" << var.Id();
+      // HELP: Compilation fails :(
+      Var(var_name, var);
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
