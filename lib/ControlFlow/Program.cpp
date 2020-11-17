@@ -509,7 +509,8 @@ TypeKind DataVariable::Type(void) const noexcept {
 
 // Whether this variable is global.
 bool DataVariable::IsGlobal(void) const noexcept {
-  return DefiningRegion() ? false : true;
+  return DefiningRole() == VariableRole::kParameter || DefiningRegion() ? false
+                                                                        : true;
 }
 
 // Unique ID of this column.
