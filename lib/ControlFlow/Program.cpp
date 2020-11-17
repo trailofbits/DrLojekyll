@@ -449,8 +449,7 @@ VariableRole DataVariable::DefiningRole(void) const noexcept {
   return impl->role;
 }
 
-// The region which defined this local variable. If this variable has no
-// defining region then it is a global variable.
+// The region which defined this local variable.
 std::optional<ProgramRegion> DataVariable::DefiningRegion(void) const noexcept {
   if (impl->defining_region) {
     return ProgramRegion(impl->defining_region);
@@ -509,7 +508,7 @@ TypeKind DataVariable::Type(void) const noexcept {
 
 // Whether this variable is global.
 bool DataVariable::IsGlobal(void) const noexcept {
-  return DefiningRegion() ? false : true;
+  return !(DefiningRole() == VariableRole::kParameter || DefiningRegion());
 }
 
 // Unique ID of this column.
