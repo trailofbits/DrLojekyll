@@ -215,6 +215,9 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   // Type of this variable.
   TypeKind Type(void) const noexcept;
 
+  // Whether this variable is global.
+  bool IsGlobal(void) const noexcept;
+
  private:
   using program::ProgramNode<DataVariable>::ProgramNode;
 };
