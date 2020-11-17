@@ -14,12 +14,20 @@ add_executable(unittests
     Parsing.cpp
     )
 
-set(_VIRTUALENV_DIRECTORY
-    "${CMAKE_BINARY_DIR}/python/virtualenv"
-    CACHE INTERNAL "Path to virtualenv")
-
 find_package(Python3 3.8 COMPONENTS Interpreter)
 if(Python3_FOUND)
+  set(_VIRTUALENV_DIRECTORY
+      "${CMAKE_BINARY_DIR}/python/virtualenv"
+      CACHE INTERNAL "Path to virtualenv")
+
+  if(WIN32)
+    set(exe_dir "Scripts")
+  else()
+    set(exe_dir "bin")
+  endif()
+  set(_VIRTUALENV_EXE_DIRECTORY
+      "${_VIRTUALENV_DIRECTORY}/${exe_dir}"
+      CACHE INTERNAL "Path to virtualenv directory containing executables")
 
   add_custom_command(
     OUTPUT "${_VIRTUALENV_DIRECTORY}"
@@ -30,21 +38,19 @@ if(Python3_FOUND)
     OUTPUT requirements.txt
     DEPENDS "${_VIRTUALENV_DIRECTORY}"
             "${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt"
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt" requirements.txt
-    COMMAND "${_VIRTUALENV_DIRECTORY}/bin/pip" install --upgrade pip
-            --requirement requirements.txt
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt" requirements.txt
+    COMMAND "${_VIRTUALENV_EXE_DIRECTORY}/pip${CMAKE_EXECUTABLE_SUFFIX}" install --upgrade --requirement requirements.txt
     COMMENT "Installing Python packages from requirements.txt")
 
   add_custom_target(
     Mypy
     DEPENDS requirements.txt
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt"
-    COMMENT "Mypy target")
+    COMMENT "Python Mypy")
 
   # Tell our tests that we can use mypy on PATH
   target_compile_definitions(
-    unittests PUBLIC MYPY_PATH="${_VIRTUALENV_DIRECTORY}/bin/mypy")
+    unittests PUBLIC MYPY_PATH="${_VIRTUALENV_EXE_DIRECTORY}/mypy${CMAKE_EXECUTABLE_SUFFIX}")
   add_dependencies(unittests Mypy)
 else()
   message(WARNING "Could not find Python 3.8+ interpreter for testing Python CodeGen validation")
