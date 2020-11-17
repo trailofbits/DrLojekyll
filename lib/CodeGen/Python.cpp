@@ -35,7 +35,8 @@ static Stream &Var(Stream &os, const DataVariable var) {
   if (var.IsGlobal()) {
     os << "self.";
   }
-  return os << "var_" << var.Id();
+  os << "var_" << var.Id();
+  return os;
 }
 
 static OutputStream &Vector(OutputStream &os, const DataVector vec) {
@@ -343,8 +344,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     std::vector<std::string> var_names;
     for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
-      // HELP: Compilation fails :(
-      Var(var_name, var);
+      (void) Var(var_name, var);
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
