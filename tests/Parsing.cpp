@@ -1,18 +1,19 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
+#include <drlojekyll/ControlFlow/Format.h>
+#include <drlojekyll/Display/Format.h>
+#include <gtest/gtest.h>
+
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <cstdlib>
 
 #include "UnitTests.h"
 #include "drlojekyll/CodeGen/CodeGen.h"
 #include "drlojekyll/CodeGen/MessageSerialization.h"
-#include <drlojekyll/ControlFlow/Format.h>
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
-#include <drlojekyll/Display/Format.h>
-#include <gtest/gtest.h>
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/ModuleIterator.h"
 #include "drlojekyll/Parse/Parser.h"
@@ -76,20 +77,21 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   if (auto query_opt = hyde::Query::Build(*mmod, err_log)) {
     if (auto program_opt = hyde::Program::Build(*query_opt, err_log)) {
 
-        // CodeGen for Python
-        std::string tmpfile = path + ".py";
-        std::unique_ptr<hyde::FileStream> py_out;
-        py_out.reset(new hyde::FileStream(display_mgr, tmpfile));
-        hyde::GeneratePythonCode(*program_opt, py_out->os);
-        py_out->os.Flush();
-        py_out->fs.close();
-      #ifdef MYPY_PATH
-        auto ret = std::system(std::string(std::string(MYPY_PATH) + " " + tmpfile).c_str());
-        EXPECT_EQ(ret, 0) << "Python mypy type-checking failed!";
-      #endif
+      // CodeGen for Python
+      std::string tmpfile = path + ".py";
+      std::unique_ptr<hyde::FileStream> py_out;
+      py_out.reset(new hyde::FileStream(display_mgr, tmpfile));
+      hyde::GeneratePythonCode(*program_opt, py_out->os);
+      py_out->os.Flush();
+      py_out->fs.close();
+#ifdef MYPY_PATH
+      auto ret = std::system(
+          std::string(std::string(MYPY_PATH) + " " + tmpfile).c_str());
+      EXPECT_EQ(ret, 0) << "Python mypy type-checking failed!";
+
+#endif
     }
   }
-
 }
 
 INSTANTIATE_TEST_SUITE_P(ValidExampleParsing, PassingExamplesParsingSuite,
