@@ -88,7 +88,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     std::optional<class hyde::Program> program_opt;
 
     // Some tests fail this step
-    if (BuildFailExamples.find(fs::path(path).filename()) !=
+    if (BuildFailExamples.find(fs::path(path).filename().string()) !=
         BuildFailExamples.end()) {
       ASSERT_DEBUG_DEATH(
           program_opt = program_build_lambda(*query_opt, err_log), ".*TODO.*");
