@@ -90,7 +90,8 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     // Some tests fail this step
     if (BuildFailExamples.find(fs::path(path).filename()) !=
         BuildFailExamples.end()) {
-      ASSERT_DEATH(program_build_lambda(*query_opt, err_log), ".*TODO.*");
+      ASSERT_DEBUG_DEATH(
+          program_opt = program_build_lambda(*query_opt, err_log), ".*TODO.*");
     } else {
       program_opt = program_build_lambda(*query_opt, err_log);
     }
