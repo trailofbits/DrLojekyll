@@ -35,6 +35,7 @@ jobs:
           -DCMAKE_C_COMPILER=gcc-8
           -DCMAKE_CXX_COMPILER=g++-8
           -DWARNINGS_AS_ERRORS=1
+          -DDISABLE_MYPY_TEST_CHECKS=ON
           -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
           .
       - name: Build
@@ -70,6 +71,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang-6.0
           -DCMAKE_CXX_COMPILER=clang++-6.0
           -DWARNINGS_AS_ERRORS=1
+          -DDISABLE_MYPY_TEST_CHECKS=ON
           -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
           .
       - name: Build
