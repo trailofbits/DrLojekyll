@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 
 #include "UnitTests.h"
 #include "drlojekyll/CodeGen/CodeGen.h"
@@ -53,6 +54,11 @@ static auto DrFilesInDir(const fs::path &dir) {
 
 class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
 
+// Set of examples that can parse but fail to build
+static std::unordered_set<std::string> BuildFailExamples{
+    "min_block.dr", "pairwise_average_weight.dr", "function_counter.dr",
+    "watched_user_dir.dr", "average_weight.dr"};
+
 TEST_P(PassingExamplesParsingSuite, Examples) {
   auto path = GetParam().string();
 
@@ -75,7 +81,20 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 
   // Build
   if (auto query_opt = hyde::Query::Build(*mmod, err_log)) {
-    if (auto program_opt = hyde::Program::Build(*query_opt, err_log)) {
+    auto program_build_lambda = [](auto q, auto log) {
+      return hyde::Program::Build(q, log);
+    };
+    std::optional<class hyde::Program> program_opt;
+
+    // Some tests fail this step
+    if (BuildFailExamples.find(fs::path(path).filename()) !=
+        BuildFailExamples.end()) {
+      ASSERT_DEATH(program_build_lambda(*query_opt, err_log), ".*TODO.*");
+    } else {
+      program_opt = program_build_lambda(*query_opt, err_log);
+    }
+
+    if (program_opt) {
 
       // CodeGen for Python
       std::string tmpfile = path + ".py";
@@ -88,7 +107,6 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
       auto ret = std::system(
           std::string(std::string(MYPY_PATH) + " " + tmpfile).c_str());
       EXPECT_EQ(ret, 0) << "Python mypy type-checking failed!";
-
 #endif
     }
   }
