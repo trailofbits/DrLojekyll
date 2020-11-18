@@ -674,7 +674,7 @@ class WeakUseRef {
       if (auto def = use_copy->def_being_used; def) {
         def->EraseWeakUse(use_copy);
       }
-      delete use;
+      delete use_copy;
     }
   }
 
