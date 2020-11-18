@@ -1,7 +1,5 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/ControlFlow/Format.h>
-#include <drlojekyll/Display/Format.h>
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -13,11 +11,14 @@
 #include "UnitTests.h"
 #include "drlojekyll/CodeGen/CodeGen.h"
 #include "drlojekyll/CodeGen/MessageSerialization.h"
+#include "drlojekyll/ControlFlow/Format.h"
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
+#include "drlojekyll/Display/Format.h"
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/ModuleIterator.h"
 #include "drlojekyll/Parse/Parser.h"
+
 
 namespace fs = std::filesystem;
 
