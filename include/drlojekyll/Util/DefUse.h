@@ -415,6 +415,7 @@ class Def {
       assert(use->def_being_used == self);
       use->user = nullptr;
       use->def_being_used = nullptr;
+      delete use;
     }
     weak_uses.clear();
 
@@ -428,7 +429,7 @@ class Def {
       use->user = nullptr;
       use->def_being_used = nullptr;
       use->index = ~0u;
-      use.release();
+      delete use.release();
     }
   }
 
@@ -674,7 +675,7 @@ class WeakUseRef {
       if (auto def = use_copy->def_being_used; def) {
         def->EraseWeakUse(use_copy);
       }
-      delete use;
+      delete use_copy;
     }
   }
 
