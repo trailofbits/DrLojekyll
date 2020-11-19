@@ -116,6 +116,8 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
                      fs::path(path).filename().stem().string() + ".py";
       hyde::FileStream py_out_fs = hyde::FileStream(display_mgr, tmpfile);
       py_out_fs.os << py_ss.str();
+      py_out_fs.os.Flush();
+      py_out_fs.fs.close();
 
       // mypy can take input from a command line string via '-c STRING'
       // but that sounds unsafe to do from here
