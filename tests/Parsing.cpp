@@ -75,8 +75,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     std::optional<class hyde::Program> program_opt;
 
     // Some tests fail this step
-    if (gBuildFailExamples.find(fs::path(path).filename().string()) !=
-        gBuildFailExamples.end()) {
+    if (gBuildFailExamples.count(fs::path(path).filename().string())) {
       ASSERT_DEBUG_DEATH(
           program_opt = program_build_lambda(*query_opt, err_log), ".*TODO.*");
     } else {
