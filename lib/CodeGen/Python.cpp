@@ -28,7 +28,16 @@ static OutputStream &Comment(OutputStream &os, const char *message) {
 }
 
 static OutputStream &Procedure(OutputStream &os, const ProgramProcedure proc) {
-  return os << "def proc_" << proc.Id();
+  switch (proc.Kind()) {
+    case ProcedureKind::kInitializer: return os << "init_" << proc.Id();
+    case ProcedureKind::kMessageHandler:
+      return os << proc.Message().value().Name() << "_"
+                << proc.VariableParameters().size() +
+                       proc.VectorParameters().size();
+    case ProcedureKind::kTupleFinder:
+    case ProcedureKind::kTupleRemover:
+    default: return os << "proc_" << proc.Id();
+  }
 }
 
 static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
@@ -558,6 +567,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << "):\n";
 
     os.PushIndent();
+
     // If there isn't a body, then an optimization to eliminate this hasn't applied,
     // or it hasn't been coded
     assert(region.Body());
@@ -607,7 +617,7 @@ static void DefineFunctor(OutputStream &os, ParsedFunctor func) {
 }
 
 static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
-  os << os.Indent() << Procedure(os, proc) << "(self";
+  os << os.Indent() << "def " << Procedure(os, proc) << "(self";
 
   // First, declare all vector parameters.
   for (auto vec : proc.VectorParameters()) {
@@ -701,9 +711,6 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
 
-  // In case there are no initialization items
-  os << os.Indent() << "pass\n\n";
-
   for (auto table : program.Tables()) {
     DefineTable(os, table);
   }
@@ -715,6 +722,11 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   for (auto constant : program.Constants()) {
     DefineConstant(os, constant);
   }
+
+  // Invoke the init procedure. Always first
+  auto init_procedure = program.Procedures()[0];
+  assert(init_procedure.Kind() == ProcedureKind::kInitializer);
+  os << os.Indent() << "self." << Procedure(os, init_procedure) << "()\n\n";
 
   os.PopIndent();
 
