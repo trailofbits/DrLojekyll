@@ -557,11 +557,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
     os << "):\n";
 
-    if (auto body = region.Body(); body) {
-      os.PushIndent();
-      body->Accept(*this);
-      os.PopIndent();
-    }
+    os.PushIndent();
+    // If there isn't a body, then an optimization to eliminate this hasn't applied,
+    // or it hasn't been coded
+    assert(region.Body());
+    region.Body()->Accept(*this);
+    os.PopIndent();
   }
 
  private:
