@@ -32,8 +32,7 @@ static OutputStream &Procedure(OutputStream &os, const ProgramProcedure proc) {
     case ProcedureKind::kInitializer: return os << "init_" << proc.Id();
     case ProcedureKind::kMessageHandler:
       return os << proc.Message().value().Name() << "_"
-                << proc.VariableParameters().size() +
-                       proc.VectorParameters().size();
+                << proc.Message().value().Arity();
     case ProcedureKind::kTupleFinder:
     case ProcedureKind::kTupleRemover:
     default: return os << "proc_" << proc.Id();
