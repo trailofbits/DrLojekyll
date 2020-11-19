@@ -29,13 +29,13 @@ static OutputStream &Comment(OutputStream &os, const char *message) {
 
 static OutputStream &Procedure(OutputStream &os, const ProgramProcedure proc) {
   switch (proc.Kind()) {
-    case ProcedureKind::kInitializer: return os << "init_" << proc.Id();
+    case ProcedureKind::kInitializer: return os << "init_" << proc.Id() << "_";
     case ProcedureKind::kMessageHandler:
       return os << proc.Message().value().Name() << "_"
                 << proc.Message().value().Arity();
     case ProcedureKind::kTupleFinder:
     case ProcedureKind::kTupleRemover:
-    default: return os << "proc_" << proc.Id();
+    default: return os << "proc_" << proc.Id() << "_";
   }
 }
 
