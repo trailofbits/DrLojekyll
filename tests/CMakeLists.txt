@@ -14,8 +14,9 @@ add_executable(unittests
     Parsing.cpp
     )
 
-option(DISABLE_MYPY_TEST_CHECKS "Disables using mypy to check generated Python code" OFF)
-if (NOT DISABLE_MYPY_TEST_CHECKS)
+option(ENABLE_TEST_MYPY_CHECKS "Test and verify generated Python code using Mypy" OFF)
+if (ENABLE_TEST_MYPY_CHECKS)
+    message(STATUS "Enabled testing and verification of generated Python code using Mypy")
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
     # Setup Python virtualenv and install requirements.txt
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/setup_venv.cmake")
@@ -30,6 +31,8 @@ if (NOT DISABLE_MYPY_TEST_CHECKS)
     target_compile_definitions(unittests PUBLIC
         MYPY_PATH="${VIRTUALENV_EXE_DIRECTORY}/mypy${CMAKE_EXECUTABLE_SUFFIX}")
     add_dependencies(unittests Mypy)
+else()
+    message(STATUS "Disabled testing and verification of generated Python code using Mypy")
 endif()
 
 target_include_directories(unittests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
