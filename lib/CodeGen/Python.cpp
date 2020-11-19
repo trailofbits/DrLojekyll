@@ -31,6 +31,10 @@ static OutputStream &Procedure(OutputStream &os, const ProgramProcedure proc) {
   return os << "def proc_" << proc.Id();
 }
 
+static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
+  return os << func.Name() << "_" << ParsedDeclaration(func).BindingPattern();
+}
+
 static OutputStream &Table(OutputStream &os, const DataTable table) {
   return os << "self.table_" << table.Id();
 }
@@ -56,6 +60,7 @@ static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
   return os << "vec_index" << vec.Id();
 }
 
+// Python representation of TypeKind
 static const char *TypeName(TypeKind kind) {
   switch (kind) {
     case TypeKind::kSigned8:
@@ -72,6 +77,18 @@ static const char *TypeName(TypeKind kind) {
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID: return "str";
+    default: assert(false); return "Any";
+  }
+}
+
+static const char *OperatorString(ComparisonOperator op) {
+  switch (op) {
+    case ComparisonOperator::kEqual: return "==";
+    case ComparisonOperator::kNotEqual: return "!=";
+    case ComparisonOperator::kLessThan: return "<";
+    case ComparisonOperator::kGreaterThan: return ">";
+
+    // TODO(ekilmer): What's a good default operator?
     default: assert(false); return "None";
   }
 }
@@ -198,16 +215,32 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramGenerateRegion region) override {
     os << Comment(os, "Program Generate Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramGenerateRegion\n";
+
+    os << os.Indent();
+    for (auto out_var : region.OutputVariables()) {
+      os << Var(os, out_var) << ", ";
+    }
+    os << "= " << Functor(os, region.Functor()) << "(";
+    auto sep = "";
+    for (auto in_var : region.InputVariables()) {
+      os << sep << Var(os, in_var);
+      sep = ", ";
+    }
+    os << ")\n";
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    }
   }
 
   void Visit(ProgramInductionRegion region) override {
-    os << Comment(os, "Program Induction Region");
+    os << Comment(os, "Program Induction Init Region");
 
     // Base case
     region.Initializer().Accept(*this);
 
-    // Induction
+    // Fixpoint
+    os << Comment(os, "Induction Fixpoint Loop Region");
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
@@ -226,6 +259,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Output
     if (auto output = region.Output(); output) {
+      os << Comment(os, "Induction Output Region");
       output->Accept(*this);
     }
   }
@@ -510,12 +544,67 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTupleCompareRegion region) override {
     os << Comment(os, "Program TupleCompare Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramTupleCompareRegion\n";
+
+    os << os.Indent() << "if (";
+    for (auto lhs : region.LHS()) {
+      os << Var(os, lhs) << ", ";
+    }
+
+    os << ") " << OperatorString(region.Operator()) << " (";
+
+    for (auto rhs : region.RHS()) {
+      os << Var(os, rhs) << ", ";
+    }
+    os << "):\n";
+
+    os.PushIndent();
+    // If there isn't a body, then an optimization to eliminate this hasn't applied,
+    // or it hasn't been coded
+    assert(region.Body());
+    region.Body()->Accept(*this);
+    os.PopIndent();
   }
 
  private:
   OutputStream &os;
 };
+
+static void DefineFunctor(OutputStream &os, ParsedFunctor func) {
+  os << os.Indent() << "def " << Functor(os, func) << "(";
+
+  std::stringstream return_tuple;
+  auto sep_ret = "";
+  auto sep_bound = "";
+  for (auto param : func.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep_bound << param.Name() << ": " << TypeName(param.Type().Kind());
+      sep_bound = ", ";
+    } else {
+      return_tuple << sep_ret << TypeName(param.Type().Kind());
+      sep_ret = ", ";
+    }
+  }
+
+  os << ") -> ";
+
+  if (func.IsFilter()) {
+    os << "bool";
+  } else {
+    os << "Tuple[";
+    if (auto ret_types = return_tuple.str(); !ret_types.empty()) {
+      os << ret_types;
+    } else {
+      os << "()";
+    }
+    os << "]";
+  }
+
+  os << ":\n";
+
+  os.PushIndent();
+  os << os.Indent() << "pass\n\n";
+  os.PopIndent();
+}
 
 static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   os << os.Indent() << Procedure(os, proc) << "(self";
@@ -585,7 +674,6 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   os << "\n";
 }
 
-
 }  // namespace
 
 // Emits Python code for the given program to `os`.
@@ -594,6 +682,11 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
 
   os << "from collections import defaultdict\n";
   os << "from typing import *\n\n";
+
+  // TODO(ekilmer): Functors are predefined with `pass` for now
+  for (auto func : program.ParsedModule().Functors()) {
+    DefineFunctor(os, func);
+  }
 
   for (auto code : program.ParsedModule().Inlines()) {
     if (code.Language() == Language::kPython) {
