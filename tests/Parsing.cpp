@@ -1,15 +1,20 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
+#include <gtest/gtest.h>
+
 #include <filesystem>
 #include <string>
+#include <unordered_set>
 
 #include "UnitTests.h"
 #include "drlojekyll/CodeGen/MessageSerialization.h"
+#include "drlojekyll/ControlFlow/Format.h"
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/ModuleIterator.h"
 #include "drlojekyll/Parse/Parser.h"
+
 
 namespace fs = std::filesystem;
 
@@ -37,6 +42,11 @@ static auto DrFilesInDir(const fs::path &dir) {
 
 class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
 
+// Set of examples that can parse but fail to build
+static std::unordered_set<std::string> BuildFailExamples{
+    "min_block.dr", "pairwise_average_weight.dr", "function_counter.dr",
+    "watched_user_dir.dr", "average_weight.dr"};
+
 TEST_P(PassingExamplesParsingSuite, Examples) {
   auto path = GetParam().string();
 
@@ -55,6 +65,27 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     EXPECT_TRUE(err_log.IsEmpty())
         << "Message schema generation failed:" << std::endl
         << err_log;
+  }
+
+  // Build
+  if (auto query_opt = hyde::Query::Build(*mmod, err_log)) {
+    auto program_build_lambda = [](auto q, auto log) {
+      return hyde::Program::Build(q, log);
+    };
+    std::optional<class hyde::Program> program_opt;
+
+    // Some tests fail this step
+    if (BuildFailExamples.find(fs::path(path).filename().string()) !=
+        BuildFailExamples.end()) {
+      ASSERT_DEBUG_DEATH(
+          program_opt = program_build_lambda(*query_opt, err_log), ".*TODO.*");
+    } else {
+      program_opt = program_build_lambda(*query_opt, err_log);
+    }
+
+    if (program_opt) {
+      SUCCEED();
+    }
   }
 }
 
