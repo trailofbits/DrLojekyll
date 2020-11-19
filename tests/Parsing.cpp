@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 
@@ -53,7 +54,15 @@ static auto DrFilesInDir(const fs::path &dir) {
   return all_entries;
 }
 
-class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
+class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {
+ protected:
+  void SetUp() override {
+    TestWithParam<fs::path>::SetUp();  // Sets up the base fixture first.
+    fs::create_directories(kGeneratedFilesDir);
+    SUCCEED() << "Created directory for generated test files: "
+              << kGeneratedFilesDir;
+  }
+};
 
 // Set of examples that can parse but fail to build
 static const std::unordered_set<std::string> gBuildFailExamples{
@@ -98,16 +107,25 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     if (program_opt) {
 
       // CodeGen for Python
-      std::string tmpfile = path + ".py";
-      std::unique_ptr<hyde::FileStream> py_out;
-      py_out.reset(new hyde::FileStream(display_mgr, tmpfile));
-      hyde::GeneratePythonCode(*program_opt, py_out->os);
-      py_out->os.Flush();
-      py_out->fs.close();
+      std::stringstream py_ss;
+      auto py_out = hyde::OutputStream(display_mgr, py_ss);
+
+      hyde::GeneratePythonCode(*program_opt, py_out);
 #ifdef MYPY_PATH
-      auto ret = std::system(
+      auto tmpfile = std::string(kGeneratedFilesDir) + "/" +
+                     fs::path(path).filename().stem().string() + ".py";
+      hyde::FileStream py_out_fs = hyde::FileStream(display_mgr, tmpfile);
+      py_out_fs.os << py_ss.str();
+
+      // mypy can take input from a command line string via '-c STRING'
+      // but that sounds unsafe to do from here
+      auto ret_code = std::system(
           std::string(std::string(MYPY_PATH) + " " + tmpfile).c_str());
-      EXPECT_EQ(ret, 0) << "Python mypy type-checking failed!";
+
+      if (ret_code != 0) {
+        FAIL() << "Python mypy type-checking failed! Saved generated code at "
+               << tmpfile << "\n";
+      }
 #endif
     }
   }
