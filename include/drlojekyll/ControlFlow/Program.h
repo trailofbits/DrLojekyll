@@ -359,6 +359,11 @@ class ProgramExistenceAssertionRegion
   // List of reference count variables that are mutated.
   UsedNodeRange<DataVariable> ReferenceCounts(void) const;
 
+  // Return the body which is conditionally executed if all reference counts
+  // just went from `0` to `1` (in the increment case) or `1` to `0` in the
+  // decrement case.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 

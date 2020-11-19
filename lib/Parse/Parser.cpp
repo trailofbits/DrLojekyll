@@ -380,6 +380,8 @@ void ParserImpl::ParseLocalExport(
   DisplayPosition next_pos;
   Token name;
 
+  bool has_mutable_parameter = false;
+
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
@@ -548,6 +550,7 @@ void ParserImpl::ParseLocalExport(
             return;
           }
 
+          has_mutable_parameter = true;
           param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
           param->opt_merge->is_merge = true;
           assert(param->opt_merge->parameters.size() == 3);
@@ -714,6 +717,8 @@ void ParserImpl::ParseLocalExport(
       case 9: continue;
     }
   }
+
+  local->has_mutable_parameter = has_mutable_parameter;
 
   if (state < 8) {
     context->error_log.Append(scope_range, next_pos)

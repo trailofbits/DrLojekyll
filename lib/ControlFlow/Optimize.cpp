@@ -210,6 +210,12 @@ static bool OptimizeImpl(LET *let) {
 
 static bool OptimizeImpl(EXISTS *exists) {
   bool changed = false;
+
+  // If there is a conditional body then don't optimize.
+  if (exists->body) {
+    return changed;
+  }
+
   if (auto parent_op = exists->parent->AsOperation(); parent_op) {
     if (auto parent_exists = parent_op->AsExistenceCheck();
         parent_exists && exists->op == parent_exists->op) {
@@ -229,6 +235,7 @@ static bool OptimizeImpl(EXISTS *exists) {
       }
     }
   }
+
   return changed;
 }
 

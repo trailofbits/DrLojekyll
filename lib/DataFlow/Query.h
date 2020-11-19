@@ -265,6 +265,12 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Copy all positive and negative conditions from `this` into `that`.
   void CopyTestedConditionsTo(Node<QueryView> *that);
 
+  // Converts this node to be unconditional, it doesn't affect set conditions.
+  void DropTestedConditions(void);
+
+  // Converts this node to not set any conditions.
+  void DropSetConditions(void);
+
   // If `sets_condition` is non-null, then transfer the setter to `that`.
   void TransferSetConditionTo(Node<QueryView> *that);
 
@@ -1078,8 +1084,17 @@ class QueryImpl {
   // the dataflow, minimize/shrink conditions, and eliminate dead flows.
   void Optimize(const ErrorLog &);
 
+  // Convert all views having constant inputs to depend upon tuple nodes, so
+  // that we have the invariant that the only type of view that can take all
+  // constants is a tuple. This simplifies lots of stuff later.
+  void ConvertConstantInputsToTuples(void);
+
   // Identify which data flows can receive and produce deletions.
-  void TrackDifferentialUpdates(void) const;
+  void TrackDifferentialUpdates(bool check_conds = false) const;
+
+  // Extract conditions from regular nodes and force them to belong to only
+  // tuple nodes. This simplifies things substantially for downstream users.
+  void ExtractConditionsToTuples(void);
 
   // After the query is built, we want to push down any condition annotations
   // on nodes.

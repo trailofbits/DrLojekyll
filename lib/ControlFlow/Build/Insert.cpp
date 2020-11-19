@@ -58,36 +58,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
       last_model = table;
     }
 
-    // If we're setting a condition then we also need to see if any constant
-    // tuples depend on that condition.
-    if (auto set_cond = view.SetCondition(); set_cond) {
-      const auto seq = impl->series_regions.Create(parent);
-      parent->body.Emplace(parent, seq);
-
-      // Now that we know that the data has been dealt with, we increment the
-      // condition variable.
-      const auto set = impl->operation_regions.CreateDerived<ASSERT>(
-          seq, ProgramOperation::kIncrementAll);
-      set->cond_vars.AddUse(ConditionVariable(impl, *set_cond));
-      set->ExecuteAfter(impl, seq);
-
-      // Call the initialization procedure. The initialization procedure is
-      // responsible for initializing data flow from constant tuples that
-      // may be condition-variable dependent.
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          seq, impl->procedure_regions[0]);
-      call->ExecuteAfter(impl, seq);
-
-      // Create a dummy/empty LET binding so that we have an `OP *` as a parent
-      // going forward.
-      parent = impl->operation_regions.CreateDerived<LET>(seq);
-      parent->ExecuteAfter(impl, seq);
-    }
-
-    if (const auto succs = view.Successors(); succs.size()) {
-      BuildEagerSuccessorRegions(impl, view, context, parent, succs,
-                                 last_model);
-    }
+    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+                               last_model);
 
   } else {
     assert(false);

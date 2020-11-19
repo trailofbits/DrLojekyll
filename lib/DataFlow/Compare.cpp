@@ -353,6 +353,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
                                               std::move(combined_cols));
       }
 
+      assert(cond);
       positive_conditions.AddUse(cond);
       cond->positive_users.AddUse(this);
 

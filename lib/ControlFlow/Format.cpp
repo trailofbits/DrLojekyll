@@ -206,14 +206,34 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
 OutputStream &operator<<(OutputStream &os,
                          ProgramExistenceAssertionRegion region) {
   os << os.Indent();
-  auto sep = "increment ";
-  if (region.IsDecrement()) {
-    sep = "decrement ";
-  }
+  if (auto maybe_body = region.Body(); maybe_body) {
+    auto end = " result is 1\n";
+    auto sep = "if increment ";
+    if (region.IsDecrement()) {
+      sep = "if decrement ";
+      end = " result is 0\n";
+    }
 
-  for (auto var : region.ReferenceCounts()) {
-    os << sep << var;
-    sep = ", ";
+    for (auto var : region.ReferenceCounts()) {
+      os << sep << var;
+      sep = ", ";
+    }
+
+    os << end;
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+
+  } else {
+    auto sep = "increment ";
+    if (region.IsDecrement()) {
+      sep = "decrement ";
+    }
+
+    for (auto var : region.ReferenceCounts()) {
+      os << sep << var;
+      sep = ", ";
+    }
   }
 
   return os;

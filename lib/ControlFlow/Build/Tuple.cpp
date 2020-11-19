@@ -49,7 +49,18 @@ void BuildTopDownTupleChecker(
     std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
 
   const QueryView view(tuple);
-  const QueryView pred_view = view.Predecessors()[0];
+  const auto pred_views = view.Predecessors();
+
+  // All inputs are constants so this tuple is trivially true.
+  //
+  // NOTE(pag): Tuples are the only views allowed to have all constant inputs.
+  //            Thus, all other views have at least one predecessor.
+  if (pred_views.empty()) {
+    proc->body.Emplace(proc, BuildStateCheckCaseReturnTrue(impl, proc));
+    return;
+  }
+
+  const QueryView pred_view = pred_views[0];
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
 

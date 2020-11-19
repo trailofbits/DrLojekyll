@@ -640,6 +640,38 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       assert(false);
     }
 
+    // This view is conditional, wrap whatever we had generated in a big
+    // if statement.
+    const auto pos_conds = view.PositiveConditions();
+    const auto neg_conds = view.NegativeConditions();
+    const auto proc_body = proc->body.get();
+
+    // Innermost test for negative conditions.
+    if (!neg_conds.empty()) {
+      auto test = impl->operation_regions.CreateDerived<EXISTS>(
+          proc, ProgramOperation::kTestAllZero);
+
+      for (auto cond : neg_conds) {
+        test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      }
+
+      proc->body.Emplace(proc, test);
+      test->body.Emplace(test, proc_body);
+    }
+
+    // Outermost test for positive conditions.
+    if (!pos_conds.empty()) {
+      auto test = impl->operation_regions.CreateDerived<EXISTS>(
+          proc, ProgramOperation::kTestAllNonZero);
+
+      for (auto cond : pos_conds) {
+        test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      }
+
+      proc->body.Emplace(proc, test);
+      test->body.Emplace(test, proc_body);
+    }
+
     if (!EndsWithReturn(proc)) {
       const auto ret = impl->operation_regions.CreateDerived<RETURN>(
           proc, ProgramOperation::kReturnFalseFromProcedure);
@@ -914,7 +946,13 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
 bool MayNeedToBePersisted(QueryView view) {
-  if (view.SetCondition()) {
+
+  // If this view sets a condition then its data must be tracked; if it
+  // tests a condition, then we might jump back in at some future point if
+  // things transition states.
+  if (view.SetCondition() ||
+      !view.PositiveConditions().empty() ||
+      !view.NegativeConditions().empty()) {
     return true;
   }
 
@@ -950,7 +988,9 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
   // If this view sets a condition, then the reference counter of that condition
   // partially reflects the arity of this view, i.e. number of records in the
   // view.
-  if (view.SetCondition()) {
+  if (view.SetCondition() ||
+      !view.PositiveConditions().empty() ||
+      !view.NegativeConditions().empty()) {
     det = Context::kCantDeferToPredecessor;
     return false;
   }

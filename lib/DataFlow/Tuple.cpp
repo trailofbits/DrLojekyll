@@ -231,6 +231,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
       assert(!new_incoming_view);
       COND *condition = CreateOrInheritConditionOnView(
           query, incoming_view, std::move(new_input_columns));
+      assert(condition);
       positive_conditions.AddUse(condition);
       condition->positive_users.AddUse(this);
     }

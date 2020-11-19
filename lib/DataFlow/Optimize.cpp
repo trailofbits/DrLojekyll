@@ -345,6 +345,7 @@ bool QueryImpl::ShrinkConditions(void) {
 
       // Keep positive conditions the same
       for (auto pos_dep_cond : setter->positive_conditions) {
+        assert(pos_dep_cond);
         for (auto user_view : cond->positive_users) {
           if (user_view) {
             user_view->positive_conditions.AddUse(pos_dep_cond);
@@ -361,6 +362,7 @@ bool QueryImpl::ShrinkConditions(void) {
 
       // Invert the negated conditions.
       for (auto neg_dep_cond : setter->negative_conditions) {
+        assert(neg_dep_cond);
         for (auto user_view : cond->positive_users) {
           if (user_view) {
             user_view->negative_conditions.AddUse(neg_dep_cond);

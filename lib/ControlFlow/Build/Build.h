@@ -534,9 +534,16 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     // Now that we know that the data has been dealt with, we increment the
     // condition variable.
     const auto set = impl->operation_regions.CreateDerived<ASSERT>(
-        seq, ProgramOperation::kIncrementAll);
+        seq, ProgramOperation::kIncrementAllAndTest);
     set->cond_vars.AddUse(ConditionVariable(impl, *set_cond));
     set->ExecuteAfter(impl, seq);
+
+    // Call the initialization procedure. The initialization procedure is
+    // responsible for initializing data flow from constant tuples that
+    // may be condition-variable dependent.
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        set, impl->procedure_regions[0]);
+    set->body.Emplace(set, call);
 
     // Create a dummy/empty LET binding so that we have an `OP *` as a parent
     // going forward.
@@ -561,37 +568,8 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   // to identify and eliminate repeated branches.
   PARALLEL *par = nullptr;
 
-  // If all outputs are constant and if this is always an insert-only view,
-  // then we shouldn't re-execute it if we've previously done it.
-  if (all_const && !view.CanProduceDeletions()) {
-    auto &ref_count = impl->const_view_to_var[view];
-    if (!ref_count) {
-      ref_count = impl->global_vars.Create(impl->next_id++,
-                                           VariableRole::kConditionRefCount);
-    }
-
-    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllZero);
-    parent->body.Emplace(parent, test);
-
-    const auto seq = impl->series_regions.Create(test);
-    test->body.Emplace(test, seq);
-
-    const auto set = impl->operation_regions.CreateDerived<ASSERT>(
-        seq, ProgramOperation::kIncrementAll);
-
-    test->cond_vars.AddUse(ref_count);
-    set->cond_vars.AddUse(ref_count);
-
-    last_model = nullptr;
-    par = impl->parallel_regions.Create(seq);
-    set->ExecuteAfter(impl, seq);
-    par->ExecuteAfter(impl, seq);
-
-  } else {
-    par = impl->parallel_regions.Create(parent);
-    parent->body.Emplace(parent, par);
-  }
+  par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
 
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);

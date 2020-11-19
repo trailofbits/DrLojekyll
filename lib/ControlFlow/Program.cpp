@@ -204,11 +204,13 @@ bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
 }
 
 bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
-  return impl->op == ProgramOperation::kIncrementAll;
+  return impl->op == ProgramOperation::kIncrementAll ||
+         impl->op == ProgramOperation::kIncrementAllAndTest;
 }
 
 bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
-  return impl->op == ProgramOperation::kDecrementAll;
+  return impl->op == ProgramOperation::kDecrementAll ||
+         impl->op == ProgramOperation::kDecrementAllAndTest;
 }
 
 #define OPTIONAL_BODY(name) \
@@ -221,6 +223,7 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
   }
 
 OPTIONAL_BODY(ProgramExistenceCheckRegion)
+OPTIONAL_BODY(ProgramExistenceAssertionRegion)
 OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)

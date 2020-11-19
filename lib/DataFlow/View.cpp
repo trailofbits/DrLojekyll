@@ -475,6 +475,30 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   return up_hash;
 }
 
+// Converts this node to be unconditional, it doesn't affect set conditions.
+void Node<QueryView>::DropTestedConditions(void) {
+  const auto is_this_view = [this](VIEW *v) { return v == this; };
+
+  for (auto cond : positive_conditions) {
+    cond->positive_users.RemoveIf(is_this_view);
+  }
+  for (auto cond : negative_conditions) {
+    cond->negative_users.RemoveIf(is_this_view);
+  }
+
+  positive_conditions.Clear();
+  negative_conditions.Clear();
+}
+
+// Converts this node to not set any conditions.
+void Node<QueryView>::DropSetConditions(void) {
+  const auto is_this_view = [this](VIEW *v) { return v == this; };
+  if (auto cond = sets_condition.get(); cond) {
+    sets_condition.Clear();
+    cond->setters.RemoveIf(is_this_view);
+  }
+}
+
 // Prepare to delete this node. This tries to drop all dependencies and
 // unlink this node from the dataflow graph. It returns `true` if successful
 // and `false` if it has already been performed.
@@ -492,20 +516,8 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
   const auto is_this_view = [this](VIEW *v) { return v == this; };
 
-  for (auto cond : positive_conditions) {
-    cond->positive_users.RemoveIf(is_this_view);
-  }
-  for (auto cond : negative_conditions) {
-    cond->negative_users.RemoveIf(is_this_view);
-  }
-
-  positive_conditions.Clear();
-  negative_conditions.Clear();
-
-  if (auto cond = sets_condition.get(); cond) {
-    sets_condition.Clear();
-    cond->setters.RemoveIf(is_this_view);
-  }
+  DropTestedConditions();
+  DropSetConditions();
 
   if (auto merge = AsMerge(); merge) {
     merge->merged_views.Clear();
@@ -555,11 +567,13 @@ bool Node<QueryView>::PrepareToDelete(void) {
 // Copy all positive and negative conditions from `this` into `that`.
 void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
   for (auto cond : positive_conditions) {
+    assert(cond);
     that->positive_conditions.AddUse(cond);
     cond->positive_users.AddUse(that);
   }
 
   for (auto cond : negative_conditions) {
+    assert(cond);
     that->negative_conditions.AddUse(cond);
     cond->negative_users.AddUse(that);
   }

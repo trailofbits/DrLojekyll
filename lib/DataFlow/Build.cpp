@@ -1349,7 +1349,8 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
                                   VIEW *insert) {
   std::vector<COND *> conds;
 
-  auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses) {
+  auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses,
+                       bool is_positive, VIEW *user) {
     conds.clear();
 
     for (auto pred : range) {
@@ -1372,12 +1373,20 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
     conds.erase(it, conds.end());
 
     for (auto cond : conds) {
+      assert(cond);
       uses.AddUse(cond);
+      if (is_positive) {
+        cond->positive_users.AddUse(user);
+      } else {
+        cond->negative_users.AddUse(user);
+      }
     }
   };
 
-  add_conds(clause.PositivePredicates(), insert->positive_conditions);
-  add_conds(clause.NegatedPredicates(), insert->negative_conditions);
+  add_conds(clause.PositivePredicates(), insert->positive_conditions,
+            true, insert);
+  add_conds(clause.NegatedPredicates(), insert->negative_conditions,
+            false, insert);
 }
 
 // The goal of this function is to build multiple equivalent dataflows out of
@@ -1603,37 +1612,71 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   INSERT *insert = nullptr;
 
   auto view = context.result;
-  assert(view->columns.Size() == clause.Arity());
 
   // Add the conditions tested.
   if (!clause.PositivePredicates().empty() ||
       !clause.NegatedPredicates().empty()) {
     auto col_index = 0u;
-    auto cond_guard = query->tuples.Create();
-    for (auto var : clause.Parameters()) {
-      cond_guard->input_columns.AddUse(view->columns[col_index]);
-      (void) cond_guard->columns.Create(
-          var, cond_guard, VarId(context, var), col_index);
-      ++col_index;
+    TUPLE *cond_guard = nullptr;
+    if (clause.Arity()) {
+      cond_guard = query->tuples.Create();
+      for (auto var : clause.Parameters()) {
+        cond_guard->input_columns.AddUse(view->columns[col_index]);
+        (void) cond_guard->columns.Create(
+            var, cond_guard, VarId(context, var), col_index);
+        ++col_index;
+      }
+    } else {
+      cond_guard = view->GuardWithTuple(query, true);
     }
 
     AddConditionsToInsert(query, clause, cond_guard);
     view = cond_guard;
   }
 
+  // Functor for adding in the `sets_condition` flag. If this is a deletion
+  // clause, e.g. `!cond : ...` then we want to add `set_condition` to the
+  // DELETE node; however, if it's an insertion clause then we want to add
+  // it to the INSERT.
+  auto set_condition = false;
+  auto add_set_conditon = [=, &set_condition] (VIEW *view) {
+    if (!set_condition && !decl.Arity()) {
+      set_condition = true;
+      const auto export_decl = ParsedExport::From(decl);
+      auto &cond = query->decl_to_condition[export_decl];
+      if (!cond) {
+        cond = query->conditions.Create(export_decl);
+      }
+
+      view->sets_condition.Emplace(view, cond);
+      cond->setters.AddUse(view);
+    }
+  };
+
   // The data in `view` must be deleted in our successor.
   if (clause.IsDeletion()) {
     auto col_index = 0u;
-    auto del = query->deletes.Create();
-    for (auto var : clause.Parameters()) {
-      del->input_columns.AddUse(view->columns[col_index]);
-      (void) del->columns.Create(
-          var, del, VarId(context, var), col_index);
-      ++col_index;
+    DELETE * const del = query->deletes.Create();
+    if (clause.Arity()) {
+      for (auto var : clause.Parameters()) {
+        del->input_columns.AddUse(view->columns[col_index]);
+        (void) del->columns.Create(
+            var, del, VarId(context, var), col_index);
+        ++col_index;
+      }
+    } else {
+      for (auto col : view->columns) {
+        del->input_columns.AddUse(col);
+        (void) del->columns.Create(
+            col->var, del, VarId(context, col->var), col_index);
+        ++col_index;
+      }
     }
 
     assert(0u < col_index);
     view = del;
+
+    add_set_conditon(view);
   }
 
   if (decl.IsMessage()) {
@@ -1664,14 +1707,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // We just proved a zero-argument predicate, i.e. a condition.
   if (!decl.Arity()) {
     assert(decl.IsExport());
-    const auto export_decl = ParsedExport::From(decl);
-    auto &cond = query->decl_to_condition[export_decl];
-    if (!cond) {
-      cond = query->conditions.Create(export_decl);
-    }
+    add_set_conditon(insert);
 
-    insert->sets_condition.Emplace(insert, cond);
-    cond->setters.AddUse(insert);
+  } else {
+    assert(view->columns.Size() == clause.Arity());
   }
 
   return true;
@@ -1721,9 +1760,12 @@ std::optional<Query> Query::Build(const ParsedModule &module,
     return std::nullopt;
   }
 
-  //  impl->SinkConditions();
+  impl->ConvertConstantInputsToTuples();
+
+//    impl->SinkConditions();
   impl->RemoveUnusedViews();
-  impl->TrackDifferentialUpdates();
+  impl->ExtractConditionsToTuples();
+  impl->TrackDifferentialUpdates(true);
   impl->FinalizeColumnIDs();
   impl->LinkViews();
 

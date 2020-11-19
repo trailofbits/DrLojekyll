@@ -704,37 +704,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   const auto is_message_clause =
       DeclarationKind::kMessage == clause->declaration->context->kind;
 
-  // Go make sure we don't have two messages inside of a given clause. In our
-  // bottom-up execution model, the "inputs" to the system are messages, which
-  // are ephemeral. If we see that as triggering a clause, then we can't
-  // easily account for two messages triggering a given clause, when the
-  // ordering in time of those messages can be unbounded.
-  //
-  // TODO(pag): This restriction can be eliminated by rewriting the module to
-  //            proxy messages with locals/exports. Do that then remove this
-  //            issue.
+  // Go see if we depend on one or more messages.
   Node<ParsedPredicate> *prev_message = nullptr;
   for (auto &used_pred : clause->positive_predicates) {
-    auto kind = used_pred->declaration->context->kind;
-    if (kind != DeclarationKind::kMessage) {
-      continue;
-    }
-    if (prev_message) {
-      const auto err_range = ParsedPredicate(used_pred.get()).SpellingRange();
-      auto err = context->error_log.Append(scope_range, err_range);
-
-      err << "Cannot have direct dependency on more than one messages";
-
-      auto note =
-          err.Note(scope_range, ParsedPredicate(prev_message).SpellingRange());
-      note << "Previous message use is here";
-      return;
-
-    } else {
-      prev_message = used_pred.get();
-
-      // Keep track of whether or not any clause for this decl uses messages.
+    const auto kind = used_pred->declaration->context->kind;
+    if (kind == DeclarationKind::kMessage) {
       clause->depends_on_messages = true;
+      prev_message = used_pred.get();
+      continue;
     }
   }
 

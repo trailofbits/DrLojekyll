@@ -331,7 +331,9 @@ enum class ProgramOperation {
   kTestAllNonZero,
   kTestAllZero,
   kIncrementAll,
+  kIncrementAllAndTest,
   kDecrementAll,
+  kDecrementAllAndTest,
 
   // Call another procedure.
   kCallProcedure,
