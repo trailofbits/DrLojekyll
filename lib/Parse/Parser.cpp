@@ -1013,15 +1013,19 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         }
         continue;
 
-      // Specify that the generated C++ code should contain a pre-processor
-      // include of some file.
+      // Specify that the generated code should contain a prologue or epilogue
+      // of specified code
       //
-      //    #inline <!
+      //    #prologue ```
       //    ...
-      //    !>
-      case Lexeme::kHashInlineStmt:
+      //    ```
+      //    #epilogue ```
+      //    ...
+      //    ```
+      case Lexeme::kHashInlinePrologueStmt:
+      case Lexeme::kHashInlineEpilogueStmt:
         ReadLine();
-        ParseInline(module);
+        ParseInlineCode(module);
         continue;
 
       // A clause. For example:

@@ -9,3 +9,11 @@ reaching_to(From, To) : tc(From, To).
 
 tc(From, To) : tc(From, X), tc(X, To).
 tc(From, To) : add_edge(From, To).
+
+#epilogue ```python
+if __name__ == "__main__":
+  db = Database()
+  db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)])
+  for edge, state in db.table_7.items():
+    print(edge)
+```

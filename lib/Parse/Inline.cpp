@@ -4,15 +4,18 @@
 
 namespace hyde {
 
-// Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
+// Try to parse `sub_range` as an inlining of of C/C++/Python code into the Datalog
 // module.
-void ParserImpl::ParseInline(Node<ParsedModule> *module) {
+void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
   }
 
-  assert(tok.Lexeme() == Lexeme::kHashInlineStmt);
+  assert(tok.Lexeme() == Lexeme::kHashInlinePrologueStmt ||
+         tok.Lexeme() == Lexeme::kHashInlineEpilogueStmt);
+
+  auto is_prologue = tok.Lexeme() == Lexeme::kHashInlinePrologueStmt;
 
   auto after_directive = tok.NextPosition();
   if (!ReadNextSubToken(tok)) {
@@ -21,12 +24,13 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
     return;
   }
 
+
   std::string_view code;
   auto language = Language::kUnknown;
 
   const auto tok_range = tok.SpellingRange();
 
-  // It's a code literal, e.g. `#inline <! ... !>`.
+  // It's a code literal, e.g. '#prologue ``` ... ```'.
   if (Lexeme::kLiteralCode == tok.Lexeme()) {
     const auto code_id = tok.CodeId();
     if (!context->string_pool.TryReadCode(code_id, &code)) {
@@ -53,7 +57,7 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
     }
     language = Language::kPython;
 
-  // Parse out a string literal, e.g. `#inline "..."`.
+  // Parse out a string literal, e.g. `#epilogue "..."`.
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {
     const auto code_id = tok.StringId();
     const auto code_len = tok.StringLength();
@@ -75,7 +79,8 @@ void ParserImpl::ParseInline(Node<ParsedModule> *module) {
     return;
   }
 
-  const auto inline_node = new Node<ParsedInline>(scope_range, code, language);
+  const auto inline_node =
+      new Node<ParsedInline>(scope_range, code, language, is_prologue);
   if (!module->inlines.empty()) {
     module->inlines.back()->next = inline_node;
   }
