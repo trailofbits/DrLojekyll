@@ -734,12 +734,6 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   }
 
   os.PopIndent();
-
-  // os << "if __name__ == \"__main__\":\n"
-  //    << "  db = Database()\n"
-  //    << "  db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-  //    << "  for edge, state in db.table_7.items():\n"
-  //    << "    print(edge)\n";
 }
 
 }  // namespace hyde
