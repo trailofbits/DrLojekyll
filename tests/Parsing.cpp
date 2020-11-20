@@ -135,6 +135,10 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
         FAIL() << "Python mypy type-checking failed! Saved generated code at "
                << py_out_path << "\n";
       }
+#else
+
+      // Prevent unused variable errors
+      (void) allow_failure;
 #endif
 
       SUCCEED();
