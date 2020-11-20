@@ -42,7 +42,8 @@
 "f64 "
 
 # inline C++
-"#inline "
+"#prologue "
+"#epilogue "
 "<! "
 "!> "
 

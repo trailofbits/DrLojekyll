@@ -1,7 +1,7 @@
 ; The purpose of this example is to figure out what it means to do differential
 ; tracking of relations with mutable columns.
 
-#inline ```c++
+#prologue ```c++
 
 MERGE(add_u32, u32, LHS, RHS) {
   return LHS + RHS;
