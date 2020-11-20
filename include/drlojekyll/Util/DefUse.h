@@ -232,11 +232,7 @@ class UseList {
   }
 
   void ClearWithoutErasure(void) {
-    if (is_weak) {
-      Clear();
-    } else {
-      uses.clear();
-    }
+    Clear();
   }
 
   void Swap(UseList<T> &that) {
@@ -622,11 +618,7 @@ class UseRef {
   UseRef(void) = default;
 
   ~UseRef(void) {
-    if (use) {
-      const auto use_copy = use;
-      use = nullptr;
-      use_copy->def_being_used->EraseUse(use_copy);
-    }
+    Clear();
   }
 
   T *operator->(void) const noexcept {
@@ -645,8 +637,17 @@ class UseRef {
     return !!use;
   }
 
+  void Clear(void) {
+    if (const auto use_copy = use; use_copy) {
+      use = nullptr;
+      if (auto def = use_copy->def_being_used; def) {
+        def->EraseUse(use_copy);
+      }
+    }
+  }
+
   void ClearWithoutErasure(void) {
-    use = nullptr;
+    Clear();
   }
 
  private:
