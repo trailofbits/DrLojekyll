@@ -698,7 +698,7 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   }
 
   for (auto code : program.ParsedModule().Inlines()) {
-    if (code.Language() == Language::kPython) {
+    if (code.Language() == Language::kPython && code.IsPrologue()) {
       os << code.CodeToInline() << '\n';
     }
   }
@@ -735,11 +735,11 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
 
   os.PopIndent();
 
-  // os << "if __name__ == \"__main__\":\n"
-  //    << "  db = Database()\n"
-  //    << "  db.proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-  //    << "  for edge, state in db.table_7.items():\n"
-  //    << "    print(edge)\n";
+  for (auto code : program.ParsedModule().Inlines()) {
+    if (code.Language() == Language::kPython && !code.IsPrologue()) {
+      os << code.CodeToInline() << '\n';
+    }
+  }
 }
 
 }  // namespace hyde
