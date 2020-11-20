@@ -105,8 +105,6 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
       program_opt = hyde::Program::Build(*query_opt, err_log);
     }
 
-    // Should still produce _some_ IR even during debug death
-    ASSERT_TRUE(program_opt);
     if (program_opt) {
       auto generated_file_base = std::string(kGeneratedFilesDir) + "/" +
                                  fs::path(path).filename().stem().string();
