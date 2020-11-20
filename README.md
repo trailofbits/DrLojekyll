@@ -127,10 +127,13 @@ clause_list
 import: "#import" <double quoted string literal>
 
 // Single and multi-line inline statements.
-inline_code: "#prologue" "```" <anything...> "```"
-inline_code: "#epilogue" "```c++" <anything...> "```"
-inline_code: "#prologue" "```python" <anything...> "```"
-inline_code: "#epilogue" <double quoted string literal>
+code_decl: "#prologue"
+code_decl: "#epilogue"
+
+inline_code: code_decl "```" <anything...> "```"
+inline_code: code_decl "```c++" <anything...> "```"
+inline_code: code_decl "```python" <anything...> "```"
+inline_code: code_decl <double quoted string literal>
 
 // Decls generally must fit inside a single line. They are allowed
 // to span multiple lines, but only if the new line characters exist
