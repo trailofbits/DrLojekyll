@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <unordered_set>
 
@@ -11,6 +12,7 @@
 #include "drlojekyll/ControlFlow/Format.h"
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
+#include "drlojekyll/Display/Format.h"
 #include "drlojekyll/Parse/ErrorLog.h"
 #include "drlojekyll/Parse/ModuleIterator.h"
 #include "drlojekyll/Parse/Parser.h"
@@ -26,6 +28,15 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
   return os;
 }
 
+struct FileStream {
+  FileStream(hyde::DisplayManager &dm_, const fs::path path_)
+      : fs(path_),
+        os(dm_, fs) {}
+
+  std::ofstream fs;
+  hyde::OutputStream os;
+};
+
 }  // namespace hyde
 
 // Make sure that we can parse each of the .dr files in the examples directory
@@ -40,7 +51,15 @@ static auto DrFilesInDir(const fs::path &dir) {
   return all_entries;
 }
 
-class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
+class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {
+ protected:
+  void SetUp() override {
+    TestWithParam<fs::path>::SetUp();  // Sets up the base fixture first.
+    fs::create_directories(kGeneratedFilesDir);
+    SUCCEED() << "Created directory for generated test files: "
+              << kGeneratedFilesDir;
+  }
+};
 
 // Set of examples that can parse but fail to build
 static const std::unordered_set<std::string> gBuildFailExamples{
@@ -83,6 +102,15 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     }
 
     if (program_opt) {
+
+      // Save the IR
+      {
+        auto ir_file = std::string(kGeneratedFilesDir) + "/" +
+                       fs::path(path).filename().stem().string() + ".ir";
+        auto ir_out = hyde::FileStream(display_mgr, ir_file);
+        ir_out.os << *program_opt;
+      }
+
       SUCCEED();
     }
   }
