@@ -110,8 +110,7 @@ enum class Lexeme : uint8_t {
   // store of state.
   kHashFunctorDecl,
 
-  // Used to insert some C/C++/Python code inline into the Datalog code. This is
-  // an alternative to `#include`, and may itself contain `#include`s. The
+  // Used to insert some C/C++/Python code inline into the Datalog code. The
   // usage looks like:
   //
   //    #prologue ```<lang>
@@ -121,10 +120,6 @@ enum class Lexeme : uint8_t {
   //    #epilogue ```<lang>
   //    ... code here ...
   //    ```
-  //
-  // Inline code is placed into the generated C/C++ code *after* all `#include`
-  // statements, regardless of whether or not the `#include`s came before or
-  // after the `#epilogue` statements.
   //
   // Inline code can either be in the "prologue" (before) or "epilogue" (after)
   // any of the generated code.
