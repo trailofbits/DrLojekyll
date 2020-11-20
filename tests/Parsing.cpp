@@ -97,13 +97,19 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     std::optional<class hyde::Program> program_opt;
 
     // Some tests fail this step
+    auto allow_failure = false;
     if (gBuildFailExamples.count(fs::path(path).filename().string())) {
-      ASSERT_DEBUG_DEATH(
+      EXPECT_DEBUG_DEATH(
           program_opt = program_build_lambda(*query_opt, err_log), ".*TODO.*");
+
+      // Allow to fail/skip next steps if it fails to build (catches fails in release)
+      allow_failure = true;
     } else {
       program_opt = program_build_lambda(*query_opt, err_log);
     }
 
+    // Should still produce _some_ IR even during debug death
+    ASSERT_TRUE(program_opt);
     if (program_opt) {
       auto generated_file_base = std::string(kGeneratedFilesDir) + "/" +
                                  fs::path(path).filename().stem().string();
@@ -128,7 +134,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
       auto ret_code = std::system(
           std::string(std::string(MYPY_PATH) + " " + py_out_path).c_str());
 
-      if (ret_code != 0) {
+      if (ret_code != 0 && !allow_failure) {
         FAIL() << "Python mypy type-checking failed! Saved generated code at "
                << py_out_path << "\n";
       }
