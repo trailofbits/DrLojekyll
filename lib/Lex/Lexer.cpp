@@ -219,11 +219,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           !impl->reader.TryReadChar(&ch) || ch != '`') {
       return_invalid_code:
         auto error_pos = impl->reader.CurrentPosition();
-        interpreter.error.error_offset = error_pos.Index() -
-                                         ret.position.Index();
+        interpreter.error.error_offset =
+            error_pos.Index() - ret.position.Index();
         interpreter.error.error_col = error_pos.Column();
-        interpreter.error.disp_lines =
-            error_pos.Line() - ret.position.Line();
+        interpreter.error.disp_lines = error_pos.Line() - ret.position.Line();
         interpreter.error.lexeme =
             static_cast<uint8_t>(Lexeme::kInvalidUnterminatedCode);
         ret.opaque_data = interpreter.flat;
@@ -628,11 +627,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               interpreter.basic.spelling_width = 7;
               interpreter.basic.lexeme =
                   static_cast<uint8_t>(Lexeme::kHashImportModuleStmt);
-
-            } else if (impl->data == "#inline") {
-              interpreter.basic.spelling_width = 7;
-              interpreter.basic.lexeme =
-                  static_cast<uint8_t>(Lexeme::kHashInlineStmt);
             }
           } else if (impl->data == "summary") {
             interpreter.basic.spelling_width = 7;
@@ -666,6 +660,15 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             interpreter.basic.spelling_width = 9;
             interpreter.basic.lexeme =
                 static_cast<uint8_t>(Lexeme::kKeywordAggregate);
+          } else if (impl->data == "#prologue") {
+            interpreter.basic.spelling_width = 9;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kHashInlinePrologueStmt);
+
+          } else if (impl->data == "#epilogue") {
+            interpreter.basic.spelling_width = 9;
+            interpreter.basic.lexeme =
+                static_cast<uint8_t>(Lexeme::kHashInlineEpilogueStmt);
           }
           break;
 

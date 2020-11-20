@@ -165,7 +165,7 @@ class ParserImpl {
 
   // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
   // module.
-  void ParseInline(Node<ParsedModule> *module);
+  void ParseInlineCode(Node<ParsedModule> *module);
 
   // Try to match a clause with a declaration.
   bool TryMatchClauseWithDecl(Node<ParsedModule> *module,

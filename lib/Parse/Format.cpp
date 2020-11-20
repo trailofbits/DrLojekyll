@@ -204,7 +204,12 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
     return os;
   }
 
-  os << "#inline ```";
+  if (code_.IsPrologue()) {
+    os << "#prologue ```";
+  } else {
+    os << "#epilogue ```";
+  }
+
   if (code_.Language() == Language::kCxx) {
     os << "c++";
 
@@ -243,7 +248,9 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   }
 
   for (auto code : module.Inlines()) {
-    os << code << "\n";
+    if (code.IsPrologue()) {
+      os << code << "\n";
+    }
   }
 
   for (auto decl : module.Queries()) {
@@ -274,6 +281,12 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
 
   for (auto clause : module.DeletionClauses()) {
     os << clause << "\n";
+  }
+
+  for (auto code : module.Inlines()) {
+    if (!code.IsPrologue()) {
+      os << code << "\n";
+    }
   }
 
   return os;

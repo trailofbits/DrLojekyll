@@ -2,10 +2,10 @@
 
 #pragma once
 
+#include <drlojekyll/Display/DisplayPosition.h>
+
 #include <functional>
 #include <utility>
-
-#include <drlojekyll/Display/DisplayPosition.h>
 
 namespace hyde {
 
@@ -110,18 +110,21 @@ enum class Lexeme : uint8_t {
   // store of state.
   kHashFunctorDecl,
 
-  // Used to insert some C/C++ code "inline" into the Datalog code. This is
-  // an alternative to `#include`, and may itself contain `#include`s. The
+  // Used to insert some C/C++/Python code inline into the Datalog code. The
   // usage looks like:
   //
-  //    #inline <!
+  //    #prologue ```<lang>
   //    ... code here ...
-  //    !>
+  //    ```
   //
-  // Inline code is placed into the generated C/C++ code *after* all `#include`
-  // statements, regardless of whether or not the `#include`s came before or
-  // after the `#inline` statements.
-  kHashInlineStmt,
+  //    #epilogue ```<lang>
+  //    ... code here ...
+  //    ```
+  //
+  // Inline code can either be in the "prologue" (before) or "epilogue" (after)
+  // any of the generated code.
+  kHashInlinePrologueStmt,
+  kHashInlineEpilogueStmt,
 
   // Unsigned/signed integral types. `n` must be one of 8, 16, 32, or 64.
   // For example, `i32` is a signed 32-bit integer, whereas `u32` is
@@ -338,13 +341,11 @@ class Token {
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
   inline bool operator==(const Token that) const noexcept {
-    return opaque_data == that.opaque_data &&
-           position == that.position;
+    return opaque_data == that.opaque_data && position == that.position;
   }
 
   inline bool operator!=(const Token that) const noexcept {
-    return opaque_data != that.opaque_data ||
-           position != that.position;
+    return opaque_data != that.opaque_data || position != that.position;
   }
 
  private:

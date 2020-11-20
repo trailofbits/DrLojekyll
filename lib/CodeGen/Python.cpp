@@ -698,7 +698,7 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   }
 
   for (auto code : program.ParsedModule().Inlines()) {
-    if (code.Language() == Language::kPython) {
+    if (code.Language() == Language::kPython && code.IsPrologue()) {
       os << code.CodeToInline() << '\n';
     }
   }
@@ -734,6 +734,12 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   }
 
   os.PopIndent();
+
+  for (auto code : program.ParsedModule().Inlines()) {
+    if (code.Language() == Language::kPython && !code.IsPrologue()) {
+      os << code.CodeToInline() << '\n';
+    }
+  }
 }
 
 }  // namespace hyde
