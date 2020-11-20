@@ -91,21 +91,18 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 
   // Build
   if (auto query_opt = hyde::Query::Build(*mmod, err_log)) {
-    auto program_build_lambda = [](auto q, auto log) {
-      return hyde::Program::Build(q, log);
-    };
     std::optional<class hyde::Program> program_opt;
 
-    // Some tests fail this step
+    // Some tests fail to build
     auto allow_failure = false;
     if (gBuildFailExamples.count(fs::path(path).filename().string())) {
       EXPECT_DEBUG_DEATH(
-          program_opt = program_build_lambda(*query_opt, err_log), ".*TODO.*");
+          program_opt = hyde::Program::Build(*query_opt, err_log), ".*TODO.*");
 
       // Allow to fail/skip next steps if it fails to build (catches fails in release)
       allow_failure = true;
     } else {
-      program_opt = program_build_lambda(*query_opt, err_log);
+      program_opt = hyde::Program::Build(*query_opt, err_log);
     }
 
     // Should still produce _some_ IR even during debug death
