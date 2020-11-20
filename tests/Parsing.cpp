@@ -105,30 +105,36 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     }
 
     if (program_opt) {
+      auto generated_file_base = std::string(kGeneratedFilesDir) + "/" +
+                                 fs::path(path).filename().stem().string();
+
+      // Save the IR
+      {
+        auto ir_out =
+            hyde::FileStream(display_mgr, generated_file_base + ".ir");
+        ir_out.os << *program_opt;
+      }
 
       // CodeGen for Python
-      std::stringstream py_ss;
-      auto py_out = hyde::OutputStream(display_mgr, py_ss);
-
-      hyde::GeneratePythonCode(*program_opt, py_out);
+      auto py_out_path = generated_file_base + ".py";
+      {
+        hyde::FileStream py_out_fs = hyde::FileStream(display_mgr, py_out_path);
+        hyde::GeneratePythonCode(*program_opt, py_out_fs.os);
+      }
 #ifdef MYPY_PATH
-      auto tmpfile = std::string(kGeneratedFilesDir) + "/" +
-                     fs::path(path).filename().stem().string() + ".py";
-      hyde::FileStream py_out_fs = hyde::FileStream(display_mgr, tmpfile);
-      py_out_fs.os << py_ss.str();
-      py_out_fs.os.Flush();
-      py_out_fs.fs.close();
 
       // mypy can take input from a command line string via '-c STRING'
       // but that sounds unsafe to do from here
       auto ret_code = std::system(
-          std::string(std::string(MYPY_PATH) + " " + tmpfile).c_str());
+          std::string(std::string(MYPY_PATH) + " " + py_out_path).c_str());
 
       if (ret_code != 0) {
         FAIL() << "Python mypy type-checking failed! Saved generated code at "
-               << tmpfile << "\n";
+               << py_out_path << "\n";
       }
 #endif
+
+      SUCCEED();
     }
   }
 }
