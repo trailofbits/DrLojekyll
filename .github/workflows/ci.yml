@@ -109,6 +109,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++-10
           -DENABLE_SANITIZERS=1
           -DENABLE_LIBFUZZER=1
+          -DENABLE_TEST_MYPY_CHECKS=ON
           -DWARNINGS_AS_ERRORS=1
           -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
           .
@@ -198,6 +199,7 @@ jobs:
           -G Xcode
           -DENABLE_SANITIZERS=1
           -DWARNINGS_AS_ERRORS=1
+          -DENABLE_TEST_MYPY_CHECKS=ON
           -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
           .
       - name: Build
@@ -226,6 +228,7 @@ jobs:
           -B build
           -G "Visual Studio 16 2019"
           -DWARNINGS_AS_ERRORS=0
+          -DENABLE_TEST_MYPY_CHECKS=ON
           -DCMAKE_INSTALL_PREFIX="$env:DR_INSTALL_DIR"
           .
       - name: Build
