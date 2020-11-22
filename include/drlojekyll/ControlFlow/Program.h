@@ -215,6 +215,9 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   // Type of this variable.
   TypeKind Type(void) const noexcept;
 
+  // Whether this variable is global.
+  bool IsGlobal(void) const noexcept;
+
  private:
   using program::ProgramNode<DataVariable>::ProgramNode;
 };
@@ -869,7 +872,13 @@ class Program {
   // List of all procedures.
   DefinedNodeRange<ProgramProcedure> Procedures(void) const;
 
-  virtual ~Program(void);
+  // Return the query used to build this program.
+  ::hyde::Query Query(void) const noexcept;
+
+  // Return the parsed module used to build the query.
+  ::hyde::ParsedModule ParsedModule(void) const noexcept;
+
+  ~Program(void);
 
   Program(const Program &) = default;
   Program(Program &&) noexcept = default;

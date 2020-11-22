@@ -881,7 +881,9 @@ class ParsedInclude : public parse::ParsedNode<ParsedInclude> {
   using parse::ParsedNode<ParsedInclude>::ParsedNode;
 };
 
-// Represents a parsed `#inline` statement, that lets us write C/C++ code
+enum class Language : unsigned { kUnknown, kCxx, kPython };
+
+// Represents a parsed `#prologue` or `#epilogue` statement, that lets us write C/C++ code
 // directly inside of a datalog module and have it pasted directly into
 // generated C/C++ code. This can be useful for making sure that certain
 // functors are inlined / inlinable, and thus visible to the compiler.
@@ -889,6 +891,8 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
   std::string_view CodeToInline(void) const noexcept;
+  ::hyde::Language Language(void) const noexcept;
+  bool IsPrologue(void) const noexcept;
 
  protected:
   using parse::ParsedNode<ParsedInline>::ParsedNode;

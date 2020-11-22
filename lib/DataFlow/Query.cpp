@@ -1484,6 +1484,10 @@ DefinedNodeRange<QueryCompare> Query::Compares(void) const {
 
 Query::~Query(void) {}
 
+::hyde::ParsedModule Query::ParsedModule(void) const noexcept {
+  return impl->module;
+}
+
 }  // namespace hyde
 
 #if defined(__GNUC__) || defined(__clang__)

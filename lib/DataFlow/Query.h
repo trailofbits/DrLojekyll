@@ -863,7 +863,8 @@ void Node<QueryColumn>::ForEachUser(T user_cb) const {
 
 class QueryImpl {
  public:
-  inline QueryImpl(void) {}
+  inline explicit QueryImpl(const ParsedModule & module_)
+      : module(module_) {}
 
   ~QueryImpl(void);
 
@@ -1100,6 +1101,9 @@ class QueryImpl {
 
   // Link together views in terms of predecessors and successors.
   void LinkViews(void) const;
+
+  // Root module associated with this query.
+  const ParsedModule module;
 
   // The streams associated with input relations to queries.
   std::unordered_map<ParsedDeclaration, Node<QueryIO> *> decl_to_input;

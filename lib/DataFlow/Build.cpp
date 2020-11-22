@@ -1718,10 +1718,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
 }  // namespace
 
-std::optional<Query> Query::Build(const ParsedModule &module,
+std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
                                   const ErrorLog &log) {
 
-  std::shared_ptr<QueryImpl> impl(new QueryImpl);
+  std::shared_ptr<QueryImpl> impl(new QueryImpl(module));
 
   ClauseContext context;
 

@@ -853,7 +853,8 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
-  auto last_tok = impl->last_tok.IsValid() && false ? impl->last_tok : impl->dot;
+  auto last_tok =
+      impl->last_tok.IsValid() && false ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
                       last_tok.NextPosition());
@@ -1322,6 +1323,14 @@ DisplayRange ParsedInline::SpellingRange(void) const noexcept {
 
 std::string_view ParsedInline::CodeToInline(void) const noexcept {
   return impl->code;
+}
+
+::hyde::Language ParsedInline::Language(void) const noexcept {
+  return impl->language;
+}
+
+bool ParsedInline::IsPrologue(void) const noexcept {
+  return impl->is_prologue;
 }
 
 }  // namespace hyde

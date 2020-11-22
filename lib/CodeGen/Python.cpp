@@ -15,6 +15,60 @@
 namespace hyde {
 namespace {
 
+// NOTE(ekilmer): Classes are named all the same for now
+constexpr auto gClassName = "Database";
+
+// Make a comment in code for debugging purposes
+static OutputStream &Comment(OutputStream &os, const char *message) {
+#ifndef NDEBUG
+  return os << os.Indent() << "# " << message << "\n";
+#else
+  return os;
+#endif
+}
+
+static OutputStream &Procedure(OutputStream &os, const ProgramProcedure proc) {
+  switch (proc.Kind()) {
+    case ProcedureKind::kInitializer: return os << "init_" << proc.Id() << "_";
+    case ProcedureKind::kMessageHandler:
+      return os << proc.Message().value().Name() << "_"
+                << proc.Message().value().Arity();
+    case ProcedureKind::kTupleFinder:
+    case ProcedureKind::kTupleRemover:
+    default: return os << "proc_" << proc.Id() << "_";
+  }
+}
+
+static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
+  return os << func.Name() << "_" << ParsedDeclaration(func).BindingPattern();
+}
+
+static OutputStream &Table(OutputStream &os, const DataTable table) {
+  return os << "self.table_" << table.Id();
+}
+
+static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
+  return os << "self.index_" << index.Id();
+}
+
+template <typename Stream>
+static Stream &Var(Stream &os, const DataVariable var) {
+  if (var.IsGlobal()) {
+    os << "self.";
+  }
+  os << "var_" << var.Id();
+  return os;
+}
+
+static OutputStream &Vector(OutputStream &os, const DataVector vec) {
+  return os << "vec_" << vec.Id();
+}
+
+static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
+  return os << "vec_index" << vec.Id();
+}
+
+// Python representation of TypeKind
 static const char *TypeName(TypeKind kind) {
   switch (kind) {
     case TypeKind::kSigned8:
@@ -31,13 +85,70 @@ static const char *TypeName(TypeKind kind) {
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID: return "str";
+    default: assert(false); return "Any";
+  }
+}
+
+static const char *OperatorString(ComparisonOperator op) {
+  switch (op) {
+    case ComparisonOperator::kEqual: return "==";
+    case ComparisonOperator::kNotEqual: return "!=";
+    case ComparisonOperator::kLessThan: return "<";
+    case ComparisonOperator::kGreaterThan: return ">";
+
+    // TODO(ekilmer): What's a good default operator?
     default: assert(false); return "None";
   }
 }
 
+static std::string TypeValueOrDefault(TypeKind kind,
+                                      std::optional<ParsedLiteral> val) {
+  auto prefix = "";
+  auto suffix = "";
+
+  // Default value
+  switch (kind) {
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64:
+      prefix = "int(";
+      suffix = ")";
+      break;
+    case TypeKind::kFloat:
+    case TypeKind::kDouble:
+      prefix = "float(";
+      suffix = ")";
+      break;
+    case TypeKind::kBytes:
+      prefix = "b\"";
+      suffix = "\"";
+      break;
+    case TypeKind::kASCII:
+    case TypeKind::kUTF8:
+    case TypeKind::kUUID:
+      prefix = "\"";
+      suffix = "\"";
+      break;
+    default: assert(false); prefix = "None  #";
+  }
+
+  std::stringstream value;
+  value << prefix;
+  if (val) {
+    value << val->Spelling();
+  }
+  value << suffix;
+  return value.str();
+}
+
 // Declare a set to hold the table.
 static void DefineTable(OutputStream &os, DataTable table) {
-  os << "table_" << table.Id() << ": DefaultDict[Tuple[";
+  os << os.Indent() << Table(os, table) << ": DefaultDict[Tuple[";
   auto sep = "";
   for (auto col : table.Columns()) {
     os << sep << TypeName(col.Type());
@@ -48,21 +159,40 @@ static void DefineTable(OutputStream &os, DataTable table) {
   // We represent indices as mappings to vectors so that we can concurrently
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
-    os << "index_" << index.Id() << ": DefaultDict[Tuple[";
+    os << os.Indent() << TableIndex(os, index) << ": DefaultDict[Tuple[";
     sep = "";
     for (auto col : index.KeyColumns()) {
-      os << TypeName(col.Type()) << sep;
+      os << sep << TypeName(col.Type());
       sep = ", ";
     }
     os << "], List[Tuple[";
-    sep = "";
-    for (auto col : index.ValueColumns()) {
-      os << TypeName(col.Type()) << sep;
-      sep = ", ";
+    if (!index.ValueColumns().empty()) {
+      sep = "";
+      for (auto col : index.ValueColumns()) {
+        os << sep << TypeName(col.Type());
+        sep = ", ";
+      }
+
+    // Valid syntax for empty Tuple
+    } else {
+      os << "()";
     }
     os << "]]] = defaultdict(list)\n";
   }
   os << "\n";
+}
+
+static void DefineGlobal(OutputStream &os, DataVariable global) {
+  auto type = global.Type();
+  os << os.Indent() << Var(os, global) << ": " << TypeName(type) << " = "
+     << TypeValueOrDefault(type, global.Value()) << "\n\n";
+}
+
+// Similar to DefineGlobal except has type-hint to enforce const-ness
+static void DefineConstant(OutputStream &os, DataVariable global) {
+  auto type = global.Type();
+  os << os.Indent() << Var(os, global) << ": Final[" << TypeName(type)
+     << "] = " << TypeValueOrDefault(type, global.Value()) << "\n\n";
 }
 
 class PythonCodeGenVisitor final : public ProgramVisitor {
@@ -70,36 +200,59 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   explicit PythonCodeGenVisitor(OutputStream &os_) : os(os_) {}
 
   void Visit(ProgramCallRegion region) override {
+    os << Comment(os, "Program Call Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramCallRegion\n";
   }
 
   void Visit(ProgramReturnRegion region) override {
+    os << Comment(os, "Program Return Region");
+
     os << os.Indent() << "return " << (region.ReturnsFalse() ? "False" : "True")
        << "\n";
   }
 
   void Visit(ProgramExistenceAssertionRegion region) override {
+    os << Comment(os, "Program ExistenceAssertion Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramExistenceAssertionRegion\n";
   }
 
   void Visit(ProgramExistenceCheckRegion region) override {
+    os << Comment(os, "Program ExistenceCheck Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramExistenceCheckRegion\n";
   }
 
   void Visit(ProgramGenerateRegion region) override {
-    os << os.Indent() << "# TODO(ekilmer): ProgramGenerateRegion\n";
+    os << Comment(os, "Program Generate Region");
+
+    os << os.Indent();
+    for (auto out_var : region.OutputVariables()) {
+      os << Var(os, out_var) << ", ";
+    }
+    os << "= " << Functor(os, region.Functor()) << "(";
+    auto sep = "";
+    for (auto in_var : region.InputVariables()) {
+      os << sep << Var(os, in_var);
+      sep = ", ";
+    }
+    os << ")\n";
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    }
   }
 
   void Visit(ProgramInductionRegion region) override {
+    os << Comment(os, "Program Induction Init Region");
 
     // Base case
     region.Initializer().Accept(*this);
 
-    // Induction
+    // Fixpoint
+    os << Comment(os, "Induction Fixpoint Loop Region");
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << "vec_index_" << vec.Id() << " < len(vec_" << vec.Id() << ")";
+      os << sep << VectorIndex(os, vec) << " < len(" << Vector(os, vec) << ")";
       sep = " or ";
     }
     os << ":\n";
@@ -109,20 +262,23 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os.PopIndent();
 
     for (auto vec : region.Vectors()) {
-      os << os.Indent() << "vec_index_" << vec.Id() << " = 0\n";
+      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
     }
 
     // Output
     if (auto output = region.Output(); output) {
+      os << Comment(os, "Induction Output Region");
       output->Accept(*this);
     }
   }
 
   void Visit(ProgramLetBindingRegion region) override {
+    os << Comment(os, "Program LetBinding Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramLetBindingRegion\n";
   }
 
   void Visit(ProgramParallelRegion region) override {
+    os << Comment(os, "Program Parallel Region");
 
     // Same as SeriesRegion
     for (auto sub_region : region.Regions()) {
@@ -131,44 +287,54 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramProcedure region) override {
+    os << Comment(os, "Program Procedure Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramProcedure\n";
   }
 
   void Visit(ProgramPublishRegion region) override {
+    os << Comment(os, "Program Publish Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramPublishRegion\n";
   }
 
   void Visit(ProgramSeriesRegion region) override {
+    os << Comment(os, "Program Series Region");
+
     for (auto sub_region : region.Regions()) {
       sub_region.Accept(*this);
     }
   }
 
   void Visit(ProgramVectorAppendRegion region) override {
-    os << os.Indent() << "vec_" << region.Vector().Id() << ".append((";
+    os << Comment(os, "Program VectorAppend Region");
+
+    os << os.Indent() << Vector(os, region.Vector()) << ".append((";
     for (auto var : region.TupleVariables()) {
-      os << "var_" << var.Id() << ", ";
+      os << Var(os, var) << ", ";
     }
     os << "))\n";
   }
 
   void Visit(ProgramVectorClearRegion region) override {
-    os << os.Indent() << "del vec_" << region.Vector().Id() << "[:]\n";
-    os << os.Indent() << "vec_index_" << region.Vector().Id() << " = 0\n";
+    os << Comment(os, "Program VectorClear Region");
+
+    os << os.Indent() << "del " << Vector(os, region.Vector()) << "[:]\n";
+    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
+    os << Comment(os, "Program VectorLoop Region");
+
     auto vec = region.Vector();
-    os << os.Indent() << "while vec_index_" << vec.Id() << " < len(vec_"
-       << vec.Id() << "):\n";
+    os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+       << Vector(os, vec) << "):\n";
     os.PushIndent();
     os << os.Indent();
     for (auto var : region.TupleVariables()) {
-      os << "var_" << var.Id() << ", ";
+      os << Var(os, var) << ", ";
     }
-    os << "= vec_" << vec.Id() << "[vec_index_" << vec.Id() << "]\n";
+    os << "= " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
 
-    os << os.Indent() << "vec_index_" << vec.Id() << " += 1\n";
+    os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -177,12 +343,16 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorUniqueRegion region) override {
-    os << os.Indent() << "vec_" << region.Vector().Id() << " = list(set(vec_"
-       << region.Vector().Id() << "))\n";
-    os << os.Indent() << "vec_index_" << region.Vector().Id() << " = 0\n";
+    os << Comment(os, "Program VectorUnique Region");
+
+    os << os.Indent() << Vector(os, region.Vector()) << " = list(set("
+       << Vector(os, region.Vector()) << "))\n";
+    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
   void Visit(ProgramTransitionStateRegion region) override {
+    os << Comment(os, "Program TransitionState Region");
+
     std::stringstream tuple;
     tuple << "tuple";
     for (auto tuple_var : region.TupleVariables()) {
@@ -192,11 +362,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     auto tuple_var = tuple.str();
     os << os.Indent() << tuple_var << " = (";
     for (auto var : region.TupleVariables()) {
-      os << "var_" << var.Id() << ", ";
+      os << Var(os, var) << ", ";
     }
     os << ")\n";
 
-    os << os.Indent() << "state = table_" << region.Table().Id() << "["
+    os << os.Indent() << "state = " << Table(os, region.Table()) << "["
        << tuple_var << "]\n";
 
     os << os.Indent() << "if ";
@@ -209,7 +379,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         break;
     }
     os.PushIndent();
-    os << os.Indent() << "table_" << region.Table().Id() << "[" << tuple_var
+    os << os.Indent() << Table(os, region.Table()) << "[" << tuple_var
        << "] = ";
     switch (region.ToState()) {
       case TupleState::kAbsent: os << "0\n"; break;
@@ -222,7 +392,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     for (auto index : region.Table().Indices()) {
-      os << os.Indent() << "index_" << index.Id() << "[(";
+      os << os.Indent() << TableIndex(os, index) << "[(";
       for (auto indexed_col : index.KeyColumns()) {
         os << tuple_var << "[" << indexed_col.Index() << "], ";
       }
@@ -240,28 +410,30 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramCheckStateRegion region) override {
+    os << Comment(os, "Program CheckState Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramCheckStateRegion\n";
   }
 
   void Visit(ProgramTableJoinRegion region) override {
+    os << Comment(os, "Program TableJoin Region");
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "while vec_index_" << vec.Id() << " < len(vec_"
-       << vec.Id() << "):\n";
+    os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+       << Vector(os, vec) << "):\n";
     os.PushIndent();
     os << os.Indent();
 
     std::vector<std::string> var_names;
     for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
-      var_name << "var_" << var.Id();
+      (void) Var(var_name, var);
       var_names.emplace_back(var_name.str());
       os << var_names.back() << ", ";
     }
-    os << "= vec_" << vec.Id() << "[vec_index_" << vec.Id() << "]\n";
+    os << "= " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
 
-    os << os.Indent() << "vec_index_" << vec.Id() << " += 1\n";
+    os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
@@ -273,17 +445,21 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       // that tracks which tuple we can next look at. This allows us to observe
       // writes into the index as they happen.
       os << os.Indent() << "tuple_" << region.Id() << "_" << i
-         << "_index : int = 0\n"
+         << "_index: int = 0\n"
          << os.Indent() << "tuple_" << region.Id() << "_" << i
-         << "_vec : List[Tuple[";
+         << "_vec: List[Tuple[";
 
       auto sep = "";
-      for (auto col : index.ValueColumns()) {
-        os << sep << TypeName(col.Type());
-        sep = ", ";
+      if (!index.ValueColumns().empty()) {
+        for (auto col : index.ValueColumns()) {
+          os << sep << TypeName(col.Type());
+          sep = ", ";
+        }
+      } else {
+        os << "()";
       }
 
-      os << "]] = index_" << index.Id() << "[(";
+      os << "]] = " << TableIndex(os, index) << "[(";
 
       // This is a bit ugly, but basically: we want to index into the
       // Python representation of this index, e.g. via `index_10[(a, b)]`,
@@ -315,17 +491,36 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
       os << os.Indent() << "tuple_" << region.Id() << "_" << i << " = "
          << "tuple_" << region.Id() << "_" << i << "_vec[tuple_" << region.Id()
-         << "_" << i << "_index]\n"
-         << os.Indent() << "tuple_" << region.Id() << "_" << i
+         << "_" << i << "_index]\n";
+
+      os << os.Indent() << "tuple_" << region.Id() << "_" << i
          << "_index += 1\n";
 
       auto out_vars = region.OutputVariables(i);
       if (!out_vars.empty()) {
-        os << os.Indent();
+        auto select_cols = region.SelectedColumns(i);
+        assert(out_vars.size() == select_cols.size());
+
+        auto indexed_cols = region.IndexedColumns(i);
+        auto indexed_col_idx = 0u;
+        auto out_var_idx = 0u;
+        auto tuple_col_idx_offset = 0u;
         for (auto var : out_vars) {
-          os << "var_" << var.Id() << ", ";
+          auto select_col_idx = select_cols[out_var_idx].Index();
+
+          // Need to loop and count indexed columns before this selected
+          // column and use as offset
+          while (indexed_col_idx < indexed_cols.size() &&
+                 select_col_idx > indexed_cols[indexed_col_idx].Index()) {
+            ++tuple_col_idx_offset;
+            ++indexed_col_idx;
+          }
+
+          os << os.Indent() << Var(os, var) << " = tuple_" << region.Id() << "_"
+             << i << "[" << select_col_idx - tuple_col_idx_offset << "]\n";
+
+          ++out_var_idx;
         }
-        os << "= tuple_" << region.Id() << "_" << i << "\n";
       }
     }
 
@@ -346,29 +541,86 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableProductRegion region) override {
+    os << Comment(os, "Program TableProduct Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramTableProductRegion\n";
   }
 
   void Visit(ProgramTableScanRegion region) override {
+    os << Comment(os, "Program TableScan Region");
     os << os.Indent() << "# TODO(ekilmer): ProgramTableScanRegion\n";
   }
 
   void Visit(ProgramTupleCompareRegion region) override {
-    os << os.Indent() << "# TODO(ekilmer): ProgramTupleCompareRegion\n";
+    os << Comment(os, "Program TupleCompare Region");
+
+    os << os.Indent() << "if (";
+    for (auto lhs : region.LHS()) {
+      os << Var(os, lhs) << ", ";
+    }
+
+    os << ") " << OperatorString(region.Operator()) << " (";
+
+    for (auto rhs : region.RHS()) {
+      os << Var(os, rhs) << ", ";
+    }
+    os << "):\n";
+
+    os.PushIndent();
+
+    // If there isn't a body, then an optimization to eliminate this hasn't applied,
+    // or it hasn't been coded
+    assert(region.Body());
+    region.Body()->Accept(*this);
+    os.PopIndent();
   }
 
  private:
   OutputStream &os;
 };
 
-static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
-  os << "def proc_" << proc.Id() << "(";
+static void DefineFunctor(OutputStream &os, ParsedFunctor func) {
+  os << os.Indent() << "def " << Functor(os, func) << "(";
 
-  auto param_sep = "";
+  std::stringstream return_tuple;
+  auto sep_ret = "";
+  auto sep_bound = "";
+  for (auto param : func.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep_bound << param.Name() << ": " << TypeName(param.Type().Kind());
+      sep_bound = ", ";
+    } else {
+      return_tuple << sep_ret << TypeName(param.Type().Kind());
+      sep_ret = ", ";
+    }
+  }
+
+  os << ") -> ";
+
+  if (func.IsFilter()) {
+    os << "bool";
+  } else {
+    os << "Tuple[";
+    if (auto ret_types = return_tuple.str(); !ret_types.empty()) {
+      os << ret_types;
+    } else {
+      os << "()";
+    }
+    os << "]";
+  }
+
+  os << ":\n";
+
+  os.PushIndent();
+  os << os.Indent() << "pass\n\n";
+  os.PopIndent();
+}
+
+static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
+  os << os.Indent() << "def " << Procedure(os, proc) << "(self";
 
   // First, declare all vector parameters.
   for (auto vec : proc.VectorParameters()) {
-    os << param_sep << "vec_" << vec.Id() << ": List[Tuple[";
+    os << ", " << Vector(os, vec) << ": List[Tuple[";
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
@@ -377,13 +629,11 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     }
 
     os << "]]";
-    param_sep = ", ";
   }
 
   // Then, declare all variable parameters.
   for (auto param : proc.VariableParameters()) {
-    os << param_sep << "var_" << param.Id() << ": " << TypeName(param.Type());
-    param_sep = ", ";
+    os << ", " << Var(os, param) << ": " << TypeName(param.Type());
   }
 
   // Every procedure has a boolean return type. A lot of the time the return
@@ -404,13 +654,13 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   //                     turn the return value of the procedures from a `bool`
   //                     to a `tuple`. :-/
   for (auto vec : proc.VectorParameters()) {
-    os << os.Indent() << "vec_index_" << vec.Id() << ": int = 0\n";
+    os << os.Indent() << VectorIndex(os, vec) << ": int = 0\n";
   }
 
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    os << os.Indent() << "vec_" << vec.Id() << ": List[Tuple[";
+    os << os.Indent() << Vector(os, vec) << ": List[Tuple[";
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
@@ -421,7 +671,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
     os << "]] = list()\n";
 
     // Tracking variable for the vector.
-    os << os.Indent() << "vec_index_" << vec.Id() << ": int = 0\n";
+    os << os.Indent() << VectorIndex(os, vec) << ": int = 0\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -433,7 +683,6 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
   os << "\n";
 }
 
-
 }  // namespace
 
 // Emits Python code for the given program to `os`.
@@ -443,22 +692,54 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "from collections import defaultdict\n";
   os << "from typing import *\n\n";
 
+  // TODO(ekilmer): Functors are predefined with `pass` for now
+  for (auto func : program.ParsedModule().Functors()) {
+    DefineFunctor(os, func);
+  }
+
+  for (auto code : program.ParsedModule().Inlines()) {
+    if (code.Language() == Language::kPython && code.IsPrologue()) {
+      os << code.CodeToInline() << '\n';
+    }
+  }
+
+  // A program gets its own class
+  os << "class " << gClassName << ":\n\n";
+  os.PushIndent();
+
+  os << os.Indent() << "def __init__(self):\n";
+  os.PushIndent();
+
   for (auto table : program.Tables()) {
     DefineTable(os, table);
   }
 
-  // TODO(ekilmer): Global variables
-  //   Single type, bool=false, int=0
-  os << os.Indent() << "# TODO(ekilmer): Global variables\n";
+  for (auto global : program.GlobalVariables()) {
+    DefineGlobal(os, global);
+  }
+
+  for (auto constant : program.Constants()) {
+    DefineConstant(os, constant);
+  }
+
+  // Invoke the init procedure. Always first
+  auto init_procedure = program.Procedures()[0];
+  assert(init_procedure.Kind() == ProcedureKind::kInitializer);
+  os << os.Indent() << "self." << Procedure(os, init_procedure) << "()\n\n";
+
+  os.PopIndent();
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, proc);
   }
 
-  // os << "if __name__ == \"__main__\":\n"
-  //    << "  proc_1([(0,1), (0,2), (2,0), (1,2), (2,3)])\n"
-  //    << "  for edge, state in table_7.items():\n"
-  //    << "    print(edge)\n";
+  os.PopIndent();
+
+  for (auto code : program.ParsedModule().Inlines()) {
+    if (code.Language() == Language::kPython && !code.IsPrologue()) {
+      os << code.CodeToInline() << '\n';
+    }
+  }
 }
 
 }  // namespace hyde

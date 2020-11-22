@@ -126,6 +126,16 @@ Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
 
+// Return the query used to build this program.
+::hyde::Query Program::Query(void) const noexcept {
+  return impl->query;
+}
+
+// Return the parsed module used to build the query.
+::hyde::ParsedModule Program::ParsedModule(void) const noexcept {
+  return impl->query.ParsedModule();
+}
+
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
@@ -443,8 +453,7 @@ VariableRole DataVariable::DefiningRole(void) const noexcept {
   return impl->role;
 }
 
-// The region which defined this local variable. If this variable has no
-// defining region then it is a global variable.
+// The region which defined this local variable.
 std::optional<ProgramRegion> DataVariable::DefiningRegion(void) const noexcept {
   if (impl->defining_region) {
     return ProgramRegion(impl->defining_region);
@@ -500,6 +509,12 @@ TypeKind DataVariable::Type(void) const noexcept {
   }
   assert(false);
   return TypeKind::kInvalid;
+}
+
+// Whether this variable is global.
+bool DataVariable::IsGlobal(void) const noexcept {
+  return !(DefiningRole() == VariableRole::kParameter ||
+           DefiningRole() == VariableRole::kFunctorOutput || DefiningRegion());
 }
 
 // Unique ID of this column.

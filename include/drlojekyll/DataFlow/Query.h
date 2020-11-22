@@ -818,6 +818,8 @@ class Query {
 
   ~Query(void);
 
+  ::hyde::ParsedModule ParsedModule(void) const noexcept;
+
   DefinedNodeRange<QueryCondition> Conditions(void) const;
   DefinedNodeRange<QueryJoin> Joins(void) const;
   DefinedNodeRange<QuerySelect> Selects(void) const;
