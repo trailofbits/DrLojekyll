@@ -201,7 +201,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, "Program Call Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramCallRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramCallRegion\n";
   }
 
   void Visit(ProgramReturnRegion region) override {
@@ -213,12 +213,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramExistenceAssertionRegion region) override {
     os << Comment(os, "Program ExistenceAssertion Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramExistenceAssertionRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramExistenceAssertionRegion\n";
   }
 
   void Visit(ProgramExistenceCheckRegion region) override {
     os << Comment(os, "Program ExistenceCheck Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramExistenceCheckRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramExistenceCheckRegion\n";
   }
 
   void Visit(ProgramGenerateRegion region) override {
@@ -274,7 +274,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramLetBindingRegion region) override {
     os << Comment(os, "Program LetBinding Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramLetBindingRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramLetBindingRegion\n";
   }
 
   void Visit(ProgramParallelRegion region) override {
@@ -288,12 +288,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramProcedure region) override {
     os << Comment(os, "Program Procedure Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramProcedure\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramProcedure\n";
   }
 
   void Visit(ProgramPublishRegion region) override {
     os << Comment(os, "Program Publish Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramPublishRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramPublishRegion\n";
   }
 
   void Visit(ProgramSeriesRegion region) override {
@@ -411,7 +411,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramCheckStateRegion region) override {
     os << Comment(os, "Program CheckState Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramCheckStateRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramCheckStateRegion\n";
   }
 
   void Visit(ProgramTableJoinRegion region) override {
@@ -542,12 +542,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableProductRegion region) override {
     os << Comment(os, "Program TableProduct Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramTableProductRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramTableProductRegion\n";
   }
 
   void Visit(ProgramTableScanRegion region) override {
     os << Comment(os, "Program TableScan Region");
-    os << os.Indent() << "# TODO(ekilmer): ProgramTableScanRegion\n";
+    os << os.Indent() << "pass  # TODO(ekilmer): ProgramTableScanRegion\n";
   }
 
   void Visit(ProgramTupleCompareRegion region) override {
