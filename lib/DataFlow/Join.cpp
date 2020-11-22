@@ -554,6 +554,25 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
 
   // Go detect if we need to guard the input views with compares.
   auto need_constant_guard = false;
+
+  if (auto user = this->OnlyUser(); user) {
+    if (auto cmp = user->AsCompare();
+        cmp && cmp->op == ComparisonOperator::kEqual) {
+      const auto lhs = cmp->input_columns[0];
+      const auto rhs = cmp->input_columns[1];
+      const auto lhs_const = lhs->AsConstant();
+      const auto rhs_const = rhs->AsConstant();
+      if (lhs->view == this && rhs_const) {
+        need_constant_guard = true;
+        lhs->CopyConstantFrom(rhs_const);
+
+      } else if (rhs->view == this && lhs_const) {
+        need_constant_guard = true;
+        rhs->CopyConstantFrom(lhs_const);
+      }
+    }
+  }
+
   for (const auto &[out_col, in_cols] : out_to_in) {
     COL *const_col = out_col->AsConstant();
 
