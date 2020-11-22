@@ -557,16 +557,6 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     parent->ExecuteAfter(impl, seq);
   }
 
-  // Check if all outputs are constant or references to constants (i.e. constant
-  // if reached by data flow).
-  bool all_const = true;
-  for (auto col : view.Columns()) {
-    if (!col.IsConstantOrConstantRef()) {
-      all_const = false;
-      break;
-    }
-  }
-
   // All successors execute in a PARALLEL region, even if there are zero or
   // one successors. Empty and trivial PARALLEL regions are optimized out later.
   //
