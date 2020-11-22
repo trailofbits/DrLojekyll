@@ -298,7 +298,7 @@ void BuildTopDownJoinChecker(
   // we'll figure out how many of the pivot columns we already have. If we have
   // the pivots then we're in a good place.
   const auto num_pivots = join_view.NumPivotColumns();
-  auto num_found_pivots = 0;
+  auto num_found_pivots = 0u;
   std::vector<VAR *> pivots(num_pivots);
 
   // TODO(pag): Nothing really enforces this, but I don't want to deal with it
@@ -380,7 +380,7 @@ void BuildTopDownJoinChecker(
     const auto pred_model = impl->view_to_model[max_view]->FindAs<DataModel>();
     assert(pred_model->table != nullptr);
 
-    auto &pred_view_cols = pred_cols[max_view];
+    auto &pred_view_cols = *max_view_cols;
     seq->regions.AddUse(BuildMaybeScanPartial(
         impl, max_view, pred_view_cols, pred_model->table, seq,
         [&] (REGION *parent) -> REGION * {
