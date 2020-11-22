@@ -733,8 +733,6 @@ void ParserImpl::ParseLocalExport(
     }
   }
 
-  local->has_mutable_parameter = has_mutable_parameter;
-
   if (state < 8) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete " << introducer_tok
@@ -744,6 +742,7 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local to the module.
   } else {
+    local->has_mutable_parameter = has_mutable_parameter;
     FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
   }
 }
