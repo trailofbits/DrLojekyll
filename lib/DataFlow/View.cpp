@@ -272,19 +272,19 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
       if (!out_col_is_constref || out_col_is_directly_used) {
         non_local_changes = true;
       }
-      out_col->CopyConstant(in_col);
+      out_col->CopyConstantFrom(in_col);
       out_col->ReplaceAllUsesWith(in_col);
 
     } else {
       if (!out_col_is_constref) {
         non_local_changes = true;
-        out_col->CopyConstant(in_col);
+        out_col->CopyConstantFrom(in_col);
       }
     }
   } else if (in_col->IsConstantRef()) {
     if (!out_col_is_constref) {
       non_local_changes = true;
-      out_col->CopyConstant(in_col);
+      out_col->CopyConstantFrom(in_col);
 
     } else if (opt.can_replace_inputs_with_constants) {
       non_local_changes = true;
@@ -637,15 +637,8 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
   }
 }
 
-// Replace all uses of `this` with `that`. The semantic here is that `this`
-// remains valid and used.
-void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
-  unsigned i = 0u;
-  for (auto col : columns) {
-    col->ReplaceAllUsesWith(that->columns[i++]);
-  }
-  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
-
+// Copy the group IDs and the receive/produce deletions from `this` to `that`.
+void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
   // Maintain the set of group IDs, to prevent over-merging.
   that->group_ids.insert(that->group_ids.end(), group_ids.begin(),
                          group_ids.end());
@@ -658,7 +651,18 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   if (can_produce_deletions) {
     that->can_produce_deletions = true;
   }
+}
 
+// Replace all uses of `this` with `that`. The semantic here is that `this`
+// remains valid and used.
+void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
+  unsigned i = 0u;
+  for (auto col : columns) {
+    col->ReplaceAllUsesWith(that->columns[i++]);
+  }
+  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+
+  CopyDifferentialAndGroupIdsTo(that);
   TransferSetConditionTo(that);
 }
 
@@ -709,7 +713,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 
   for (auto col : columns) {
     auto out_col = tuple->columns.Create(col->var, tuple, col->id);
-    out_col->CopyConstant(col);
+    out_col->CopyConstantFrom(col);
   }
 
   // Make any merges use the tuple.
@@ -756,18 +760,18 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   auto lhs_out_col =
       cmp->columns.Create(lhs_col->var, cmp, lhs_col->id, col_index++);
 
-  lhs_out_col->CopyConstant(lhs_col);
+  lhs_out_col->CopyConstantFrom(lhs_col);
   in_to_out.emplace(lhs_col, lhs_out_col);
 
   cmp->input_columns.AddUse(rhs_col);
   if (ComparisonOperator::kEqual == op) {
-    lhs_out_col->CopyConstant(rhs_col);
+    lhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
     auto rhs_out_col =
         cmp->columns.Create(rhs_col->var, cmp, rhs_col->id, col_index++);
-    rhs_out_col->CopyConstant(rhs_col);
+    rhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
   }
 
@@ -779,7 +783,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
       cmp->attached_columns.AddUse(col);
       const auto attached_col =
           cmp->columns.Create(col->var, cmp, col->id, col_index++);
-      attached_col->CopyConstant(col);
+      attached_col->CopyConstantFrom(col);
       in_to_out.emplace(col, attached_col);
     }
   }
@@ -793,7 +797,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     auto out_col =
         tuple->columns.Create(orig_col->var, tuple, orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
-    out_col->CopyConstant(in_col);
+    out_col->CopyConstantFrom(in_col);
   }
 
 #ifndef NDEBUG

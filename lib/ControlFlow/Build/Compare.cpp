@@ -135,6 +135,8 @@ void BuildTopDownCompareChecker(
   // merge), and that may share its data model with something else.
   if (model->table) {
 
+    TABLE *table_to_update = model->table;
+
     // Compares are conditional, i.e. they might admit fewer tuples through
     // than they are fed, so they never share the data model with their
     // predecessors.
@@ -154,7 +156,7 @@ void BuildTopDownCompareChecker(
     auto call_pred = [&] (PARALLEL *parent) {
       parent->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols,
-          model->table, pred_view, already_checked));
+          table_to_update, pred_view, already_checked));
     };
 
     auto if_unknown = [&] (ProgramImpl *, REGION *parent) -> REGION * {
@@ -190,9 +192,11 @@ void BuildTopDownCompareChecker(
             // and thus would have done the check.
             assert(done_check);
 
+            table_to_update = nullptr;
+
             return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                  impl, context, parent, view, view_cols,
-                  model->table, pred_view, already_checked);
+                impl, context, parent, view, view_cols,
+                nullptr, pred_view, already_checked);
           }
         }));
 
@@ -223,13 +227,13 @@ void BuildTopDownCompareChecker(
         if (done_check) {
           return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
               impl, context, parent, view, view_cols,
-              model->table, pred_view, nullptr);
+              nullptr, pred_view, nullptr);
 
         } else {
           auto check = CreateCompareRegion(impl, cmp, context, parent);
           check->body.Emplace(check, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
               impl, context, parent, view, view_cols,
-              model->table, pred_view, nullptr));
+              nullptr, pred_view, nullptr));
           return check;
         }
       }));

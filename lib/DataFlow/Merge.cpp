@@ -184,7 +184,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
           auto guard_out_col = guarded_view->columns.Create(
               out_col->var, guarded_view, out_col->id);
           guarded_view->input_columns.AddUse(out_col);
-          guard_out_col->CopyConstant(out_col);
+          guard_out_col->CopyConstantFrom(out_col);
         }
       }
 
@@ -201,7 +201,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
       if (out_col->IsUsed()) {
         auto new_out_col = new_columns.Create(
             out_col->var, this, out_col->id);
-        new_out_col->CopyConstant(out_col);
+        new_out_col->CopyConstantFrom(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
       }
     }

@@ -35,7 +35,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
         id(id_),
         index(index_) {}
 
-  void CopyConstant(Node<QueryColumn> *maybe_const_col);
+  void CopyConstantFrom(Node<QueryColumn> *maybe_const_col);
 
   void ReplaceAllUsesWith(Node<QueryColumn> *that);
 
@@ -273,6 +273,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // If `sets_condition` is non-null, then transfer the setter to `that`.
   void TransferSetConditionTo(Node<QueryView> *that);
+
+  // Copy the group IDs and the receive/produce deletions from `this` to `that`.
+  void CopyDifferentialAndGroupIdsTo(Node<QueryView> *that);
 
   // Replace all uses of `this` with `that`. The semantic here is that `this`
   // remains valid and used.
@@ -631,26 +634,20 @@ class Node<QueryJoin> final : public Node<QueryView> {
   unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
-  // Update the set of joined views.
-  void UpdateJoinedViews(QueryImpl *query);
-
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
-  // If we have a constant feeding into one of the pivot sets, then we want to
-  // eliminate that pivot set and instead propagate CMP nodes to all pivot
-  // sources.
-  void PropagateConstAcrossPivotSet(QueryImpl *query, COL *col,
-                                    UseList<COL> &pivot_cols);
+  // Remove all constant uses.
+  void RemoveConstants(QueryImpl *query);
 
-  // Replace the pivot column `pivot_col` with `const_col`.
-  void ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
-                                COL *const_col);
+  // Convert a trivial join (only has a single input view) into a TUPLE.
+  void ConvertTrivialJoinToTuple(QueryImpl *impl);
 
-  // Replace `view`, which should be a member of `joined_views` with
-  // `replacement_view` in this JOIN.
-  void ReplaceViewInJoin(VIEW *view, VIEW *replacement_view);
+  // Returns `true` if any joined views were identified where one or more of
+  // their columns are not used by the JOIN. If so, we proxy those views with
+  // TUPLEs.
+  bool ProxyUnusedInputColumns(QueryImpl *impl);
 
   // Maps output columns to input columns.
   std::unordered_map<COL *, UseList<COL>> out_to_in;
@@ -1095,10 +1092,6 @@ class QueryImpl {
   // Extract conditions from regular nodes and force them to belong to only
   // tuple nodes. This simplifies things substantially for downstream users.
   void ExtractConditionsToTuples(void);
-
-  // After the query is built, we want to push down any condition annotations
-  // on nodes.
-  void SinkConditions(void) const;
 
   // Finalize column ID values. Column ID values relate to lexical scope, to
   // some extent. Two columns with the same ID can be said to have the same

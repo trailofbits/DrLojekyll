@@ -350,6 +350,12 @@ void BuildTopDownUnionChecker(
     QueryMerge view, std::vector<QueryColumn> &available_cols,
     TABLE *already_checked);
 
+// Build a top-down checker on a join.
+void BuildTopDownJoinChecker(
+    ProgramImpl *impl, Context &context, PROC *proc,
+    QueryJoin view, std::vector<QueryColumn> &available_cols,
+    TABLE *already_checked);
+
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,

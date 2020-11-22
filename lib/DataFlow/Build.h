@@ -20,7 +20,7 @@ static void ReplaceInputsWithTuple(QueryImpl *impl, VIEW *user,
       assert(in_col->IsConstant());
       auto out_col = tuple->columns.Create(
           in_col->var, tuple, in_col->id, col_index++);
-      out_col->CopyConstant(in_col);
+      out_col->CopyConstantFrom(in_col);
       new_col_list.AddUse(out_col);
       tuple->input_columns.AddUse(in_col);
     }

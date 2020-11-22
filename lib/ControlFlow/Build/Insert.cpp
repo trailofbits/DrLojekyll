@@ -47,6 +47,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
       const auto table_insert =
           impl->operation_regions.CreateDerived<CHANGESTATE>(
               parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+
       for (auto col : cols) {
         const auto var = parent->VariableFor(impl, col);
         table_insert->col_values.AddUse(var);

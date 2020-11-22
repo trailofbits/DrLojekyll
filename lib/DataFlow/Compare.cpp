@@ -170,11 +170,11 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
       // NOTE(pag): Don't apply `input_col` to `lhs_col`; we'll let the tuple
       //            canonicalization do any simplification for us.
       tuple->input_columns.AddUse(lhs_col);
-      tuple->columns[0]->CopyConstant(lhs_col);
+      tuple->columns[0]->CopyConstantFrom(lhs_col);
 
       for (auto j = 0u; j < attached_columns.Size(); ++j, ++i) {
         tuple->input_columns.AddUse(attached_columns[j]);
-        tuple->columns[i]->CopyConstant(attached_columns[j]);
+        tuple->columns[i]->CopyConstantFrom(attached_columns[j]);
       }
 
       ReplaceAllUsesWith(tuple);
@@ -186,7 +186,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
 
     in_to_out.emplace(lhs_col, new_lhs_out);
     in_to_out.emplace(rhs_col, new_lhs_out);
-    new_lhs_out->CopyConstant(lhs_out_col);
+    new_lhs_out->CopyConstantFrom(lhs_out_col);
     lhs_out_col->ReplaceAllUsesWith(new_lhs_out);
 
   // Preserve the column ordering for the output columns of other
@@ -224,8 +224,8 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     const auto new_rhs_out =
         new_columns.Create(rhs_out_col->var, this, rhs_out_col->id);
 
-    new_lhs_out->CopyConstant(lhs_out_col);
-    new_rhs_out->CopyConstant(rhs_out_col);
+    new_lhs_out->CopyConstantFrom(lhs_out_col);
+    new_rhs_out->CopyConstantFrom(rhs_out_col);
 
     in_to_out.emplace(lhs_col, new_lhs_out);
     in_to_out.emplace(rhs_col, new_rhs_out);
@@ -301,7 +301,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     const auto new_out_col =
         new_columns.Create(out_col->var, this, out_col->id);
 
-    new_out_col->CopyConstant(out_col);
+    new_out_col->CopyConstantFrom(out_col);
     out_col->ReplaceAllUsesWith(new_out_col);
 
     if (!prev_out_col) {

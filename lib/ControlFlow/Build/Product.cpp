@@ -130,8 +130,9 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
 // Build an eager cross-product for a join.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryJoin view, Context &context, OP *parent,
+                             QueryJoin product_view, Context &context, OP *parent,
                              TABLE *last_model) {
+  const QueryView view(product_view);
 
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
@@ -142,6 +143,24 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
                               pred_view.CanProduceDeletions(),
                               pred_view.Columns());
     last_model = table;
+  }
+
+  // Nothing really to do, this cross-product just needs to pass its data
+  // through. This is some kind of weird degenerate case that might happen
+  // due to a failure in optimization.
+  if (view.Predecessors().size() == 1u) {
+    product_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                                std::optional<QueryColumn> out_col) {
+      if (out_col) {
+        const auto in_var = parent->VariableFor(impl, in_col);
+        assert(in_var != nullptr);
+        parent->col_id_to_var.emplace(out_col->Id(), in_var);
+      }
+    });
+
+    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+                               last_model);
+    return;
   }
 
   auto &vec = context.product_vector[table];
@@ -162,9 +181,9 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   append->vector.Emplace(append, vec);
   parent->body.Emplace(parent, append);
 
-  auto &action = context.view_to_work_item[view];
+  auto &action = context.view_to_work_item[product_view];
   if (!action) {
-    action = new ContinueProductWorkItem(view);
+    action = new ContinueProductWorkItem(product_view);
     context.work_list.emplace_back(action);
   }
 

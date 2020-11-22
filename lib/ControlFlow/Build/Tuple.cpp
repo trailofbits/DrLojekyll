@@ -64,21 +64,25 @@ void BuildTopDownTupleChecker(
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
 
+
   // TODO(pag): We don't handle the case where `succ_view` is passing us a
   //            subset of the columns of `view`.
 
   // This tuple was persisted, thus we can check it.
   if (model->table) {
+    TABLE *table_to_update = model->table;
 
     auto call_pred = [&] (REGION *parent) -> REGION * {
       return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols,
-          model->table, pred_view, already_checked);
+          table_to_update, pred_view, already_checked);
     };
 
     // If the predecessor persists the same data then we'll call the
     // predecessor's checker.
     if (model->table == pred_model->table) {
+      table_to_update = nullptr;  // Let the predecessor do the state change.
+
       proc->body.Emplace(proc, BuildMaybeScanPartial(
           impl, view, view_cols, model->table, proc,
           call_pred));
@@ -104,6 +108,7 @@ void BuildTopDownTupleChecker(
                   });
 
             } else {
+              table_to_update = nullptr;
               return call_pred(parent);
             }
           });
@@ -111,12 +116,12 @@ void BuildTopDownTupleChecker(
       proc->body.Emplace(proc, region);
     }
 
-  // Out best option at this point is to just call the predecessor; this tuple's
+  // Our best option at this point is to just call the predecessor; this tuple's
   // data is not persisted.
   } else {
     const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, nullptr, pred_view,
-          nullptr);
+        impl, context, proc, view, view_cols, nullptr, pred_view,
+        nullptr);
     proc->body.Emplace(proc, check);
   }
 }

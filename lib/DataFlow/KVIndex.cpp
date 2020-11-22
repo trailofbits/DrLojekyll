@@ -169,7 +169,7 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
 
     auto j = 0u;
     for (auto key_col : input_columns) {
-      columns[j++]->CopyConstant(key_col);
+      columns[j++]->CopyConstantFrom(key_col);
       tuple->input_columns.AddUse(key_col);
     }
 
@@ -223,7 +223,7 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
 
     const auto new_out_col =
         new_output_columns.Create(out_col->var, this, out_col->id);
-    new_out_col->CopyConstant(out_col);
+    new_out_col->CopyConstantFrom(out_col);
     out_col->ReplaceAllUsesWith(new_out_col);
 
     new_input_columns.AddUse(in_col);

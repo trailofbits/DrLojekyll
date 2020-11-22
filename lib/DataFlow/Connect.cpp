@@ -93,7 +93,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
           auto out_col =
               ins_proxy->columns.Create(in_col->var, ins_proxy, in_col->id);
           ins_proxy->input_columns.AddUse(in_col);
-          out_col->CopyConstant(in_col);
+          out_col->CopyConstantFrom(in_col);
         }
 
         for (auto in_col : ins_proxy->input_columns) {

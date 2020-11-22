@@ -60,7 +60,7 @@ bool Node<QueryDelete>::Canonicalize(QueryImpl *,
         new_input_columns.AddUse(input_columns[i]);
         auto new_out_col = new_columns.Create(
             out_col->var, this, out_col->id);
-        new_out_col->CopyConstant(out_col);
+        new_out_col->CopyConstantFrom(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
       }
       ++i;

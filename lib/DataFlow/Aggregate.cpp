@@ -154,7 +154,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
       const auto new_out_col =
           new_columns.Create(old_out_col->var, this, old_out_col->id);
       old_out_col->ReplaceAllUsesWith(new_out_col);
-      new_out_col->CopyConstant(old_out_col);
+      new_out_col->CopyConstantFrom(old_out_col);
     }
   }
 
@@ -165,7 +165,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
     const auto new_out_col =
         new_columns.Create(old_out_col->var, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
-    new_out_col->CopyConstant(old_out_col);
+    new_out_col->CopyConstantFrom(old_out_col);
   }
 
   group_by_columns.Swap(new_group_by_columns);

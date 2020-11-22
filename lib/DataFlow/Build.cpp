@@ -1756,13 +1756,12 @@ std::optional<Query> Query::Build(const ParsedModule &module,
 
   impl->RemoveUnusedViews();
   impl->Optimize(log);
+
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
 
   impl->ConvertConstantInputsToTuples();
-
-//    impl->SinkConditions();
   impl->RemoveUnusedViews();
   impl->ExtractConditionsToTuples();
   impl->TrackDifferentialUpdates(true);

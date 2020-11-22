@@ -28,22 +28,22 @@ class User {
   uint64_t timestamp{0u};
 };
 
-template <typename>
+template <typename T>
 class Use;
 
-template <typename, typename>
+template <typename T, typename RealT=T>
 class UseRef;
 
-template <typename>
+template <typename T>
 class WeakUseRef;
 
-template <typename>
+template <typename T>
 class Def;
 
-template <typename>
+template <typename T>
 class UseList;
 
-template <typename>
+template <typename T>
 class UseListIterator;
 
 template <typename T>
@@ -232,11 +232,7 @@ class UseList {
   }
 
   void ClearWithoutErasure(void) {
-    if (is_weak) {
-      Clear();
-    } else {
-      uses.clear();
-    }
+    Clear();
   }
 
   void Swap(UseList<T> &that) {
@@ -402,8 +398,6 @@ class DefListIterator {
  private:
   const std::unique_ptr<T> *it;
 };
-
-class DefBase {};
 
 // CRTP class for definitions of `T`. `Use<T>::def_being_used` should point to
 // a `T`, which is derived from `Def<T>`.
@@ -609,21 +603,22 @@ void UseList<T>::AddUse(Def<T> *def) {
   }
 }
 
-template <typename T, typename Tbase=T>
+template <typename T, typename RealT>
 class UseRef {
  public:
-  explicit UseRef(User *user, Def<Tbase> *def)
-      : use(def ? def->CreateUse(user) : nullptr) {}
+  using SelfT = UseRef<T, RealT>;
 
-  void Swap(UseRef<T> &that) {
+  UseRef(User *user, T *def) : use(def ? def->CreateUse(user) : nullptr) {}
+
+  void Swap(SelfT &that) {
     if (use && that.use) {
       assert(use->user == that.use->user);
     }
     std::swap(use, that.use);
   }
 
-  void Emplace(User *user, Def<Tbase> *def) {
-    UseRef<T>(user, def).Swap(*this);
+  void Emplace(User *user, T *def) {
+    SelfT(user, def).Swap(*this);
   }
 
   UseRef(void) = default;
@@ -633,25 +628,34 @@ class UseRef {
   }
 
   T *operator->(void) const noexcept {
-    if constexpr (std::is_same_v<T, Tbase>) {
+    if constexpr (std::is_same_v<T, RealT>) {
       return use->def_being_used;
     } else {
+      static_assert(std::is_convertible_v<T *, RealT *>);
+      static_assert(std::is_convertible_v<RealT *, Def<RealT> *>);
+
       return dynamic_cast<T *>(use->def_being_used);
     }
   }
 
   T &operator*(void) const noexcept {
-    if constexpr (std::is_same_v<T, Tbase>) {
+    if constexpr (std::is_same_v<T, RealT>) {
       return *(use->def_being_used);
     } else {
+      static_assert(std::is_convertible_v<T *, RealT *>);
+      static_assert(std::is_convertible_v<RealT *, Def<RealT> *>);
+
       return *dynamic_cast<T *>(use->def_being_used);
     }
   }
 
   T *get(void) const noexcept {
-    if constexpr (std::is_same_v<T, Tbase>) {
+    if constexpr (std::is_same_v<T, RealT>) {
       return use ? use->def_being_used : nullptr;
     } else {
+      static_assert(std::is_convertible_v<T *, RealT *>);
+      static_assert(std::is_convertible_v<RealT *, Def<RealT> *>);
+
       return use ? dynamic_cast<T *>(use->def_being_used) : nullptr;
     }
   }
@@ -660,39 +664,32 @@ class UseRef {
     return !!use;
   }
 
-  inline bool operator==(const UseRef<T> &that) const noexcept {
-    return use == that.use;
-  }
-
-  inline bool operator!=(const UseRef<T> &that) const noexcept {
-    return use != that.use;
-  }
-
-  void ClearWithoutErasure(void) {
-    use = nullptr;
-  }
-
   void Clear(void) {
-    if (use) {
-      const auto use_copy = use;
+    if (const auto use_copy = use; use_copy) {
       use = nullptr;
-      use_copy->def_being_used->EraseUse(use_copy);
+      if (auto def = use_copy->def_being_used; def) {
+        def->EraseUse(use_copy);
+      }
     }
   }
 
- private:
-  UseRef(const UseRef<T> &) = delete;
-  UseRef(UseRef<T> &&) noexcept = delete;
-  UseRef<T> &operator=(const UseRef<T> &) = delete;
-  UseRef<T> &operator=(UseRef<T> &&) noexcept = delete;
+  void ClearWithoutErasure(void) {
+    Clear();
+  }
 
-  Use<Tbase> *use{nullptr};
+ private:
+  UseRef(const SelfT &) = delete;
+  UseRef(SelfT &&) noexcept = delete;
+  SelfT &operator=(const SelfT &) = delete;
+  SelfT &operator=(SelfT &&) noexcept = delete;
+
+  Use<RealT> *use{nullptr};
 };
 
 template <typename T>
 class WeakUseRef {
  public:
-  explicit WeakUseRef(User *user, Def<T> *def)
+  WeakUseRef(User *user, Def<T> *def)
       : use(def ? def->CreateWeakUse(user) : nullptr) {}
 
   void Swap(WeakUseRef<T> &that) {
@@ -709,7 +706,7 @@ class WeakUseRef {
       if (auto def = use_copy->def_being_used; def) {
         def->EraseWeakUse(use_copy);
       }
-      delete use;
+      delete use_copy;
     }
   }
 

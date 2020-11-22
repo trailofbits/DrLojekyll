@@ -45,6 +45,8 @@ void BuildTopDownUnionChecker(
   // predecessors.
   if (model->table) {
 
+    TABLE *table_to_update = model->table;
+
     // Call all of the predecessors.
     auto call_preds = [&] (PARALLEL *par) {
       for (QueryView pred_view : view.Predecessors()) {
@@ -56,7 +58,7 @@ void BuildTopDownUnionChecker(
         }
 
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, par, view, view_cols, model->table, pred_view,
+            impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
         check->ExecuteAlongside(impl, par);
       }
@@ -84,6 +86,7 @@ void BuildTopDownUnionChecker(
                 });
 
           } else {
+            table_to_update = nullptr;
             const auto par = impl->parallel_regions.Create(parent);
             call_preds(par);
             return parent;
@@ -100,13 +103,15 @@ void BuildTopDownUnionChecker(
 
     for (QueryView pred_view : view.Predecessors()) {
 
-      // NOTE(pag): We don't need to handle the `DELETE` (really, and insert)
-      //            case, as otherwise this union would have persistent backing.
+      // `DELETE`s will always return `false`, so we don't dispatch down
+      // to them.
+      if (pred_view.IsDelete()) {
+        continue;
+      }
 
-      const auto check = CallTopDownChecker(
-          impl, context, par, view, view_cols, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue, nullptr);
-      check->ExecuteAlongside(impl, par);
+      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+          impl, context, par, view, view_cols, nullptr, pred_view,
+          nullptr));
     }
   }
 }

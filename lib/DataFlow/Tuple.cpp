@@ -74,8 +74,9 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
   if (!is_used_in_merge && !introduces_control_dep && !sets_condition &&
       AllColumnsAreUsed()) {
     if (auto outgoing_view = OnlyUser();
-        outgoing_view && !outgoing_view->AsJoin()) {
-      assert(!outgoing_view->AsMerge());
+        outgoing_view &&
+        !outgoing_view->AsJoin() &&
+        !outgoing_view->AsMerge()) {
 
       for (auto i = 0u; i < max_i; ++i) {
         const auto in_col = input_columns[i];
@@ -205,7 +206,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
 
       auto new_out_col = new_columns.Create(out_col->var, this, out_col->id);
       out_col->ReplaceAllUsesWith(new_out_col);
-      new_out_col->CopyConstant(out_col);
+      new_out_col->CopyConstantFrom(out_col);
 
       if (opt.can_replace_inputs_with_constants && in_col->IsConstantRef()) {
 

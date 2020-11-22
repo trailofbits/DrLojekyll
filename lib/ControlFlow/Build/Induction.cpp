@@ -285,9 +285,13 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 void BuildTopDownInductionChecker(
     ProgramImpl *impl, Context &context, PROC *proc,
     QueryMerge view, std::vector<QueryColumn> &view_cols,
-    TABLE *) {
+    TABLE *already_checked) {
 
-  const auto table = TABLE::GetOrCreate(impl, view);
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  const auto table = model->table;
+  assert(table != nullptr);
+
+  TABLE *table_to_update = table;
 
   auto build_rule_checks = [=, &context] (PARALLEL *par) {
     for (auto pred_view : view.MergedViews()) {
@@ -301,7 +305,7 @@ void BuildTopDownInductionChecker(
       }
 
       const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, proc, view, view_cols, table, pred_view,
+            impl, context, proc, view, view_cols, table_to_update, pred_view,
             table);
 
       rec_check->ExecuteAlongside(impl, par);
@@ -321,18 +325,22 @@ void BuildTopDownInductionChecker(
         impl, table, parent, view.Columns(), build_rule_checks);
   };
 
-  const auto region = BuildMaybeScanPartial(
+  proc->body.Emplace(proc, BuildMaybeScanPartial(
       impl, view, view_cols, table, proc,
       [&] (REGION *parent) -> REGION * {
+        if (already_checked != table) {
+          already_checked = table;
+          return BuildTopDownCheckerStateCheck(
+              impl, proc, table, view.Columns(),
+              BuildStateCheckCaseReturnTrue,
+              BuildStateCheckCaseNothing,
+              build_unknown);
 
-    return BuildTopDownCheckerStateCheck(
-        impl, proc, table, view.Columns(),
-        BuildStateCheckCaseReturnTrue,
-        BuildStateCheckCaseNothing,
-        build_unknown);
-  });
-
-  proc->body.Emplace(proc, region);
+        } else {
+          table_to_update = nullptr;  // The caller will update.
+          return build_unknown(impl, parent);
+        }
+      }));
 }
 
 }  // namespace hyde

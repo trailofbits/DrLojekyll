@@ -575,8 +575,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
       if (join.NumPivotColumns()) {
-        //assert(false && "TODO");
-
+        BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
+                                 already_checked);
       } else {
         assert(false && "TODO");
       }
@@ -747,7 +747,9 @@ CALL *CallTopDownChecker(
   if (view != succ_view) {
     succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
                              std::optional<QueryColumn> succ_view_col) {
-      if (succ_view_col && QueryView::Containing(view_col) == view &&
+      if (InputColumnRole::kIndexValue != role &&
+          InputColumnRole::kAggregatedColumn != role &&
+          succ_view_col && QueryView::Containing(view_col) == view &&
           available_cols_map[*(succ_view_col->Index())]) {
         available_cols.push_back(view_col);
         inout_map.emplace(view_col, *succ_view_col);
@@ -1196,6 +1198,10 @@ std::optional<Program> Program::Build(const Query &query, const ErrorLog &) {
   impl->Optimize();
 
   // Assign defining regions to each variable.
+  //
+  // NOTE(pag): We don't really want to map variables throughout the building
+  //            process because otherwise every time we replaced all uses of
+  //            one region with another, we'd screw up the mapping.
   for (auto proc : impl->procedure_regions) {
     MapVariables(proc->body.get());
   }

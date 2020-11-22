@@ -2,6 +2,8 @@
 
 #include "Program.h"
 
+#include <iostream>
+
 namespace hyde {
 namespace {
 
@@ -577,6 +579,40 @@ void ProgramImpl::Optimize(void) {
 
     for (auto proc : procedure_regions) {
       changed = OptimizeImpl(proc) | changed;
+    }
+  }
+
+  // Go find possibly similar procedures.
+  std::unordered_map<uint64_t, std::vector<PROC *>> similar_procs;
+  for (auto proc : procedure_regions) {
+    if (proc->kind == ProcedureKind::kInitializer ||
+        proc->kind == ProcedureKind::kMessageHandler) {
+      continue;
+    } else if (proc->IsUsed()) {
+      const auto hash = proc->Hash();
+      similar_procs[hash].emplace_back(proc);
+    }
+  }
+
+  // Go through an compare procedures for equality and replace any unused ones.
+  for (const auto &[hash, procs] : similar_procs) {
+    (void) hash;
+    std::vector<bool> dead(procs.size());
+    for (size_t i = 0u, max_i = procs.size(); i < max_i; ++i) {
+      if (dead[i]) {
+        continue;
+      }
+      for (auto j = i + 1u; j < max_i; ++j) {
+        if (dead[j]) {
+          continue;
+        }
+
+        EqualitySet eq;
+        if (procs[i]->Equals(eq, procs[j])) {
+          dead[j] = true;
+          procs[j]->ReplaceAllUsesWith(procs[i]);
+        }
+      }
     }
   }
 
