@@ -464,18 +464,31 @@ static bool EndsWithReturn(REGION *region) {
     return EndsWithReturn(proc->body.get());
 
   } else if (auto series = region->AsSeries(); series) {
-    if (auto num_regions = series->regions.Empty(); num_regions) {
+    if (auto num_regions = series->regions.Size(); num_regions) {
       return EndsWithReturn(series->regions[num_regions - 1u]);
+    } else {
+      return false;
     }
 
   } else if (auto par = region->AsParallel(); par) {
+    if (par->regions.Empty()) {
+      return false;
+    }
+
     for (auto sub_region : par->regions) {
       if (!EndsWithReturn(sub_region)) {
         return false;
       }
     }
 
-    return !par->regions.Empty();
+    return true;
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    if (auto output = induction->output_region.get(); output) {
+      return EndsWithReturn(output);
+    } else {
+      return false;
+    }
 
   } else if (auto op = region->AsOperation(); op) {
     if (op->AsReturn()) {
@@ -486,6 +499,7 @@ static bool EndsWithReturn(REGION *region) {
              EndsWithReturn(cs->absent_body.get()) &&
              EndsWithReturn(cs->unknown_body.get());
     }
+
   }
 
   return false;

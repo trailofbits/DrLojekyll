@@ -300,7 +300,6 @@ static std::pair<bool, RETURN *> FindReturnAfterSimpleCalls(
       target_return = ret;
 
     } else if (auto target_op = target_region->AsOperation(); target_op) {
-      assert(!target_return);
 
       if (auto target_call = target_op->AsCall(); target_call) {
         if (!target_call->arg_vecs.Empty()) {
@@ -312,6 +311,7 @@ static std::pair<bool, RETURN *> FindReturnAfterSimpleCalls(
         }
 
       } else if (auto found_return = target_op->AsReturn(); found_return) {
+        assert(!target_return);
         target_return = found_return;
 
       // Found something that isn't a call or return.
