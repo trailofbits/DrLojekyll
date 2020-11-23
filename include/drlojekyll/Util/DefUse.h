@@ -669,6 +669,8 @@ class UseRef {
       use = nullptr;
       if (auto def = use_copy->def_being_used; def) {
         def->EraseUse(use_copy);
+      } else {
+        delete use_copy;
       }
     }
   }
