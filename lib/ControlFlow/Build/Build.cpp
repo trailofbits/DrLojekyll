@@ -552,8 +552,8 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       assert(false);
     }
 
-    if (!proc->body) {
-      auto ret = impl->operation_regions.CreateDerived<RETURN>(
+    if (!EndsWithReturn(proc)) {
+      const auto ret = impl->operation_regions.CreateDerived<RETURN>(
           proc, ProgramOperation::kReturnFalseFromProcedure);
       ret->ExecuteAfter(impl, proc);
     }
