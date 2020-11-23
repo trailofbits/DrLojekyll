@@ -2,6 +2,8 @@
 
 #include "Program.h"
 
+#include <drlojekyll/Util/BitManipulation.h>
+
 namespace hyde {
 
 Node<ProgramInductionRegion>::~Node(void) {}
@@ -16,6 +18,20 @@ Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
       cyclic_region(this, impl->parallel_regions.Create(this)),
       output_region(this, impl->parallel_regions.Create(this)),
       vectors(this) {}
+
+uint64_t Node<ProgramInductionRegion>::Hash(void) const {
+  uint64_t hash = 117u;
+  if (this->init_region) {
+    hash ^= RotateRight64(hash, 13u) * init_region->Hash();
+  }
+  if (this->cyclic_region) {
+    hash ^= RotateRight64(hash, 17u) * cyclic_region->Hash();
+  }
+  if (this->output_region) {
+    hash ^= RotateRight64(hash, 19u) * output_region->Hash();
+  }
+  return hash;
+}
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming).

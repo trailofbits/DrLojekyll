@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <unordered_set>
+#include <iostream>
 
 #include "Optimize.h"
 #include "Query.h"
@@ -90,313 +91,441 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
   return depth;
 }
 
-// Replace `view`, which should be a member of `joined_views` with
-// `replacement_view` in this JOIN.
-void Node<QueryJoin>::ReplaceViewInJoin(VIEW *view, VIEW *replacement_view) {
-  is_canonical = false;
+// Convert a trivial join (only has a single input view) into a TUPLE.
+void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
+  auto tuple = impl->tuples.Create();
 
-  for (auto &col : prev_input_columns) {
-    if (col->view == view) {
-      col = replacement_view->columns[col->Index()];
+  auto col_index = 0u;
+  for (auto out_col : columns) {
+    const auto new_out_col = tuple->columns.Create(
+        out_col->var, tuple, out_col->id, col_index++);
+    new_out_col->CopyConstantFrom(out_col);
+  }
+
+  UseList<COL> new_tuple_inputs(tuple);
+  for (auto out_col : columns) {
+    auto in_cols_it = out_to_in.find(out_col);
+    if (in_cols_it != out_to_in.end()) {
+      const auto &in_cols = in_cols_it->second;
+      assert(in_cols.Size() == 1u);
+      new_tuple_inputs.AddUse(in_cols[0]);
+
+    } else if (auto const_col = out_col->AsConstant(); const_col){
+      new_tuple_inputs.AddUse(const_col);
+
+    } else {
+      assert(false);
+    }
+  }
+
+  ReplaceAllUsesWith(tuple);
+
+  tuple->input_columns.Swap(new_tuple_inputs);
+}
+
+// Returns `true` if any joined views were identified where one or more of
+// their columns are not used by the JOIN. If so, we proxy those views with
+// TUPLEs.
+bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
+  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  if (is_used_in_merge) {
+    return false;
+  }
+
+  auto has_unused_cols = false;
+  auto num_cols = 0u;
+
+  // Look to see if any of the non-pivot output columns of the JOIN are unused.
+  for (const auto &[out_col, in_cols] : out_to_in) {
+    const auto is_pivot = out_col->Index() < num_pivots;
+    if (is_pivot) {
+      assert(1u < in_cols.Size());
+      num_cols += in_cols.Size();
+      continue;
+    } else if (!out_col->IsUsedIgnoreMerges()) {
+      has_unused_cols = true;
+      break;
+    } else {
+      num_cols += 1u;
+    }
+  }
+
+  // Look to see if any of the columns of any of the input joined views aren't
+  // represented by the JOIN.
+  if (!has_unused_cols) {
+    auto num_expected_cols = 0u;
+    for (auto joined_view : joined_views) {
+      num_expected_cols += joined_view->columns.Size();
+    }
+
+    has_unused_cols = num_cols < num_expected_cols;
+  }
+
+  if (!has_unused_cols) {
+    return false;
+  }
+
+  std::unordered_map<COL *, bool> needed_cols;
+
+  for (const auto &[out_col, in_cols] : out_to_in) {
+    const auto is_pivot = out_col->Index() < num_pivots;
+    if (is_pivot) {
+      for (auto in_col : in_cols) {
+        needed_cols.emplace(in_col, true);
+      }
+      needed_cols.emplace(out_col, true);
+
+    } else if (out_col->IsUsedIgnoreMerges()) {
+      assert(in_cols.Size() == 1u);
+      needed_cols.emplace(in_cols[0], true);
+      needed_cols.emplace(out_col, true);
     }
   }
 
   WeakUseList<VIEW> new_joined_views(this);
+  std::unordered_map<COL *, COL *> col_map;
+
   for (auto joined_view : joined_views) {
-    if (joined_view) {
-      if (joined_view == view) {
-        new_joined_views.AddUse(replacement_view);
+    has_unused_cols = false;
+    for (auto in_col : joined_view->columns) {
+      if (!needed_cols[in_col]) {
+        has_unused_cols = true;
       } else {
-        new_joined_views.AddUse(joined_view);
+        col_map.emplace(in_col, in_col);
       }
     }
+
+    if (!has_unused_cols) {
+      new_joined_views.AddUse(joined_view);
+      continue;
+    }
+
+    auto tuple = impl->tuples.Create();
+    auto col_index = 0u;
+    for (auto in_col : joined_view->columns) {
+      if (needed_cols[in_col]) {
+        auto new_in_col = tuple->columns.Create(
+            in_col->var, tuple, in_col->id, col_index++);
+        new_in_col->CopyConstantFrom(in_col);
+        tuple->input_columns.AddUse(in_col);
+        col_map[in_col] = new_in_col;
+      }
+    }
+
+    joined_view->CopyDifferentialAndGroupIdsTo(tuple);
+    new_joined_views.AddUse(tuple);
   }
 
   std::unordered_map<COL *, UseList<COL>> new_out_to_in;
-  for (const auto &[out_col, in_cols] : out_to_in) {
-    auto &new_in_cols = new_out_to_in.emplace(out_col, this).first->second;
+  DefList<COL> new_columns;
 
-    for (auto col : in_cols) {
-      if (col->view == view) {
-        new_in_cols.AddUse(replacement_view->columns[col->Index()]);
-      } else {
-        new_in_cols.AddUse(col);
+  auto col_index = 0u;
+  for (auto out_col : columns) {
+    const auto &in_cols = out_to_in.find(out_col)->second;
+    const auto is_pivot = out_col->Index() < num_pivots;
+    UseList<COL> new_in_cols(this);
+    if (is_pivot) {
+      for (auto in_col : in_cols) {
+        new_in_cols.AddUse(col_map[in_col]);
       }
-    }
+      auto new_out_col = new_columns.Create(
+          out_col->var, this, out_col->id, col_index++);
+      new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
+      out_col->ReplaceAllUsesWith(new_out_col);
 
-    assert(!new_in_cols.Empty());
+    } else if (out_col->IsUsedIgnoreMerges()) {
+      auto new_out_col = new_columns.Create(
+          out_col->var, this, out_col->id, col_index++);
+      new_in_cols.AddUse(col_map[in_cols[0]]);
+      new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
+      out_col->ReplaceAllUsesWith(new_out_col);
+    }
   }
 
+  columns.Swap(new_columns);
   joined_views.Swap(new_joined_views);
   out_to_in.swap(new_out_to_in);
+  return true;
 }
 
-// Replace the pivot column `pivot_col` with `const_col`.
-void Node<QueryJoin>::ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
-                                               COL *const_col) {
-  is_canonical = false;
+// Remove all constant uses and outputs. This is a pretty aggressive function.
+void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
-  TUPLE *tuple = query->tuples.Create();
+  std::unordered_map<VIEW *, VIEW *> view_map;
+  std::unordered_map<COL *, COL *> new_to_old_col_map;
+  std::unordered_map<COL *, COL *> old_to_new_col_map;
+  std::unordered_map<COL *, COL *> in_col_const;
 
-  for (auto col : columns) {
-    auto out_col =
-        tuple->columns.Create(col->var, tuple, col->id, col->Index());
-    out_col->CopyConstant(col);
+  // Figure out what the intended output constants are for this join, and map
+  // the input columns to those outputs. This basically decides on how the JOIN
+  // will interpret the constants.
+  for (const auto &[out_col, in_cols] : out_to_in) {
+    if (COL *out_const = out_col->AsConstant(); out_const) {
+      for (COL * const in_col : in_cols) {
+        in_col_const.emplace(in_col, out_const);
+      }
+    }
   }
 
-#ifndef NDEBUG
-  std::stringstream ss;
-  ss << "DEL-PIVOT-" << pivot_col->Index() << "(" << KindName() << ": "
-     << producer << ')';
-  tuple->producer = ss.str();
-#endif
+  // Create guard views for each joined view. The purpose is to compare
+  // everything that could be constant with constants. One challenge is that
+  // we possibly need to make a tower of comparisons for any incoming view that
+  // is sending more than one constant into the join.
+  for (auto joined_view : joined_views) {
 
-  SubstituteAllUsesWith(tuple);
+    auto view_to_process = joined_view;
+    for (auto col : joined_view->columns) {
+      new_to_old_col_map.emplace(col, col);
+      old_to_new_col_map.emplace(col, col);
+    }
 
-  std::unordered_map<COL *, COL *> out_to_new_out;
-  DefList<COL> new_columns(this);
+    // Go create a tower of compares, so that all
+    for (VIEW *prev_view_to_process = nullptr;
+        view_to_process != prev_view_to_process; ) {
+      prev_view_to_process = view_to_process;
 
-  auto new_col_index = 0u;
+      for (auto col : view_to_process->columns) {
+        const auto const_col = in_col_const[col];
+        if (!const_col || const_col == col->AsConstant()) {
+          continue;
+        }
+
+        CMP * const cmp = impl->compares.Create(ComparisonOperator::kEqual);
+        COL * const new_col = cmp->columns.Create(
+            col->var, cmp, col->id, 0u);
+
+        view_to_process->CopyDifferentialAndGroupIdsTo(cmp);
+
+        new_to_old_col_map.emplace(new_col, new_to_old_col_map[col]);
+        old_to_new_col_map[new_to_old_col_map[col]] = new_col;
+        in_col_const.emplace(new_col, const_col);
+
+        new_col->CopyConstantFrom(const_col);
+        cmp->input_columns.AddUse(const_col);
+        cmp->input_columns.AddUse(col);
+
+        auto col_index = 1u;
+        for (auto other_col : view_to_process->columns) {
+          if (other_col == col) {
+            continue;
+          }
+
+          const auto new_other_col = cmp->columns.Create(
+              other_col->var, cmp, other_col->id, col_index++);
+
+          new_other_col->CopyConstantFrom(other_col);
+          cmp->attached_columns.AddUse(other_col);
+
+          in_col_const.emplace(new_other_col, in_col_const[other_col]);
+          new_to_old_col_map.emplace(new_other_col, new_to_old_col_map[other_col]);
+          old_to_new_col_map[new_to_old_col_map[other_col]] = new_other_col;
+        }
+
+        view_to_process = cmp;
+        break;
+      }
+    }
+
+    view_map.emplace(joined_view, view_to_process);
+  }
+
+  // Alright, by this point we've conditioned every input view, making sure we
+  // only keep non-constant input columns. We'll start by creating a new set of
+  // pivot columns, and that will tell us what views need to be kept.
+
+  DefList<COL> new_columns;
+  WeakUseList<VIEW> new_joined_views(this);
+  std::unordered_map<COL *, UseList<COL>> new_out_to_in;
+  std::vector<VIEW *> pivot_views;
+  std::vector<VIEW *> all_input_views;
+
+  auto col_index = 0u;
+  auto last_pivot_set_size = 0u;
+  auto new_num_pivots = 0u;
+
+  // Add in the non-constant pivot columns first.
+  for (const auto out_col : columns) {
+    if (out_col->AsConstant() || out_col->Index() >= num_pivots) {
+      continue;
+    }
+
+    ++new_num_pivots;
+    const auto new_out_col = new_columns.Create(
+        out_col->var, this, out_col->id, col_index++);
+
+    new_to_old_col_map.emplace(new_out_col, out_col);
+    old_to_new_col_map[out_col] = new_out_col;
+
+    const auto &old_in_cols = out_to_in.find(out_col)->second;
+    assert(1u < old_in_cols.Size());
+    UseList<COL> new_in_cols(this);
+
+    for (auto old_in_col : old_in_cols) {
+      const auto new_in_col = old_to_new_col_map[old_in_col];
+      assert(new_in_col != nullptr);
+      assert(!new_in_col->AsConstant());
+
+      new_in_cols.AddUse(new_in_col);
+
+      if (!last_pivot_set_size) {
+        pivot_views.push_back(new_in_col->view);
+      }
+
+      all_input_views.push_back(new_in_col->view);
+    }
+
+    // Make sure our pivot sets aren't changing shape on us.
+    if (!last_pivot_set_size) {
+      last_pivot_set_size = new_in_cols.Size();
+    } else {
+      assert(last_pivot_set_size == new_in_cols.Size());
+    }
+
+    new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
+  }
+
+  // Add in the non-constant, non-pivot columns.
+  auto new_num_non_pivots = 0u;
+  for (const auto out_col : columns) {
+    if (out_col->AsConstant() || out_col->Index() < num_pivots) {
+      continue;
+    }
+
+    ++new_num_non_pivots;
+    const auto new_out_col = new_columns.Create(
+        out_col->var, this, out_col->id, col_index++);
+
+    new_to_old_col_map.emplace(new_out_col, out_col);
+    old_to_new_col_map[out_col] = new_out_col;
+
+    const auto &old_in_cols = out_to_in.find(out_col)->second;
+    assert(1u == old_in_cols.Size());
+
+    UseList<COL> new_in_cols(this);
+
+    const auto old_in_col = old_in_cols[0];
+    const auto new_in_col = old_to_new_col_map[old_in_col];
+    assert(new_in_col != nullptr);
+    assert(!new_in_col->AsConstant());
+
+    all_input_views.push_back(new_in_col->view);
+
+    // Make sure this non-pivot column is represented by a pivot column on
+    // the same view. If it's not, then we must have made a cross-product.
+    if (new_num_pivots) {
+      assert(std::find(pivot_views.begin(), pivot_views.end(),
+                       new_in_col->view) != pivot_views.end());
+    }
+
+    new_in_cols.AddUse(new_in_col);
+    new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
+  }
+
+  // This is our new output tuple. It matches the size/shape of the original
+  // JOIN, but uses all the new columns, or uses constant columns where
+  // necessary.
+  TUPLE * const tuple = impl->tuples.Create();
+  col_index = 0u;
   for (auto out_col : columns) {
-    assert(!out_col->IsUsed());
-    if (out_col == pivot_col) {
-      out_col->CopyConstant(const_col);
+    COL * const new_out_col = tuple->columns.Create(
+        out_col->var, tuple, out_col->id, col_index++);
+
+    if (auto const_col = out_col->AsConstant(); const_col) {
       tuple->input_columns.AddUse(const_col);
+      new_out_col->CopyConstantFrom(const_col);
 
     } else {
-      auto new_out_col =
-          new_columns.Create(out_col->var, this, out_col->id, new_col_index++);
-      tuple->input_columns.AddUse(new_out_col);
-      new_out_col->CopyConstant(out_col);
-      out_to_new_out.emplace(out_col, new_out_col);
+      const auto new_join_col = old_to_new_col_map[out_col];
+      assert(!new_join_col->AsConstant());
+      assert(new_join_col->view == this);
+      tuple->input_columns.AddUse(new_join_col);
     }
   }
 
-  bool is_pivot_set = false;
-  if (auto in_cols_it = out_to_in.find(pivot_col);
-      in_cols_it != out_to_in.end()) {
-    auto &pivot_cols = in_cols_it->second;
-    if (1u < pivot_cols.Size()) {
-      is_pivot_set = true;
-      PropagateConstAcrossPivotSet(query, const_col, pivot_cols);
-    }
-  }
+  // Go figure out if we've dropped any views.
+  std::sort(all_input_views.begin(), all_input_views.end());
+  auto it = std::unique(all_input_views.begin(), all_input_views.end());
+  all_input_views.erase(it, all_input_views.end());
 
-  std::vector<VIEW *> views;
-  unsigned num_joined_views = 0u;
-  for (auto view : joined_views) {
-    if (view) {  // It's a weak use list, so some might be `nullptr`s.
-      ++num_joined_views;
-    }
-  }
-
-  (void) num_joined_views;
-  std::unordered_map<COL *, UseList<COL>> new_out_to_in;
-
-  for (auto out_col : columns) {
-    if (out_col == pivot_col) {
-      continue;
-    }
-
-    const auto new_out_col = out_to_new_out[out_col];
-    assert(new_out_col != nullptr);
-
-    auto &old_pivot_set = out_to_in.find(out_col)->second;
-    auto &new_pivot_set =
-        new_out_to_in.emplace(new_out_col, this).first->second;
-
-    assert(!old_pivot_set.Empty());
-    assert(new_pivot_set.Empty());
-
-    const auto old_size = old_pivot_set.Size();
-
-    // If this is a pivot set then use its size as our estimate of how many
-    // views to join.
-    if (1u < old_size) {
-      assert(old_size == num_joined_views);
-      if (views.empty()) {
-        views.resize(old_size);
-      } else {
-        assert(old_size == views.size());
+  // Looks like we've dropped some views, so go create a bunch of conditions
+  // and make the tuple which will go above the join conditional on the now
+  // dropped views.
+  assert(view_map.size() == joined_views.Size());
+  if (all_input_views.size() < joined_views.Size()) {
+    for (auto [old_in_view, new_in_view_] : view_map) {
+      VIEW * const new_in_view = new_in_view_;
+      if (std::find(all_input_views.begin(), all_input_views.end(),
+                    new_in_view) != all_input_views.end()) {
+        (void) old_in_view;
+        continue;  // `old_in_view` / `new_in_view` is represented.
       }
+
+      COND * const cond = impl->conditions.Create();
+      cond->setters.AddUse(new_in_view);
+      new_in_view->sets_condition.Emplace(new_in_view, cond);
+
+      tuple->positive_conditions.AddUse(cond);
+      cond->positive_users.AddUse(tuple);
     }
+  }
 
-    // Get the views in the same order that we saw them before. Given that
-    // we're eliminating a pivot, it's also possible that we're eliminating
-    // an incoming VIEW, and so we may end up with `nullptr`s inside of `views`.
-    auto i = 0u;
-    for (auto in_col : old_pivot_set) {
-      new_pivot_set.AddUse(in_col);
+  SubstituteAllUsesWith(tuple);
+  CopyTestedConditionsTo(tuple);
+  DropTestedConditions();
+  DropSetConditions();
 
-      if (1u < old_size && !in_col->IsConstant()) {
-        auto &view = views[i];
-        if (!view) {
-          view = in_col->view;
+  // All of the pivots were constant!
+  if (!new_num_pivots) {
+
+    // Every column associated with this join is actually constant!
+    if (!new_num_non_pivots) {
+      assert(tuple->positive_conditions.Size() == joined_views.Size());
+      PrepareToDelete();
+      return;
+
+    // We've created a cross-product!
+    } else if (all_input_views.size() != 1) {
+      for (auto view : all_input_views) {
+        new_joined_views.AddUse(view);
+      }
+
+    // Every column we want to publish is available in just one of the views.
+    } else {
+      UseList<COL> new_tuple_inputs(tuple);
+      for (auto tuple_in_col : tuple->input_columns) {
+        auto in_cols_it = new_out_to_in.find(tuple_in_col);
+        if (in_cols_it != new_out_to_in.end()) {
+          const auto &in_cols = in_cols_it->second;
+          assert(in_cols.Size() == 1u);
+          new_tuple_inputs.AddUse(in_cols[0]);
+
+        } else if (auto const_col = tuple_in_col->AsConstant(); const_col){
+          new_tuple_inputs.AddUse(const_col);
+
         } else {
-          assert(view == in_col->view);
+          assert(false);
         }
       }
 
-      ++i;
+      tuple->input_columns.Swap(new_tuple_inputs);
+      PrepareToDelete();
+      return;
     }
 
-    assert(!new_pivot_set.Empty());
+  // This is still a join, though possibly on fewer pivots.
+  } else {
+    assert(view_map.size() == pivot_views.size());
+    assert(pivot_views.size() == all_input_views.size());
+
+    for (auto view : pivot_views) {
+      new_joined_views.AddUse(view);
+    }
   }
 
-  // The column that we're removing is indeed a true pivot column.
-  if (is_pivot_set) {
-    assert(0u < num_pivots);
-    num_pivots -= 1u;
-  }
-
+  num_pivots = new_num_pivots;
+  joined_views.Swap(new_joined_views);
   out_to_in.swap(new_out_to_in);
   columns.Swap(new_columns);
-  assert(out_to_in.size() == columns.Size());
-
-  UpdateJoinedViews(query);
-
-  // It's possible that we just replaced the last pivot, which happened to be
-  // the last column, with a constant, and thus after updating the joined views
-  // and fixing up the columns, we find ourselves with `out_to_in` empty, and
-  // thus when this JOIN is next canonicalized, it will be deleted. Because we
-  // just eliminated the last incoming column, we also reduced the number of
-  // joined views, but replaced that deficit with a CONDition, which was added
-  // to the JOIN. Go and add any such conditions onto the just-created TUPLE.
-  CopyTestedConditionsTo(tuple);
-}
-
-// If we have a constant feeding into one of the pivot sets, then we want to
-// eliminate that pivot set and instead propagate CMP nodes to all pivot
-// sources.
-void Node<QueryJoin>::PropagateConstAcrossPivotSet(QueryImpl *query,
-                                                   COL *const_col,
-                                                   UseList<COL> &pivot_cols) {
-
-  is_canonical = false;
-
-  std::vector<COL *> cols;
-  std::vector<VIEW *> views;
-
-  // NOTE(pag): Cache `pivot_cols` because calls below to `ReplaceViewInJoin`
-  //            are going to destroy it below.
-  for (auto in_col : pivot_cols) {
-    cols.push_back(in_col);
-    views.push_back(in_col->IsConstant() ? nullptr : in_col->view);
-  }
-
-  // This is super annoying but technically possible. Suppose we had the
-  // following clause body: `foo(A, B), foo(C, B), A=1, C=A, C=2`. We
-  // distinguish constants by their spelling, so two different constants may
-  // logically be the same (`1` and `0x1`), or may be different (`1` and `2`)
-  // and we don't really try to figure that out, we just punt on the C++
-  // compiler to do that for us.
-  //
-  // Anyway, the `out_to_in` mapping between JOIN output columns and their
-  // respective input columns doesn't give us provenance for those input
-  // columns. Normally that's fine, except when those input columns are
-  // constants, in which case we have no idea what views proposed those
-  // constants. Thus, if we ever encounter two or more unique constants in
-  // a pivot set, then it's best for us to add comparisons between both of them
-  // to all incoming views.
-  for (auto in_col : cols) {
-    if (in_col->IsConstant() && in_col != const_col) {
-
-      // Apply the comparison to all views because we don't know who proposed
-      // this constant.
-      for (auto &view : views) {
-        if (view) {
-          auto proxy_view = view->ProxyWithComparison(
-              query, ComparisonOperator::kEqual, const_col, in_col);
-          ReplaceViewInJoin(view, proxy_view);
-          view = proxy_view;
-        }
-      }
-    }
-  }
-
-  auto i = 0u;
-  for (auto in_col : cols) {
-    const auto view = views[i++];
-    if (in_col == const_col || in_col->IsConstant()) {
-      continue;
-    }
-    const auto proxy_view = view->ProxyWithComparison(
-        query, ComparisonOperator::kEqual, const_col, in_col);
-    ReplaceViewInJoin(view, proxy_view);
-  }
-}
-
-// Update the set of joined views.
-void Node<QueryJoin>::UpdateJoinedViews(QueryImpl *query) {
-  assert(!prev_input_columns.empty());
-  auto num_found_pivots = 0u;
-
-  std::vector<VIEW *> old_views;
-  std::vector<VIEW *> new_views;
-
-  for (auto in_col : prev_input_columns) {
-    if (!in_col->IsConstant()) {
-      old_views.push_back(in_col->view);
-    }
-  }
-
-  for (const auto &[out_col, in_cols] : out_to_in) {
-    (void) out_col;
-    for (auto in_col : in_cols) {
-      if (!in_col->IsConstant()) {
-        new_views.push_back(in_col->view);
-      }
-    }
-    if (1u < in_cols.Size()) {
-      ++num_found_pivots;
-    }
-  }
-
-  std::sort(old_views.begin(), old_views.end());
-  auto it = std::unique(old_views.begin(), old_views.end());
-  old_views.erase(it, old_views.end());
-
-  std::sort(new_views.begin(), new_views.end());
-  it = std::unique(new_views.begin(), new_views.end());
-  new_views.erase(it, new_views.end());
-
-  assert(num_pivots == num_found_pivots);
-  assert(old_views.size() == joined_views.Size());
-
-  // Looks to see if we've lost any JOINed views. If so, then convert those
-  // into new, anonymous CONDitions.
-  if (new_views.size() < old_views.size()) {
-    auto new_it = new_views.begin();
-    auto new_end = new_views.end();
-
-    for (auto old_view : old_views) {
-      auto found_it = std::find(new_it, new_end, old_view);
-      if (found_it != new_end) {
-        new_it = ++found_it;
-        continue;  // Old view is still being used.
-      }
-
-      UseList<COL> old_inputs(this);
-      for (auto in_col : prev_input_columns) {
-        if (in_col->view == old_view) {
-          old_inputs.AddUse(in_col);
-        }
-      }
-
-      const auto cond = CreateOrInheritConditionOnView(query, old_view,
-                                                       std::move(old_inputs));
-
-      positive_conditions.AddUse(cond);
-      cond->positive_users.AddUse(this);
-    }
-  }
-
-  joined_views.Clear();
-  for (auto view : new_views) {
-    joined_views.AddUse(view);
-  }
-
-  prev_input_columns.clear();
 }
 
 // Put this join into a canonical form, which will make comparisons and
@@ -421,295 +550,64 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
     return false;
   }
 
-  prev_input_columns.clear();
+  is_canonical = false;
 
-  auto num_found_pivots = 0u;
+  // Go detect if we need to guard the input views with compares.
+  auto need_constant_guard = false;
+
+  if (auto user = this->OnlyUser(); user) {
+    if (auto cmp = user->AsCompare();
+        cmp && cmp->op == ComparisonOperator::kEqual) {
+      const auto lhs = cmp->input_columns[0];
+      const auto rhs = cmp->input_columns[1];
+      const auto lhs_const = lhs->AsConstant();
+      const auto rhs_const = rhs->AsConstant();
+      if (lhs->view == this && rhs_const) {
+        need_constant_guard = true;
+        lhs->CopyConstantFrom(rhs_const);
+
+      } else if (rhs->view == this && lhs_const) {
+        need_constant_guard = true;
+        rhs->CopyConstantFrom(lhs_const);
+      }
+    }
+  }
+
   for (const auto &[out_col, in_cols] : out_to_in) {
-    if (in_cols.Empty()) {
-      invalid_var = out_col->var;
-      valid = kInvalidBeforeCanonicalize;
-      is_canonical = true;
-      return false;
+    COL *const_col = out_col->AsConstant();
 
-    } else if (1u < in_cols.Size()) {
-      ++num_found_pivots;
-    }
-
-    for (auto in_col : in_cols) {
-      prev_input_columns.push_back(in_col);
-    }
-  }
-
-  assert(num_pivots == num_found_pivots);
-
-  for (auto out_col : columns) {
-    (void) out_col;
-    assert(out_to_in.count(out_col));
-    assert(!out_to_in.find(out_col)->second.Empty());
-  }
-
-  assert(num_pivots <= columns.Size());
-  assert(out_to_in.size() == columns.Size());
-
-  auto non_local_changes = false;
-  auto need_remove_non_pivots = false;
-
-  VIEW *first_joined_view = nullptr;
-  bool joins_at_least_two_views = false;
-
-  for (auto &[out_col, in_cols] : out_to_in) {
-    assert(!in_cols.Empty());
-    COL *same_col = in_cols[0];
-    COL *same_const = same_col->IsConstant() ? same_col : nullptr;
-    COL *same_const_ref = same_col->AsConstant();
-    COL *first_const = nullptr;
-    COL *first_const_ref = nullptr;
-
-    const auto is_pivot = in_cols.Size() > 1u;
-    const auto out_is_const_ref = out_col->IsConstantRef();
-
-    for (auto in_col : in_cols) {
-      if (in_col != same_col) {
-        same_col = nullptr;
-      }
-
-      if (in_col->IsConstant()) {
-        if (!first_const) {
-          first_const = in_col;
-          out_col->CopyConstant(first_const);
-        }
-
-        // If we've found a different constant, then set `same_const` to
-        // `nullptr` to say that all columns have different constant values.
-        if (in_col != same_const) {
-          same_const = nullptr;
-        }
-
-        // If this is a constant, and we're tracking if all pivot entries
-        // are the same constant ref, and if this constant differs from the
-        // referred constant, then mark it so that not all pivots share the
-        // same constant ref.
-        if (in_col != same_const_ref) {
-          same_const_ref = nullptr;
-        }
-
-        // If this isn't a pivot then do const propagation now, otherwise we'll
-        // defer to below for that.
-        if (!is_pivot) {
-          if (!out_is_const_ref || out_col->IsUsedIgnoreMerges()) {
-            non_local_changes = true;
-          }
-          out_col->CopyConstant(first_const);
-          out_col->ReplaceAllUsesWith(first_const);
-        }
-
-      } else if (in_col->IsConstantRef()) {
-        if (!first_joined_view) {
-          first_joined_view = in_col->view;
-        } else if (in_col->view != first_joined_view) {
-          joins_at_least_two_views = true;
-        }
-
-        same_const = nullptr;  // Not all columns are constant.
-
-        if (!first_const_ref) {
-          first_const_ref = in_col;
-          out_col->CopyConstant(first_const_ref);
-        }
-
-        // Two of the pivots refer to different constants.
-        if (same_const_ref && in_col->AsConstant() != same_const_ref) {
-          same_const_ref = nullptr;
-        }
-
-      } else {
-        if (!first_joined_view) {
-          first_joined_view = in_col->view;
-        } else if (in_col->view != first_joined_view) {
-          joins_at_least_two_views = true;
-        }
-
-        // Not all columns are constant.
-        same_const = nullptr;
-
-        // Not all columns are constants or constant refs.
-        same_const_ref = nullptr;
-      }
-    }
-
-    // All incoming pivot values are the same constant. We can eliminate this
-    // pivot.
-    if (same_const) {
-      ReplacePivotWithConstant(query, out_col, same_const);
-      Canonicalize(query, opt);
-      return true;
-
-    // All incoming pivot values are either constant, or constant refs, and
-    // they all refer to the same constant. We need to keep this pivot around
-    // to enforce a data dependency, but we can do constant propagation on the
-    // output, thus "breaking" the control dependency.
-    } else if (same_const_ref) {
-      if (opt.can_replace_inputs_with_constants) {
-
-#ifndef NDEBUG
-        producer = "PIVOT-TO-CONST(" + producer + ")";
-#endif
-        UseList<COL> new_in_cols(this);
-        for (auto old_in_col : in_cols) {
-          old_in_col->view->is_canonical = false;
-          new_in_cols.AddUse(same_const_ref);
-        }
-
-        in_cols.Swap(new_in_cols);
-        UpdateJoinedViews(query);
-        Canonicalize(query, opt);
-        return true;
-      }
-
-    // At least one of the pivots is a reference to a constant; we will inject
-    // comparisons across all incominging pivots to ensure that they match this
-    // constant.
-    } else if (first_const_ref) {
-      if (!out_is_const_ref) {
-#ifndef NDEBUG
-        producer = "PIVOT-CONSTREF-ENFORCE(" + producer + ")";
-#endif
-        PropagateConstAcrossPivotSet(
-            query, first_const ? first_const : first_const_ref->AsConstant(),
-            in_cols);
-        UpdateJoinedViews(query);
-        Canonicalize(query, opt);
-        return true;
-      }
-
-    // At least one of the pivots is a constant, and none of them are constant
-    // references (otherwise we would have been in the prior case). It is
-    // possible that after more optimization, we will discover that some of the
-    // other pivots are constants or constant refs. Thus, we cannot eagerly
-    // eliminate this pivot until we know that *all* incoming values are
-    // the same constant.
-    } else if (first_const) {
-      if (!out_is_const_ref) {
-#ifndef NDEBUG
-        producer = "PIVOT-CONST-ENFORCE(" + producer + ")";
-#endif
-
-        PropagateConstAcrossPivotSet(query, first_const, in_cols);
-        UpdateJoinedViews(query);
-        Canonicalize(query, opt);
-        return true;
-      }
-    }
-
-    // Check to see if we should try to remove non-pivot output columns
-    // (because they aren't used).
-    if (opt.can_remove_unused_columns && !need_remove_non_pivots &&
-        in_cols.Size() == 1 && !out_col->IsUsed()) {
-      is_canonical = false;
-      need_remove_non_pivots = true;
-    }
-  }
-
-  // The `joined_views` list is a list of weak uses, so some might get nulled
-  // out over time. If any are null, then make sure we recompute them.
-  for (auto joined_view : joined_views) {
-    if (!joined_view) {
-      is_canonical = false;
-      break;
-    }
-  }
-
-  if (!non_local_changes && is_canonical && joins_at_least_two_views) {
-    return false;
-  }
-
-  // There is at least one output column that isn't needed; go remove it.
-  if (opt.can_remove_unused_columns && need_remove_non_pivots) {
-    assert(!this->Def<Node<QueryView>>::IsUsed());
-
-    DefList<COL> new_columns(this);
-    std::unordered_map<COL *, UseList<COL>> new_out_to_in;
-
-    auto col_index = 0u;
-    num_found_pivots = 0u;
-    for (auto out_col : columns) {
-      auto &in_cols = out_to_in.find(out_col)->second;
-      const auto is_pivot_col = 1u < in_cols.Size();
-      if (is_pivot_col) {
-        ++num_found_pivots;
-      }
-      if (is_pivot_col || out_col->IsUsed()) {
-        const auto new_out_col =
-            new_columns.Create(out_col->var, this, out_col->id, col_index++);
-        new_out_col->CopyConstant(out_col);
-        out_col->ReplaceAllUsesWith(new_out_col);
-
-        assert(!in_cols.Empty());
-        in_cols.Swap(new_out_to_in.emplace(new_out_col, this).first->second);
-        assert(in_cols.Empty());
-      } else {
-        assert(in_cols.Size() == 1u);
-        in_cols[0]->view->is_canonical = false;
-      }
-    }
-
-#ifndef NDEBUG
-    producer = "REMOVE-UNUSED-NON-PIVOTS(" + producer + ")";
-#endif
-
-    columns.Swap(new_columns);
-    out_to_in.swap(new_out_to_in);
-    non_local_changes = true;
-
-    assert(num_found_pivots == num_pivots);
-    assert(out_to_in.size() == columns.Size());
-  }
-
-  UpdateJoinedViews(query);
-
-#ifndef NDEBUG
-  for (auto out_col : columns) {
-    (void) out_col;
-    assert(out_to_in.count(out_col));
-    assert(!out_to_in.find(out_col)->second.Empty());
-  }
-#endif
-
-  // This JOIN isn't needed. If all incoming things are constant then by the
-  // time we get down here, we should have sunk conditions down to all the
-  // source views
-  if (1u >= joined_views.Size()) {
-
-    TUPLE *tuple = query->tuples.Create();
-
-    for (auto out_col : columns) {
-      auto &in_cols = out_to_in.find(out_col)->second;
-      COL *new_out_col =
-          tuple->columns.Create(out_col->var, tuple, out_col->id);
-      COL *new_in_col = in_cols[0];
-      for (auto in_col : in_cols) {
-        if (in_col->IsConstantRef()) {
-          new_in_col = in_col;
+    if (!const_col) {
+      for (COL * in_col : in_cols) {
+        if (auto in_const_col = in_col->AsConstant(); in_const_col) {
+          out_col->CopyConstantFrom(in_const_col);
+          const_col = in_const_col;
           break;
         }
       }
-
-      tuple->input_columns.AddUse(new_in_col);
-      new_out_col->CopyConstant(new_in_col);
     }
+    if (const_col) {
+      need_constant_guard = true;
+    }
+  }
 
-#ifndef NDEBUG
-    std::stringstream ss;
-    ss << "JOIN-ELIM-CONSTREF(" << producer << ")";
-    tuple->producer = ss.str();
-#endif
+  if (need_constant_guard) {
+    RemoveConstants(query);
+    return true;
+  }
 
-    ReplaceAllUsesWith(tuple);
+  if (opt.can_remove_unused_columns &&
+      ProxyUnusedInputColumns(query)) {
+    return true;
+  }
+
+  // There's only one incoming view, convert this into a tuple.
+  if (joined_views.Size() == 1u) {
+    ConvertTrivialJoinToTuple(query);
     return true;
   }
 
   is_canonical = true;
-  return non_local_changes;
+  return false;
 }
 
 // Equality over joins is pointer-based.

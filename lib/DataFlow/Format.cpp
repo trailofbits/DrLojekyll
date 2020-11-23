@@ -106,9 +106,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (auto insert : relation.Inserts()) {
-      if (insert.IsInsert() && QueryInsert::From(insert).IsDelete()) {
-        continue;
-      }
       auto color = QueryView::From(insert).CanReceiveDeletions()
                        ? " [color=purple]"
                        : "";
@@ -551,37 +548,70 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     link_conds(insert);
   }
 
-  for (auto tuple : query.Tuples()) {
-    os << "v" << tuple.UniqueId() << " [ label=<" << kBeginTable;
-    do_conds(2, tuple);
-    os << "<TD rowspan=\"2\">" << QueryView(tuple).KindName() << "</TD>";
-    for (auto col : tuple.Columns()) {
+  for (auto view : query.Tuples()) {
+    os << "v" << view.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, view);
+    os << "<TD rowspan=\"2\">" << QueryView(view).KindName() << "</TD>";
+    for (auto col : view.Columns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
 
-    for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\">" << do_col(tuple.NthInputColumn(i))
+    for (auto i = 0u; i < view.NumInputColumns(); ++i) {
+      os << "<TD port=\"p" << i << "\">" << do_col(view.NthInputColumn(i))
          << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << tuple.DebugString(os)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << view.DebugString(os)
              << "</TD>";)
 
     os << kEndTable << ">];\n";
 
     auto color =
-        QueryView::From(tuple).CanReceiveDeletions() ? " [color=purple]" : "";
+        QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
 
     // Link the input columns to their sources.
-    for (auto i = 0u; i < tuple.NumInputColumns(); ++i) {
-      auto col = tuple.NthInputColumn(i);
-      auto view = QueryView::Containing(col);
-      os << "v" << tuple.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+    for (auto i = 0u; i < view.NumInputColumns(); ++i) {
+      auto col = view.NthInputColumn(i);
+      auto input_view = QueryView::Containing(col);
+      os << "v" << view.UniqueId() << ":p" << i << " -> v"
+         << input_view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
     }
 
-    link_conds(tuple);
+    link_conds(view);
+  }
+
+  for (auto view : query.Deletes()) {
+    os << "v" << view.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, view);
+    os << "<TD rowspan=\"2\">" << QueryView(view).KindName() << "</TD>";
+    for (auto col : view.Columns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+    }
+    os << "</TR><TR>";
+
+    for (auto i = 0u; i < view.NumInputColumns(); ++i) {
+      os << "<TD port=\"p" << i << "\">" << do_col(view.NthInputColumn(i))
+         << "</TD>";
+    }
+
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << view.DebugString(os)
+             << "</TD>";)
+
+    os << kEndTable << ">];\n";
+
+    auto color =
+        QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
+
+    // Link the input columns to their sources.
+    for (auto i = 0u; i < view.NumInputColumns(); ++i) {
+      auto col = view.NthInputColumn(i);
+      auto input_view = QueryView::Containing(col);
+      os << "v" << view.UniqueId() << ":p" << i << " -> v"
+         << input_view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+    }
+
+    link_conds(view);
   }
 
   for (auto merge : query.Merges()) {

@@ -109,13 +109,19 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
     }
 
   } else if (view.IsAggregate()) {
-    assert(false && "TODO");
+    assert(false && "TODO(pag): Aggregates");
 
   } else if (view.IsKVIndex()) {
-    assert(false && "TODO");
+    assert(false && "TODO(pag): KV Indices.");
 
   } else if (view.IsMap()) {
-    BuildEagerGenerateRegion(impl, QueryMap::From(view), context, parent);
+    auto map = QueryMap::From(view);
+    if (map.Functor().IsPure()) {
+      BuildEagerGenerateRegion(impl, map, context, parent);
+
+    } else {
+      assert(false && "TODO(pag): Impure functors");
+    }
 
   } else if (view.IsCompare()) {
     BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
@@ -130,13 +136,12 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
-    if (insert.IsDelete()) {
-      BuildEagerDeleteRegion(impl, pred_view, insert, context,
-                             parent);
-    } else {
-      BuildEagerInsertRegion(impl, pred_view, insert, context,
-                             parent, last_model);
-    }
+    BuildEagerInsertRegion(impl, pred_view, insert, context,
+                                 parent, last_model);
+
+  } else if (view.IsDelete()) {
+    BuildEagerDeleteRegion(impl, view, context, parent);
+
   } else {
     assert(false);
   }
@@ -210,9 +215,9 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     loop->col_id_to_var.emplace(col.Id(), var);
   }
 
-  UseRef<REGION>(loop, par).Swap(loop->body);
-  UseRef<VECTOR>(loop, vec).Swap(loop->vector);
-  UseRef<REGION>(proc, loop).Swap(proc->body);
+  loop->body.Emplace(loop, par);
+  loop->vector.Emplace(loop, vec);
+  proc->body.Emplace(proc, loop);
 
   context.view_to_induction.clear();
   context.work_list.clear();
@@ -374,9 +379,16 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // UNIONs can share the data of any of their predecessors so long as
     // those predecessors don't themselves have other successors, i.e. they
     // only lead into the UNION.
+    //
+    // We also have to be careful about merges that receive deletions. If so,
+    // then we need to be able to distinguish where data is from. This is
+    // especially important for comparisons or maps leading into merges.
     if (view.IsMerge()) {
+      const auto can_receive_deletions = view.CanReceiveDeletions();
       for (auto pred : preds) {
-        if (pred.Successors().size() == 1u) {
+        if (!pred.IsDelete() &&
+            pred.Successors().size() == 1u &&
+            !can_receive_deletions) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -387,7 +399,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     } else if (view.IsTuple()) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
-        if (all_cols_match(view.Columns(), pred.Columns())) {
+        if (!pred.IsDelete() &&
+            all_cols_match(view.Columns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -399,7 +412,25 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // share the same data model.
     } else if (view.IsInsert()) {
       if (preds.size() == 1u) {
+        const auto pred = preds[0];
         const auto insert = QueryInsert::From(view);
+        const auto cols = insert.InputColumns();
+        const auto pred_cols = pred.Columns();
+        if (!pred.IsDelete() && all_cols_match(cols, pred_cols)) {
+          const auto pred_model = program->view_to_model[pred];
+          DisjointSet::Union(model, pred_model);
+        }
+      }
+
+    // NOTE(pag): DELETE nodes don't have a data model per se. They exist
+    //            to delete things in the data model of their /successor/,
+    //            they can't delete anything in the model of their predecessor.
+    //
+    // NOTE(pag): If a DELETE flows into a DELETE then we permit them to
+    //            share a data model, for whatever that's worth.
+    } else if (view.IsDelete()) {
+      if (preds.size() == 1u) {
+        const auto insert = QueryDelete::From(view);
         const auto cols = insert.InputColumns();
         const auto pred_cols = preds[0].Columns();
         if (all_cols_match(cols, pred_cols)) {
@@ -433,18 +464,31 @@ static bool EndsWithReturn(REGION *region) {
     return EndsWithReturn(proc->body.get());
 
   } else if (auto series = region->AsSeries(); series) {
-    if (auto num_regions = series->regions.Empty(); num_regions) {
+    if (auto num_regions = series->regions.Size(); num_regions) {
       return EndsWithReturn(series->regions[num_regions - 1u]);
+    } else {
+      return false;
     }
 
   } else if (auto par = region->AsParallel(); par) {
+    if (par->regions.Empty()) {
+      return false;
+    }
+
     for (auto sub_region : par->regions) {
       if (!EndsWithReturn(sub_region)) {
         return false;
       }
     }
 
-    return !par->regions.Empty();
+    return true;
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    if (auto output = induction->output_region.get(); output) {
+      return EndsWithReturn(output);
+    } else {
+      return false;
+    }
 
   } else if (auto op = region->AsOperation(); op) {
     if (op->AsReturn()) {
@@ -455,9 +499,79 @@ static bool EndsWithReturn(REGION *region) {
              EndsWithReturn(cs->absent_body.get()) &&
              EndsWithReturn(cs->unknown_body.get());
     }
+
   }
 
   return false;
+}
+
+// Build out all the bottom-up (negative) provers that are used to mark tuples
+// as being in an unknown state. We want to do this after building all
+// (positive) bottom-up provers so that we can know which views correspond
+// with which tables.
+static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
+  while (!context.bottom_up_removers_work_list.empty()) {
+    auto [from_view, to_view, proc, already_checked] =
+        context.bottom_up_removers_work_list.back();
+    context.bottom_up_removers_work_list.pop_back();
+
+    if (to_view.IsTuple()) {
+      CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
+
+    } else if (to_view.IsCompare()) {
+      CreateBottomUpCompareRemover(impl, context, to_view, proc, already_checked);
+
+    } else if (to_view.IsInsert()) {
+      CreateBottomUpInsertRemover(impl, context, to_view, proc,
+                                  already_checked);
+
+    } else if (to_view.IsDelete()) {
+      CreateBottomUpDeleteRemover(impl, context, to_view, proc);
+
+    // NOTE(pag): We don't need to distinguish between unions that are inductions
+    //            and unions that are merges.
+    } else if (to_view.IsMerge()) {
+      CreateBottomUpUnionRemover(impl, context, to_view, proc, already_checked);
+
+    } else if (to_view.IsJoin()) {
+      auto join = QueryJoin::From(to_view);
+      if (join.NumPivotColumns()) {
+        CreateBottomUpJoinRemover(impl, context, from_view, join,
+                                  proc, already_checked);
+      } else {
+        assert(false && "TODO: Cross-products!");
+      }
+    } else if (to_view.IsAggregate()) {
+      assert(false && "TODO Aggregates!");
+
+    } else if (to_view.IsKVIndex()) {
+      assert(false && "TODO Key Values!");
+
+    } else if (to_view.IsMap()) {
+      auto map = QueryMap::From(to_view);
+      auto functor = map.Functor();
+      if (functor.IsPure()) {
+        CreateBottomUpGenerateRemover(impl, context, map, functor, proc);
+
+      } else {
+        assert(false && "TODO Impure Functors!");
+      }
+
+    // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
+    //            removers jump past SELECTs.
+    } else if (to_view.IsSelect()) {
+      assert(false);
+
+    } else {
+      assert(false);
+    }
+
+    if (!EndsWithReturn(proc)) {
+      const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+          proc, ProgramOperation::kReturnFalseFromProcedure);
+      ret->ExecuteAfter(impl, proc);
+    }
+  }
 }
 
 // Build out all the top-down checkers. We want to do this after building all
@@ -475,8 +589,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
       if (join.NumPivotColumns()) {
-        //assert(false && "TODO");
-
+        BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
+                                 already_checked);
       } else {
         assert(false && "TODO");
       }
@@ -502,7 +616,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       assert(false && "TODO");
 
     } else if (view.IsCompare()) {
-      assert(false && "TODO");
+      BuildTopDownCompareChecker(impl, context, proc, QueryCompare::From(view),
+                                 view_cols, already_checked);
 
     } else if (view.IsSelect()) {
       const auto select = QuerySelect::From(view);
@@ -524,19 +639,51 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     } else if (view.IsInsert()) {
       const auto insert = QueryInsert::From(view);
 
-      // The base case is that we get to an INSERT that's actually a DELETE,
-      // i.e. a deletion clause head.
-      if (insert.IsDelete() || insert.IsStream()) {
-        assert(!insert.IsStream());  // Impossible.
+      if (insert.IsStream()) {
         // Nothing to do.
 
       } else {
         assert(false && "TODO");
       }
 
+    } else if (view.IsDelete()) {
+      // Nothing to do.
+
     // Not possible?
     } else {
       assert(false);
+    }
+
+    // This view is conditional, wrap whatever we had generated in a big
+    // if statement.
+    const auto pos_conds = view.PositiveConditions();
+    const auto neg_conds = view.NegativeConditions();
+    const auto proc_body = proc->body.get();
+
+    // Innermost test for negative conditions.
+    if (!neg_conds.empty()) {
+      auto test = impl->operation_regions.CreateDerived<EXISTS>(
+          proc, ProgramOperation::kTestAllZero);
+
+      for (auto cond : neg_conds) {
+        test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      }
+
+      proc->body.Emplace(proc, test);
+      test->body.Emplace(test, proc_body);
+    }
+
+    // Outermost test for positive conditions.
+    if (!pos_conds.empty()) {
+      auto test = impl->operation_regions.CreateDerived<EXISTS>(
+          proc, ProgramOperation::kTestAllNonZero);
+
+      for (auto cond : pos_conds) {
+        test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      }
+
+      proc->body.Emplace(proc, test);
+      test->body.Emplace(test, proc_body);
     }
 
     if (!EndsWithReturn(proc)) {
@@ -582,8 +729,7 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
 CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                          QueryView succ_view, QueryView view,
                          ProgramOperation call_op) {
-
-  assert(!(view.IsInsert() && QueryInsert::From(view).IsDelete()));
+  assert(!view.IsDelete());
   assert(!succ_view.IsInsert());
 
   std::vector<QueryColumn> succ_cols;
@@ -615,7 +761,9 @@ CALL *CallTopDownChecker(
   if (view != succ_view) {
     succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
                              std::optional<QueryColumn> succ_view_col) {
-      if (succ_view_col && QueryView::Containing(view_col) == view &&
+      if (InputColumnRole::kIndexValue != role &&
+          InputColumnRole::kAggregatedColumn != role &&
+          succ_view_col && QueryView::Containing(view_col) == view &&
           available_cols_map[*(succ_view_col->Index())]) {
         available_cols.push_back(view_col);
         inout_map.emplace(view_col, *succ_view_col);
@@ -656,7 +804,7 @@ CALL *CallTopDownChecker(
 
   // We haven't made this procedure before; so we'll declare it now and
   // enqueue it for building. We enqueue all such procedures for building so
-  // that we can build top-down checkers afte all bottom-up provers have been
+  // that we can build top-down checkers after all bottom-up provers have been
   // created. Doing so lets us determine which views, and thus data models,
   // are backed by what tables.
   auto &proc = context.view_to_top_down_checker[ss.str()];
@@ -709,7 +857,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     auto change_state = BuildChangeState(
         impl, table, check, view_cols,
         TupleState::kAbsentOrUnknown, TupleState::kPresent);
-    UseRef<REGION>(check, change_state).Swap(check->body);
+    check->body.Emplace(check, change_state);
 
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
     ret_true->ExecuteAfter(impl, change_state);
@@ -717,7 +865,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   // No table, just return `true` to the caller.
   } else {
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    UseRef<REGION>(check, ret_true).Swap(check->body);
+    check->body.Emplace(check, ret_true);
   }
 
   return check;
@@ -726,8 +874,32 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, TABLE *table) {
-  auto &proc = impl->view_to_bottom_up_remover[view];
+                                 QueryView from_view, QueryView to_view,
+                                 TABLE *already_checked) {
+  std::vector<QueryColumn> available_cols;
+
+  // Inserts are annoying because they don't have output columns.
+  if (to_view.IsInsert()) {
+    for (auto col : QueryInsert::From(to_view).InputColumns()) {
+      available_cols.push_back(col);
+    }
+
+  } else {
+    for (auto col : from_view.Columns()) {
+      available_cols.push_back(col);
+    }
+  }
+
+  assert(!available_cols.empty());
+
+  std::stringstream ss;
+  ss << to_view.UniqueId();
+  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+  for (auto col : available_cols) {
+    ss << ':' << col.Id();
+  }
+
+  auto &proc = context.view_to_bottom_up_remover[ss.str()];
   if (proc) {
     return proc;
   }
@@ -735,12 +907,54 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
   proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kTupleRemover);
 
-  // TODO(pag): Add parameters!
-//  AddParametersToProc(impl, proc, view);
+  // Add parameters to procedure.
+  for (auto param_col : available_cols) {
+    const auto var = proc->input_vars.Create(
+        impl->next_id++, VariableRole::kParameter);
+    var->query_column = param_col;
+    proc->col_id_to_var.emplace(param_col.Id(), var);
+  }
 
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
+  bool is_equality_cmp = false;
+  if (from_view.IsCompare()) {
+    auto from_cmp = QueryCompare::From(from_view);
+    is_equality_cmp = from_cmp.Operator() == ComparisonOperator::kEqual;
+  }
+
+  // Create variable bindings for input-to-output columns. Our function has
+  // as many columns as `from_view` has, which may be different than what
+  // `to_view` uses (i.e. it might use fewer columns).
+  to_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole role,
+                          std::optional<QueryColumn> out_col) {
+    if (QueryView::Containing(in_col) != from_view ||
+        !out_col ||
+        !proc->col_id_to_var.count(in_col.Id()) ||
+        proc->col_id_to_var.count(out_col->Id())) {
+      return;
+    }
+
+    switch (role) {
+      case InputColumnRole::kAggregatedColumn:
+      case InputColumnRole::kIndexValue:
+        return;
+      case InputColumnRole::kCompareLHS:
+      case InputColumnRole::kCompareRHS:
+        if (is_equality_cmp) {
+          return;
+        }
+        [[clang::fallthrough]];
+      default:
+        break;
+    }
+
+    proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
+  });
+
+  // Add it to a work list that will be processed after all main bottom-up
+  // (positive) provers are created, so that we have proper access to all
+  // data models.
+  context.bottom_up_removers_work_list.emplace_back(
+      from_view, to_view, proc, already_checked);
 
   return proc;
 }
@@ -748,6 +962,15 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
 bool MayNeedToBePersisted(QueryView view) {
+
+  // If this view sets a condition then its data must be tracked; if it
+  // tests a condition, then we might jump back in at some future point if
+  // things transition states.
+  if (view.SetCondition() ||
+      !view.PositiveConditions().empty() ||
+      !view.NegativeConditions().empty()) {
+    return true;
+  }
 
   if (view.CanReceiveDeletions() || view.CanProduceDeletions()) {
     return true;
@@ -771,10 +994,21 @@ bool MayNeedToBePersisted(QueryView view) {
 bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
                                      QueryView view, QueryView pred_view) {
 
-  // Check out cache; we may have already determined this.
   auto &det = context.can_defer_to_predecessor[std::make_pair(view, pred_view)];
+
+  // Check out cache; we may have already determined this.
   if (det != Context::kDeferUnknown) {
     return det == Context::kCanDeferToPredecessor;
+  }
+
+  // If this view sets a condition, then the reference counter of that condition
+  // partially reflects the arity of this view, i.e. number of records in the
+  // view.
+  if (view.SetCondition() ||
+      !view.PositiveConditions().empty() ||
+      !view.NegativeConditions().empty()) {
+    det = Context::kCantDeferToPredecessor;
+    return false;
   }
 
   // If this tuple can receive deletions, then whatever is providing data is
@@ -856,33 +1090,6 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
   return false;
 }
 
-//// Get a mapping of `(input_col, output_col)` where the columns are in order
-//// of `input_col`, and no input columns are repeated.
-//std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view) {
-//  std::vector<ColPair> inout_cols;
-//
-//  // We need to call the checker for the next
-//  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-//                      std::optional<QueryColumn> out_col) {
-//    if (out_col && QueryView::Containing(in_col) == pred_view) {
-//      inout_cols.emplace_back(in_col, *out_col);
-//    }
-//  });
-//
-//  std::sort(inout_cols.begin(), inout_cols.end(),
-//            [] (ColPair a, ColPair b) {
-//              return *(a.first.Index()) < *(b.first.Index());
-//            });
-//
-//  auto it = std::unique(inout_cols.begin(), inout_cols.end(),
-//                        [] (ColPair a, ColPair b) {
-//                          return *(a.first.Index()) == *(b.first.Index());
-//                        });
-//  inout_cols.erase(it, inout_cols.end());
-//
-//  return inout_cols;
-//}
-
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
   while (!context.work_list.empty()) {
@@ -920,7 +1127,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       test->cond_vars.AddUse(ConditionVariable(impl, cond));
     }
 
-    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent->body.Emplace(parent, test);
     parent = test;
     last_model = nullptr;
   }
@@ -934,7 +1141,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       test->cond_vars.AddUse(ConditionVariable(impl, cond));
     }
 
-    UseRef<REGION>(parent, test).Swap(parent->body);
+    parent->body.Emplace(parent, test);
     parent = test;
     last_model = nullptr;
   }
@@ -999,9 +1206,17 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Build top-down provers.
   BuildTopDownCheckers(program, context);
 
+  // Build bottom-up removers. These follow Stefan Brass's push method of
+  // pipelined Datalog execution.
+  BuildBottomUpRemovalProvers(program, context);
+
   impl->Optimize();
 
   // Assign defining regions to each variable.
+  //
+  // NOTE(pag): We don't really want to map variables throughout the building
+  //            process because otherwise every time we replaced all uses of
+  //            one region with another, we'd screw up the mapping.
   for (auto proc : impl->procedure_regions) {
     MapVariables(proc->body.get());
   }

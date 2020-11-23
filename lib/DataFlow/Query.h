@@ -35,7 +35,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
         id(id_),
         index(index_) {}
 
-  void CopyConstant(Node<QueryColumn> *maybe_const_col);
+  void CopyConstantFrom(Node<QueryColumn> *maybe_const_col);
 
   void ReplaceAllUsesWith(Node<QueryColumn> *that);
 
@@ -265,8 +265,17 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Copy all positive and negative conditions from `this` into `that`.
   void CopyTestedConditionsTo(Node<QueryView> *that);
 
+  // Converts this node to be unconditional, it doesn't affect set conditions.
+  void DropTestedConditions(void);
+
+  // Converts this node to not set any conditions.
+  void DropSetConditions(void);
+
   // If `sets_condition` is non-null, then transfer the setter to `that`.
   void TransferSetConditionTo(Node<QueryView> *that);
+
+  // Copy the group IDs and the receive/produce deletions from `this` to `that`.
+  void CopyDifferentialAndGroupIdsTo(Node<QueryView> *that);
 
   // Replace all uses of `this` with `that`. The semantic here is that `this`
   // remains valid and used.
@@ -319,6 +328,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // beyond the scope of this view.
   virtual bool Canonicalize(QueryImpl *query, const OptimizationContext &opt);
 
+  virtual Node<QueryDelete> *AsDelete(void) noexcept;
   virtual Node<QuerySelect> *AsSelect(void) noexcept;
   virtual Node<QueryTuple> *AsTuple(void) noexcept;
   virtual Node<QueryKVIndex> *AsKVIndex(void) noexcept;
@@ -624,26 +634,20 @@ class Node<QueryJoin> final : public Node<QueryView> {
   unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
-  // Update the set of joined views.
-  void UpdateJoinedViews(QueryImpl *query);
-
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
-  // If we have a constant feeding into one of the pivot sets, then we want to
-  // eliminate that pivot set and instead propagate CMP nodes to all pivot
-  // sources.
-  void PropagateConstAcrossPivotSet(QueryImpl *query, COL *col,
-                                    UseList<COL> &pivot_cols);
+  // Remove all constant uses.
+  void RemoveConstants(QueryImpl *query);
 
-  // Replace the pivot column `pivot_col` with `const_col`.
-  void ReplacePivotWithConstant(QueryImpl *query, COL *pivot_col,
-                                COL *const_col);
+  // Convert a trivial join (only has a single input view) into a TUPLE.
+  void ConvertTrivialJoinToTuple(QueryImpl *impl);
 
-  // Replace `view`, which should be a member of `joined_views` with
-  // `replacement_view` in this JOIN.
-  void ReplaceViewInJoin(VIEW *view, VIEW *replacement_view);
+  // Returns `true` if any joined views were identified where one or more of
+  // their columns are not used by the JOIN. If so, we proxy those views with
+  // TUPLEs.
+  bool ProxyUnusedInputColumns(QueryImpl *impl);
 
   // Maps output columns to input columns.
   std::unordered_map<COL *, UseList<COL>> out_to_in;
@@ -806,27 +810,13 @@ class Node<QueryInsert> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_,
-              bool is_insert_ = true)
+  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
       : relation(this, relation_),
-        declaration(decl_),
-        is_insert(is_insert_) {
+        declaration(decl_) {}
 
-    if (!is_insert) {
-      this->can_produce_deletions = true;
-    }
-  }
-
-  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_,
-              bool is_insert_ = true)
+  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_)
       : stream(this, stream_),
-        declaration(decl_),
-        is_insert(is_insert_) {
-
-    if (!is_insert) {
-      this->can_produce_deletions = true;
-    }
-  }
+        declaration(decl_) {}
 
   const char *KindName(void) const noexcept override;
   Node<QueryInsert> *AsInsert(void) noexcept override;
@@ -838,10 +828,31 @@ class Node<QueryInsert> : public Node<QueryView> {
   WeakUseRef<REL> relation;
   WeakUseRef<STREAM> stream;
   const ParsedDeclaration declaration;
-  bool is_insert;
 };
 
 using INSERT = Node<QueryInsert>;
+
+// Deletes are tuple-like nodes. They exist to signal that some data should be
+// forwarded as a deletion.
+template <>
+class Node<QueryDelete> : public Node<QueryView> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(void)
+      : Node<QueryView>() {
+    can_produce_deletions = true;
+  }
+
+  const char *KindName(void) const noexcept override;
+  Node<QueryDelete> *AsDelete(void) noexcept override;
+
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+};
+
+using DELETE = Node<QueryDelete>;
 
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
@@ -887,6 +898,9 @@ class QueryImpl {
     for (auto view : inserts) {
       views.push_back(view);
     }
+    for (auto view : deletes) {
+      views.push_back(view);
+    }
 
     for (auto view : views) {
       do_view(view);
@@ -920,6 +934,9 @@ class QueryImpl {
       do_view(view);
     }
     for (auto view : inserts) {
+      do_view(view);
+    }
+    for (auto view : deletes) {
       do_view(view);
     }
   }
@@ -960,6 +977,10 @@ class QueryImpl {
       views.push_back(view);
     }
     for (auto view : inserts) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : deletes) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -1011,6 +1032,10 @@ class QueryImpl {
       view->depth = 0;
       views.push_back(view);
     }
+    for (auto view : deletes) {
+      view->depth = 0;
+      views.push_back(view);
+    }
 
     std::sort(views.begin(), views.end(),
               [](VIEW *a, VIEW *b) { return a->Depth() > b->Depth(); });
@@ -1057,12 +1082,17 @@ class QueryImpl {
   // the dataflow, minimize/shrink conditions, and eliminate dead flows.
   void Optimize(const ErrorLog &);
 
-  // Identify which data flows can receive and produce deletions.
-  void TrackDifferentialUpdates(void) const;
+  // Convert all views having constant inputs to depend upon tuple nodes, so
+  // that we have the invariant that the only type of view that can take all
+  // constants is a tuple. This simplifies lots of stuff later.
+  void ConvertConstantInputsToTuples(void);
 
-  // After the query is built, we want to push down any condition annotations
-  // on nodes.
-  void SinkConditions(void) const;
+  // Identify which data flows can receive and produce deletions.
+  void TrackDifferentialUpdates(bool check_conds = false) const;
+
+  // Extract conditions from regular nodes and force them to belong to only
+  // tuple nodes. This simplifies things substantially for downstream users.
+  void ExtractConditionsToTuples(void);
 
   // Finalize column ID values. Column ID values relate to lexical scope, to
   // some extent. Two columns with the same ID can be said to have the same
@@ -1104,6 +1134,7 @@ class QueryImpl {
   DefList<MERGE> merges;
   DefList<CMP> compares;
   DefList<INSERT> inserts;
+  DefList<DELETE> deletes;
 };
 
 }  // namespace hyde

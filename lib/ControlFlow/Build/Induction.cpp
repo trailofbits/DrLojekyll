@@ -101,10 +101,10 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto ancestor_of_inits = FindCommonAncestorOfInitRegions();
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
-  UseRef<REGION>(induction, ancestor_of_inits).Swap(induction->init_region);
+  induction->init_region.Emplace(induction, ancestor_of_inits);
 
   const auto cycle_par = impl->parallel_regions.Create(induction);
-  UseRef<REGION>(induction, cycle_par).Swap(induction->cyclic_region);
+  induction->cyclic_region.Emplace(induction, cycle_par);
 
   // Now build the inductive cycle regions and add them in. We'll do this
   // before we actually add the successor regions in.
@@ -113,7 +113,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     if (!vec) {
       const auto incoming_vec =
           proc->VectorFor(impl, VectorKind::kInduction, merge.Columns());
-      UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
+      vec.Emplace(induction, incoming_vec);
       induction->vectors.AddUse(incoming_vec);
     }
 
@@ -127,8 +127,9 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
       var->query_column = col;
       cycle->col_id_to_var.emplace(col.Id(), var);
     }
-    UseRef<VECTOR>(cycle, vec.get()).Swap(cycle->vector);
-    UseRef<REGION>(induction, cycle).Swap(induction->view_to_cycle_loop[merge]);
+
+    cycle->vector.Emplace(cycle, vec.get());
+    induction->view_to_cycle_loop[merge].Emplace(induction, cycle);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
@@ -157,7 +158,7 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   induction->state = INDUCTION::kBuildingOutputRegions;
 
   const auto seq = impl->series_regions.Create(induction);
-  UseRef<REGION>(induction, seq).Swap(induction->output_region);
+  induction->output_region.Emplace(induction, seq);
 
   const auto proc = induction->containing_procedure;
   const auto cycle_par = impl->parallel_regions.Create(seq);
@@ -172,14 +173,14 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     if (!vec) {
       const auto incoming_vec =
           proc->VectorFor(impl, VectorKind::kInduction, merge.Columns());
-      UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
+      vec.Emplace(induction, incoming_vec);
       induction->vectors.AddUse(incoming_vec);
     }
 
     // Clear out the vector after the output loop.
     const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
         seq, ProgramOperation::kClearInductionInputVector);
-    UseRef<VECTOR>(clear, vec.get()).Swap(clear->vector);
+    clear->vector.Emplace(clear, vec.get());
     clear->ExecuteAfter(impl, seq);
 
     // Create a loop over the induction vector to process the accumulated
@@ -195,9 +196,8 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
       cycle->col_id_to_var.emplace(col.Id(), var);
     }
 
-    UseRef<VECTOR>(cycle, vec.get()).Swap(cycle->vector);
-    UseRef<REGION>(induction, cycle)
-        .Swap(induction->view_to_output_loop[merge]);
+    cycle->vector.Emplace(cycle, vec.get());
+    induction->view_to_output_loop[merge].Emplace(induction, cycle);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
@@ -253,7 +253,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   if (!vec) {
     const auto incoming_vec =
         proc->VectorFor(impl, VectorKind::kInduction, view.Columns());
-    UseRef<VECTOR>(induction, incoming_vec).Swap(vec);
+    vec.Emplace(induction, incoming_vec);
     induction->vectors.AddUse(incoming_vec);
   }
 
@@ -267,8 +267,8 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     append_to_vec->tuple_vars.AddUse(var);
   }
 
-  UseRef<VECTOR>(append_to_vec, vec.get()).Swap(append_to_vec->vector);
-  UseRef<REGION>(parent, append_to_vec).Swap(parent->body);
+  append_to_vec->vector.Emplace(append_to_vec, vec.get());
+  parent->body.Emplace(parent, append_to_vec);
 
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:
@@ -285,19 +285,27 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 void BuildTopDownInductionChecker(
     ProgramImpl *impl, Context &context, PROC *proc,
     QueryMerge view, std::vector<QueryColumn> &view_cols,
-    TABLE *) {
+    TABLE *already_checked) {
 
-  const auto table = TABLE::GetOrCreate(impl, view);
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  const auto table = model->table;
+  assert(table != nullptr);
+
+  TABLE *table_to_update = table;
 
   auto build_rule_checks = [=, &context] (PARALLEL *par) {
     for (auto pred_view : view.MergedViews()) {
-      // If it's a DELETE, then we can't really
-      if (pred_view.IsInsert() && QueryInsert::From(pred_view).IsDelete()) {
+
+      // Deletes signal to their successors that data should be deleted, thus
+      // there isn't much we can do in terms of actually checking if something
+      // is there or not because if we've made it down here, then it *isn't*
+      // there.
+      if (pred_view.IsDelete()) {
         continue;
       }
 
       const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, proc, view, view_cols, table, pred_view,
+            impl, context, proc, view, view_cols, table_to_update, pred_view,
             table);
 
       rec_check->ExecuteAlongside(impl, par);
@@ -313,23 +321,26 @@ void BuildTopDownInductionChecker(
       return BuildStateCheckCaseReturnFalse(impl, parent);
     }
 
-    return BuildTopDownCheckerResetAndProve(
+    return BuildTopDownTryMarkAbsent(
         impl, table, parent, view.Columns(), build_rule_checks);
   };
 
-  const auto region = BuildMaybeScanPartial(
+  proc->body.Emplace(proc, BuildMaybeScanPartial(
       impl, view, view_cols, table, proc,
       [&] (REGION *parent) -> REGION * {
+        if (already_checked != table) {
+          already_checked = table;
+          return BuildTopDownCheckerStateCheck(
+              impl, proc, table, view.Columns(),
+              BuildStateCheckCaseReturnTrue,
+              BuildStateCheckCaseNothing,
+              build_unknown);
 
-    return BuildTopDownCheckerStateCheck(
-        impl, proc, table, view.Columns(),
-        BuildStateCheckCaseReturnTrue,
-        BuildStateCheckCaseNothing,
-        build_unknown);
-  });
-
-
-  UseRef<REGION>(proc, region).Swap(proc->body);
+        } else {
+          table_to_update = nullptr;  // The caller will update.
+          return build_unknown(impl, parent);
+        }
+      }));
 }
 
 }  // namespace hyde

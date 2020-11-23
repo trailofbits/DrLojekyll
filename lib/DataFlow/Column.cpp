@@ -94,7 +94,7 @@ uint64_t Node<QueryColumn>::Sort(void) noexcept {
   return Hash();
 }
 
-void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
+void Node<QueryColumn>::CopyConstantFrom(Node<QueryColumn> *maybe_const_col) {
   if (auto const_col = maybe_const_col->AsConstant();
       const_col && !referenced_constant) {
 
@@ -103,7 +103,7 @@ void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
     this->ForEachUse<VIEW>(
         [](VIEW *view, COL *) { view->is_canonical = false; });
 
-    UseRef<COL>(view, const_col).Swap(referenced_constant);
+    referenced_constant.Emplace(view, const_col);
   }
 }
 
@@ -119,7 +119,7 @@ void Node<QueryColumn>::ReplaceAllUsesWith(COL *that) {
   //
   //  } else {
   if (referenced_constant && !that->IsConstantOrConstantRef()) {
-    that->CopyConstant(referenced_constant.get());
+    that->CopyConstantFrom(referenced_constant.get());
   }
   this->Def<Node<QueryColumn>>::ReplaceAllUsesWith(that);
 

@@ -74,6 +74,10 @@ const char *Node<QueryCompare>::KindName(void) const noexcept {
   return "COMPARE";
 }
 
+const char *Node<QueryDelete>::KindName(void) const noexcept {
+  return "DELETE";
+}
+
 const char *Node<QueryInsert>::KindName(void) const noexcept {
   if (declaration.Kind() == DeclarationKind::kQuery) {
     return "MATERIALIZE";
@@ -81,20 +85,17 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
   } else if (declaration.Kind() == DeclarationKind::kMessage) {
     return "TRANSMIT";
 
-  } else if (is_insert) {
+  } else {
     if (declaration.Arity()) {
       return "INSERT";
     } else {
       return "INCREMENT";
     }
-
-  } else {
-    if (declaration.Arity()) {
-      return "DELETE";
-    } else {
-      return "DECREMENT";
-    }
   }
+}
+
+Node<QueryDelete> *Node<QueryView>::AsDelete(void) noexcept {
+  return nullptr;
 }
 
 Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {
@@ -271,19 +272,19 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
       if (!out_col_is_constref || out_col_is_directly_used) {
         non_local_changes = true;
       }
-      out_col->CopyConstant(in_col);
+      out_col->CopyConstantFrom(in_col);
       out_col->ReplaceAllUsesWith(in_col);
 
     } else {
       if (!out_col_is_constref) {
         non_local_changes = true;
-        out_col->CopyConstant(in_col);
+        out_col->CopyConstantFrom(in_col);
       }
     }
   } else if (in_col->IsConstantRef()) {
     if (!out_col_is_constref) {
       non_local_changes = true;
-      out_col->CopyConstant(in_col);
+      out_col->CopyConstantFrom(in_col);
 
     } else if (opt.can_replace_inputs_with_constants) {
       non_local_changes = true;
@@ -474,6 +475,30 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
   return up_hash;
 }
 
+// Converts this node to be unconditional, it doesn't affect set conditions.
+void Node<QueryView>::DropTestedConditions(void) {
+  const auto is_this_view = [this](VIEW *v) { return v == this; };
+
+  for (auto cond : positive_conditions) {
+    cond->positive_users.RemoveIf(is_this_view);
+  }
+  for (auto cond : negative_conditions) {
+    cond->negative_users.RemoveIf(is_this_view);
+  }
+
+  positive_conditions.Clear();
+  negative_conditions.Clear();
+}
+
+// Converts this node to not set any conditions.
+void Node<QueryView>::DropSetConditions(void) {
+  const auto is_this_view = [this](VIEW *v) { return v == this; };
+  if (auto cond = sets_condition.get(); cond) {
+    sets_condition.Clear();
+    cond->setters.RemoveIf(is_this_view);
+  }
+}
+
 // Prepare to delete this node. This tries to drop all dependencies and
 // unlink this node from the dataflow graph. It returns `true` if successful
 // and `false` if it has already been performed.
@@ -491,20 +516,8 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
   const auto is_this_view = [this](VIEW *v) { return v == this; };
 
-  for (auto cond : positive_conditions) {
-    cond->positive_users.RemoveIf(is_this_view);
-  }
-  for (auto cond : negative_conditions) {
-    cond->negative_users.RemoveIf(is_this_view);
-  }
-
-  positive_conditions.Clear();
-  negative_conditions.Clear();
-
-  if (auto cond = sets_condition.get(); cond) {
-    WeakUseRef<COND>().Swap(sets_condition);
-    cond->setters.RemoveIf(is_this_view);
-  }
+  DropTestedConditions();
+  DropSetConditions();
 
   if (auto merge = AsMerge(); merge) {
     merge->merged_views.Clear();
@@ -521,7 +534,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
   } else if (auto select = AsSelect(); select) {
     if (auto stream = select->stream.get(); stream) {
-      WeakUseRef<STREAM>().Swap(select->stream);
+      select->stream.Clear();
       if (auto io = stream->AsIO(); io) {
         io->receives.RemoveIf(is_this_view);
       } else {
@@ -529,13 +542,13 @@ bool Node<QueryView>::PrepareToDelete(void) {
       }
 
     } else if (auto rel = select->relation.get(); rel) {
-      WeakUseRef<REL>().Swap(select->relation);
+      select->relation.Clear();
       rel->selects.RemoveIf(is_this_view);
     }
 
   } else if (auto insert = AsInsert(); insert) {
     if (auto stream = insert->stream.get(); stream) {
-      WeakUseRef<STREAM>().Swap(insert->stream);
+      insert->stream.Clear();
       if (auto io = stream->AsIO(); io) {
         io->transmits.RemoveIf(is_this_view);
       } else {
@@ -543,7 +556,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
       }
 
     } else if (auto rel = insert->relation.get(); rel) {
-      WeakUseRef<REL>().Swap(insert->relation);
+      insert->relation.Clear();
       rel->inserts.RemoveIf(is_this_view);
     }
   }
@@ -554,11 +567,13 @@ bool Node<QueryView>::PrepareToDelete(void) {
 // Copy all positive and negative conditions from `this` into `that`.
 void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
   for (auto cond : positive_conditions) {
+    assert(cond);
     that->positive_conditions.AddUse(cond);
     cond->positive_users.AddUse(that);
   }
 
   for (auto cond : negative_conditions) {
+    assert(cond);
     that->negative_conditions.AddUse(cond);
     cond->negative_users.AddUse(that);
   }
@@ -617,20 +632,13 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
         that->is_canonical = false;
       }
 
-      WeakUseRef<COND>().Swap(sets_condition);
+      sets_condition.Clear();
     }
   }
 }
 
-// Replace all uses of `this` with `that`. The semantic here is that `this`
-// remains valid and used.
-void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
-  unsigned i = 0u;
-  for (auto col : columns) {
-    col->ReplaceAllUsesWith(that->columns[i++]);
-  }
-  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
-
+// Copy the group IDs and the receive/produce deletions from `this` to `that`.
+void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
   // Maintain the set of group IDs, to prevent over-merging.
   that->group_ids.insert(that->group_ids.end(), group_ids.begin(),
                          group_ids.end());
@@ -643,7 +651,18 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   if (can_produce_deletions) {
     that->can_produce_deletions = true;
   }
+}
 
+// Replace all uses of `this` with `that`. The semantic here is that `this`
+// remains valid and used.
+void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
+  unsigned i = 0u;
+  for (auto col : columns) {
+    col->ReplaceAllUsesWith(that->columns[i++]);
+  }
+  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+
+  CopyDifferentialAndGroupIdsTo(that);
   TransferSetConditionTo(that);
 }
 
@@ -694,7 +713,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 
   for (auto col : columns) {
     auto out_col = tuple->columns.Create(col->var, tuple, col->id);
-    out_col->CopyConstant(col);
+    out_col->CopyConstantFrom(col);
   }
 
   // Make any merges use the tuple.
@@ -741,18 +760,18 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   auto lhs_out_col =
       cmp->columns.Create(lhs_col->var, cmp, lhs_col->id, col_index++);
 
-  lhs_out_col->CopyConstant(lhs_col);
+  lhs_out_col->CopyConstantFrom(lhs_col);
   in_to_out.emplace(lhs_col, lhs_out_col);
 
   cmp->input_columns.AddUse(rhs_col);
   if (ComparisonOperator::kEqual == op) {
-    lhs_out_col->CopyConstant(rhs_col);
+    lhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
     auto rhs_out_col =
         cmp->columns.Create(rhs_col->var, cmp, rhs_col->id, col_index++);
-    rhs_out_col->CopyConstant(rhs_col);
+    rhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
   }
 
@@ -764,7 +783,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
       cmp->attached_columns.AddUse(col);
       const auto attached_col =
           cmp->columns.Create(col->var, cmp, col->id, col_index++);
-      attached_col->CopyConstant(col);
+      attached_col->CopyConstantFrom(col);
       in_to_out.emplace(col, attached_col);
     }
   }
@@ -778,7 +797,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     auto out_col =
         tuple->columns.Create(orig_col->var, tuple, orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
-    out_col->CopyConstant(in_col);
+    out_col->CopyConstantFrom(in_col);
   }
 
 #ifndef NDEBUG
@@ -886,7 +905,7 @@ COND *Node<QueryView>::CreateOrInheritConditionOnView(QueryImpl *query,
     //    }
 
     assert(!view->sets_condition);
-    WeakUseRef<COND>(view, condition).Swap(view->sets_condition);
+    view->sets_condition.Emplace(view, condition);
 
     condition->setters.AddUse(view);
   }

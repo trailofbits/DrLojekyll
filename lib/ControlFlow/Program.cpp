@@ -79,7 +79,7 @@ ProgramImpl::~ProgramImpl(void) {
 
     } else if (auto view_product = op->AsTableProduct(); view_product) {
       view_product->tables.ClearWithoutErasure();
-      view_product->input_vectors.ClearWithoutErasure();
+      view_product->input_vecs.ClearWithoutErasure();
 
     } else if (auto view_scan = op->AsTableScan(); view_scan) {
       view_scan->index.ClearWithoutErasure();
@@ -104,6 +104,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto call = op->AsCall(); call) {
       call->arg_vars.ClearWithoutErasure();
       call->arg_vecs.ClearWithoutErasure();
+      call->called_proc.ClearWithoutErasure();
 
     } else if (auto check = op->AsCheckState(); check) {
       check->col_values.ClearWithoutErasure();
@@ -213,11 +214,13 @@ bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
 }
 
 bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
-  return impl->op == ProgramOperation::kIncrementAll;
+  return impl->op == ProgramOperation::kIncrementAll ||
+         impl->op == ProgramOperation::kIncrementAllAndTest;
 }
 
 bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
-  return impl->op == ProgramOperation::kDecrementAll;
+  return impl->op == ProgramOperation::kDecrementAll ||
+         impl->op == ProgramOperation::kDecrementAllAndTest;
 }
 
 #define OPTIONAL_BODY(name) \
@@ -230,6 +233,7 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
   }
 
 OPTIONAL_BODY(ProgramExistenceCheckRegion)
+OPTIONAL_BODY(ProgramExistenceAssertionRegion)
 OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)
@@ -286,7 +290,7 @@ DEFINED_RANGE(ProgramGenerateRegion, OutputVariables, DataVariable, defined_vars
 DEFINED_RANGE(ProgramVectorLoopRegion, TupleVariables, DataVariable, defined_vars)
 DEFINED_RANGE(DataTable, Columns, DataColumn, columns)
 DEFINED_RANGE(DataTable, Indices, DataIndex, indices)
-DEFINED_RANGE(ProgramProcedure, VectorParameters, DataVector, input_vectors)
+DEFINED_RANGE(ProgramProcedure, VectorParameters, DataVector, input_vecs)
 DEFINED_RANGE(ProgramProcedure, VariableParameters, DataVariable, input_vars)
 DEFINED_RANGE(ProgramProcedure, DefinedVectors, DataVector, vectors)
 DEFINED_RANGE(Program, Tables, DataTable, tables)
@@ -317,7 +321,7 @@ USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
 USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
 USED_RANGE(ProgramTableProductRegion, Tables, DataTable, tables)
-USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vectors)
+USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vecs)
 USED_RANGE(ProgramTableScanRegion, IndexedColumns, DataColumn, in_cols)
 USED_RANGE(ProgramTableScanRegion, SelectedColumns, DataColumn, out_cols)
 USED_RANGE(ProgramTableScanRegion, InputVariables, DataVariable, in_vars)
@@ -491,7 +495,8 @@ std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
 // Type of this variable.
 TypeKind DataVariable::Type(void) const noexcept {
   switch (impl->role) {
-    case VariableRole::kConditionRefCount: return TypeKind::kUnsigned64;
+    case VariableRole::kConditionRefCount:
+      return TypeKind::kUnsigned64;
     case VariableRole::kConstant:
       if (impl->query_const) {
         return impl->query_const->Literal().Type().Kind();
@@ -703,8 +708,8 @@ ProgramTableJoinRegion::OutputVariables(unsigned table_index) const {
 // The index used by the Nth table scan.
 DataVector
 ProgramTableProductRegion::Vector(unsigned table_index) const noexcept {
-  assert(table_index < impl->input_vectors.Size());
-  return DataVector(impl->input_vectors[table_index]);
+  assert(table_index < impl->input_vecs.Size());
+  return DataVector(impl->input_vecs[table_index]);
 }
 
 DefinedNodeRange<DataVariable>
@@ -735,7 +740,7 @@ DataVector ProgramTableScanRegion::FilledVector(void) const {
 }
 
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
-  return ProgramProcedure(impl->called_proc);
+  return ProgramProcedure(impl->called_proc.get());
 }
 
 // Should we execute the body if the called procedure returns `true`?

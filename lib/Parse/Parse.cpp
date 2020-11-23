@@ -618,12 +618,7 @@ bool ParsedDeclaration::IsLocal(void) const noexcept {
 // Does this declaration have a `mutable`-attributed parameter? If so, then
 // this relation must be materialized.
 bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
-  for (const auto &param : impl->parameters) {
-    if (param->opt_merge) {
-      return true;
-    }
-  }
-  return false;
+  return impl->has_mutable_parameter;
 }
 
 // Does this declaration have a clause that directly depends on a `#message`?
@@ -635,11 +630,9 @@ bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
 
   context->checked_takes_input = true;
   for (const auto &clause : context->clauses) {
-    for (const auto &pred : clause->positive_predicates) {
-      if (ParsedDeclaration(pred->declaration).IsMessage()) {
-        context->takes_input = true;
-        return true;
-      }
+    if (clause->depends_on_messages) {
+      context->takes_input = true;
+      return true;
     }
   }
 

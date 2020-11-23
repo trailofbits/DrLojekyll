@@ -8,8 +8,9 @@ namespace hyde {
 // loop, and thus passes on its data to the next thing down as long as that
 // data is unique.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
-                           QueryMerge view, Context &context, OP *parent,
+                           QueryMerge merge, Context &context, OP *parent,
                            TABLE *last_model) {
+  const QueryView view(merge);
 
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
@@ -18,7 +19,7 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
     if (const auto table = TABLE::GetOrCreate(impl, view);
         table != last_model) {
       parent = BuildInsertCheck(impl, view, context, parent, table,
-                                true, view.Columns());
+                                view.CanReceiveDeletions(), view.Columns());
       last_model = table;
     }
   }
@@ -44,15 +45,20 @@ void BuildTopDownUnionChecker(
   // predecessors.
   if (model->table) {
 
+    TABLE *table_to_update = model->table;
+
     // Call all of the predecessors.
     auto call_preds = [&] (PARALLEL *par) {
       for (QueryView pred_view : view.Predecessors()) {
-        if (pred_view.IsInsert() &&
-            QueryInsert::From(pred_view).IsDelete()) {
+
+        // Deletes have no backing data; they signal to their successors that
+        // data should be deleted from their successor models.
+        if (pred_view.IsDelete()) {
           continue;
         }
+
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, par, view, view_cols, model->table, pred_view,
+            impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
         check->ExecuteAlongside(impl, par);
       }
@@ -63,70 +69,108 @@ void BuildTopDownUnionChecker(
         [&] (REGION *parent) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
+
+            // TODO(pag): We should be able to optimize
+            //            `BuildTopDownTryMarkAbsent` to not actually
+            //            have to check during its state change, but oh well.
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
                 BuildStateCheckCaseNothing,
                 [&] (ProgramImpl *, REGION *parent) -> REGION * {
-                  return BuildTopDownCheckerResetAndProve(
+                  return BuildTopDownTryMarkAbsent(
                       impl, model->table, parent, view.Columns(),
                       [&] (PARALLEL *par) {
                         call_preds(par);
                       });
                 });
+
           } else {
+            table_to_update = nullptr;
             const auto par = impl->parallel_regions.Create(parent);
             call_preds(par);
             return parent;
           }
         });
 
-    UseRef<REGION>(proc, region).Swap(proc->body);
+    proc->body.Emplace(proc, region);
 
   // This union doesn't have persistent backing, so we have to call down to
   // each predecessor. If any of them returns true then we can return true.
   } else {
     auto par = impl->parallel_regions.Create(proc);
-    UseRef<REGION>(proc, par).Swap(proc->body);
+    proc->body.Emplace(proc, par);
 
     for (QueryView pred_view : view.Predecessors()) {
 
-      // NOTE(pag): We don't need to handle the `DELETE` (really, and insert)
-      //            case, as otherwise this union would have persistent backing.
+      // `DELETE`s will always return `false`, so we don't dispatch down
+      // to them.
+      if (pred_view.IsDelete()) {
+        continue;
+      }
 
-      const auto check = CallTopDownChecker(
-          impl, context, par, view, view_cols, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue, nullptr);
-      check->ExecuteAlongside(impl, par);
+      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+          impl, context, par, view, view_cols, nullptr, pred_view,
+          nullptr));
     }
   }
+}
 
+void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
+                                QueryView view, PROC *proc,
+                                TABLE *already_checked) {
 
-//  if (QueryView(view).CanReceiveDeletions()) {
-//    BuildTopDownInductionChecker(impl, context, proc, succ_view, view);
-//    return;
-//  }
-//
-//  const auto par = impl->parallel_regions.Create(proc);
-//  par->ExecuteAfter(impl, proc);
-//
-//  for (auto pred_view : view.MergedViews()) {
-//    const auto rec_check = impl->operation_regions.CreateDerived<CALL>(
-//        par, GetOrCreateTopDownChecker(impl, context, view, pred_view),
-//        ProgramOperation::kCallProcedureCheckTrue);
-//
-//    for (auto col : view.Columns()) {
-//      const auto var = proc->VariableFor(impl, col);
-//      rec_check->arg_vars.AddUse(var);
-//    }
-//
-//    rec_check->ExecuteAlongside(impl, par);
-//
-//    // If the tuple is present, then return `true`.
-//    const auto rec_present = impl->operation_regions.CreateDerived<RETURN>(
-//        rec_check, ProgramOperation::kReturnTrueFromProcedure);
-//    UseRef<REGION>(rec_check, rec_present).Swap(rec_check->OP::body);
-//  }
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  PARALLEL *parent = nullptr;
+
+  if (model->table) {
+
+    // We've already transitioned for this table, so our job is just to pass
+    // the buck along, and then eventually we'll temrinate recursion.
+    if (already_checked == model->table) {
+
+      parent = impl->parallel_regions.Create(proc);
+      proc->body.Emplace(proc, parent);
+
+    // The caller didn't already do a state transition, so we cn do it.
+    } else {
+      auto remove = BuildBottomUpTryMarkUnknown(
+          impl, model->table, proc, view.Columns(),
+          [&] (PARALLEL *par) {
+            parent = par;
+          });
+
+      proc->body.Emplace(proc, remove);
+
+      already_checked = model->table;
+    }
+
+  // This merge isn't associated with any persistent storage.
+  } else {
+    already_checked = nullptr;
+    parent = impl->parallel_regions.Create(proc);
+    proc->body.Emplace(proc, parent);
+  }
+
+  for (auto succ_view : view.Successors()) {
+    assert(!succ_view.IsMerge());
+
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                           already_checked));
+
+    for (auto col : view.Columns()) {
+      const auto var = proc->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+    }
+
+    parent->regions.AddUse(call);
+  }
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      proc, ProgramOperation::kReturnFalseFromProcedure);
+  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

@@ -62,6 +62,18 @@ bool QueryImpl::EliminateDeadFlows(void) {
       }
     }
 
+    for (DELETE *view : deletes) {
+      if (!view->is_dead && !VIEW::GetIncomingView(view->input_columns)) {
+        derived_from_input.insert(view);  // All inputs are constants.
+      }
+    }
+
+    for (INSERT *view : inserts) {
+      if (!view->is_dead && !VIEW::GetIncomingView(view->input_columns)) {
+        derived_from_input.insert(view);  // All inputs are constants.
+      }
+    }
+
     for (auto changed = true; changed;) {
       changed = false;
       ForEachViewInDepthOrder([&](VIEW *view) {
@@ -144,8 +156,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
           continue;
         }
 
-        // Negated uses of this (now dead) condition are fine, and so we can remove
-        // the condition entirely.
+        // Negated uses of this (now dead) condition are fine, and so we can
+        // remove the condition entirely.
         for (auto user_view : cond->negative_users) {
           if (user_view) {
             user_view->negative_conditions.RemoveIf(
@@ -153,8 +165,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
           }
         }
 
-        // Positive uses of the condition are unsatisfiable, and so we should kill
-        // all positive users.
+        // Positive uses of the condition are unsatisfiable, and so we should
+        // kill all positive users.
         for (auto user_view : cond->positive_users) {
           if (user_view && !user_view->is_dead) {
             kill_view(user_view);
@@ -175,7 +187,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       for (auto setter : cond->setters) {
         if (setter) {
           removed_conds = true;
-          WeakUseRef<COND>().Swap(setter->sets_condition);
+          setter->sets_condition.Clear();
         }
       }
       cond->setters.Clear();

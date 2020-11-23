@@ -396,9 +396,23 @@ class Node<ParsedDeclaration> {
   FunctorRange range{FunctorRange::kZeroOrMore};
   Token inline_attribute;
   Token last_tok;
+
+  // Is this decl a functor, and if so, does it have `aggregate`- and
+  // `summary`-attributed parameters.
   bool is_aggregate{false};
+
+  // Is this decl a functor, and if so, does it always produce the same outputs
+  // given the same inputs, or has it been attributed with `impure` and thus
+  // might behave non-deterministically.
   bool is_pure{true};
+
+  // Is this decl a functor, and if so, is it used as a merge functor to a
+  // `mutable`-attributed parameter of another decl.
   bool is_merge{false};
+
+  // Does this declaration have any `mutable`-attributed parameter?
+  bool has_mutable_parameter{false};
+
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
   std::string binding_pattern;
 

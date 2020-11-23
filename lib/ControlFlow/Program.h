@@ -167,6 +167,16 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
     return id;
   }
 
+  inline bool IsGlobal(void) const noexcept {
+    switch (role) {
+      case VariableRole::kConditionRefCount:
+      case VariableRole::kConstant:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   std::optional<QueryConstant> query_const;
   std::optional<QueryColumn> query_column;
   std::optional<QueryCondition> query_cond;
@@ -183,6 +193,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   explicit Node(Node<ProgramRegion> *parent_);
 
   virtual void Accept(ProgramVisitor &visitor) = 0;
+  virtual uint64_t Hash(void) const = 0;
 
   virtual Node<ProgramProcedure> *AsProcedure(void) noexcept;
   virtual Node<ProgramOperationRegion> *AsOperation(void) noexcept;
@@ -321,7 +332,9 @@ enum class ProgramOperation {
   kTestAllNonZero,
   kTestAllZero,
   kIncrementAll,
+  kIncrementAllAndTest,
   kDecrementAll,
+  kDecrementAllAndTest,
 
   // Call another procedure.
   kCallProcedure,
@@ -373,7 +386,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
-  const ProgramOperation op;
+  ProgramOperation op;
 
   // If this operation does something conditional then this is the body it
   // executes.
@@ -391,7 +404,7 @@ class Node<ProgramLetBindingRegion> final
   virtual ~Node(void);
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -427,6 +440,7 @@ class Node<ProgramVectorLoopRegion> final
       : Node<ProgramOperationRegion>(parent_, op_),
         defined_vars(this) {}
 
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -459,6 +473,8 @@ class Node<ProgramVectorAppendRegion> final
       : Node<ProgramOperationRegion>(parent_, op_),
         tuple_vars(this) {}
 
+  uint64_t Hash(void) const override;
+
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
@@ -482,6 +498,8 @@ class Node<ProgramVectorClearRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
+  uint64_t Hash(void) const override;
+
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
@@ -503,6 +521,8 @@ class Node<ProgramVectorUniqueRegion> final
   using Node<ProgramOperationRegion>::Node;
 
   void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -541,6 +561,8 @@ class Node<ProgramTransitionStateRegion> final
 
   Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
 
+  uint64_t Hash(void) const override;
+
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
@@ -576,7 +598,7 @@ class Node<ProgramCheckStateRegion> final
         col_values(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept override;
@@ -611,14 +633,10 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   virtual ~Node(void);
 
   Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_,
-       ProgramOperation op_ = ProgramOperation::kCallProcedure)
-      : Node<ProgramOperationRegion>(parent_, op_),
-        called_proc(called_proc_),
-        arg_vars(this),
-        arg_vecs(this) {}
+       ProgramOperation op_ = ProgramOperation::kCallProcedure);
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -629,7 +647,7 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
 
   // Procedure being called.
-  Node<ProgramProcedure> *const called_proc;
+  UseRef<Node<ProgramProcedure>, REGION> called_proc;
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
@@ -650,6 +668,7 @@ class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
       : Node<ProgramOperationRegion>(parent_, op_) {}
 
   void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
@@ -672,6 +691,7 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
         arg_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -702,6 +722,7 @@ class Node<ProgramExistenceCheckRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -730,6 +751,7 @@ class Node<ProgramExistenceAssertionRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -762,7 +784,7 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
         pivot_cols() {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -779,7 +801,7 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
   UseList<TABLEINDEX> indices;
   UseRef<VECTOR> pivot_vec;
 
-  // There is a `1:N` correspondence bween `pivot_vars` and `pivot_cols`.
+  // There is a `1:N` correspondence between `pivot_vars` and `pivot_cols`.
   DefList<VAR> pivot_vars;
   std::vector<UseList<TABLECOLUMN>> pivot_cols;
 
@@ -800,10 +822,10 @@ class Node<ProgramTableProductRegion> final
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCrossProduct),
         query_join(query_join_),
         tables(this),
-        input_vectors(this) {}
+        input_vecs(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -816,7 +838,7 @@ class Node<ProgramTableProductRegion> final
   const QueryJoin query_join;
 
   UseList<TABLE> tables;
-  UseList<VECTOR> input_vectors;
+  UseList<VECTOR> input_vecs;
   std::vector<DefList<VAR>> output_vars;
 };
 
@@ -837,7 +859,7 @@ class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
         in_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -872,7 +894,7 @@ class Node<ProgramTupleCompareRegion> final
         rhs_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -903,7 +925,7 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
         used_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -937,8 +959,10 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
         tables(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
-
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
@@ -959,7 +983,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   UseRef<REGION> body;
 
   // Input vectors and variables.
-  DefList<VECTOR> input_vectors;
+  DefList<VECTOR> input_vecs;
   DefList<VAR> input_vars;
 
   // Vectors defined in this procedure. If this is a vector procedure then
@@ -983,6 +1007,7 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
   virtual ~Node(void);
 
   void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1012,6 +1037,7 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
 
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
@@ -1033,6 +1059,7 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   void Accept(ProgramVisitor &visitor) override;
 
   explicit Node(ProgramImpl *impl, REGION *parent_);
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -1123,10 +1150,6 @@ class ProgramImpl : public User {
   // We build up "data models" of views that can share the same backing storage.
   std::vector<std::unique_ptr<DataModel>> models;
   std::unordered_map<QueryView, DataModel *> view_to_model;
-
-  // Maps views to procedures for bottom-up proving that goes and removes
-  // tuples. Removal of tuples changes their state from PRESENT to UNKNOWN.
-  std::unordered_map<QueryView, PROC *> view_to_bottom_up_remover;
 };
 
 }  // namespace hyde

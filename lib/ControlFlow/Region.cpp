@@ -117,7 +117,7 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
       this->ExecuteBefore(program, proc_body);
 
     } else {
-      UseRef<REGION>(proc, this).Swap(proc->body);
+      proc->body.Emplace(proc, this);
       this->parent = proc;
     }
 
@@ -145,7 +145,7 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
       this->ExecuteAfter(program, proc_body);
 
     } else {
-      UseRef<REGION>(proc, this).Swap(proc->body);
+      proc->body.Emplace(proc, this);
       this->parent = proc;
     }
 
@@ -170,7 +170,7 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
     if (auto proc_body = proc->body.get(); proc_body) {
       this->ExecuteAlongside(program, proc_body);
     } else {
-      UseRef<REGION>(proc, this).Swap(proc->body);
+      proc->body.Emplace(proc, this);
       this->parent = proc;
     }
 

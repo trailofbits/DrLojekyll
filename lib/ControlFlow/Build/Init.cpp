@@ -12,14 +12,21 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
   assert(impl->procedure_regions.Empty());
   const auto init_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kInitializer);
+
+  const auto seq = impl->series_regions.Create(init_proc);
+  init_proc->body.Emplace(init_proc, seq);
+
   const auto par = impl->parallel_regions.Create(init_proc);
-  UseRef<REGION>(init_proc, par).Swap(init_proc->body);
+  seq->regions.AddUse(par);
 
   // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
   // as those are dataflow dependent.
-  for (auto tuple : impl->query.Tuples()) {
+  //
+  // NOTE(pag): The dataflow builder ensures that TUPLEs are the only node types
+  //            that can take all constants.
+  for (auto view : impl->query.Tuples()) {
     bool all_const = true;
-    for (auto in_col : tuple.InputColumns()) {
+    for (auto in_col : view.InputColumns()) {
       if (!in_col.IsConstant()) {
         all_const = false;
       }
@@ -32,7 +39,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
     parent->ExecuteAlongside(impl, par);
 
     // Add variable mappings.
-    tuple.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+    view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                          std::optional<QueryColumn> out_col) {
       auto in_var = impl->const_to_var[QueryConstant::From(in_col)];
       parent->col_id_to_var.emplace(in_col.Id(), in_var);
@@ -41,7 +48,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
       }
     });
 
-    BuildEagerRegion(impl, tuple, tuple, context, parent, nullptr);
+    BuildEagerRegion(impl, view, view, context, parent, nullptr);
   }
 
   CompleteProcedure(impl, init_proc, context);

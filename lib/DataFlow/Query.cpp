@@ -100,6 +100,8 @@ QueryView QueryView::Containing(QueryColumn col) {
 
 QueryView::QueryView(const QueryView &view) : QueryView(view.impl) {}
 
+QueryView::QueryView(const QueryDelete &view) : QueryView(view.impl) {}
+
 QueryView::QueryView(const QuerySelect &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryTuple &view) : QueryView(view.impl) {}
@@ -117,6 +119,10 @@ QueryView::QueryView(const QueryMerge &view) : QueryView(view.impl) {}
 QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
+
+QueryView QueryView::From(QueryDelete &view) noexcept {
+  return reinterpret_cast<QueryView &>(view);
+}
 
 QueryView QueryView::From(QuerySelect &view) noexcept {
   return reinterpret_cast<QueryView &>(view);
@@ -179,6 +185,10 @@ DefinedNodeRange<QueryColumn> QueryJoin::MergedColumns(void) const noexcept {
 
 const char *QueryView::KindName(void) const noexcept {
   return impl->KindName();
+}
+
+bool QueryView::IsDelete(void) const noexcept {
+  return impl->AsDelete() != nullptr;
 }
 
 bool QueryView::IsSelect(void) const noexcept {
@@ -372,6 +382,9 @@ void QueryView::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
 
   } else if (auto insert = impl->AsInsert(); insert) {
     QueryInsert(insert).ForEachUse(std::move(with_col));
+
+  } else if (auto del = impl->AsDelete(); del) {
+    QueryDelete(del).ForEachUse(std::move(with_col));
 
   } else if (auto tuple = impl->AsTuple(); tuple) {
     QueryTuple(tuple).ForEachUse(std::move(with_col));
@@ -619,7 +632,7 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
     for (auto i = 0u; i < max_i; ++i) {
       const auto out_col = impl->columns[i];
       const auto in_col = view->columns[i];
-      with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+      with_col(QueryColumn(in_col), InputColumnRole::kCopied,
                QueryColumn(out_col));
     }
   }
@@ -1131,7 +1144,6 @@ void QueryCompare::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   }
 }
 
-
 QueryInsert QueryInsert::From(QueryView view) {
   assert(view.IsInsert());
   return reinterpret_cast<QueryInsert &>(view);
@@ -1139,10 +1151,6 @@ QueryInsert QueryInsert::From(QueryView view) {
 
 ParsedDeclaration QueryInsert::Declaration(void) const noexcept {
   return impl->declaration;
-}
-
-bool QueryInsert::IsDelete(void) const noexcept {
-  return !impl->is_insert;
 }
 
 bool QueryInsert::IsRelation(void) const noexcept {
@@ -1187,8 +1195,79 @@ OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
 void QueryInsert::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                 std::optional<QueryColumn>)>
                                  with_col) const {
-  for (auto in_col : impl->input_columns) {
-    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough, std::nullopt);
+  if (IsStream()) {
+    for (auto in_col : impl->input_columns) {
+      with_col(QueryColumn(in_col), InputColumnRole::kPublished, std::nullopt);
+    }
+
+  } else if (IsRelation()) {
+    if (impl->successors.Empty()) {
+      for (auto in_col : impl->input_columns) {
+        with_col(QueryColumn(in_col), InputColumnRole::kMaterialized,
+                 std::nullopt);
+      }
+    } else {
+      for (auto user : impl->successors) {
+        if (user->AsMerge() || user->AsSelect()) {
+          for (auto out_col : user->columns) {
+            auto in_col = impl->input_columns[out_col->index];
+            with_col(QueryColumn(in_col), InputColumnRole::kMaterialized,
+                     QueryColumn(out_col));
+          }
+        } else {
+          assert(false);
+        }
+      }
+    }
+
+  } else {
+    assert(false);
+  }
+}
+
+QueryDelete QueryDelete::From(QueryView view) {
+  assert(view.IsDelete());
+  return reinterpret_cast<QueryDelete &>(view);
+}
+
+// The deleted columns.
+DefinedNodeRange<QueryColumn> QueryDelete::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+QueryColumn QueryDelete::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
+unsigned QueryDelete::NumInputColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->input_columns.Size());
+}
+
+QueryColumn QueryDelete::NthInputColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->input_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryDelete::InputColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+OutputStream &QueryDelete::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryDelete::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                                std::optional<QueryColumn>)>
+                                 with_col) const {
+  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
+    const auto out_col = impl->columns[i];
+    const auto in_col = impl->input_columns[i];
+    with_col(QueryColumn(in_col), InputColumnRole::kDeleted,
+             QueryColumn(out_col));
   }
 }
 
@@ -1237,7 +1316,7 @@ void QueryTuple::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
     const auto out_col = impl->columns[i];
     const auto in_col = impl->input_columns[i];
-    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
              QueryColumn(out_col));
   }
 }
@@ -1376,6 +1455,11 @@ DefinedNodeRange<QueryIO> Query::IOs(void) const {
 DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
   return {DefinedNodeIterator<QueryInsert>(impl->inserts.begin()),
           DefinedNodeIterator<QueryInsert>(impl->inserts.end())};
+}
+
+DefinedNodeRange<QueryDelete> Query::Deletes(void) const {
+  return {DefinedNodeIterator<QueryDelete>(impl->deletes.begin()),
+          DefinedNodeIterator<QueryDelete>(impl->deletes.end())};
 }
 
 DefinedNodeRange<QueryMap> Query::Maps(void) const {

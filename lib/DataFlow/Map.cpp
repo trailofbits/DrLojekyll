@@ -103,7 +103,7 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query,
       const auto new_out_col =
           new_columns.Create(out_col->var, this, out_col->id);
 
-      new_out_col->CopyConstant(out_col);
+      new_out_col->CopyConstantFrom(out_col);
       out_col->ReplaceAllUsesWith(new_out_col);
 
       if (functor.NthParameter(i).Binding() != ParameterBinding::kFree) {
@@ -139,7 +139,7 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query,
       const auto new_out_col =
           new_columns.Create(out_col->var, this, out_col->id);
 
-      new_out_col->CopyConstant(out_col);
+      new_out_col->CopyConstantFrom(out_col);
       out_col->ReplaceAllUsesWith(new_out_col);
       new_attached_columns.AddUse(in_col);
 
