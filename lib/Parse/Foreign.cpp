@@ -6,6 +6,8 @@ namespace hyde {
 
 // Try to parse `sub_range` as a froeign type declaration, adding it to
 // module if successful.
-void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {}
+void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
+  (void) module;
+}
 
 }  // namespace hyde
