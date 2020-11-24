@@ -2,6 +2,8 @@
 
 #include "Token.h"
 
+#incldue <cassert>
+
 #include <drlojekyll/Util/BitManipulation.h>
 
 namespace hyde {
@@ -35,9 +37,11 @@ DisplayPosition Token::ErrorPosition(void) const {
   }
 
   const auto error = As<lex::ErrorToken>();
-  const auto next_col  = error.Load<lex::Column>();
   const auto error_col = error.Load<lex::ErrorColumn>();
+#ifndef NDEBUG
+  const auto next_col  = error.Load<lex::Column>();
   assert(error_col <= next_col);
+#endif
   return DisplayPosition(
       position.DisplayId(),
       position.Index() + error.Load<lex::ErrorIndexDisp>(),
