@@ -99,7 +99,7 @@ struct Extractor<Desired, kOffset, First, Rest...> final {
   }
 };
 
-template <typename Desired, size_t kOffset, typename Final>
+template <typename Desired, uint64_t kOffset, typename Final>
 struct Extractor<Desired, kOffset, Final> final {
  public:
   static constexpr auto kSizeInBits = sizeof(Final) * 8u;
