@@ -86,8 +86,7 @@ class Context {
   // Maps views to procedures for top-down execution. The top-down executors
   // exist to determine if a tuple is actually PRESENT (returning false if so),
   // converting unprovable UNKNOWNs into ABSENTs.
-  std::unordered_map<std::string, PROC *>
-      view_to_top_down_checker;
+  std::unordered_map<std::string, PROC *> view_to_top_down_checker;
 
   // Maps views to procedures for bottom-up proving that goes and removes
   // tuples. Removal of tuples changes their state from PRESENT to UNKNOWN.
@@ -122,10 +121,12 @@ OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseNothing(ProgramImpl *impl, REGION *parent);
 
-template <typename Cols, typename IfPresent, typename IfAbsent, typename IfUnknown>
-static CHECKSTATE *BuildTopDownCheckerStateCheck(
-    ProgramImpl *impl, REGION *parent, TABLE *table, Cols &&cols,
-    IfPresent if_present_cb, IfAbsent if_absent_cb, IfUnknown if_unknown_cb) {
+template <typename Cols, typename IfPresent, typename IfAbsent,
+          typename IfUnknown>
+static CHECKSTATE *
+BuildTopDownCheckerStateCheck(ProgramImpl *impl, REGION *parent, TABLE *table,
+                              Cols &&cols, IfPresent if_present_cb,
+                              IfAbsent if_absent_cb, IfUnknown if_unknown_cb) {
 
   const auto check = impl->operation_regions.CreateDerived<CHECKSTATE>(parent);
   for (auto col : cols) {
@@ -152,13 +153,12 @@ static CHECKSTATE *BuildTopDownCheckerStateCheck(
 
 // Change the state of some relation.
 template <typename Cols>
-static CHANGESTATE *BuildChangeState(
-    ProgramImpl *impl, TABLE *table, REGION *parent,
-    Cols &&cols, TupleState from_state, TupleState to_state) {
+static CHANGESTATE *
+BuildChangeState(ProgramImpl *impl, TABLE *table, REGION *parent, Cols &&cols,
+                 TupleState from_state, TupleState to_state) {
 
-  const auto state_change =
-      impl->operation_regions.CreateDerived<CHANGESTATE>(
-          parent, from_state, to_state);
+  const auto state_change = impl->operation_regions.CreateDerived<CHANGESTATE>(
+      parent, from_state, to_state);
 
   state_change->table.Emplace(state_change, table);
   for (auto col : cols) {
@@ -170,9 +170,9 @@ static CHANGESTATE *BuildChangeState(
 }
 
 template <typename Cols, typename AfterChangeState>
-static CHANGESTATE *BuildTopDownTryMarkAbsent(
-    ProgramImpl *impl, TABLE *table, REGION *parent,
-    Cols &&cols, AfterChangeState with_par_node) {
+static CHANGESTATE *BuildTopDownTryMarkAbsent(ProgramImpl *impl, TABLE *table,
+                                              REGION *parent, Cols &&cols,
+                                              AfterChangeState with_par_node) {
 
   // Change the tuple's state to mark it as deleted so that we can't use it
   // as its own base case.
@@ -190,9 +190,9 @@ static CHANGESTATE *BuildTopDownTryMarkAbsent(
 }
 
 template <typename Cols, typename AfterChangeState>
-static CHANGESTATE *BuildBottomUpTryMarkUnknown(
-    ProgramImpl *impl, TABLE *table, REGION *parent,
-    Cols &&cols, AfterChangeState with_par_node) {
+static CHANGESTATE *
+BuildBottomUpTryMarkUnknown(ProgramImpl *impl, TABLE *table, REGION *parent,
+                            Cols &&cols, AfterChangeState with_par_node) {
 
   // Change the tuple's state to mark it as deleted so that we can't use it
   // as its own base case.
@@ -219,16 +219,15 @@ static CHANGESTATE *BuildBottomUpTryMarkUnknown(
 // NOTE(pag): This mutates `available_cols` in place, so that by the time that
 //            `cb` is called, `available_cols` contains all columns.
 template <typename ForEachTuple>
-static REGION *BuildMaybeScanPartial(
-    ProgramImpl *impl, QueryView view,
-    std::vector<QueryColumn> &view_cols,
-    TABLE *table, REGION *parent, ForEachTuple cb) {
+static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
+                                     std::vector<QueryColumn> &view_cols,
+                                     TABLE *table, REGION *parent,
+                                     ForEachTuple cb) {
 
   // Sort and unique out the relevant columns.
-  std::sort(view_cols.begin(), view_cols.end(),
-            [] (QueryColumn a, QueryColumn b) {
-              return *(a.Index()) < *(b.Index());
-            });
+  std::sort(
+      view_cols.begin(), view_cols.end(),
+      [](QueryColumn a, QueryColumn b) { return *(a.Index()) < *(b.Index()); });
 
   auto it = std::unique(view_cols.begin(), view_cols.end());
   view_cols.erase(it, view_cols.end());
@@ -261,8 +260,8 @@ static REGION *BuildMaybeScanPartial(
   const auto index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
   const auto seq = impl->series_regions.Create(parent);
   const auto proc = seq->containing_procedure;
-  const auto vec = proc->vectors.Create(
-      impl->next_id++, VectorKind::kTableScan, selected_cols);
+  const auto vec = proc->vectors.Create(impl->next_id++, VectorKind::kTableScan,
+                                        selected_cols);
 
   // Scan an index, using the columns from the tuple to find the columns
   // from the tuple's predecessor.
@@ -293,8 +292,8 @@ static REGION *BuildMaybeScanPartial(
   loop->vector.Emplace(loop, vec);
 
   for (auto col : selected_cols) {
-    const auto var = loop->defined_vars.Create(
-        impl->next_id++, VariableRole::kScanOutput);
+    const auto var =
+        loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
     var->query_column = col;
     loop->col_id_to_var.emplace(col.Id(), var);
   }
@@ -332,9 +331,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on an induction. This applies to inductions as
 // well as differential unions.
-void BuildTopDownInductionChecker(
-    ProgramImpl *impl, Context &context, PROC *proc, QueryMerge view,
-    std::vector<QueryColumn> &available_cols, TABLE *already_checked);
+void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
+                                  PROC *proc, QueryMerge view,
+                                  std::vector<QueryColumn> &available_cols,
+                                  TABLE *already_checked);
 
 // Build an eager region for a `QueryMerge` that is NOT part of an inductive
 // loop, and thus passes on its data to the next thing down as long as that
@@ -345,16 +345,16 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
-void BuildTopDownUnionChecker(
-    ProgramImpl *impl, Context &context, PROC *proc,
-    QueryMerge view, std::vector<QueryColumn> &available_cols,
-    TABLE *already_checked);
+void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                              QueryMerge view,
+                              std::vector<QueryColumn> &available_cols,
+                              TABLE *already_checked);
 
 // Build a top-down checker on a join.
-void BuildTopDownJoinChecker(
-    ProgramImpl *impl, Context &context, PROC *proc,
-    QueryJoin view, std::vector<QueryColumn> &available_cols,
-    TABLE *already_checked);
+void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                             QueryJoin view,
+                             std::vector<QueryColumn> &available_cols,
+                             TABLE *already_checked);
 
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
@@ -393,14 +393,16 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
 // recovering "lost" columns, and possibly re-orders arguments before calling
 // down to the tuple's predecessor's checker.
-void BuildTopDownTupleChecker(
-    ProgramImpl *impl, Context &context, PROC *proc, QueryTuple tuple,
-    std::vector<QueryColumn> &available_cols, TABLE *already_checked);
+void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                              QueryTuple tuple,
+                              std::vector<QueryColumn> &available_cols,
+                              TABLE *already_checked);
 
 // Build a top-down checker on a compare.
-void BuildTopDownCompareChecker(
-    ProgramImpl *impl, Context &context, PROC *proc, QueryCompare cmp,
-    std::vector<QueryColumn> &available_cols, TABLE *already_checked);
+void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                                QueryCompare cmp,
+                                std::vector<QueryColumn> &available_cols,
+                                TABLE *already_checked);
 
 // Builds an initialization function which does any work that depends purely
 // on constants.
@@ -417,30 +419,31 @@ VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 //
 // The idea is that we have the output columns of `succ_view`, and we want to
 // check if a tuple on `view` exists.
-CALL *CallTopDownChecker(ProgramImpl *impl, Context &context,
-                         REGION *parent, QueryView succ_view,
-                         QueryView view, ProgramOperation call_op);
+CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
+                         QueryView succ_view, QueryView view,
+                         ProgramOperation call_op);
 
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
-CALL *CallTopDownChecker(
-    ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
-    const std::vector<QueryColumn> &succ_cols, QueryView view,
-    ProgramOperation call_op, TABLE *already_checked=nullptr);
+CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
+                         QueryView succ_view,
+                         const std::vector<QueryColumn> &succ_cols,
+                         QueryView view, ProgramOperation call_op,
+                         TABLE *already_checked = nullptr);
 
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
 // table.
 CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-    ProgramImpl *impl, Context &context, REGION *parent,
-    QueryView view, const std::vector<QueryColumn> &view_cols, TABLE *table,
-    QueryView pred_view, TABLE *already_checked=nullptr);
+    ProgramImpl *impl, Context &context, REGION *parent, QueryView view,
+    const std::vector<QueryColumn> &view_cols, TABLE *table,
+    QueryView pred_view, TABLE *already_checked = nullptr);
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
                                  QueryView from_view, QueryView to_view,
-                                 TABLE *already_checked=nullptr);
+                                 TABLE *already_checked = nullptr);
 
 void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc);
@@ -466,8 +469,8 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
                                   TABLE *already_checked);
 
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
-                               QueryView from_view, QueryJoin join,
-                               PROC *proc, TABLE *already_checked);
+                               QueryView from_view, QueryJoin join, PROC *proc,
+                               TABLE *already_checked);
 
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
@@ -487,9 +490,9 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
   // If we can receive deletions, then we need to call a functor that will
   // tell us if this tuple doesn't actually exist.
   if (differential) {
-    const auto check = CallTopDownChecker(
-        impl, context, parent, view, view,
-        ProgramOperation::kCallProcedureCheckFalse);
+    const auto check =
+        CallTopDownChecker(impl, context, parent, view, view,
+                           ProgramOperation::kCallProcedureCheckFalse);
     parent->body.Emplace(parent, check);
     parent = check;
   }
@@ -577,13 +580,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
       switch (role) {
         case InputColumnRole::kCompareLHS:
         case InputColumnRole::kCompareRHS:
-          switch (QueryCompare::From(QueryView::Containing(*out_col)).Operator()) {
-            case ComparisonOperator::kEqual:
-              return;
+          switch (
+              QueryCompare::From(QueryView::Containing(*out_col)).Operator()) {
+            case ComparisonOperator::kEqual: return;
             case ComparisonOperator::kGreaterThan:
             case ComparisonOperator::kLessThan:
-            case ComparisonOperator::kNotEqual:
-              break;
+            case ComparisonOperator::kNotEqual: break;
           }
           [[clang::fallthrough]];
         case InputColumnRole::kCopied:
@@ -610,8 +612,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
         case InputColumnRole::kIndexValue:
         case InputColumnRole::kAggregatedColumn:
-        case InputColumnRole::kPublished:
-          return;
+        case InputColumnRole::kPublished: return;
       }
     });
 

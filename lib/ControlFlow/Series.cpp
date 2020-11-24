@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Program.h"
-
 #include <drlojekyll/Util/BitManipulation.h>
+
+#include "Program.h"
 
 namespace hyde {
 

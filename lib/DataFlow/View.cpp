@@ -639,6 +639,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
 
 // Copy the group IDs and the receive/produce deletions from `this` to `that`.
 void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
+
   // Maintain the set of group IDs, to prevent over-merging.
   that->group_ids.insert(that->group_ids.end(), group_ids.begin(),
                          group_ids.end());

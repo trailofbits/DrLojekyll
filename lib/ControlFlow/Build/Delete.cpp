@@ -14,8 +14,8 @@ namespace hyde {
 //            If we ever hit this case, it likely means we need to introduce
 //            a second table that is different than `last_model`, I think.
 //            Overall I'm not super sure.
-void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view,
-                            Context &context, OP *parent) {
+void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
+                            OP *parent) {
 
   // We don't permit `!foo : message(...).`
   assert(!view.SetCondition());

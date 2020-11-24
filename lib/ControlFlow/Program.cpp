@@ -495,8 +495,7 @@ std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
 // Type of this variable.
 TypeKind DataVariable::Type(void) const noexcept {
   switch (impl->role) {
-    case VariableRole::kConditionRefCount:
-      return TypeKind::kUnsigned64;
+    case VariableRole::kConditionRefCount: return TypeKind::kUnsigned64;
     case VariableRole::kConstant:
       if (impl->query_const) {
         return impl->query_const->Literal().Type().Kind();

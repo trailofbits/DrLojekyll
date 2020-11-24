@@ -31,7 +31,7 @@ class User {
 template <typename T>
 class Use;
 
-template <typename T, typename RealT=T>
+template <typename T, typename RealT = T>
 class UseRef;
 
 template <typename T>

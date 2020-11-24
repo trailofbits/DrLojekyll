@@ -7,27 +7,25 @@
 namespace hyde {
 namespace display {
 
-enum PositionStatus : uint64_t {
-  kPositionStatusIndexOverflow = 1u << 0,
-  kPositionStatusLineNumberOverflow = 1u << 1,
-  kPositionStatusColumnNumberOverflow = 1u << 2,
-  kPositionStatusDisplayIdOverflow = 1u << 3,
+enum PositionStatus : uint16_t {
+  kPositionStatusOK = 0u,
+  kPositionStatusIndexOverflow = 1u << 0u,
+  kPositionStatusLineNumberOverflow = 1u << 1u,
+  kPositionStatusColumnNumberOverflow = 1u << 2u,
+  kPositionStatusDisplayIdOverflow = 1u << 3u,
 };
 
-struct Position {
-  uint64_t index : 24;
-  uint64_t line : 12;
-  uint64_t column : 12;
-  uint64_t display_id : 12;
-  uint64_t status : 4;
-};
+DEFINE_BOXED_TYPE(Index, uint32_t);
+DEFINE_BOXED_TYPE(DisplayId, uint16_t);
+DEFINE_BOXED_TYPE(Line, uint32_t);
+DEFINE_BOXED_TYPE(Column, uint32_t);
 
-union PositionInterpreter {
-  uint64_t flat{0};
-  Position position;
-};
+struct Position final
+    : public TypedOpaqueData<Index, DisplayId, PositionStatus, Line, Column> {
 
-static_assert(sizeof(PositionInterpreter) == 8);
+  void Emplace(uint64_t display_id, uint64_t index, uint64_t line, uint64_t col,
+               PositionStatus status = kPositionStatusOK);
+};
 
 }  // namespace display
 }  // namespace hyde

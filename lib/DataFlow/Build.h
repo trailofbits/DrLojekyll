@@ -8,7 +8,7 @@ template <typename... Args>
 static void ReplaceInputsWithTuple(QueryImpl *impl, VIEW *user,
                                    Args... input_lists) {
   UseList<COL> *input_col_lists[] = {input_lists...};
-  TUPLE * const tuple = impl->tuples.Create();
+  TUPLE *const tuple = impl->tuples.Create();
   unsigned col_index = 0u;
   for (auto input_col_list : input_col_lists) {
     if (input_col_list->Empty()) {
@@ -18,8 +18,8 @@ static void ReplaceInputsWithTuple(QueryImpl *impl, VIEW *user,
     UseList<COL> new_col_list(user);
     for (auto in_col : *input_col_list) {
       assert(in_col->IsConstant());
-      auto out_col = tuple->columns.Create(
-          in_col->var, tuple, in_col->id, col_index++);
+      auto out_col =
+          tuple->columns.Create(in_col->var, tuple, in_col->id, col_index++);
       out_col->CopyConstantFrom(in_col);
       new_col_list.AddUse(out_col);
       tuple->input_columns.AddUse(in_col);

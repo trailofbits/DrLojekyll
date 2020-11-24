@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <cstdint>
+#include <drlojekyll/Util/OpaqueData.h>
 
 namespace hyde {
 
@@ -16,8 +16,13 @@ class Token;
 // Position of a lexeme or AST node inside of a display (a abstraction over
 // an input, which could be a file, but can be displayed back to a user given
 // a configuration).
-class DisplayPosition {
+class DisplayPosition final : public OpaqueData {
  public:
+  static constexpr uint64_t kInvalidDisplayId = ~0u;
+  static constexpr uint64_t kInvalidIndex = ~0u;
+  static constexpr uint64_t kInvalidLine = ~0u;
+  static constexpr uint64_t kInvalidColumn = ~0u;
+
   DisplayPosition(void) = default;
 
   // Return the display ID, or `~0U` (32 0s, followed by 32 1s) if invalid.
@@ -42,20 +47,15 @@ class DisplayPosition {
   bool HasData(void) const;
 
   // Tries to compute the distance between two positions.
-  bool TryComputeDistanceTo(DisplayPosition that, int *num_bytes,
-                            int *num_lines, int *num_cols) const;
+  bool TryComputeDistanceTo(DisplayPosition that, int64_t *num_bytes,
+                            int64_t *num_lines, int64_t *num_cols) const;
 
   inline bool IsInvalid(void) const {
     return !IsValid();
   }
 
-  inline bool operator==(DisplayPosition that) const noexcept {
-    return opaque_data == that.opaque_data;
-  }
-
-  inline bool operator!=(DisplayPosition that) const noexcept {
-    return opaque_data != that.opaque_data;
-  }
+  using OpaqueData::operator==;
+  using OpaqueData::operator!=;
 
  private:
   friend class Display;
@@ -67,12 +67,6 @@ class DisplayPosition {
 
   explicit DisplayPosition(uint64_t display_id, uint64_t index, uint64_t line,
                            uint64_t column);
-
-  // Private constructor for use by tokens and such.
-  inline explicit DisplayPosition(uint64_t opaque_data_)
-      : opaque_data(opaque_data_) {}
-
-  uint64_t opaque_data{0};
 };
 
 // Exclusive range of characters in a display.
@@ -99,8 +93,8 @@ class DisplayRange {
   }
 
   // Tries to compute the distance between two positions.
-  inline bool TryComputeDistance(int *num_bytes, int *num_lines,
-                                 int *num_cols) const {
+  inline bool TryComputeDistance(int64_t *num_bytes, int64_t *num_lines,
+                                 int64_t *num_cols) const {
     return from.TryComputeDistanceTo(to, num_bytes, num_lines, num_cols);
   }
 

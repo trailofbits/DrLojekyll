@@ -6,8 +6,8 @@ namespace hyde {
 namespace {
 
 static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
-                                      ParsedFunctor functor,
-                                      Context &context, REGION *parent) {
+                                      ParsedFunctor functor, Context &context,
+                                      REGION *parent) {
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
@@ -90,8 +90,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
     assert(!succ_view.IsMerge());
 
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                           nullptr));
+        parent,
+        GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
 
     for (auto col : view.Columns()) {
       const auto var = proc->VariableFor(impl, col);

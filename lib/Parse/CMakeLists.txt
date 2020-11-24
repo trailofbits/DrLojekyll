@@ -19,6 +19,7 @@ set(Parse_SRCS
     "Clause.cpp"
     "Error.cpp"
     "ErrorLog.cpp"
+    "Foreign.cpp"
     "Format.cpp"
     "Functor.cpp"
     "Import.cpp"

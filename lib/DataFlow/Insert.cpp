@@ -48,8 +48,7 @@ bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   }
 
   const auto that = that_->AsInsert();
-  if (!that ||
-      can_produce_deletions != that->can_produce_deletions ||
+  if (!that || can_produce_deletions != that->can_produce_deletions ||
       declaration.Id() != that->declaration.Id() ||
       columns.Size() != that->columns.Size() ||
       positive_conditions != that->positive_conditions ||

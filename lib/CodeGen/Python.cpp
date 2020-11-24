@@ -213,7 +213,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramExistenceAssertionRegion region) override {
     os << Comment(os, "Program ExistenceAssertion Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramExistenceAssertionRegion\n";
+    os << os.Indent()
+       << "pass  # TODO(ekilmer): ProgramExistenceAssertionRegion\n";
   }
 
   void Visit(ProgramExistenceCheckRegion region) override {

@@ -244,6 +244,7 @@ class QueryInsert;
 // NOTE(pag): There is no `kSelected` because `SELECT` / `RECV` nodes have no
 //            input columns.
 enum class InputColumnRole {
+
   // The input column is copied to the output column, and it has no additional
   // semantic meaning.
   kCopied,

@@ -89,11 +89,9 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we cn do it.
     } else {
-      auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, insert_cols,
-          [&] (PARALLEL *par) {
-            parent = par;
-          });
+      auto remove =
+          BuildBottomUpTryMarkUnknown(impl, model->table, proc, insert_cols,
+                                      [&](PARALLEL *par) { parent = par; });
 
       proc->body.Emplace(proc, remove);
 
@@ -122,8 +120,8 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                              already_checked));
 
       for (auto sel_col : sel_cols) {
-        const auto var = proc->VariableFor(
-            impl, insert_cols[*(sel_col.Index())]);
+        const auto var =
+            proc->VariableFor(impl, insert_cols[*(sel_col.Index())]);
         assert(var != nullptr);
         call->arg_vars.AddUse(var);
       }

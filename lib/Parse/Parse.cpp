@@ -1220,14 +1220,6 @@ NodeRange<ParsedImport> ParsedModule::Imports(void) const {
   }
 }
 
-NodeRange<ParsedInclude> ParsedModule::Includes(void) const {
-  if (impl->includes.empty()) {
-    return NodeRange<ParsedInclude>();
-  } else {
-    return NodeRange<ParsedInclude>(impl->includes.front().get());
-  }
-}
-
 NodeRange<ParsedInline> ParsedModule::Inlines(void) const {
   if (impl->inlines.empty()) {
     return NodeRange<ParsedInline>();
@@ -1303,18 +1295,6 @@ DisplayRange ParsedImport::SpellingRange(void) const noexcept {
 
 ParsedModule ParsedImport::ImportedModule(void) const noexcept {
   return ParsedModule(impl->imported_module->shared_from_this());
-}
-
-DisplayRange ParsedInclude::SpellingRange(void) const noexcept {
-  return impl->range;
-}
-
-std::string_view ParsedInclude::IncludedFilePath(void) const noexcept {
-  return impl->path;
-}
-
-bool ParsedInclude::IsSystemInclude(void) const noexcept {
-  return impl->is_angled;
 }
 
 DisplayRange ParsedInline::SpellingRange(void) const noexcept {

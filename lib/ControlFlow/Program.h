@@ -170,10 +170,8 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
   inline bool IsGlobal(void) const noexcept {
     switch (role) {
       case VariableRole::kConditionRefCount:
-      case VariableRole::kConstant:
-        return true;
-      default:
-        return false;
+      case VariableRole::kConstant: return true;
+      default: return false;
     }
   }
 
@@ -773,8 +771,7 @@ template <>
 class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_,
-              unsigned id_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_, unsigned id_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kJoinTables),
         query_join(query_join_),
         id(id_),

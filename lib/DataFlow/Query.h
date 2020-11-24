@@ -839,8 +839,7 @@ class Node<QueryDelete> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  inline Node(void)
-      : Node<QueryView>() {
+  inline Node(void) : Node<QueryView>() {
     can_produce_deletions = true;
   }
 
@@ -863,8 +862,7 @@ void Node<QueryColumn>::ForEachUser(T user_cb) const {
 
 class QueryImpl {
  public:
-  inline explicit QueryImpl(const ParsedModule & module_)
-      : module(module_) {}
+  inline explicit QueryImpl(const ParsedModule &module_) : module(module_) {}
 
   ~QueryImpl(void);
 

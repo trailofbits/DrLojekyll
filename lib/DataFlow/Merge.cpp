@@ -199,8 +199,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     for (auto i = 0u; i < num_cols; ++i) {
       const auto out_col = columns[i];
       if (out_col->IsUsed()) {
-        auto new_out_col = new_columns.Create(
-            out_col->var, this, out_col->id);
+        auto new_out_col = new_columns.Create(out_col->var, this, out_col->id);
         new_out_col->CopyConstantFrom(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
       }

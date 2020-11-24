@@ -3,84 +3,40 @@
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/Type.h>
 
+#include <cassert>
+
 namespace hyde {
-namespace {
-
-static TypeKind TokToTypeKind(Token tok) noexcept {
-  switch (tok.Lexeme()) {
-    case Lexeme::kTypeBytes: return TypeKind::kBytes;
-    case Lexeme::kTypeASCII: return TypeKind::kASCII;
-    case Lexeme::kTypeUTF8: return TypeKind::kUTF8;
-    case Lexeme::kTypeUUID: return TypeKind::kUUID;
-    case Lexeme::kTypeIn:
-      switch (tok.TypeSizeInBytes()) {
-        case 1: return TypeKind::kSigned8;
-        case 2: return TypeKind::kSigned16;
-        case 4: return TypeKind::kSigned32;
-        case 8: return TypeKind::kSigned64;
-        default: return TypeKind::kInvalid;
-      }
-    case Lexeme::kTypeUn:
-      switch (tok.TypeSizeInBytes()) {
-        case 1: return TypeKind::kUnsigned8;
-        case 2: return TypeKind::kUnsigned16;
-        case 4: return TypeKind::kUnsigned32;
-        case 8: return TypeKind::kUnsigned64;
-        default: return TypeKind::kInvalid;
-      }
-    case Lexeme::kTypeFn:
-      switch (tok.TypeSizeInBytes()) {
-        case 4: return TypeKind::kFloat;
-        case 8: return TypeKind::kDouble;
-        default: return TypeKind::kInvalid;
-      }
-    default: return TypeKind::kInvalid;
-  }
-}
-
-}  // namespace
-
-unsigned SizeInBits(TypeKind kind) noexcept {
-  return SizeInBytes(kind) * 8u;
-}
-
-unsigned SizeInBytes(TypeKind kind) noexcept {
-  switch (kind) {
-    case TypeKind::kInvalid: break;
-    case TypeKind::kSigned8: return 1u;
-    case TypeKind::kSigned16: return 2u;
-    case TypeKind::kSigned32: return 4u;
-    case TypeKind::kSigned64: return 8u;
-    case TypeKind::kUnsigned8: return 1u;
-    case TypeKind::kUnsigned16: return 2u;
-    case TypeKind::kUnsigned32: return 4u;
-    case TypeKind::kUnsigned64: return 8u;
-    case TypeKind::kFloat: return 4u;
-    case TypeKind::kDouble: return 8u;
-    case TypeKind::kBytes:
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: return 16u;
-  }
-  return 0u;
-}
 
 TypeLoc::TypeLoc(const Token &tok)
-    : kind(TokToTypeKind(tok)),
+    : kind(tok.TypeKind()),
       range(tok.SpellingRange()) {}
 
 TypeLoc::TypeLoc(TypeKind kind_, const DisplayRange &range_)
     : kind(kind_),
       range(range_) {}
 
+TypeLoc::TypeLoc(TypeKind kind_, uint32_t foreign_id_,
+                 const DisplayRange &range_)
+    : kind(kind_ == TypeKind::kForeignType
+               ? static_cast<TypeKind>((foreign_id_ << 8u) |
+                                       static_cast<uint32_t>(kind_))
+               : kind_),
+      range(range_) {
+  if (kind_ == TypeKind::kForeignType) {
+    assert(0u < foreign_id_);
+  } else {
+    assert(!foreign_id_);
+  }
+}
+
 TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
-  kind = TokToTypeKind(tok);
+  kind = tok.TypeKind();
   range = tok.SpellingRange();
   return *this;
 }
 
 const char *Spelling(TypeKind kind) noexcept {
-  switch (kind) {
+  switch (static_cast<TypeKind>(static_cast<uint8_t>(kind))) {
     case TypeKind::kInvalid: break;
     case TypeKind::kSigned8: return "i8";
     case TypeKind::kSigned16: return "i16";
@@ -96,6 +52,7 @@ const char *Spelling(TypeKind kind) noexcept {
     case TypeKind::kASCII: return "ascii";
     case TypeKind::kUTF8: return "utf8";
     case TypeKind::kUUID: return "uuid";
+    case TypeKind::kForeignType: return "<foreign>";
   }
   return "<invalid>";
 }

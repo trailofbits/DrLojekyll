@@ -198,10 +198,9 @@ DisplayManager::DisplayManager(void)
 // Return the name of a display, given a position.
 std::string_view DisplayManager::DisplayName(DisplayPosition position) const {
   if (position.IsValid()) {
-    display::PositionInterpreter interpreter = {position.opaque_data};
-    const auto display_id = interpreter.position.display_id;
+    const auto display_id = position.DisplayId();
     if (display_id && display_id < impl->displays.size()) {
-      return impl->displays[interpreter.position.display_id]->Name();
+      return impl->displays[display_id]->Name();
     }
   }
   return std::string_view();
@@ -274,15 +273,12 @@ bool DisplayManager::TryReadChar(DisplayPosition position, char *ch_out) const {
     return false;
   }
 
-  display::PositionInterpreter interpreter = {};
-  interpreter.flat = position.opaque_data;
-  const auto display_id = interpreter.position.display_id;
+  const auto display_id = position.DisplayId();
   if (!display_id || display_id >= impl->displays.size()) {
     return false;
   }
 
-  return impl->displays[display_id]->TryReadChar(interpreter.position.index,
-                                                 ch_out);
+  return impl->displays[display_id]->TryReadChar(position.Index(), ch_out);
 }
 
 // Tries to read a range of characters from a display. Returns `true` if
@@ -291,9 +287,10 @@ bool DisplayManager::TryReadChar(DisplayPosition position, char *ch_out) const {
 // NOTE(pag): `*data_out` is valid for the lifetime of this `DisplayManager`
 bool DisplayManager::TryReadData(DisplayRange range,
                                  std::string_view *data_out) const {
-  display::PositionInterpreter interpreter = {};
-  interpreter.flat = range.from.opaque_data;
-  const auto display_id = interpreter.position.display_id;
+  if (range.IsInvalid()) {
+    return false;
+  }
+  const auto display_id = range.From().DisplayId();
   if (!display_id || display_id >= impl->displays.size()) {
     return false;
   }
@@ -304,36 +301,33 @@ bool DisplayManager::TryReadData(DisplayRange range,
 // Try to displace `position` by `num_bytes`. If successful, modifies
 // `position` in place, and returns `true`, otherwise returns `false`.
 bool DisplayManager::TryDisplacePosition(DisplayPosition &position,
-                                         int num_bytes) const {
+                                         int64_t num_bytes) const {
   if (!position.IsValid()) {
     return false;
   }
 
-  display::PositionInterpreter interpreter = {position.opaque_data};
-  const auto display_id = interpreter.position.display_id;
+  const auto display_id = position.DisplayId();
   if (!display_id || display_id >= impl->displays.size()) {
     return false;
   }
 
   DisplayImpl *const display = impl->displays[display_id].get();
-  const auto index = static_cast<unsigned>(interpreter.position.index);
+  const auto index = position.Index();
 
   if (!num_bytes) {
     return true;
 
   // Jump forward.
   } else if (0 < num_bytes) {
-    const auto disp = static_cast<unsigned>(num_bytes);
+    const auto disp = static_cast<uint64_t>(num_bytes);
     if (display->TryGetPosition(index + disp, &position)) {
       return true;
     }
 
     // `index + disp - 1` is the last character in the display.
-    if (display->TryGetPosition(index + disp - 1, &position)) {
-      interpreter.flat = position.opaque_data;
-      position = DisplayPosition(display_id, interpreter.position.index + 1,
-                                 interpreter.position.line,
-                                 interpreter.position.column + 1);
+    if (display->TryGetPosition(index + disp - 1u, &position)) {
+      position = DisplayPosition(display_id, index + disp, position.Line(),
+                                 position.Column() + 1u);
       return true;
     }
 
@@ -341,17 +335,24 @@ bool DisplayManager::TryDisplacePosition(DisplayPosition &position,
 
   // Jump backward.
   } else {
-    const auto disp = static_cast<unsigned>(static_cast<int64_t>(-num_bytes));
+    const auto disp = static_cast<uint64_t>(static_cast<int64_t>(-num_bytes));
+
+    // Jumping to the beginning of the display.
     if (disp == index) {
-      interpreter.position.index = 0;
-      interpreter.position.line = 1;
-      interpreter.position.column = 1;
-      position.opaque_data = interpreter.flat;
+      position = DisplayPosition(display_id, 0u, 1u, 1u);
       return true;
 
+    // Jumping out-of-bounds.
     } else if (disp > index) {
       return false;
 
+    // Jumping within the line.
+    } else if (const auto col = position.Column(); disp < col) {
+      position = DisplayPosition(display_id, index - disp, position.Line(),
+                                 col - disp);
+      return true;
+
+    // Jumping to a previous line.
     } else {
       return display->TryGetPosition(index - disp, &position);
     }

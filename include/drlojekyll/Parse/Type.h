@@ -4,6 +4,8 @@
 
 #include <drlojekyll/Display/DisplayPosition.h>
 
+#include <optional>
+
 namespace hyde {
 
 class ParsedVariable;
@@ -11,7 +13,7 @@ class ParsedParameter;
 class ParsedLiteral;
 class Token;
 
-enum class TypeKind : int {
+enum class TypeKind : uint32_t {
   kInvalid,
   kSigned8,
   kSigned16,
@@ -26,11 +28,13 @@ enum class TypeKind : int {
   kBytes,
   kASCII,
   kUTF8,
-  kUUID
+  kUUID,
+
+  // If it's a foreign type type then we embed extra data in the high
+  // 24 bits.
+  kForeignType
 };
 
-unsigned SizeInBits(TypeKind kind) noexcept;
-unsigned SizeInBytes(TypeKind kind) noexcept;
 const char *Spelling(TypeKind kind) noexcept;
 
 // Type and location of that type.
@@ -38,10 +42,19 @@ class TypeLoc {
  public:
   TypeLoc(const Token &tok);
   TypeLoc(TypeKind kind_, const DisplayRange &range_);
+  TypeLoc(TypeKind kind_, uint32_t foreign_id_, const DisplayRange &range_);
   TypeLoc &operator=(const Token &tok) noexcept;
 
   inline TypeKind Kind(void) const noexcept {
-    return kind;
+    return static_cast<TypeKind>(static_cast<uint8_t>(kind));
+  }
+
+  inline std::optional<uint32_t> ForeignTypeId(void) const noexcept {
+    if (Kind() == TypeKind::kForeignType) {
+      return static_cast<uint32_t>(kind) >> 8u;
+    } else {
+      return std::nullopt;
+    }
   }
 
   inline DisplayPosition Position(void) const noexcept {

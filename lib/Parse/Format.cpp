@@ -188,15 +188,6 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ParsedInclude include) {
-  if (include.IsSystemInclude()) {
-    os << "#include <" << include.IncludedFilePath() << ">";
-  } else {
-    os << "#include \"" << include.IncludedFilePath() << "\"";
-  }
-  return os;
-}
-
 OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   const auto code = code_.CodeToInline();
 
@@ -232,18 +223,6 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   if (os.KeepImports()) {
     for (auto import : module.Imports()) {
       os << import.SpellingRange() << "\n";
-    }
-  }
-
-  for (auto include : module.Includes()) {
-    if (include.IsSystemInclude()) {
-      os << include << "\n";
-    }
-  }
-
-  for (auto include : module.Includes()) {
-    if (!include.IsSystemInclude()) {
-      os << include << "\n";
     }
   }
 

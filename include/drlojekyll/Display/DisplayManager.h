@@ -57,7 +57,7 @@ class DisplayManager {
 
   // Try to displace `position` by `num_bytes`. If successful, modifies
   // `position` in place, and returns `true`, otherwise returns `false`.
-  bool TryDisplacePosition(DisplayPosition &position, int num_bytes) const;
+  bool TryDisplacePosition(DisplayPosition &position, int64_t num_bytes) const;
 
  private:
   friend class Lexer;
