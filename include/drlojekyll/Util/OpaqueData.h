@@ -176,7 +176,7 @@ struct BoxedType {
   }
 
   T val;
-} __attribute__((packed));
+};
 
 template <>
 struct BoxedType<uint64_t> {
@@ -190,7 +190,7 @@ struct BoxedType<uint64_t> {
     return val;
   }
   uint64_t val;
-} __attribute__((packed));
+};
 
 template <>
 struct BoxedType<uint32_t> {
@@ -204,7 +204,7 @@ struct BoxedType<uint32_t> {
     return val;
   }
   uint32_t val;
-} __attribute__((packed));
+};
 
 template <>
 struct BoxedType<uint16_t> {
@@ -218,7 +218,7 @@ struct BoxedType<uint16_t> {
     return val;
   }
   uint16_t val;
-} __attribute__((packed));
+};
 
 template <>
 struct BoxedType<uint8_t> {
@@ -233,12 +233,12 @@ struct BoxedType<uint8_t> {
   }
 
   uint8_t val;
-} __attribute__((packed));
+};
 
 #define DEFINE_BOXED_TYPE(name, underlying_type) \
   struct name final : public ::hyde::BoxedType<underlying_type> { \
     using BoxedType::BoxedType; \
-  } __attribute__((packed)); \
+  }; \
   static_assert(sizeof(name) == sizeof(underlying_type))
 
 }  // namespace hyde
