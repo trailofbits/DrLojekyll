@@ -2,9 +2,9 @@
 
 #include "Token.h"
 
-#include <cassert>
-
 #include <drlojekyll/Util/BitManipulation.h>
+
+#include <cassert>
 
 namespace hyde {
 
@@ -39,14 +39,13 @@ DisplayPosition Token::ErrorPosition(void) const {
   const auto error = As<lex::ErrorToken>();
   const auto error_col = error.Load<lex::ErrorColumn>();
 #ifndef NDEBUG
-  const auto next_col  = error.Load<lex::Column>();
+  const auto next_col = error.Load<lex::Column>();
   assert(error_col <= next_col);
 #endif
-  return DisplayPosition(
-      position.DisplayId(),
-      position.Index() + error.Load<lex::ErrorIndexDisp>(),
-      position.Line() + error.Load<lex::ErrorLineDisp>(),
-      error_col);
+  return DisplayPosition(position.DisplayId(),
+                         position.Index() + error.Load<lex::ErrorIndexDisp>(),
+                         position.Line() + error.Load<lex::ErrorLineDisp>(),
+                         error_col);
 }
 
 // Return the range of characters covered by this token. This is an open range
@@ -168,8 +167,7 @@ bool Token::IsType(void) const {
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
     case ::hyde::Lexeme::kTypeFn:
-    case ::hyde::Lexeme::kIdentifierType:
-    return true;
+    case ::hyde::Lexeme::kIdentifierType: return true;
     default: return false;
   }
 }
@@ -190,8 +188,7 @@ unsigned Token::CodeId(void) const {
     case ::hyde::Lexeme::kLiteralPythonCode: {
       return As<lex::CodeLiteralToken>().Load<lex::Id>();
     }
-    default:
-      return 0;
+    default: return 0;
   }
 }
 
@@ -250,11 +247,11 @@ unsigned Token::IdentifierLength(void) const {
       return As<lex::TypeToken>().Load<::hyde::TypeKind>();
     case ::hyde::Lexeme::kIdentifierType: {
       const uint32_t high = IdentifierId() << 8u;
-      const uint32_t low = static_cast<uint32_t>(::hyde::TypeKind::kForeignType);
+      const uint32_t low =
+          static_cast<uint32_t>(::hyde::TypeKind::kForeignType);
       return static_cast<::hyde::TypeKind>(high | low);
     }
-    default:
-      return ::hyde::TypeKind::kInvalid;
+    default: return ::hyde::TypeKind::kInvalid;
   }
 }
 

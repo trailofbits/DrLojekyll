@@ -3,6 +3,8 @@
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/Type.h>
 
+#include <cassert>
+
 namespace hyde {
 
 TypeLoc::TypeLoc(const Token &tok)
@@ -15,10 +17,10 @@ TypeLoc::TypeLoc(TypeKind kind_, const DisplayRange &range_)
 
 TypeLoc::TypeLoc(TypeKind kind_, uint32_t foreign_id_,
                  const DisplayRange &range_)
-    : kind(kind_ == TypeKind::kForeignType ?
-           static_cast<TypeKind>((foreign_id_ << 8u) |
-                                 static_cast<uint32_t>(kind_)) :
-           kind_),
+    : kind(kind_ == TypeKind::kForeignType
+               ? static_cast<TypeKind>((foreign_id_ << 8u) |
+                                       static_cast<uint32_t>(kind_))
+               : kind_),
       range(range_) {
   if (kind_ == TypeKind::kForeignType) {
     assert(0u < foreign_id_);

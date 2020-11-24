@@ -248,8 +248,8 @@ bool QueryView::AllUsersUseAllColumns(void) const noexcept {
 
   std::vector<bool> used_cols(num_cols);
   for (auto succ : Successors()) {
-    succ.ForEachUse([&] (QueryColumn in_col, InputColumnRole,
-                         std::optional<QueryColumn> out_col) {
+    succ.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                        std::optional<QueryColumn> out_col) {
       if (QueryView::Containing(in_col) == *this) {
         if (is_insert) {  // `out_col` is a select.
           used_cols[*(out_col->Index())] = true;
@@ -284,12 +284,12 @@ bool QueryView::AllColumnsOfSinglePredecessorAreUsed(void) const noexcept {
 
   const auto pred = preds[0];
   std::vector<bool> is_used(pred.Columns().size());
-  this->ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                       std::optional<QueryColumn>) {
-    if (QueryView::Containing(in_col) == pred) {
-      is_used[*(in_col.Index())] = true;
-    }
-  });
+  this->ForEachUse(
+      [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
+        if (QueryView::Containing(in_col) == pred) {
+          is_used[*(in_col.Index())] = true;
+        }
+      });
 
   for (auto col_is_used : is_used) {
     if (!col_is_used) {

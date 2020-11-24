@@ -326,8 +326,7 @@ bool DisplayManager::TryDisplacePosition(DisplayPosition &position,
 
     // `index + disp - 1` is the last character in the display.
     if (display->TryGetPosition(index + disp - 1u, &position)) {
-      position = DisplayPosition(display_id, index + disp,
-                                 position.Line(),
+      position = DisplayPosition(display_id, index + disp, position.Line(),
                                  position.Column() + 1u);
       return true;
     }

@@ -54,8 +54,8 @@ class DisplayPosition final : public OpaqueData {
     return !IsValid();
   }
 
-  using OpaqueData::operator ==;
-  using OpaqueData::operator !=;
+  using OpaqueData::operator==;
+  using OpaqueData::operator!=;
 
  private:
   friend class Display;

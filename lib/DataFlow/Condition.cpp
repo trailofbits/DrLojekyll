@@ -9,7 +9,7 @@ Node<QueryCondition>::~Node(void) {}
 // Extract conditions from regular nodes and force them to belong to only
 // tuple nodes. This simplifies things substantially for downstream users.
 void QueryImpl::ExtractConditionsToTuples(void) {
-  for (auto changed = true; changed; ) {
+  for (auto changed = true; changed;) {
     changed = false;
 
     ForEachView([&](VIEW *view) {

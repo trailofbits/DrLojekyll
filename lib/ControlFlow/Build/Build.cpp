@@ -136,8 +136,8 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
-    BuildEagerInsertRegion(impl, pred_view, insert, context,
-                                 parent, last_model);
+    BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
+                           last_model);
 
   } else if (view.IsDelete()) {
     BuildEagerDeleteRegion(impl, view, context, parent);
@@ -386,8 +386,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     if (view.IsMerge()) {
       const auto can_receive_deletions = view.CanReceiveDeletions();
       for (auto pred : preds) {
-        if (!pred.IsDelete() &&
-            pred.Successors().size() == 1u &&
+        if (!pred.IsDelete() && pred.Successors().size() == 1u &&
             !can_receive_deletions) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
@@ -499,7 +498,6 @@ static bool EndsWithReturn(REGION *region) {
              EndsWithReturn(cs->absent_body.get()) &&
              EndsWithReturn(cs->unknown_body.get());
     }
-
   }
 
   return false;
@@ -519,7 +517,8 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
 
     } else if (to_view.IsCompare()) {
-      CreateBottomUpCompareRemover(impl, context, to_view, proc, already_checked);
+      CreateBottomUpCompareRemover(impl, context, to_view, proc,
+                                   already_checked);
 
     } else if (to_view.IsInsert()) {
       CreateBottomUpInsertRemover(impl, context, to_view, proc,
@@ -536,8 +535,8 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     } else if (to_view.IsJoin()) {
       auto join = QueryJoin::From(to_view);
       if (join.NumPivotColumns()) {
-        CreateBottomUpJoinRemover(impl, context, from_view, join,
-                                  proc, already_checked);
+        CreateBottomUpJoinRemover(impl, context, from_view, join, proc,
+                                  already_checked);
       } else {
         assert(false && "TODO: Cross-products!");
       }
@@ -590,7 +589,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       const auto join = QueryJoin::From(view);
       if (join.NumPivotColumns()) {
         BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
-                                 already_checked);
+                                already_checked);
       } else {
         assert(false && "TODO");
       }
@@ -626,6 +625,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       // data received as ephemeral, and so there is no way to actually check
       // if the tuple exists, and so we treat it as not existing.
       if (select.IsStream()) {
+
         // Nothing to do.
 
       } else {
@@ -640,6 +640,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       const auto insert = QueryInsert::From(view);
 
       if (insert.IsStream()) {
+
         // Nothing to do.
 
       } else {
@@ -647,6 +648,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       }
 
     } else if (view.IsDelete()) {
+
       // Nothing to do.
 
     // Not possible?
@@ -737,16 +739,17 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     succ_cols.push_back(succ_view_col);
   }
 
-  return CallTopDownChecker(impl, context, parent, succ_view,
-                            succ_cols, view, call_op);
+  return CallTopDownChecker(impl, context, parent, succ_view, succ_cols, view,
+                            call_op);
 }
 
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
-CALL *CallTopDownChecker(
-    ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
-    const std::vector<QueryColumn> &succ_cols, QueryView view,
-    ProgramOperation call_op, TABLE *already_checked) {
+CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
+                         QueryView succ_view,
+                         const std::vector<QueryColumn> &succ_cols,
+                         QueryView view, ProgramOperation call_op,
+                         TABLE *already_checked) {
 
   assert(!succ_view.IsInsert());
 
@@ -762,8 +765,8 @@ CALL *CallTopDownChecker(
     succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
                              std::optional<QueryColumn> succ_view_col) {
       if (InputColumnRole::kIndexValue != role &&
-          InputColumnRole::kAggregatedColumn != role &&
-          succ_view_col && QueryView::Containing(view_col) == view &&
+          InputColumnRole::kAggregatedColumn != role && succ_view_col &&
+          QueryView::Containing(view_col) == view &&
           available_cols_map[*(succ_view_col->Index())]) {
         available_cols.push_back(view_col);
         inout_map.emplace(view_col, *succ_view_col);
@@ -771,12 +774,12 @@ CALL *CallTopDownChecker(
     });
 
     std::sort(available_cols.begin(), available_cols.end(),
-              [] (QueryColumn a, QueryColumn b) {
+              [](QueryColumn a, QueryColumn b) {
                 return *(a.Index()) < *(b.Index());
               });
 
     auto it = std::unique(available_cols.begin(), available_cols.end(),
-                          [] (QueryColumn a, QueryColumn b) {
+                          [](QueryColumn a, QueryColumn b) {
                             return *(a.Index()) == *(b.Index());
                           });
 
@@ -809,23 +812,23 @@ CALL *CallTopDownChecker(
   // are backed by what tables.
   auto &proc = context.view_to_top_down_checker[ss.str()];
   if (!proc) {
-    proc = impl->procedure_regions.Create(
-        impl->next_id++, ProcedureKind::kTupleFinder);
+    proc = impl->procedure_regions.Create(impl->next_id++,
+                                          ProcedureKind::kTupleFinder);
 
     for (auto param_col : available_cols) {
-      const auto var = proc->input_vars.Create(
-          impl->next_id++, VariableRole::kParameter);
+      const auto var =
+          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
       var->query_column = param_col;
       proc->col_id_to_var.emplace(param_col.Id(), var);
     }
 
-    context.top_down_checker_work_list.emplace_back(
-        view, available_cols, proc, already_checked);
+    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
+                                                    already_checked);
   }
 
   // Now call the checker procedure.
-  const auto check = impl->operation_regions.CreateDerived<CALL>(
-      parent, proc, call_op);
+  const auto check =
+      impl->operation_regions.CreateDerived<CALL>(parent, proc, call_op);
 
   assert(!available_cols.empty());
   for (auto col : available_cols) {
@@ -842,8 +845,8 @@ CALL *CallTopDownChecker(
 // `true`. If we have a persistent table then update the tuple's state in that
 // table.
 CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-    ProgramImpl *impl, Context &context, REGION *parent,
-    QueryView view, const std::vector<QueryColumn> &view_cols, TABLE *table,
+    ProgramImpl *impl, Context &context, REGION *parent, QueryView view,
+    const std::vector<QueryColumn> &view_cols, TABLE *table,
     QueryView pred_view, TABLE *already_checked) {
 
   const auto check = CallTopDownChecker(
@@ -854,9 +857,9 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   // it true via one of the paths into this node.
   if (table) {
     assert(view_cols.size() == view.Columns().size());
-    auto change_state = BuildChangeState(
-        impl, table, check, view_cols,
-        TupleState::kAbsentOrUnknown, TupleState::kPresent);
+    auto change_state =
+        BuildChangeState(impl, table, check, view_cols,
+                         TupleState::kAbsentOrUnknown, TupleState::kPresent);
     check->body.Emplace(check, change_state);
 
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
@@ -904,13 +907,13 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
     return proc;
   }
 
-  proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kTupleRemover);
+  proc = impl->procedure_regions.Create(impl->next_id++,
+                                        ProcedureKind::kTupleRemover);
 
   // Add parameters to procedure.
   for (auto param_col : available_cols) {
-    const auto var = proc->input_vars.Create(
-        impl->next_id++, VariableRole::kParameter);
+    const auto var =
+        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
     var->query_column = param_col;
     proc->col_id_to_var.emplace(param_col.Id(), var);
   }
@@ -924,10 +927,9 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
   // Create variable bindings for input-to-output columns. Our function has
   // as many columns as `from_view` has, which may be different than what
   // `to_view` uses (i.e. it might use fewer columns).
-  to_view.ForEachUse([=] (QueryColumn in_col, InputColumnRole role,
-                          std::optional<QueryColumn> out_col) {
-    if (QueryView::Containing(in_col) != from_view ||
-        !out_col ||
+  to_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+                         std::optional<QueryColumn> out_col) {
+    if (QueryView::Containing(in_col) != from_view || !out_col ||
         !proc->col_id_to_var.count(in_col.Id()) ||
         proc->col_id_to_var.count(out_col->Id())) {
       return;
@@ -935,16 +937,14 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
 
     switch (role) {
       case InputColumnRole::kAggregatedColumn:
-      case InputColumnRole::kIndexValue:
-        return;
+      case InputColumnRole::kIndexValue: return;
       case InputColumnRole::kCompareLHS:
       case InputColumnRole::kCompareRHS:
         if (is_equality_cmp) {
           return;
         }
         [[clang::fallthrough]];
-      default:
-        break;
+      default: break;
     }
 
     proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
@@ -953,8 +953,8 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
   // Add it to a work list that will be processed after all main bottom-up
   // (positive) provers are created, so that we have proper access to all
   // data models.
-  context.bottom_up_removers_work_list.emplace_back(
-      from_view, to_view, proc, already_checked);
+  context.bottom_up_removers_work_list.emplace_back(from_view, to_view, proc,
+                                                    already_checked);
 
   return proc;
 }
@@ -966,8 +966,7 @@ bool MayNeedToBePersisted(QueryView view) {
   // If this view sets a condition then its data must be tracked; if it
   // tests a condition, then we might jump back in at some future point if
   // things transition states.
-  if (view.SetCondition() ||
-      !view.PositiveConditions().empty() ||
+  if (view.SetCondition() || !view.PositiveConditions().empty() ||
       !view.NegativeConditions().empty()) {
     return true;
   }
@@ -1004,8 +1003,7 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
   // If this view sets a condition, then the reference counter of that condition
   // partially reflects the arity of this view, i.e. number of records in the
   // view.
-  if (view.SetCondition() ||
-      !view.PositiveConditions().empty() ||
+  if (view.SetCondition() || !view.PositiveConditions().empty() ||
       !view.NegativeConditions().empty()) {
     det = Context::kCantDeferToPredecessor;
     return false;
@@ -1076,7 +1074,7 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
     // then we can use it.
     } else if (succ_of_pred.IsInsert() &&
                QueryInsert::From(succ_of_pred).IsRelation()) {
-      const auto succ_of_pred_model = \
+      const auto succ_of_pred_model =
           impl->view_to_model[pred_view]->FindAs<DataModel>();
 
       if (succ_of_pred_model == pred_model) {

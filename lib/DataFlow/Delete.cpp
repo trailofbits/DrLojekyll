@@ -48,8 +48,8 @@ bool Node<QueryDelete>::Canonicalize(QueryImpl *,
 
   // It looks like at least one column is unused; go drop it.
   const auto introduces_control_dep = IntroducesControlDependency();
-  if (opt.can_remove_unused_columns &&
-      !AllColumnsAreUsed() && !introduces_control_dep && !sets_condition) {
+  if (opt.can_remove_unused_columns && !AllColumnsAreUsed() &&
+      !introduces_control_dep && !sets_condition) {
 
     DefList<COL> new_columns;
     UseList<COL> new_input_columns(this);
@@ -58,8 +58,7 @@ bool Node<QueryDelete>::Canonicalize(QueryImpl *,
     for (auto out_col : columns) {
       if (out_col->IsUsed()) {
         new_input_columns.AddUse(input_columns[i]);
-        auto new_out_col = new_columns.Create(
-            out_col->var, this, out_col->id);
+        auto new_out_col = new_columns.Create(out_col->var, this, out_col->id);
         new_out_col->CopyConstantFrom(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
       }

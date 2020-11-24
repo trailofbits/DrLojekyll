@@ -370,11 +370,11 @@ class Token final : public OpaqueData {
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
   inline bool operator==(const Token that) const noexcept {
-    return this->OpaqueData::operator ==(that) && position == that.position;
+    return this->OpaqueData::operator==(that) && position == that.position;
   }
 
   inline bool operator!=(const Token that) const noexcept {
-    return this->OpaqueData::operator !=(that) || position != that.position;
+    return this->OpaqueData::operator!=(that) || position != that.position;
   }
 
  private:

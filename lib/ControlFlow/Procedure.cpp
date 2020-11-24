@@ -57,7 +57,7 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
     }
   }
 
-  auto cmp_vec = [] (VECTOR *this_vec, VECTOR *that_vec) {
+  auto cmp_vec = [](VECTOR *this_vec, VECTOR *that_vec) {
     if (this_vec->kind != that_vec->kind) {
       return false;
     }

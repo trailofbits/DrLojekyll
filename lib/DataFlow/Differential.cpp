@@ -30,10 +30,8 @@ void QueryImpl::TrackDifferentialUpdates(bool check_conds) const {
   for (auto changed = true; changed;) {
     changed = false;
     ForEachView([&](VIEW *view) {
-
       // If a node is conditional then we treat it as differential.
-      if (check_conds &&
-          !view->can_produce_deletions &&
+      if (check_conds && !view->can_produce_deletions &&
           (!view->positive_conditions.Empty() ||
            !view->negative_conditions.Empty())) {
         view->can_produce_deletions = true;

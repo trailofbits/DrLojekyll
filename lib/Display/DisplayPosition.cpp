@@ -48,8 +48,7 @@ bool DisplayPosition::IsValid(void) const {
 // Returns `true` if the display position has data.
 bool DisplayPosition::HasData(void) const {
   const auto pos = As<display::Position>();
-  return 0 < pos.Load<display::Column>() &&
-         0 < pos.Load<display::Line>() &&
+  return 0 < pos.Load<display::Column>() && 0 < pos.Load<display::Line>() &&
          0 < pos.Load<display::DisplayId>();
 }
 
@@ -114,7 +113,8 @@ DisplayPosition::DisplayPosition(uint64_t display_id, uint64_t index,
 }
 
 // Tries to compute the distance between two positions.
-bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int64_t *num_bytes,
+bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to,
+                                           int64_t *num_bytes,
                                            int64_t *num_lines,
                                            int64_t *num_cols) const {
 
@@ -127,7 +127,8 @@ bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int64_t *num_byte
     return false;
   }
 
-  if (from_pos.Load<display::DisplayId>() != to_pos.Load<display::DisplayId>()) {
+  if (from_pos.Load<display::DisplayId>() !=
+      to_pos.Load<display::DisplayId>()) {
     return false;
   }
 
@@ -135,16 +136,18 @@ bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int64_t *num_byte
     if (status & display::kPositionStatusIndexOverflow) {
       return false;
     }
-    const auto from_index = static_cast<int64_t>(from_pos.Load<display::Index>());
+    const auto from_index =
+        static_cast<int64_t>(from_pos.Load<display::Index>());
     const auto to_index = static_cast<int64_t>(to_pos.Load<display::Index>());
     *num_bytes = (to_index - from_index);
   }
 
   if (num_lines) {
-    if (status & display::kPositionStatusLineNumberOverflow) {\
+    if (status & display::kPositionStatusLineNumberOverflow) {
       return false;
     }
-    const auto from_index = static_cast<int64_t>(from_pos.Load<display::Line>());
+    const auto from_index =
+        static_cast<int64_t>(from_pos.Load<display::Line>());
     const auto to_index = static_cast<int64_t>(to_pos.Load<display::Line>());
     *num_lines = (to_index - from_index);
   }
@@ -153,7 +156,8 @@ bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int64_t *num_byte
     if (status & display::kPositionStatusColumnNumberOverflow) {
       return false;
     }
-    const auto from_index = static_cast<int64_t>(from_pos.Load<display::Column>());
+    const auto from_index =
+        static_cast<int64_t>(from_pos.Load<display::Column>());
     const auto to_index = static_cast<int64_t>(to_pos.Load<display::Column>());
     *num_cols = (to_index - from_index);
   }
@@ -171,7 +175,8 @@ bool DisplayRange::IsValid(void) const {
     return false;
   }
 
-  if (from_pos.Load<display::DisplayId>() != to_pos.Load<display::DisplayId>()) {
+  if (from_pos.Load<display::DisplayId>() !=
+      to_pos.Load<display::DisplayId>()) {
     return false;
   }
 

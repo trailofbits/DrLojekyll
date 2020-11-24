@@ -31,8 +31,8 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 
       // TODO(pag): Why did I pass `true` to the `differential` parameter here?
       //            It could be the case that `tuple.SetCondition()` is present.
-      parent = BuildInsertCheck(impl, pred_view, context, parent, table,
-                                true, pred_view.Columns());
+      parent = BuildInsertCheck(impl, pred_view, context, parent, table, true,
+                                pred_view.Columns());
       last_model = table;
     }
   }
@@ -44,9 +44,10 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
 // recovering "lost" columns, and possibly re-orders arguments before calling
 // down to the tuple's predecessor's checker.
-void BuildTopDownTupleChecker(
-    ProgramImpl *impl, Context &context, PROC *proc, QueryTuple tuple,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                              QueryTuple tuple,
+                              std::vector<QueryColumn> &view_cols,
+                              TABLE *already_checked) {
 
   const QueryView view(tuple);
   const auto pred_views = view.Predecessors();
@@ -72,10 +73,10 @@ void BuildTopDownTupleChecker(
   if (model->table) {
     TABLE *table_to_update = model->table;
 
-    auto call_pred = [&] (REGION *parent) -> REGION * {
+    auto call_pred = [&](REGION *parent) -> REGION * {
       return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, parent, view, view_cols,
-          table_to_update, pred_view, already_checked);
+          impl, context, parent, view, view_cols, table_to_update, pred_view,
+          already_checked);
     };
 
     // If the predecessor persists the same data then we'll call the
@@ -83,26 +84,25 @@ void BuildTopDownTupleChecker(
     if (model->table == pred_model->table) {
       table_to_update = nullptr;  // Let the predecessor do the state change.
 
-      proc->body.Emplace(proc, BuildMaybeScanPartial(
-          impl, view, view_cols, model->table, proc,
-          call_pred));
+      proc->body.Emplace(
+          proc, BuildMaybeScanPartial(impl, view, view_cols, model->table, proc,
+                                      call_pred));
 
     // The predecessor persists different data, so we'll check in the tuple,
     // and if it's not present, /then/ we'll call the predecessor handler.
     } else {
       const auto region = BuildMaybeScanPartial(
           impl, view, view_cols, model->table, proc,
-          [&] (REGION *parent) -> REGION * {
+          [&](REGION *parent) -> REGION * {
             if (already_checked != model->table) {
               already_checked = model->table;
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseNothing,
-                  [&] (ProgramImpl *, REGION *parent) -> REGION * {
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  [&](ProgramImpl *, REGION *parent) -> REGION * {
                     return BuildTopDownTryMarkAbsent(
                         impl, model->table, parent, view.Columns(),
-                        [&] (PARALLEL *par) {
+                        [&](PARALLEL *par) {
                           call_pred(par)->ExecuteAlongside(impl, par);
                         });
                   });
@@ -120,8 +120,7 @@ void BuildTopDownTupleChecker(
   // data is not persisted.
   } else {
     const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-        impl, context, proc, view, view_cols, nullptr, pred_view,
-        nullptr);
+        impl, context, proc, view, view_cols, nullptr, pred_view, nullptr);
     proc->body.Emplace(proc, check);
   }
 }
@@ -144,11 +143,9 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we can do it.
     } else {
-      auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, view.Columns(),
-          [&] (PARALLEL *par) {
-            parent = par;
-          });
+      auto remove =
+          BuildBottomUpTryMarkUnknown(impl, model->table, proc, view.Columns(),
+                                      [&](PARALLEL *par) { parent = par; });
 
       proc->body.Emplace(proc, remove);
 

@@ -224,11 +224,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   INDUCTION *&induction = context.view_to_induction[view];
 
   // First, check if we should add this tuple to the induction.
-  if (const auto table = TABLE::GetOrCreate(impl, view);
-      last_model != table) {
-    parent = BuildInsertCheck(impl, view, context, parent, table,
-                              QueryView(view).CanReceiveDeletions(),
-                              view.Columns());
+  if (const auto table = TABLE::GetOrCreate(impl, view); last_model != table) {
+    parent =
+        BuildInsertCheck(impl, view, context, parent, table,
+                         QueryView(view).CanReceiveDeletions(), view.Columns());
     last_model = table;
   }
 
@@ -282,10 +281,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 }
 
 // Build a top-down checker on an induction.
-void BuildTopDownInductionChecker(
-    ProgramImpl *impl, Context &context, PROC *proc,
-    QueryMerge view, std::vector<QueryColumn> &view_cols,
-    TABLE *already_checked) {
+void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
+                                  PROC *proc, QueryMerge view,
+                                  std::vector<QueryColumn> &view_cols,
+                                  TABLE *already_checked) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto table = model->table;
@@ -293,7 +292,7 @@ void BuildTopDownInductionChecker(
 
   TABLE *table_to_update = table;
 
-  auto build_rule_checks = [=, &context] (PARALLEL *par) {
+  auto build_rule_checks = [=, &context](PARALLEL *par) {
     for (auto pred_view : view.MergedViews()) {
 
       // Deletes signal to their successors that data should be deleted, thus
@@ -305,15 +304,14 @@ void BuildTopDownInductionChecker(
       }
 
       const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, proc, view, view_cols, table_to_update, pred_view,
-            table);
+          impl, context, proc, view, view_cols, table_to_update, pred_view,
+          table);
 
       rec_check->ExecuteAlongside(impl, par);
     }
   };
 
-  auto build_unknown = [=] (ProgramImpl *, REGION *parent) -> REGION * {
-
+  auto build_unknown = [=](ProgramImpl *, REGION *parent) -> REGION * {
     // If this induction can't receive deletions, then there's nothing else to
     // do because if it's not present here, then it won't be present in any of
     // the children.
@@ -321,26 +319,26 @@ void BuildTopDownInductionChecker(
       return BuildStateCheckCaseReturnFalse(impl, parent);
     }
 
-    return BuildTopDownTryMarkAbsent(
-        impl, table, parent, view.Columns(), build_rule_checks);
+    return BuildTopDownTryMarkAbsent(impl, table, parent, view.Columns(),
+                                     build_rule_checks);
   };
 
-  proc->body.Emplace(proc, BuildMaybeScanPartial(
-      impl, view, view_cols, table, proc,
-      [&] (REGION *parent) -> REGION * {
-        if (already_checked != table) {
-          already_checked = table;
-          return BuildTopDownCheckerStateCheck(
-              impl, proc, table, view.Columns(),
-              BuildStateCheckCaseReturnTrue,
-              BuildStateCheckCaseNothing,
-              build_unknown);
+  proc->body.Emplace(
+      proc,
+      BuildMaybeScanPartial(
+          impl, view, view_cols, table, proc, [&](REGION *parent) -> REGION * {
+            if (already_checked != table) {
+              already_checked = table;
+              return BuildTopDownCheckerStateCheck(
+                  impl, proc, table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  build_unknown);
 
-        } else {
-          table_to_update = nullptr;  // The caller will update.
-          return build_unknown(impl, parent);
-        }
-      }));
+            } else {
+              table_to_update = nullptr;  // The caller will update.
+              return build_unknown(impl, parent);
+            }
+          }));
 }
 
 }  // namespace hyde

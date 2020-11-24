@@ -46,9 +46,8 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
 }
 
 // Build a join region given a JOIN view and a pivot vector.
-static TABLEJOIN *BuildJoin(
-    ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
-    SERIES *seq) {
+static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
+                            VECTOR *pivot_vec, SERIES *seq) {
 
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
@@ -131,7 +130,6 @@ static TABLEJOIN *BuildJoin(
   // Add in the non-pivot columns.
   join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
                            std::optional<QueryColumn> out_col) {
-
     if (in_col.IsConstantOrConstantRef() && out_col &&
         !out_col->IsConstantOrConstantRef()) {
       auto in_var = join->VariableFor(impl, in_col);
@@ -227,7 +225,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
           impl, context, parent, view, view_cols, pred_view,
           ProgramOperation::kCallProcedureCheckTrue, nullptr);
 
-      const auto ret_false = BuildStateCheckCaseReturnFalse(impl, index_is_good);
+      const auto ret_false =
+          BuildStateCheckCaseReturnFalse(impl, index_is_good);
       index_is_good->body.Emplace(index_is_good, ret_false);
       parent->body.Emplace(parent, index_is_good);
       parent = index_is_good;
@@ -267,10 +266,10 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
 }
 
 // Build a top-down checker on a join.
-void BuildTopDownJoinChecker(
-    ProgramImpl *impl, Context &context, PROC *proc,
-    QueryJoin join_view, std::vector<QueryColumn> &view_cols,
-    TABLE *already_checked) {
+void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                             QueryJoin join_view,
+                             std::vector<QueryColumn> &view_cols,
+                             TABLE *already_checked) {
 
   QueryView view(join_view);
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -279,11 +278,11 @@ void BuildTopDownJoinChecker(
   auto pivot_vec =
       proc->VectorFor(impl, VectorKind::kJoinPivots, join_view.PivotColumns());
 
-  SERIES * const seq = impl->series_regions.Create(proc);
+  SERIES *const seq = impl->series_regions.Create(proc);
   proc->body.Emplace(proc, seq);
 
   // Append a tuple to a pivot vector.
-  auto add_to_pivot_vec = [&] (REGION *parent) -> REGION * {
+  auto add_to_pivot_vec = [&](REGION *parent) -> REGION * {
     const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
         parent, ProgramOperation::kAppendJoinPivotsToVector);
     for (auto col : join_view.PivotColumns()) {
@@ -309,9 +308,8 @@ void BuildTopDownJoinChecker(
   // Figure out all of our input columns. Figure out how many pivot columns we
   // have, and map in the input column variables.
   std::unordered_map<QueryView, std::vector<QueryColumn>> pred_cols;
-  join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                       std::optional<QueryColumn> out_col) {
-
+  join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
     if (std::find(view_cols.begin(), view_cols.end(), *out_col) !=
         view_cols.end()) {
 
@@ -353,9 +351,7 @@ void BuildTopDownJoinChecker(
 
     seq->regions.AddUse(BuildMaybeScanPartial(
         impl, view, view_cols_copy, model->table, seq,
-        [&] (REGION *parent) -> REGION * {
-          return add_to_pivot_vec(parent);
-        }));
+        [&](REGION *parent) -> REGION * { return add_to_pivot_vec(parent); }));
 
   // Worst-case, but really not so bad. The JOIN itself doesn't have a data
   // model. We don't yet have all the pivots. We know, however, that all
@@ -368,8 +364,8 @@ void BuildTopDownJoinChecker(
     std::vector<QueryColumn> *max_view_cols = &(pred_cols.begin()->second);
 
     for (auto &[pred_view, pred_view_cols] : pred_cols) {
-      auto view_score = double(pred_view_cols.size()) /
-                        double(pred_view.Columns().size());
+      auto view_score =
+          double(pred_view_cols.size()) / double(pred_view.Columns().size());
       if (view_score > max_score) {
         max_score = view_score;
         max_view = pred_view;
@@ -383,12 +379,11 @@ void BuildTopDownJoinChecker(
     auto &pred_view_cols = *max_view_cols;
     seq->regions.AddUse(BuildMaybeScanPartial(
         impl, max_view, pred_view_cols, pred_model->table, seq,
-        [&] (REGION *parent) -> REGION * {
-
+        [&](REGION *parent) -> REGION * {
           // Map the `max_view` variables to be named in the same way as `view`s
           // variables so that we can use `add_to_pivot_vec`.
-          join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                                    std::optional<QueryColumn> out_col) {
+          join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                                   std::optional<QueryColumn> out_col) {
             if (!in_col.IsConstant() &&
                 QueryView::Containing(in_col) == max_view) {
               const auto in_var = parent->VariableFor(impl, in_col);
@@ -415,8 +410,8 @@ void BuildTopDownJoinChecker(
   const auto check = impl->operation_regions.CreateDerived<TUPLECMP>(
       join, ComparisonOperator::kEqual);
   join->body.Emplace(join, check);
-  join_view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                            std::optional<QueryColumn> out_col) {
+  join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
     if (InputColumnRole::kJoinNonPivot == role) {
       auto join_var = join->VariableFor(impl, in_col);
       auto param_var = proc->col_id_to_var[in_col.Id()];
@@ -430,7 +425,7 @@ void BuildTopDownJoinChecker(
   // Okay, by this point we know that we're in the right tuple, given the
   // inputs to the function an the results of the join. Now we need to do
   // state checking.
-  SERIES * const in_check = impl->series_regions.Create(check);
+  SERIES *const in_check = impl->series_regions.Create(check);
   check->body.Emplace(check, in_check);
 
   PARALLEL *par = nullptr;
@@ -440,15 +435,12 @@ void BuildTopDownJoinChecker(
   if (model->table && already_checked != model->table) {
     in_check->regions.AddUse(BuildTopDownCheckerStateCheck(
         impl, in_check, model->table, view.Columns(),
-        BuildStateCheckCaseReturnTrue,
-        BuildStateCheckCaseNothing,
-        [&] (ProgramImpl *, REGION *parent) -> REGION * {
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+        [&](ProgramImpl *, REGION *parent) -> REGION * {
           do_state_transition = true;
           return BuildTopDownTryMarkAbsent(
               impl, model->table, parent, view.Columns(),
-              [&] (PARALLEL *par_node) {
-                par = par_node;
-              });
+              [&](PARALLEL *par_node) { par = par_node; });
         }));
 
   } else {
@@ -486,9 +478,9 @@ void BuildTopDownJoinChecker(
   // if it has a model and the caller isn't doing it for us, and then return
   // true.
   if (do_state_transition) {
-    in_check->regions.AddUse(BuildChangeState(
-        impl, model->table, in_check, view_cols,
-        TupleState::kAbsentOrUnknown, TupleState::kPresent));
+    in_check->regions.AddUse(
+        BuildChangeState(impl, model->table, in_check, view_cols,
+                         TupleState::kAbsentOrUnknown, TupleState::kPresent));
   }
 
   in_check->regions.AddUse(BuildStateCheckCaseReturnTrue(impl, in_check));
@@ -513,9 +505,9 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   assert(pred_model->table != nullptr);
   if (already_checked != pred_model->table) {
 
-    const auto table_remove = BuildChangeState(
-        impl, pred_model->table, parent, from_view.Columns(),
-        TupleState::kPresent, TupleState::kUnknown);
+    const auto table_remove =
+        BuildChangeState(impl, pred_model->table, parent, from_view.Columns(),
+                         TupleState::kPresent, TupleState::kUnknown);
 
     parent->regions.AddUse(table_remove);
 
@@ -571,7 +563,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   }
 
   // Called within the context of a join on an index scan.
-  auto with_join = [&] (REGION *join) -> REGION * {
+  auto with_join = [&](REGION *join) -> REGION * {
     join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                              std::optional<QueryColumn> out_col) {
       if (auto in_var = join->VariableFor(impl, in_col); in_var && out_col) {
@@ -582,8 +574,8 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     auto par = impl->parallel_regions.Create(join);
     for (auto succ_view : view.Successors()) {
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                             nullptr));
+          parent,
+          GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
 
       for (auto col : view.Columns()) {
         const auto var = join->VariableFor(impl, col);
@@ -631,11 +623,12 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   // need for a join region.
   } else if (2u == pred_views.size()) {
     const auto other_view = pred_views[unsigned(pred_views[0] == from_view)];
-    const auto other_model = impl->view_to_model[other_view]->FindAs<DataModel>();
+    const auto other_model =
+        impl->view_to_model[other_view]->FindAs<DataModel>();
     assert(other_model->table != nullptr);
-    parent->regions.AddUse(BuildMaybeScanPartial(
-        impl, other_view, pivot_cols[other_view], other_model->table, parent,
-        with_join));
+    parent->regions.AddUse(
+        BuildMaybeScanPartial(impl, other_view, pivot_cols[other_view],
+                              other_model->table, parent, with_join));
 
   } else {
     assert(false);

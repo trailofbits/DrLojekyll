@@ -40,7 +40,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
 
     // Add variable mappings.
     view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                         std::optional<QueryColumn> out_col) {
+                        std::optional<QueryColumn> out_col) {
       auto in_var = impl->const_to_var[QueryConstant::From(in_col)];
       parent->col_id_to_var.emplace(in_col.Id(), in_var);
       if (out_col) {

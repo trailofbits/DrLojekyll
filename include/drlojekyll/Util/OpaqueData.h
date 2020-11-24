@@ -12,8 +12,8 @@ template <uint64_t kOffsetBits, uint64_t kSizeBits>
 static uint64_t LoadFromPair(uint64_t a, uint64_t b) {
   static_assert((kOffsetBits + kSizeBits) <= 128u);
 
-  static constexpr uint64_t kBitMask = kSizeBits == 64 ? ~0ull :
-                                       (1ull << kSizeBits) - 1ull;
+  static constexpr uint64_t kBitMask =
+      kSizeBits == 64 ? ~0ull : (1ull << kSizeBits) - 1ull;
 
   // Extracting from `b`.
   if constexpr (kOffsetBits >= 64u) {
@@ -44,8 +44,8 @@ template <uint64_t kOffsetBits, uint64_t kSizeBits>
 static void StoreToPair(uint64_t &a, uint64_t &b, uint64_t val) {
   static_assert((kOffsetBits + kSizeBits) <= 128u);
 
-  static constexpr uint64_t kBitMask = kSizeBits == 64 ? ~0ull :
-                                       (1ull << kSizeBits) - 1ull;
+  static constexpr uint64_t kBitMask =
+      kSizeBits == 64 ? ~0ull : (1ull << kSizeBits) - 1ull;
 
   // Storing to `b`.
   if constexpr (kOffsetBits >= 64u) {
@@ -159,11 +159,9 @@ struct TypedOpaqueData : public OpaqueData {
 
 template <typename T>
 struct BoxedType {
-  inline BoxedType(T val_)
-      : val(val_) {}
+  inline BoxedType(T val_) : val(val_) {}
 
-  inline BoxedType(uint64_t val_)
-      : val(static_cast<T>(val_)) {}
+  inline BoxedType(uint64_t val_) : val(static_cast<T>(val_)) {}
 
   inline void operator=(T val_) noexcept {
     val = val_;
@@ -173,7 +171,7 @@ struct BoxedType {
     val = static_cast<T>(val_);
   }
 
-  inline operator T (void) const {
+  inline operator T(void) const {
     return val;
   }
 
@@ -182,14 +180,13 @@ struct BoxedType {
 
 template <>
 struct BoxedType<uint64_t> {
-  inline BoxedType(uint64_t val_)
-      : val(val_) {}
+  inline BoxedType(uint64_t val_) : val(val_) {}
 
   inline void operator=(uint64_t val_) noexcept {
     val = val_;
   }
 
-  inline operator uint64_t (void) const {
+  inline operator uint64_t(void) const {
     return val;
   }
   uint64_t val;
@@ -197,14 +194,13 @@ struct BoxedType<uint64_t> {
 
 template <>
 struct BoxedType<uint32_t> {
-  inline BoxedType(uint64_t val_)
-      : val(static_cast<uint32_t>(val_)) {}
+  inline BoxedType(uint64_t val_) : val(static_cast<uint32_t>(val_)) {}
 
   inline void operator=(uint64_t val_) noexcept {
     val = static_cast<uint32_t>(val_);
   }
 
-  inline operator uint32_t (void) const {
+  inline operator uint32_t(void) const {
     return val;
   }
   uint32_t val;
@@ -212,14 +208,13 @@ struct BoxedType<uint32_t> {
 
 template <>
 struct BoxedType<uint16_t> {
-  inline BoxedType(uint64_t val_)
-      : val(static_cast<uint16_t>(val_)) {}
+  inline BoxedType(uint64_t val_) : val(static_cast<uint16_t>(val_)) {}
 
   inline void operator=(uint64_t val_) noexcept {
     val = static_cast<uint16_t>(val_);
   }
 
-  inline operator uint16_t (void) const {
+  inline operator uint16_t(void) const {
     return val;
   }
   uint16_t val;
@@ -227,14 +222,13 @@ struct BoxedType<uint16_t> {
 
 template <>
 struct BoxedType<uint8_t> {
-  inline BoxedType(uint64_t val_)
-      : val(static_cast<uint8_t>(val_)) {}
+  inline BoxedType(uint64_t val_) : val(static_cast<uint8_t>(val_)) {}
 
   inline void operator=(uint64_t val_) noexcept {
     val = static_cast<uint8_t>(val_);
   }
 
-  inline operator uint8_t (void) const {
+  inline operator uint8_t(void) const {
     return val;
   }
 
@@ -242,9 +236,9 @@ struct BoxedType<uint8_t> {
 } __attribute__((packed));
 
 #define DEFINE_BOXED_TYPE(name, underlying_type) \
-    struct name final : public ::hyde::BoxedType<underlying_type> { \
-      using BoxedType::BoxedType; \
-    } __attribute__((packed)); \
-    static_assert(sizeof(name) == sizeof(underlying_type))
+  struct name final : public ::hyde::BoxedType<underlying_type> { \
+    using BoxedType::BoxedType; \
+  } __attribute__((packed)); \
+  static_assert(sizeof(name) == sizeof(underlying_type))
 
 }  // namespace hyde

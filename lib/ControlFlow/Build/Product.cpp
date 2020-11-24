@@ -130,8 +130,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
 // Build an eager cross-product for a join.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryJoin product_view, Context &context, OP *parent,
-                             TABLE *last_model) {
+                             QueryJoin product_view, Context &context,
+                             OP *parent, TABLE *last_model) {
   const QueryView view(product_view);
 
   // First, check if we should push this tuple through the JOIN. If it's
@@ -139,9 +139,9 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // never been seen before.
   const auto table = TABLE::GetOrCreate(impl, pred_view);
   if (table != last_model) {
-    parent = BuildInsertCheck(impl, pred_view, context, parent, table,
-                              pred_view.CanProduceDeletions(),
-                              pred_view.Columns());
+    parent =
+        BuildInsertCheck(impl, pred_view, context, parent, table,
+                         pred_view.CanProduceDeletions(), pred_view.Columns());
     last_model = table;
   }
 

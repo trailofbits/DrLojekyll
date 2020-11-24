@@ -34,9 +34,10 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
-void BuildTopDownUnionChecker(
-    ProgramImpl *impl, Context &context, PROC *proc, QueryMerge merge,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                              QueryMerge merge,
+                              std::vector<QueryColumn> &view_cols,
+                              TABLE *already_checked) {
 
   QueryView view(merge);
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -48,7 +49,7 @@ void BuildTopDownUnionChecker(
     TABLE *table_to_update = model->table;
 
     // Call all of the predecessors.
-    auto call_preds = [&] (PARALLEL *par) {
+    auto call_preds = [&](PARALLEL *par) {
       for (QueryView pred_view : view.Predecessors()) {
 
         // Deletes have no backing data; they signal to their successors that
@@ -66,7 +67,7 @@ void BuildTopDownUnionChecker(
 
     const auto region = BuildMaybeScanPartial(
         impl, view, view_cols, model->table, proc,
-        [&] (REGION *parent) -> REGION * {
+        [&](REGION *parent) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
 
@@ -75,14 +76,11 @@ void BuildTopDownUnionChecker(
             //            have to check during its state change, but oh well.
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseNothing,
-                [&] (ProgramImpl *, REGION *parent) -> REGION * {
+                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                [&](ProgramImpl *, REGION *parent) -> REGION * {
                   return BuildTopDownTryMarkAbsent(
                       impl, model->table, parent, view.Columns(),
-                      [&] (PARALLEL *par) {
-                        call_preds(par);
-                      });
+                      [&](PARALLEL *par) { call_preds(par); });
                 });
 
           } else {
@@ -110,8 +108,7 @@ void BuildTopDownUnionChecker(
       }
 
       par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, par, view, view_cols, nullptr, pred_view,
-          nullptr));
+          impl, context, par, view, view_cols, nullptr, pred_view, nullptr));
     }
   }
 }
@@ -134,11 +131,9 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we cn do it.
     } else {
-      auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, view.Columns(),
-          [&] (PARALLEL *par) {
-            parent = par;
-          });
+      auto remove =
+          BuildBottomUpTryMarkUnknown(impl, model->table, proc, view.Columns(),
+                                      [&](PARALLEL *par) { parent = par; });
 
       proc->body.Emplace(proc, remove);
 

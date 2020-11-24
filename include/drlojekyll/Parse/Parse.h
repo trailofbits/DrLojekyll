@@ -889,7 +889,6 @@ enum class Language : unsigned { kUnknown, kCxx, kPython };
 //    #foreign std_string ```python str```
 class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
  public:
-
   // Type name of this token.
   Token Name(void) const noexcept;
 

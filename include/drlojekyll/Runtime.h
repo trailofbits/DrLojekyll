@@ -11,20 +11,23 @@ struct Token {
   const char *token;
 };
 
-template <typename...> struct Columns;
+template <typename...>
+struct Columns;
 
-template <typename, typename> struct KeyValues;
+template <typename, typename>
+struct KeyValues;
 
-template <typename...> struct Indices;
+template <typename...>
+struct Indices;
 
 class Table;
 class Index;
 
 extern "C" {
 
-extern bool __hyde_init(int argc, char *argv[],
-                        unsigned num_tables, unsigned num_indices,
-                        unsigned num_rx_messages, unsigned num_tx_messages);
+extern bool __hyde_init(int argc, char *argv[], unsigned num_tables,
+                        unsigned num_indices, unsigned num_rx_messages,
+                        unsigned num_tx_messages);
 
 extern int __hyde_run(bool (*init_proc)(void));
 
@@ -37,10 +40,8 @@ namespace {
 // Initialize the runtime, telling it about the command-line arguments
 // (`argc` and `argv`), the number of tables and indices, and the number
 // of received and transmitted message types.
-inline static void Init(int argc, char *argv[],
-                        unsigned num_tables,
-                        unsigned num_indices,
-                        unsigned num_rx_messages,
+inline static void Init(int argc, char *argv[], unsigned num_tables,
+                        unsigned num_indices, unsigned num_rx_messages,
                         unsigned num_tx_messages) {
   __hyde_init(argc, argv, num_tables, num_indices, num_rx_messages,
               num_tx_messages);

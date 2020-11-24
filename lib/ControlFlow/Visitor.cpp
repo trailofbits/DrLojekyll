@@ -5,11 +5,11 @@
 namespace hyde {
 
 #define MAKE_VISITOR(cls) \
-    void Node<cls>::Accept(ProgramVisitor &visitor) { \
-      cls val(this); \
-      visitor.Visit(val); \
-    } \
-    void ProgramVisitor::Visit(cls) {}
+  void Node<cls>::Accept(ProgramVisitor &visitor) { \
+    cls val(this); \
+    visitor.Visit(val); \
+  } \
+  void ProgramVisitor::Visit(cls) {}
 
 ProgramVisitor::~ProgramVisitor(void) {}
 

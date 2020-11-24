@@ -93,12 +93,12 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
   //            inequality comparisons as they might introduce extra data
   //            dependencies.
   const auto incoming_view = GetIncomingView(input_columns, attached_columns);
-  CMP * const incoming_cmp = incoming_view ? incoming_view->AsCompare() : nullptr;
+  CMP *const incoming_cmp =
+      incoming_view ? incoming_view->AsCompare() : nullptr;
   const auto num_cols = columns.Size();
   if (incoming_cmp && incoming_cmp->op == this->op &&
-      incoming_cmp->columns.Size() == num_cols &&
-      !sets_condition && positive_conditions.Empty() &&
-      negative_conditions.Empty()) {
+      incoming_cmp->columns.Size() == num_cols && !sets_condition &&
+      positive_conditions.Empty() && negative_conditions.Empty()) {
 
     bool is_redundant = true;
     auto i = 0u;

@@ -27,8 +27,8 @@ void QueryImpl::ConvertConstantInputsToTuples(void) {
   }
 
   for (auto view : compares) {
-    const auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                     view->attached_columns);
+    const auto incoming_view =
+        VIEW::GetIncomingView(view->input_columns, view->attached_columns);
     if (incoming_view) {
       continue;
     }
@@ -45,8 +45,8 @@ void QueryImpl::ConvertConstantInputsToTuples(void) {
   }
 
   for (auto view : maps) {
-    const auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                     view->attached_columns);
+    const auto incoming_view =
+        VIEW::GetIncomingView(view->input_columns, view->attached_columns);
     if (incoming_view) {
       continue;
     }
@@ -55,16 +55,15 @@ void QueryImpl::ConvertConstantInputsToTuples(void) {
   }
 
   for (auto view : aggregates) {
-    const auto incoming_view0 = VIEW::GetIncomingView(view->input_columns,
-                                                      view->config_columns);
-    const auto incoming_view1 = VIEW::GetIncomingView(view->group_by_columns,
-                                                      view->aggregated_columns);
+    const auto incoming_view0 =
+        VIEW::GetIncomingView(view->input_columns, view->config_columns);
+    const auto incoming_view1 =
+        VIEW::GetIncomingView(view->group_by_columns, view->aggregated_columns);
     if (incoming_view0 || incoming_view1) {
       continue;
     }
     ReplaceInputsWithTuple(this, view, &(view->input_columns),
-                           &(view->attached_columns),
-                           &(view->group_by_columns),
+                           &(view->attached_columns), &(view->group_by_columns),
                            &(view->config_columns),
                            &(view->aggregated_columns));
   }

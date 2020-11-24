@@ -1,12 +1,13 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Program.h"
-
 #include <drlojekyll/Util/BitManipulation.h>
+
+#include "Program.h"
 
 //#include <iostream>
 
 #define FAILED_EQ(...)
+
 //#define FAILED_EQ(that)
 //  std::cerr << __LINE__ << ": " << this->containing_procedure->id
 //            << " != " << that->containing_procedure->id << std::endl
@@ -53,7 +54,8 @@ Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramReturnRegion> *Node<ProgramOperationRegion>::AsReturn(void) noexcept {
+Node<ProgramReturnRegion> *
+Node<ProgramOperationRegion>::AsReturn(void) noexcept {
   return nullptr;
 }
 
@@ -167,11 +169,9 @@ Node<ProgramVectorLoopRegion>::AsVectorLoop(void) noexcept {
 
 uint64_t Node<ProgramVectorLoopRegion>::Hash(void) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= RotateRight64(hash, 13) *
-          (static_cast<unsigned>(vector->kind) + 17u);
+  hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) *
-            (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
@@ -242,11 +242,9 @@ bool Node<ProgramLetBindingRegion>::Equals(
 
 uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= RotateRight64(hash, 13) *
-          (static_cast<unsigned>(vector->kind) + 17u);
+  hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) *
-            (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
   for (auto var : tuple_vars) {
     hash ^= RotateRight64(hash, 13) *
@@ -315,8 +313,7 @@ bool Node<ProgramTransitionStateRegion>::Equals(
   }
 
   const auto that = that_op->AsTransitionState();
-  if (!that || table.get() != that->table.get() ||
-      !body != !(that->body)) {
+  if (!that || table.get() != that->table.get() || !body != !(that->body)) {
     FAILED_EQ(that_);
     return false;
   }
@@ -456,8 +453,7 @@ uint64_t Node<ProgramVectorClearRegion>::Hash(void) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= static_cast<unsigned>(vector->kind) * 17;
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) *
-            (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
   return hash;
 }
@@ -488,8 +484,7 @@ uint64_t Node<ProgramVectorUniqueRegion>::Hash(void) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= static_cast<unsigned>(vector->kind) * 17;
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) *
-            (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
   return hash;
 }
@@ -854,11 +849,9 @@ uint64_t Node<ProgramCallRegion>::Hash(void) const {
   }
 
   for (auto vec : this->arg_vecs) {
-    hash ^= RotateRight64(hash, 13) *
-            (static_cast<unsigned>(vec->kind) + 7u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vec->kind) + 7u);
     for (auto type : vec->col_types) {
-      hash ^= RotateRight64(hash, 7) *
-              (static_cast<unsigned>(type) + 3u);
+      hash ^= RotateRight64(hash, 7) * (static_cast<unsigned>(type) + 3u);
     }
   }
 
@@ -1056,8 +1049,8 @@ bool Node<ProgramCheckStateRegion>::IsNoOp(void) const noexcept {
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming).
-bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
-            Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramCheckStateRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -1075,8 +1068,7 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (!this->body != !that->body ||
-      !this->absent_body != !that->absent_body ||
+  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
       !this->unknown_body != !that->unknown_body) {
     FAILED_EQ(that_);
     return false;

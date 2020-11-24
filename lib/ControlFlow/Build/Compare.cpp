@@ -77,14 +77,15 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
 
   const auto check = CreateCompareRegion(impl, cmp, context, parent);
   parent->body.Emplace(parent, check);
-  BuildEagerSuccessorRegions(impl, view, context, check,
-                             view.Successors(), table);
+  BuildEagerSuccessorRegions(impl, view, context, check, view.Successors(),
+                             table);
 }
 
 // Build a top-down checker on a compare.
-void BuildTopDownCompareChecker(
-    ProgramImpl *impl, Context &context, PROC *proc, QueryCompare cmp,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                                QueryCompare cmp,
+                                std::vector<QueryColumn> &view_cols,
+                                TABLE *already_checked) {
 
   const QueryView view(cmp);
   const QueryView pred_view = view.Predecessors()[0];
@@ -94,7 +95,7 @@ void BuildTopDownCompareChecker(
   // Assign the input column IDs to variables for whatever we have. This should
   // match `view_cols` by virtue of the procedure's input variables.
   cmp.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                 std::optional<QueryColumn> out_col) {
+                     std::optional<QueryColumn> out_col) {
     if (out_col) {
       if (const auto out_var = proc->col_id_to_var[out_col->Id()]; out_var) {
         proc->col_id_to_var.emplace(in_col.Id(), out_var);
@@ -142,9 +143,9 @@ void BuildTopDownCompareChecker(
     // predecessors.
     assert(model->table != pred_model->table);
 
-    auto assign_ins_to_outs = [=] (REGION *region) {
+    auto assign_ins_to_outs = [=](REGION *region) {
       cmp.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                     std::optional<QueryColumn> out_col) {
+                         std::optional<QueryColumn> out_col) {
         if (out_col) {
           const auto out_var = region->VariableFor(impl, *out_col);
           assert(out_var != nullptr);
@@ -153,40 +154,39 @@ void BuildTopDownCompareChecker(
       });
     };
 
-    auto call_pred = [&] (PARALLEL *parent) {
+    auto call_pred = [&](PARALLEL *parent) {
       parent->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, parent, view, view_cols,
-          table_to_update, pred_view, already_checked));
+          impl, context, parent, view, view_cols, table_to_update, pred_view,
+          already_checked));
     };
 
-    auto if_unknown = [&] (ProgramImpl *, REGION *parent) -> REGION * {
+    auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
       if (done_check) {
-        return BuildTopDownTryMarkAbsent(
-            impl, model->table, parent, view.Columns(),
-            call_pred);
+        return BuildTopDownTryMarkAbsent(impl, model->table, parent,
+                                         view.Columns(), call_pred);
 
       } else {
         assign_ins_to_outs(parent);
         auto check = CreateCompareRegion(impl, cmp, context, parent);
-        check->body.Emplace(check, BuildTopDownTryMarkAbsent(
-            impl, model->table, check, view.Columns(),
-            call_pred));
+        check->body.Emplace(
+            check, BuildTopDownTryMarkAbsent(impl, model->table, check,
+                                             view.Columns(), call_pred));
         return check;
       }
     };
 
     series->regions.AddUse(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&] (REGION *parent) -> REGION * {
+        [&](REGION *parent) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseNothing,
+                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
                 if_unknown);
 
           } else {
+
             // If the model passed in matches the compare's model then it
             // means we should have all of the columns of the comparison
             // and thus would have done the check.
@@ -195,8 +195,8 @@ void BuildTopDownCompareChecker(
             table_to_update = nullptr;
 
             return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                impl, context, parent, view, view_cols,
-                nullptr, pred_view, already_checked);
+                impl, context, parent, view, view_cols, nullptr, pred_view,
+                already_checked);
           }
         }));
 
@@ -207,13 +207,13 @@ void BuildTopDownCompareChecker(
     std::vector<QueryColumn> pred_view_cols;
 
     // Get a list of output columns of the predecessor that we have.
-    cmp.ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                   std::optional<QueryColumn>) {
-      if (auto in_var = proc->col_id_to_var[in_col.Id()];
-          in_var && QueryView::Containing(in_col) == pred_view) {
-        pred_view_cols.push_back(in_col);
-      }
-    });
+    cmp.ForEachUse(
+        [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
+          if (auto in_var = proc->col_id_to_var[in_col.Id()];
+              in_var && QueryView::Containing(in_col) == pred_view) {
+            pred_view_cols.push_back(in_col);
+          }
+        });
 
     // This sucks; we don't really have any of the predecessor columns
     // available :-/
@@ -222,21 +222,22 @@ void BuildTopDownCompareChecker(
     }
 
     series->regions.AddUse(BuildMaybeScanPartial(
-      impl, pred_view, pred_view_cols, pred_model->table, series,
-      [&] (REGION *parent) -> REGION * {
-        if (done_check) {
-          return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-              impl, context, parent, view, view_cols,
-              nullptr, pred_view, nullptr);
+        impl, pred_view, pred_view_cols, pred_model->table, series,
+        [&](REGION *parent) -> REGION * {
+          if (done_check) {
+            return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+                impl, context, parent, view, view_cols, nullptr, pred_view,
+                nullptr);
 
-        } else {
-          auto check = CreateCompareRegion(impl, cmp, context, parent);
-          check->body.Emplace(check, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-              impl, context, parent, view, view_cols,
-              nullptr, pred_view, nullptr));
-          return check;
-        }
-      }));
+          } else {
+            auto check = CreateCompareRegion(impl, cmp, context, parent);
+            check->body.Emplace(
+                check, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+                           impl, context, parent, view, view_cols, nullptr,
+                           pred_view, nullptr));
+            return check;
+          }
+        }));
 
   // This compare doesn't have persistent backing, nor does its predecessor,
   // so we have to call down to its predecessor. If we've already done the
@@ -249,8 +250,7 @@ void BuildTopDownCompareChecker(
     // recursive call to the predecessor returns true.
     if (done_check) {
       series->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, nullptr, pred_view,
-          nullptr));
+          impl, context, proc, view, view_cols, nullptr, pred_view, nullptr));
 
     // The issue here is that our codegen model of top-down checking treats
     // predecessors as black boxes. We really need to recover the columns from
@@ -258,7 +258,8 @@ void BuildTopDownCompareChecker(
     // check to them, but we don't (yet) have a way of doing this. This is
     // also kind of a problem for
     } else {
-      assert(false && "TODO(pag): Handle worst case of top-down compare checker");
+      assert(false &&
+             "TODO(pag): Handle worst case of top-down compare checker");
       series->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, series));
     }
   }

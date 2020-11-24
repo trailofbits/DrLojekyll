@@ -1,16 +1,15 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
+#include <drlojekyll/ControlFlow/Format.h>
+#include <drlojekyll/ControlFlow/Program.h>
+#include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
+#include <drlojekyll/Parse/Format.h>
 
 #include <algorithm>
 #include <unordered_set>
 #include <vector>
-
-#include <drlojekyll/ControlFlow/Program.h>
-#include <drlojekyll/Display/Format.h>
-#include <drlojekyll/ControlFlow/Format.h>
-#include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Lex/Format.h>
 
 namespace hyde {
 namespace {
@@ -67,16 +66,16 @@ static void DeclareColumn(OutputStream &os, DataTable table, DataColumn col) {
 
   os << os.Indent() << "using Type = " << TypeName(col.Type()) << ";\n"
      << os.Indent() << "static constexpr bool kIsPersistent = true;\n"
-     << os.Indent() << "static constexpr unsigned kNumIndexUses = "
-     << num_indices << "u;\n"
+     << os.Indent()
+     << "static constexpr unsigned kNumIndexUses = " << num_indices << "u;\n"
      << os.Indent() << "static constexpr unsigned kId = " << col.Id() << "u;\n"
-     << os.Indent() << "static constexpr unsigned kTableId = "
-     << table.Id() << "u;\n"
+     << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
+     << "u;\n"
      << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
   if (i) {
     os << os.Indent() << "static constexpr unsigned kOffset = col_"
-       << table.Id() << '_' << (i - 1u) << "::kOffset + col_"
-       << table.Id() << '_' << (i - 1u) << "::kSize;\n";
+       << table.Id() << '_' << (i - 1u) << "::kOffset + col_" << table.Id()
+       << '_' << (i - 1u) << "::kSize;\n";
   } else {
     os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
   }
@@ -97,8 +96,8 @@ static void DeclareColumn(OutputStream &os, DataTable table, DataColumn col) {
   }
   os.PopIndent();
   os << os.Indent() << "};\n"
-     << os.Indent() << "static constexpr unsigned kNumNames = "
-     << num_names << "u;\n";
+     << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
+     << "u;\n";
   os.PopIndent();
   os << "};\n";
 }
@@ -166,8 +165,8 @@ static void DeclareVectorColumns(OutputStream &os, DataVector vec) {
        << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
     if (i) {
       os << os.Indent() << "static constexpr unsigned kOffset = col_"
-         << vec.Id() << '_' << (i - 1u) << "::kOffset + col_"
-         << vec.Id() << '_' << (i - 1u) << "::kSize;\n";
+         << vec.Id() << '_' << (i - 1u) << "::kOffset + col_" << vec.Id() << '_'
+         << (i - 1u) << "::kSize;\n";
     } else {
       os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
     }
@@ -188,8 +187,8 @@ static void DeclareVectorColumns(OutputStream &os, DataVector vec) {
     }
     os.PopIndent();
     os << os.Indent() << "};\n"
-       << os.Indent() << "static constexpr unsigned kNumNames = "
-       << num_names << "u;\n";
+       << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
+       << "u;\n";
     os.PopIndent();
     os << "};\n";
 
@@ -205,8 +204,7 @@ static void FindCover(std::vector<DataIndex> &work_list,
 
   next_work_list.clear();
 
-  for (auto it = work_list.rbegin(), end = work_list.rend();
-       it != end; ++it) {
+  for (auto it = work_list.rbegin(), end = work_list.rend(); it != end; ++it) {
 
     DataIndex curr_index = covered.back();
     DataIndex maybe_subset_index = *it;
@@ -263,10 +261,9 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
   }
 
   // Put biggest indices last.
-  std::sort(work_list.begin(), work_list.end(),
-            [](DataIndex a, DataIndex b) {
-              return a.KeyColumns().size() < b.KeyColumns().size();
-            });
+  std::sort(work_list.begin(), work_list.end(), [](DataIndex a, DataIndex b) {
+    return a.KeyColumns().size() < b.KeyColumns().size();
+  });
 
   // Pop off the biggest index, then merge into it the next smallest index
   // that covers a subset of the columns, then use that next one for grouping.
@@ -285,10 +282,10 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
     seen_cols.clear();
     os << "struct index_" << table.Id() << '_' << num_indices << " {\n";
     os.PushIndent();
-    os << os.Indent() << "static constexpr unsigned kId = "
-       << (next_index_id++) << "u;\n"
-       << os.Indent() << "static constexpr unsigned kSlot = "
-       << num_indices << "u;\n"
+    os << os.Indent() << "static constexpr unsigned kId = " << (next_index_id++)
+       << "u;\n"
+       << os.Indent() << "static constexpr unsigned kSlot = " << num_indices
+       << "u;\n"
        << os.Indent() << "using Spec = KeyValues<Columns<";
     auto sep = "";
     for (auto index : indices) {
@@ -313,8 +310,7 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
       }
     }
 
-    os << ">>;\n"
-       << os.Indent() << "static Index *gStorage = nullptr;\n";
+    os << ">>;\n" << os.Indent() << "static Index *gStorage = nullptr;\n";
 
     os.PopIndent();
     os << "};\n";
@@ -326,23 +322,23 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
     ++num_indices;
   }
 
-//  // Make sure there's always at least one index so that we can cover the table.
-//  if (!num_indices) {
-//    num_indices = 1u;
-//    os << "struct index_" << table.Id() << "_0 {\n";
-//    os.PushIndent();
-//    os << os.Indent() << "using Spec = Columns<";
-//    auto sep = "";
-//    for (auto col : table.Columns()) {
-//      os << sep << "col_" << table.Id() << '_' << col.Id();
-//      sep = ", ";
-//    }
-//    os << ">;\n"
-//       << os.Indent() << "static Index *gStorage = nullptr;\n";
-//
-//    os.PopIndent();
-//    os << "};\n";
-//  }
+  //  // Make sure there's always at least one index so that we can cover the table.
+  //  if (!num_indices) {
+  //    num_indices = 1u;
+  //    os << "struct index_" << table.Id() << "_0 {\n";
+  //    os.PushIndent();
+  //    os << os.Indent() << "using Spec = Columns<";
+  //    auto sep = "";
+  //    for (auto col : table.Columns()) {
+  //      os << sep << "col_" << table.Id() << '_' << col.Id();
+  //      sep = ", ";
+  //    }
+  //    os << ">;\n"
+  //       << os.Indent() << "static Index *gStorage = nullptr;\n";
+  //
+  //    os.PopIndent();
+  //    os << "};\n";
+  //  }
 
   return num_indices;
 }
@@ -372,27 +368,26 @@ static void DeclareTable(OutputStream &os, DataTable table,
   const auto cols = table.Columns();
   os << "struct table_" << table.Id() << " {\n";
   os.PushIndent();
-  os << os.Indent() << "static constexpr unsigned kId = " << table.Id() << "u;\n"
-     << os.Indent() << "static constexpr bool kIsDifferential = "
-     << is_differential << ";\n"
-     << os.Indent() << "static constexpr unsigned kNumColumns = "
-     << cols.size() << "u;\n"
+  os << os.Indent() << "static constexpr unsigned kId = " << table.Id()
+     << "u;\n"
+     << os.Indent()
+     << "static constexpr bool kIsDifferential = " << is_differential << ";\n"
+     << os.Indent() << "static constexpr unsigned kNumColumns = " << cols.size()
+     << "u;\n"
      << os.Indent() << "static constexpr unsigned kTupleSize = ";
   auto sep = "";
   for (auto col : cols) {
     os << sep << "col_" << table.Id() << '_' << col.Index() << "::kSize";
     sep = " + ";
   }
-  os << ";\n"
-     << os.Indent() << "using ColumnSpec = Columns<";
+  os << ";\n" << os.Indent() << "using ColumnSpec = Columns<";
 
   sep = "";
   for (auto col : cols) {
     os << sep << "col_" << table.Id() << '_' << col.Index();
     sep = ", ";
   }
-  os << ">;\n"
-     << os.Indent() << "using IndexSpec = Indices<";
+  os << ">;\n" << os.Indent() << "using IndexSpec = Indices<";
 
   sep = "";
   for (auto i = 0u; i < num_indices; ++i) {
@@ -400,8 +395,8 @@ static void DeclareTable(OutputStream &os, DataTable table,
     sep = ", ";
   }
   os << ">;\n"
-     << os.Indent() << "static constexpr unsigned kNumIndices = "
-     << num_indices << "u;\n"
+     << os.Indent() << "static constexpr unsigned kNumIndices = " << num_indices
+     << "u;\n"
      << os.Indent() << "static Table *gStorage = nullptr;\n";
 
   os.PopIndent();
@@ -506,19 +501,18 @@ void DefineMainFunction(OutputStream &os, Program program,
   os << "extern \"C\" int main(int argc, char *argv[]) {\n";
   os.PushIndent();
   os << os.Indent() << "drlojekyll::Init(argc, argv, "
-     << program.Tables().size() << ", "
-     << num_indices << ", proc_0);\n";
+     << program.Tables().size() << ", " << num_indices << ", proc_0);\n";
 
   for (auto table : program.Tables()) {
-    os << os.Indent() << "drlojekyll::CreateTable<table_"
-       << table.Id() << ">();\n";
+    os << os.Indent() << "drlojekyll::CreateTable<table_" << table.Id()
+       << ">();\n";
   }
 
   for (auto proc : program.Procedures()) {
     if (auto maybe_messsage = proc.Message(); maybe_messsage) {
       auto message = *maybe_messsage;
-      os << os.Indent() << "drlojekyll::RegisterHandler(\""
-         << message.Name() << "\", proc_" << proc.Id() << ");\n";
+      os << os.Indent() << "drlojekyll::RegisterHandler(\"" << message.Name()
+         << "\", proc_" << proc.Id() << ");\n";
     }
   }
 
@@ -559,9 +553,9 @@ void GenerateCxxCode(Program &program, OutputStream &os) {
 
   DefineMainFunction(os, program, next_index_id);
 
-//  CPPCodeGenVisitor visitor(os);
-//  visitor.Visit(program);
-//  os.Flush();
+  //  CPPCodeGenVisitor visitor(os);
+  //  visitor.Visit(program);
+  //  os.Flush();
 }
 
 }  // namespace hyde

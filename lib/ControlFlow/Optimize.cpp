@@ -277,8 +277,8 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
 // Process a function as if it contains just simple function calls and a return.
 // We permit series and parallel regions inside. This roughly corresponds to
 // the trivial case of bottom-up procedures that "prove to remove."
-static std::pair<bool, RETURN *> FindReturnAfterSimpleCalls(
-    const UseList<Node<ProgramRegion>> &regions) {
+static std::pair<bool, RETURN *>
+FindReturnAfterSimpleCalls(const UseList<Node<ProgramRegion>> &regions) {
 
   RETURN *target_return = nullptr;
 
@@ -291,7 +291,8 @@ static std::pair<bool, RETURN *> FindReturnAfterSimpleCalls(
       target_return = ret;
 
     } else if (auto target_series = target_region->AsSeries(); target_series) {
-      const auto [good, ret] = FindReturnAfterSimpleCalls(target_series->regions);
+      const auto [good, ret] =
+          FindReturnAfterSimpleCalls(target_series->regions);
       if (!good) {
         return {false, nullptr};
       }
@@ -407,19 +408,18 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
       auto is_conditional = false;
 
       switch (call->op) {
-        case ProgramOperation::kCallProcedure:
-          can_remove = true;
-          break;
+        case ProgramOperation::kCallProcedure: can_remove = true; break;
         case ProgramOperation::kCallProcedureCheckFalse:
-          can_remove = target_ret->op != ProgramOperation::kReturnFalseFromProcedure;
+          can_remove =
+              target_ret->op != ProgramOperation::kReturnFalseFromProcedure;
           is_conditional = true;
           break;
         case ProgramOperation::kCallProcedureCheckTrue:
-          can_remove = target_ret->op != ProgramOperation::kReturnTrueFromProcedure;
+          can_remove =
+              target_ret->op != ProgramOperation::kReturnTrueFromProcedure;
           is_conditional = true;
           break;
-        default:
-          break;
+        default: break;
       }
 
       // The call is useless, or the condition tested by the call is never true,
@@ -491,8 +491,7 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
     // and try to see if we should keep or omit the conditional body of the
     // call.
     switch (call->op) {
-      case ProgramOperation::kCallProcedure:
-        break;
+      case ProgramOperation::kCallProcedure: break;
       case ProgramOperation::kCallProcedureCheckTrue:
         assert(call_body != nullptr);
         if (target_return->op == ProgramOperation::kReturnTrueFromProcedure) {
@@ -510,9 +509,7 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
           series->regions.AddUse(call_body);
         }
         break;
-      default:
-        assert(false);
-        break;
+      default: assert(false); break;
     }
 
     return true;
@@ -614,12 +611,12 @@ void ProgramImpl::Optimize(void) {
     }
   }
 
-  for (size_t changed = 1; changed; ) {
+  for (size_t changed = 1; changed;) {
     changed = 0;
     changed |= parallel_regions.RemoveUnused();
     changed |= series_regions.RemoveUnused();
     changed |= operation_regions.RemoveUnused();
-    changed |= procedure_regions.RemoveIf([] (PROC *proc) {
+    changed |= procedure_regions.RemoveIf([](PROC *proc) {
       if (proc->kind == ProcedureKind::kInitializer ||
           proc->kind == ProcedureKind::kMessageHandler) {
         return false;

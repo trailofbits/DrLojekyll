@@ -125,8 +125,8 @@ OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
   os << os.Indent();
 
-  const auto conditional = region.ExecuteBodyIfReturnIsTrue() ||
-                           region.ExecuteBodyIfReturnIsFalse();
+  const auto conditional =
+      region.ExecuteBodyIfReturnIsTrue() || region.ExecuteBodyIfReturnIsFalse();
   if (conditional) {
     os << "if ";
   }
@@ -378,7 +378,8 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramTransitionStateRegion region) {
+OutputStream &operator<<(OutputStream &os,
+                         ProgramTransitionStateRegion region) {
 
   os << os.Indent();
   if (region.Body()) {
@@ -395,31 +396,17 @@ OutputStream &operator<<(OutputStream &os, ProgramTransitionStateRegion region) 
   os << "} in " << region.Table() << " from ";
 
   switch (region.FromState()) {
-    case TupleState::kPresent:
-      os << "present to ";
-      break;
-    case TupleState::kAbsent:
-      os << "absent to ";
-      break;
-    case TupleState::kUnknown:
-      os << "unknown to ";
-      break;
-    case TupleState::kAbsentOrUnknown:
-      os << "absent|unknown to ";
-      break;
+    case TupleState::kPresent: os << "present to "; break;
+    case TupleState::kAbsent: os << "absent to "; break;
+    case TupleState::kUnknown: os << "unknown to "; break;
+    case TupleState::kAbsentOrUnknown: os << "absent|unknown to "; break;
   }
 
   switch (region.ToState()) {
-    case TupleState::kPresent:
-      os << "present";
-      break;
-    case TupleState::kAbsent:
-      os << "absent";
-      break;
+    case TupleState::kPresent: os << "present"; break;
+    case TupleState::kAbsent: os << "absent"; break;
     case TupleState::kUnknown:
-    case TupleState::kAbsentOrUnknown:
-      os << "unknown";
-      break;
+    case TupleState::kAbsentOrUnknown: os << "unknown"; break;
   }
 
   if (auto maybe_body = region.Body(); maybe_body) {
@@ -635,13 +622,12 @@ class FormatDispatcher final : public ProgramVisitor {
  public:
   virtual ~FormatDispatcher(void) = default;
 
-  explicit FormatDispatcher(OutputStream &os_)
-      : os(os_) {}
+  explicit FormatDispatcher(OutputStream &os_) : os(os_) {}
 
 #define MAKE_VISITOR(cls) \
-    void Visit(cls region) override { \
-      os << region; \
-    } \
+  void Visit(cls region) override { \
+    os << region; \
+  }
 
   MAKE_VISITOR(ProgramCallRegion)
   MAKE_VISITOR(ProgramReturnRegion)
@@ -679,21 +665,15 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
-    case ProcedureKind::kInitializer:
-      os << "^init:";
-      break;
+    case ProcedureKind::kInitializer: os << "^init:"; break;
     case ProcedureKind::kMessageHandler:
       os << "^receive:";
       if (auto message = proc.Message(); message) {
         os << message->Name() << '/' << message->Arity() << ':';
       }
       break;
-    case ProcedureKind::kTupleFinder:
-      os << "^find:";
-      break;
-    case ProcedureKind::kTupleRemover:
-      os << "^remove:";
-      break;
+    case ProcedureKind::kTupleFinder: os << "^find:"; break;
+    case ProcedureKind::kTupleRemover: os << "^remove:"; break;
   }
   os << proc.Id();
 

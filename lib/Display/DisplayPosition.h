@@ -20,11 +20,11 @@ DEFINE_BOXED_TYPE(DisplayId, uint16_t);
 DEFINE_BOXED_TYPE(Line, uint32_t);
 DEFINE_BOXED_TYPE(Column, uint32_t);
 
-struct Position final :
-    public TypedOpaqueData<Index, DisplayId, PositionStatus, Line, Column> {
+struct Position final
+    : public TypedOpaqueData<Index, DisplayId, PositionStatus, Line, Column> {
 
-  void Emplace(uint64_t display_id, uint64_t index, uint64_t line,
-               uint64_t col, PositionStatus status=kPositionStatusOK);
+  void Emplace(uint64_t display_id, uint64_t index, uint64_t line, uint64_t col,
+               PositionStatus status = kPositionStatusOK);
 };
 
 }  // namespace display

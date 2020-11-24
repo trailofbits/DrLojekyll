@@ -1383,10 +1383,10 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
     }
   };
 
-  add_conds(clause.PositivePredicates(), insert->positive_conditions,
-            true, insert);
-  add_conds(clause.NegatedPredicates(), insert->negative_conditions,
-            false, insert);
+  add_conds(clause.PositivePredicates(), insert->positive_conditions, true,
+            insert);
+  add_conds(clause.NegatedPredicates(), insert->negative_conditions, false,
+            insert);
 }
 
 // The goal of this function is to build multiple equivalent dataflows out of
@@ -1622,8 +1622,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       cond_guard = query->tuples.Create();
       for (auto var : clause.Parameters()) {
         cond_guard->input_columns.AddUse(view->columns[col_index]);
-        (void) cond_guard->columns.Create(
-            var, cond_guard, VarId(context, var), col_index);
+        (void) cond_guard->columns.Create(var, cond_guard, VarId(context, var),
+                                          col_index);
         ++col_index;
       }
     } else {
@@ -1639,7 +1639,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // DELETE node; however, if it's an insertion clause then we want to add
   // it to the INSERT.
   auto set_condition = false;
-  auto add_set_conditon = [=, &set_condition] (VIEW *view) {
+  auto add_set_conditon = [=, &set_condition](VIEW *view) {
     if (!set_condition && !decl.Arity()) {
       set_condition = true;
       const auto export_decl = ParsedExport::From(decl);
@@ -1656,19 +1656,18 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // The data in `view` must be deleted in our successor.
   if (clause.IsDeletion()) {
     auto col_index = 0u;
-    DELETE * const del = query->deletes.Create();
+    DELETE *const del = query->deletes.Create();
     if (clause.Arity()) {
       for (auto var : clause.Parameters()) {
         del->input_columns.AddUse(view->columns[col_index]);
-        (void) del->columns.Create(
-            var, del, VarId(context, var), col_index);
+        (void) del->columns.Create(var, del, VarId(context, var), col_index);
         ++col_index;
       }
     } else {
       for (auto col : view->columns) {
         del->input_columns.AddUse(col);
-        (void) del->columns.Create(
-            col->var, del, VarId(context, col->var), col_index);
+        (void) del->columns.Create(col->var, del, VarId(context, col->var),
+                                   col_index);
         ++col_index;
       }
     }

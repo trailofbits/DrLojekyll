@@ -239,7 +239,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         auto &error = ret.As<lex::ErrorToken>();
         const auto error_pos = impl->reader.CurrentPosition();
         error.Store<Lexeme>(Lexeme::kInvalidUnterminatedCode);
-        error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
+        error.Store<lex::ErrorIndexDisp>(error_pos.Index() -
+                                         ret.position.Index());
         error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
         error.Store<lex::ErrorColumn>(error_pos.Column());
         error.Store<lex::IndexDisp>(error_pos.Index() - ret.position.Index());
@@ -274,8 +275,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             literal.Store<Lexeme>(Lexeme::kLiteralCxxCode);
             literal.Store<lex::Id>(string_pool.InternCode(impl->data));
             literal.Store<lex::ReprWidth>(impl->data.size());
-            literal.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
-            literal.Store<lex::LineDisp>(after_pos.Line() - ret.position.Index());
+            literal.Store<lex::IndexDisp>(after_pos.Index() -
+                                          ret.position.Index());
+            literal.Store<lex::LineDisp>(after_pos.Line() -
+                                         ret.position.Index());
             literal.Store<lex::Column>(after_pos.Column());
             return true;
 
@@ -287,8 +290,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             literal.Store<Lexeme>(Lexeme::kLiteralPythonCode);
             literal.Store<lex::Id>(string_pool.InternCode(impl->data));
             literal.Store<lex::ReprWidth>(impl->data.size());
-            literal.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
-            literal.Store<lex::LineDisp>(after_pos.Line() - ret.position.Index());
+            literal.Store<lex::IndexDisp>(after_pos.Index() -
+                                          ret.position.Index());
+            literal.Store<lex::LineDisp>(after_pos.Line() -
+                                         ret.position.Index());
             literal.Store<lex::Column>(after_pos.Column());
             return true;
 
@@ -298,8 +303,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             literal.Store<Lexeme>(Lexeme::kLiteralCode);
             literal.Store<lex::Id>(string_pool.InternCode(impl->data));
             literal.Store<lex::ReprWidth>(impl->data.size());
-            literal.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
-            literal.Store<lex::LineDisp>(after_pos.Line() - ret.position.Index());
+            literal.Store<lex::IndexDisp>(after_pos.Index() -
+                                          ret.position.Index());
+            literal.Store<lex::LineDisp>(after_pos.Line() -
+                                         ret.position.Index());
             literal.Store<lex::Column>(after_pos.Column());
             return true;
           }
@@ -341,8 +348,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             const auto error_pos = impl->reader.CurrentPosition();
             auto &error = ret.As<lex::ErrorToken>();
             error.Store<Lexeme>(Lexeme::kInvalidNewLineInString);
-            error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
-            error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
+            error.Store<lex::ErrorIndexDisp>(error_pos.Index() -
+                                             ret.position.Index());
+            error.Store<lex::ErrorLineDisp>(error_pos.Line() -
+                                            ret.position.Line());
             error.Store<lex::ErrorColumn>(error_pos.Column());
             error.Store<char>(ch);
             is_invalid = true;
@@ -385,8 +394,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                   const auto error_pos = impl->reader.CurrentPosition();
                   auto &error = ret.As<lex::ErrorToken>();
                   error.Store<Lexeme>(Lexeme::kInvalidEscapeInString);
-                  error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
-                  error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
+                  error.Store<lex::ErrorIndexDisp>(error_pos.Index() -
+                                                   ret.position.Index());
+                  error.Store<lex::ErrorLineDisp>(error_pos.Line() -
+                                                  ret.position.Line());
                   error.Store<lex::ErrorColumn>(error_pos.Column());
                   error.Store<char>(ch);
                   is_invalid = true;
@@ -417,8 +428,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           const auto error_pos = impl->reader.CurrentPosition();
           auto &error = ret.As<lex::ErrorToken>();
           error.Store<Lexeme>(Lexeme::kInvalidUnterminatedString);
-          error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
-          error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
+          error.Store<lex::ErrorIndexDisp>(error_pos.Index() -
+                                           ret.position.Index());
+          error.Store<lex::ErrorLineDisp>(error_pos.Line() -
+                                          ret.position.Line());
           error.Store<lex::ErrorColumn>(error_pos.Column());
           error.Store<char>(ch);
           is_invalid = true;
@@ -775,7 +788,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           auto &literal = ret.As<lex::NumberLiteralToken>();
           literal.Store<Lexeme>(Lexeme::kLiteralNumber);
           literal.Store<lex::SpellingWidth>(1);
-          literal.Store<lex::NumberSpellingKind>(lex::NumberSpellingKind::kDecimal);
+          literal.Store<lex::NumberSpellingKind>(
+              lex::NumberSpellingKind::kDecimal);
           literal.Store<bool>(false);  // No decimal point.
           literal.Store<lex::PrefixWidth>(0u);
           return true;
@@ -786,7 +800,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             auto &literal = ret.As<lex::NumberLiteralToken>();
             literal.Store<Lexeme>(Lexeme::kLiteralNumber);
             literal.Store<lex::SpellingWidth>(2u);
-            literal.Store<lex::NumberSpellingKind>(lex::NumberSpellingKind::kOctal);
+            literal.Store<lex::NumberSpellingKind>(
+                lex::NumberSpellingKind::kOctal);
             literal.Store<bool>(false);  // No decimal point.
             literal.Store<lex::PrefixWidth>(1u);  // `0` prefix for octal.
             return true;
@@ -842,7 +857,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             auto &literal = ret.As<lex::NumberLiteralToken>();
             literal.Store<Lexeme>(Lexeme::kLiteralNumber);
             literal.Store<lex::SpellingWidth>(impl->data.size());
-            literal.Store<lex::NumberSpellingKind>(lex::NumberSpellingKind::kHexadecimal);
+            literal.Store<lex::NumberSpellingKind>(
+                lex::NumberSpellingKind::kHexadecimal);
             literal.Store<bool>(false);
             literal.Store<lex::PrefixWidth>(2u);  // `0x` or `0X` prefix length.
             return true;
@@ -856,7 +872,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             error.Store<lex::ErrorColumn>(ret.position.Column() + i);
 
             const auto after_pos = impl->reader.CurrentPosition();
-            error.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
+            error.Store<lex::IndexDisp>(after_pos.Index() -
+                                        ret.position.Index());
             error.Store<lex::LineDisp>(after_pos.Line() - ret.position.Line());
             error.Store<lex::Column>(after_pos.Column());
             return true;
@@ -878,7 +895,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             auto &literal = ret.As<lex::NumberLiteralToken>();
             literal.Store<Lexeme>(Lexeme::kLiteralNumber);
             literal.Store<lex::SpellingWidth>(impl->data.size());
-            literal.Store<lex::NumberSpellingKind>(lex::NumberSpellingKind::kBinary);
+            literal.Store<lex::NumberSpellingKind>(
+                lex::NumberSpellingKind::kBinary);
             literal.Store<bool>(false);
             literal.Store<lex::PrefixWidth>(2u);  // `0b` or `0B` prefix length.
             return true;
@@ -892,7 +910,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             error.Store<lex::ErrorColumn>(ret.position.Column() + i);
 
             const auto after_pos = impl->reader.CurrentPosition();
-            error.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
+            error.Store<lex::IndexDisp>(after_pos.Index() -
+                                        ret.position.Index());
             error.Store<lex::LineDisp>(after_pos.Line() - ret.position.Line());
             error.Store<lex::Column>(after_pos.Column());
             return true;
@@ -930,7 +949,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             auto &literal = ret.As<lex::NumberLiteralToken>();
             literal.Store<Lexeme>(Lexeme::kLiteralNumber);
             literal.Store<lex::SpellingWidth>(impl->data.size());
-            literal.Store<lex::NumberSpellingKind>(lex::NumberSpellingKind::kOctal);
+            literal.Store<lex::NumberSpellingKind>(
+                lex::NumberSpellingKind::kOctal);
             literal.Store<bool>(false);
             literal.Store<lex::PrefixWidth>(1u);  // `0` prefix.
             return true;
@@ -944,7 +964,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             error.Store<lex::ErrorColumn>(ret.position.Column() + i);
 
             const auto after_pos = impl->reader.CurrentPosition();
-            error.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
+            error.Store<lex::IndexDisp>(after_pos.Index() -
+                                        ret.position.Index());
             error.Store<lex::LineDisp>(after_pos.Line() - ret.position.Line());
             error.Store<lex::Column>(after_pos.Column());
             return true;
@@ -983,8 +1004,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
                     });
 
                     const auto after_pos = impl->reader.CurrentPosition();
-                    error.Store<lex::IndexDisp>(after_pos.Index() - ret.position.Index());
-                    error.Store<lex::LineDisp>(after_pos.Line() - ret.position.Line());
+                    error.Store<lex::IndexDisp>(after_pos.Index() -
+                                                ret.position.Index());
+                    error.Store<lex::LineDisp>(after_pos.Line() -
+                                               ret.position.Line());
                     error.Store<lex::Column>(after_pos.Column());
                     return true;
                   }
@@ -1005,7 +1028,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         auto &literal = ret.As<lex::NumberLiteralToken>();
         literal.Store<Lexeme>(Lexeme::kLiteralNumber);
         literal.Store<lex::SpellingWidth>(impl->data.size());
-        literal.Store<lex::NumberSpellingKind>(lex::NumberSpellingKind::kDecimal);
+        literal.Store<lex::NumberSpellingKind>(
+            lex::NumberSpellingKind::kDecimal);
         literal.Store<bool>(tentative_has_decimal_point);
         literal.Store<lex::PrefixWidth>(0u);
         return true;

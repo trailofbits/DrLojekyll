@@ -73,10 +73,9 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
   // `transitive_closure.dr`.
   if (!is_used_in_merge && !introduces_control_dep && !sets_condition &&
       AllColumnsAreUsed()) {
-    if (auto outgoing_view = OnlyUser();
-        outgoing_view &&
-        !outgoing_view->AsJoin() &&
-        !outgoing_view->AsMerge()) {
+    if (auto outgoing_view = OnlyUser(); outgoing_view &&
+                                         !outgoing_view->AsJoin() &&
+                                         !outgoing_view->AsMerge()) {
 
       for (auto i = 0u; i < max_i; ++i) {
         const auto in_col = input_columns[i];

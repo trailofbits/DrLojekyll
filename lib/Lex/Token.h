@@ -31,33 +31,32 @@ enum class NumberSpellingKind : uint8_t {
   kHexadecimal,  // E.g. `0xf00`.
 };
 
-struct BasicToken final
-    : public TypedOpaqueData<Lexeme, SpellingWidth> {};
+struct BasicToken final : public TypedOpaqueData<Lexeme, SpellingWidth> {};
 
 struct ErrorToken final
-    : public TypedOpaqueData<Lexeme,
-                             char  /* Character that cause the error */,
-                             ErrorIndexDisp  /* Index of the bad char in the display */,
-                             ErrorLineDisp  /* Line of the bad char in the display */,
-                             ErrorColumn  /* Column of the bad char in the display */,
-                             IndexDisp  /* Index of the first char of the following token */,
-                             LineDisp  /* Line of the first char of the following token */,
-                             Column  /* Column of the first char of the following token */> {};
+    : public TypedOpaqueData<
+          Lexeme, char /* Character that cause the error */,
+          ErrorIndexDisp /* Index of the bad char in the display */,
+          ErrorLineDisp /* Line of the bad char in the display */,
+          ErrorColumn /* Column of the bad char in the display */,
+          IndexDisp /* Index of the first char of the following token */,
+          LineDisp /* Line of the first char of the following token */,
+          Column /* Column of the first char of the following token */> {};
 
 struct TypeToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth, TypeKind> {};
 
 struct WhitespaceToken final
-    : public TypedOpaqueData<Lexeme,
-                             SpellingWidth  /* Number of leading spaces */,
-                             IndexDisp  /* Next index */,
-                             LineDisp  /* Next line */,
-                             Column  /* Next column */> {};
+    : public TypedOpaqueData<
+          Lexeme, SpellingWidth /* Number of leading spaces */,
+          IndexDisp /* Next index */, LineDisp /* Next line */,
+          Column /* Next column */> {};
 
 struct NumberLiteralToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth, NumberSpellingKind,
-                             bool  /* Has decimal point */,
-                             PrefixWidth  /* Prefix width, e.g. 2 for `0x`. */> {};
+                             bool /* Has decimal point */,
+                             PrefixWidth /* Prefix width, e.g. 2 for `0x`. */> {
+};
 
 struct StringLiteralToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth,
@@ -71,16 +70,17 @@ struct StringLiteralToken final
                                          * like escape characters). */> {};
 
 struct CodeLiteralToken final
-    : public TypedOpaqueData<Lexeme,
-                             Id  /* Unique ID of the represented code. The first
+    : public TypedOpaqueData<
+          Lexeme, Id /* Unique ID of the represented code. The first
                                   * code block has ID `0`, the second has ID
-                                  * `1`, etc. */,
-                             ReprWidth  /* Number of bytes in the represented
+                                  * `1`, etc. */
+          ,
+          ReprWidth /* Number of bytes in the represented
                                          * string (after processing things
-                                         * like escape characters). */,
-                             IndexDisp  /* The next index. */,
-                             LineDisp  /* The next line ``` */,
-                             Column  /* The next column */> {};
+                                         * like escape characters). */
+          ,
+          IndexDisp /* The next index. */, LineDisp /* The next line ``` */,
+          Column /* The next column */> {};
 
 struct IdentifierToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth,
