@@ -3,6 +3,7 @@
 #pragma once
 
 #include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Util/OpaqueData.h>
 
 #include <functional>
 #include <utility>
@@ -17,6 +18,9 @@ enum class Lexeme : uint8_t {
   kInvalid,
   kInvalidDirective,  // Invalid declaration (starts with a `hash`).
   kInvalidNumber,
+  kInvalidOctalNumber,
+  kInvalidHexadecimalNumber,
+  kInvalidBinaryNumber,
   kInvalidNewLineInString,
   kInvalidEscapeInString,
   kInvalidUnterminatedString,
@@ -88,12 +92,6 @@ enum class Lexeme : uint8_t {
   // `entrypoint_function` rule.
   kHashMessageDecl,
 
-  // Used to import another module.
-  //
-  //    #import "path"
-  //
-  kHashImportModuleStmt,
-
   // Declares a user-defined functor. These are functions that are defined
   // by native code modules. They must have globally unique names. When called
   // with all bound arguments, they must be pure, so that two uses can be
@@ -109,6 +107,33 @@ enum class Lexeme : uint8_t {
   // Associating functors with classes enables functors to manage a backing
   // store of state.
   kHashFunctorDecl,
+
+  // Used to declare a "foreign" type. Foreign types can be "forward declared"
+  // with no codegen, e.g.
+  //
+  //    #foreign std_string
+  //
+  // And/or be re-declared with concrete implementation types in code, with the
+  // syntax:
+  //
+  //    #foreign <type name> <type name code>
+  //
+  // For example:
+  //
+  //    #foreign std_string ```python str```
+  //    #foreign std_string ```c++ std::string```
+  //
+  // Once declared, foreign types are globally visible. There can be at most
+  // one concrete implementation declaration per language for each foreign
+  // type. If no language specifier is given for the concrete implementation,
+  // then it applies to target languages uniformly.
+  kHashForeignTypeDecl,
+
+  // Used to import another module.
+  //
+  //    #import "path"
+  //
+  kHashImportModuleStmt,
 
   // Used to insert some C/C++/Python code inline into the Datalog code. The
   // usage looks like:
@@ -254,11 +279,14 @@ enum class Lexeme : uint8_t {
   kIdentifierAtom,
   kIdentifierUnnamedAtom,
   kIdentifierVariable,
-  kIdentifierUnnamedVariable  // `_`.
+  kIdentifierUnnamedVariable,  // `_`.
+  kIdentifierType,  // Foreign type names.
 };
 
+enum class TypeKind : uint32_t;
+
 // Represents a single token of input.
-class Token {
+class Token final : public OpaqueData {
  public:
   bool IsValid(void) const;
 
@@ -275,7 +303,8 @@ class Token {
   // invalid token.
   DisplayPosition ErrorPosition(void) const;
 
-  // Return the range of characters covered by this token.
+  // Return the range of characters covered by this token. This is an open range
+  // of the form `[begin, end)`.
   DisplayRange SpellingRange(void) const;
 
   // Return the position of the first character immediately following
@@ -331,8 +360,8 @@ class Token {
   // Return the length of the corresponding identifier, or `0` if not a string.
   unsigned IdentifierLength(void) const;
 
-  // Return the size, in bytes, of the corresponding type.
-  unsigned TypeSizeInBytes(void) const;
+  // Return the kind of this type.
+  ::hyde::TypeKind TypeKind(void) const;
 
   // Returns the invalid char, or `\0` if not present.
   char InvalidChar(void) const;
@@ -341,11 +370,11 @@ class Token {
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
   inline bool operator==(const Token that) const noexcept {
-    return opaque_data == that.opaque_data && position == that.position;
+    return this->OpaqueData::operator ==(that) && position == that.position;
   }
 
   inline bool operator!=(const Token that) const noexcept {
-    return opaque_data != that.opaque_data || position != that.position;
+    return this->OpaqueData::operator !=(that) || position != that.position;
   }
 
  private:
@@ -370,7 +399,6 @@ class Token {
   static Token FakeType(DisplayPosition position, unsigned spelling_width);
 
   DisplayPosition position;
-  uint64_t opaque_data{0};
 };
 
 }  // namespace hyde

@@ -149,11 +149,12 @@ class ParserImpl {
   void ParseLocalExport(Node<ParsedModule> *module,
                         std::vector<std::unique_ptr<Node<NodeType>>> &out_vec);
 
+  // Try to parse `sub_range` as a froeign type declaration, adding it to
+  // module if successful.
+  void ParseForeignTypeDecl(Node<ParsedModule> *module);
+
   // Try to parse `sub_range` as an import.
   void ParseImport(Node<ParsedModule> *module);
-
-  // Try to parse `sub_range` as an include of C/C++ code.
-  void ParseInclude(Node<ParsedModule> *module);
 
   // Try to resolve the given path to a file on the filesystem, searching the
   // provided directories in order.

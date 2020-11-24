@@ -802,7 +802,6 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 };
 
 class ParsedImport;
-class ParsedInclude;
 class ParsedInline;
 class ParsedModuleIterator;
 
@@ -816,7 +815,6 @@ class ParsedModule {
 
   NodeRange<ParsedQuery> Queries(void) const;
   NodeRange<ParsedImport> Imports(void) const;
-  NodeRange<ParsedInclude> Includes(void) const;
   NodeRange<ParsedInline> Inlines(void) const;
   NodeRange<ParsedLocal> Locals(void) const;
   NodeRange<ParsedExport> Exports(void) const;
@@ -869,29 +867,53 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
   using parse::ParsedNode<ParsedImport>::ParsedNode;
 };
 
-// Represents a parsed `#include` statement, for passing through down to the
-// code generator.
-class ParsedInclude : public parse::ParsedNode<ParsedInclude> {
- public:
-  DisplayRange SpellingRange(void) const noexcept;
-  std::string_view IncludedFilePath(void) const noexcept;
-  bool IsSystemInclude(void) const noexcept;
-
- protected:
-  using parse::ParsedNode<ParsedInclude>::ParsedNode;
-};
-
 enum class Language : unsigned { kUnknown, kCxx, kPython };
 
-// Represents a parsed `#prologue` or `#epilogue` statement, that lets us write C/C++ code
-// directly inside of a datalog module and have it pasted directly into
-// generated C/C++ code. This can be useful for making sure that certain
+// Represents a parsed foreign type. These let us explicitly represent value/
+// serializable types from the codegen target language in Dr. Lojekyll's code.
+// They can be forward declared as:
+//
+//    #foreign type_name
+//
+// And defined as:
+//
+//    #foreign type_name ```name for all languages here```
+//
+// Or:
+//
+//    #foreign type_name "name for all languages here"
+//
+// Alternatively, language-specific codegen names can be provided with:
+//
+//    #foreign std_string ```c++ std::string```
+//    #foreign std_string ```python str```
+class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
+ public:
+
+  // Type name of this token.
+  Token Name(void) const noexcept;
+
+  std::optional<DisplayRange> SpellingRange(Language lang) const noexcept;
+
+  // Optional code to inline, specific to a language.
+  std::optional<std::string_view> CodeToInline(Language lang) const noexcept;
+
+ protected:
+  using parse::ParsedNode<ParsedForeignType>::ParsedNode;
+};
+
+// Represents a parsed `#prologue` or `#epilogue` statement, that lets us write
+// C/C++ code directly inside of a datalog module and have it pasted directly
+// into generated C/C++ code. This can be useful for making sure that certain
 // functors are inlined / inlinable, and thus visible to the compiler.
 class ParsedInline : public parse::ParsedNode<ParsedInline> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
   std::string_view CodeToInline(void) const noexcept;
   ::hyde::Language Language(void) const noexcept;
+
+  // Tells us whether or not this code should be emitted at the beginning of
+  // codegen (returns `true`) or at the end of codegen (returns `false`).
   bool IsPrologue(void) const noexcept;
 
  protected:

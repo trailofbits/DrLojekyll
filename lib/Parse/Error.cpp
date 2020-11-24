@@ -209,7 +209,7 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
     impl->column = from.Column();
   }
 
-  int num_bytes = 0;
+  int64_t num_bytes = 0;
 
   impl->hightlight_line = range.From().Line();
   impl->is_error.clear();
@@ -222,7 +222,7 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
     return;
   }
 
-  int range_num_bytes = 0;
+  int64_t range_num_bytes = 0;
   if (!sub_range.TryComputeDistance(&range_num_bytes, nullptr, nullptr)) {
     return;
   }

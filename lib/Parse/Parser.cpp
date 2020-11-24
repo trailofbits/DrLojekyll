@@ -115,6 +115,21 @@ void ParserImpl::LexAllTokens(Display display) {
           tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
           break;
 
+        case Lexeme::kInvalidOctalNumber:
+          err << "Invalid octal digit in number literal '" << tok << "'";
+          tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
+          break;
+
+        case Lexeme::kInvalidHexadecimalNumber:
+          err << "Invalid hexadecimal digit in number literal '" << tok << "'";
+          tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
+          break;
+
+        case Lexeme::kInvalidBinaryNumber:
+          err << "Invalid binary digit in number literal '" << tok << "'";
+          tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
+          break;
+
         case Lexeme::kInvalidNewLineInString:
           err << "Invalid new line character in string literal";
           tok = Token::FakeStringLiteral(tok.Position(), tok.SpellingWidth());
@@ -194,7 +209,7 @@ void ParserImpl::LexAllTokens(Display display) {
     // line mode when we encounter unrecognized directives.
     } else if (ignore_line) {
 
-      int num_lines = 0;
+      int64_t num_lines = 0;
       prev_pos.TryComputeDistanceTo(tok.NextPosition(), nullptr, &num_lines,
                                     nullptr);
       if (num_lines) {
@@ -231,6 +246,9 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalid:
       case Lexeme::kInvalidDirective:
       case Lexeme::kInvalidNumber:
+      case Lexeme::kInvalidOctalNumber:
+      case Lexeme::kInvalidHexadecimalNumber:
+      case Lexeme::kInvalidBinaryNumber:
       case Lexeme::kInvalidNewLineInString:
       case Lexeme::kInvalidEscapeInString:
       case Lexeme::kInvalidUnterminatedString:
@@ -999,6 +1017,11 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
         }
+        break;
+
+      case Lexeme::kHashForeignTypeDecl:
+        ReadLine();
+        ParseForeignTypeDecl(module);
         break;
 
       // Import another module, e.g. `#import "foo/bar"`.

@@ -2,8 +2,6 @@
 
 #include "Program.h"
 
-#include <iostream>
-
 namespace hyde {
 namespace {
 

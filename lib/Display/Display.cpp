@@ -66,16 +66,12 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wconversion"
 #endif
-      display::PositionInterpreter interpreter = {};
-      interpreter.position.index = data.size();
-      interpreter.position.line = next_line;
-      interpreter.position.column = next_column;
-      interpreter.position.display_id = id;
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic pop
 #endif
-      const DisplayPosition waypoint(interpreter.flat);
-      waypoints.emplace_back(waypoint);
+      DisplayPosition &waypoint = waypoints.emplace_back();
+      display::Position &pos = waypoint.As<display::Position>();
+      pos.Emplace(id, data.size(), next_line, next_column);
     }
   };
 
@@ -195,13 +191,11 @@ bool Display::TryReadChar(DisplayPosition position, char *ch_out) const {
     return false;
   }
 
-  display::PositionInterpreter interpreter = {};
-  interpreter.flat = position.opaque_data;
-  if (interpreter.position.display_id != impl->id) {
+  if (position.DisplayId() != impl->id) {
     return false;
   }
 
-  return impl->TryReadChar(interpreter.position.index, ch_out);
+  return impl->TryReadChar(position.Index(), ch_out);
 }
 
 // Tries to read a range of characters from the display. Returns `true` if
@@ -212,22 +206,17 @@ bool Display::TryReadData(DisplayRange range,
     return false;
   }
 
-  display::PositionInterpreter interpreter_from = {};
-  interpreter_from.flat = range.from.opaque_data;
-
-  display::PositionInterpreter interpreter_to = {};
-  interpreter_to.flat = range.to.opaque_data;
-
-  if (interpreter_from.position.display_id != impl->id) {
+  const auto from = range.From();
+  const auto to = range.To();
+  if (from.DisplayId() != impl->id) {
     return false;
   }
 
-  const auto from_index =
-      static_cast<unsigned>(interpreter_from.position.index);
-  const auto to_index = static_cast<unsigned>(interpreter_to.position.index);
+  const auto from_index = from.Index();
+  const auto to_index = to.Index();
 
   // NOTE(pag): The range is an exclusive range.
-  if (!impl->TryReadChar(to_index - 1, nullptr)) {
+  if (!impl->TryReadChar(to_index - 1u, nullptr)) {
     return false;
   }
 
