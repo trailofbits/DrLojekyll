@@ -6,6 +6,7 @@
 #include <drlojekyll/Lex/Lexer.h>
 #include <drlojekyll/Lex/StringPool.h>
 
+#include <cassert>
 #include <cctype>
 #include <string>
 
