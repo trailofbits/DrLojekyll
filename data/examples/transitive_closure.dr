@@ -1,7 +1,8 @@
 
-#message add_edge(i64 From, i64 To)
-#query reachable_from(bound i64 From, free i64 To)
-#query reaching_to(free i64 From, bound i64 To)
+
+#message add_edge(u64 From, u64 To)
+#query reachable_from(bound u64 From, free u64 To)
+#query reaching_to(free u64 From, bound u64 To)
 #local tc(From, To)
 
 reachable_from(From, To) : tc(From, To).

@@ -193,7 +193,7 @@ uint64_t Node<ProgramLetBindingRegion>::Hash(void) const {
   for (auto var : used_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
@@ -249,7 +249,7 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
   for (auto var : tuple_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   return hash;
 }
@@ -296,7 +296,7 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
   for (auto var : col_values) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
@@ -337,7 +337,7 @@ uint64_t Node<ProgramExistenceCheckRegion>::Hash(void) const {
   for (auto var : cond_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
@@ -391,7 +391,7 @@ uint64_t Node<ProgramExistenceAssertionRegion>::Hash(void) const {
   for (auto var : cond_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
@@ -716,12 +716,12 @@ uint64_t Node<ProgramTupleCompareRegion>::Hash(void) const {
   for (auto var : this->lhs_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   for (auto var : this->rhs_vars) {
     hash ^= RotateRight64(hash, 15) *
             ((static_cast<unsigned>(var->role) + 11u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 13u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 13u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
@@ -782,7 +782,7 @@ uint64_t Node<ProgramGenerateRegion>::Hash(void) const {
   for (auto var : this->used_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
@@ -845,7 +845,7 @@ uint64_t Node<ProgramCallRegion>::Hash(void) const {
   for (auto var : this->arg_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
 
   for (auto vec : this->arg_vecs) {
@@ -942,7 +942,7 @@ uint64_t Node<ProgramPublishRegion>::Hash(void) const {
   for (auto var : this->arg_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   return hash;
 }
@@ -1017,7 +1017,7 @@ uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {
   for (auto var : this->col_values) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type()) + 11u));
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();

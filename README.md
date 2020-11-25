@@ -126,14 +126,15 @@ clause_list
 
 import: "#import" <double quoted string literal>
 
-// Single and multi-line inline statements.
-code_decl: "#prologue"
-code_decl: "#epilogue"
+// Single and multi-line code blocks
+code_data: "```" <anything...> "```"
+code_data: "```c++" <anything...> "```"
+code_data: "```python" <anything...> "```"
+code_data: <double quoted string literal>
 
-inline_code: code_decl "```" <anything...> "```"
-inline_code: code_decl "```c++" <anything...> "```"
-inline_code: code_decl "```python" <anything...> "```"
-inline_code: code_decl <double quoted string literal>
+// Inline code statements to be emitted to the generated code.
+code_decl: "#prologue" code_data
+code_decl: "#epilogue" code_data
 
 // Decls generally must fit inside a single line. They are allowed
 // to span multiple lines, but only if the new line characters exist
@@ -142,10 +143,22 @@ decl: export_decl
 decl: local_decl
 decl: functor_decl
 decl: message_decl
+decl: foreign_decl
+decl: constant_decl
 
 message_decl: "#message" atom "(" param_list_0 ")" "\n"
 export_decl: "#export" atom "(" param_list_1 ")" "\n"
 local_decl: "#local" atom "(" param_list_1 ")" maybe_inline "\n"
+
+foreign_type_name: atom
+foreign_type_name: variable
+
+foreign_decl: "#foreign" foreign_type_name
+foreign_decl: "#foreign" foreign_type_name code_data
+foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```"
+foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $>
+
+constant_decl: "#constant" foreign_type_name code_data
 
 maybe_inline: "inline"
 maybe_inline:
@@ -170,7 +183,6 @@ param_list_1: named_var
 
 param_list_2: binding_specifier_2 type named_var "," param_list_2
 param_list_2: binding_specifier_2 type named_var
-
 
 type: "i8"
 type: "i16"

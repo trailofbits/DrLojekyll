@@ -213,7 +213,7 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   std::optional<ParsedLiteral> Value(void) const noexcept;
 
   // Type of this variable.
-  TypeKind Type(void) const noexcept;
+  TypeLoc Type(void) const noexcept;
 
   // Whether this variable is global.
   bool IsGlobal(void) const noexcept;

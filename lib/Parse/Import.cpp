@@ -63,6 +63,8 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     return;
   }
 
+  imp->resolved_path = resolved_path;
+
   // Save the old first search path, and put in the directory containing the
   // about-to-be parsed module as the new first search path.
   std::filesystem::path prev_search0 = context->import_search_paths[0];

@@ -11,7 +11,7 @@ namespace hyde {
 OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   auto name = var.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
-    os << "V" << var.Id();
+    os << 'V' << var.Id();
   } else {
     os << name;
   }
@@ -24,7 +24,12 @@ OutputStream &operator<<(OutputStream &os, TypeKind type) {
 }
 
 OutputStream &operator<<(OutputStream &os, TypeLoc type) {
-  os << type.Kind();
+  auto range = type.SpellingRange();
+  if (range.IsValid()) {
+    os << range;
+  } else {
+    os << type.Kind();
+  }
   return os;
 }
 
@@ -190,7 +195,6 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
 
 OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   const auto code = code_.CodeToInline();
-
   if (code.empty()) {
     return os;
   }
@@ -201,21 +205,77 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
     os << "#epilogue ```";
   }
 
-  if (code_.Language() == Language::kCxx) {
-    os << "c++";
-
-  } else if (code_.Language() == Language::kPython) {
-    os << "python";
+  switch (code_.Language()) {
+    case Language::kUnknown:
+      os << '\n';
+      break;
+    case Language::kCxx:
+      os << "c++\n";
+      break;
+    case Language::kPython:
+      os << "python\n";
+      break;
   }
 
-  if (code.front() == '\n' && code.back() == '\n') {
-    os << code;
-  } else if (code.front() == '\n') {
-    os << code << '\n';
-  } else if (code.back() == '\n') {
-    os << '\n' << code;
+  os << code << "\n```";
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
+
+  // Forward declaration.
+  os << "#foreign " << type.Name();
+
+  // Actual definitions, if any.
+  for (auto lang : {Language::kUnknown, Language::kCxx, Language::kPython}) {
+    auto maybe_code = type.CodeToInline(lang);
+    if (!maybe_code) {
+      continue;
+    }
+
+    const auto code = *maybe_code;
+    os << "\n#foreign " << type.Name() << " ```";
+
+    switch (lang) {
+      case Language::kUnknown:
+        break;
+      case Language::kCxx:
+        os << "c++ ";
+        break;
+      case Language::kPython:
+        os << "python ";
+        break;
+    }
+
+    os << code << "```";
+
+    if (auto constructor = type.Constructor(lang); constructor) {
+      os << " ```" << constructor->first << '$'
+         << constructor->second << "```";
+    }
+
+    for (auto foreign_const : type.Constants(lang)) {
+      os << '\n' << foreign_const;
+    }
   }
-  os << "```";
+
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
+  os << "#constant " << constant.Type() << ' ' << constant.Name() << " ```";
+  switch (constant.Language()) {
+    case Language::kUnknown:
+      break;
+    case Language::kCxx:
+      os << "c++ ";
+      break;
+    case Language::kPython:
+      os << "python ";
+      break;
+  }
+
+  os << constant.Constructor() << "```";
   return os;
 }
 
@@ -229,6 +289,12 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   for (auto code : module.Inlines()) {
     if (code.IsPrologue()) {
       os << code << "\n";
+    }
+  }
+
+  if (module.RootModule() == module) {
+    for (auto type : module.ForeignTypes()) {
+      os << type << "\n";
     }
   }
 

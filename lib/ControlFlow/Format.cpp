@@ -11,12 +11,33 @@
 namespace hyde {
 namespace {
 
-static void DefineTable(OutputStream &os, DataTable table) {
+static OutputStream &Type(OutputStream &os, ParsedModule module,
+                          TypeKind kind) {
+  if (auto type = module.ForeignType(kind); type) {
+    os << type->Name();
+  } else {
+    os << kind;
+  }
+  return os;
+}
+
+static OutputStream &Type(OutputStream &os, ParsedModule module,
+                          DataColumn col) {
+  return Type(os, module, col.Type());
+}
+
+
+static OutputStream &Type(OutputStream &os, ParsedModule module,
+                          DataVariable var) {
+  return Type(os, module, var.Type().Kind());
+}
+
+static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) {
   os << os.Indent() << "create " << table;
   os.PushIndent();
   for (auto col : table.Columns()) {
     os << '\n';
-    os << os.Indent() << col.Type() << '\t' << col;
+    os << os.Indent() << Type(os, module, col) << '\t' << col;
     auto sep = "\t; ";
     for (auto name : col.PossibleNames()) {
       os << sep << name;
@@ -682,18 +703,22 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
 
 OutputStream &operator<<(OutputStream &os, Program program) {
   auto sep = "";
+
+  const auto module = program.ParsedModule();
   for (auto var : program.Constants()) {
-    os << sep << os.Indent() << "const " << var.Type() << ' ' << var << " = "
-       << *(var.Value());
+    os << sep << os.Indent() << "const " << Type(os, module, var) << ' '
+       << var << " = " << *(var.Value());
     sep = "\n\n";
   }
   for (auto var : program.GlobalVariables()) {
-    os << sep << os.Indent() << "global " << var.Type() << ' ' << var;
+    os << sep << os.Indent() << "global " << Type(os, module, var) << ' '
+       << var;
     sep = "\n\n";
   }
+
   for (auto table : program.Tables()) {
     os << sep;
-    DefineTable(os, table);
+    DefineTable(os, module, table);
     sep = "\n\n";
   }
 

@@ -56,6 +56,12 @@ class SharedParserContext {
 
   // Keeps track of the global locals. All parsed modules shared this.
   std::unordered_map<uint64_t, Node<ParsedDeclaration> *> declarations;
+
+  // Maps identifier IDs to foreign types.
+  std::unordered_map<uint32_t, Node<ParsedForeignType> *> foreign_types;
+
+  // Maps identifier IDs to foreign constants.
+  std::unordered_map<uint32_t, Node<ParsedForeignConstant> *> foreign_constants;
 };
 
 class ParserImpl {
@@ -149,9 +155,13 @@ class ParserImpl {
   void ParseLocalExport(Node<ParsedModule> *module,
                         std::vector<std::unique_ptr<Node<NodeType>>> &out_vec);
 
-  // Try to parse `sub_range` as a froeign type declaration, adding it to
+  // Try to parse `sub_range` as a foreign type declaration, adding it to
   // module if successful.
   void ParseForeignTypeDecl(Node<ParsedModule> *module);
+
+  // Try to parse `sub_range` as a foreign constant declaration, adding it to
+  // module if successful.
+  void ParseForeignConstantDecl(Node<ParsedModule> *module);
 
   // Try to parse `sub_range` as an import.
   void ParseImport(Node<ParsedModule> *module);

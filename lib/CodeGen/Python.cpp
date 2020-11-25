@@ -69,8 +69,8 @@ static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
 }
 
 // Python representation of TypeKind
-static const char *TypeName(TypeKind kind) {
-  switch (kind) {
+static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
+  switch (kind.UnderlyingKind()) {
     case TypeKind::kSigned8:
     case TypeKind::kSigned16:
     case TypeKind::kSigned32:
@@ -85,6 +85,13 @@ static const char *TypeName(TypeKind kind) {
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID: return "str";
+    case TypeKind::kForeignType:
+      if (auto type = module.ForeignType(kind); type) {
+        if (auto code = type->CodeToInline(Language::kPython)) {
+          return *code;
+        }
+      }
+      [[clang::fallthrough]];
     default: assert(false); return "Any";
   }
 }
@@ -101,13 +108,13 @@ static const char *OperatorString(ComparisonOperator op) {
   }
 }
 
-static std::string TypeValueOrDefault(TypeKind kind,
+static std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                       std::optional<ParsedLiteral> val) {
-  auto prefix = "";
-  auto suffix = "";
+  std::string_view prefix = "";
+  std::string_view suffix = "";
 
   // Default value
-  switch (kind) {
+  switch (loc.UnderlyingKind()) {
     case TypeKind::kSigned8:
     case TypeKind::kSigned16:
     case TypeKind::kSigned32:
@@ -134,24 +141,36 @@ static std::string TypeValueOrDefault(TypeKind kind,
       prefix = "\"";
       suffix = "\"";
       break;
+    case TypeKind::kForeignType:
+      if (auto type = module.ForeignType(loc); type) {
+        if (auto constructor = type->Constructor(Language::kPython);
+            constructor) {
+          prefix = constructor->first;
+          suffix = constructor->second;
+        }
+        break;
+      }
+      [[clang::fallthrough]];
     default: assert(false); prefix = "None  #";
   }
 
   std::stringstream value;
   value << prefix;
   if (val) {
-    value << val->Spelling();
+    if (auto spelling = val->Spelling(Language::kPython); spelling) {
+      value << *spelling;
+    }
   }
   value << suffix;
   return value.str();
 }
 
 // Declare a set to hold the table.
-static void DefineTable(OutputStream &os, DataTable table) {
+static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) {
   os << os.Indent() << Table(os, table) << ": DefaultDict[Tuple[";
   auto sep = "";
   for (auto col : table.Columns()) {
-    os << sep << TypeName(col.Type());
+    os << sep << TypeName(module, col.Type());
     sep = ", ";
   }
   os << "], int] = defaultdict(int)\n";
@@ -162,14 +181,14 @@ static void DefineTable(OutputStream &os, DataTable table) {
     os << os.Indent() << TableIndex(os, index) << ": DefaultDict[Tuple[";
     sep = "";
     for (auto col : index.KeyColumns()) {
-      os << sep << TypeName(col.Type());
+      os << sep << TypeName(module, col.Type());
       sep = ", ";
     }
     os << "], List[Tuple[";
     if (!index.ValueColumns().empty()) {
       sep = "";
       for (auto col : index.ValueColumns()) {
-        os << sep << TypeName(col.Type());
+        os << sep << TypeName(module, col.Type());
         sep = ", ";
       }
 
@@ -182,22 +201,26 @@ static void DefineTable(OutputStream &os, DataTable table) {
   os << "\n";
 }
 
-static void DefineGlobal(OutputStream &os, DataVariable global) {
+static void DefineGlobal(OutputStream &os, ParsedModule module,
+                         DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << Var(os, global) << ": " << TypeName(type) << " = "
-     << TypeValueOrDefault(type, global.Value()) << "\n\n";
+  os << os.Indent() << Var(os, global) << ": " << TypeName(module, type) << " = "
+     << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
 }
 
 // Similar to DefineGlobal except has type-hint to enforce const-ness
-static void DefineConstant(OutputStream &os, DataVariable global) {
+static void DefineConstant(OutputStream &os, ParsedModule module,
+                           DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << Var(os, global) << ": Final[" << TypeName(type)
-     << "] = " << TypeValueOrDefault(type, global.Value()) << "\n\n";
+  os << os.Indent() << Var(os, global) << ": Final[" << TypeName(module, type)
+     << "] = " << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
 }
 
 class PythonCodeGenVisitor final : public ProgramVisitor {
  public:
-  explicit PythonCodeGenVisitor(OutputStream &os_) : os(os_) {}
+  explicit PythonCodeGenVisitor(OutputStream &os_, ParsedModule module_)
+      : os(os_),
+        module(module_) {}
 
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, "Program Call Region");
@@ -453,7 +476,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       auto sep = "";
       if (!index.ValueColumns().empty()) {
         for (auto col : index.ValueColumns()) {
-          os << sep << TypeName(col.Type());
+          os << sep << TypeName(module, col.Type());
           sep = ", ";
         }
       } else {
@@ -577,9 +600,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
  private:
   OutputStream &os;
+  const ParsedModule module;
 };
 
-static void DefineFunctor(OutputStream &os, ParsedFunctor func) {
+static void DefineFunctor(OutputStream &os, ParsedModule module,
+                          ParsedFunctor func) {
   os << os.Indent() << "def " << Functor(os, func) << "(";
 
   std::stringstream return_tuple;
@@ -587,10 +612,11 @@ static void DefineFunctor(OutputStream &os, ParsedFunctor func) {
   auto sep_bound = "";
   for (auto param : func.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
-      os << sep_bound << param.Name() << ": " << TypeName(param.Type().Kind());
+      os << sep_bound << param.Name() << ": "
+         << TypeName(module, param.Type().Kind());
       sep_bound = ", ";
     } else {
-      return_tuple << sep_ret << TypeName(param.Type().Kind());
+      return_tuple << sep_ret << TypeName(module, param.Type().Kind());
       sep_ret = ", ";
     }
   }
@@ -616,7 +642,8 @@ static void DefineFunctor(OutputStream &os, ParsedFunctor func) {
   os.PopIndent();
 }
 
-static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
+static void DefineProcedure(OutputStream &os, ParsedModule module,
+                            ProgramProcedure proc) {
   os << os.Indent() << "def " << Procedure(os, proc) << "(self";
 
   // First, declare all vector parameters.
@@ -625,7 +652,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
-      os << type_sep << TypeName(type);
+      os << type_sep << TypeName(module, type);
       type_sep = ", ";
     }
 
@@ -634,7 +661,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
   // Then, declare all variable parameters.
   for (auto param : proc.VariableParameters()) {
-    os << ", " << Var(os, param) << ": " << TypeName(param.Type());
+    os << ", " << Var(os, param) << ": " << TypeName(module, param.Type());
   }
 
   // Every procedure has a boolean return type. A lot of the time the return
@@ -665,7 +692,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
     auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
-      os << type_sep << TypeName(type);
+      os << type_sep << TypeName(module, type);
       type_sep = ", ";
     }
 
@@ -677,7 +704,7 @@ static void DefineProcedure(OutputStream &os, ProgramProcedure proc) {
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
   // most trivial procedure body contains a `return False`.
-  PythonCodeGenVisitor visitor(os);
+  PythonCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
 
   os.PopIndent();
@@ -693,12 +720,14 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "from collections import defaultdict\n";
   os << "from typing import *\n\n";
 
+  const auto module = program.ParsedModule();
+
   // TODO(ekilmer): Functors are predefined with `pass` for now
   for (auto func : program.ParsedModule().Functors()) {
-    DefineFunctor(os, func);
+    DefineFunctor(os, module, func);
   }
 
-  for (auto code : program.ParsedModule().Inlines()) {
+  for (auto code : module.Inlines()) {
     if (code.Language() == Language::kPython && code.IsPrologue()) {
       os << code.CodeToInline() << '\n';
     }
@@ -712,15 +741,15 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os.PushIndent();
 
   for (auto table : program.Tables()) {
-    DefineTable(os, table);
+    DefineTable(os, module, table);
   }
 
   for (auto global : program.GlobalVariables()) {
-    DefineGlobal(os, global);
+    DefineGlobal(os, module, global);
   }
 
   for (auto constant : program.Constants()) {
-    DefineConstant(os, constant);
+    DefineConstant(os, module, constant);
   }
 
   // Invoke the init procedure. Always first
@@ -731,12 +760,12 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os.PopIndent();
 
   for (auto proc : program.Procedures()) {
-    DefineProcedure(os, proc);
+    DefineProcedure(os, module, proc);
   }
 
   os.PopIndent();
 
-  for (auto code : program.ParsedModule().Inlines()) {
+  for (auto code : module.Inlines()) {
     if (code.Language() == Language::kPython && !code.IsPrologue()) {
       os << code.CodeToInline() << '\n';
     }

@@ -7,6 +7,7 @@
 #include <drlojekyll/Parse/Type.h>
 #include <drlojekyll/Util/Node.h>
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string_view>
@@ -73,15 +74,33 @@ class ParsedClause;
 class ParsedComparison;
 class ParsedPredicate;
 
+enum class Language : unsigned { kUnknown, kCxx, kPython };
+static constexpr auto kNumLanguages = 3u;
+
 // Represents a literal.
 class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
  public:
   DisplayRange SpellingRange(void) const noexcept;
-  std::string_view Spelling(void) const noexcept;
 
+  std::optional<std::string_view> Spelling(Language lang) const noexcept;
+
+  // Is this a foreign constant?
+  bool IsConstant(void) const noexcept;
+
+  // Is this a numeric immediate literal? This could encompass both integral
+  // and floating point values, including integers of hexadecimal, octal, and
+  // binary representations.
   bool IsNumber(void) const noexcept;
+
+  // Is this a string literal? This does not include code literals.
   bool IsString(void) const noexcept;
+
+  // What is the type of this literal? The returned `TypeLoc` refers to the
+  // source of the type that we used to infer the type, based off of usage.
   TypeLoc Type(void) const noexcept;
+
+  // Token representing the use of this constant.
+  Token Literal(void) const noexcept;
 
  protected:
   friend class ParsedVariable;
@@ -801,6 +820,7 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   using parse::ParsedNode<ParsedMessage>::ParsedNode;
 };
 
+class ParsedForeignType;
 class ParsedImport;
 class ParsedInline;
 class ParsedModuleIterator;
@@ -822,6 +842,15 @@ class ParsedModule {
   NodeRange<ParsedFunctor> Functors(void) const;
   NodeRange<ParsedClause> Clauses(void) const;
   NodeRange<ParsedClause> DeletionClauses(void) const;
+
+  // NOTE(pag): This returns the list of /all/ foreign types, as they are
+  //            globally visible.
+  NodeRange<ParsedForeignType> ForeignTypes(void) const;
+
+  // Try to return the foreign type associated with a particular type location
+  // or type kind.
+  std::optional<ParsedForeignType> ForeignType(TypeLoc loc);
+  std::optional<ParsedForeignType> ForeignType(TypeKind kind);
 
   // The root module of this parse.
   ParsedModule RootModule(void) const;
@@ -863,11 +892,38 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
   DisplayRange SpellingRange(void) const noexcept;
   ParsedModule ImportedModule(void) const noexcept;
 
+  std::filesystem::path ImportedPath(void) const noexcept;
+
  protected:
   using parse::ParsedNode<ParsedImport>::ParsedNode;
 };
 
-enum class Language : unsigned { kUnknown, kCxx, kPython };
+// Represents a parsed foreign constant. These let us explicitly represent
+// values from a target language. For example, we can map foreign constants
+// to C++ expressions, such as enumerators, `sizeof(...)` expressions, even
+// function calls!
+//
+//    #constant type_name const_name ```<lang> expansion```
+//
+// Where `type_name` is a foreign type declared with `#foreign`.
+class ParsedForeignConstant : public parse::ParsedNode<ParsedForeignConstant> {
+ public:
+  TypeLoc Type(void) const noexcept;
+
+  // Name of this constant.
+  Token Name(void) const noexcept;
+
+  ::hyde::Language Language(void) const noexcept;
+
+  DisplayRange SpellingRange(void) const noexcept;
+
+  std::string_view Constructor(void) const noexcept;
+
+ protected:
+  friend class ParsedForeignType;
+
+  using parse::ParsedNode<ParsedForeignConstant>::ParsedNode;
+};
 
 // Represents a parsed foreign type. These let us explicitly represent value/
 // serializable types from the codegen target language in Dr. Lojekyll's code.
@@ -887,6 +943,17 @@ enum class Language : unsigned { kUnknown, kCxx, kPython };
 //
 //    #foreign std_string ```c++ std::string```
 //    #foreign std_string ```python str```
+//
+// Sometimes, one needs to specify how to construct the type given a default
+// value in the target language. For example, this can be done with:
+//
+//    #foreign std_string ```c++ std::string``` ```std::string($)```
+//
+// The meta-variable `$` must appear in the constructor string exactly once.
+//
+// Foreign type declarations logically follow code inlined into the target
+// via `#prologue` statements. Thus, a foreign type can safely refer to a type
+// declared within a `#prologue` statement.
 class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
  public:
   // Type name of this token.
@@ -897,7 +964,16 @@ class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
   // Optional code to inline, specific to a language.
   std::optional<std::string_view> CodeToInline(Language lang) const noexcept;
 
+  // Return the prefix and suffix for construction for this language.
+  std::optional<std::pair<std::string_view, std::string_view>>
+  Constructor(Language lang) const noexcept;
+
+  // List of constants defined on this type for a particular language.
+  NodeRange<ParsedForeignConstant> Constants(Language lang) const noexcept;
+
  protected:
+  friend class ParsedModule;
+
   using parse::ParsedNode<ParsedForeignType>::ParsedNode;
 };
 
