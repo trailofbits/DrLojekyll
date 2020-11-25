@@ -913,13 +913,15 @@ template <>
 class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_)
+  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_,
+              unsigned id_)
       : Node<ProgramOperationRegion>(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
         defined_vars(this),
-        used_vars(this) {}
+        used_vars(this),
+        id(id_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
@@ -939,6 +941,8 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
 
   // Bound variables passed in as arguments to the functor.
   UseList<VAR> used_vars;
+
+  const unsigned id;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;

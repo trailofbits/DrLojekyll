@@ -380,6 +380,8 @@ class ProgramGenerateRegion
  public:
   static ProgramGenerateRegion From(ProgramRegion) noexcept;
 
+  unsigned Id(void) const noexcept;
+
   // Does this functor application behave like a filter function?
   bool IsFilter(void) const noexcept;
 

@@ -376,6 +376,10 @@ VECTOR_OPS(ProgramVectorUniqueRegion)
 
 #undef VECTOR_OPS
 
+unsigned ProgramGenerateRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
 // Does this functor application behave like a filter function?
 bool ProgramGenerateRegion::IsFilter(void) const noexcept {
   return impl->op == ProgramOperation::kCallFilterFunctor;

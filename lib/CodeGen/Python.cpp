@@ -246,22 +246,102 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramGenerateRegion region) override {
+    const auto functor = region.Functor();
     os << Comment(os, "Program Generate Region");
 
-    os << os.Indent();
-    for (auto out_var : region.OutputVariables()) {
-      os << Var(os, out_var) << ", ";
-    }
-    os << "= " << Functor(os, region.Functor()) << "(";
-    auto sep = "";
-    for (auto in_var : region.InputVariables()) {
-      os << sep << Var(os, in_var);
-      sep = ", ";
-    }
-    os << ")\n";
+    auto output_vars = region.OutputVariables();
 
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
+    auto call_functor = [&] (void) {
+      Functor(os, functor) << "(";
+      auto sep = "";
+      for (auto in_var : region.InputVariables()) {
+        os << sep << Var(os, in_var);
+        sep = ", ";
+      }
+      os << ")";
+    };
+
+    auto do_body = [&] (void) {
+      if (auto body = region.Body(); body) {
+        body->Accept(*this);
+      } else {
+        os << os.Indent() << "pass";
+      }
+    };
+
+    switch (functor.Range()) {
+      // These behave like iterators.
+      case FunctorRange::kOneOrMore:
+      case FunctorRange::kZeroOrMore: {
+        os << os.Indent() << "tmp_" << region.Id();
+        auto sep = ": Tuple[";
+        for (auto out_var : output_vars) {
+          os << sep << TypeName(module, out_var.Type());
+          sep = ", ";
+        }
+        os << "]\n"
+           << os.Indent() << "for tmp_" << region.Id() << " in ";
+        call_functor();
+        os << ":\n";
+        os.PushIndent();
+        auto out_var_index = 0u;
+        for (auto out_var : output_vars) {
+          os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+             << '[' << (out_var_index++) << "]\n";
+        }
+        do_body();
+        os.PopIndent();
+        break;
+      }
+
+      // These behave like returns of tuples/values/optionals.
+      case FunctorRange::kOneToOne:
+      case FunctorRange::kZeroOrOne:
+        // Only takes bound inputs, acts as a filter functor.
+        if (output_vars.empty()) {
+          os << os.Indent() << "if ";
+          call_functor();
+          os << ":\n";
+          os.PushIndent();
+          do_body();
+          os.PopIndent();
+
+        // Produces a single value. This returns an `Optional` value.
+        } else if (output_vars.size() == 1u) {
+          const auto out_var = output_vars[0];
+          os << os.Indent() << "tmp_" << region.Id() << ": Optional["
+             << TypeName(module, out_var.Type()) << "] = ";
+          call_functor();
+          os << "\n"
+             << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+          os.PushIndent();
+          os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+             << '\n';
+          do_body();
+          os.PopIndent();
+
+        // Produces a tuple of values.
+        } else {
+          os << os.Indent() << "tmp_" << region.Id();
+          auto sep = ": Optional[Tuple[";
+          for (auto out_var : output_vars) {
+            os << sep << TypeName(module, out_var.Type());
+            sep = ", ";
+          }
+          os << "]] = ";
+          call_functor();
+          os << "\n"
+             << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+          os.PushIndent();
+          auto out_var_index = 0u;
+          for (auto out_var : output_vars) {
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+               << '[' << (out_var_index++) << "]\n";
+          }
+          do_body();
+          os.PopIndent();
+        }
+        break;
     }
   }
 
@@ -577,24 +657,34 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramTupleCompareRegion region) override {
     os << Comment(os, "Program TupleCompare Region");
 
-    os << os.Indent() << "if (";
-    for (auto lhs : region.LHS()) {
-      os << Var(os, lhs) << ", ";
-    }
+    const auto lhs_vars = region.LHS();
+    const auto rhs_vars = region.RHS();
 
-    os << ") " << OperatorString(region.Operator()) << " (";
+    if (lhs_vars.size() == 1u) {
+      os << os.Indent() << "if " << Var(os, lhs_vars[0]) << ' '
+         << OperatorString(region.Operator())
+         << ' ' << Var(os, rhs_vars[0]) << ":\n";
 
-    for (auto rhs : region.RHS()) {
-      os << Var(os, rhs) << ", ";
+    } else {
+      os << os.Indent() << "if (";
+      for (auto lhs : region.LHS()) {
+        os << Var(os, lhs) << ", ";
+      }
+
+      os << ") " << OperatorString(region.Operator()) << " (";
+
+      for (auto rhs : region.RHS()) {
+        os << Var(os, rhs) << ", ";
+      }
+      os << "):\n";
     }
-    os << "):\n";
 
     os.PushIndent();
-
-    // If there isn't a body, then an optimization to eliminate this hasn't applied,
-    // or it hasn't been coded
-    assert(region.Body());
-    region.Body()->Accept(*this);
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass";
+    }
     os.PopIndent();
   }
 
@@ -717,14 +807,27 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n";
 
-  os << "from collections import defaultdict\n";
+  os << "from collections import defaultdict, namedtuple\n";
   os << "from typing import *\n\n";
 
   const auto module = program.ParsedModule();
 
-  // TODO(ekilmer): Functors are predefined with `pass` for now
-  for (auto func : program.ParsedModule().Functors()) {
-    DefineFunctor(os, module, func);
+//  // TODO(ekilmer): Functors are predefined with `pass` for now
+//  for (auto func : program.ParsedModule().Functors()) {
+//    DefineFunctor(os, module, func);
+//  }
+
+  // Treat each message as a named tuple.
+  for (ParsedMessage message : module.Messages()) {
+    os << "class " << message.Name() << '_' << message.Arity()
+       << "(NamedTuple):\n";
+    os.PushIndent();
+    for (auto param : message.Parameters()) {
+      os << os.Indent() << param.Name() << ": " << TypeName(module, param.Type())
+         << "\n";
+    }
+    os << '\n';
+    os.PopIndent();
   }
 
   for (auto code : module.Inlines()) {
@@ -737,8 +840,24 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "class " << gClassName << ":\n\n";
   os.PushIndent();
 
-  os << os.Indent() << "def __init__(self):\n";
+  os << os.Indent() << "class UpdateLog:\n";
+  bool has_messages = false;
   os.PushIndent();
+  for (ParsedMessage message : module.Messages()) {
+    if (message.IsPublished()) {
+      has_messages = true;
+      os << os.Indent() << "pass  # TODO!!!!!\n";
+    }
+  }
+  if (!has_messages) {
+    os << os.Indent() << "pass\n";
+  }
+  os << '\n';
+  os.PopIndent();
+
+  os << os.Indent() << "def __init__(self, log: UpdateLog):\n";
+  os.PushIndent();
+  os << os.Indent() << "self._update_log: UpdateLog = log\n";
 
   for (auto table : program.Tables()) {
     DefineTable(os, module, table);
