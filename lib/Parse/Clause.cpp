@@ -280,7 +280,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         // Support something like `foo(1, ...) : ...`, converting it into
         // `foo(V, ...) : V=1, ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme) {
+                   Lexeme::kLiteralNumber == lexeme ||
+                   Lexeme::kIdentifierConstant == lexeme) {
           (void) CreateLiteralVariable(clause.get(), tok, true, false);
           state = 3;
           continue;
@@ -352,7 +353,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme) {
+                   Lexeme::kLiteralNumber == lexeme ||
+                   Lexeme::kIdentifierConstant == lexeme) {
           lhs = CreateLiteralVariable(clause.get(), tok, false, false);
           state = 6;
           continue;
@@ -395,7 +397,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         // Allow comparisons with literals by converting the literals into
         // variables and assigning values to those variables.
         if (Lexeme::kLiteralString == lexeme ||
-            Lexeme::kLiteralNumber == lexeme) {
+            Lexeme::kLiteralNumber == lexeme ||
+            Lexeme::kIdentifierConstant == lexeme) {
 
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
@@ -558,7 +561,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
         // Convert literals into variables, just-in-time.
         if (Lexeme::kLiteralString == lexeme ||
-            Lexeme::kLiteralNumber == lexeme) {
+            Lexeme::kLiteralNumber == lexeme ||
+            Lexeme::kIdentifierConstant == lexeme) {
           arg = CreateLiteralVariable(clause.get(), tok, false, true);
 
         } else if (Lexeme::kIdentifierVariable == lexeme ||

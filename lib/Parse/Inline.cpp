@@ -30,10 +30,23 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
 
   const auto tok_range = tok.SpellingRange();
 
+  // Strip out leading newlines, as well as trailing newlines and spaces.
+  auto fixup_code = [&code] (void) -> bool {
+    while (code.front() == '\n') {
+      code = code.substr(1u);
+    }
+
+    while (code.back() == ' ' || code.back() == '\n') {
+      code = code.substr(0, code.size() - 1u);
+    }
+
+    return !code.empty();
+  };
+
   // It's a code literal, e.g. '#prologue ``` ... ```'.
   if (Lexeme::kLiteralCode == tok.Lexeme()) {
     const auto code_id = tok.CodeId();
-    if (!context->string_pool.TryReadCode(code_id, &code)) {
+    if (!context->string_pool.TryReadCode(code_id, &code) || !fixup_code()) {
       context->error_log.Append(scope_range, tok_range)
           << "Empty or invalid code literal in inline statement";
       return;
@@ -41,7 +54,7 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
 
   } else if (Lexeme::kLiteralCxxCode == tok.Lexeme()) {
     const auto code_id = tok.CodeId();
-    if (!context->string_pool.TryReadCode(code_id, &code)) {
+    if (!context->string_pool.TryReadCode(code_id, &code) || !fixup_code()) {
       context->error_log.Append(scope_range, tok_range)
           << "Empty or invalid C++ code literal in inline statement";
       return;
@@ -50,7 +63,7 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
 
   } else if (Lexeme::kLiteralPythonCode == tok.Lexeme()) {
     const auto code_id = tok.CodeId();
-    if (!context->string_pool.TryReadCode(code_id, &code)) {
+    if (!context->string_pool.TryReadCode(code_id, &code) || !fixup_code()) {
       context->error_log.Append(scope_range, tok_range)
           << "Empty or invalid Python code literal in inline statement";
       return;
@@ -63,7 +76,7 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
     const auto code_len = tok.StringLength();
 
     if (!context->string_pool.TryReadString(code_id, code_len, &code) ||
-        !code_len) {
+        !code_len || !fixup_code()) {
       context->error_log.Append(scope_range, tok_range)
           << "Empty or invalid string literal in inline statement";
       return;

@@ -62,6 +62,15 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
 
   auto assign = new Node<ParsedAssignment>(lhs);
   assign->rhs.literal = tok;
+
+  // Infer the type of the assignment based off the constant.
+  if (Lexeme::kIdentifierConstant == tok.Lexeme()) {
+    auto const_ptr = context->foreign_constants[tok.IdentifierId()];
+    assert(const_ptr != nullptr);
+    assign->rhs.type = const_ptr->type;
+    assign->rhs.foreign_type = const_ptr->parent;
+  }
+
   std::string_view data;
   if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
     assert(!data.empty());

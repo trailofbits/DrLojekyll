@@ -64,7 +64,7 @@ void ParserImpl::LexAllTokens(Display display) {
   auto ignore_line = false;
 
   while (lexer.TryGetNextToken(context->string_pool, &tok)) {
-    const auto lexeme = tok.Lexeme();
+    auto lexeme = tok.Lexeme();
 
     if (Lexeme::kWhitespace == lexeme &&
         tok.Line() < tok.NextPosition().Line()) {
@@ -239,7 +239,7 @@ void ParserImpl::LexAllTokens(Display display) {
 // Read the next token.
 bool ParserImpl::ReadNextToken(Token &tok_out) {
   while (next_tok_index < tokens.size()) {
-    const auto &next_tok = tokens[next_tok_index];
+    auto &next_tok = tokens[next_tok_index];
     ++next_tok_index;
 
     switch (next_tok.Lexeme()) {
@@ -255,6 +255,19 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalidUnterminatedCxxCode:
       case Lexeme::kInvalidUnterminatedPythonCode:
       case Lexeme::kComment: continue;
+
+      // Adjust for foreign types.
+      case Lexeme::kIdentifierAtom:
+      case Lexeme::kIdentifierVariable: {
+        const auto id = next_tok.IdentifierId();
+        if (context->foreign_types.count(id)) {
+          next_tok = next_tok.AsForeignType();
+        } else if (context->foreign_constants.count(id)) {
+          next_tok = next_tok.AsForeignConstant(
+              context->foreign_constants[id]->type.Kind());
+        }
+      }
+      [[clang::fallthrough]];
 
       // We pass these through so that we can report more meaningful
       // errors in locations relevant to specific parses.
@@ -1022,6 +1035,17 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       case Lexeme::kHashForeignTypeDecl:
         ReadLine();
         ParseForeignTypeDecl(module);
+        if (first_non_import.IsInvalid()) {
+          first_non_import = SubTokenRange();
+        }
+        break;
+
+      case Lexeme::kHashForeignConstantDecl:
+        ReadLine();
+        ParseForeignConstantDecl(module);
+        if (first_non_import.IsInvalid()) {
+          first_non_import = SubTokenRange();
+        }
         break;
 
       // Import another module, e.g. `#import "foo/bar"`.

@@ -9,6 +9,7 @@
 #include <drlojekyll/Parse/Parse.h>
 
 #include <cassert>
+#include <filesystem>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -110,6 +111,7 @@ class Node<ParsedLiteral> {
   Token literal;
   TypeLoc type;
   std::string data;
+  Node<ParsedForeignType> *foreign_type{nullptr};
 };
 
 class UseBase {
@@ -458,12 +460,49 @@ class Node<ParsedImport> {
 
   DisplayPosition directive_pos;
   Token path;
+  std::filesystem::path resolved_path;
   Node<ParsedModule> *imported_module{nullptr};
+};
+
+template <>
+class Node<ParsedForeignConstant> {
+ public:
+
+  // The next foreign constant defined on this type for a particular language.
+  Node<ParsedForeignConstant> *next{nullptr};
+  Node<ParsedForeignConstant> *next_with_same_name{nullptr};
+  Node<ParsedForeignType> *parent{nullptr};
+
+  Language lang{Language::kUnknown};
+  DisplayRange range;
+  std::string code;
+  Token name;
+  TypeLoc type;
+  bool can_overide{true};
 };
 
 template <>
 class Node<ParsedForeignType> {
  public:
+
+  // The next foreign type anywhere in the parse.
+  Node<ParsedForeignType> *next{nullptr};
+
+  // The name of this type.
+  Token name;
+
+  // Display ranges for all declarations.
+  std::vector<DisplayRange> decls;
+
+  struct Info {
+    DisplayRange range;
+    std::string code;
+    std::string constructor_prefix;
+    std::string constructor_suffix;
+    bool can_override{true};
+    bool is_present{false};
+    std::vector<std::unique_ptr<Node<ParsedForeignConstant>>> constants;
+  } info[kNumLanguages];
 };
 
 template <>
@@ -517,6 +556,13 @@ class Node<ParsedModule>
   std::vector<std::unique_ptr<Node<ParsedQuery>>> queries;
   std::vector<std::unique_ptr<Node<ParsedFunctor>>> functors;
   std::vector<std::unique_ptr<Node<ParsedMessage>>> messages;
+  std::vector<std::unique_ptr<Node<ParsedForeignType>>> types;
+
+  // Mapping of identifier IDs to foreign types.
+  std::unordered_map<uint32_t, Node<ParsedForeignType> *> foreign_types;
+
+  // Maps identifier IDs to foreign constants.
+  std::unordered_map<uint32_t, Node<ParsedForeignConstant> *> foreign_constants;
 
   // All clauses defined in this module.
   std::vector<Node<ParsedClause> *> clauses;

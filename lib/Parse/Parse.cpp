@@ -306,8 +306,26 @@ DisplayRange ParsedLiteral::SpellingRange(void) const noexcept {
   return impl->literal.SpellingRange();
 }
 
-std::string_view ParsedLiteral::Spelling(void) const noexcept {
-  return impl->data;
+std::optional<std::string_view>
+ParsedLiteral::Spelling(Language lang) const noexcept {
+  if (IsConstant()) {
+    const auto &info = impl->foreign_type->info[static_cast<unsigned>(lang)];
+    const auto id = impl->literal.IdentifierId();
+    for (const auto &const_ptr : info.constants) {
+      if (const_ptr->lang == lang && const_ptr->name.IdentifierId() == id) {
+        return const_ptr->code;
+      }
+    }
+    return std::nullopt;
+
+  } else {
+    return impl->data;
+  }
+}
+
+// Is this a foreign constant?
+bool ParsedLiteral::IsConstant(void) const noexcept {
+  return impl->literal.Lexeme() == Lexeme::kIdentifierConstant;
 }
 
 bool ParsedLiteral::IsNumber(void) const noexcept {
@@ -320,6 +338,11 @@ bool ParsedLiteral::IsString(void) const noexcept {
 
 TypeLoc ParsedLiteral::Type(void) const noexcept {
   return impl->type;
+}
+
+// Token representing the use of this constant.
+Token ParsedLiteral::Literal(void) const noexcept {
+  return impl->literal;
 }
 
 DisplayRange ParsedComparison::SpellingRange(void) const noexcept {
@@ -1280,6 +1303,42 @@ NodeRange<ParsedClause> ParsedModule::DeletionClauses(void) const {
   }
 }
 
+NodeRange<ParsedForeignType> ParsedModule::ForeignTypes(void) const {
+
+  if (impl->root_module->types.empty()) {
+    return NodeRange<ParsedForeignType>();
+  } else {
+    return NodeRange<ParsedForeignType>(
+        impl->root_module->types.front().get(),
+        __builtin_offsetof(Node<ParsedForeignType>, next));
+  }
+}
+
+// Try to return the foreign type associated with a particular type location
+// or type kind.
+std::optional<ParsedForeignType> ParsedModule::ForeignType(TypeLoc loc) {
+  return ForeignType(loc.Kind());
+}
+
+std::optional<ParsedForeignType> ParsedModule::ForeignType(TypeKind kind_) {
+  const auto kind = static_cast<uint32_t>(kind_);
+  const auto hi = kind >> 8u;
+  const auto lo = kind & 0xffu;
+
+  if (static_cast<TypeKind>(lo) != TypeKind::kForeignType) {
+    return std::nullopt;
+  }
+
+  const auto &types = impl->root_module->foreign_types;
+  auto it = types.find(hi);
+  if (it == types.end()) {
+    return std::nullopt;
+  }
+
+  assert(it->second != nullptr);
+  return ParsedForeignType(it->second);
+}
+
 // The root module of this parse.
 ParsedModule ParsedModule::RootModule(void) const {
   if (impl->root_module == impl.get()) {
@@ -1295,6 +1354,86 @@ DisplayRange ParsedImport::SpellingRange(void) const noexcept {
 
 ParsedModule ParsedImport::ImportedModule(void) const noexcept {
   return ParsedModule(impl->imported_module->shared_from_this());
+}
+
+std::filesystem::path ParsedImport::ImportedPath(void) const noexcept {
+  return impl->resolved_path;
+}
+
+// Type name of this token.
+Token ParsedForeignType::Name(void) const noexcept {
+  return impl->name;
+}
+
+std::optional<DisplayRange>
+ParsedForeignType::SpellingRange(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  if (impl->info[lang].is_present) {
+    return impl->info[lang].range;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Optional code to inline, specific to a language.
+std::optional<std::string_view>
+ParsedForeignType::CodeToInline(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  if (impl->info[lang].is_present) {
+    return impl->info[lang].code;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Return the prefix and suffix for construction for this language.
+std::optional<std::pair<std::string_view, std::string_view>>
+ParsedForeignType::Constructor(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  const auto &info = impl->info[lang];
+  if (lang_ != Language::kUnknown && info.is_present &&
+      (!info.constructor_prefix.empty() || !info.constructor_suffix.empty())) {
+    return std::make_pair<std::string_view, std::string_view>(
+        info.constructor_prefix,
+        info.constructor_suffix);
+  } else {
+    return std::nullopt;
+  }
+}
+
+// List of constants defined on this type for a particular language.
+NodeRange<ParsedForeignConstant> ParsedForeignType::Constants(
+    Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  const auto &info = impl->info[lang];
+  if (info.constants.empty()) {
+    return NodeRange<ParsedForeignConstant>();
+  } else {
+    return NodeRange<ParsedForeignConstant>(
+        info.constants.front().get(),
+        __builtin_offsetof(Node<ParsedForeignConstant>, next));
+  }
+}
+
+TypeLoc ParsedForeignConstant::Type(void) const noexcept {
+  return impl->type;
+}
+
+// Name of this constant.
+Token ParsedForeignConstant::Name(void) const noexcept {
+  return impl->name;
+}
+
+::hyde::Language ParsedForeignConstant::Language(void) const noexcept {
+  return impl->lang;
+}
+
+DisplayRange ParsedForeignConstant::SpellingRange(void) const noexcept {
+  return impl->range;
+}
+
+std::string_view ParsedForeignConstant::Constructor(void) const noexcept {
+  return impl->code;
 }
 
 DisplayRange ParsedInline::SpellingRange(void) const noexcept {

@@ -1436,7 +1436,13 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     // unique constants in a clause body. There are some obvious missed things,
     // e.g. `1` and `0x1` are treated differently, but that's OK.
     std::stringstream ss;
-    ss << literal.Type().Spelling() << ':' << literal.Spelling();
+    ss << literal.Type().Spelling() << ':';
+    if (literal.IsConstant()) {
+      ss << static_cast<unsigned>(literal.Type().Kind()) << ':'
+         << literal.Literal().IdentifierId();
+    } else {
+      ss << *literal.Spelling(Language::kUnknown);
+    }
     const auto key = ss.str();
 
     auto vc = context.var_id_to_col[var.UniqueId()];

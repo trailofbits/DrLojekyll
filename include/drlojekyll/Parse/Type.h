@@ -41,11 +41,16 @@ const char *Spelling(TypeKind kind) noexcept;
 class TypeLoc {
  public:
   TypeLoc(const Token &tok);
+  TypeLoc(TypeKind kind_);
   TypeLoc(TypeKind kind_, const DisplayRange &range_);
   TypeLoc(TypeKind kind_, uint32_t foreign_id_, const DisplayRange &range_);
   TypeLoc &operator=(const Token &tok) noexcept;
 
   inline TypeKind Kind(void) const noexcept {
+    return kind;
+  }
+
+  inline TypeKind UnderlyingKind(void) const noexcept {
     return static_cast<TypeKind>(static_cast<uint8_t>(kind));
   }
 

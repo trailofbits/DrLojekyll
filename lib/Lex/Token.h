@@ -85,7 +85,8 @@ struct CodeLiteralToken final
 struct IdentifierToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth,
                              Id  /* Unique ID of the identifier. All identifiers
-                                  * are interned along with strings. */> {};
+                                  * are interned along with strings. */,
+                             TypeKind  /* Foreign type kind, if any */> {};
 
 union TokenInterpreter {
   OpaqueData flat;

@@ -215,9 +215,9 @@ unsigned Token::IdentifierId(void) const {
   switch (Lexeme()) {
     case ::hyde::Lexeme::kIdentifierAtom:
     case ::hyde::Lexeme::kIdentifierVariable:
-    case ::hyde::Lexeme::kIdentifierType: {
+    case ::hyde::Lexeme::kIdentifierConstant:
+    case ::hyde::Lexeme::kIdentifierType:
       return As<lex::IdentifierToken>().Load<lex::Id>();
-    }
     default: return 0;
   }
 }
@@ -227,14 +227,15 @@ unsigned Token::IdentifierLength(void) const {
   switch (Lexeme()) {
     case ::hyde::Lexeme::kIdentifierAtom:
     case ::hyde::Lexeme::kIdentifierVariable:
-    case ::hyde::Lexeme::kIdentifierType: {
+    case ::hyde::Lexeme::kIdentifierConstant:
+    case ::hyde::Lexeme::kIdentifierType:
       return As<lex::IdentifierToken>().Load<lex::SpellingWidth>();
-    }
     default: return 0;
   }
 }
 
-// Return the type kind of a token.
+// Return the kind of this type. This works for foreign types, as well as
+// for foreign constants.
 ::hyde::TypeKind Token::TypeKind(void) const {
   switch (Lexeme()) {
     case ::hyde::Lexeme::kTypeASCII:
@@ -245,12 +246,9 @@ unsigned Token::IdentifierLength(void) const {
     case ::hyde::Lexeme::kTypeIn:
     case ::hyde::Lexeme::kTypeFn:
       return As<lex::TypeToken>().Load<::hyde::TypeKind>();
-    case ::hyde::Lexeme::kIdentifierType: {
-      const uint32_t high = IdentifierId() << 8u;
-      const uint32_t low =
-          static_cast<uint32_t>(::hyde::TypeKind::kForeignType);
-      return static_cast<::hyde::TypeKind>(high | low);
-    }
+    case ::hyde::Lexeme::kIdentifierConstant:
+    case ::hyde::Lexeme::kIdentifierType:
+      return As<lex::IdentifierToken>().Load<::hyde::TypeKind>();
     default: return ::hyde::TypeKind::kInvalid;
   }
 }
@@ -262,6 +260,49 @@ char Token::InvalidChar(void) const {
   } else {
     return '\0';
   }
+}
+
+// Returns this token, converted to be a foreign type.
+Token Token::AsForeignType(void) const {
+  Token ret;
+  switch (Lexeme()) {
+    case ::hyde::Lexeme::kIdentifierType:
+      return *this;
+    case ::hyde::Lexeme::kIdentifierAtom:
+    case ::hyde::Lexeme::kIdentifierVariable: {
+      ret = *this;
+      const uint32_t high = IdentifierId() << 8u;
+      const uint32_t low =
+          static_cast<uint32_t>(::hyde::TypeKind::kForeignType);
+      auto &ident = ret.As<lex::IdentifierToken>();
+      ident.Store<::hyde::Lexeme>(::hyde::Lexeme::kIdentifierType);
+      ident.Store<::hyde::TypeKind>(high | low);
+      break;
+    }
+    default: break;
+  }
+
+  return ret;
+}
+
+// Returns this token, converted to be a foreign constant of a specific type.
+Token Token::AsForeignConstant(::hyde::TypeKind kind) const {
+  Token ret;
+  switch (Lexeme()) {
+    case ::hyde::Lexeme::kIdentifierConstant:
+      return *this;
+    case ::hyde::Lexeme::kIdentifierAtom:
+    case ::hyde::Lexeme::kIdentifierVariable: {
+      ret = *this;
+      auto &ident = ret.As<lex::IdentifierToken>();
+      ident.Store<::hyde::Lexeme>(::hyde::Lexeme::kIdentifierConstant);
+      ident.Store<::hyde::TypeKind>(kind);
+      break;
+    }
+    default: break;
+  }
+
+  return ret;
 }
 
 // Return an EOF token at `position`.

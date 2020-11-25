@@ -630,8 +630,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             } else if (impl->data == "#import") {
               tentative_lexeme = Lexeme::kHashImportModuleStmt;
 
-            } else if (impl->data == "#foreign") {
-              tentative_lexeme = Lexeme::kHashForeignTypeDecl;
             }
           } else if (impl->data == "summary") {
             tentative_lexeme = Lexeme::kKeywordSummary;
@@ -648,6 +646,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
             } else if (impl->data == "#functor") {
               tentative_lexeme = Lexeme::kHashFunctorDecl;
+
+            } else if (impl->data == "#foreign") {
+              tentative_lexeme = Lexeme::kHashForeignTypeDecl;
             }
           }
           break;
@@ -660,6 +661,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
           } else if (impl->data == "#epilogue") {
             tentative_lexeme = Lexeme::kHashInlineEpilogueStmt;
+
+          } else if (impl->data == "#constant") {
+            tentative_lexeme = Lexeme::kHashForeignConstantDecl;
           }
           break;
 

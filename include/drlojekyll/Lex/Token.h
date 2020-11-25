@@ -129,6 +129,16 @@ enum class Lexeme : uint8_t {
   // then it applies to target languages uniformly.
   kHashForeignTypeDecl,
 
+  // Used to declare a foreign constant of a particular foreign type.
+  //
+  //    #constant <foreign type> ```<lang> value```
+  //
+  // Foreign constants can be used to translate things like `sizeof` expressions
+  // from C++, enumeration constants, global variables, etc. Realistically, one
+  // could expand a foreign constant to a function call that (should) always
+  // return the same value.
+  kHashForeignConstantDecl,
+
   // Used to import another module.
   //
   //    #import "path"
@@ -281,6 +291,7 @@ enum class Lexeme : uint8_t {
   kIdentifierVariable,
   kIdentifierUnnamedVariable,  // `_`.
   kIdentifierType,  // Foreign type names.
+  kIdentifierConstant,  // Foreign constant name.
 };
 
 enum class TypeKind : uint32_t;
@@ -360,7 +371,8 @@ class Token final : public OpaqueData {
   // Return the length of the corresponding identifier, or `0` if not a string.
   unsigned IdentifierLength(void) const;
 
-  // Return the kind of this type.
+  // Return the kind of this type. This works for foreign types, as well as
+  // for foreign constants.
   ::hyde::TypeKind TypeKind(void) const;
 
   // Returns the invalid char, or `\0` if not present.
@@ -380,6 +392,12 @@ class Token final : public OpaqueData {
  private:
   friend class Lexer;
   friend class ParserImpl;
+
+  // Returns this token, converted to be a foreign type.
+  Token AsForeignType(void) const;
+
+  // Returns this token, converted to be a foreign constant of a specific type.
+  Token AsForeignConstant(::hyde::TypeKind kind) const;
 
   // Return an EOF token at `position`.
   static Token FakeEndOfFile(DisplayPosition position);
