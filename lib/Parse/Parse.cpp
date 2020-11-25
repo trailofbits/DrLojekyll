@@ -1452,6 +1452,10 @@ bool ParsedInline::IsPrologue(void) const noexcept {
   return impl->is_prologue;
 }
 
+bool ParsedInline::IsEpilogue(void) const noexcept {
+  return !impl->is_prologue;
+}
+
 }  // namespace hyde
 
 #if defined(__GNUC__) || defined(__clang__)

@@ -753,6 +753,9 @@ class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
   // List of variables being published.
   UsedNodeRange<DataVariable> VariableArguments(void) const;
 
+  // Are we publishing the removal of some tuple?
+  bool IsRemoval(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 

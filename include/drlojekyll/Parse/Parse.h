@@ -990,6 +990,7 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
   // Tells us whether or not this code should be emitted at the beginning of
   // codegen (returns `true`) or at the end of codegen (returns `false`).
   bool IsPrologue(void) const noexcept;
+  bool IsEpilogue(void) const noexcept;
 
  protected:
   using parse::ParsedNode<ParsedInline>::ParsedNode;

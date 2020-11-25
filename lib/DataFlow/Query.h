@@ -862,7 +862,8 @@ void Node<QueryColumn>::ForEachUser(T user_cb) const {
 
 class QueryImpl {
  public:
-  inline explicit QueryImpl(const ParsedModule &module_) : module(module_) {}
+  inline explicit QueryImpl(const ParsedModule &module_)
+      : module(module_.RootModule()) {}
 
   ~QueryImpl(void);
 

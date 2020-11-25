@@ -769,4 +769,9 @@ ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
   return impl->message;
 }
 
+// Are we publishing the removal of some tuple?
+bool ProgramPublishRegion::IsRemoval(void) const noexcept {
+  return impl->is_removal;
+}
+
 }  // namespace hyde

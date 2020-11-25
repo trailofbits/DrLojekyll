@@ -701,6 +701,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
   // Message being published.
   const ParsedMessage message;
 
+  // Is this a removal publication?
+  bool is_removal{false};
+
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
 };
