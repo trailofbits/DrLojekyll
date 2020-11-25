@@ -21,7 +21,7 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
   std::string_view code;
 
   std::unique_ptr<Node<ParsedForeignType>> alloc_type;
-  Node<ParsedForeignType> *type;
+  Node<ParsedForeignType> *type = nullptr;
 
   auto set_data =
       [&] (Node<ParsedForeignType>::Info &info, bool can_override) -> bool {
