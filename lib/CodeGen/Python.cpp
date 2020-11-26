@@ -547,21 +547,24 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << "len(" << Vector(os, vec) << ")";
+      os << sep << VectorIndex(os, vec) << " < len(" << Vector(os, vec) << ")";
       sep = " or ";
     }
     os << ":\n";
 
     os.PushIndent();
     region.FixpointLoop().Accept(*this);
+    for (auto vec : region.Vectors()) {
+      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
+    }
+    os.PopIndent();
+
 
     // Output
     if (auto output = region.Output(); output) {
       os << Comment(os, "Induction Output Region");
       output->Accept(*this);
     }
-
-    os.PopIndent();
   }
 
   void Visit(ProgramLetBindingRegion region) override {

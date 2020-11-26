@@ -1119,6 +1119,7 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
   std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
   std::unordered_map<QueryView, VECTOR *> view_to_cycle_input_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_induction_vec;
 
   // List of append to vector regions inside this induction.
   std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;

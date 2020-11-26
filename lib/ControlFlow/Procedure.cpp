@@ -51,8 +51,10 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
   }
 
   for (auto i = 0u; i < num_arg_vars; ++i) {
-    if (DataVariable(input_vars[i]).Type() !=
-        DataVariable(that->input_vars[i]).Type()) {
+    const auto this_var = input_vars[i];
+    const auto that_var = that->input_vars[i];
+    if (this_var->role != that_var->role ||
+        DataVariable(this_var).Type() != DataVariable(that_var).Type()) {
       return false;
     }
   }

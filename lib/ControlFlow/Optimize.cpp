@@ -343,7 +343,7 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
     } else if (auto target_series = target_region->AsSeries(); target_series) {
       const auto copied_series = impl->series_regions.Create(into_parent);
       into_parent_regions.AddUse(copied_series);
-      InlineCalls(target_par->regions, impl, copied_series,
+      InlineCalls(target_series->regions, impl, copied_series,
                   copied_series->regions, target_to_local);
 
     } else if (auto target_op = target_region->AsOperation(); target_op) {

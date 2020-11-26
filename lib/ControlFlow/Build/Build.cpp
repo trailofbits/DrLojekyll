@@ -1209,6 +1209,13 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // pipelined Datalog execution.
   BuildBottomUpRemovalProvers(program, context);
 
+  for (auto proc : impl->procedure_regions) {
+    if (!EndsWithReturn(proc)) {
+      BuildStateCheckCaseReturnFalse(impl.get(), proc)->ExecuteAfter(
+          impl.get(), proc);
+    }
+  }
+
   impl->Optimize();
 
   // Assign defining regions to each variable.
