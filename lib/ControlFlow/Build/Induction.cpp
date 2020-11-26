@@ -15,7 +15,7 @@ namespace {
 
 static unsigned MaxDepth(InductionSet *induction_set) {
   unsigned max_depth = 0u;
-  for (auto merge : induction_set->merges) {
+  for (auto merge : induction_set->all_merges) {
     if (auto depth = merge.Depth(); depth > max_depth) {
       max_depth = depth;
     }

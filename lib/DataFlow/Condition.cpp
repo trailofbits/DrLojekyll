@@ -4,7 +4,28 @@
 
 namespace hyde {
 
-Node<QueryCondition>::~Node(void) {}
+Node<QueryCondition>::~Node(void) {
+  for (auto setter : setters) {
+    if (setter) {
+      setter->sets_condition.Clear();
+      setter->is_canonical = false;
+
+      // If there's an "increment" `INSERT` associated with this condition, then
+      // we want to make sure it looks unused as well.
+      if (const auto insert = setter->AsInsert();
+          insert && insert->relation && declaration &&
+          insert->declaration == *declaration) {
+
+        // Disconnect the insert from its relation, making it look unused, and
+        // thus subject to elimination.
+        insert->relation->inserts.RemoveIf(
+            [=] (VIEW *v) { return v == insert;});
+        insert->relation.Clear();
+      }
+    }
+  }
+  setters.Clear();
+}
 
 // Extract conditions from regular nodes and force them to belong to only
 // tuple nodes. This simplifies things substantially for downstream users.

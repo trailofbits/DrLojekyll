@@ -7,6 +7,10 @@ namespace hyde {
 // Build an eager region for a `QueryMerge` that is NOT part of an inductive
 // loop, and thus passes on its data to the next thing down as long as that
 // data is unique.
+//
+// NOTE(pag): These merges could actually be part of an induction set, but
+//            really the induction loop belongs to another merge which dominates
+//            this merge.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryMerge merge, Context &context, OP *parent,
                            TABLE *last_model) {

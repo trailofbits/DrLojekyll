@@ -91,32 +91,42 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
   is_canonical = true;
 
   std::vector<VIEW *> unique_merged_views;
+  std::vector<VIEW *> seen;
   std::vector<VIEW *> work_list;
 
-  for (auto i = merged_views.Size(); i;) {
-    work_list.push_back(merged_views[--i]);
+  for (auto i = merged_views.Size(); i--;) {
+    work_list.push_back(merged_views[i]);
   }
 
+  const auto num_cols = columns.Size();
   while (!work_list.empty()) {
 
     const auto view = work_list.back();
+    assert(view->columns.Size() == num_cols);
     work_list.pop_back();
 
-    // Don't let a merge be its own source, and don't double-merge any
-    // sub-merges.
-    const auto end = unique_merged_views.end();
-    if (view == this ||
-        std::find(unique_merged_views.begin(), end, view) != end) {
+    // Don't let a merge be its own source.
+    if (view == this) {
       continue;
     }
 
+    // Don't double-process any reached views.
+    const auto end = seen.end();
+    if (std::find(seen.begin(), end, view) != end) {
+      continue;
+    }
+    seen.push_back(view);
+
     // If we're merging a merge, then copy the lower merge into this one.
-    if (auto incoming_merge = view->AsMerge(); incoming_merge) {
+    if (auto incoming_merge = view->AsMerge();
+        incoming_merge &&
+        !incoming_merge->IntroducesControlDependency()) {
+
       non_local_changes = true;
       is_canonical = false;
 
-      for (auto i = incoming_merge->merged_views.Size(); i;) {
-        work_list.push_back(incoming_merge->merged_views[--i]);
+      for (auto i = incoming_merge->merged_views.Size(); i--;) {
+        work_list.push_back(incoming_merge->merged_views[i]);
       }
 
     // This is a unique view we're adding in.
@@ -149,8 +159,6 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     hash = 0;
     return non_local_changes;
   }
-
-  const auto num_cols = columns.Size();
 
   // Path compression.
   if (non_local_changes) {

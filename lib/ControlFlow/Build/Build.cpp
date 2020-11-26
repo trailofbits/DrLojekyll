@@ -100,7 +100,8 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsMerge()) {
     const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view)) {
+    if (context.inductive_successors.count(view) &&
+        !context.dominated_merges.count(view)) {
       BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
                                 last_model);
     } else {
@@ -280,6 +281,7 @@ static void DiscoverInductions(const Query &query, Context &context) {
   // Now group together the merges into co-inductive sets, i.e. when one
   // induction is tied with another induction.
   std::set<QueryView> seen;
+  std::unordered_set<QueryView> reached_cycles;
   std::vector<QueryView> frontier;
   std::set<std::pair<QueryView, QueryView>> disallowed_edges;
 
@@ -298,37 +300,68 @@ static void DiscoverInductions(const Query &query, Context &context) {
 
     frontier.clear();
     seen.clear();
+    reached_cycles.clear();
+
+    // This is a variant of transitive successors, except that we don't allow
+    // ourselves to walk through non-inductive output paths of merges because
+    // otherwise we would end up merging two unrelated induction sets.
 
     for (QueryView succ_view : inductive_successors) {
       frontier.push_back(succ_view);
     }
 
+    // We want to express something similar to dominance analysis here.
+    // Specifically, suppose we have a set of UNIONs that all logically belong
+    // to the same co-inductive set. That is, the outputs of each of the unions
+    // somehow cycle into all of the other unions.
+
+    InductionSet &base_set = context.merge_sets[view];
+
+    bool appears_dominated = true;
+
     while (!frontier.empty()) {
-      const auto view = frontier.back();
+      const auto frontier_view = frontier.back();
       frontier.pop_back();
-      for (auto succ_view : view.Successors()) {
-        if (!seen.count(succ_view) &&
-            !disallowed_edges.count({view, succ_view})) {
-          seen.insert(succ_view);
-          frontier.push_back(succ_view);
+
+      // We've cycled back to ourselves. If we get back to ourselves along
+      // some path that doesn't itself go through another inductive merge/cycle,
+      // which would have been caught by the `else if` case below, then it means
+      // that this view isn't subordinate to any other one, and that is actually
+      // does in fact need storage.
+      if (frontier_view == view) {
+        appears_dominated = false;
+        continue;
+
+      // We've cycled to a UNION that is inductive.
+      } else if (context.inductive_successors.count(frontier_view)) {
+        reached_cycles.insert(frontier_view);
+        InductionSet &reached_set = context.merge_sets[frontier_view];
+        DisjointSet::Union(&base_set, &reached_set);
+
+      // We need to follow the frontier view's successors.
+      } else {
+        for (auto succ_view : frontier_view.Successors()) {
+          if (!seen.count(succ_view) &&
+              !disallowed_edges.count({frontier_view, succ_view})) {
+            seen.insert(succ_view);
+            frontier.push_back(succ_view);
+          }
         }
       }
     }
 
-    DisjointSet &base_set = context.merge_sets[view];
-    for (auto reached_view : seen) {
-      if (reached_view.IsMerge()) {
-        QueryMerge reached_merge = QueryMerge::From(reached_view);
-        if (context.inductive_successors.count(reached_merge)) {
-          auto &reached_set = context.merge_sets[reached_merge];
-          DisjointSet::Union(&base_set, &reached_set);
-        }
-      }
+    // All inductive paths out of this union lead to another inductive union.
+    if (appears_dominated && reached_cycles.size() == 1u) {
+      context.dominated_merges.insert(view);
     }
   }
 
   for (auto &[merge, merge_set] : context.merge_sets) {
-    merge_set.FindAs<InductionSet>()->merges.push_back(merge);
+    InductionSet * const set = merge_set.FindAs<InductionSet>();
+    set->all_merges.push_back(merge);
+    if (!context.dominated_merges.count(merge)) {
+      set->merges.push_back(merge);
+    }
   }
 }
 
@@ -478,8 +511,8 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     } else if (to_view.IsDelete()) {
       CreateBottomUpDeleteRemover(impl, context, to_view, proc);
 
-    // NOTE(pag): We don't need to distinguish between unions that are inductions
-    //            and unions that are merges.
+    // NOTE(pag): We don't need to distinguish between unions that are
+    //            inductions and unions that are merges.
     } else if (to_view.IsMerge()) {
       CreateBottomUpUnionRemover(impl, context, to_view, proc, already_checked);
 
@@ -547,7 +580,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
     } else if (view.IsMerge()) {
       const auto merge = QueryMerge::From(view);
-      if (context.inductive_successors.count(view)) {
+      if (context.inductive_successors.count(view) &&
+          !context.dominated_merges.count(view)) {
         BuildTopDownInductionChecker(impl, context, proc, merge, view_cols,
                                      already_checked);
 

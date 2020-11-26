@@ -19,7 +19,11 @@ class InductionSet : public DisjointSet {
  public:
   using DisjointSet::DisjointSet;
 
+  // The set of non-dominated merges that need to have persistent backing.
   std::vector<QueryView> merges;
+
+  // The set of all merges that belong to this co-inductive set.
+  std::vector<QueryView> all_merges;
 };
 
 class Context;
@@ -48,6 +52,11 @@ class Context {
  public:
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
+
+  // Merges in this set are inductive, but behave more like non-inductive
+  // merges because all paths leading out of these views go through a single
+  // other merge in their inductive set.
+  std::unordered_set<QueryView> dominated_merges;
 
   // Mapping of inductions to functions that process their inductive cycles.
   std::unordered_map<InductionSet *, PROC *> induction_cycle_funcs;
