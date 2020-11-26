@@ -203,7 +203,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   proc->io = io;
 
   const auto vec =
-      proc->VectorFor(impl, VectorKind::kInput, receives[0].Columns());
+      proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
   auto par = impl->parallel_regions.Create(loop);
@@ -454,55 +454,6 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   });
 }
 
-// Returns `true` if all paths through `region` ends with a `return` region.
-static bool EndsWithReturn(REGION *region) {
-  if (!region) {
-    return false;
-
-  } else if (auto proc = region->AsProcedure(); proc) {
-    return EndsWithReturn(proc->body.get());
-
-  } else if (auto series = region->AsSeries(); series) {
-    if (auto num_regions = series->regions.Size(); num_regions) {
-      return EndsWithReturn(series->regions[num_regions - 1u]);
-    } else {
-      return false;
-    }
-
-  } else if (auto par = region->AsParallel(); par) {
-    if (par->regions.Empty()) {
-      return false;
-    }
-
-    for (auto sub_region : par->regions) {
-      if (!EndsWithReturn(sub_region)) {
-        return false;
-      }
-    }
-
-    return true;
-
-  } else if (auto induction = region->AsInduction(); induction) {
-    if (auto output = induction->output_region.get(); output) {
-      return EndsWithReturn(output);
-    } else {
-      return false;
-    }
-
-  } else if (auto op = region->AsOperation(); op) {
-    if (op->AsReturn()) {
-      return true;
-
-    } else if (auto cs = op->AsCheckState(); cs) {
-      return EndsWithReturn(cs->body.get()) &&
-             EndsWithReturn(cs->absent_body.get()) &&
-             EndsWithReturn(cs->unknown_body.get());
-    }
-  }
-
-  return false;
-}
-
 // Build out all the bottom-up (negative) provers that are used to mark tuples
 // as being in an unknown state. We want to do this after building all
 // (positive) bottom-up provers so that we can know which views correspond
@@ -698,6 +649,55 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
 }  // namespace
 
+// Returns `true` if all paths through `region` ends with a `return` region.
+bool EndsWithReturn(REGION *region) {
+  if (!region) {
+    return false;
+
+  } else if (auto proc = region->AsProcedure(); proc) {
+    return EndsWithReturn(proc->body.get());
+
+  } else if (auto series = region->AsSeries(); series) {
+    if (auto num_regions = series->regions.Size(); num_regions) {
+      return EndsWithReturn(series->regions[num_regions - 1u]);
+    } else {
+      return false;
+    }
+
+  } else if (auto par = region->AsParallel(); par) {
+    if (par->regions.Empty()) {
+      return false;
+    }
+
+    for (auto sub_region : par->regions) {
+      if (!EndsWithReturn(sub_region)) {
+        return false;
+      }
+    }
+
+    return true;
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    if (auto output = induction->output_region.get(); output) {
+      return EndsWithReturn(output);
+    } else {
+      return false;
+    }
+
+  } else if (auto op = region->AsOperation(); op) {
+    if (op->AsReturn()) {
+      return true;
+
+    } else if (auto cs = op->AsCheckState(); cs) {
+      return EndsWithReturn(cs->body.get()) &&
+             EndsWithReturn(cs->absent_body.get()) &&
+             EndsWithReturn(cs->unknown_body.get());
+    }
+  }
+
+  return false;
+}
+
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   auto &cond_var = impl->cond_ref_counts[cond];
@@ -828,7 +828,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   // Now call the checker procedure.
   const auto check =
-      impl->operation_regions.CreateDerived<CALL>(parent, proc, call_op);
+      impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, parent, proc, call_op);
 
   assert(!available_cols.empty());
   for (auto col : available_cols) {

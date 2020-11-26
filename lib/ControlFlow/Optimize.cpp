@@ -350,7 +350,8 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
 
       if (auto target_call = target_op->AsCall(); target_call) {
         auto copied_call = impl->operation_regions.CreateDerived<CALL>(
-            into_parent, target_call->called_proc.get(), target_call->op);
+            impl->next_id++, into_parent, target_call->called_proc.get(),
+            target_call->op);
         into_parent_regions.AddUse(copied_call);
 
         for (auto target_var : target_call->arg_vars) {

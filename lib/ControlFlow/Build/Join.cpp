@@ -574,7 +574,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     auto par = impl->parallel_regions.Create(join);
     for (auto succ_view : view.Successors()) {
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          parent,
+          impl->next_id++, parent,
           GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
 
       for (auto col : view.Columns()) {

@@ -49,6 +49,12 @@ class Context {
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
 
+  // Mapping of inductions to functions that process their inductive cycles.
+  std::unordered_map<InductionSet *, PROC *> induction_cycle_funcs;
+
+  // Mapping of inductions to functions that process their output vectors.
+  std::unordered_map<InductionSet *, PROC *> induction_output_funcs;
+
   // Set of successors of a `QueryMerge` that may lead back to the merge
   // (inductive) and never lead back to the merge (noninductive), respectively.
   std::unordered_map<QueryView, std::unordered_set<QueryView>>
@@ -411,6 +417,9 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context);
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
 
+// Returns `true` if all paths through `region` ends with a `return` region.
+bool EndsWithReturn(REGION *region);
+
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 
@@ -551,7 +560,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     // responsible for initializing data flow from constant tuples that
     // may be condition-variable dependent.
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        set, impl->procedure_regions[0]);
+        impl->next_id++, set, impl->procedure_regions[0]);
     set->body.Emplace(set, call);
 
     // Create a dummy/empty LET binding so that we have an `OP *` as a parent

@@ -31,6 +31,7 @@ Node<ProgramTupleCompareRegion>::~Node(void) {}
 Node<ProgramVectorLoopRegion>::~Node(void) {}
 Node<ProgramVectorAppendRegion>::~Node(void) {}
 Node<ProgramVectorClearRegion>::~Node(void) {}
+Node<ProgramVectorSwapRegion>::~Node(void) {}
 Node<ProgramVectorUniqueRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
@@ -42,13 +43,14 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 
-Node<ProgramCallRegion>::Node(Node<ProgramRegion> *parent_,
+Node<ProgramCallRegion>::Node(unsigned id_, Node<ProgramRegion> *parent_,
                               Node<ProgramProcedure> *called_proc_,
                               ProgramOperation op_)
     : Node<ProgramOperationRegion>(parent_, op_),
       called_proc(this, called_proc_),
       arg_vars(this),
-      arg_vecs(this) {}
+      arg_vecs(this),
+      id(id_) {}
 
 Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
   return nullptr;
@@ -76,6 +78,11 @@ Node<ProgramOperationRegion>::AsVectorAppend(void) noexcept {
 
 Node<ProgramVectorClearRegion> *
 Node<ProgramOperationRegion>::AsVectorClear(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramVectorSwapRegion> *
+Node<ProgramOperationRegion>::AsVectorSwap(void) noexcept {
   return nullptr;
 }
 
@@ -451,7 +458,7 @@ Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
 
 uint64_t Node<ProgramVectorClearRegion>::Hash(void) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= static_cast<unsigned>(vector->kind) * 17;
+  hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
@@ -480,9 +487,52 @@ Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
   return this;
 }
 
+Node<ProgramVectorSwapRegion> *
+Node<ProgramVectorSwapRegion>::AsVectorSwap(void) noexcept {
+  return this;
+}
+
+
+uint64_t Node<ProgramVectorSwapRegion>::Hash(void) const {
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
+  hash ^= (static_cast<unsigned>(lhs->kind) + 1u) * 17;
+  hash ^= (static_cast<unsigned>(rhs->kind) + 1u) * 17;
+  for (auto type : lhs->col_types) {
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
+  }
+  return hash;
+}
+
+
+bool Node<ProgramVectorSwapRegion>::Equals(
+    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  const auto that = that_op->AsVectorSwap();
+  if (!that) {
+    FAILED_EQ(that_);
+    return false;
+
+  } else if (eq.Contains(lhs.get(), that->lhs.get()) &&
+             eq.Contains(rhs.get(), that->rhs.get())) {
+    return true;
+
+  } else if (eq.Contains(lhs.get(), that->rhs.get()) &&
+             eq.Contains(rhs.get(), that->lhs.get())) {
+    return true;
+
+  } else {
+    return false;
+  }
+}
+
 uint64_t Node<ProgramVectorUniqueRegion>::Hash(void) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= static_cast<unsigned>(vector->kind) * 17;
+  hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }

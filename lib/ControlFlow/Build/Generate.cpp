@@ -91,7 +91,7 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
     assert(!succ_view.IsMerge());
 
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        parent,
+        impl->next_id++, parent,
         GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
 
     for (auto col : view.Columns()) {

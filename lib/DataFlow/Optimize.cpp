@@ -91,7 +91,7 @@ static bool CSE(CandidateList &all_views) {
       (void) v2_uphash;
 
       eq.Clear();
-      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && eq.Contains(v1, v2)) {
+      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
         v1->ReplaceAllUsesWith(v2);
         changed = true;
       }

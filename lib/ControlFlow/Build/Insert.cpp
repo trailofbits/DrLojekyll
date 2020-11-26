@@ -116,8 +116,9 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
     for (auto sel_succ : succ_view.Successors()) {
 
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          parent, GetOrCreateBottomUpRemover(impl, context, succ_view, sel_succ,
-                                             already_checked));
+          impl->next_id++, parent,
+          GetOrCreateBottomUpRemover(impl, context, succ_view, sel_succ,
+                                     already_checked));
 
       for (auto sel_col : sel_cols) {
         const auto var =
