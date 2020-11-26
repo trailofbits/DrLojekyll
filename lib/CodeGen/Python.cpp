@@ -24,7 +24,7 @@ static OutputStream &Comment(OutputStream &os, const char *message) {
 #ifndef NDEBUG
   return os << os.Indent() << "# " << message << "\n";
 #else
-  (void) comment;
+  (void) message;
   return os;
 #endif
 }
@@ -1040,7 +1040,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 
   std::stringstream return_tuple;
   auto sep_ret = "";
-  auto num_ret_types = 0;
+  auto num_ret_types = 0u;
   for (auto param : func.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << ", " << param.Name() << ": "
