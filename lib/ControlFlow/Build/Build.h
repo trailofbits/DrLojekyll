@@ -39,9 +39,17 @@ class WorkItem {
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
 
-  explicit WorkItem(unsigned order_) : order(order_) {}
+  explicit WorkItem(Context &context, unsigned order_);
 
   const unsigned order;
+
+  // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
+  // the same INDUCTION if they belong to the same "inductive set". This happens
+  // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
+  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
+
+  // Maps tables to their product input vectors.
+  std::unordered_map<TABLE *, VECTOR *> product_vector;
 };
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
@@ -125,12 +133,6 @@ class Context {
   std::vector<std::tuple<QueryView, QueryView, PROC *, TABLE *>>
       bottom_up_removers_work_list;
 };
-
-//using ColPair = std::pair<QueryColumn, QueryColumn>;
-//
-//// Get a mapping of `(input_col, output_col)` where the columns are in order
-//// of `input_col`, and no input columns are repeated.
-//std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view);
 
 OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);

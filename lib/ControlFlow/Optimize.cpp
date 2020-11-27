@@ -216,6 +216,10 @@ static bool OptimizeImpl(EXISTS *exists) {
     return changed;
   }
 
+  // Find a parent existence check, and if it does the same type of check,
+  // then try to merge this existence check into the parent by moving its
+  // condition variables up, and replacing all uses of it with its conditional
+  // body.
   if (auto parent_op = exists->parent->AsOperation(); parent_op) {
     if (auto parent_exists = parent_op->AsExistenceCheck();
         parent_exists && exists->op == parent_exists->op) {

@@ -220,9 +220,10 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   loop->vector.Emplace(loop, vec);
   proc->body.Emplace(proc, loop);
 
-  context.view_to_induction.clear();
   context.work_list.clear();
   context.view_to_work_item.clear();
+
+  context.view_to_induction.clear();
   context.product_vector.clear();
 
   for (auto receive : io.Receives()) {
@@ -1135,6 +1136,8 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
 
     WorkItemPtr action = std::move(context.work_list.back());
     context.work_list.pop_back();
+    context.product_vector.swap(action->product_vector);
+    context.view_to_induction.swap(action->view_to_induction);
     action->Run(impl, context);
   }
 
@@ -1182,6 +1185,9 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   BuildUnconditionalEagerRegion(impl, pred_view, view, usage, parent,
                                 last_model);
 }
+
+WorkItem::WorkItem(Context &context, unsigned order_)
+    : order(order_) {}
 
 WorkItem::~WorkItem(void) {}
 

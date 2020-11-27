@@ -9,9 +9,11 @@ class ContinueProductWorkItem final : public WorkItem {
  public:
   virtual ~ContinueProductWorkItem(void) {}
 
-  ContinueProductWorkItem(QueryView view_)
-      : WorkItem(view_.Depth()),
-        view(view_) {}
+  ContinueProductWorkItem(Context &context, QueryView view_)
+      : WorkItem(context, view_.Depth()),
+        view(view_) {
+    this->product_vector = context.product_vector;
+  }
 
   // Find the common ancestor of all insert regions.
   REGION *FindCommonAncestorOfAppendRegions(void) const;
@@ -183,7 +185,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 
   auto &action = context.view_to_work_item[product_view];
   if (!action) {
-    action = new ContinueProductWorkItem(product_view);
+    action = new ContinueProductWorkItem(context, product_view);
     context.work_list.emplace_back(action);
   }
 

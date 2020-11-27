@@ -9,9 +9,11 @@ class ContinueJoinWorkItem final : public WorkItem {
  public:
   virtual ~ContinueJoinWorkItem(void) {}
 
-  ContinueJoinWorkItem(QueryView view_)
-      : WorkItem(view_.Depth()),
-        view(view_) {}
+  ContinueJoinWorkItem(Context &context, QueryView view_)
+      : WorkItem(context, view_.Depth()),
+        view(view_) {
+    this->view_to_induction = context.view_to_induction;
+  }
 
   // Find the common ancestor of all insert regions.
   REGION *FindCommonAncestorOfInsertRegions(void) const;
@@ -258,7 +260,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
 
   auto &action = context.view_to_work_item[view];
   if (!action) {
-    action = new ContinueJoinWorkItem(view);
+    action = new ContinueJoinWorkItem(context, view);
     context.work_list.emplace_back(action);
   }
 

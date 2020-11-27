@@ -29,10 +29,14 @@ class ContinueInductionWorkItem final : public WorkItem {
  public:
   virtual ~ContinueInductionWorkItem(void) {}
 
-  ContinueInductionWorkItem(INDUCTION *induction_, InductionSet *induction_set_)
-      : WorkItem(WorkItem::kContinueInductionOrder + MaxDepth(induction_set_)),
+  ContinueInductionWorkItem(Context &context, INDUCTION *induction_,
+                            InductionSet *induction_set_)
+      : WorkItem(context,
+                 WorkItem::kContinueInductionOrder + MaxDepth(induction_set_)),
         induction(induction_),
-        induction_set(induction_set_) {}
+        induction_set(induction_set_) {
+    this->view_to_induction = context.view_to_induction;
+  }
 
   // Find the common ancestor of all initialization regions.
   REGION *FindCommonAncestorOfInitRegions(void) const;
@@ -50,10 +54,14 @@ class FinalizeInductionWorkItem final : public WorkItem {
  public:
   virtual ~FinalizeInductionWorkItem(void) {}
 
-  FinalizeInductionWorkItem(INDUCTION *induction_, InductionSet *induction_set_)
-      : WorkItem(WorkItem::kFinalizeInductionOrder + MaxDepth(induction_set_)),
+  FinalizeInductionWorkItem(Context &context, INDUCTION *induction_,
+                            InductionSet *induction_set_)
+      : WorkItem(context,
+                 WorkItem::kFinalizeInductionOrder + MaxDepth(induction_set_)),
         induction(induction_),
-        induction_set(induction_set_) {}
+        induction_set(induction_set_) {
+    this->view_to_induction = context.view_to_induction;
+  }
 
   void Run(ProgramImpl *impl, Context &context) override;
 
@@ -100,6 +108,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
   induction->init_region.Emplace(induction, ancestor_of_inits);
+  ancestor_of_inits->parent = induction;
 
   // Pass in the induction vectors to the handlers.
   for (auto merge : induction_set->merges) {
@@ -179,7 +188,8 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // the outputs. It is possible that we're not actually done filling out
   // the INDUCTION's cycles, even after the above, due to WorkItems being
   // added by other nodes.
-  const auto action = new FinalizeInductionWorkItem(induction, induction_set);
+  const auto action = new FinalizeInductionWorkItem(
+      context, induction, induction_set);
   context.work_list.emplace_back(action);
 }
 
@@ -283,7 +293,8 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     induction = impl->induction_regions.Create(impl, parent);
 
     const auto induction_set = context.merge_sets[view].FindAs<InductionSet>();
-    const auto action = new ContinueInductionWorkItem(induction, induction_set);
+    const auto action = new ContinueInductionWorkItem(context,
+                                                      induction, induction_set);
     context.work_list.emplace_back(action);
 
     for (auto view : induction_set->merges) {
