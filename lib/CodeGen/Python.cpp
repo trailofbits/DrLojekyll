@@ -21,12 +21,12 @@ constexpr auto gClassName = "Database";
 
 // Make a comment in code for debugging purposes
 static OutputStream &Comment(OutputStream &os, const char *message) {
-#ifndef NDEBUG
-  return os << os.Indent() << "# " << message << "\n";
-#else
-  (void) message;
+//#ifndef NDEBUG
+//  os << os.Indent() << "# " << message << "\n";
+//#else
+//  (void) message;
+//#endif
   return os;
-#endif
 }
 
 static OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
@@ -909,9 +909,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         // see, might not match the order of the columns in the index. Thus we
         // need to re-order our usage of variables so that they match the
         // order expected by `index_10[...]`.
+        sep = "";
         for (auto index_col : index_keys) {
           auto j = 0u;
-          sep = "";
           for (auto used_col : region.IndexedColumns(i)) {
             if (used_col == index_col) {
               os << sep << var_names[j];
