@@ -21,11 +21,11 @@ constexpr auto gClassName = "Database";
 
 // Make a comment in code for debugging purposes
 static OutputStream &Comment(OutputStream &os, const char *message) {
-//#ifndef NDEBUG
-//  os << os.Indent() << "# " << message << "\n";
-//#else
-//  (void) message;
-//#endif
+#ifndef NDEBUG
+  os << os.Indent() << "# " << message << "\n";
+#else
+  (void) message;
+#endif
   return os;
 }
 
@@ -395,7 +395,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Update any vectors in the caller by reference.
     for (auto var : proc.VariableParameters()) {
-      if (var.DefiningRole() == VariableRole::kParameter) {
+      if (var.DefiningRole() == VariableRole::kInputOutputParameter) {
         os << os.Indent() << "param_" << param_index << "[0] = "
            << Var(os, var) << '\n';
       }
@@ -408,13 +408,59 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramExistenceAssertionRegion region) override {
     os << Comment(os, "Program ExistenceAssertion Region");
-    os << os.Indent()
-       << "pass  # TODO(ekilmer): ProgramExistenceAssertionRegion\n";
+    const auto vars = region.ReferenceCounts();
+    for (auto var : vars) {
+      if (region.IsIncrement()) {
+        os << os.Indent() << Var(os, var) << " += 1\n";
+      } else {
+        os << os.Indent() << Var(os, var) << " -= 1\n";
+      }
+    }
+
+    if (auto body = region.Body(); body) {
+      assert(vars.size() == 1u);
+      if (region.IsIncrement()) {
+        os << os.Indent() << "if " << Var(os, vars[0]) << " == 1:\n";
+      } else {
+        os << os.Indent() << "if " << Var(os, vars[0]) << " == 0:\n";
+      }
+      os.PushIndent();
+      body->Accept(*this);
+      os.PopIndent();
+    }
   }
 
   void Visit(ProgramExistenceCheckRegion region) override {
     os << Comment(os, "Program ExistenceCheck Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramExistenceCheckRegion\n";
+    const auto vars = region.ReferenceCounts();
+    auto sep = "if ";
+    os << os.Indent();
+    auto seen = false;
+    for (auto var : vars) {
+      os << sep << Var(os, var);
+      if (region.CheckForZero()) {
+        os << " == 0";
+      } else if (region.CheckForNotZero()) {
+        os << " != 0";
+      } else {
+        assert(false);
+      }
+      sep = " and ";
+      seen = true;
+    }
+
+    if (seen) {
+      os << ":\n";
+    } else {
+      os << "if True:\n";
+    }
+    os.PushIndent();
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
+    }
+    os.PopIndent();
   }
 
   void Visit(ProgramGenerateRegion region) override {
@@ -569,7 +615,17 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramLetBindingRegion region) override {
     os << Comment(os, "Program LetBinding Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramLetBindingRegion\n";
+    auto i = 0u;
+    const auto used_vars = region.UsedVariables();
+    for (auto var : region.DefinedVariables()) {
+      os << os.Indent() << Var(os, var) << ": "
+         << TypeName(module, var.Type()) << " = "
+         << Var(os, used_vars[i++]) << '\n';
+    }
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    }
   }
 
   void Visit(ProgramParallelRegion region) override {
@@ -581,9 +637,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
   }
 
+  // Should never be reached; defined below.
   void Visit(ProgramProcedure region) override {
-    os << Comment(os, "Program Procedure Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramProcedure\n";
+    assert(false);
   }
 
   void Visit(ProgramPublishRegion region) override {
@@ -811,7 +867,45 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramCheckStateRegion region) override {
     os << Comment(os, "Program CheckState Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramCheckStateRegion\n";
+    const auto table = region.Table();
+    const auto vars = region.TupleVariables();
+    os << os.Indent() << "state = " << Table(os, table) << "[";
+    if (vars.size() == 1u) {
+      os << Var(os, vars[0]);
+    } else {
+      auto sep = "(";
+      for (auto var : vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      os << ')';
+    }
+    os << "]\n";
+
+    auto sep = "if ";
+
+    if (auto absent_body = region.IfAbsent(); absent_body) {
+      os << os.Indent() << sep << "state == 0:\n";
+      os.PushIndent();
+      absent_body->Accept(*this);
+      os.PopIndent();
+      sep = "elif ";
+    }
+
+    if (auto present_body = region.IfPresent(); present_body) {
+      os << os.Indent() << sep << "state == 1:\n";
+      os.PushIndent();
+      present_body->Accept(*this);
+      os.PopIndent();
+      sep = "elif ";
+    }
+
+    if (auto unknown_body = region.IfPresent(); unknown_body) {
+      os << os.Indent() << sep << "state == 2:\n";
+      os.PushIndent();
+      unknown_body->Accept(*this);
+      os.PopIndent();
+    }
   }
 
   void Visit(ProgramTableJoinRegion region) override {
@@ -1235,17 +1329,6 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     if (var.DefiningRole() == VariableRole::kInputOutputParameter) {
       os << os.Indent() << Var(os, var) << " = param_"
          << param_index << "[0]\n";
-    }
-    ++param_index;
-  }
-
-  // Then, declare all variable parameters.
-  for (auto param : var_params) {
-    if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-      os << ", param_" << param_index << ": List["
-         << TypeName(module, param.Type()) << "]";
-    } else {
-      os << ", " << Var(os, param) << ": " << TypeName(module, param.Type());
     }
     ++param_index;
   }
