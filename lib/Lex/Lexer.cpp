@@ -768,9 +768,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           auto &error = ret.As<lex::ErrorToken>();
           const auto error_pos = impl->reader.CurrentPosition();
           error.Store<Lexeme>(Lexeme::kInvalidNumber);
-          error.Store<lex::IndexDisp>(error_pos.Index() - ret.position.Index());
-          error.Store<lex::LineDisp>(error_pos.Line() - ret.position.Line());
-          error.Store<lex::Column>(error_pos.Column());
+          error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
+          error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
+          error.Store<lex::ErrorColumn>(error_pos.Column());
 
           accumulate_if([](char next_ch) {
             return kStopChars.find(next_ch) == std::string::npos;
