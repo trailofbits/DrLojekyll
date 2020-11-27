@@ -294,8 +294,6 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt) {
     }
   }
 
-  assert(iter <= max_iters);
-
   RemoveUnusedViews();
   RelabelGroupIDs();
 }
@@ -416,6 +414,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
 
   do_cse();  // Apply CSE to all views before most canonicalization.
   OptimizationContext opt(log);
+  opt.can_sink_unions = true;
   Canonicalize(opt);
   do_cse();  // Apply CSE to all canonical views.
 
@@ -429,6 +428,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     // Now do a stronger form of canonicalization.
     opt.can_remove_unused_columns = true;
     opt.can_replace_inputs_with_constants = true;
+    opt.can_sink_unions = false;
     opt.bottom_up = false;
     Canonicalize(opt);
 

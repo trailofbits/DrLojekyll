@@ -687,8 +687,8 @@ class Node<QueryMap> final : public Node<QueryView> {
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
-  inline explicit Node(ParsedFunctor functor_, DisplayRange range)
-      : position(range.From()),
+  inline explicit Node(ParsedFunctor functor_, DisplayRange range_)
+      : range(range_),
         functor(functor_) {
     this->can_produce_deletions = !functor.IsPure();
     for (auto param : functor.Parameters()) {
@@ -698,7 +698,7 @@ class Node<QueryMap> final : public Node<QueryView> {
     }
   }
 
-  const DisplayPosition position;
+  const DisplayRange range;
   const ParsedFunctor functor;
 
   // Number of `free` parameters in this functor. This distinguishes this map
@@ -766,6 +766,21 @@ class Node<QueryMerge> : public Node<QueryView> {
   unsigned Depth(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
 
+  // Convert two or more tuples into a single tuple that reads its data from
+  // a union, where that union reads its data from the sources of the two
+  // tuples. The returned tuple is likely superficial but serves to prevent
+  // the union of the tuple's sources from being merged upward. What we are
+  // looking for are cases where the tuples leading into the union have
+  // similarly shaped inputs. We want a union over those inputs (which may be
+  // wider than the tuple itself, hence the returned tuple).
+  //
+  // Returns `true` if successful, and updates `tuples` in place with the
+  // new merged entries.
+  bool SinkThroughTuples(QueryImpl *impl, std::vector<VIEW *> &tuples);
+
+  // Similar to above, but for maps.
+  bool SinkThroughMaps(QueryImpl *impl, std::vector<VIEW *> &maps);
+
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
@@ -773,6 +788,10 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
+
+  // If this is non-zero, then we're not allowed to do sinking. This exists to
+  // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
+  unsigned sink_penalty{0u};
 };
 
 using MERGE = Node<QueryMerge>;

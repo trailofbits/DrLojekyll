@@ -78,11 +78,11 @@ class TypeLoc {
     return kind == TypeKind::kInvalid;
   }
 
-  inline bool operator==(TypeLoc that) {
+  inline bool operator==(TypeLoc that) const noexcept {
     return kind == that.kind;
   }
 
-  inline bool operator!=(TypeLoc that) {
+  inline bool operator!=(TypeLoc that) const noexcept {
     return kind != that.kind;
   }
 

@@ -14,7 +14,7 @@ Node<QueryMap> *Node<QueryMap>::AsMap(void) noexcept {
 }
 
 uint64_t Node<QueryMap>::Sort(void) noexcept {
-  return position.Index();
+  return range.From().Index();
 }
 
 static const std::hash<std::string_view> kStringViewHasher;
