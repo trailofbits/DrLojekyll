@@ -37,15 +37,30 @@ DisplayPosition Token::ErrorPosition(void) const {
   }
 
   const auto error = As<lex::ErrorToken>();
+  const auto line = position.Line();
   const auto error_col = error.Load<lex::ErrorColumn>();
+  const auto error_line = line + error.Load<lex::ErrorLineDisp>();
+  const auto error_index = position.Index() + error.Load<lex::ErrorIndexDisp>();
 #ifndef NDEBUG
+  const auto col = position.Column();
+  const auto next_line = line + error.Load<lex::LineDisp>();
   const auto next_col = error.Load<lex::Column>();
-  assert(error_col <= next_col);
+  assert(0u < col);
+  assert(0u < error_col);
+  assert(0u < next_col);
+  if (error_line == next_line) {
+    assert(error_col <= next_col);
+
+  } else if (error_line == line) {
+    assert(col <= error_col);
+    assert(error_line < next_line);
+
+  } else {
+    assert(error_line < next_line);
+  }
 #endif
-  return DisplayPosition(position.DisplayId(),
-                         position.Index() + error.Load<lex::ErrorIndexDisp>(),
-                         position.Line() + error.Load<lex::ErrorLineDisp>(),
-                         error_col);
+  return DisplayPosition(position.DisplayId(), error_index,
+                         error_line, error_col);
 }
 
 // Return the range of characters covered by this token. This is an open range

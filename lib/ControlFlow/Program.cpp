@@ -27,15 +27,6 @@ ProgramImpl::~ProgramImpl(void) {
     for (auto &entry : induction->view_to_init_appends) {
       entry.second.ClearWithoutErasure();
     }
-    for (auto &entry : induction->view_to_cycle_appends) {
-      entry.second.ClearWithoutErasure();
-    }
-    for (auto &entry : induction->view_to_cycle_loop) {
-      entry.second.ClearWithoutErasure();
-    }
-    for (auto &entry : induction->view_to_output_loop) {
-      entry.second.ClearWithoutErasure();
-    }
     for (auto &entry : induction->view_to_vec) {
       entry.second.ClearWithoutErasure();
     }
@@ -60,6 +51,13 @@ ProgramImpl::~ProgramImpl(void) {
 
     } else if (auto vec_clear = op->AsVectorClear(); vec_clear) {
       vec_clear->vector.ClearWithoutErasure();
+
+    } else if (auto vec_swap = op->AsVectorSwap(); vec_swap) {
+      vec_swap->lhs.ClearWithoutErasure();
+      vec_swap->rhs.ClearWithoutErasure();
+
+    } else if (auto vec_unique = op->AsVectorUnique(); vec_unique) {
+      vec_unique->vector.ClearWithoutErasure();
 
     } else if (auto view_insert = op->AsTransitionState(); view_insert) {
       view_insert->table.ClearWithoutErasure();
@@ -145,6 +143,15 @@ ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
+std::optional<ProgramRegion>
+ProgramRegion::Containing(ProgramRegion &self) noexcept {
+  if (self.impl->parent != self.impl->containing_procedure) {
+    return ProgramRegion(self.impl->parent);
+  } else {
+    return std::nullopt;
+  }
+}
+
 void ProgramRegion::Accept(ProgramVisitor &visitor) const {
   impl->Accept(visitor);
 }
@@ -188,6 +195,7 @@ IS_OP(TupleCompare)
 IS_OP(VectorLoop)
 IS_OP(VectorAppend)
 IS_OP(VectorClear)
+IS_OP(VectorSwap)
 IS_OP(VectorUnique)
 
 #undef IS_OP
@@ -269,6 +277,7 @@ FROM_OP(ProgramTableScanRegion, AsTableScan)
 FROM_OP(ProgramVectorLoopRegion, AsVectorLoop)
 FROM_OP(ProgramVectorAppendRegion, AsVectorAppend)
 FROM_OP(ProgramVectorClearRegion, AsVectorClear)
+FROM_OP(ProgramVectorSwapRegion, AsVectorSwap)
 FROM_OP(ProgramVectorUniqueRegion, AsVectorUnique)
 
 #undef FROM_OP
@@ -340,6 +349,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kAppendInductionInputToVector:
     case ProgramOperation::kClearInductionInputVector:
     case ProgramOperation::kLoopOverInductionInputVector:
+    case ProgramOperation::kSwapInductionVector:
       return VectorUsage::kInductionVector;
     case ProgramOperation::kAppendUnionInputToVector:
     case ProgramOperation::kLoopOverUnionInputVector:
@@ -375,6 +385,18 @@ VECTOR_OPS(ProgramVectorClearRegion)
 VECTOR_OPS(ProgramVectorUniqueRegion)
 
 #undef VECTOR_OPS
+
+DataVector ProgramVectorSwapRegion::LHS(void) const noexcept {
+  return DataVector(impl->lhs.get());
+}
+
+DataVector ProgramVectorSwapRegion::RHS(void) const noexcept {
+  return DataVector(impl->rhs.get());
+}
+
+unsigned ProgramGenerateRegion::Id(void) const noexcept {
+  return impl->id;
+}
 
 // Does this functor application behave like a filter function?
 bool ProgramGenerateRegion::IsFilter(void) const noexcept {
@@ -513,8 +535,13 @@ TypeLoc DataVariable::Type(void) const noexcept {
 
 // Whether this variable is global.
 bool DataVariable::IsGlobal(void) const noexcept {
-  return !(DefiningRole() == VariableRole::kParameter ||
-           DefiningRole() == VariableRole::kFunctorOutput || DefiningRegion());
+  switch (DefiningRole()) {
+    case VariableRole::kConditionRefCount:
+    case VariableRole::kConstant:
+      return true;
+    default:
+      return false;
+  }
 }
 
 // Unique ID of this column.
@@ -599,6 +626,11 @@ void DataVector::VisitUsers(ProgramVisitor &visitor) {
 void DataVector::ForEachUser(std::function<void(ProgramRegion)> cb) {
   impl->ForEachUse<Node<ProgramRegion>>(
       [&](Node<ProgramRegion> *region, Node<DataVector> *) { cb(region); });
+}
+
+// Return the procedure containing another region.
+ProgramProcedure ProgramProcedure::Containing(ProgramRegion region) noexcept {
+  return ProgramProcedure(region.impl->containing_procedure);
 }
 
 // Unique ID of this procedure.
@@ -739,6 +771,10 @@ DataVector ProgramTableScanRegion::FilledVector(void) const {
   return DataVector(impl->output_vector.get());
 }
 
+unsigned ProgramCallRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
   return ProgramProcedure(impl->called_proc.get());
 }
@@ -763,6 +799,11 @@ bool ProgramReturnRegion::ReturnsFalse(void) const noexcept {
 
 ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
   return impl->message;
+}
+
+// Are we publishing the removal of some tuple?
+bool ProgramPublishRegion::IsRemoval(void) const noexcept {
+  return impl->is_removal;
 }
 
 }  // namespace hyde

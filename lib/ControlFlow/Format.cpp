@@ -102,7 +102,8 @@ OutputStream &operator<<(OutputStream &os, DataTable table) {
 OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
-    case VectorKind::kInput: os << "$input"; break;
+    case VectorKind::kParameter: os << "$input"; break;
+    case VectorKind::kInputOutputParameter: os << "$inout"; break;
     case VectorKind::kInduction: os << "$induction"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
@@ -399,6 +400,11 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramVectorSwapRegion region) {
+  os << os.Indent() << "vector-swap " << region.LHS() << ", " << region.RHS();
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os,
                          ProgramTransitionStateRegion region) {
 
@@ -664,6 +670,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramVectorAppendRegion)
   MAKE_VISITOR(ProgramVectorClearRegion)
   MAKE_VISITOR(ProgramVectorLoopRegion)
+  MAKE_VISITOR(ProgramVectorSwapRegion)
   MAKE_VISITOR(ProgramVectorUniqueRegion)
   MAKE_VISITOR(ProgramTransitionStateRegion)
   MAKE_VISITOR(ProgramCheckStateRegion)
@@ -695,6 +702,9 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
       break;
     case ProcedureKind::kTupleFinder: os << "^find:"; break;
     case ProcedureKind::kTupleRemover: os << "^remove:"; break;
+    case ProcedureKind::kInductionCycleHandler:
+      os << "^induction_cycle:"; break;
+    case ProcedureKind::kInductionOutputHandler: os << "^induction_out:"; break;
   }
   os << proc.Id();
 

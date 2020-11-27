@@ -11,7 +11,8 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
-  auto gen = impl->operation_regions.CreateDerived<GENERATOR>(parent, functor);
+  auto gen = impl->operation_regions.CreateDerived<GENERATOR>(
+      parent, functor, impl->next_id++);
   auto i = 0u;
 
   // Deal with the functor inputs and outputs.
@@ -90,7 +91,7 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
     assert(!succ_view.IsMerge());
 
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        parent,
+        impl->next_id++, parent,
         GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
 
     for (auto col : view.Columns()) {

@@ -91,7 +91,7 @@ static bool CSE(CandidateList &all_views) {
       (void) v2_uphash;
 
       eq.Clear();
-      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && eq.Contains(v1, v2)) {
+      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
         v1->ReplaceAllUsesWith(v2);
         changed = true;
       }
@@ -197,6 +197,11 @@ bool QueryImpl::RemoveUnusedViews(void) {
 
   std::vector<VIEW *> views;
 
+  conditions.RemoveIf([](COND *cond) {
+    return cond->positive_users.Empty() &&
+           cond->negative_users.Empty();
+  });
+
   ForEachViewInReverseDepthOrder([&](VIEW *view) { views.push_back(view); });
 
   for (auto changed = true; changed;) {
@@ -211,27 +216,12 @@ bool QueryImpl::RemoveUnusedViews(void) {
   }
 
   do {
-
-    //    for (auto rel : relations) {
-    //      if (rel->IsUsed()) {
-    //        rel->ForEachUse<VIEW>([] (VIEW *v, REL *) {
-    //          assert(!v->is_dead);
-    //        });
-    //      }
-    //      rel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
-    //    }
-
     ret = 0u;
-
-    //    for (auto sel : selects) {
-    //      sel->inserts.RemoveIf([] (VIEW *v) { return v->is_dead; });
-    //    }
-
     ret |= selects.RemoveUnused() | tuples.RemoveUnused() |
            kv_indices.RemoveUnused() | joins.RemoveUnused() |
            maps.RemoveUnused() | aggregates.RemoveUnused() |
            merges.RemoveUnused() | compares.RemoveUnused() |
-           inserts.RemoveUnused();
+           inserts.RemoveUnused() | deletes.RemoveUnused();
     all_ret |= ret;
   } while (ret);
 
@@ -273,12 +263,21 @@ void QueryImpl::Simplify(const ErrorLog &log) {
 
 // Canonicalize the dataflow. This tries to put each node into its current
 // "most optimal" form. Previously it was more about re-arranging columns
-// to encourange better CSE results.
+// to encourage better CSE results.
 void QueryImpl::Canonicalize(const OptimizationContext &opt) {
-  ForEachView([&](VIEW *view) { view->is_canonical = false; });
+  uint64_t num_views = 0u;
+  const_cast<const QueryImpl *>(this)->ForEachView([&num_views](VIEW *view) {
+    view->is_canonical = false;
+    ++num_views;
+  });
+
+  auto max_iters = std::max<uint64_t>(num_views, num_views * 2u);
+  max_iters = std::max<uint64_t>(max_iters, num_views * num_views);
 
   // Canonicalize all views.
-  for (auto non_local_changes = true; non_local_changes;) {
+  uint64_t iter = 0u;
+  for (auto non_local_changes = true; non_local_changes && iter < max_iters;
+       ++iter) {
     non_local_changes = false;
     if (opt.bottom_up) {
       ForEachViewInDepthOrder([&](VIEW *view) {
@@ -401,26 +400,35 @@ void QueryImpl::Optimize(const ErrorLog &log) {
 
   auto do_cse = [&](void) {
     views.clear();
-    this->ForEachView([&views](VIEW *view) { views.push_back(view); });
+    const_cast<const QueryImpl *>(this)->ForEachView(
+        [&views](VIEW *view) { views.push_back(view); });
 
-    while (CSE(views)) {
+    for (auto max_cse = views.size(); CSE(views) && max_cse--; ) {
       RemoveUnusedViews();
       RelabelGroupIDs();
       views.clear();
-      this->ForEachView([&views](VIEW *view) { views.push_back(view); });
+      const_cast<const QueryImpl *>(this)->ForEachView(
+          [&views](VIEW *view) { views.push_back(view); });
     }
   };
 
   do_cse();  // Apply CSE to all views before most canonicalization.
   OptimizationContext opt(log);
+  opt.can_sink_unions = true;
   Canonicalize(opt);
   do_cse();  // Apply CSE to all canonical views.
 
-  do {
+  auto max_depth = 1u;
+  for (auto view : this->inserts) {
+    max_depth = std::max(view->Depth(), max_depth);
+  }
+
+  for (auto changed = true; changed && max_depth--; ) {
 
     // Now do a stronger form of canonicalization.
     opt.can_remove_unused_columns = true;
     opt.can_replace_inputs_with_constants = true;
+    opt.can_sink_unions = false;
     opt.bottom_up = false;
     Canonicalize(opt);
 
@@ -429,8 +437,8 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     }
 
     RemoveUnusedViews();
-
-  } while (EliminateDeadFlows());
+    changed = EliminateDeadFlows();
+  }
 
   RemoveUnusedViews();
 }

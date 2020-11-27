@@ -269,6 +269,7 @@ enum class ProgramOperation {
   kAppendInductionInputToVector,
   kLoopOverInductionInputVector,
   kClearInductionInputVector,
+  kSwapInductionVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
   // cycle.
@@ -380,6 +381,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
+  virtual Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept;
   virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
@@ -510,6 +512,31 @@ class Node<ProgramVectorClearRegion> final
 
 using VECTORCLEAR = Node<ProgramVectorClearRegion>;
 
+// Swap the contents of two vectors.
+template <>
+class Node<ProgramVectorSwapRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  using Node<ProgramOperationRegion>::Node;
+
+  void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept override;
+
+  UseRef<VECTOR> lhs;
+  UseRef<VECTOR> rhs;
+};
+
+using VECTORSWAP = Node<ProgramVectorSwapRegion>;
+
 // Sort and unique a vector.
 template <>
 class Node<ProgramVectorUniqueRegion> final
@@ -630,7 +657,8 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_,
+  Node(unsigned id_, Node<ProgramRegion> *parent_,
+       Node<ProgramProcedure> *called_proc_,
        ProgramOperation op_ = ProgramOperation::kCallProcedure);
 
   void Accept(ProgramVisitor &visitor) override;
@@ -652,6 +680,8 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
 
   // Vectors passed as arguments.
   UseList<VECTOR> arg_vecs;
+
+  const unsigned id;
 };
 
 using CALL = Node<ProgramCallRegion>;
@@ -700,6 +730,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 
   // Message being published.
   const ParsedMessage message;
+
+  // Is this a removal publication?
+  bool is_removal{false};
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
@@ -913,13 +946,15 @@ template <>
 class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_)
+  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_,
+              unsigned id_)
       : Node<ProgramOperationRegion>(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
         defined_vars(this),
-        used_vars(this) {}
+        used_vars(this),
+        id(id_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
@@ -939,6 +974,8 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
 
   // Bound variables passed in as arguments to the functor.
   UseList<VAR> used_vars;
+
+  const unsigned id;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;
@@ -1081,18 +1118,14 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // going into a co-mingled induction, as is the case in
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
   std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_input_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_induction_vec;
 
   // List of append to vector regions inside this induction.
   std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
 
-  // List of append to vector regions inside this induction.
-  std::unordered_map<QueryView, UseList<REGION>> view_to_cycle_appends;
-
-  // Maps views to their cycles inside of the `cyclic_region`.
-  std::unordered_map<QueryView, UseRef<REGION>> view_to_cycle_loop;
-
-  // Maps views to their cycles inside of the `output_region`.
-  std::unordered_map<QueryView, UseRef<REGION>> view_to_output_loop;
+  PROC *cycle_proc{nullptr};
+  PROC *output_proc{nullptr};
 
   enum State {
     kAccumulatingInputRegions,

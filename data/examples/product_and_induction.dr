@@ -1,0 +1,11 @@
+; The purpose of this is to show a trivial example of cross-products and 
+; inductions.
+
+#message add_name(utf8 Name)
+#functor mangle_name(bound utf8 Name1, bound utf8 Name2, free utf8 MangledName)
+#query name_pairs(bound utf8 Name1, bound utf8 Name2)
+#local name(Name)
+
+name(Name) : add_name(Name).
+name_pairs(Name1, Name2) : name(Name1), name(Name2), Name1 != Name2.
+name(MangledName) : name_pairs(Name1, Name2), mangle_name(Name1, Name2, MangledName).

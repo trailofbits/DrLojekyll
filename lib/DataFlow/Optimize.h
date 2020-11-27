@@ -29,6 +29,9 @@ class OptimizationContext {
   //            `can_remove_unused_columns`.
   bool can_remove_unused_columns{false};
 
+  // Can we sink unions?
+  bool can_sink_unions{false};
+
   // Should optimization happen bottom-up or top-down?
   bool bottom_up{true};
 

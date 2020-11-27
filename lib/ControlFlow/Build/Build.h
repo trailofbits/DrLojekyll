@@ -19,7 +19,11 @@ class InductionSet : public DisjointSet {
  public:
   using DisjointSet::DisjointSet;
 
+  // The set of non-dominated merges that need to have persistent backing.
   std::vector<QueryView> merges;
+
+  // The set of all merges that belong to this co-inductive set.
+  std::vector<QueryView> all_merges;
 };
 
 class Context;
@@ -35,9 +39,17 @@ class WorkItem {
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
 
-  explicit WorkItem(unsigned order_) : order(order_) {}
+  explicit WorkItem(Context &context, unsigned order_);
 
   const unsigned order;
+
+  // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
+  // the same INDUCTION if they belong to the same "inductive set". This happens
+  // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
+  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
+
+  // Maps tables to their product input vectors.
+  std::unordered_map<TABLE *, VECTOR *> product_vector;
 };
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
@@ -48,6 +60,17 @@ class Context {
  public:
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
+
+  // Merges in this set are inductive, but behave more like non-inductive
+  // merges because all paths leading out of these views go through a single
+  // other merge in their inductive set.
+  std::unordered_set<QueryView> dominated_merges;
+
+  // Mapping of inductions to functions that process their inductive cycles.
+  std::unordered_map<InductionSet *, PROC *> induction_cycle_funcs;
+
+  // Mapping of inductions to functions that process their output vectors.
+  std::unordered_map<InductionSet *, PROC *> induction_output_funcs;
 
   // Set of successors of a `QueryMerge` that may lead back to the merge
   // (inductive) and never lead back to the merge (noninductive), respectively.
@@ -110,12 +133,6 @@ class Context {
   std::vector<std::tuple<QueryView, QueryView, PROC *, TABLE *>>
       bottom_up_removers_work_list;
 };
-
-//using ColPair = std::pair<QueryColumn, QueryColumn>;
-//
-//// Get a mapping of `(input_col, output_col)` where the columns are in order
-//// of `input_col`, and no input columns are repeated.
-//std::vector<ColPair> GetColumnMap(QueryView view, QueryView pred_view);
 
 OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);
@@ -411,6 +428,9 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context);
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
 
+// Returns `true` if all paths through `region` ends with a `return` region.
+bool EndsWithReturn(REGION *region);
+
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 
@@ -551,7 +571,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     // responsible for initializing data flow from constant tuples that
     // may be condition-variable dependent.
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        set, impl->procedure_regions[0]);
+        impl->next_id++, set, impl->procedure_regions[0]);
     set->body.Emplace(set, call);
 
     // Create a dummy/empty LET binding so that we have an `OP *` as a parent

@@ -25,7 +25,8 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
 
   for (auto succ_view : view.Successors()) {
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        par, GetOrCreateBottomUpRemover(impl, context, view, succ_view));
+        impl->next_id++, par,
+        GetOrCreateBottomUpRemover(impl, context, view, succ_view));
     par->regions.AddUse(call);
 
     for (auto col : view.Columns()) {
@@ -48,7 +49,8 @@ void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
     assert(succ_view.IsMerge());
 
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        proc, GetOrCreateBottomUpRemover(impl, context, view, succ_view));
+        impl->next_id++, proc,
+        GetOrCreateBottomUpRemover(impl, context, view, succ_view));
 
     for (auto col : del.Columns()) {
       const auto var = proc->VariableFor(impl, col);

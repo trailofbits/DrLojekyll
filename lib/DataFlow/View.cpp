@@ -1008,6 +1008,19 @@ bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
   }
 
   return false;
+
+//double_check:
+//  auto a_used_by_join = false;
+//  a->ForEachUse<JOIN>([&a_used_by_join] (JOIN *, VIEW *) {
+//    a_used_by_join = true;
+//  });
+//
+//  auto b_used_by_join = false;
+//  b->ForEachUse<JOIN>([&b_used_by_join] (JOIN *, VIEW *) {
+//    b_used_by_join = true;
+//  });
+//
+//  return a_used_by_join || b_used_by_join;
 }
 
 }  // namespace hyde

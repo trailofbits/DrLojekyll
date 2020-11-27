@@ -71,6 +71,7 @@ class ProgramSeriesRegion;
 class ProgramVectorAppendRegion;
 class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
+class ProgramVectorSwapRegion;
 class ProgramVectorUniqueRegion;
 class ProgramTransitionStateRegion;
 class ProgramCheckStateRegion;
@@ -82,6 +83,11 @@ class ProgramTupleCompareRegion;
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  public:
+
+  // Return the region containing `child`, or `std::nullopt` if this is the
+  // topmost region in a procedure.
+  static std::optional<ProgramRegion> Containing(ProgramRegion &child) noexcept;
+
   ProgramRegion(const ProgramCallRegion &);
   ProgramRegion(const ProgramReturnRegion &);
   ProgramRegion(const ProgramExistenceAssertionRegion &);
@@ -95,6 +101,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramVectorAppendRegion &);
   ProgramRegion(const ProgramVectorClearRegion &);
   ProgramRegion(const ProgramVectorLoopRegion &);
+  ProgramRegion(const ProgramVectorSwapRegion &);
   ProgramRegion(const ProgramVectorUniqueRegion &);
   ProgramRegion(const ProgramTransitionStateRegion &);
   ProgramRegion(const ProgramCheckStateRegion &);
@@ -114,6 +121,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsVectorLoop(void) const noexcept;
   bool IsVectorAppend(void) const noexcept;
   bool IsVectorClear(void) const noexcept;
+  bool IsVectorSwap(void) const noexcept;
   bool IsVectorUnique(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
   bool IsTransitionState(void) const noexcept;
@@ -141,6 +149,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramVectorAppendRegion;
   friend class ProgramVectorClearRegion;
   friend class ProgramVectorLoopRegion;
+  friend class ProgramVectorSwapRegion;
   friend class ProgramVectorUniqueRegion;
   friend class ProgramTransitionStateRegion;
   friend class ProgramCheckStateRegion;
@@ -192,6 +201,7 @@ enum class VariableRole : int {
   kScanOutput,
   kFunctorOutput,
   kParameter,
+  kInputOutputParameter,
 };
 
 // A variable in the program.
@@ -223,7 +233,8 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 };
 
 enum class VectorKind : unsigned {
-  kInput,
+  kParameter,
+  kInputOutputParameter,
   kInduction,
   kJoinPivots,
   kProductInput,
@@ -315,6 +326,10 @@ class DataVector : public program::ProgramNode<DataVector> {
   void ForEachUser(std::function<void(ProgramRegion)> cb);
 
  private:
+  friend class ProgramVectorClearRegion;
+  friend class ProgramVectorSwapRegion;
+  friend class ProgramVectorUniqueRegion;
+
   using program::ProgramNode<DataVector>::ProgramNode;
 };
 
@@ -379,6 +394,8 @@ class ProgramGenerateRegion
     : public program::ProgramNode<ProgramGenerateRegion> {
  public:
   static ProgramGenerateRegion From(ProgramRegion) noexcept;
+
+  unsigned Id(void) const noexcept;
 
   // Does this functor application behave like a filter function?
   bool IsFilter(void) const noexcept;
@@ -486,7 +503,6 @@ class ProgramVectorAppendRegion
     static name From(ProgramRegion) noexcept; \
     VectorUsage Usage(void) const noexcept; \
     DataVector Vector(void) const noexcept; \
-\
    private: \
     friend class ProgramRegion; \
     using program::ProgramNode<name>::ProgramNode; \
@@ -499,6 +515,19 @@ VECTOR_OP(ProgramVectorClearRegion);
 VECTOR_OP(ProgramVectorUniqueRegion);
 
 #undef VECTOR_OP
+
+class ProgramVectorSwapRegion
+    : public program::ProgramNode<ProgramVectorSwapRegion> {
+ public:
+  static ProgramVectorSwapRegion From(ProgramRegion) noexcept;
+
+  DataVector LHS(void) const noexcept;
+  DataVector RHS(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+  using program::ProgramNode<ProgramVectorSwapRegion>::ProgramNode;
+};
 
 enum class TupleState : unsigned {
   kPresent,
@@ -751,6 +780,9 @@ class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
   // List of variables being published.
   UsedNodeRange<DataVariable> VariableArguments(void) const;
 
+  // Are we publishing the removal of some tuple?
+  bool IsRemoval(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 
@@ -776,12 +808,21 @@ enum class ProcedureKind : unsigned {
   // everything provable from it, and recursively remove those things. Removal
   // in this case is really a form of marking, i.e. marking the discovered
   // tuples as being in an unknown state.
-  kTupleRemover
+  kTupleRemover,
+
+  // Handles the cycle of an induction.
+  kInductionCycleHandler,
+
+  // Handles the outputs of an induction.
+  kInductionOutputHandler
 };
 
 // A procedure in the program. All procedures return either `true` or `false`.
 class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
  public:
+  // Return the procedure containing another region.
+  static ProgramProcedure Containing(ProgramRegion region) noexcept;
+
   // Unique ID of this procedure.
   unsigned Id(void) const noexcept;
 
@@ -815,6 +856,8 @@ class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
 class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
  public:
   static ProgramCallRegion From(ProgramRegion) noexcept;
+
+  unsigned Id(void) const noexcept;
 
   ProgramProcedure CalledProcedure(void) const noexcept;
 
@@ -917,6 +960,7 @@ class ProgramVisitor {
   virtual void Visit(ProgramVectorAppendRegion val);
   virtual void Visit(ProgramVectorClearRegion val);
   virtual void Visit(ProgramVectorLoopRegion val);
+  virtual void Visit(ProgramVectorSwapRegion val);
   virtual void Visit(ProgramVectorUniqueRegion val);
   virtual void Visit(ProgramTransitionStateRegion val);
   virtual void Visit(ProgramCheckStateRegion val);

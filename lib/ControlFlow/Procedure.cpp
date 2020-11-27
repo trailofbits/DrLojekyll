@@ -51,8 +51,10 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
   }
 
   for (auto i = 0u; i < num_arg_vars; ++i) {
-    if (DataVariable(input_vars[i]).Type() !=
-        DataVariable(that->input_vars[i]).Type()) {
+    const auto this_var = input_vars[i];
+    const auto that_var = that->input_vars[i];
+    if (this_var->role != that_var->role ||
+        DataVariable(this_var).Type() != DataVariable(that_var).Type()) {
       return false;
     }
   }
@@ -120,7 +122,8 @@ Node<ProgramProcedure> *Node<ProgramProcedure>::AsProcedure(void) noexcept {
 VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl, VectorKind kind,
                                           DefinedNodeRange<QueryColumn> cols) {
   const auto next_id = impl->next_id++;
-  if (VectorKind::kInput == kind) {
+  if (VectorKind::kParameter == kind ||
+      VectorKind::kInputOutputParameter == kind) {
     return input_vecs.Create(next_id, kind, cols);
   } else {
     return vectors.Create(next_id, kind, cols);

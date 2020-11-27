@@ -276,8 +276,9 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
 
   for (auto succ_view : view.Successors()) {
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        parent, GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                           already_checked));
+        impl->next_id++, parent,
+        GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                   already_checked));
 
     for (auto col : view.Columns()) {
       const auto var = proc->VariableFor(impl, col);

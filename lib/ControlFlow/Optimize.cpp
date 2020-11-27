@@ -216,6 +216,10 @@ static bool OptimizeImpl(EXISTS *exists) {
     return changed;
   }
 
+  // Find a parent existence check, and if it does the same type of check,
+  // then try to merge this existence check into the parent by moving its
+  // condition variables up, and replacing all uses of it with its conditional
+  // body.
   if (auto parent_op = exists->parent->AsOperation(); parent_op) {
     if (auto parent_exists = parent_op->AsExistenceCheck();
         parent_exists && exists->op == parent_exists->op) {
@@ -343,14 +347,15 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
     } else if (auto target_series = target_region->AsSeries(); target_series) {
       const auto copied_series = impl->series_regions.Create(into_parent);
       into_parent_regions.AddUse(copied_series);
-      InlineCalls(target_par->regions, impl, copied_series,
+      InlineCalls(target_series->regions, impl, copied_series,
                   copied_series->regions, target_to_local);
 
     } else if (auto target_op = target_region->AsOperation(); target_op) {
 
       if (auto target_call = target_op->AsCall(); target_call) {
         auto copied_call = impl->operation_regions.CreateDerived<CALL>(
-            into_parent, target_call->called_proc.get(), target_call->op);
+            impl->next_id++, into_parent, target_call->called_proc.get(),
+            target_call->op);
         into_parent_regions.AddUse(copied_call);
 
         for (auto target_var : target_call->arg_vars) {

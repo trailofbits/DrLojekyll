@@ -324,18 +324,27 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
     switch (state) {
       case 0:
-        if (Lexeme::kIdentifierType == lexeme) {
-          const_val.type = TypeLoc(tok);
-          state = 1;
-          type = context->foreign_types[tok.IdentifierId()];
-          assert(type != nullptr);
-          const_val.parent = type;
-          continue;
+        switch (lexeme) {
+          case Lexeme::kIdentifierType:
+          case Lexeme::kTypeASCII:
+          case Lexeme::kTypeUTF8:
+          case Lexeme::kTypeBytes:
+          case Lexeme::kTypeUUID:
+          case Lexeme::kTypeUn:
+          case Lexeme::kTypeIn:
+          case Lexeme::kTypeFn: {
+            const_val.type = TypeLoc(tok);
+            state = 1;
+            type = context->foreign_types[tok.IdentifierId()];
+            assert(type != nullptr);
+            const_val.parent = type;
+            continue;
 
-        } else {
-          context->error_log.Append(scope_range, tok_range)
-              << "Expected foreign type name here, got '" << tok << "' instead";
-          return;
+          }
+          default:
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected foreign type name here, got '" << tok << "' instead";
+            return;
         }
 
       case 1:

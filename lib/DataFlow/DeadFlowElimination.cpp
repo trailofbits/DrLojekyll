@@ -136,7 +136,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       });
     }
 
-    ForEachView([&](VIEW *view) {
+    const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
       if (!derived_from_input.count(view)) {
         kill_view(view);
 
@@ -180,24 +180,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
     }
   }
 
-  // Unlink any untested conditions from their setters.
-  auto removed_conds = false;
-  for (auto cond : conditions) {
-    if (cond->positive_users.Empty() && cond->negative_users.Empty()) {
-      for (auto setter : cond->setters) {
-        if (setter) {
-          removed_conds = true;
-          setter->sets_condition.Clear();
-        }
-      }
-      cond->setters.Clear();
-    }
-  }
-
-  if (any_changed || removed_conds) {
-    conditions.RemoveIf([](COND *cond) {
-      return cond->positive_users.Empty() && cond->negative_users.Empty();
-    });
+  if (any_changed) {
     RemoveUnusedViews();
     return true;
 

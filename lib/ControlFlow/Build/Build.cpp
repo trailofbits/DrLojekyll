@@ -100,7 +100,8 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsMerge()) {
     const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view)) {
+    if (context.inductive_successors.count(view) &&
+        !context.dominated_merges.count(view)) {
       BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
                                 last_model);
     } else {
@@ -203,7 +204,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   proc->io = io;
 
   const auto vec =
-      proc->VectorFor(impl, VectorKind::kInput, receives[0].Columns());
+      proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       proc, ProgramOperation::kLoopOverInputVector);
   auto par = impl->parallel_regions.Create(loop);
@@ -219,9 +220,10 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   loop->vector.Emplace(loop, vec);
   proc->body.Emplace(proc, loop);
 
-  context.view_to_induction.clear();
   context.work_list.clear();
   context.view_to_work_item.clear();
+
+  context.view_to_induction.clear();
   context.product_vector.clear();
 
   for (auto receive : io.Receives()) {
@@ -280,6 +282,7 @@ static void DiscoverInductions(const Query &query, Context &context) {
   // Now group together the merges into co-inductive sets, i.e. when one
   // induction is tied with another induction.
   std::set<QueryView> seen;
+  std::unordered_set<QueryView> reached_cycles;
   std::vector<QueryView> frontier;
   std::set<std::pair<QueryView, QueryView>> disallowed_edges;
 
@@ -298,37 +301,68 @@ static void DiscoverInductions(const Query &query, Context &context) {
 
     frontier.clear();
     seen.clear();
+    reached_cycles.clear();
+
+    // This is a variant of transitive successors, except that we don't allow
+    // ourselves to walk through non-inductive output paths of merges because
+    // otherwise we would end up merging two unrelated induction sets.
 
     for (QueryView succ_view : inductive_successors) {
       frontier.push_back(succ_view);
     }
 
+    // We want to express something similar to dominance analysis here.
+    // Specifically, suppose we have a set of UNIONs that all logically belong
+    // to the same co-inductive set. That is, the outputs of each of the unions
+    // somehow cycle into all of the other unions.
+
+    InductionSet &base_set = context.merge_sets[view];
+
+    bool appears_dominated = true;
+
     while (!frontier.empty()) {
-      const auto view = frontier.back();
+      const auto frontier_view = frontier.back();
       frontier.pop_back();
-      for (auto succ_view : view.Successors()) {
-        if (!seen.count(succ_view) &&
-            !disallowed_edges.count({view, succ_view})) {
-          seen.insert(succ_view);
-          frontier.push_back(succ_view);
+
+      // We've cycled back to ourselves. If we get back to ourselves along
+      // some path that doesn't itself go through another inductive merge/cycle,
+      // which would have been caught by the `else if` case below, then it means
+      // that this view isn't subordinate to any other one, and that is actually
+      // does in fact need storage.
+      if (frontier_view == view) {
+        appears_dominated = false;
+        continue;
+
+      // We've cycled to a UNION that is inductive.
+      } else if (context.inductive_successors.count(frontier_view)) {
+        reached_cycles.insert(frontier_view);
+        InductionSet &reached_set = context.merge_sets[frontier_view];
+        DisjointSet::Union(&base_set, &reached_set);
+
+      // We need to follow the frontier view's successors.
+      } else {
+        for (auto succ_view : frontier_view.Successors()) {
+          if (!seen.count(succ_view) &&
+              !disallowed_edges.count({frontier_view, succ_view})) {
+            seen.insert(succ_view);
+            frontier.push_back(succ_view);
+          }
         }
       }
     }
 
-    DisjointSet &base_set = context.merge_sets[view];
-    for (auto reached_view : seen) {
-      if (reached_view.IsMerge()) {
-        QueryMerge reached_merge = QueryMerge::From(reached_view);
-        if (context.inductive_successors.count(reached_merge)) {
-          auto &reached_set = context.merge_sets[reached_merge];
-          DisjointSet::Union(&base_set, &reached_set);
-        }
-      }
+    // All inductive paths out of this union lead to another inductive union.
+    if (appears_dominated && reached_cycles.size() == 1u) {
+      context.dominated_merges.insert(view);
     }
   }
 
   for (auto &[merge, merge_set] : context.merge_sets) {
-    merge_set.FindAs<InductionSet>()->merges.push_back(merge);
+    InductionSet * const set = merge_set.FindAs<InductionSet>();
+    set->all_merges.push_back(merge);
+    if (!context.dominated_merges.count(merge)) {
+      set->merges.push_back(merge);
+    }
   }
 }
 
@@ -454,55 +488,6 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   });
 }
 
-// Returns `true` if all paths through `region` ends with a `return` region.
-static bool EndsWithReturn(REGION *region) {
-  if (!region) {
-    return false;
-
-  } else if (auto proc = region->AsProcedure(); proc) {
-    return EndsWithReturn(proc->body.get());
-
-  } else if (auto series = region->AsSeries(); series) {
-    if (auto num_regions = series->regions.Size(); num_regions) {
-      return EndsWithReturn(series->regions[num_regions - 1u]);
-    } else {
-      return false;
-    }
-
-  } else if (auto par = region->AsParallel(); par) {
-    if (par->regions.Empty()) {
-      return false;
-    }
-
-    for (auto sub_region : par->regions) {
-      if (!EndsWithReturn(sub_region)) {
-        return false;
-      }
-    }
-
-    return true;
-
-  } else if (auto induction = region->AsInduction(); induction) {
-    if (auto output = induction->output_region.get(); output) {
-      return EndsWithReturn(output);
-    } else {
-      return false;
-    }
-
-  } else if (auto op = region->AsOperation(); op) {
-    if (op->AsReturn()) {
-      return true;
-
-    } else if (auto cs = op->AsCheckState(); cs) {
-      return EndsWithReturn(cs->body.get()) &&
-             EndsWithReturn(cs->absent_body.get()) &&
-             EndsWithReturn(cs->unknown_body.get());
-    }
-  }
-
-  return false;
-}
-
 // Build out all the bottom-up (negative) provers that are used to mark tuples
 // as being in an unknown state. We want to do this after building all
 // (positive) bottom-up provers so that we can know which views correspond
@@ -527,8 +512,8 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     } else if (to_view.IsDelete()) {
       CreateBottomUpDeleteRemover(impl, context, to_view, proc);
 
-    // NOTE(pag): We don't need to distinguish between unions that are inductions
-    //            and unions that are merges.
+    // NOTE(pag): We don't need to distinguish between unions that are
+    //            inductions and unions that are merges.
     } else if (to_view.IsMerge()) {
       CreateBottomUpUnionRemover(impl, context, to_view, proc, already_checked);
 
@@ -596,7 +581,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
     } else if (view.IsMerge()) {
       const auto merge = QueryMerge::From(view);
-      if (context.inductive_successors.count(view)) {
+      if (context.inductive_successors.count(view) &&
+          !context.dominated_merges.count(view)) {
         BuildTopDownInductionChecker(impl, context, proc, merge, view_cols,
                                      already_checked);
 
@@ -697,6 +683,55 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 }
 
 }  // namespace
+
+// Returns `true` if all paths through `region` ends with a `return` region.
+bool EndsWithReturn(REGION *region) {
+  if (!region) {
+    return false;
+
+  } else if (auto proc = region->AsProcedure(); proc) {
+    return EndsWithReturn(proc->body.get());
+
+  } else if (auto series = region->AsSeries(); series) {
+    if (auto num_regions = series->regions.Size(); num_regions) {
+      return EndsWithReturn(series->regions[num_regions - 1u]);
+    } else {
+      return false;
+    }
+
+  } else if (auto par = region->AsParallel(); par) {
+    if (par->regions.Empty()) {
+      return false;
+    }
+
+    for (auto sub_region : par->regions) {
+      if (!EndsWithReturn(sub_region)) {
+        return false;
+      }
+    }
+
+    return true;
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    if (auto output = induction->output_region.get(); output) {
+      return EndsWithReturn(output);
+    } else {
+      return false;
+    }
+
+  } else if (auto op = region->AsOperation(); op) {
+    if (op->AsReturn()) {
+      return true;
+
+    } else if (auto cs = op->AsCheckState(); cs) {
+      return EndsWithReturn(cs->body.get()) &&
+             EndsWithReturn(cs->absent_body.get()) &&
+             EndsWithReturn(cs->unknown_body.get());
+    }
+  }
+
+  return false;
+}
 
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
@@ -828,7 +863,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   // Now call the checker procedure.
   const auto check =
-      impl->operation_regions.CreateDerived<CALL>(parent, proc, call_op);
+      impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, parent, proc, call_op);
 
   assert(!available_cols.empty());
   for (auto col : available_cols) {
@@ -1100,6 +1136,8 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
 
     WorkItemPtr action = std::move(context.work_list.back());
     context.work_list.pop_back();
+    context.product_vector.swap(action->product_vector);
+    context.view_to_induction.swap(action->view_to_induction);
     action->Run(impl, context);
   }
 
@@ -1147,6 +1185,9 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   BuildUnconditionalEagerRegion(impl, pred_view, view, usage, parent,
                                 last_model);
 }
+
+WorkItem::WorkItem(Context &context, unsigned order_)
+    : order(order_) {}
 
 WorkItem::~WorkItem(void) {}
 
@@ -1207,6 +1248,13 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Build bottom-up removers. These follow Stefan Brass's push method of
   // pipelined Datalog execution.
   BuildBottomUpRemovalProvers(program, context);
+
+  for (auto proc : impl->procedure_regions) {
+    if (!EndsWithReturn(proc)) {
+      BuildStateCheckCaseReturnFalse(impl.get(), proc)->ExecuteAfter(
+          impl.get(), proc);
+    }
+  }
 
   impl->Optimize();
 
