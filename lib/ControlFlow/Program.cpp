@@ -810,7 +810,7 @@ ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
 
 // Are we publishing the removal of some tuple?
 bool ProgramPublishRegion::IsRemoval(void) const noexcept {
-  return impl->is_removal;
+  return impl->op == ProgramOperation::kPublishMessageRemoval;
 }
 
 }  // namespace hyde

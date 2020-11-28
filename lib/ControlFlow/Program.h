@@ -320,6 +320,7 @@ enum class ProgramOperation {
 
   // Publish a message.
   kPublishMessage,
+  kPublishMessageRemoval,
 
   // Creates a let binding, which assigns uses of variables to definitions of
   // variables. In practice, let bindings are eliminated during the process
@@ -712,9 +713,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, ParsedMessage message_)
-      : Node<ProgramOperationRegion>(parent_,
-                                     ProgramOperation::kPublishMessage),
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_,
+       ProgramOperation op_ = ProgramOperation::kPublishMessage)
+      : Node<ProgramOperationRegion>(parent_, op_),
         message(message_),
         arg_vars(this) {}
 
@@ -730,9 +731,6 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 
   // Message being published.
   const ParsedMessage message;
-
-  // Is this a removal publication?
-  bool is_removal{false};
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;

@@ -401,9 +401,17 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
   assert(call->arg_vecs.Size() == target_func->input_vecs.Size());
 
   const auto call_body = call->body.get();
-  if (!call_body && call->op != ProgramOperation::kCallProcedure) {
-    assert(false);
-    call->op = ProgramOperation::kCallProcedure;
+  if (call->op != ProgramOperation::kCallProcedure) {
+    if (!call_body) {
+      assert(false);
+      call->op = ProgramOperation::kCallProcedure;
+
+    // E.g. an empty `LET`, `SERIES`, or `PARALLEL`.
+    } else if (call_body->IsNoOp()) {
+      call_body->parent = nullptr;
+      call->body.Clear();
+      call->op = ProgramOperation::kCallProcedure;
+    }
   }
 
   if (auto target_op = target_body->AsOperation(); target_op) {

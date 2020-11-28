@@ -706,44 +706,6 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
   }
 }
 
-// Gets or creates a top down checker function.
-static PROC *GetOrCreateTopDownChecker(
-    ProgramImpl *impl, Context &context, QueryView view,
-    const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
-  assert(!available_cols.empty());
-
-  // Make up a string that captures what we have available.
-  std::stringstream ss;
-  ss << view.UniqueId();
-  for (auto view_col : available_cols) {
-    ss << ',' << view_col.Id();
-  }
-  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
-
-  // We haven't made this procedure before; so we'll declare it now and
-  // enqueue it for building. We enqueue all such procedures for building so
-  // that we can build top-down checkers after all bottom-up provers have been
-  // created. Doing so lets us determine which views, and thus data models,
-  // are backed by what tables.
-  auto &proc = context.view_to_top_down_checker[ss.str()];
-  if (!proc) {
-    proc = impl->procedure_regions.Create(impl->next_id++,
-                                          ProcedureKind::kTupleFinder);
-
-    for (auto param_col : available_cols) {
-      const auto var =
-          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-      var->query_column = param_col;
-      proc->col_id_to_var.emplace(param_col.Id(), var);
-    }
-
-    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
-                                                    already_checked);
-  }
-
-  return proc;
-}
-
 // Add entry point records for each query to the program.
 static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
                                  ParsedDeclaration decl, QueryInsert insert) {
@@ -877,6 +839,44 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   return CallTopDownChecker(impl, context, parent, succ_view, succ_cols, view,
                             call_op);
+}
+
+// Gets or creates a top down checker function.
+PROC *GetOrCreateTopDownChecker(
+    ProgramImpl *impl, Context &context, QueryView view,
+    const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
+  assert(!available_cols.empty());
+
+  // Make up a string that captures what we have available.
+  std::stringstream ss;
+  ss << view.UniqueId();
+  for (auto view_col : available_cols) {
+    ss << ',' << view_col.Id();
+  }
+  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+
+  // We haven't made this procedure before; so we'll declare it now and
+  // enqueue it for building. We enqueue all such procedures for building so
+  // that we can build top-down checkers after all bottom-up provers have been
+  // created. Doing so lets us determine which views, and thus data models,
+  // are backed by what tables.
+  auto &proc = context.view_to_top_down_checker[ss.str()];
+  if (!proc) {
+    proc = impl->procedure_regions.Create(impl->next_id++,
+                                          ProcedureKind::kTupleFinder);
+
+    for (auto param_col : available_cols) {
+      const auto var =
+          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+      var->query_column = param_col;
+      proc->col_id_to_var.emplace(param_col.Id(), var);
+    }
+
+    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
+                                                    already_checked);
+  }
+
+  return proc;
 }
 
 // We want to call the checker for `view`, but we only have the columns

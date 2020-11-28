@@ -30,12 +30,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     auto view = QueryView::From(view_);
     auto do_cond = [&](const char *port, QueryCondition cond) {
       os << "v" << view.UniqueId() << ":cc" << port << cond.UniqueId()
-         << " -> c" << cond.UniqueId() << ";\n";
+         << " -> c" << cond.UniqueId() << "  [color=purple];\n";
     };
     for (auto cond : view.PositiveConditions()) {
+      assert(view.CanProduceDeletions());
       do_cond("p", cond);
     }
     for (auto cond : view.NegativeConditions()) {
+      assert(view.CanProduceDeletions());
       do_cond("n", cond);
     }
   };
@@ -106,11 +108,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     for (auto insert : relation.Inserts()) {
-      auto color = QueryView::From(insert).CanReceiveDeletions()
-                       ? " [color=purple]"
-                       : "";
-      os << "t" << relation.UniqueId() << " -> v" << insert.UniqueId() << color
-         << ";\n";
+      os << "t" << relation.UniqueId() << " -> v" << insert.UniqueId();
+
+      if (insert.CanProduceDeletions()) {
+        os << " [color=purple]";
+      }
+
+      os << ";\n";
     }
   }
 
@@ -165,7 +169,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     for (auto view : cond.Setters()) {
-      os << "c" << cond.UniqueId() << " -> v" << view.UniqueId() << ";\n";
+      assert(view.CanProduceDeletions());
+      os << "c" << cond.UniqueId() << " -> v" << view.UniqueId()
+         << " [color=purple];\n";
     }
   }
 

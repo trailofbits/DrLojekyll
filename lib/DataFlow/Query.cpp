@@ -120,44 +120,44 @@ QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
 
-QueryView QueryView::From(QueryDelete &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryDelete &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QuerySelect &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QuerySelect &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryTuple &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryTuple &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryKVIndex &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryKVIndex &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryJoin &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryJoin &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryMap &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryMap &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryAggregate &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryAggregate &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryMerge &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryMerge &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryCompare &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryCompare &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryInsert &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryInsert &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
 DefinedNodeRange<QueryColumn> QueryView::Columns(void) const {
@@ -543,9 +543,9 @@ const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
   return impl->literal;
 }
 
-QueryConstant QueryConstant::From(QueryStream &stream) {
+QueryConstant QueryConstant::From(const QueryStream &stream) {
   assert(stream.IsConstant());
-  return reinterpret_cast<QueryConstant &>(stream);
+  return reinterpret_cast<const QueryConstant &>(stream);
 }
 
 QueryConstant QueryConstant::From(QueryColumn col) {
@@ -554,9 +554,9 @@ QueryConstant QueryConstant::From(QueryColumn col) {
       col.impl->AsConstant()->view->AsSelect()->stream->AsConstant());
 }
 
-QueryIO QueryIO::From(QueryStream &stream) {
+QueryIO QueryIO::From(const QueryStream &stream) {
   assert(stream.IsIO());
-  return reinterpret_cast<QueryIO &>(stream);
+  return reinterpret_cast<const QueryIO &>(stream);
 }
 
 const ParsedDeclaration &QueryIO::Declaration(void) const noexcept {

@@ -449,6 +449,11 @@ bool EndsWithReturn(REGION *region);
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 
+// Gets or creates a top down checker function.
+PROC *GetOrCreateTopDownChecker(
+    ProgramImpl *impl, Context &context, QueryView view,
+    const std::vector<QueryColumn> &available_cols, TABLE *already_checked);
+
 // Calls a top-down checker that tries to figure out if some tuple (passed as
 // arguments to this function) is present or not.
 //

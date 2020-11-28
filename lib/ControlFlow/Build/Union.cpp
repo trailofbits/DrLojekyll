@@ -151,6 +151,45 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
     proc->body.Emplace(proc, parent);
   }
 
+  // By this point, we know that we have a data model, and that we or our caller
+  // has marked this tuple as being unknown. If we're actually in an induction,
+  // then we want to be really sure about calling the successors, which may go
+  // and do lots and lots of loops (via recursion) and remove tons of stuff, but
+  // maybe we can avoid that by finding an alternate proof for our tuple (via
+  // this exact induction) so we want to avoid pushing forward a delete.
+  //
+  // NOTE(pag): Some inductive unions are actually handled by the normal union
+  //            code if all paths out of those apparently inductive unions are
+  //            post-dominated by another co-inductive union.
+  if (model->table && context.inductive_successors.count(view)) {
+
+    std::vector<QueryColumn> check_cols;
+    for (auto col : view.Columns()) {
+      check_cols.push_back(col);
+    }
+
+    const auto checker_proc = GetOrCreateTopDownChecker(
+        impl, context, view, check_cols, model->table);
+
+    // Now call the checker procedure. Unlike in normal checkers, we're doing
+    // a check on `false`.
+    const auto check = impl->operation_regions.CreateDerived<CALL>(
+        impl->next_id++, parent, checker_proc,
+        ProgramOperation::kCallProcedureCheckFalse);
+    for (auto col : check_cols) {
+      check->arg_vars.AddUse(parent->VariableFor(impl, col));
+    }
+
+    // Re-parent into the body of the check.
+    parent->regions.AddUse(check);
+    parent = impl->parallel_regions.Create(check);
+    check->body.Emplace(check, parent);
+  }
+
+  // Okay, by this point, we've either marked the tuple as unknown
+  // (non-inductive) and we are proceeding to speculatively delete it in
+  // the successors, or we've proven its absence, and are proceeding to
+  // speculatively delete it in the successors.
   for (auto succ_view : view.Successors()) {
     assert(!succ_view.IsMerge());
 
