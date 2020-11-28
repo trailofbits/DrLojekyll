@@ -24,6 +24,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto view = QueryView(insert);
   const auto cols = insert.InputColumns();
 
+  // This insert represents a message publication.
   if (insert.IsStream()) {
     assert(!view.SetCondition());  // TODO(pag): Is this possible?
     auto stream = insert.Stream();

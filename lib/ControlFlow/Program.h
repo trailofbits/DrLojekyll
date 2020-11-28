@@ -1032,6 +1032,11 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // a raw, non-`UseRef`/`UseList` pointer to this procedure, such as inside
   // of `ProgramQuery` specifications.
   bool has_raw_use{false};
+
+  // Should we not bother trying to merge this function with another one? This
+  // comes up when this function has been converted into a call to another one
+  // (due to equivalence, but where both are marked with `has_raw_use`).
+  bool is_alias{false};
 };
 
 using PROC = Node<ProgramProcedure>;

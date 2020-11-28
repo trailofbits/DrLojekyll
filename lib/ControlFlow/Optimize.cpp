@@ -588,9 +588,11 @@ void ProgramImpl::Optimize(void) {
   std::unordered_map<uint64_t, std::vector<PROC *>> similar_procs;
   for (auto proc : procedure_regions) {
     if (proc->kind == ProcedureKind::kInitializer ||
-        proc->kind == ProcedureKind::kMessageHandler) {
+        proc->kind == ProcedureKind::kMessageHandler ||
+        proc->is_alias) {
       continue;
-    } else if (proc->IsUsed()) {
+
+    } else if (proc->IsUsed() || proc->has_raw_use) {
       const auto hash = proc->Hash();
       similar_procs[hash].emplace_back(proc);
     }
@@ -618,6 +620,7 @@ void ProgramImpl::Optimize(void) {
 
           // If both need to be used, then make one call the other.
           if (i_proc->has_raw_use && j_proc->has_raw_use) {
+            j_proc->is_alias = true;
             j_proc->ReplaceAllUsesWith(i_proc);
             j_proc->body->parent = nullptr;
             j_proc->body.Clear();

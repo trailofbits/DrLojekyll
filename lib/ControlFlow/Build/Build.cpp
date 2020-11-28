@@ -364,6 +364,40 @@ static void DiscoverInductions(const Query &query, Context &context) {
       set->merges.push_back(merge);
     }
   }
+
+  // Do a final pass over the induction sets. It's possible that the approximate
+  // dominance analysis led us astray, as it doesn't consider the graph as a
+  // whole.
+  for (auto &[view, set_] : context.merge_sets) {
+    InductionSet &set = set_;
+    if (set.all_merges.empty()) {
+      continue;
+    }
+
+    for (auto merge : set.all_merges) {
+
+      // Even though this merge appears dominated, it needs to be treated as
+      // undominated because it has some non-inductive successors. Non-inductive
+      // successors are processed with the same induction vectors as the cyclic
+      // cases.
+      if (context.dominated_merges.count(merge) &&
+          !context.noninductive_successors[merge].empty()) {
+        context.dominated_merges.erase(merge);
+        set.merges.push_back(merge);
+      }
+    }
+
+    // We've got a perfect cycle, and none of the unions in the cycle have a
+    // direct output successor. The output it probably guarded behind a join.
+    // We'll be conservative and just assume all unions need to be
+    // co-represented.
+    if (set.merges.empty()) {
+      set.merges = set.all_merges;
+      for (auto merge : set.all_merges) {
+        context.dominated_merges.erase(merge);
+      }
+    }
+  }
 }
 
 // Building the data model means figuring out which `QueryView`s can share the
@@ -576,7 +610,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
         BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
                                 already_checked);
       } else {
-        assert(false && "TODO");
+        assert(false && "TODO: Checker for cross-product.");
       }
 
     } else if (view.IsMerge()) {
@@ -592,10 +626,10 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       }
 
     } else if (view.IsAggregate()) {
-      assert(false && "TODO");
+      assert(false && "TODO: Checker for aggregates.");
 
     } else if (view.IsKVIndex()) {
-      assert(false && "TODO");
+      assert(false && "TODO: Checker for k/v indices.");
 
     } else if (view.IsMap()) {
       assert(false && "TODO");
@@ -605,18 +639,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
                                  view_cols, already_checked);
 
     } else if (view.IsSelect()) {
-      const auto select = QuerySelect::From(view);
-
-      // The base case is that we get to a SELECT from a stream. We treat
-      // data received as ephemeral, and so there is no way to actually check
-      // if the tuple exists, and so we treat it as not existing.
-      if (select.IsStream()) {
-
-        // Nothing to do.
-
-      } else {
-        assert(false && "TODO");
-      }
+      BuildTopDownSelectChecker(impl, context, proc, QuerySelect::From(view),
+                                view_cols, already_checked);
 
     } else if (view.IsTuple()) {
       BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view),

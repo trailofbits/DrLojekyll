@@ -424,6 +424,12 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
                                std::vector<QueryColumn> &available_cols,
                                TABLE *already_checked);
 
+// Build a top-down checker on a select.
+void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                               QuerySelect select,
+                               std::vector<QueryColumn> &available_cols,
+                               TABLE *already_checked);
+
 // Build a top-down checker on a compare.
 void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
                                 QueryCompare cmp,
