@@ -16,7 +16,7 @@
 namespace hyde {
 namespace {
 
-// NOTE(ekilmer): Classes are named all the same for now
+// NOTE(ekilmer): Classes are named all the same for now.
 constexpr auto gClassName = "Database";
 
 // Make a comment in code for debugging purposes
@@ -1378,7 +1378,166 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   proc.Body().Accept(visitor);
 
   os.PopIndent();
-  os << "\n";
+  os << '\n';
+}
+
+static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
+                                  const ProgramQuery &spec) {
+  const ParsedDeclaration decl(spec.query);
+  os << os.Indent() << "def " << decl.Name() << '_' << decl.BindingPattern()
+     << "(self";
+
+  auto num_bound_params = 0u;
+  auto num_free_params = 0u;
+  for (auto param : decl.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << ", param_" << param.Index() << ": "
+         << TypeName(module, param.Type());
+      ++num_bound_params;
+    } else {
+      ++num_free_params;
+    }
+  }
+  if (num_free_params) {
+    os << ") -> Iterator[";
+    if (1u < num_free_params) {
+      os << "Tuple[";
+    }
+    auto sep = "";
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << TypeName(module, param.Type());
+        sep = ", ";
+      }
+    }
+    if (1u < num_free_params) {
+      os << ']';
+    }
+    os << "]:\n";
+  } else {
+    os << ") -> bool:\n";
+  }
+  os.PushIndent();
+
+  if (spec.forcing_function) {
+    os << Procedure(os, *(spec.forcing_function))
+       << '(';
+    auto sep = "";
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    os << ")\n";
+  }
+
+  os << os.Indent() << "tuple_index: int = 0\n";
+
+  // This is an index scan.
+  if (num_bound_params) {
+    assert(spec.index.has_value());
+    const auto index = *(spec.index);
+    const auto index_vals = index.ValueColumns();
+    auto key_prefix = "(";
+    auto key_suffix = ")";
+
+    if (num_free_params == 1u) {
+      key_prefix = "";
+      key_suffix = "";
+    }
+
+    os << os.Indent() << "tuple_vec: List[";
+
+    if (1u < num_free_params) {
+      os << "Tuple[";
+    }
+
+    auto sep = "";
+    for (auto col : index_vals) {
+      os << sep << TypeName(module, col.Type());
+      sep = ", ";
+    }
+    if (1u < index_vals.size()) {
+      os << "]";
+    }
+    os << "] = " << TableIndex(os, index) << "[" << key_prefix;
+
+    sep = "";
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+
+    os << key_suffix << "]\n";
+
+    os << os.Indent() << "while tuple_index < len(tuple_vec):\n";
+    os.PushIndent();
+    os << os.Indent() << "tuple = tuple_vec[tuple_index]\n"
+       << os.Indent() << "tuple_index += 1\n";
+
+  // This is a full table scan.
+  } else {
+    assert(0u < num_free_params);
+
+    os << os.Indent() << "for (tuple, state) in " << Table(os, spec.table)
+       << ":\n";
+    os.PushIndent();
+    os << os.Indent() << "tuple_index += 1\n"
+       << os.Indent() << "if state == 0:\n";
+    os.PushIndent();
+    os << os.Indent() << "continue\n";
+    os.PopIndent();
+  }
+
+  auto col_index = 0u;
+  for (auto param : decl.Parameters()) {
+    if (param.Binding() != ParameterBinding::kBound) {
+      os << os.Indent() << "param_" << param.Index() << ": "
+         << TypeName(module, param.Type()) << " = tuple";
+      if (num_free_params != 1u) {
+        os << '[' << col_index << ']';
+      }
+      ++col_index;
+      os << '\n';
+    }
+  }
+
+  if (spec.tuple_checker) {
+    os << os.Indent() << "if not " << Procedure(os, *(spec.tuple_checker))
+       << '(';
+    auto sep = "";
+    for (auto param : decl.Parameters()) {
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+    os << "):\n";
+    os.PushIndent();
+    os << os.Indent() << "continue\n";
+    os.PopIndent();
+  }
+
+  if (num_free_params) {
+    os << os.Indent() << "yield ";
+    auto sep = "";
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    os << "\n";
+
+  } else {
+    os << os.Indent() << "return True\n";
+  }
+
+  os.PopIndent();
+
+  os.PopIndent();
+  os << '\n';
 }
 
 }  // namespace
@@ -1450,6 +1609,10 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, module, proc);
+  }
+
+  for (const auto &query_spec : program.Queries()) {
+    DefineQueryEntryPoint(os, module, query_spec);
   }
 
   os.PopIndent();

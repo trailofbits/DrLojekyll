@@ -897,6 +897,46 @@ class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
   using program::ProgramNode<ProgramReturnRegion>::ProgramNode;
 };
 
+// Specifies a relationship between a `#query` declaration, backing storage and
+// various procedures needed to fill or check that storage. This information is
+// sufficient for code generators to implement a notion of queries without
+// imposing or prescribing a particular implementation in the control-flow IR.
+class ProgramQuery {
+ public:
+  // The specific `#query` declaration associated with this entry point.
+  const ParsedQuery query;
+
+  // The backing table storing the data that is being queried.
+  const DataTable table;
+
+  // The index that must be scanned using any `bound`-attributed parameters
+  // of the query declaration.
+  const std::optional<DataIndex> index;
+
+  // If present, a procedure which must be invoked on each scanned tuple from
+  // the table / index.
+  const std::optional<ProgramProcedure> tuple_checker;
+
+  // If present, a procedure which must be invoked in order to ensure the
+  // presence of any backing data. The parameters to this procedure are any
+  // `bound`-attributed parameters of the query declaration.
+  const std::optional<ProgramProcedure> forcing_function;
+
+  inline explicit ProgramQuery(
+      ParsedQuery query_, DataTable table_,
+      std::optional<DataIndex> index_,
+      std::optional<ProgramProcedure> tuple_checker_,
+      std::optional<ProgramProcedure> forcing_function_)
+      : query(query_),
+        table(table_),
+        index(index_),
+        tuple_checker(tuple_checker_),
+        forcing_function(forcing_function_) {}
+
+  ProgramQuery(const ProgramQuery &) = default;
+  ProgramQuery(ProgramQuery &&) noexcept = default;
+};
+
 // A program in its entirety.
 class Program {
  public:
@@ -914,6 +954,9 @@ class Program {
 
   // List of all procedures.
   DefinedNodeRange<ProgramProcedure> Procedures(void) const;
+
+  // List of query entry points.
+  const std::vector<ProgramQuery> &Queries(void) const noexcept;
 
   // Return the query used to build this program.
   ::hyde::Query Query(void) const noexcept;

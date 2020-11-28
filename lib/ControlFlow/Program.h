@@ -1143,6 +1143,7 @@ class ProgramImpl : public User {
   inline explicit ProgramImpl(Query query_)
       : User(this),
         query(query_),
+        query_checkers(this),
         procedure_regions(this),
         series_regions(this),
         parallel_regions(this),
@@ -1154,6 +1155,10 @@ class ProgramImpl : public User {
 
   // The data flow representation from which this was created.
   const Query query;
+
+  // List of query entry points.
+  std::vector<ProgramQuery> queries;
+  UseList<REGION> query_checkers;
 
   DefList<PROC> procedure_regions;
   DefList<SERIES> series_regions;

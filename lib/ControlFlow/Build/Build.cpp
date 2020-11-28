@@ -682,6 +682,82 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
   }
 }
 
+// Gets or creates a top down checker function.
+static PROC *GetOrCreateTopDownChecker(
+    ProgramImpl *impl, Context &context, QueryView view,
+    const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
+  assert(!available_cols.empty());
+
+  // Make up a string that captures what we have available.
+  std::stringstream ss;
+  ss << view.UniqueId();
+  for (auto view_col : available_cols) {
+    ss << ',' << view_col.Id();
+  }
+  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+
+  // We haven't made this procedure before; so we'll declare it now and
+  // enqueue it for building. We enqueue all such procedures for building so
+  // that we can build top-down checkers after all bottom-up provers have been
+  // created. Doing so lets us determine which views, and thus data models,
+  // are backed by what tables.
+  auto &proc = context.view_to_top_down_checker[ss.str()];
+  if (!proc) {
+    proc = impl->procedure_regions.Create(impl->next_id++,
+                                          ProcedureKind::kTupleFinder);
+
+    for (auto param_col : available_cols) {
+      const auto var =
+          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+      var->query_column = param_col;
+      proc->col_id_to_var.emplace(param_col.Id(), var);
+    }
+
+    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
+                                                    already_checked);
+  }
+
+  return proc;
+}
+
+// Add entry point records for each query to the program.
+static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
+                                 ParsedDeclaration decl, QueryInsert insert) {
+  const QueryView view(insert);
+  const auto query = ParsedQuery::From(decl);
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  assert(model->table != nullptr);
+
+  std::vector<QueryColumn> cols;
+  std::vector<unsigned> col_indices;
+  for (auto param : decl.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      col_indices.push_back(param.Index());
+    }
+    cols.push_back(insert.NthInputColumn(param.Index()));
+  }
+
+  const DataTable table(model->table);
+  std::optional<ProgramProcedure> checker_proc;
+  std::optional<ProgramProcedure> forcer_proc;
+  std::optional<DataIndex> scanned_index;
+
+  if (!col_indices.empty()) {
+    const auto index = model->table->GetOrCreateIndex(impl, col_indices);
+    scanned_index.emplace(DataIndex(index));
+  }
+
+  if (view.CanReceiveDeletions()) {
+    const auto checker = GetOrCreateTopDownChecker(
+        impl, context, view, cols, nullptr);
+    impl->query_checkers.AddUse(checker);
+    checker_proc.emplace(ProgramProcedure(checker));
+  }
+
+  impl->queries.emplace_back(
+      query, table, scanned_index, checker_proc, forcer_proc);
+}
+
 }  // namespace
 
 // Returns `true` if all paths through `region` ends with a `return` region.
@@ -796,6 +872,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
   std::vector<QueryColumn> available_cols;
   std::unordered_map<QueryColumn, QueryColumn> inout_map;
 
+  // TODO(pag): Handle inserts.
+
   if (view != succ_view) {
     succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
                              std::optional<QueryColumn> succ_view_col) {
@@ -830,36 +908,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     }
   }
 
-  assert(!available_cols.empty());
-
-  // Make up a string that captures what we have available.
-  std::stringstream ss;
-  ss << view.UniqueId();
-  for (auto view_col : available_cols) {
-    ss << ',' << view_col.Id();
-  }
-  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
-
-  // We haven't made this procedure before; so we'll declare it now and
-  // enqueue it for building. We enqueue all such procedures for building so
-  // that we can build top-down checkers after all bottom-up provers have been
-  // created. Doing so lets us determine which views, and thus data models,
-  // are backed by what tables.
-  auto &proc = context.view_to_top_down_checker[ss.str()];
-  if (!proc) {
-    proc = impl->procedure_regions.Create(impl->next_id++,
-                                          ProcedureKind::kTupleFinder);
-
-    for (auto param_col : available_cols) {
-      const auto var =
-          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-      var->query_column = param_col;
-      proc->col_id_to_var.emplace(param_col.Id(), var);
-    }
-
-    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
-                                                    already_checked);
-  }
+  const auto proc = GetOrCreateTopDownChecker(
+      impl, context, view, available_cols, already_checked);
 
   // Now call the checker procedure.
   const auto check =
@@ -1240,6 +1290,15 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Build bottom-up procedures starting from message receives.
   for (auto io : query.IOs()) {
     BuildEagerProcedure(program, io, context);
+  }
+
+  for (auto insert : query.Inserts()) {
+    if (insert.IsRelation()) {
+      auto decl = insert.Relation().Declaration();
+      if (decl.IsQuery()) {
+        BuildQueryEntryPoint(program, context, decl, insert);
+      }
+    }
   }
 
   // Build top-down provers.
