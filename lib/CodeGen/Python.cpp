@@ -16,6 +16,16 @@
 namespace hyde {
 namespace {
 
+constexpr auto kStateAbsent = 0u;
+constexpr auto kStatePresent = 1u;
+constexpr auto kStateUnknown = 2u;
+
+// NOTE(pag): We store an extra bit besides present/absent/unknown
+//            to track whether or not the data had ever been in our
+//            index before, and thus doesn't need to be re-added.
+constexpr auto kStateMask = 0x3u;
+constexpr auto kPresentBit = 0x4u;
+
 // NOTE(ekilmer): Classes are named all the same for now.
 constexpr auto gClassName = "Database";
 
@@ -593,21 +603,20 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << VectorIndex(os, vec) << " < len(" << Vector(os, vec) << ")";
+      os << sep << "len(" << Vector(os, vec) << ")";
       sep = " or ";
     }
     os << ":\n";
 
     os.PushIndent();
     region.FixpointLoop().Accept(*this);
-    for (auto vec : region.Vectors()) {
-      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
-    }
     os.PopIndent();
-
 
     // Output
     if (auto output = region.Output(); output) {
+      for (auto vec : region.Vectors()) {
+        os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
+      }
       os << Comment(os, "Induction Output Region");
       output->Accept(*this);
     }
@@ -769,94 +778,115 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << sep << Var(os, var);
       sep = ", ";
     }
-    os << tuple_suffix << "\n";
-
-    os << os.Indent() << "state = " << Table(os, region.Table()) << "["
-       << tuple_var << "]\n";
+    os << tuple_suffix << "\n"
+       << os.Indent() << "prev_state = " << Table(os, region.Table())
+       << "[" << tuple_var << "]\n"
+       << os.Indent() << "state = prev_state & " << kStateMask << "\n"
+       << os.Indent() << "present_bit = prev_state & "
+       << kPresentBit << "\n";
 
     os << os.Indent() << "if ";
     switch (region.FromState()) {
-      case TupleState::kAbsent: os << "state == 0:\n"; break;
-      case TupleState::kPresent: os << "state == 1:\n"; break;
-      case TupleState::kUnknown: os << "state == 2:\n"; break;
+      case TupleState::kAbsent:
+        os << "state == " << kStateAbsent << ":\n";
+        break;
+      case TupleState::kPresent:
+        os << "state == " << kStatePresent << ":\n";
+        break;
+      case TupleState::kUnknown:
+        os << "state == " << kStateUnknown << ":\n";
+        break;
       case TupleState::kAbsentOrUnknown:
-        os << "state == 0 or state == 2:\n";
+        os << "state == " << kStateAbsent
+           << " or state == " << kStateUnknown << ":\n";
         break;
     }
     os.PushIndent();
     os << os.Indent() << Table(os, region.Table()) << "[" << tuple_var
        << "] = ";
+
     switch (region.ToState()) {
-      case TupleState::kAbsent: os << "0\n"; break;
-      case TupleState::kPresent: os << "1\n"; break;
-      case TupleState::kUnknown: os << "2\n"; break;
+      case TupleState::kAbsent:
+        os << kStateAbsent << " | " << kPresentBit << "\n"; break;
+      case TupleState::kPresent:
+        os << kStatePresent << " | " << kPresentBit << "\n"; break;
+      case TupleState::kUnknown:
+        os << kStateUnknown << " | " << kPresentBit << "\n"; break;
       case TupleState::kAbsentOrUnknown:
-        os << "2\n";
-        assert(false);
+        os << kStateUnknown << " | " << kPresentBit << "\n";
+        assert(false);  // Shouldn't be created.
         break;
     }
 
-    for (auto index : region.Table().Indices()) {
-      const auto key_cols = index.KeyColumns();
-      const auto val_cols = index.ValueColumns();
+    // If we're transitioning to present, then add it to our indices.
+    if (region.ToState() == TupleState::kPresent) {
+      os << os.Indent() << "if not present_bit:\n";
+      os.PushIndent();
 
-      auto key_prefix = "(";
-      auto key_suffix = ")";
-      auto val_prefix = "(";
-      auto val_suffix = ")";
+      for (auto index : region.Table().Indices()) {
+        const auto key_cols = index.KeyColumns();
+        const auto val_cols = index.ValueColumns();
 
-      if (key_cols.size() == 1u) {
-        key_prefix = "";
-        key_suffix = "";
-      }
+        auto key_prefix = "(";
+        auto key_suffix = ")";
+        auto val_prefix = "(";
+        auto val_suffix = ")";
 
-      if (val_cols.size() == 1u) {
-        val_prefix = "";
-        val_suffix = "";
-      }
-
-      // The index is the set of keys in the table's `defaultdict`. Thus, we
-      // don't need to add anything because adding to the table will have done
-      // it.
-      if (tuple_vars.size() == key_cols.size()) {
-        continue;
-      }
-
-      os << os.Indent() << TableIndex(os, index);
-
-      // The index is implemented with a `set`.
-      if (val_cols.empty()) {
-        os << ".add(";
-        sep = "";
         if (key_cols.size() == 1u) {
-          os << tuple_var;
+          key_prefix = "";
+          key_suffix = "";
+        }
+
+        if (val_cols.size() == 1u) {
+          val_prefix = "";
+          val_suffix = "";
+        }
+
+        // The index is the set of keys in the table's `defaultdict`. Thus, we
+        // don't need to add anything because adding to the table will have done
+        // it.
+        if (tuple_vars.size() == key_cols.size()) {
+          continue;
+        }
+
+        os << os.Indent() << TableIndex(os, index);
+
+        // The index is implemented with a `set`.
+        if (val_cols.empty()) {
+          os << ".add(";
+          sep = "";
+          if (key_cols.size() == 1u) {
+            os << tuple_var;
+          } else {
+            os << '(';
+            for (auto indexed_col : index.KeyColumns()) {
+              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
+              sep = ", ";
+            }
+            os << ')';
+          }
+
+          os << ")\n";
+
+        // The index is implemented with a `defaultdict`.
         } else {
-          os << '(';
+          os << "[" << key_prefix;
+          sep = "";
           for (auto indexed_col : index.KeyColumns()) {
             os << sep << tuple_var << "[" << indexed_col.Index() << "]";
             sep = ", ";
           }
-          os << ')';
+          os << key_suffix << "].append(" << val_prefix;
+          sep = "";
+          for (auto mapped_col : index.ValueColumns()) {
+            os << sep << tuple_var << "[" << mapped_col.Index() << "]";
+            sep = ", ";
+          }
+          os << val_suffix << ")\n";
         }
-
-        os << ")\n";
-
-      // The index is implemented with a `defaultdict`.
-      } else {
-        os << "[" << key_prefix;
-        sep = "";
-        for (auto indexed_col : index.KeyColumns()) {
-          os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-          sep = ", ";
-        }
-        os << key_suffix << "].append(" << val_prefix;
-        sep = "";
-        for (auto mapped_col : index.ValueColumns()) {
-          os << sep << tuple_var << "[" << mapped_col.Index() << "]";
-          sep = ", ";
-        }
-        os << val_suffix << ")\n";
       }
+
+      os.PopIndent();
     }
 
     if (auto body = region.Body(); body) {
@@ -880,12 +910,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       }
       os << ')';
     }
-    os << "]\n";
+    os << "] & " << kStateMask << '\n';
 
     auto sep = "if ";
 
     if (auto absent_body = region.IfAbsent(); absent_body) {
-      os << os.Indent() << sep << "state == 0:\n";
+      os << os.Indent() << sep << "state == " << kStateAbsent << ":\n";
       os.PushIndent();
       absent_body->Accept(*this);
       os.PopIndent();
@@ -893,15 +923,15 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     if (auto present_body = region.IfPresent(); present_body) {
-      os << os.Indent() << sep << "state == 1:\n";
+      os << os.Indent() << sep << "state == " << kStatePresent << ":\n";
       os.PushIndent();
       present_body->Accept(*this);
       os.PopIndent();
       sep = "elif ";
     }
 
-    if (auto unknown_body = region.IfPresent(); unknown_body) {
-      os << os.Indent() << sep << "state == 2:\n";
+    if (auto unknown_body = region.IfUnknown(); unknown_body) {
+      os << os.Indent() << sep << "state == " << kStateUnknown << ":\n";
       os.PushIndent();
       unknown_body->Accept(*this);
       os.PopIndent();
@@ -1088,7 +1118,75 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableScanRegion region) override {
     os << Comment(os, "Program TableScan Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramTableScanRegion\n";
+
+    const auto input_vars = region.InputVariables();
+    const auto output_cols = region.SelectedColumns();
+    const auto filled_vec = region.FilledVector();
+
+    os << os.Indent() << "scan_tuple_" << filled_vec.Id()
+       << ": ";
+
+    if (output_cols.size() == 1u) {
+      os << TypeName(module, output_cols[0].Type()) << '\n';
+    } else {
+      os << "Tuple[";
+      auto sep = "";
+      for (auto col : output_cols) {
+        os << sep << TypeName(module, col.Type());
+        sep = ", ";
+      }
+      os << "]\n";
+    }
+
+    // Index scan :-D
+    if (region.Index()) {
+      const auto index = *(region.Index());
+
+      os << os.Indent() << "scan_index_" << filled_vec.Id()
+         << ": int = 0\n"
+         << os.Indent() << "scan_tuple_" << filled_vec.Id() << "_vec: List[";
+
+      // Types mapped by this index.
+      if (input_vars.size() == 1u) {
+        os << TypeName(module, input_vars[0].Type());
+      } else {
+        os << "Tuple[";
+        auto sep = "";
+        for (auto var : input_vars) {
+          os << sep << TypeName(module, var.Type());
+          sep = ", ";
+        }
+        os << "]";
+      }
+
+      os << "] = " << TableIndex(os, index) << "[";
+      auto sep = "";
+      for (auto var : input_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      os << "]\n";
+      os << os.Indent() << "while scan_index_" << filled_vec.Id()
+         << " < len(scan_tuple_" << filled_vec.Id() << "_vec):\n";
+      os.PushIndent();
+
+      os << os.Indent() << "scan_tuple_" << filled_vec.Id()
+         << " = scan_tuple_" << filled_vec.Id() << "_vec["
+         << "scan_index_" << filled_vec.Id() << "]\n"
+         << os.Indent() << "scan_index_" << filled_vec.Id()
+         << " += 1\n";
+
+    // Full table scan.
+    } else {
+      assert(input_vars.empty());
+      os << os.Indent() << "for scan_tuple_" << filled_vec.Id()
+         << " in " << Table(os, region.Table()) << ":\n";
+      os.PushIndent();
+    }
+
+    os << os.Indent() << Vector(os, filled_vec)
+       << ".append(scan_tuple_" << filled_vec.Id() << ")\n";
+    os.PopIndent();
   }
 
   void Visit(ProgramTupleCompareRegion region) override {
@@ -1310,7 +1408,9 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   os << ") -> bool:\n";
 
   os.PushIndent();
-  os << os.Indent() << "state: int = 0\n"
+  os << os.Indent() << "state: int = " << kStateUnknown << '\n'
+     << os.Indent() << "prev_state: int = " << kStateUnknown << '\n'
+     << os.Indent() << "present_bit: int = 0\n"
      << os.Indent() << "ret: bool = False\n";
 
   param_index = 0u;
@@ -1420,7 +1520,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   os.PushIndent();
 
   if (spec.forcing_function) {
-    os << Procedure(os, *(spec.forcing_function))
+    os << os.Indent() << "self." << Procedure(os, *(spec.forcing_function))
        << '(';
     auto sep = "";
     for (auto param : decl.Parameters()) {
@@ -1482,14 +1582,10 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   } else {
     assert(0u < num_free_params);
 
-    os << os.Indent() << "for (tuple, state) in " << Table(os, spec.table)
+    os << os.Indent() << "for tuple in " << Table(os, spec.table)
        << ":\n";
     os.PushIndent();
-    os << os.Indent() << "tuple_index += 1\n"
-       << os.Indent() << "if state == 0:\n";
-    os.PushIndent();
-    os << os.Indent() << "continue\n";
-    os.PopIndent();
+    os << os.Indent() << "tuple_index += 1\n";
   }
 
   auto col_index = 0u;
@@ -1506,7 +1602,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   }
 
   if (spec.tuple_checker) {
-    os << os.Indent() << "if not " << Procedure(os, *(spec.tuple_checker))
+    os << os.Indent() << "if not self." << Procedure(os, *(spec.tuple_checker))
        << '(';
     auto sep = "";
     for (auto param : decl.Parameters()) {

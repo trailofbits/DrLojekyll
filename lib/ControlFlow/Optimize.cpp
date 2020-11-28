@@ -389,6 +389,7 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
 // Try to eliminate unnecessary function calls. This is pretty common when
 // generating bottom-up deleters.
 static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
+
   const auto target_func = call->called_proc.get();
   if (!target_func) {
     return false;  // Dead.
@@ -401,6 +402,7 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
 
   const auto call_body = call->body.get();
   if (!call_body && call->op != ProgramOperation::kCallProcedure) {
+    assert(false);
     call->op = ProgramOperation::kCallProcedure;
   }
 
@@ -595,22 +597,65 @@ void ProgramImpl::Optimize(void) {
   }
 
   // Go through an compare procedures for equality and replace any unused ones.
-  for (const auto &[hash, procs] : similar_procs) {
+  for (auto &[hash, procs] : similar_procs) {
     (void) hash;
     std::vector<bool> dead(procs.size());
     for (size_t i = 0u, max_i = procs.size(); i < max_i; ++i) {
       if (dead[i]) {
         continue;
       }
+      PROC *&i_proc = procs[i];
+
       for (auto j = i + 1u; j < max_i; ++j) {
         if (dead[j]) {
           continue;
         }
 
+        PROC *&j_proc = procs[j];
+
         EqualitySet eq;
-        if (procs[i]->Equals(eq, procs[j])) {
+        if (i_proc->Equals(eq, j_proc)) {
+
+          // If both need to be used, then make one call the other.
+          if (i_proc->has_raw_use && j_proc->has_raw_use) {
+            j_proc->ReplaceAllUsesWith(i_proc);
+            j_proc->body->parent = nullptr;
+            j_proc->body.Clear();
+            auto seq = series_regions.Create(j_proc);
+            auto call_i = operation_regions.CreateDerived<CALL>(
+                next_id++, seq, i_proc, ProgramOperation::kCallProcedureCheckTrue);
+
+            for (auto arg_var : j_proc->input_vars) {
+              call_i->arg_vars.AddUse(arg_var);
+            }
+            for (auto arg_vec : j_proc->input_vecs) {
+              call_i->arg_vecs.AddUse(arg_vec);
+            }
+
+            auto ret_true = operation_regions.CreateDerived<RETURN>(
+                call_i, ProgramOperation::kReturnTrueFromProcedure);
+            auto ret_false = operation_regions.CreateDerived<RETURN>(
+                seq, ProgramOperation::kReturnFalseFromProcedure);
+
+            j_proc->body.Emplace(j_proc, seq);
+            seq->regions.AddUse(call_i);
+            seq->regions.AddUse(ret_false);
+            call_i->body.Emplace(call_i, ret_true);
+
+          // The first one needs to be preserved.
+          } else if (i_proc->has_raw_use) {
+            j_proc->ReplaceAllUsesWith(i_proc);
+
+          // The second needs to be preserved.
+          } else if (j_proc->has_raw_use) {
+            i_proc->ReplaceAllUsesWith(j_proc);
+            i_proc = j_proc;
+
+          // Neither needs to be preserved.
+          } else {
+            j_proc->ReplaceAllUsesWith(i_proc);
+          }
           dead[j] = true;
-          procs[j]->ReplaceAllUsesWith(procs[i]);
         }
       }
     }
@@ -626,7 +671,7 @@ void ProgramImpl::Optimize(void) {
           proc->kind == ProcedureKind::kMessageHandler) {
         return false;
       } else {
-        return !proc->IsUsed();
+        return !proc->has_raw_use && !proc->IsUsed();
       }
     });
   }

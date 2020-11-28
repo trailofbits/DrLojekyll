@@ -415,6 +415,15 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
                               std::vector<QueryColumn> &available_cols,
                               TABLE *already_checked);
 
+// Build a top-down checker for a relational insert.
+//
+// NOTE(pag): `available_cols` is always some subset of the input columns read
+//            by the insert.
+void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                               QueryInsert insert,
+                               std::vector<QueryColumn> &available_cols,
+                               TABLE *already_checked);
+
 // Build a top-down checker on a compare.
 void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
                                 QueryCompare cmp,

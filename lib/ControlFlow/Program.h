@@ -1027,6 +1027,11 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // Are we currently checking if this procedure is being used? This is to
   // avoid infinite recursion when doing a procedure call NoOp checks.
   mutable bool checking_if_nop{false};
+
+  // Do we need to keep this procedure around? This happens if we're holding
+  // a raw, non-`UseRef`/`UseList` pointer to this procedure, such as inside
+  // of `ProgramQuery` specifications.
+  bool has_raw_use{false};
 };
 
 using PROC = Node<ProgramProcedure>;

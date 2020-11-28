@@ -607,7 +607,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     } else if (view.IsSelect()) {
       const auto select = QuerySelect::From(view);
 
-      // The base case is that we get to a SELECT from a a stream. We treat
+      // The base case is that we get to a SELECT from a stream. We treat
       // data received as ephemeral, and so there is no way to actually check
       // if the tuple exists, and so we treat it as not existing.
       if (select.IsStream()) {
@@ -626,11 +626,11 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       const auto insert = QueryInsert::From(view);
 
       if (insert.IsStream()) {
-
         // Nothing to do.
 
       } else {
-        assert(false && "TODO");
+        BuildTopDownInsertChecker(impl, context, proc, QueryInsert::From(view),
+                                  view_cols, already_checked);
       }
 
     } else if (view.IsDelete()) {
@@ -752,6 +752,7 @@ static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
         impl, context, view, cols, nullptr);
     impl->query_checkers.AddUse(checker);
     checker_proc.emplace(ProgramProcedure(checker));
+    checker->has_raw_use = true;
   }
 
   impl->queries.emplace_back(
@@ -948,7 +949,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
                          TupleState::kAbsentOrUnknown, TupleState::kPresent);
     check->body.Emplace(check, change_state);
 
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, change_state);
     ret_true->ExecuteAfter(impl, change_state);
 
   // No table, just return `true` to the caller.
