@@ -1651,7 +1651,7 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
      << "from __future__ import annotations\n"
      << "from collections import defaultdict, namedtuple\n"
      << "from typing import (DefaultDict, Final, Iterator, List, NamedTuple, Optional, "
-     << "Set, Tuple, Union)\n"
+     << "Sequence, Set, Tuple, Union)\n"
      << "try:\n";
   os.PushIndent();
   os << os.Indent() << "from typing import Protocol\n";

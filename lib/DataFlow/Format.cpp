@@ -169,7 +169,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     for (auto view : cond.Setters()) {
-      assert(view.CanProduceDeletions());
       os << "c" << cond.UniqueId() << " -> v" << view.UniqueId()
          << " [color=purple];\n";
     }
