@@ -1654,24 +1654,26 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << os.Indent() << "from typing_extensions import Protocol #type: ignore\n\n";
   os.PopIndent();
 
-  const auto module = program.ParsedModule();
+  const auto root_module = program.ParsedModule();
+
+  DeclareFunctors(os, program, root_module);
+  DeclareMessageLog(os, program, root_module);
 
   // Output prologue code.
-  for (auto code : module.Inlines()) {
-    switch (code.Language()) {
-      case Language::kUnknown:
-      case Language::kPython:
-        if (code.IsPrologue()) {
-          os << code.CodeToInline() << "\n\n";
-        }
-        break;
-      default:
-        break;
+  for (auto sub_module : ParsedModuleIterator(root_module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kPython:
+          if (code.IsPrologue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
-
-  DeclareFunctors(os, program, module);
-  DeclareMessageLog(os, program, module);
 
   // A program gets its own class
   os << "class " << gClassName << ":\n\n";
@@ -1685,15 +1687,15 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
      << "Functors = functors\n\n";
 
   for (auto table : program.Tables()) {
-    DefineTable(os, module, table);
+    DefineTable(os, root_module, table);
   }
 
   for (auto global : program.GlobalVariables()) {
-    DefineGlobal(os, module, global);
+    DefineGlobal(os, root_module, global);
   }
 
   for (auto constant : program.Constants()) {
-    DefineConstant(os, module, constant);
+    DefineConstant(os, root_module, constant);
   }
 
   // Invoke the init procedure. Always first
@@ -1704,26 +1706,28 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os.PopIndent();
 
   for (auto proc : program.Procedures()) {
-    DefineProcedure(os, module, proc);
+    DefineProcedure(os, root_module, proc);
   }
 
   for (const auto &query_spec : program.Queries()) {
-    DefineQueryEntryPoint(os, module, query_spec);
+    DefineQueryEntryPoint(os, root_module, query_spec);
   }
 
   os.PopIndent();
 
   // Output epilogue code.
-  for (auto code : module.Inlines()) {
-    switch (code.Language()) {
-      case Language::kUnknown:
-      case Language::kPython:
-        if (code.IsEpilogue()) {
-          os << code.CodeToInline() << "\n\n";
-        }
-        break;
-      default:
-        break;
+  for (auto sub_module : ParsedModuleIterator(root_module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kPython:
+          if (code.IsEpilogue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
 }
