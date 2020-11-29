@@ -32,7 +32,8 @@ class SharedParserContext {
       : display_manager(display_manager_),
         error_log(error_log_) {
 
-    // FIXME(blarsen): grabbing the current path in parser construction is a hidden dependency
+    // TODO(blarsen): Grabbing the current path in parser construction
+    //                is a hidden dependency.
     std::filesystem::path cwd = std::filesystem::current_path();
     import_search_paths.push_back(cwd);
   }

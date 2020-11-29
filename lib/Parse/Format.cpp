@@ -282,7 +282,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
 OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   if (os.KeepImports()) {
     for (auto import : module.Imports()) {
-      os << import.SpellingRange() << "\n";
+      os << "#import \"" << import.ImportedPath().string() << "\"\n";
     }
   }
 

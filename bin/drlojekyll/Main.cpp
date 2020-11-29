@@ -107,15 +107,14 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   std::stringstream ss;
   do {
     OutputStream os(display_manager, ss);
-    os << module;
+    os.SetKeepImports(false);
+    for (auto sub_module : ParsedModuleIterator(module)) {
+      os << sub_module;
+    }
   } while (false);
 
-  Parser parser(display_manager, error_log);
-
-  // FIXME(blarsen): Using ParseStream do re-parse a pretty-printed module
-  //                 doesn't work, due to differences in module search paths
-  //                 with ParseStream and ParsePath.
-  auto module2_opt = parser.ParseStream(ss, hyde::DisplayConfiguration());
+  Parser parser2(display_manager, error_log);
+  auto module2_opt = parser2.ParseStream(ss, hyde::DisplayConfiguration());
   if (!module2_opt) {
     return EXIT_FAILURE;
   }
@@ -126,7 +125,19 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     os << *module2_opt;
   } while (false);
 
-  assert(ss.str() == ss2.str());
+  Parser parser3(display_manager, error_log);
+  auto module3_opt = parser3.ParseStream(ss2, hyde::DisplayConfiguration());
+  if (!module3_opt) {
+    return EXIT_FAILURE;
+  }
+
+  std::stringstream ss3;
+  do {
+    OutputStream os(display_manager, ss3);
+    os << *module3_opt;
+  } while (false);
+
+  assert(ss2.str() == ss3.str());
 #endif
 
   return CompileModule(display_manager, error_log, module);
