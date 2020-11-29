@@ -819,11 +819,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     // If we're transitioning to present, then add it to our indices.
+    const auto indices = region.Table().Indices();
     if (region.ToState() == TupleState::kPresent) {
       os << os.Indent() << "if not present_bit:\n";
       os.PushIndent();
 
-      for (auto index : region.Table().Indices()) {
+      auto has_indices = false;
+      for (auto index : indices) {
         const auto key_cols = index.KeyColumns();
         const auto val_cols = index.ValueColumns();
 
@@ -849,6 +851,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           continue;
         }
 
+        has_indices = true;
         os << os.Indent() << TableIndex(os, index);
 
         // The index is implemented with a `set`.
@@ -884,6 +887,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           }
           os << val_suffix << ")\n";
         }
+      }
+
+      if (!has_indices) {
+        os << os.Indent() << "pass\n";
       }
 
       os.PopIndent();
@@ -1295,7 +1302,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
 
   auto has_functors = false;
   for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto first_func : program.ParsedModule().Functors()) {
+    for (auto first_func : module.Functors()) {
       for (auto func : first_func.Redeclarations()) {
         std::stringstream ss;
         ss << func.Id() << ':'
@@ -1339,7 +1346,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
   bool has_messages = false;
   for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto message : program.ParsedModule().Messages()) {
+    for (auto message : module.Messages()) {
       if (auto [it, inserted] = seen.emplace(message);
           inserted && message.IsPublished()) {
         DeclareMessageLogger(os, module, message);
@@ -1654,13 +1661,13 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << os.Indent() << "from typing_extensions import Protocol #type: ignore\n\n";
   os.PopIndent();
 
-  const auto root_module = program.ParsedModule();
+  const auto module = program.ParsedModule();
 
-  DeclareFunctors(os, program, root_module);
-  DeclareMessageLog(os, program, root_module);
+  DeclareFunctors(os, program, module);
+  DeclareMessageLog(os, program, module);
 
   // Output prologue code.
-  for (auto sub_module : ParsedModuleIterator(root_module)) {
+  for (auto sub_module : ParsedModuleIterator(module)) {
     for (auto code : sub_module.Inlines()) {
       switch (code.Language()) {
         case Language::kUnknown:
@@ -1687,15 +1694,15 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
      << "Functors = functors\n\n";
 
   for (auto table : program.Tables()) {
-    DefineTable(os, root_module, table);
+    DefineTable(os, module, table);
   }
 
   for (auto global : program.GlobalVariables()) {
-    DefineGlobal(os, root_module, global);
+    DefineGlobal(os, module, global);
   }
 
   for (auto constant : program.Constants()) {
-    DefineConstant(os, root_module, constant);
+    DefineConstant(os, module, constant);
   }
 
   // Invoke the init procedure. Always first
@@ -1706,17 +1713,17 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os.PopIndent();
 
   for (auto proc : program.Procedures()) {
-    DefineProcedure(os, root_module, proc);
+    DefineProcedure(os, module, proc);
   }
 
   for (const auto &query_spec : program.Queries()) {
-    DefineQueryEntryPoint(os, root_module, query_spec);
+    DefineQueryEntryPoint(os, module, query_spec);
   }
 
   os.PopIndent();
 
   // Output epilogue code.
-  for (auto sub_module : ParsedModuleIterator(root_module)) {
+  for (auto sub_module : ParsedModuleIterator(module)) {
     for (auto code : sub_module.Inlines()) {
       switch (code.Language()) {
         case Language::kUnknown:

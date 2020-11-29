@@ -37,16 +37,8 @@ class OutputStream {
     return *this;
   }
 
-  inline void SetKeepImports(bool state) {
-    include_imports = state;
-  }
-
   inline void SetRenameLocals(bool state) {
     rename_locals = state;
-  }
-
-  inline bool KeepImports(void) const {
-    return include_imports;
   }
 
   inline bool RenameLocals(void) const {
@@ -73,7 +65,6 @@ class OutputStream {
  private:
   const DisplayManager &display_manager;
   std::ostream &os;
-  bool include_imports{true};
   bool rename_locals{false};
   std::string indent;
 };

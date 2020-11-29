@@ -707,8 +707,10 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 }
 
 // Add entry point records for each query to the program.
-static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
-                                 ParsedDeclaration decl, QueryInsert insert) {
+static void BuildQueryEntryPointImpl(
+    ProgramImpl * impl, Context &context,
+    ParsedDeclaration decl, QueryInsert insert) {
+
   const QueryView view(insert);
   const auto query = ParsedQuery::From(decl);
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -743,6 +745,24 @@ static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
 
   impl->queries.emplace_back(
       query, table, scanned_index, checker_proc, forcer_proc);
+}
+
+
+// Add entry point records for each query to the program.
+static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
+                                 ParsedDeclaration decl, QueryInsert insert) {
+  std::unordered_set<std::string> seen_variants;
+
+  for (auto redecl : decl.Redeclarations()) {
+
+    // We may have duplicate redeclarations, so don't repeat any.
+    std::string binding(redecl.BindingPattern());
+    if (seen_variants.count(binding)) {
+      continue;
+    }
+    seen_variants.insert(std::move(binding));
+    BuildQueryEntryPointImpl(impl, context, redecl, insert);
+  }
 }
 
 }  // namespace

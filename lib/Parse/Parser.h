@@ -321,7 +321,9 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     }
 
     // The inferred range specifications don't match.
-    if (prev_decl->range != decl->range) {
+    if (prev_decl->range != decl->range &&
+        (ParsedDeclaration(prev_decl).BindingPattern() ==
+         ParsedDeclaration(decl.get()).BindingPattern())) {
       DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
                                    prev_decl->range_end_opt.NextPosition());
 
@@ -372,8 +374,10 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     for (size_t i = 0; i < num_params; ++i) {
       const auto prev_param = prev_decl->parameters[i].get();
       const auto curr_param = decl->parameters[i].get();
-      if (prev_param->opt_binding.Lexeme() !=
-          curr_param->opt_binding.Lexeme()) {
+      if ((prev_param->opt_binding.Lexeme() !=
+           curr_param->opt_binding.Lexeme()) &&
+          prev_decl->context->kind != DeclarationKind::kFunctor &&
+          prev_decl->context->kind != DeclarationKind::kQuery) {
         auto err = context->error_log.Append(
             scope_range, curr_param->opt_binding.SpellingRange());
         err << "Parameter binding attribute differs";

@@ -82,11 +82,8 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   // Output the amalgamation of all files.
   if (gDRStream) {
-    gDRStream->SetKeepImports(false);
     gDRStream->SetRenameLocals(true);
-    for (auto module : ParsedModuleIterator(module)) {
-      (*gDRStream) << module;
-    }
+    (*gDRStream) << module;
     gDRStream->Flush();
   }
 
@@ -107,10 +104,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   std::stringstream ss;
   do {
     OutputStream os(display_manager, ss);
-    os.SetKeepImports(false);
-    for (auto sub_module : ParsedModuleIterator(module)) {
-      os << sub_module;
-    }
+    os << module;
   } while (false);
 
   Parser parser2(display_manager, error_log);
