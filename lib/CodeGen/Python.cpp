@@ -1630,7 +1630,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     }
     os << "):\n";
     os.PushIndent();
-    os << os.Indent() << "continue\n";
+    if (num_free_params) {
+      os << os.Indent() << "continue;\n";
+    } else {
+      os << os.Indent() << "return False\n";
+    }
     os.PopIndent();
 
   // Double check the tuple's state.
