@@ -1154,13 +1154,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
          << os.Indent() << "scan_tuple_" << filled_vec.Id() << "_vec: List[";
 
       // Types mapped by this index.
-      if (input_vars.size() == 1u) {
-        os << TypeName(module, input_vars[0].Type());
+      if (output_cols.size() == 1u) {
+        os << TypeName(module, output_cols[0].Type());
       } else {
         os << "Tuple[";
         auto sep = "";
-        for (auto var : input_vars) {
-          os << sep << TypeName(module, var.Type());
+        for (auto col : output_cols) {
+          os << sep << TypeName(module, col.Type());
           sep = ", ";
         }
         os << "]";
