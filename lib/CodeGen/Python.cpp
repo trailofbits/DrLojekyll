@@ -1496,7 +1496,9 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   auto num_bound_params = 0u;
   auto num_free_params = 0u;
-  for (auto param : decl.Parameters()) {
+  const auto params = decl.Parameters();
+  const auto num_params = decl.Arity();
+  for (auto param : params) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << ", param_" << param.Index() << ": "
          << TypeName(module, param.Type());
@@ -1505,13 +1507,16 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       ++num_free_params;
     }
   }
+
+  assert(num_params == (num_bound_params + num_free_params));
+
   if (num_free_params) {
     os << ") -> Iterator[";
     if (1u < num_free_params) {
       os << "Tuple[";
     }
     auto sep = "";
-    for (auto param : decl.Parameters()) {
+    for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
         os << sep << TypeName(module, param.Type());
         sep = ", ";
@@ -1525,12 +1530,13 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << ") -> bool:\n";
   }
   os.PushIndent();
+  os << os.Indent() << "state: int = 0\n";
 
   if (spec.forcing_function) {
     os << os.Indent() << "self." << Procedure(os, *(spec.forcing_function))
        << '(';
     auto sep = "";
-    for (auto param : decl.Parameters()) {
+    for (auto param : params) {
       if (param.Binding() == ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
         sep = ", ";
@@ -1542,7 +1548,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   os << os.Indent() << "tuple_index: int = 0\n";
 
   // This is an index scan.
-  if (num_bound_params) {
+  if (num_bound_params && num_bound_params < num_params) {
     assert(spec.index.has_value());
     const auto index = *(spec.index);
     const auto index_vals = index.ValueColumns();
@@ -1586,17 +1592,23 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
        << os.Indent() << "tuple_index += 1\n";
 
   // This is a full table scan.
-  } else {
+  } else if (num_free_params) {
     assert(0u < num_free_params);
 
     os << os.Indent() << "for tuple in " << Table(os, spec.table)
        << ":\n";
     os.PushIndent();
     os << os.Indent() << "tuple_index += 1\n";
+
+  // Either the tuple checker will figure out of the tuple is present, or our
+  // state check on the full tuple will figure it out.
+  } else {
+    os << os.Indent() << "if True:\n";
+    os.PushIndent();
   }
 
   auto col_index = 0u;
-  for (auto param : decl.Parameters()) {
+  for (auto param : params) {
     if (param.Binding() != ParameterBinding::kBound) {
       os << os.Indent() << "param_" << param.Index() << ": "
          << TypeName(module, param.Type()) << " = tuple";
@@ -1612,7 +1624,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "if not self." << Procedure(os, *(spec.tuple_checker))
        << '(';
     auto sep = "";
-    for (auto param : decl.Parameters()) {
+    for (auto param : params) {
       os << sep << "param_" << param.Index();
       sep = ", ";
     }
@@ -1620,12 +1632,41 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os.PushIndent();
     os << os.Indent() << "continue\n";
     os.PopIndent();
+
+  // Double check the tuple's state.
+  } else {
+    os << os.Indent() << "full_tuple = ";
+    if (1 < num_params) {
+      os << '(';
+    }
+
+    auto sep = "";
+    for (auto param : params) {
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+
+    if (1 < num_params) {
+      os << ')';
+    }
+
+    os << '\n'
+       << os.Indent() << "state = " << Table(os, spec.table)
+       << "[full_tuple] & " << kStateMask << '\n'
+       << os.Indent() << "if state != " << kStatePresent << ":\n";
+    os.PushIndent();
+    if (num_free_params) {
+      os << os.Indent() << "continue;\n";
+    } else {
+      os << os.Indent() << "return False\n";
+    }
+    os.PopIndent();
   }
 
   if (num_free_params) {
     os << os.Indent() << "yield ";
     auto sep = "";
-    for (auto param : decl.Parameters()) {
+    for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
         sep = ", ";
