@@ -849,8 +849,8 @@ class ParsedModule {
 
   // Try to return the foreign type associated with a particular type location
   // or type kind.
-  std::optional<ParsedForeignType> ForeignType(TypeLoc loc);
-  std::optional<ParsedForeignType> ForeignType(TypeKind kind);
+  std::optional<ParsedForeignType> ForeignType(TypeLoc loc) const noexcept;
+  std::optional<ParsedForeignType> ForeignType(TypeKind kind) const noexcept;
 
   // The root module of this parse.
   ParsedModule RootModule(void) const;

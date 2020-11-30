@@ -70,6 +70,20 @@ class TypeLoc {
     return range;
   }
 
+  inline bool IsForeign(void) const noexcept {
+    return UnderlyingKind() == TypeKind::kForeignType;
+  }
+
+  inline bool IsBuiltIn(void) const noexcept {
+    switch (UnderlyingKind()) {
+      case TypeKind::kInvalid:
+      case TypeKind::kForeignType:
+        return false;
+      default:
+        return true;
+    }
+  }
+
   inline bool IsValid(void) const noexcept {
     return kind != TypeKind::kInvalid;
   }

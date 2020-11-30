@@ -84,6 +84,15 @@ static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
 }
 
 // Python representation of TypeKind
+static const std::string_view TypeName(ParsedForeignType type) {
+  if (auto code = type.CodeToInline(Language::kPython)) {
+    return *code;
+  }
+  assert(false);
+  return "Any";
+}
+
+// Python representation of TypeKind
 static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
   switch (kind.UnderlyingKind()) {
     case TypeKind::kSigned8:
@@ -102,9 +111,7 @@ static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
     case TypeKind::kUUID: return "str";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
-        if (auto code = type->CodeToInline(Language::kPython)) {
-          return *code;
-        }
+        return TypeName(*type);
       }
       [[clang::fallthrough]];
     default: assert(false); return "Any";
@@ -272,6 +279,49 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
   auto type = global.Type();
   os << os.Indent() << Var(os, global) << ": Final[" << TypeName(module, type)
      << "] = " << TypeValueOrDefault(module, type, global.Value()) << "\n";
+}
+
+// We want to enable referential transparency in the code, so that if an Nth
+// value is produced by some mechanism that is equal to some prior value, then
+// we replace its usage with the prior value.
+static void DefineTypeRefResolver(OutputStream &os, ParsedModule module,
+                                  ParsedForeignType type) {
+  os << os.Indent() << "_MERGE_METHOD_" << type.Name()
+     << ": Final[Callable[[" << TypeName(type) << ", " << TypeName(type)
+     << "], None]] = getattr(" << TypeName(type)
+     << ", 'merge_into', lambda a, b: None)\n\n"
+     << os.Indent() << "def _resolve_" << type.Name() << "(self, obj: "
+     << TypeName(type) << ") -> " << TypeName(type) << ":\n";
+  os.PushIndent();
+  os << os.Indent() << "ref_list = self._refs[hash(obj)]\n"
+     << os.Indent() << "for maybe_obj in ref_list:\n";
+  os.PushIndent();
+
+  // The proposed object is identical (referentially) to the old one.
+  os << os.Indent() << "if obj is maybe_obj:\n";
+  os.PushIndent();
+  os << os.Indent() << "return obj\n";
+  os.PopIndent();
+
+  // The proposed object is structurally equivalent to the old one.
+  os << os.Indent() << "elif obj == maybe_obj:\n";
+  os.PushIndent();
+  os << os.Indent() << "prior_obj: " << TypeName(type)
+     << " = cast(" << TypeName(type) << ", maybe_obj)\n";
+
+  // Merge the new value `obj` into the prior value, `prior_obj`.
+  os << os.Indent() << gClassName << "._MERGE_METHOD_"
+     << type.Name() << "(obj, prior_obj)\n";
+  os << os.Indent() << "return prior_obj\n";
+
+  os.PopIndent();
+  os.PopIndent();
+
+  // We didn't find a prior version of the object; add our object in.
+  os << os.Indent() << "ref_list.append(obj)\n"
+     << os.Indent() << "return obj\n\n";
+
+  os.PopIndent();
 }
 
 class PythonCodeGenVisitor final : public ProgramVisitor {
@@ -685,6 +735,16 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     const auto tuple_vars = region.TupleVariables();
 
+    // Make sure to resolve to the correct reference of the foreign object.
+    switch (region.Usage()) {
+      case VectorUsage::kInductionVector:
+      case VectorUsage::kJoinPivots:
+        ResolveReferences(tuple_vars);
+        break;
+      default:
+        break;
+    }
+
     os << os.Indent() << Vector(os, region.Vector()) << ".append(";
     if (tuple_vars.size() == 1u) {
       os << Var(os, tuple_vars[0]);
@@ -754,16 +814,34 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
+  void ResolveReference(DataVariable var) {
+    if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
+      os << os.Indent() << Var(os, var)
+         << " = self._resolve_" << foreign_type->Name()
+         << '(' << Var(os, var) << ")\n";
+    }
+  }
+
+  void ResolveReferences(UsedNodeRange<DataVariable> vars) {
+    for (auto var : vars) {
+      ResolveReference(var);
+    }
+  }
+
   void Visit(ProgramTransitionStateRegion region) override {
     os << Comment(os, "Program TransitionState Region");
 
+    const auto tuple_vars = region.TupleVariables();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    ResolveReferences(tuple_vars);
+
     std::stringstream tuple;
     tuple << "tuple";
-    for (auto tuple_var : region.TupleVariables()) {
+    for (auto tuple_var : tuple_vars) {
       tuple << "_" << tuple_var.Id();
     }
 
-    const auto tuple_vars = region.TupleVariables();
     auto tuple_prefix = "(";
     auto tuple_suffix = ")";
     if (tuple_vars.size() == 1u) {
@@ -1129,6 +1207,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     const auto input_vars = region.InputVariables();
     const auto output_cols = region.SelectedColumns();
     const auto filled_vec = region.FilledVector();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    ResolveReferences(input_vars);
 
     os << os.Indent() << "scan_tuple_" << filled_vec.Id()
        << ": ";
@@ -1695,8 +1776,8 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "from collections import defaultdict, namedtuple\n"
-     << "from typing import (DefaultDict, Final, Iterator, List, NamedTuple, Optional, "
-     << "Sequence, Set, Tuple, Union)\n"
+     << "from typing import (Callable, cast, DefaultDict, Final, Iterator, "
+     << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union)\n"
      << "try:\n";
   os.PushIndent();
   os << os.Indent() << "from typing import Protocol\n";
@@ -1736,7 +1817,9 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os.PushIndent();
   os << os.Indent() << "self._log: " << gClassName << "Log = log\n"
      << os.Indent() << "self._functors: " << gClassName
-     << "Functors = functors\n\n";
+     << "Functors = functors\n"
+     << os.Indent() << "self._refs: DefaultDict[int, List[object]] "
+     << "= defaultdict(list)\n\n";
 
   for (auto table : program.Tables()) {
     DefineTable(os, module, table);
@@ -1756,6 +1839,10 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << os.Indent() << "self." << Procedure(os, init_procedure) << "()\n\n";
 
   os.PopIndent();
+
+  for (auto type : module.ForeignTypes()) {
+    DefineTypeRefResolver(os, module, type);
+  }
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, module, proc);
