@@ -364,6 +364,40 @@ static void DiscoverInductions(const Query &query, Context &context) {
       set->merges.push_back(merge);
     }
   }
+
+  // Do a final pass over the induction sets. It's possible that the approximate
+  // dominance analysis led us astray, as it doesn't consider the graph as a
+  // whole.
+  for (auto &[view, set_] : context.merge_sets) {
+    InductionSet &set = set_;
+    if (set.all_merges.empty()) {
+      continue;
+    }
+
+    for (auto merge : set.all_merges) {
+
+      // Even though this merge appears dominated, it needs to be treated as
+      // undominated because it has some non-inductive successors. Non-inductive
+      // successors are processed with the same induction vectors as the cyclic
+      // cases.
+      if (context.dominated_merges.count(merge) &&
+          !context.noninductive_successors[merge].empty()) {
+        context.dominated_merges.erase(merge);
+        set.merges.push_back(merge);
+      }
+    }
+
+    // We've got a perfect cycle, and none of the unions in the cycle have a
+    // direct output successor. The output it probably guarded behind a join.
+    // We'll be conservative and just assume all unions need to be
+    // co-represented.
+    if (set.merges.empty()) {
+      set.merges = set.all_merges;
+      for (auto merge : set.all_merges) {
+        context.dominated_merges.erase(merge);
+      }
+    }
+  }
 }
 
 // Building the data model means figuring out which `QueryView`s can share the
@@ -576,7 +610,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
         BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
                                 already_checked);
       } else {
-        assert(false && "TODO");
+        assert(false && "TODO: Checker for cross-product.");
       }
 
     } else if (view.IsMerge()) {
@@ -592,10 +626,10 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       }
 
     } else if (view.IsAggregate()) {
-      assert(false && "TODO");
+      assert(false && "TODO: Checker for aggregates.");
 
     } else if (view.IsKVIndex()) {
-      assert(false && "TODO");
+      assert(false && "TODO: Checker for k/v indices.");
 
     } else if (view.IsMap()) {
       assert(false && "TODO");
@@ -605,18 +639,8 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
                                  view_cols, already_checked);
 
     } else if (view.IsSelect()) {
-      const auto select = QuerySelect::From(view);
-
-      // The base case is that we get to a SELECT from a a stream. We treat
-      // data received as ephemeral, and so there is no way to actually check
-      // if the tuple exists, and so we treat it as not existing.
-      if (select.IsStream()) {
-
-        // Nothing to do.
-
-      } else {
-        assert(false && "TODO");
-      }
+      BuildTopDownSelectChecker(impl, context, proc, QuerySelect::From(view),
+                                view_cols, already_checked);
 
     } else if (view.IsTuple()) {
       BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view),
@@ -626,11 +650,11 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       const auto insert = QueryInsert::From(view);
 
       if (insert.IsStream()) {
-
         // Nothing to do.
 
       } else {
-        assert(false && "TODO");
+        BuildTopDownInsertChecker(impl, context, proc, QueryInsert::From(view),
+                                  view_cols, already_checked);
       }
 
     } else if (view.IsDelete()) {
@@ -679,6 +703,65 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
           proc, ProgramOperation::kReturnFalseFromProcedure);
       ret->ExecuteAfter(impl, proc);
     }
+  }
+}
+
+// Add entry point records for each query to the program.
+static void BuildQueryEntryPointImpl(
+    ProgramImpl * impl, Context &context,
+    ParsedDeclaration decl, QueryInsert insert) {
+
+  const QueryView view(insert);
+  const auto query = ParsedQuery::From(decl);
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  assert(model->table != nullptr);
+
+  std::vector<QueryColumn> cols;
+  std::vector<unsigned> col_indices;
+  for (auto param : decl.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      col_indices.push_back(param.Index());
+    }
+    cols.push_back(insert.NthInputColumn(param.Index()));
+  }
+
+  const DataTable table(model->table);
+  std::optional<ProgramProcedure> checker_proc;
+  std::optional<ProgramProcedure> forcer_proc;
+  std::optional<DataIndex> scanned_index;
+
+  if (!col_indices.empty()) {
+    const auto index = model->table->GetOrCreateIndex(impl, col_indices);
+    scanned_index.emplace(DataIndex(index));
+  }
+
+  if (view.CanReceiveDeletions()) {
+    const auto checker = GetOrCreateTopDownChecker(
+        impl, context, view, cols, nullptr);
+    impl->query_checkers.AddUse(checker);
+    checker_proc.emplace(ProgramProcedure(checker));
+    checker->has_raw_use = true;
+  }
+
+  impl->queries.emplace_back(
+      query, table, scanned_index, checker_proc, forcer_proc);
+}
+
+
+// Add entry point records for each query to the program.
+static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
+                                 ParsedDeclaration decl, QueryInsert insert) {
+  std::unordered_set<std::string> seen_variants;
+
+  for (auto redecl : decl.Redeclarations()) {
+
+    // We may have duplicate redeclarations, so don't repeat any.
+    std::string binding(redecl.BindingPattern());
+    if (seen_variants.count(binding)) {
+      continue;
+    }
+    seen_variants.insert(std::move(binding));
+    BuildQueryEntryPointImpl(impl, context, redecl, insert);
   }
 }
 
@@ -778,6 +861,44 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                             call_op);
 }
 
+// Gets or creates a top down checker function.
+PROC *GetOrCreateTopDownChecker(
+    ProgramImpl *impl, Context &context, QueryView view,
+    const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
+  assert(!available_cols.empty());
+
+  // Make up a string that captures what we have available.
+  std::stringstream ss;
+  ss << view.UniqueId();
+  for (auto view_col : available_cols) {
+    ss << ',' << view_col.Id();
+  }
+  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+
+  // We haven't made this procedure before; so we'll declare it now and
+  // enqueue it for building. We enqueue all such procedures for building so
+  // that we can build top-down checkers after all bottom-up provers have been
+  // created. Doing so lets us determine which views, and thus data models,
+  // are backed by what tables.
+  auto &proc = context.view_to_top_down_checker[ss.str()];
+  if (!proc) {
+    proc = impl->procedure_regions.Create(impl->next_id++,
+                                          ProcedureKind::kTupleFinder);
+
+    for (auto param_col : available_cols) {
+      const auto var =
+          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+      var->query_column = param_col;
+      proc->col_id_to_var.emplace(param_col.Id(), var);
+    }
+
+    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
+                                                    already_checked);
+  }
+
+  return proc;
+}
+
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
 CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
@@ -795,6 +916,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   std::vector<QueryColumn> available_cols;
   std::unordered_map<QueryColumn, QueryColumn> inout_map;
+
+  // TODO(pag): Handle inserts.
 
   if (view != succ_view) {
     succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
@@ -830,36 +953,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     }
   }
 
-  assert(!available_cols.empty());
-
-  // Make up a string that captures what we have available.
-  std::stringstream ss;
-  ss << view.UniqueId();
-  for (auto view_col : available_cols) {
-    ss << ',' << view_col.Id();
-  }
-  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
-
-  // We haven't made this procedure before; so we'll declare it now and
-  // enqueue it for building. We enqueue all such procedures for building so
-  // that we can build top-down checkers after all bottom-up provers have been
-  // created. Doing so lets us determine which views, and thus data models,
-  // are backed by what tables.
-  auto &proc = context.view_to_top_down_checker[ss.str()];
-  if (!proc) {
-    proc = impl->procedure_regions.Create(impl->next_id++,
-                                          ProcedureKind::kTupleFinder);
-
-    for (auto param_col : available_cols) {
-      const auto var =
-          proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-      var->query_column = param_col;
-      proc->col_id_to_var.emplace(param_col.Id(), var);
-    }
-
-    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
-                                                    already_checked);
-  }
+  const auto proc = GetOrCreateTopDownChecker(
+      impl, context, view, available_cols, already_checked);
 
   // Now call the checker procedure.
   const auto check =
@@ -898,7 +993,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
                          TupleState::kAbsentOrUnknown, TupleState::kPresent);
     check->body.Emplace(check, change_state);
 
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, change_state);
     ret_true->ExecuteAfter(impl, change_state);
 
   // No table, just return `true` to the caller.
@@ -1240,6 +1335,15 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Build bottom-up procedures starting from message receives.
   for (auto io : query.IOs()) {
     BuildEagerProcedure(program, io, context);
+  }
+
+  for (auto insert : query.Inserts()) {
+    if (insert.IsRelation()) {
+      auto decl = insert.Relation().Declaration();
+      if (decl.IsQuery()) {
+        BuildQueryEntryPoint(program, context, decl, insert);
+      }
+    }
   }
 
   // Build top-down provers.

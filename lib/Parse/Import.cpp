@@ -55,8 +55,8 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
   if (ec || resolved_path.empty()) {
 
-    // TODO(blarsen): fix up the error reporting here to include the source
-    // information, like in `ParseInclude`
+    // TODO(blarsen): Fix up the error reporting here to include the source
+    //                information, like in `ParseInclude`
     context->error_log.Append(scope_range, tok_range)
         << "Unable to locate module '" << tok
         << "' requested by import statement";

@@ -415,6 +415,21 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
                               std::vector<QueryColumn> &available_cols,
                               TABLE *already_checked);
 
+// Build a top-down checker for a relational insert.
+//
+// NOTE(pag): `available_cols` is always some subset of the input columns read
+//            by the insert.
+void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                               QueryInsert insert,
+                               std::vector<QueryColumn> &available_cols,
+                               TABLE *already_checked);
+
+// Build a top-down checker on a select.
+void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                               QuerySelect select,
+                               std::vector<QueryColumn> &available_cols,
+                               TABLE *already_checked);
+
 // Build a top-down checker on a compare.
 void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
                                 QueryCompare cmp,
@@ -433,6 +448,11 @@ bool EndsWithReturn(REGION *region);
 
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
+
+// Gets or creates a top down checker function.
+PROC *GetOrCreateTopDownChecker(
+    ProgramImpl *impl, Context &context, QueryView view,
+    const std::vector<QueryColumn> &available_cols, TABLE *already_checked);
 
 // Calls a top-down checker that tries to figure out if some tuple (passed as
 // arguments to this function) is present or not.

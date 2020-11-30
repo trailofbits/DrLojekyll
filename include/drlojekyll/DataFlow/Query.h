@@ -203,7 +203,7 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
  public:
   const ParsedLiteral &Literal(void) const noexcept;
 
-  static QueryConstant From(QueryStream &table);
+  static QueryConstant From(const QueryStream &table);
   static QueryConstant From(QueryColumn col);
 
  private:
@@ -219,7 +219,7 @@ class QueryIO : public query::QueryNode<QueryIO> {
  public:
   const ParsedDeclaration &Declaration(void) const noexcept;
 
-  static QueryIO From(QueryStream &stream);
+  static QueryIO From(const QueryStream &stream);
 
   // The list of sends to this I/O.
   UsedNodeRange<QueryView> Transmits(void) const;
@@ -326,16 +326,16 @@ class QueryView : public query::QueryNode<QueryView> {
     return view;
   }
 
-  static QueryView From(QueryDelete &view) noexcept;
-  static QueryView From(QuerySelect &view) noexcept;
-  static QueryView From(QueryTuple &view) noexcept;
-  static QueryView From(QueryKVIndex &view) noexcept;
-  static QueryView From(QueryJoin &view) noexcept;
-  static QueryView From(QueryMap &view) noexcept;
-  static QueryView From(QueryAggregate &view) noexcept;
-  static QueryView From(QueryMerge &view) noexcept;
-  static QueryView From(QueryCompare &view) noexcept;
-  static QueryView From(QueryInsert &view) noexcept;
+  static QueryView From(const QueryDelete &view) noexcept;
+  static QueryView From(const QuerySelect &view) noexcept;
+  static QueryView From(const QueryTuple &view) noexcept;
+  static QueryView From(const QueryKVIndex &view) noexcept;
+  static QueryView From(const QueryJoin &view) noexcept;
+  static QueryView From(const QueryMap &view) noexcept;
+  static QueryView From(const QueryAggregate &view) noexcept;
+  static QueryView From(const QueryMerge &view) noexcept;
+  static QueryView From(const QueryCompare &view) noexcept;
+  static QueryView From(const QueryInsert &view) noexcept;
 
   const char *KindName(void) const noexcept;
 

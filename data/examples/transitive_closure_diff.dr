@@ -6,6 +6,9 @@
 #local tc(From, To)
 #local edge(From, To)
 
+#message found_path(i64 From, i64 To)
+found_path(From, To) : tc(From, To).
+
 reachable_from(From, To) : tc(From, To).
 reaching_to(From, To) : tc(From, To).
 
@@ -14,3 +17,57 @@ edge(From, To) : add_edge(From, To).
 
 tc(From, To) : tc(From, X), tc(X, To).
 tc(From, To) : edge(From, To).
+
+
+#epilogue ```python
+
+class Functors(DatabaseFunctors):
+  pass
+  
+
+class Log(DatabaseLog):
+  def __init__(self):
+    self.edges = set()
+    self.removed_edges = set()
+  
+  def found_path_2(self, From: int, To: int, added: bool):
+    old_size = len(self.edges)
+    if added:
+      self.edges.add((From, To))
+    else:
+      self.edges.remove((From, To))
+      self.removed_edges.add((From, To))
+    assert old_size != len(self.edges)
+
+
+if __name__ == "__main__":
+  messages = Log()
+  db = Database(messages, Functors())
+  db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  assert len(reached_from_zero) == 4
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  assert 3 in reached_from_zero  # 0 -> 2 -> 3
+  
+  db.remove_edge_2([(2, 3)])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  assert len(reached_from_zero) == 3
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  
+  assert len(messages.removed_edges) == 3
+  assert (2, 3) in messages.removed_edges
+  assert (0, 3) in messages.removed_edges
+  assert (1, 3) in messages.removed_edges
+
+  db.add_edge_2([(2, 3)])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  assert len(reached_from_zero) == 4
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  assert 3 in reached_from_zero  # 0 -> 2 -> 3
+```

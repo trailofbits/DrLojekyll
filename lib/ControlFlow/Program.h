@@ -320,6 +320,7 @@ enum class ProgramOperation {
 
   // Publish a message.
   kPublishMessage,
+  kPublishMessageRemoval,
 
   // Creates a let binding, which assigns uses of variables to definitions of
   // variables. In practice, let bindings are eliminated during the process
@@ -712,9 +713,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, ParsedMessage message_)
-      : Node<ProgramOperationRegion>(parent_,
-                                     ProgramOperation::kPublishMessage),
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_,
+       ProgramOperation op_ = ProgramOperation::kPublishMessage)
+      : Node<ProgramOperationRegion>(parent_, op_),
         message(message_),
         arg_vars(this) {}
 
@@ -730,9 +731,6 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 
   // Message being published.
   const ParsedMessage message;
-
-  // Is this a removal publication?
-  bool is_removal{false};
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
@@ -1027,6 +1025,16 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // Are we currently checking if this procedure is being used? This is to
   // avoid infinite recursion when doing a procedure call NoOp checks.
   mutable bool checking_if_nop{false};
+
+  // Do we need to keep this procedure around? This happens if we're holding
+  // a raw, non-`UseRef`/`UseList` pointer to this procedure, such as inside
+  // of `ProgramQuery` specifications.
+  bool has_raw_use{false};
+
+  // Should we not bother trying to merge this function with another one? This
+  // comes up when this function has been converted into a call to another one
+  // (due to equivalence, but where both are marked with `has_raw_use`).
+  bool is_alias{false};
 };
 
 using PROC = Node<ProgramProcedure>;
@@ -1143,6 +1151,7 @@ class ProgramImpl : public User {
   inline explicit ProgramImpl(Query query_)
       : User(this),
         query(query_),
+        query_checkers(this),
         procedure_regions(this),
         series_regions(this),
         parallel_regions(this),
@@ -1154,6 +1163,10 @@ class ProgramImpl : public User {
 
   // The data flow representation from which this was created.
   const Query query;
+
+  // List of query entry points.
+  std::vector<ProgramQuery> queries;
+  UseList<REGION> query_checkers;
 
   DefList<PROC> procedure_regions;
   DefList<SERIES> series_regions;

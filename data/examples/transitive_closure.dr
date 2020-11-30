@@ -12,9 +12,17 @@ tc(From, To) : tc(From, X), tc(X, To).
 tc(From, To) : add_edge(From, To).
 
 #epilogue ```python
+class Functors(DatabaseFunctors):
+  pass
+
 if __name__ == "__main__":
-  db = Database(DatabaseLog(), DatabaseFunctors())
+  db = Database(DatabaseLog(), Functors())
   db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)])
-  for edge, state in db.table_7.items():
-    print(edge)
+  reached_from_zero = list(db.reachable_from_bf(0))
+  assert len(reached_from_zero) == 4
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  assert 3 in reached_from_zero  # 0 -> 2 -> 3
+
 ```

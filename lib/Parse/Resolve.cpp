@@ -20,14 +20,11 @@ ParserImpl::ResolvePath(const std::filesystem::path &path,
     std::filesystem::path joined_path(search_dir / path);
     std::filesystem::canonical(joined_path, ec);
     if (ec) {
-
-      // not found here
       continue;
     }
 
-    // found it!
     out_resolved_path = joined_path;
-    return ec;
+    break;
   }
 
   return ec;

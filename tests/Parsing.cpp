@@ -64,9 +64,13 @@ class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {
 };
 
 // Set of examples that can parse but fail to build
-static const std::unordered_set<std::string> gBuildFailExamples{
+static const std::unordered_set<std::string> kBuildDebugFailExamples{
     "min_block.dr", "pairwise_average_weight.dr", "function_counter.dr",
     "watched_user_dir.dr", "average_weight.dr"};
+static const std::unordered_set<std::string> kBuildReleaseFailExamples{
+    "min_block.dr", "function_counter.dr"};
+static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
+    "average_weight.dr", "pairwise_average_weight.dr"};
 
 TEST_P(PassingExamplesParsingSuite, Examples) {
   auto path = GetParam().string();
@@ -93,13 +97,20 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     std::optional<class hyde::Program> program_opt;
 
     // Some tests fail to build
-    auto allow_failure = false;
-    if (gBuildFailExamples.count(fs::path(path).filename().string())) {
+    auto allow_mypy_failure = false;
+    if (kBuildDebugFailExamples.count(fs::path(path).filename().string())) {
+#if NDEBUG
+      if (kBuildIRReleaseFailExamples.count(
+              fs::path(path).filename().string())) {
+        EXPECT_DEATH(hyde::Program::Build(*query_opt, err_log), "");
+        return;
+      }
+#endif
       EXPECT_DEBUG_DEATH(
           program_opt = hyde::Program::Build(*query_opt, err_log), ".*TODO.*");
 
       // Allow to fail/skip next steps if it fails to build (catches fails in release)
-      allow_failure = true;
+      allow_mypy_failure = true;
     } else {
       program_opt = hyde::Program::Build(*query_opt, err_log);
     }
@@ -115,28 +126,33 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
         ir_out.os << *program_opt;
       }
 
-      // CodeGen for Python
-      auto py_out_path = generated_file_base + ".py";
-      {
-        hyde::FileStream py_out_fs = hyde::FileStream(display_mgr, py_out_path);
-        hyde::GeneratePythonCode(*program_opt, py_out_fs.os);
-      }
+      if (!kBuildReleaseFailExamples.count(
+              fs::path(path).filename().string())) {
+
+        // CodeGen for Python
+        auto py_out_path = generated_file_base + ".py";
+        {
+          hyde::FileStream py_out_fs =
+              hyde::FileStream(display_mgr, py_out_path);
+          hyde::GeneratePythonCode(*program_opt, py_out_fs.os);
+        }
 #ifdef MYPY_PATH
 
-      // mypy can take input from a command line string via '-c STRING'
-      // but that sounds unsafe to do from here
-      auto ret_code = std::system(
-          std::string(std::string(MYPY_PATH) + " " + py_out_path).c_str());
+        // mypy can take input from a command line string via '-c STRING'
+        // but that sounds unsafe to do from here
+        auto ret_code = std::system(
+            std::string(std::string(MYPY_PATH) + " " + py_out_path).c_str());
 
-      if (ret_code != 0 && !allow_failure) {
-        FAIL() << "Python mypy type-checking failed! Saved generated code at "
-               << py_out_path << "\n";
-      }
+        if (ret_code != 0 && !allow_mypy_failure) {
+          FAIL() << "Python mypy type-checking failed! Saved generated code at "
+                 << py_out_path << "\n";
+        }
 #else
 
-      // Prevent unused variable errors
-      (void) allow_failure;
+        // Prevent unused variable errors
+        (void) allow_mypy_failure;
 #endif
+      }
 
       SUCCEED();
     }

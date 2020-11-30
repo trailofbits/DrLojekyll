@@ -5,6 +5,8 @@
 namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
+  query_checkers.ClearWithoutErasure();
+
   for (auto table : tables) {
     for (auto column : table->columns) {
       column->table.ClearWithoutErasure();
@@ -123,6 +125,11 @@ ProgramImpl::~ProgramImpl(void) {
 Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
+
+// List of query entry points.
+const std::vector<ProgramQuery> &Program::Queries(void) const noexcept {
+  return impl->queries;
+}
 
 // Return the query used to build this program.
 ::hyde::Query Program::Query(void) const noexcept {
@@ -803,7 +810,7 @@ ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
 
 // Are we publishing the removal of some tuple?
 bool ProgramPublishRegion::IsRemoval(void) const noexcept {
-  return impl->is_removal;
+  return impl->op == ProgramOperation::kPublishMessageRemoval;
 }
 
 }  // namespace hyde

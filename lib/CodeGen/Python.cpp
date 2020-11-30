@@ -16,7 +16,17 @@
 namespace hyde {
 namespace {
 
-// NOTE(ekilmer): Classes are named all the same for now
+constexpr auto kStateAbsent = 0u;
+constexpr auto kStatePresent = 1u;
+constexpr auto kStateUnknown = 2u;
+
+// NOTE(pag): We store an extra bit besides present/absent/unknown
+//            to track whether or not the data had ever been in our
+//            index before, and thus doesn't need to be re-added.
+constexpr auto kStateMask = 0x3u;
+constexpr auto kPresentBit = 0x4u;
+
+// NOTE(ekilmer): Classes are named all the same for now.
 constexpr auto gClassName = "Database";
 
 // Make a comment in code for debugging purposes
@@ -74,6 +84,15 @@ static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
 }
 
 // Python representation of TypeKind
+static const std::string_view TypeName(ParsedForeignType type) {
+  if (auto code = type.CodeToInline(Language::kPython)) {
+    return *code;
+  }
+  assert(false);
+  return "Any";
+}
+
+// Python representation of TypeKind
 static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
   switch (kind.UnderlyingKind()) {
     case TypeKind::kSigned8:
@@ -92,9 +111,7 @@ static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
     case TypeKind::kUUID: return "str";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
-        if (auto code = type->CodeToInline(Language::kPython)) {
-          return *code;
-        }
+        return TypeName(*type);
       }
       [[clang::fallthrough]];
     default: assert(false); return "Any";
@@ -262,6 +279,49 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
   auto type = global.Type();
   os << os.Indent() << Var(os, global) << ": Final[" << TypeName(module, type)
      << "] = " << TypeValueOrDefault(module, type, global.Value()) << "\n";
+}
+
+// We want to enable referential transparency in the code, so that if an Nth
+// value is produced by some mechanism that is equal to some prior value, then
+// we replace its usage with the prior value.
+static void DefineTypeRefResolver(OutputStream &os, ParsedModule module,
+                                  ParsedForeignType type) {
+  os << os.Indent() << "_MERGE_METHOD_" << type.Name()
+     << ": Final[Callable[[" << TypeName(type) << ", " << TypeName(type)
+     << "], None]] = getattr(" << TypeName(type)
+     << ", 'merge_into', lambda a, b: None)\n\n"
+     << os.Indent() << "def _resolve_" << type.Name() << "(self, obj: "
+     << TypeName(type) << ") -> " << TypeName(type) << ":\n";
+  os.PushIndent();
+  os << os.Indent() << "ref_list = self._refs[hash(obj)]\n"
+     << os.Indent() << "for maybe_obj in ref_list:\n";
+  os.PushIndent();
+
+  // The proposed object is identical (referentially) to the old one.
+  os << os.Indent() << "if obj is maybe_obj:\n";
+  os.PushIndent();
+  os << os.Indent() << "return obj\n";
+  os.PopIndent();
+
+  // The proposed object is structurally equivalent to the old one.
+  os << os.Indent() << "elif obj == maybe_obj:\n";
+  os.PushIndent();
+  os << os.Indent() << "prior_obj: " << TypeName(type)
+     << " = cast(" << TypeName(type) << ", maybe_obj)\n";
+
+  // Merge the new value `obj` into the prior value, `prior_obj`.
+  os << os.Indent() << gClassName << "._MERGE_METHOD_"
+     << type.Name() << "(obj, prior_obj)\n";
+  os << os.Indent() << "return prior_obj\n";
+
+  os.PopIndent();
+  os.PopIndent();
+
+  // We didn't find a prior version of the object; add our object in.
+  os << os.Indent() << "ref_list.append(obj)\n"
+     << os.Indent() << "return obj\n\n";
+
+  os.PopIndent();
 }
 
 class PythonCodeGenVisitor final : public ProgramVisitor {
@@ -593,21 +653,20 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << VectorIndex(os, vec) << " < len(" << Vector(os, vec) << ")";
+      os << sep << "len(" << Vector(os, vec) << ")";
       sep = " or ";
     }
     os << ":\n";
 
     os.PushIndent();
     region.FixpointLoop().Accept(*this);
-    for (auto vec : region.Vectors()) {
-      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
-    }
     os.PopIndent();
-
 
     // Output
     if (auto output = region.Output(); output) {
+      for (auto vec : region.Vectors()) {
+        os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
+      }
       os << Comment(os, "Induction Output Region");
       output->Accept(*this);
     }
@@ -675,6 +734,16 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, "Program VectorAppend Region");
 
     const auto tuple_vars = region.TupleVariables();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    switch (region.Usage()) {
+      case VectorUsage::kInductionVector:
+      case VectorUsage::kJoinPivots:
+        ResolveReferences(tuple_vars);
+        break;
+      default:
+        break;
+    }
 
     os << os.Indent() << Vector(os, region.Vector()) << ".append(";
     if (tuple_vars.size() == 1u) {
@@ -745,16 +814,34 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
+  void ResolveReference(DataVariable var) {
+    if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
+      os << os.Indent() << Var(os, var)
+         << " = self._resolve_" << foreign_type->Name()
+         << '(' << Var(os, var) << ")\n";
+    }
+  }
+
+  void ResolveReferences(UsedNodeRange<DataVariable> vars) {
+    for (auto var : vars) {
+      ResolveReference(var);
+    }
+  }
+
   void Visit(ProgramTransitionStateRegion region) override {
     os << Comment(os, "Program TransitionState Region");
 
+    const auto tuple_vars = region.TupleVariables();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    ResolveReferences(tuple_vars);
+
     std::stringstream tuple;
     tuple << "tuple";
-    for (auto tuple_var : region.TupleVariables()) {
+    for (auto tuple_var : tuple_vars) {
       tuple << "_" << tuple_var.Id();
     }
 
-    const auto tuple_vars = region.TupleVariables();
     auto tuple_prefix = "(";
     auto tuple_suffix = ")";
     if (tuple_vars.size() == 1u) {
@@ -769,94 +856,122 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << sep << Var(os, var);
       sep = ", ";
     }
-    os << tuple_suffix << "\n";
-
-    os << os.Indent() << "state = " << Table(os, region.Table()) << "["
-       << tuple_var << "]\n";
+    os << tuple_suffix << "\n"
+       << os.Indent() << "prev_state = " << Table(os, region.Table())
+       << "[" << tuple_var << "]\n"
+       << os.Indent() << "state = prev_state & " << kStateMask << "\n"
+       << os.Indent() << "present_bit = prev_state & "
+       << kPresentBit << "\n";
 
     os << os.Indent() << "if ";
     switch (region.FromState()) {
-      case TupleState::kAbsent: os << "state == 0:\n"; break;
-      case TupleState::kPresent: os << "state == 1:\n"; break;
-      case TupleState::kUnknown: os << "state == 2:\n"; break;
+      case TupleState::kAbsent:
+        os << "state == " << kStateAbsent << ":\n";
+        break;
+      case TupleState::kPresent:
+        os << "state == " << kStatePresent << ":\n";
+        break;
+      case TupleState::kUnknown:
+        os << "state == " << kStateUnknown << ":\n";
+        break;
       case TupleState::kAbsentOrUnknown:
-        os << "state == 0 or state == 2:\n";
+        os << "state == " << kStateAbsent
+           << " or state == " << kStateUnknown << ":\n";
         break;
     }
     os.PushIndent();
     os << os.Indent() << Table(os, region.Table()) << "[" << tuple_var
        << "] = ";
+
     switch (region.ToState()) {
-      case TupleState::kAbsent: os << "0\n"; break;
-      case TupleState::kPresent: os << "1\n"; break;
-      case TupleState::kUnknown: os << "2\n"; break;
+      case TupleState::kAbsent:
+        os << kStateAbsent << " | " << kPresentBit << "\n"; break;
+      case TupleState::kPresent:
+        os << kStatePresent << " | " << kPresentBit << "\n"; break;
+      case TupleState::kUnknown:
+        os << kStateUnknown << " | " << kPresentBit << "\n"; break;
       case TupleState::kAbsentOrUnknown:
-        os << "2\n";
-        assert(false);
+        os << kStateUnknown << " | " << kPresentBit << "\n";
+        assert(false);  // Shouldn't be created.
         break;
     }
 
-    for (auto index : region.Table().Indices()) {
-      const auto key_cols = index.KeyColumns();
-      const auto val_cols = index.ValueColumns();
+    // If we're transitioning to present, then add it to our indices.
+    const auto indices = region.Table().Indices();
+    if (region.ToState() == TupleState::kPresent) {
+      os << os.Indent() << "if not present_bit:\n";
+      os.PushIndent();
 
-      auto key_prefix = "(";
-      auto key_suffix = ")";
-      auto val_prefix = "(";
-      auto val_suffix = ")";
+      auto has_indices = false;
+      for (auto index : indices) {
+        const auto key_cols = index.KeyColumns();
+        const auto val_cols = index.ValueColumns();
 
-      if (key_cols.size() == 1u) {
-        key_prefix = "";
-        key_suffix = "";
-      }
+        auto key_prefix = "(";
+        auto key_suffix = ")";
+        auto val_prefix = "(";
+        auto val_suffix = ")";
 
-      if (val_cols.size() == 1u) {
-        val_prefix = "";
-        val_suffix = "";
-      }
-
-      // The index is the set of keys in the table's `defaultdict`. Thus, we
-      // don't need to add anything because adding to the table will have done
-      // it.
-      if (tuple_vars.size() == key_cols.size()) {
-        continue;
-      }
-
-      os << os.Indent() << TableIndex(os, index);
-
-      // The index is implemented with a `set`.
-      if (val_cols.empty()) {
-        os << ".add(";
-        sep = "";
         if (key_cols.size() == 1u) {
-          os << tuple_var;
+          key_prefix = "";
+          key_suffix = "";
+        }
+
+        if (val_cols.size() == 1u) {
+          val_prefix = "";
+          val_suffix = "";
+        }
+
+        // The index is the set of keys in the table's `defaultdict`. Thus, we
+        // don't need to add anything because adding to the table will have done
+        // it.
+        if (tuple_vars.size() == key_cols.size()) {
+          continue;
+        }
+
+        has_indices = true;
+        os << os.Indent() << TableIndex(os, index);
+
+        // The index is implemented with a `set`.
+        if (val_cols.empty()) {
+          os << ".add(";
+          sep = "";
+          if (key_cols.size() == 1u) {
+            os << tuple_var;
+          } else {
+            os << '(';
+            for (auto indexed_col : index.KeyColumns()) {
+              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
+              sep = ", ";
+            }
+            os << ')';
+          }
+
+          os << ")\n";
+
+        // The index is implemented with a `defaultdict`.
         } else {
-          os << '(';
+          os << "[" << key_prefix;
+          sep = "";
           for (auto indexed_col : index.KeyColumns()) {
             os << sep << tuple_var << "[" << indexed_col.Index() << "]";
             sep = ", ";
           }
-          os << ')';
+          os << key_suffix << "].append(" << val_prefix;
+          sep = "";
+          for (auto mapped_col : index.ValueColumns()) {
+            os << sep << tuple_var << "[" << mapped_col.Index() << "]";
+            sep = ", ";
+          }
+          os << val_suffix << ")\n";
         }
-
-        os << ")\n";
-
-      // The index is implemented with a `defaultdict`.
-      } else {
-        os << "[" << key_prefix;
-        sep = "";
-        for (auto indexed_col : index.KeyColumns()) {
-          os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-          sep = ", ";
-        }
-        os << key_suffix << "].append(" << val_prefix;
-        sep = "";
-        for (auto mapped_col : index.ValueColumns()) {
-          os << sep << tuple_var << "[" << mapped_col.Index() << "]";
-          sep = ", ";
-        }
-        os << val_suffix << ")\n";
       }
+
+      if (!has_indices) {
+        os << os.Indent() << "pass\n";
+      }
+
+      os.PopIndent();
     }
 
     if (auto body = region.Body(); body) {
@@ -880,12 +995,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       }
       os << ')';
     }
-    os << "]\n";
+    os << "] & " << kStateMask << '\n';
 
     auto sep = "if ";
 
     if (auto absent_body = region.IfAbsent(); absent_body) {
-      os << os.Indent() << sep << "state == 0:\n";
+      os << os.Indent() << sep << "state == " << kStateAbsent << ":\n";
       os.PushIndent();
       absent_body->Accept(*this);
       os.PopIndent();
@@ -893,15 +1008,15 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     if (auto present_body = region.IfPresent(); present_body) {
-      os << os.Indent() << sep << "state == 1:\n";
+      os << os.Indent() << sep << "state == " << kStatePresent << ":\n";
       os.PushIndent();
       present_body->Accept(*this);
       os.PopIndent();
       sep = "elif ";
     }
 
-    if (auto unknown_body = region.IfPresent(); unknown_body) {
-      os << os.Indent() << sep << "state == 2:\n";
+    if (auto unknown_body = region.IfUnknown(); unknown_body) {
+      os << os.Indent() << sep << "state == " << kStateUnknown << ":\n";
       os.PushIndent();
       unknown_body->Accept(*this);
       os.PopIndent();
@@ -1088,7 +1203,78 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableScanRegion region) override {
     os << Comment(os, "Program TableScan Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramTableScanRegion\n";
+
+    const auto input_vars = region.InputVariables();
+    const auto output_cols = region.SelectedColumns();
+    const auto filled_vec = region.FilledVector();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    ResolveReferences(input_vars);
+
+    os << os.Indent() << "scan_tuple_" << filled_vec.Id()
+       << ": ";
+
+    if (output_cols.size() == 1u) {
+      os << TypeName(module, output_cols[0].Type()) << '\n';
+    } else {
+      os << "Tuple[";
+      auto sep = "";
+      for (auto col : output_cols) {
+        os << sep << TypeName(module, col.Type());
+        sep = ", ";
+      }
+      os << "]\n";
+    }
+
+    // Index scan :-D
+    if (region.Index()) {
+      const auto index = *(region.Index());
+
+      os << os.Indent() << "scan_index_" << filled_vec.Id()
+         << ": int = 0\n"
+         << os.Indent() << "scan_tuple_" << filled_vec.Id() << "_vec: List[";
+
+      // Types mapped by this index.
+      if (output_cols.size() == 1u) {
+        os << TypeName(module, output_cols[0].Type());
+      } else {
+        os << "Tuple[";
+        auto sep = "";
+        for (auto col : output_cols) {
+          os << sep << TypeName(module, col.Type());
+          sep = ", ";
+        }
+        os << "]";
+      }
+
+      os << "] = " << TableIndex(os, index) << "[";
+      auto sep = "";
+      for (auto var : input_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      os << "]\n";
+      os << os.Indent() << "while scan_index_" << filled_vec.Id()
+         << " < len(scan_tuple_" << filled_vec.Id() << "_vec):\n";
+      os.PushIndent();
+
+      os << os.Indent() << "scan_tuple_" << filled_vec.Id()
+         << " = scan_tuple_" << filled_vec.Id() << "_vec["
+         << "scan_index_" << filled_vec.Id() << "]\n"
+         << os.Indent() << "scan_index_" << filled_vec.Id()
+         << " += 1\n";
+
+    // Full table scan.
+    } else {
+      assert(input_vars.empty());
+      os << os.Indent() << "for scan_tuple_" << filled_vec.Id()
+         << " in " << Table(os, region.Table()) << ":\n";
+      os.PushIndent();
+    }
+
+    os << os.Indent() << Vector(os, filled_vec)
+       << ".append(scan_tuple_" << filled_vec.Id() << ")\n";
+    os.PopIndent();
   }
 
   void Visit(ProgramTupleCompareRegion region) override {
@@ -1197,7 +1383,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
 
   auto has_functors = false;
   for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto first_func : program.ParsedModule().Functors()) {
+    for (auto first_func : module.Functors()) {
       for (auto func : first_func.Redeclarations()) {
         std::stringstream ss;
         ss << func.Id() << ':'
@@ -1241,7 +1427,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
   bool has_messages = false;
   for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto message : program.ParsedModule().Messages()) {
+    for (auto message : module.Messages()) {
       if (auto [it, inserted] = seen.emplace(message);
           inserted && message.IsPublished()) {
         DeclareMessageLogger(os, module, message);
@@ -1310,7 +1496,9 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   os << ") -> bool:\n";
 
   os.PushIndent();
-  os << os.Indent() << "state: int = 0\n"
+  os << os.Indent() << "state: int = " << kStateUnknown << '\n'
+     << os.Indent() << "prev_state: int = " << kStateUnknown << '\n'
+     << os.Indent() << "present_bit: int = 0\n"
      << os.Indent() << "ret: bool = False\n";
 
   param_index = 0u;
@@ -1378,7 +1566,207 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   proc.Body().Accept(visitor);
 
   os.PopIndent();
-  os << "\n";
+  os << '\n';
+}
+
+static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
+                                  const ProgramQuery &spec) {
+  const ParsedDeclaration decl(spec.query);
+  os << os.Indent() << "def " << decl.Name() << '_' << decl.BindingPattern()
+     << "(self";
+
+  auto num_bound_params = 0u;
+  auto num_free_params = 0u;
+  const auto params = decl.Parameters();
+  const auto num_params = decl.Arity();
+  for (auto param : params) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << ", param_" << param.Index() << ": "
+         << TypeName(module, param.Type());
+      ++num_bound_params;
+    } else {
+      ++num_free_params;
+    }
+  }
+
+  assert(num_params == (num_bound_params + num_free_params));
+
+  if (num_free_params) {
+    os << ") -> Iterator[";
+    if (1u < num_free_params) {
+      os << "Tuple[";
+    }
+    auto sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << TypeName(module, param.Type());
+        sep = ", ";
+      }
+    }
+    if (1u < num_free_params) {
+      os << ']';
+    }
+    os << "]:\n";
+  } else {
+    os << ") -> bool:\n";
+  }
+  os.PushIndent();
+  os << os.Indent() << "state: int = 0\n";
+
+  if (spec.forcing_function) {
+    os << os.Indent() << "self." << Procedure(os, *(spec.forcing_function))
+       << '(';
+    auto sep = "";
+    for (auto param : params) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    os << ")\n";
+  }
+
+  os << os.Indent() << "tuple_index: int = 0\n";
+
+  // This is an index scan.
+  if (num_bound_params && num_bound_params < num_params) {
+    assert(spec.index.has_value());
+    const auto index = *(spec.index);
+    const auto index_vals = index.ValueColumns();
+    auto key_prefix = "(";
+    auto key_suffix = ")";
+
+    if (num_free_params == 1u) {
+      key_prefix = "";
+      key_suffix = "";
+    }
+
+    os << os.Indent() << "tuple_vec: List[";
+
+    if (1u < num_free_params) {
+      os << "Tuple[";
+    }
+
+    auto sep = "";
+    for (auto col : index_vals) {
+      os << sep << TypeName(module, col.Type());
+      sep = ", ";
+    }
+    if (1u < index_vals.size()) {
+      os << "]";
+    }
+    os << "] = " << TableIndex(os, index) << "[" << key_prefix;
+
+    sep = "";
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+
+    os << key_suffix << "]\n";
+
+    os << os.Indent() << "while tuple_index < len(tuple_vec):\n";
+    os.PushIndent();
+    os << os.Indent() << "tuple = tuple_vec[tuple_index]\n"
+       << os.Indent() << "tuple_index += 1\n";
+
+  // This is a full table scan.
+  } else if (num_free_params) {
+    assert(0u < num_free_params);
+
+    os << os.Indent() << "for tuple in " << Table(os, spec.table)
+       << ":\n";
+    os.PushIndent();
+    os << os.Indent() << "tuple_index += 1\n";
+
+  // Either the tuple checker will figure out of the tuple is present, or our
+  // state check on the full tuple will figure it out.
+  } else {
+    os << os.Indent() << "if True:\n";
+    os.PushIndent();
+  }
+
+  auto col_index = 0u;
+  for (auto param : params) {
+    if (param.Binding() != ParameterBinding::kBound) {
+      os << os.Indent() << "param_" << param.Index() << ": "
+         << TypeName(module, param.Type()) << " = tuple";
+      if (num_free_params != 1u) {
+        os << '[' << col_index << ']';
+      }
+      ++col_index;
+      os << '\n';
+    }
+  }
+
+  if (spec.tuple_checker) {
+    os << os.Indent() << "if not self." << Procedure(os, *(spec.tuple_checker))
+       << '(';
+    auto sep = "";
+    for (auto param : params) {
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+    os << "):\n";
+    os.PushIndent();
+    if (num_free_params) {
+      os << os.Indent() << "continue;\n";
+    } else {
+      os << os.Indent() << "return False\n";
+    }
+    os.PopIndent();
+
+  // Double check the tuple's state.
+  } else {
+    os << os.Indent() << "full_tuple = ";
+    if (1 < num_params) {
+      os << '(';
+    }
+
+    auto sep = "";
+    for (auto param : params) {
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+
+    if (1 < num_params) {
+      os << ')';
+    }
+
+    os << '\n'
+       << os.Indent() << "state = " << Table(os, spec.table)
+       << "[full_tuple] & " << kStateMask << '\n'
+       << os.Indent() << "if state != " << kStatePresent << ":\n";
+    os.PushIndent();
+    if (num_free_params) {
+      os << os.Indent() << "continue;\n";
+    } else {
+      os << os.Indent() << "return False\n";
+    }
+    os.PopIndent();
+  }
+
+  if (num_free_params) {
+    os << os.Indent() << "yield ";
+    auto sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    os << "\n";
+
+  } else {
+    os << os.Indent() << "return True\n";
+  }
+
+  os.PopIndent();
+
+  os.PopIndent();
+  os << '\n';
 }
 
 }  // namespace
@@ -1388,8 +1776,8 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "from collections import defaultdict, namedtuple\n"
-     << "from typing import (DefaultDict, Final, Iterator, List, NamedTuple, Optional, "
-     << "Set, Tuple, Union)\n"
+     << "from typing import (Callable, cast, DefaultDict, Final, Iterator, "
+     << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union)\n"
      << "try:\n";
   os.PushIndent();
   os << os.Indent() << "from typing import Protocol\n";
@@ -1401,22 +1789,24 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
 
   const auto module = program.ParsedModule();
 
-  // Output prologue code.
-  for (auto code : module.Inlines()) {
-    switch (code.Language()) {
-      case Language::kUnknown:
-      case Language::kPython:
-        if (code.IsPrologue()) {
-          os << code.CodeToInline() << "\n\n";
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);
+
+  // Output prologue code.
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kPython:
+          if (code.IsPrologue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default:
+          break;
+      }
+    }
+  }
 
   // A program gets its own class
   os << "class " << gClassName << ":\n\n";
@@ -1427,7 +1817,9 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
   os.PushIndent();
   os << os.Indent() << "self._log: " << gClassName << "Log = log\n"
      << os.Indent() << "self._functors: " << gClassName
-     << "Functors = functors\n\n";
+     << "Functors = functors\n"
+     << os.Indent() << "self._refs: DefaultDict[int, List[object]] "
+     << "= defaultdict(list)\n\n";
 
   for (auto table : program.Tables()) {
     DefineTable(os, module, table);
@@ -1448,23 +1840,33 @@ void GeneratePythonCode(Program &program, OutputStream &os) {
 
   os.PopIndent();
 
+  for (auto type : module.ForeignTypes()) {
+    DefineTypeRefResolver(os, module, type);
+  }
+
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, module, proc);
+  }
+
+  for (const auto &query_spec : program.Queries()) {
+    DefineQueryEntryPoint(os, module, query_spec);
   }
 
   os.PopIndent();
 
   // Output epilogue code.
-  for (auto code : module.Inlines()) {
-    switch (code.Language()) {
-      case Language::kUnknown:
-      case Language::kPython:
-        if (code.IsEpilogue()) {
-          os << code.CodeToInline() << "\n\n";
-        }
-        break;
-      default:
-        break;
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kPython:
+          if (code.IsEpilogue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
 }

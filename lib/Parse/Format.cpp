@@ -3,8 +3,10 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <cassert>
+#include <unordered_set>
 
 namespace hyde {
 
@@ -280,57 +282,67 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedModule module) {
-  if (os.KeepImports()) {
-    for (auto import : module.Imports()) {
-      os << import.SpellingRange() << "\n";
+  module = module.RootModule();
+
+  for (auto type : module.ForeignTypes()) {
+    os << type << "\n";
+  }
+
+  std::unordered_set<ParsedDeclaration> seen;
+  auto do_decl = [&](ParsedDeclaration decl) {
+    if (!seen.count(decl)) {
+      seen.insert(decl);
+      os << decl << '\n';
+    }
+  };
+
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (ParsedQuery decl : sub_module.Queries()) {
+      for (auto redecl : decl.Redeclarations()) {
+        do_decl(redecl);
+      }
+    }
+
+    for (ParsedMessage decl : sub_module.Messages()) {
+      do_decl(decl);
+    }
+
+    for (ParsedFunctor decl : sub_module.Functors()) {
+      for (auto redecl : decl.Redeclarations()) {
+        do_decl(redecl);
+      }
+    }
+
+    for (ParsedExport decl : sub_module.Exports()) {
+      if (decl.Arity()) {
+        do_decl(decl);
+      }
+    }
+
+    for (ParsedLocal decl : sub_module.Locals()) {
+      do_decl(decl);
     }
   }
 
-  for (auto code : module.Inlines()) {
-    if (code.IsPrologue()) {
-      os << code << "\n";
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      if (code.IsPrologue()) {
+        os << code << "\n";
+      }
     }
-  }
 
-  if (module.RootModule() == module) {
-    for (auto type : module.ForeignTypes()) {
-      os << type << "\n";
+    for (auto clause : sub_module.Clauses()) {
+      os << clause << "\n";
     }
-  }
 
-  for (auto decl : module.Queries()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto decl : module.Messages()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto decl : module.Functors()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto decl : module.Exports()) {
-    if (decl.Arity()) {
-      os << ParsedDeclaration(decl) << "\n";
+    for (auto clause : sub_module.DeletionClauses()) {
+      os << clause << "\n";
     }
-  }
 
-  for (auto decl : module.Locals()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto clause : module.Clauses()) {
-    os << clause << "\n";
-  }
-
-  for (auto clause : module.DeletionClauses()) {
-    os << clause << "\n";
-  }
-
-  for (auto code : module.Inlines()) {
-    if (!code.IsPrologue()) {
-      os << code << "\n";
+    for (auto code : sub_module.Inlines()) {
+      if (!code.IsPrologue()) {
+        os << code << "\n";
+      }
     }
   }
 

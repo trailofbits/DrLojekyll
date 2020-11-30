@@ -1316,11 +1316,13 @@ NodeRange<ParsedForeignType> ParsedModule::ForeignTypes(void) const {
 
 // Try to return the foreign type associated with a particular type location
 // or type kind.
-std::optional<ParsedForeignType> ParsedModule::ForeignType(TypeLoc loc) {
+std::optional<ParsedForeignType>
+ParsedModule::ForeignType(TypeLoc loc) const noexcept {
   return ForeignType(loc.Kind());
 }
 
-std::optional<ParsedForeignType> ParsedModule::ForeignType(TypeKind kind_) {
+std::optional<ParsedForeignType>
+ParsedModule::ForeignType(TypeKind kind_) const noexcept {
   const auto kind = static_cast<uint32_t>(kind_);
   const auto hi = kind >> 8u;
   const auto lo = kind & 0xffu;
