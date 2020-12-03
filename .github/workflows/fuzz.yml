@@ -30,7 +30,7 @@ on:
       corpus_prune_threshold:
         description: "The number of corpus entries at which to try corpus minimization"
         required: true
-        default: "500"
+        default: "2500"
 
 # Note: the following environment variables are duplicated from the default values
 #       of the inputs specified in the `workflow_dispatch` trigger above.
