@@ -33,7 +33,9 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
         type(var.Type()),
         view(view_),
         id(id_),
-        index(index_) {}
+        index(index_) {
+    assert(type.UnderlyingKind() != TypeKind::kInvalid);
+  }
 
   void CopyConstantFrom(Node<QueryColumn> *maybe_const_col);
 

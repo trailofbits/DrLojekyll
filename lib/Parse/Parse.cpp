@@ -834,6 +834,7 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 
 // Create a new variable in this context of this clause.
 ParsedVariable ParsedClause::CreateVariable(TypeLoc type) {
+  assert(type.UnderlyingKind() != TypeKind::kInvalid);
   auto var = new Node<ParsedVariable>;
   var->type = type;
   var->name =

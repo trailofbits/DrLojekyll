@@ -5,6 +5,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
@@ -529,6 +530,7 @@ static JOIN *CacheJoin(ClauseContext &context, JOIN *join) {
       const auto curr_col = join->columns[i++];
       assert(col->Hash() == curr_col->Hash());
       assert(col->type.Kind() == curr_col->type.Kind());
+      assert(col->type.UnderlyingKind() != TypeKind::kInvalid);
       col->var = curr_col->var;
       col->id = curr_col->id;
     }
@@ -1732,17 +1734,19 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   auto num_errors = log.Size();
 
-  for (auto clause : module.Clauses()) {
-    context.Reset();
-    if (!BuildClause(impl.get(), clause, context, log)) {
-      return std::nullopt;
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto clause : sub_module.Clauses()) {
+      context.Reset();
+      if (!BuildClause(impl.get(), clause, context, log)) {
+        return std::nullopt;
+      }
     }
-  }
 
-  for (auto clause : module.DeletionClauses()) {
-    context.Reset();
-    if (!BuildClause(impl.get(), clause, context, log)) {
-      return std::nullopt;
+    for (auto clause : sub_module.DeletionClauses()) {
+      context.Reset();
+      if (!BuildClause(impl.get(), clause, context, log)) {
+        return std::nullopt;
+      }
     }
   }
 
