@@ -427,7 +427,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
 
   TABLE *table_to_update = table;
 
-  auto build_rule_checks = [=, &context](PARALLEL *par) {
+  auto build_rule_checks = [=, &context, &view_cols](PARALLEL *par) {
     for (auto pred_view : view.MergedViews()) {
 
       // Deletes signal to their successors that data should be deleted, thus
@@ -439,14 +439,14 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
       }
 
       const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, table_to_update, pred_view,
+          impl, context, par, view, view_cols, table_to_update, pred_view,
           table);
 
-      rec_check->ExecuteAlongside(impl, par);
+      par->regions.AddUse(rec_check);
     }
   };
 
-  auto build_unknown = [=](ProgramImpl *, REGION *parent) -> REGION * {
+  auto build_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
     // If this induction can't receive deletions, then there's nothing else to
     // do because if it's not present here, then it won't be present in any of
     // the children.
@@ -465,7 +465,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
             if (already_checked != table) {
               already_checked = table;
               return BuildTopDownCheckerStateCheck(
-                  impl, proc, table, view.Columns(),
+                  impl, parent, table, view.Columns(),
                   BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
                   build_unknown);
 

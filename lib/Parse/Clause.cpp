@@ -277,12 +277,25 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 3;
           continue;
 
+        } else if (Lexeme::kIdentifierUnnamedVariable == lexeme) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Unnamed variables in the parameter list of a clause "
+              << "are not allowed because they cannot be range restricted";
+          return;
+
         // Support something like `foo(1, ...) : ...`, converting it into
         // `foo(V, ...) : V=1, ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme ||
-                   Lexeme::kIdentifierConstant == lexeme) {
+                   Lexeme::kLiteralNumber == lexeme) {
           (void) CreateLiteralVariable(clause.get(), tok, true, false);
+          state = 3;
+          continue;
+
+        // Kick-start type inference when using a named constant.
+        } else if (Lexeme::kIdentifierConstant == lexeme) {
+          auto unnamed_var = CreateLiteralVariable(
+              clause.get(), tok, true, false);
+          unnamed_var->type = TypeLoc(tok.TypeKind());
           state = 3;
           continue;
 
