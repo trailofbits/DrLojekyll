@@ -289,13 +289,20 @@ static void DefineTypeRefResolver(OutputStream &os, ParsedModule module,
   if (type.IsBuiltIn()) {
     return;
   }
-  os << os.Indent() << "_MERGE_METHOD_" << type.Name()
+  os << os.Indent() << "_HAS_MERGE_METHOD_" << type.Name()
+     << ": Final[bool] = hasattr(" << TypeName(type) << ", 'merge_into')\n"
+     << os.Indent() << "_MERGE_METHOD_" << type.Name()
      << ": Final[Callable[[" << TypeName(type) << ", " << TypeName(type)
      << "], None]] = getattr(" << TypeName(type)
      << ", 'merge_into', lambda a, b: None)\n\n"
      << os.Indent() << "def _resolve_" << type.Name() << "(self, obj: "
      << TypeName(type) << ") -> " << TypeName(type) << ":\n";
+
   os.PushIndent();
+  os << os.Indent() << "if " << gClassName << "._HAS_MERGE_METHOD_"
+     << type.Name() << ":\n";
+  os.PushIndent();
+
   os << os.Indent() << "ref_list = self._refs[hash(obj)]\n"
      << os.Indent() << "for maybe_obj in ref_list:\n";
   os.PushIndent();
@@ -321,8 +328,10 @@ static void DefineTypeRefResolver(OutputStream &os, ParsedModule module,
   os.PopIndent();
 
   // We didn't find a prior version of the object; add our object in.
-  os << os.Indent() << "ref_list.append(obj)\n"
-     << os.Indent() << "return obj\n\n";
+  os << os.Indent() << "ref_list.append(obj)\n";
+  os.PopIndent();
+
+  os << os.Indent() << "return obj\n\n";
 
   os.PopIndent();
 }
