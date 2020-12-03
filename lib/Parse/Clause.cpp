@@ -271,7 +271,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 2:
-        if (Lexeme::kIdentifierVariable == lexeme) {
+        if (Lexeme::kIdentifierVariable == lexeme ||
+            Lexeme::kIdentifierUnnamedVariable == lexeme) {
           (void) CreateVariable(clause.get(), tok, true, false);
 
           state = 3;
@@ -280,9 +281,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         // Support something like `foo(1, ...) : ...`, converting it into
         // `foo(V, ...) : V=1, ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme ||
-                   Lexeme::kIdentifierConstant == lexeme) {
+                   Lexeme::kLiteralNumber == lexeme) {
           (void) CreateLiteralVariable(clause.get(), tok, true, false);
+          state = 3;
+          continue;
+
+        // Kick-start type inference when using a named constant.
+        } else if (Lexeme::kIdentifierConstant == lexeme) {
+          auto unnamed_var = CreateLiteralVariable(
+              clause.get(), tok, true, false);
+          unnamed_var->type = TypeLoc(tok.TypeKind());
           state = 3;
           continue;
 

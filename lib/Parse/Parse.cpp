@@ -1367,6 +1367,11 @@ Token ParsedForeignType::Name(void) const noexcept {
   return impl->name;
 }
 
+// Is this type actually built-in?
+bool ParsedForeignType::IsBuiltIn(void) const noexcept {
+  return impl->is_built_in;
+}
+
 std::optional<DisplayRange>
 ParsedForeignType::SpellingRange(Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);

@@ -959,6 +959,9 @@ class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
   // Type name of this token.
   Token Name(void) const noexcept;
 
+  // Is this type actually built-in?
+  bool IsBuiltIn(void) const noexcept;
+
   std::optional<DisplayRange> SpellingRange(Language lang) const noexcept;
 
   // Optional code to inline, specific to a language.
