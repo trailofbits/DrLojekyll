@@ -271,12 +271,17 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 2:
-        if (Lexeme::kIdentifierVariable == lexeme ||
-            Lexeme::kIdentifierUnnamedVariable == lexeme) {
+        if (Lexeme::kIdentifierVariable == lexeme) {
           (void) CreateVariable(clause.get(), tok, true, false);
 
           state = 3;
           continue;
+
+        } else if (Lexeme::kIdentifierUnnamedVariable == lexeme) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Unnamed variables in the parameter list of a clause "
+              << "are not allowed because they cannot be range restricted";
+          return;
 
         // Support something like `foo(1, ...) : ...`, converting it into
         // `foo(V, ...) : V=1, ...`.

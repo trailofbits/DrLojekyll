@@ -824,7 +824,15 @@ bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
   for (auto i = 0u; i < num_cols; ++i) {
     auto a = c1s[i];
     auto b = c2s[i];
-    if (a->type.Kind() != b->type.Kind() || !a->view->Equals(eq, b->view)) {
+    if (a == b) {
+      continue;
+
+    } else if (a->view == b->view) {
+      return false;
+
+    } else if (a->type.Kind() != b->type.Kind() ||
+               !a->view->Equals(eq, b->view) ||
+               a->Index() != b->Index()) {
       return false;
     }
   }
