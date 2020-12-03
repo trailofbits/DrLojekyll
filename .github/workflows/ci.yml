@@ -138,7 +138,7 @@ jobs:
           mkdir -p fuzz-run/Debug
           cp -r data/examples fuzz-run/Debug/corpus
           cd fuzz-run/Debug
-          if ! ../../build/fuzz/Debug/fuzzer \
+          if ! ../../build/fuzz/Debug/drlojekyll-parser-fuzzer \
                  -max_total_time=3 \
                  -timeout=1 \
                  -max_len=400 \
@@ -179,7 +179,7 @@ jobs:
           mkdir -p fuzz-run/RelWithDebInfo
           cp -r data/examples fuzz-run/RelWithDebInfo/corpus
           cd fuzz-run/RelWithDebInfo
-          ../../build/fuzz/RelWithDebInfo/fuzzer \
+          ../../build/fuzz/RelWithDebInfo/drlojekyll-parser-fuzzer \
             -max_total_time=3 \
             -timeout=1 \
             -max_len=400 \
