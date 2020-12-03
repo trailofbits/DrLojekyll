@@ -286,6 +286,9 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
 // we replace its usage with the prior value.
 static void DefineTypeRefResolver(OutputStream &os, ParsedModule module,
                                   ParsedForeignType type) {
+  if (type.IsBuiltIn()) {
+    return;
+  }
   os << os.Indent() << "_MERGE_METHOD_" << type.Name()
      << ": Final[Callable[[" << TypeName(type) << ", " << TypeName(type)
      << "], None]] = getattr(" << TypeName(type)
