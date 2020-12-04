@@ -33,13 +33,14 @@ struct FuzzerStats
   uint64_t num_generated_python{0};
 
   uint64_t num_custom_calls{0};
+  uint64_t num_custom_fallbacks{0};
   uint64_t num_custom_generated_asts{0};
   uint64_t num_custom_parsed_asts{0};
 
   ~FuzzerStats() {
     assert(num_attempts >= num_parsed);
     assert(num_parsed >= num_compiled);
-    assert(num_custom_calls == num_custom_generated_asts + num_custom_parsed_asts);
+    assert(num_custom_calls == num_custom_generated_asts + num_custom_parsed_asts + num_custom_fallbacks);
 
     // Figure out how wide to make the numeric column in the first section
     int col_width = 1;
@@ -48,9 +49,10 @@ struct FuzzerStats
     std::cerr << "### Final fuzzer statistics ###" << std::endl
               << std::endl
               << "Custom mutator:" << std::endl
-              << "    Total calls:         " << set_width << num_custom_calls << std::endl
-              << "    Parsed ASTs:         " << set_width << num_custom_parsed_asts << std::endl
-              << "    Generated ASTs:      " << set_width << num_custom_generated_asts << std::endl
+              << "    Total calls:          " << set_width << num_custom_calls << std::endl
+              << "    Fallbacks to default: " << set_width << num_custom_fallbacks << std::endl
+              << "    Parsed ASTs:          " << set_width << num_custom_parsed_asts << std::endl
+              << "    Generated ASTs:       " << set_width << num_custom_generated_asts << std::endl
               << std::endl;
 
     // Figure out how wide to make the numeric column in the second section
@@ -195,11 +197,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
 
 // Forward-declare the libFuzzer's mutator callback.
-// FIXME: we only need this if we are going to call the default LibFuzzer mutator ourselves.
-#if 0
 extern "C" size_t
 LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
-#endif
 
 
 
@@ -221,6 +220,12 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   // We use the given seed for deterministic random number generation, when we
   // need to make random choices here.
   std::mt19937_64 gen(Seed);
+
+  // About 2% of the time, fallback to LLVM's default mutator.
+  if (std::uniform_int_distribution(1, 100)(gen) <= 2) {
+    gStats.num_custom_fallbacks += 1;
+    return LLVMFuzzerMutate(Data, Size, MaxSize);
+  }
 
   // Step 1. Parse the given data.
   std::string_view input(reinterpret_cast<char *>(Data), Size);
