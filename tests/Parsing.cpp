@@ -33,8 +33,8 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
 }  // namespace hyde
 
 // How many kinds of messages are there in the given parsed module?
-static auto NumMessages(const hyde::ParsedModule &module) {
-  auto num_messages = 0;
+static size_t NumMessages(const hyde::ParsedModule &module) {
+  size_t num_messages = 0;
   for (const auto &message : module.Messages()) {
     (void) message;
     num_messages += 1;
