@@ -430,10 +430,33 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   // with its predecessor.
   //
   // NOTE(pag): Conditions are a tire fire.
-  auto is_conditional = [](QueryView view) {
+  auto is_conditional = +[](QueryView view) {
     return !view.NegativeConditions().empty() ||
            !view.PositiveConditions().empty() || view.IsCompare() ||
            view.IsMap();
+  };
+
+  // With maps, we try to avoid saving the outputs and attached columns
+  // when the maps are differential.
+  //
+  // TODO(pag): Eventually revisit this idea. It needs corresponding support
+  //            in Data.cpp, `TABLE::GetOrCreate`.
+  auto is_diff_map = +[](QueryView view) {
+    return false;
+//
+//    if (!view.IsMap()) {
+//      return false;
+//    }
+//
+//    const auto functor = QueryMap::From(view).Functor();
+//    if (!functor.IsPure()) {
+//      return false;  // All output columns are stored.
+//    }
+//
+//    // These are the conditions for whether or not to persist the data of a
+//    // map. If the map is persisted and it's got a pure functor then we don't
+//    // actually store the outputs of the functor.
+//    return view.CanReceiveDeletions() || !!view.SetCondition();
   };
 
   query.ForEachView([=](QueryView view) {
@@ -454,7 +477,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     if (view.IsMerge()) {
       const auto can_receive_deletions = view.CanReceiveDeletions();
       for (auto pred : preds) {
-        if (!pred.IsDelete() && pred.Successors().size() == 1u &&
+        if (!is_diff_map(pred) &&
+            !pred.IsDelete() && pred.Successors().size() == 1u &&
             !can_receive_deletions) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
@@ -466,7 +490,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     } else if (view.IsTuple()) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
-        if (!pred.IsDelete() &&
+        if (!is_diff_map(pred) &&
+            !pred.IsDelete() &&
             all_cols_match(view.Columns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
@@ -483,7 +508,8 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
         const auto insert = QueryInsert::From(view);
         const auto cols = insert.InputColumns();
         const auto pred_cols = pred.Columns();
-        if (!pred.IsDelete() && all_cols_match(cols, pred_cols)) {
+        if (!is_diff_map(pred) && !pred.IsDelete() &&
+            all_cols_match(cols, pred_cols)) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -500,7 +526,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
         const auto insert = QueryDelete::From(view);
         const auto cols = insert.InputColumns();
         const auto pred_cols = preds[0].Columns();
-        if (all_cols_match(cols, pred_cols)) {
+        if (!is_diff_map(preds[0]) && all_cols_match(cols, pred_cols)) {
           const auto pred_model = program->view_to_model[preds[0]];
           DisjointSet::Union(model, pred_model);
         }

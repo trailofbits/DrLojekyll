@@ -752,6 +752,25 @@ DefinedNodeRange<QueryColumn> QueryMap::MappedColumns(void) const {
       DefinedNodeIterator<QueryColumn>(impl->columns.end() - num_copied_cols)};
 }
 
+// The resulting mapped columns. This is a subset of `MappedColumns`.
+DefinedNodeRange<QueryColumn> QueryMap::MappedBoundColumns(void) const {
+  const auto num_copied_cols = impl->attached_columns.Size();
+  const auto num_bound_cols = impl->input_columns.Size();
+  return {
+      DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+      DefinedNodeIterator<QueryColumn>(impl->columns.end() -
+                                       (num_bound_cols + num_copied_cols))};
+}
+
+// The resulting mapped columns. This is a subset of `MappedColumns`.
+DefinedNodeRange<QueryColumn> QueryMap::MappedFreeColumns(void) const {
+  const auto num_copied_cols = impl->attached_columns.Size();
+  const auto num_bound_cols = impl->input_columns.Size();
+  return {
+      DefinedNodeIterator<QueryColumn>(impl->columns.begin() + num_bound_cols),
+      DefinedNodeIterator<QueryColumn>(impl->columns.end() - num_copied_cols)};
+}
+
 // The resulting grouped columns.
 DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
   const auto num_cols = impl->columns.Size();

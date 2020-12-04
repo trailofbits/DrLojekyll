@@ -508,6 +508,12 @@ class QueryMap : public query::QueryNode<QueryMap> {
   // The resulting mapped columns. This does not include copied columns.
   DefinedNodeRange<QueryColumn> MappedColumns(void) const;
 
+  // The resulting mapped columns. This is a subset of `MappedColumns`.
+  DefinedNodeRange<QueryColumn> MappedBoundColumns(void) const;
+
+  // The resulting mapped columns. This is a subset of `MappedColumns`.
+  DefinedNodeRange<QueryColumn> MappedFreeColumns(void) const;
+
   // The resulting copied columns.
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
 

@@ -130,7 +130,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
   for (auto cond_set : conditions) {
     auto err = log.Append(clause_range);
     err << "The following elements in the body of this clause should be "
-        << "factored out into a a zero-argument predicate";
+        << "factored out into a zero-argument predicate";
 
     for (const auto &pred : clause->positive_predicates) {
       if (pred_to_set[pred.get()]->Find() == cond_set) {
