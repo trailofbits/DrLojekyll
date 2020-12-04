@@ -30,20 +30,20 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
   return os;
 }
 
-struct FileStream {
-  FileStream(hyde::DisplayManager &dm_, const fs::path path_)
-      : fs(path_),
-        os(dm_, fs) {}
-
-  std::ofstream fs;
-  hyde::OutputStream os;
-};
-
 }  // namespace hyde
 
-// Make sure that we can parse each of the .dr files in the examples directory
-// without an error
-static auto DrFilesInDir(const fs::path &dir) {
+// How many kinds of messages are there in the given parsed module?
+static auto NumMessages(const hyde::ParsedModule &module) {
+  auto num_messages = 0;
+  for (const auto &message : module.Messages()) {
+    (void) message;
+    num_messages += 1;
+  }
+  return num_messages;
+}
+
+// Return a vector of all *.dr files immediately under `dir`
+static std::vector<fs::path> DrFilesInDir(const fs::path &dir) {
   std::vector<fs::path> all_entries;
   for (const auto &entry : fs::directory_iterator(dir)) {
     if (entry.path().extension() == ".dr" && fs::is_regular_file(entry)) {
@@ -72,91 +72,89 @@ static const std::unordered_set<std::string> kBuildReleaseFailExamples{
 static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
     "average_weight.dr", "pairwise_average_weight.dr"};
 
+// Test that the well-formed example files parse and build.
 TEST_P(PassingExamplesParsingSuite, Examples) {
-  auto path = GetParam().string();
+  fs::path path = GetParam();
+  fs::path path_filename = path.filename();
+  fs::path path_filename_str = path_filename.string();
+  std::string path_str = path.string();
 
   hyde::DisplayManager display_mgr;
   hyde::ErrorLog err_log(display_mgr);
   hyde::Parser parser(display_mgr, err_log);
-  hyde::DisplayConfiguration display_cfg = {path, 2, true};
+  hyde::DisplayConfiguration display_cfg = {path_str, 2, true};
 
-  auto mmod = parser.ParsePath(path, display_cfg);
-  EXPECT_TRUE(mmod.has_value());
+  // Parse the input
+  auto mmod = parser.ParsePath(path_str, display_cfg);
   EXPECT_TRUE(err_log.IsEmpty()) << "Parsing failed:" << std::endl << err_log;
+  ASSERT_TRUE(mmod.has_value());
 
-  // CodeGen for message schemas
+  // Generate code for message schemas
   for (auto module : hyde::ParsedModuleIterator(*mmod)) {
-    (void) hyde::GenerateAvroMessageSchemas(display_mgr, module, err_log);
+    auto schemas = hyde::GenerateAvroMessageSchemas(display_mgr, module, err_log);
     EXPECT_TRUE(err_log.IsEmpty())
         << "Message schema generation failed:" << std::endl
         << err_log;
+    EXPECT_TRUE(schemas.size() == NumMessages(module));
   }
 
-  // Build
-  if (auto query_opt = hyde::Query::Build(*mmod, err_log)) {
-    std::optional<class hyde::Program> program_opt;
+  // Build the query
+  auto query_opt = hyde::Query::Build(*mmod, err_log);
+  ASSERT_TRUE(query_opt.has_value());
 
-    // Some tests fail to build
-    auto allow_mypy_failure = false;
-    if (kBuildDebugFailExamples.count(fs::path(path).filename().string())) {
+  // Build the program
+  //
+  // Note: Some tests fail to build -- handle those specially
+  if (kBuildDebugFailExamples.count(path_filename_str)) {
 #if NDEBUG
-      if (kBuildIRReleaseFailExamples.count(
-              fs::path(path).filename().string())) {
-        EXPECT_DEATH(hyde::Program::Build(*query_opt, err_log), "");
-        return;
-      }
-#endif
-      EXPECT_DEBUG_DEATH(
-          program_opt = hyde::Program::Build(*query_opt, err_log), ".*TODO.*");
-
-      // Allow to fail/skip next steps if it fails to build (catches fails in release)
-      allow_mypy_failure = true;
-    } else {
-      program_opt = hyde::Program::Build(*query_opt, err_log);
+    if (kBuildIRReleaseFailExamples.count(path_filename_str)) {
+      ASSERT_DEATH(hyde::Program::Build(*query_opt, err_log), "");
+      return;
     }
-
-    if (program_opt) {
-      auto generated_file_base = std::string(kGeneratedFilesDir) + "/" +
-                                 fs::path(path).filename().stem().string();
-
-      // Save the IR
-      {
-        auto ir_out =
-            hyde::FileStream(display_mgr, generated_file_base + ".ir");
-        ir_out.os << *program_opt;
-      }
-
-      if (!kBuildReleaseFailExamples.count(
-              fs::path(path).filename().string())) {
-
-        // CodeGen for Python
-        auto py_out_path = generated_file_base + ".py";
-        {
-          hyde::FileStream py_out_fs =
-              hyde::FileStream(display_mgr, py_out_path);
-          hyde::GeneratePythonCode(*program_opt, py_out_fs.os);
-        }
-#ifdef MYPY_PATH
-
-        // mypy can take input from a command line string via '-c STRING'
-        // but that sounds unsafe to do from here
-        auto ret_code = std::system(
-            std::string(std::string(MYPY_PATH) + " " + py_out_path).c_str());
-
-        if (ret_code != 0 && !allow_mypy_failure) {
-          FAIL() << "Python mypy type-checking failed! Saved generated code at "
-                 << py_out_path << "\n";
-        }
-#else
-
-        // Prevent unused variable errors
-        (void) allow_mypy_failure;
 #endif
-      }
-
-      SUCCEED();
-    }
+    ASSERT_DEBUG_DEATH(hyde::Program::Build(*query_opt, err_log),
+                       ".*TODO.*");
+    return;
   }
+
+  auto program_opt = hyde::Program::Build(*query_opt, err_log);
+  ASSERT_TRUE(program_opt.has_value());
+
+  auto generated_file_base = fs::path(kGeneratedFilesDir) / path_filename.stem();
+
+  // Save the IR
+  {
+    std::ofstream os(generated_file_base.string() + ".ir");
+    hyde::OutputStream ir_out(display_mgr, os);
+    ir_out << *program_opt;
+  }
+
+  // Skip examples that are known to fail
+  if (kBuildReleaseFailExamples.count(path_filename_str)) {
+    return;
+  }
+
+  // Generate Python code
+  auto py_out_path = generated_file_base.string() + ".py";
+  {
+    std::ofstream os(py_out_path);
+    hyde::OutputStream py_out_fs(display_mgr, os);
+    hyde::GeneratePythonCode(*program_opt, py_out_fs);
+  }
+
+  // Type-check the generated Python code with mypy, if available
+#ifdef MYPY_PATH
+  // Note, mypy can take input from a command line string via '-c STRING'
+  // but that sounds unsafe to do from here, so pass the path to the file
+  // instead.
+  //
+  // FIXME: possible command injection here!
+  std::string cmd = std::string(MYPY_PATH) + " " + py_out_path;
+  int ret_code = std::system(cmd.c_str());
+  EXPECT_TRUE(ret_code == 0)
+    << "Python mypy type-checking failed! Saved generated code at "
+    << py_out_path << std::endl;
+#endif  // MYPY_PATH
 }
 
 INSTANTIATE_TEST_SUITE_P(ValidExampleParsing, PassingExamplesParsingSuite,
@@ -164,18 +162,18 @@ INSTANTIATE_TEST_SUITE_P(ValidExampleParsing, PassingExamplesParsingSuite,
 
 class FailingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
 
-// Make sure that we fail to parse each of the .dr files in the invalid_examples
+// Test that we fail to parse each of the .dr files in the invalid_examples
 // directory with an error
 TEST_P(FailingExamplesParsingSuite, Examples) {
-  auto path = GetParam().string();
+  std::string path_str = GetParam().string();
 
   hyde::DisplayManager display_mgr;
   hyde::ErrorLog err_log(display_mgr);
   hyde::Parser parser(display_mgr, err_log);
-  hyde::DisplayConfiguration display_cfg = {path, 2, true};
+  hyde::DisplayConfiguration display_cfg = {path_str, 2, true};
 
   // Parsing is expected to fail for the invalid examples.
-  auto mmod = parser.ParsePath(path, display_cfg);
+  auto mmod = parser.ParsePath(path_str, display_cfg);
   EXPECT_FALSE(mmod.has_value());
   EXPECT_FALSE(err_log.IsEmpty());
 }
