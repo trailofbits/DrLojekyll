@@ -1390,7 +1390,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
       sep_ret = ", ";
     }
   }
-  os << ")\n\n";
+  os << ")  # type: ignore\n\n";
   os.PopIndent();
 }
 
