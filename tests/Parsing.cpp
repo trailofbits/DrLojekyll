@@ -76,7 +76,7 @@ static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
 TEST_P(PassingExamplesParsingSuite, Examples) {
   fs::path path = GetParam();
   fs::path path_filename = path.filename();
-  fs::path path_filename_str = path_filename.string();
+  std::string path_filename_str = path_filename.string();
   std::string path_str = path.string();
 
   hyde::DisplayManager display_mgr;
