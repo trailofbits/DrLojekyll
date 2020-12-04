@@ -1390,8 +1390,8 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
       sep_ret = ", ";
     }
   }
+  os << ")\n\n";
   os.PopIndent();
-  os << "\n\n";
 }
 
 
@@ -1795,10 +1795,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits Python code for the given program to `os`.
 void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
+     << "import sys\n"
      << "from __future__ import annotations\n"
      << "from collections import defaultdict, namedtuple\n"
-     << "from typing import (Callable, cast, DefaultDict, Final, Iterator, "
-     << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union)\n"
+     << "from typing import Callable, cast, DefaultDict, Final, Iterator, "
+     << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union\n"
      << "try:\n";
   os.PushIndent();
   os << os.Indent() << "from typing import Protocol\n";
