@@ -245,7 +245,7 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
   auto call_pred = [&](REGION *parent) -> REGION * {
     return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-        impl, context, parent, pred_view, view_cols, table_to_update, pred_view,
+        impl, context, parent, view, view_cols, table_to_update, pred_view,
         already_checked);
   };
 

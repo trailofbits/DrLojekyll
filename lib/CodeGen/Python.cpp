@@ -1381,14 +1381,23 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
   os << ":\n";
 
   os.PushIndent();
-  os << os.Indent() << "...  # pragma: no cover\n\n";
+  os << os.Indent() << "return sys.modules[__name__]." << func.Name() << '_'
+     << ParsedDeclaration(func).BindingPattern() << "(";
+  sep_ret = "";
+  for (auto param : func.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep_ret << param.Name();
+      sep_ret = ", ";
+    }
+  }
   os.PopIndent();
+  os << "\n\n";
 }
 
 
 static void DeclareFunctors(OutputStream &os, Program program,
                             ParsedModule root_module) {
-  os << os.Indent() << "class " << gClassName << "Functors(Protocol):\n";
+  os << os.Indent() << "class " << gClassName << "Functors:\n";
   os.PushIndent();
 
   std::unordered_set<std::string> seen;

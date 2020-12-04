@@ -135,7 +135,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
   if (model->table) {
 
     // We've already transitioned for this table, so our job is just to pass
-    // the buck along, and then eventually we'll temrinate recursion.
+    // the buck along, and then eventually we'll terminate recursion.
     if (already_checked == model->table) {
 
       parent = impl->parallel_regions.Create(proc);
@@ -148,7 +148,6 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
                                       [&](PARALLEL *par) { parent = par; });
 
       proc->body.Emplace(proc, remove);
-
       already_checked = model->table;
     }
 
