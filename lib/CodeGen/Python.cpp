@@ -1795,8 +1795,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits Python code for the given program to `os`.
 void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
-     << "import sys\n"
      << "from __future__ import annotations\n"
+     << "import sys\n"
      << "from collections import defaultdict, namedtuple\n"
      << "from typing import Callable, cast, DefaultDict, Final, Iterator, "
      << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union\n"
