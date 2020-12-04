@@ -5,10 +5,11 @@ if(ENABLE_LIBFUZZER)
         settings_public
         settings_private
         settings_fuzz_target
-        Util
+
         Display
         Lex
         Parse
+        Util
         Version
     )
 
@@ -18,10 +19,14 @@ if(ENABLE_LIBFUZZER)
         settings_public
         settings_private
         settings_fuzz_target
-        Util
+
+        CodeGen
+        ControlFlow
+        DataFlow
         Display
         Lex
         Parse
+        Util
         Version
     )
 endif()
