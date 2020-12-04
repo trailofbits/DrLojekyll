@@ -3,7 +3,9 @@
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/ControlFlow/Format.h>
+#include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Format.h>
+#include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/Format.h>
