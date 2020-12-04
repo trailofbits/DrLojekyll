@@ -15,7 +15,7 @@ env:
 #     - Build mode: debug or release
 #     - Fuzzing: enabled or disabled
 #     - macOS / several LTS versions of ubuntu / windows
-#     - gcc 8 / clang 6.0 / clang 9 / gcc 9
+#     - gcc 8 / clang 6.0 / clang 9 / gcc 9 / ...
 #     - ninja / makefiles / visual studio solution / xcode
 #
 # This would be hundreds of configurations, and it would be silly to test all
@@ -132,8 +132,9 @@ jobs:
             .
           cmake --build build
 
-      # Just a quick test to make sure the fuzzer doesn't crash immediately
-      - name: Test Debug Fuzzer
+      # Just a quick test to make sure the fuzzers don't crash immediately.
+      # More thorough fuzzing is done in a separate GitHub Actions workflow.
+      - name: Test Debug Fuzzers
         run: |
           mkdir -p fuzz-run/Debug
           cp -r data/examples fuzz-run/Debug/corpus
@@ -173,8 +174,9 @@ jobs:
       - name: Test Release
         run: cd build && ctest -C RelWithDebInfo --output-on-failure
 
-      # Just a quick test to make sure the fuzzer doesn't crash immediately
-      - name: Test Release Fuzzer
+      # Just a quick test to make sure the fuzzers don't crash immediately.
+      # More thorough fuzzing is done in a separate GitHub Actions workflow.
+      - name: Test Release Fuzzers
         run: |
           mkdir -p fuzz-run/RelWithDebInfo
           cp -r data/examples fuzz-run/RelWithDebInfo/corpus

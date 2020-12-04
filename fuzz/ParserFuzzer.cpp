@@ -1,5 +1,16 @@
 // Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
+// This fuzz target primarily exercises the Dr. Lojekyll parser.
+//
+// The inputs are mutated at the bytestring level, based on an corpus of Dr.
+// Lojekyll input programs.  As a result, the vast majority of inputs tested
+// during a fuzzing run will be syntactically invalid inputs, and Dr. Lojekyll
+// will not successfully parse them into an AST.  However, it is expected that
+// invalid inputs will be handled gracefully, not causing crashes.
+//
+// When an input _is_ parsed successfully by this target, a round-trip parsing
+// and pretty-printing property is checked.
+
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/Format.h>
@@ -22,14 +33,13 @@ struct FuzzerStats
 {
   uint64_t num_successful_parses{0};
   uint64_t num_failed_parses{0};
-  uint64_t num_custom{0};
 
   ~FuzzerStats() {
     auto num_total = num_successful_parses + num_failed_parses;
     double success_percent = (double)num_successful_parses / (double)num_total * 100.0;
     double failed_percent = (double)num_failed_parses / (double)num_total * 100.0;
 
-    std::cerr << "Final fuzzer statistics:" << std::endl
+    std::cerr << "### Final fuzzer statistics ###" << std::endl
               << "    Total attempts:    " << std::setw(12) << num_total << std::endl
               << "    Failed parses:     " << std::setw(12) << num_failed_parses << " (" << std::setprecision(4) << failed_percent << "%)"  << std::endl
               << "    Successful parses: " << std::setw(12) << num_successful_parses << " (" << std::setprecision(4) << success_percent << "%)" << std::endl;

@@ -99,7 +99,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     }
   }
 
-  // Round-trip test of the parser.
+  // Round-trip test of the parser in debug builds.
 #ifndef NDEBUG
   std::stringstream ss;
   do {
