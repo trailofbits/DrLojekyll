@@ -53,7 +53,7 @@ static FuzzerStats gStats;
 static std::string ParsedModuleToString(const hyde::ParsedModule &module) {
   std::stringstream stream;
   hyde::DisplayManager display_manager;
-  hyde::OutputStream os(display_manager, stream);  // KeepImports?
+  hyde::OutputStream os(display_manager, stream);
   return stream.str();
 }
 
