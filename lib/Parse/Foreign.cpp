@@ -297,6 +297,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
   DisplayRange tok_range;
   std::string_view code;
 
+  std::unique_ptr<Node<ParsedForeignType>> alloc_type;
   Node<ParsedForeignType> *type = nullptr;
   Node<ParsedForeignConstant> const_val;
   const_val.range = scope_range;
@@ -325,7 +326,18 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
     switch (state) {
       case 0:
         switch (lexeme) {
-          case Lexeme::kIdentifierType:
+
+          // Create a named constant on a foreign type.
+          case Lexeme::kIdentifierType: {
+            const_val.type = TypeLoc(tok);
+            state = 1;
+            type = context->foreign_types[tok.IdentifierId()];
+            assert(type != nullptr);
+            const_val.parent = type;
+            continue;
+          }
+
+          // Create a named constant on a built-in type.
           case Lexeme::kTypeASCII:
           case Lexeme::kTypeUTF8:
           case Lexeme::kTypeBytes:
@@ -336,11 +348,17 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             const_val.type = TypeLoc(tok);
             state = 1;
             type = context->foreign_types[tok.IdentifierId()];
-            assert(type != nullptr);
+            if (!type) {
+              type = new Node<ParsedForeignType>;
+              type->name = tok;
+              type->is_built_in = true;
+              alloc_type.reset(type);
+              context->foreign_types[tok.IdentifierId()] = type;
+            }
             const_val.parent = type;
             continue;
-
           }
+
           default:
             context->error_log.Append(scope_range, tok_range)
                 << "Expected foreign type name here, got '" << tok << "' instead";
@@ -403,17 +421,53 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           }
 
         } else if (Lexeme::kLiteralString == lexeme) {
-          const auto str_id = tok.StringId();
-          const auto str_len = tok.StringLength();
-          if (!context->string_pool.TryReadString(str_id, str_len, &code) ||
-              !fixup_code()) {
-            context->error_log.Append(scope_range, tok_range)
-                << "Empty or invalid string literal in foreign constant "
-                << "declaration";
+          switch (const_val.type.UnderlyingKind()) {
+            case TypeKind::kASCII:
+            case TypeKind::kBytes:
+            case TypeKind::kUTF8:
+              const_val.lang = Language::kUnknown;
+              context->display_manager.TryReadData(tok_range, &code);
+              break;
+            case TypeKind::kForeignType: {
+              const auto str_id = tok.StringId();
+              const auto str_len = tok.StringLength();
+              if (!context->string_pool.TryReadString(str_id, str_len, &code) ||
+                  !fixup_code()) {
+                context->error_log.Append(scope_range, tok_range)
+                    << "Empty or invalid string literal in foreign constant "
+                    << "declaration";
 
-            state = 3;
-            report_trailing = false;
-            continue;
+                state = 3;
+                report_trailing = false;
+                continue;
+              }
+              break;
+            }
+            default:
+              context->error_log.Append(scope_range, tok_range)
+                  << "Cannot initialize named constant of built-in type '"
+                  << const_val.type.SpellingRange() << "' with string literal";
+              state = 3;
+              report_trailing = false;
+              continue;
+          }
+
+        } else if (Lexeme::kLiteralNumber == lexeme) {
+          switch (const_val.type.UnderlyingKind()) {
+            case TypeKind::kASCII:
+            case TypeKind::kBytes:
+            case TypeKind::kUTF8:
+              context->error_log.Append(scope_range, tok_range)
+                  << "Cannot initialize named constant of built-in type '"
+                  << const_val.type.SpellingRange() << "' with number literal";
+              state = 3;
+              report_trailing = false;
+              continue;
+
+            default:
+              const_val.lang = Language::kUnknown;
+              context->display_manager.TryReadData(tok_range, &code);
+              break;
           }
 
         } else {
@@ -441,8 +495,34 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
     }
   }
 
+  if (!report_trailing) {
+    return;
+  }
+
+  if (state < 2) {
+    context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+        << "Expected a variable or atom name here as the name of the "
+        << "constant, but got nothing";
+    return;
+  }
+
   if (!type) {
     return;
+  }
+
+  if (type->is_built_in) {
+    if (code.empty()) {
+      context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+          << "Named constants on built-in types must be have an initializer";
+      return;
+    }
+  }
+
+  if (alloc_type) {
+    if (!module->root_module->types.empty()) {
+      module->root_module->types.back().get()->next = type;
+    }
+    module->root_module->types.emplace_back(std::move(alloc_type));
   }
 
   const_val.code.insert(const_val.code.end(), code.begin(), code.end());

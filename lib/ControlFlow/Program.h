@@ -988,7 +988,10 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
       : Node<ProgramRegion>(this),
         id(id_),
         kind(kind_),
-        tables(this) {}
+        tables(this),
+        input_vecs(this),
+        input_vars(this),
+        vectors(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
@@ -1157,7 +1160,9 @@ class ProgramImpl : public User {
         parallel_regions(this),
         induction_regions(this),
         operation_regions(this),
-        tables(this) {}
+        tables(this),
+        global_vars(this),
+        const_vars(this) {}
 
   void Optimize(void);
 

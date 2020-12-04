@@ -1142,7 +1142,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 }
 
 // Perform type checking/assignment. Returns `false` if there was an error.
-bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
+bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
 
   auto var_var_eq_p = [=](Node<ParsedVariable> *a,
                           Node<ParsedVariable> *b) -> bool {
@@ -1361,15 +1361,17 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
     changed = false;
     missing.clear();
 
-    for (auto clause : module->clauses) {
-      if (!do_clause(clause)) {
-        return false;
+    for (auto module : root_module->all_modules) {
+      for (auto clause : module->clauses) {
+        if (!do_clause(clause)) {
+          return false;
+        }
       }
-    }
 
-    for (auto clause : module->deletion_clauses) {
-      if (!do_clause(clause)) {
-        return false;
+      for (auto clause : module->deletion_clauses) {
+        if (!do_clause(clause)) {
+          return false;
+        }
       }
     }
   }
@@ -1409,8 +1411,10 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
     }
   };
 
-  type_redecls(module->locals);
-  type_redecls(module->exports);
+  for (auto module : root_module->all_modules) {
+    type_redecls(module->locals);
+    type_redecls(module->exports);
+  }
 
   return true;
 }

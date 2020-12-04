@@ -65,7 +65,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
-        check->ExecuteAlongside(impl, par);
+        par->regions.AddUse(check);
       }
     };
 

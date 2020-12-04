@@ -494,6 +494,9 @@ class Node<ParsedForeignType> {
   // Display ranges for all declarations.
   std::vector<DisplayRange> decls;
 
+  // Is this a built-in type?
+  bool is_built_in{false};
+
   struct Info {
     DisplayRange range;
     std::string code;

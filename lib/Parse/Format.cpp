@@ -226,34 +226,39 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
 OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 
   // Forward declaration.
-  os << "#foreign " << type.Name();
+  if (!type.IsBuiltIn()) {
+    os << "#foreign " << type.Name();
+  }
 
   // Actual definitions, if any.
   for (auto lang : {Language::kUnknown, Language::kCxx, Language::kPython}) {
-    auto maybe_code = type.CodeToInline(lang);
-    if (!maybe_code) {
-      continue;
-    }
 
-    const auto code = *maybe_code;
-    os << "\n#foreign " << type.Name() << " ```";
+    if (!type.IsBuiltIn()) {
+      auto maybe_code = type.CodeToInline(lang);
+      if (!maybe_code) {
+        continue;
+      }
 
-    switch (lang) {
-      case Language::kUnknown:
-        break;
-      case Language::kCxx:
-        os << "c++ ";
-        break;
-      case Language::kPython:
-        os << "python ";
-        break;
-    }
+      const auto code = *maybe_code;
+      os << "\n#foreign " << type.Name() << " ```";
 
-    os << code << "```";
+      switch (lang) {
+        case Language::kUnknown:
+          break;
+        case Language::kCxx:
+          os << "c++ ";
+          break;
+        case Language::kPython:
+          os << "python ";
+          break;
+      }
 
-    if (auto constructor = type.Constructor(lang); constructor) {
-      os << " ```" << constructor->first << '$'
-         << constructor->second << "```";
+      os << code << "```";
+
+      if (auto constructor = type.Constructor(lang); constructor) {
+        os << " ```" << constructor->first << '$'
+           << constructor->second << "```";
+      }
     }
 
     for (auto foreign_const : type.Constants(lang)) {

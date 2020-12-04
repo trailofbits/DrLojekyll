@@ -834,6 +834,7 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 
 // Create a new variable in this context of this clause.
 ParsedVariable ParsedClause::CreateVariable(TypeLoc type) {
+  assert(type.UnderlyingKind() != TypeKind::kInvalid);
   auto var = new Node<ParsedVariable>;
   var->type = type;
   var->name =
@@ -1365,6 +1366,11 @@ std::filesystem::path ParsedImport::ImportedPath(void) const noexcept {
 // Type name of this token.
 Token ParsedForeignType::Name(void) const noexcept {
   return impl->name;
+}
+
+// Is this type actually built-in?
+bool ParsedForeignType::IsBuiltIn(void) const noexcept {
+  return impl->is_built_in;
 }
 
 std::optional<DisplayRange>
