@@ -79,7 +79,7 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, check, view.Successors(),
+  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
                              table);
 }
 

@@ -102,7 +102,7 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, gen,
+  BuildEagerSuccessorRegions(impl, view, context, parent,
                              QueryView(view).Successors(), table);
 }
 
