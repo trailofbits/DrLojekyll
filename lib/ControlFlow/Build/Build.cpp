@@ -955,68 +955,96 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                          QueryView view, ProgramOperation call_op,
                          TABLE *already_checked) {
 
-  std::vector<bool> available_cols_map(succ_view.Columns().size());
-  if (succ_view.IsInsert()) {
-    available_cols_map.resize(view.Columns().size());
-  }
-
-  for (auto succ_view_col : succ_cols) {
-    if (!succ_view_col.IsConstant()) {
-      available_cols_map[*(succ_view_col.Index())] = true;
-    }
-  }
-
-  for (auto col : view.Columns()) {
-    if (col.IsConstantRef()) {
-      available_cols_map[*(col.Index())] = true;
-    }
-  }
-
+  // List of output columns of `view` that can be derived from the output
+  // columns of `succ_view`, as available in `succ_cols`.
   std::vector<QueryColumn> available_cols;
-  std::unordered_map<QueryColumn, QueryColumn> inout_map;
 
+  // Inserts only have input columns, and that what gets passed in here.
   if (succ_view.IsInsert()) {
-    assert(view != succ_view);
-    for (auto col : succ_cols) {
-      if (!col.IsConstant() && available_cols_map[*(col.Index())]) {
-        available_cols.push_back(col);
-        inout_map.emplace(col, col);
-      }
-    }
-
-  } else if (view != succ_view) {
-    succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
-                             std::optional<QueryColumn> succ_view_col) {
-      if (InputColumnRole::kIndexValue != role &&
-          InputColumnRole::kAggregatedColumn != role && succ_view_col &&
-          QueryView::Containing(view_col) == view &&
-          available_cols_map[*(succ_view_col->Index())]) {
-        available_cols.push_back(view_col);
-        inout_map.emplace(view_col, *succ_view_col);
-      }
-    });
-
-    std::sort(available_cols.begin(), available_cols.end(),
-              [](QueryColumn a, QueryColumn b) {
-                return *(a.Index()) < *(b.Index());
-              });
-
-    auto it = std::unique(available_cols.begin(), available_cols.end(),
-                          [](QueryColumn a, QueryColumn b) {
-                            return *(a.Index()) == *(b.Index());
-                          });
-
-    available_cols.erase(it, available_cols.end());
+    available_cols = succ_cols;
+  }
 
   // Everything is available, yay!
-  } else {
+  if (view == succ_view) {
     for (auto col : view.Columns()) {
-      if (available_cols_map[*(col.Index())] || col.IsConstantRef()) {
-        available_cols.push_back(col);
-        inout_map.emplace(col, col);
-      }
+      available_cols.push_back(col);
     }
   }
+
+  // If any of the columns of the view we want to call are constant references
+  // then they are available. We know the outputs of a view are never themselves
+  // constants.
+  for (auto col : view.Columns()) {
+    if (col.IsConstantRef()) {
+      available_cols.push_back(col);
+      (void) parent->VariableFor(impl, col);
+    }
+  }
+
+  // Now we need to map the outputs of `succ_view` back to the outputs of
+  // `view`.
+  succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
+                           std::optional<QueryColumn> succ_view_col) {
+
+    // `view_col` is unrelated to `view`.
+    if (QueryView::Containing(view_col) != view) {
+      return;
+
+    // If it's a constant ref then we have it. Note that we take `view_col`
+    // as the lookup for the `VariableFor` and not `*succ_view_col` because
+    // that might give us the output of a mutable column in a key/value store.
+    } else if (view_col.IsConstantRef()) {
+      const auto succ_var = parent->VariableFor(impl, view_col);
+      parent->col_id_to_var.emplace(view_col.Id(), succ_var);
+      available_cols.push_back(view_col);
+
+    // The input column from `view` is not present in `succ_view`.
+    } else if (!succ_view_col) {
+      return;
+
+    // We cannot depend on the output value of this column
+    // (from `succ_view_col`) to derive the input value `view_col`. However,
+    // if the input column is a constant or constant ref then we have it.
+    } else if (InputColumnRole::kIndexValue == role ||
+               InputColumnRole::kAggregatedColumn == role) {
+      return;
+
+    // Two input values are conditionally merged into one output value. We can
+    // never convert an output into an input in this case.
+    } else if ((InputColumnRole::kCompareLHS == role ||
+                InputColumnRole::kCompareRHS == role) &&
+               (QueryCompare::From(succ_view).Operator() ==
+                ComparisonOperator::kEqual)) {
+      return;
+
+    // `*succ_view_col` is available in `view_cols`, thus `view_col` is
+    // also available.
+    } else if (std::find(succ_cols.begin(), succ_cols.end(), *succ_view_col) !=
+               succ_cols.end()) {
+      available_cols.push_back(view_col);
+      const auto succ_var = parent->VariableFor(impl, *succ_view_col);
+      parent->col_id_to_var.emplace(view_col.Id(), succ_var);
+
+    // Realistically, this shouldn't be possible, as it suggests a possible
+    // bug in the dataflow optimizers.
+    } else if (succ_view_col->IsConstantRef()) {
+      assert(false);
+      available_cols.push_back(view_col);
+      const auto succ_var = parent->VariableFor(impl, *succ_view_col);
+      parent->col_id_to_var.emplace(view_col.Id(), succ_var);
+    }
+  });
+
+  // Sort and unique out the available columns.
+  std::sort(available_cols.begin(), available_cols.end(),
+            [] (QueryColumn a, QueryColumn b) {
+              return *(a.Index()) < *(b.Index());
+            });
+  auto it = std::unique(available_cols.begin(), available_cols.end(),
+                        [] (QueryColumn a, QueryColumn b) {
+                          return *(a.Index()) == *(b.Index());
+                        });
+  available_cols.erase(it, available_cols.end());
 
   const auto proc = GetOrCreateTopDownChecker(
       impl, context, view, available_cols, already_checked);
@@ -1028,7 +1056,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   assert(!available_cols.empty());
   for (auto col : available_cols) {
-    const auto var = parent->VariableFor(impl, inout_map.find(col)->second);
+    const auto var = parent->VariableFor(impl, col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
   }

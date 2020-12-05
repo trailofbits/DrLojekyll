@@ -154,39 +154,20 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
                                   PROC *proc, QueryMap gen,
                                   std::vector<QueryColumn> &view_cols,
                                   TABLE *already_checked) {
+  const auto functor = gen.Functor();
+  assert(functor.IsPure());
 
   const QueryView view(gen);
   const QueryView pred_view = view.Predecessors()[0];
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
 
-  // If we can, do the check right away.
-  bool done_check = true;
-  for (auto out_of_in_col : gen.MappedColumns()) {
-    if (!proc->col_id_to_var.count(out_of_in_col.Id())) {
-      done_check = false;
-      break;
-    }
-  }
+  auto series = impl->series_regions.Create(proc);
+  proc->body.Emplace(proc, series);
 
-  UseRef<REGION> *parent_body = &(proc->body);
-  REGION *parent = proc;
-
-  if (done_check) {
-    const auto call = CreateGeneratorCall(
-        impl, gen, gen.Functor(), context, parent);
-    parent_body->Emplace(parent, call);
-    parent = call;
-    parent_body = &(call->body);
-  }
-
-  auto series = impl->series_regions.Create(parent);
-  parent_body->Emplace(parent, series);
-
-  // This map was persisted, thus we can check it. We'll do a partial or
-  // complete scan. We need to re-evaluate the calls inside the scan because
-  // this map node may share its data model with its successor (e.g. a
-  // merge), and that may share its data model with something else.
+  // This map was persisted, we're not going to re-execute the functor because
+  // it is pure. We'll do a partial or complete scan to recover the inputs
+  // needed by the predecessor to check the predecessor.
   if (model->table) {
 
     TABLE *table_to_update = model->table;
@@ -196,17 +177,6 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     // predecessors.
     assert(model->table != pred_model->table);
 
-    auto assign_outs_to_ins = [=](REGION *region) {
-      gen.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                         std::optional<QueryColumn> out_col) {
-        if (out_col) {
-          const auto out_var = region->VariableFor(impl, *out_col);
-          assert(out_var != nullptr);
-          region->col_id_to_var.emplace(in_col.Id(), out_var);
-        }
-      });
-    };
-
     auto call_pred = [&](PARALLEL *par) {
       par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, table_to_update, pred_view,
@@ -214,19 +184,8 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     };
 
     auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
-      if (done_check) {
-        return BuildTopDownTryMarkAbsent(impl, model->table, parent,
-                                         view.Columns(), call_pred);
-
-      } else {
-        assign_outs_to_ins(parent);
-        const auto call = CreateGeneratorCall(
-            impl, gen, gen.Functor(), context, parent);
-        call->body.Emplace(
-            call, BuildTopDownTryMarkAbsent(impl, model->table, call,
-                                            view.Columns(), call_pred));
-        return call;
-      }
+      return BuildTopDownTryMarkAbsent(impl, model->table, parent,
+                                       view_cols, call_pred);
     };
 
     series->regions.AddUse(BuildMaybeScanPartial(
@@ -235,17 +194,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
           if (already_checked != model->table) {
             already_checked = model->table;
             return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
+                impl, parent, model->table, view_cols,
                 BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
                 if_unknown);
 
           } else {
-
-            // If the model passed in matches the compare's model then it
-            // means we should have all of the columns of the comparison
-            // and thus would have done the check.
-            assert(done_check);
-
             table_to_update = nullptr;
 
             return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
@@ -278,20 +231,13 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     series->regions.AddUse(BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_model->table, series,
         [&](REGION *parent) -> REGION * {
-          if (done_check) {
-            return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                impl, context, parent, view, view_cols, nullptr, pred_view,
-                nullptr);
-
-          } else {
-            const auto call = CreateGeneratorCall(
-                impl, gen, gen.Functor(), context, parent);
-            call->body.Emplace(
-                call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                          impl, context, call, view, view_cols, nullptr,
-                          pred_view, nullptr));
-            return call;
-          }
+          const auto call = CreateGeneratorCall(
+              impl, gen, gen.Functor(), context, parent);
+          call->body.Emplace(
+              call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+                        impl, context, call, view, view_cols, nullptr,
+                        pred_view, nullptr));
+          return call;
         }));
 
   // This generator doesn't have persistent backing, nor does its predecessor,
@@ -301,11 +247,47 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
   } else {
   handle_worst_case:
 
-    // If we've done the check already then we'll trust things if the
-    // recursive call to the predecessor returns true.
+    std::vector<QueryColumn> bound_cols;
+    for (auto col : gen.MappedColumns()) {
+      if (functor.NthParameter(*(col.Index())).Binding() ==
+          ParameterBinding::kBound) {
+        bound_cols.push_back(col);
+      }
+    }
+
+    // Try to figure out if we have sufficient columns to be able to invoke
+    // the generator.
+    bool done_check = true;
+    for (auto out_of_in_col : bound_cols) {
+      if (out_of_in_col.IsConstantRef()) {
+        continue;  // The input column is constant, so we have it.
+
+      // We don't have an input variable associated with the output column
+      // which maps up with the input column associated with a `bound`-
+      // attributed parameter of the functor.
+      } else if (!proc->col_id_to_var.count(out_of_in_col.Id())) {
+        done_check = false;
+        break;
+      }
+    }
+
+    // If we can do the check because we have enough input columns then we'll
+    // trust things.
     if (done_check) {
-      series->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, series, view, view_cols, nullptr, pred_view, nullptr));
+
+      // Map in the variables.
+      for (auto out_of_in_col : bound_cols) {
+        auto out_var = series->VariableFor(impl, out_of_in_col);
+        auto in_col = gen.NthInputColumn(*(out_of_in_col.Index()));
+        series->col_id_to_var.emplace(in_col.Id(), out_var);
+      }
+
+      const auto call = CreateGeneratorCall(
+          impl, gen, gen.Functor(), context, series);
+      series->regions.AddUse(call);
+
+      call->body.Emplace(call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+          impl, context, call, view, view_cols, nullptr, pred_view, nullptr));
 
     // The issue here is that our codegen model of top-down checking treats
     // predecessors as black boxes. We really need to recover the columns from

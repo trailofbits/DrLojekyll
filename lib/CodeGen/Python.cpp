@@ -154,14 +154,11 @@ static std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
       suffix = ")";
       break;
     case TypeKind::kBytes:
-      prefix = "b\"";
-      suffix = "\"";
+      prefix = "b";
       break;
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID:
-      prefix = "\"";
-      suffix = "\"";
       break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {

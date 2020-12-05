@@ -3,6 +3,8 @@
 #include "Query.h"
 
 #include <cassert>
+#include <functional>
+#include <optional>
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
@@ -752,25 +754,6 @@ DefinedNodeRange<QueryColumn> QueryMap::MappedColumns(void) const {
       DefinedNodeIterator<QueryColumn>(impl->columns.end() - num_copied_cols)};
 }
 
-// The resulting mapped columns. This is a subset of `MappedColumns`.
-DefinedNodeRange<QueryColumn> QueryMap::MappedBoundColumns(void) const {
-  const auto num_copied_cols = impl->attached_columns.Size();
-  const auto num_bound_cols = impl->input_columns.Size();
-  return {
-      DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
-      DefinedNodeIterator<QueryColumn>(impl->columns.end() -
-                                       (num_bound_cols + num_copied_cols))};
-}
-
-// The resulting mapped columns. This is a subset of `MappedColumns`.
-DefinedNodeRange<QueryColumn> QueryMap::MappedFreeColumns(void) const {
-  const auto num_copied_cols = impl->attached_columns.Size();
-  const auto num_bound_cols = impl->input_columns.Size();
-  return {
-      DefinedNodeIterator<QueryColumn>(impl->columns.begin() + num_bound_cols),
-      DefinedNodeIterator<QueryColumn>(impl->columns.end() - num_copied_cols)};
-}
-
 // The resulting grouped columns.
 DefinedNodeRange<QueryColumn> QueryMap::CopiedColumns(void) const {
   const auto num_cols = impl->columns.Size();
@@ -827,12 +810,13 @@ OutputStream &QueryMap::DebugString(OutputStream &os) const noexcept {
 }
 
 // Apply a callback `with_col` to each input column of this view.
-void QueryMap::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
-                                             std::optional<QueryColumn>)>
-                              with_col) const {
+void QueryMap::ForEachUse(
+    std::function<void(QueryColumn, InputColumnRole,
+                       std::optional<QueryColumn>)> with_col) const {
   auto i = 0u;
+  auto j = 0u;
   auto max_i = impl->functor.Arity();
-  for (auto j = 0u; i < max_i; ++i) {
+  for (j = 0u; i < max_i; ++i) {
     if (impl->functor.NthParameter(i).Binding() == ParameterBinding::kFree) {
       continue;  // It's an output column.
     }
@@ -842,12 +826,16 @@ void QueryMap::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
     with_col(QueryColumn(in_col), InputColumnRole::kFunctorInput,
              QueryColumn(out_col));
   }
-  for (auto j = 0u; i < max_i; ++i, ++j) {
+  assert(j == impl->input_columns.Size());
+
+  max_i = impl->columns.Size();
+  for (j = 0u; i < max_i; ++i, ++j) {
     const auto out_col = impl->columns[i];
     const auto in_col = impl->attached_columns[j];
     with_col(QueryColumn(in_col), InputColumnRole::kCopied,
              QueryColumn(out_col));
   }
+  assert(j == impl->attached_columns.Size());
 }
 
 QueryAggregate QueryAggregate::From(QueryView view) {
