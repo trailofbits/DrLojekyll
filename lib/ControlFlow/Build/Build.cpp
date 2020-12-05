@@ -629,8 +629,6 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
         context.top_down_checker_work_list.back();
     context.top_down_checker_work_list.pop_back();
 
-    assert(!view_cols.empty());
-
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
       if (join.NumPivotColumns()) {
@@ -793,6 +791,29 @@ static void BuildQueryEntryPoint(ProgramImpl * impl, Context &context,
   }
 }
 
+static bool CanImplementTopDownChecker(
+    ProgramImpl *impl, QueryView view,
+    const std::vector<QueryColumn> &available_cols) {
+
+  if (view.IsSelect() && QuerySelect::From(view).IsStream()) {
+    return true;  // The top-down checker will return false;
+
+  // Join checkers are based off of their predecessors, which are guaranteed
+  // to have models.
+  } else if (view.IsJoin()) {
+    return true;
+  }
+
+  // We have a model, so worst case, we can do a full table scan.
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  if (model->table) {
+    return true;
+  }
+
+  // We need
+  return !available_cols.empty();
+}
+
 }  // namespace
 
 // Returns `true` if all paths through `region` ends with a `return` region.
@@ -893,7 +914,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 PROC *GetOrCreateTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
     const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
-  assert(!available_cols.empty());
+
+  assert(CanImplementTopDownChecker(impl, view, available_cols));
 
   // Make up a string that captures what we have available.
   std::stringstream ss;
@@ -902,13 +924,13 @@ PROC *GetOrCreateTopDownChecker(
     ss << ',' << view_col.Id();
   }
   ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+  auto &proc = context.view_to_top_down_checker[ss.str()];
 
   // We haven't made this procedure before; so we'll declare it now and
   // enqueue it for building. We enqueue all such procedures for building so
   // that we can build top-down checkers after all bottom-up provers have been
   // created. Doing so lets us determine which views, and thus data models,
   // are backed by what tables.
-  auto &proc = context.view_to_top_down_checker[ss.str()];
   if (!proc) {
     proc = impl->procedure_regions.Create(impl->next_id++,
                                           ProcedureKind::kTupleFinder);
@@ -1054,7 +1076,6 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
       impl->operation_regions.CreateDerived<CALL>(
           impl->next_id++, parent, proc, call_op);
 
-  assert(!available_cols.empty());
   for (auto col : available_cols) {
     const auto var = parent->VariableFor(impl, col);
     assert(var != nullptr);

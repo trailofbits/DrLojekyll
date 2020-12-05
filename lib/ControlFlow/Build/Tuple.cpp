@@ -31,8 +31,11 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 
       // TODO(pag): Why did I pass `true` to the `differential` parameter here?
       //            It could be the case that `tuple.SetCondition()` is present.
-      parent = BuildInsertCheck(impl, pred_view, context, parent, table, true,
-                                pred_view.Columns());
+      //
+      // TODO(pag): Really try to understand this again!!!
+      parent = BuildInsertCheck(
+          impl, pred_view, context, parent, table, true,
+          pred_view.Columns());
       last_model = table;
     }
   }
