@@ -35,7 +35,9 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
 // How many kinds of messages are there in the given parsed module?
 static size_t NumMessages(const hyde::ParsedModule &module) {
   size_t num_messages = 0;
-  for (const auto &message : module.Messages()) {
+  // Note: would use std::distance here, but `hyde::ParsedModule` doesn't
+  // implement all the necessary APIs.
+  for (auto message : module.Messages()) {
     (void) message;
     num_messages += 1;
   }
