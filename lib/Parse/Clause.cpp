@@ -295,7 +295,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         } else if (Lexeme::kIdentifierConstant == lexeme) {
           auto unnamed_var = CreateLiteralVariable(
               clause.get(), tok, true, false);
-          unnamed_var->type = TypeLoc(tok.TypeKind());
+          const TypeLoc type_loc(tok.TypeKind());
+          unnamed_var->type = type_loc;
+          auto foreign_const_it = context->foreign_constants.find(
+              tok.IdentifierId());
+          if (foreign_const_it != context->foreign_constants.end()) {
+            unnamed_var->type = foreign_const_it->second->type;
+          }
           state = 3;
           continue;
 
