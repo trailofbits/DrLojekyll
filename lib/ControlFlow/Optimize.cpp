@@ -126,69 +126,71 @@ static bool OptimizeImpl(INDUCTION *induction) {
     return changed;
   }
 
-  // Optimize nested inductions.
   auto parent_induction = induction->parent->AsInduction();
-  if (parent_induction) {
+  if (!parent_induction) {
+    return changed;
+  }
 
-    // Form like
-    // induction
-    //   init
-    //    induction
-    if (induction == parent_induction->init_region.get()) {
-      for (auto def : induction->vectors) {
-        changed = true;
-        parent_induction->vectors.AddUse(def);
-      }
-      induction->vectors.Clear();
+  // Optimize nested inductions.
 
-      if (induction->output_region && !induction->output_region->IsNoOp()) {
-        auto out_parent_region = parent_induction->output_region->AsSeries();
-        auto this_out_region = induction->output_region->AsSeries();
-        assert(out_parent_region);
-        assert(this_out_region);
-        for (auto region : this_out_region->regions) {
-          region->parent = out_parent_region;
-          out_parent_region->regions.AddUse(region);
-        }
-        induction->output_region->parent = nullptr;
-        induction->output_region.Clear();
-      }
-
-      auto init_region = induction->init_region.get();
-      init_region->parent = parent_induction;
-      parent_induction->init_region.Emplace(parent_induction, init_region);
-      induction->init_region.Clear();
-
-      auto cycle_parent_region = parent_induction->cyclic_region->AsSeries();
-      auto this_cycle_region = induction->cyclic_region->AsSeries();
-      assert(cycle_parent_region);
-      assert(this_cycle_region);
-      for (auto region : this_cycle_region->regions) {
-        region->parent = cycle_parent_region;
-        cycle_parent_region->regions.AddUse(region);
-      }
-      induction->cyclic_region->parent = nullptr;
-      induction->cyclic_region.Clear();
-
-      induction->parent = nullptr;
-
+  // Form like
+  // induction
+  //   init
+  //    induction
+  if (induction == parent_induction->init_region.get()) {
+    for (auto def : induction->vectors) {
       changed = true;
-
-    // Form like
-    // induction:
-    // init:
-    //   init-code-0
-    // fixpoint-loop:
-    //   induction:
-    //     init:
-    //       init-code-1
-    //     fixpoint-loop:
-    //       code-2
-    //   code-3
-    } else if (induction == parent_induction->cyclic_region.get()) {
-
-      // TODO(ekilmer)
+      parent_induction->vectors.AddUse(def);
     }
+    induction->vectors.Clear();
+
+    if (induction->output_region && !induction->output_region->IsNoOp()) {
+      auto out_parent_region = parent_induction->output_region->AsSeries();
+      auto this_out_region = induction->output_region->AsSeries();
+      assert(out_parent_region);
+      assert(this_out_region);
+      for (auto region : this_out_region->regions) {
+        region->parent = out_parent_region;
+        out_parent_region->regions.AddUse(region);
+      }
+      induction->output_region->parent = nullptr;
+      induction->output_region.Clear();
+    }
+
+    auto init_region = induction->init_region.get();
+    init_region->parent = parent_induction;
+    parent_induction->init_region.Emplace(parent_induction, init_region);
+    induction->init_region.Clear();
+
+    auto cycle_parent_region = parent_induction->cyclic_region->AsSeries();
+    auto this_cycle_region = induction->cyclic_region->AsSeries();
+    assert(cycle_parent_region);
+    assert(this_cycle_region);
+    for (auto region : this_cycle_region->regions) {
+      region->parent = cycle_parent_region;
+      cycle_parent_region->regions.AddUse(region);
+    }
+    induction->cyclic_region->parent = nullptr;
+    induction->cyclic_region.Clear();
+
+    induction->parent = nullptr;
+
+    changed = true;
+
+  // Form like
+  // induction:
+  // init:
+  //   init-code-0
+  // fixpoint-loop:
+  //   induction:
+  //     init:
+  //       init-code-1
+  //     fixpoint-loop:
+  //       code-2
+  //   code-3
+  } else if (induction == parent_induction->cyclic_region.get()) {
+
+    // TODO(ekilmer)
   }
 
   return changed;
