@@ -251,7 +251,8 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
   auto max_i = cmp->lhs_vars.Size();
   if (auto parent_op = cmp->parent->AsOperation(); max_i && parent_op) {
     if (auto parent_cmp = parent_op->AsTupleCompare();
-        parent_cmp && cmp->cmp_op == parent_cmp->cmp_op) {
+        parent_cmp && cmp->cmp_op == ComparisonOperator::kEqual &&
+        cmp->cmp_op == parent_cmp->cmp_op) {
 
       for (auto i = 0u; i < max_i; ++i) {
         parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
