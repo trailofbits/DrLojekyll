@@ -108,7 +108,7 @@ static bool OptimizeImpl(PARALLEL *par) {
   return changed;
 }
 
-// Optimize induction regions to reduce unnecessary complexity.
+// Optimize induction regions.
 // * Clear out empty output regions of inductions.
 // * Optimize nested loop inductions.
 static bool OptimizeImpl(INDUCTION *induction) {
