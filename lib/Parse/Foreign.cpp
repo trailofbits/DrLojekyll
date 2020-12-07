@@ -43,11 +43,11 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
 
   // Strip out leading and trailing whitespace.
   auto fixup_code = [&code] (void) -> bool {
-    while (code.front() == ' ' || code.front() == '\n') {
+    while (!code.empty() && (code.front() == ' ' || code.front() == '\n')) {
       code = code.substr(1u);
     }
 
-    while (code.back() == ' ' || code.back() == '\n') {
+    while (!code.empty() && (code.back() == ' ' || code.back() == '\n')) {
       code = code.substr(0, code.size() - 1u);
     }
 
@@ -304,11 +304,11 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
   // Strip out leading and trailing whitespace.
   auto fixup_code = [&code] (void) -> bool {
-    while (code.front() == ' ' || code.front() == '\n') {
+    while (!code.empty() && (code.front() == ' ' || code.front() == '\n')) {
       code = code.substr(1u);
     }
 
-    while (code.back() == ' ' || code.back() == '\n') {
+    while (!code.empty() && (code.back() == ' ' || code.back() == '\n')) {
       code = code.substr(0, code.size() - 1u);
     }
 

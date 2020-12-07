@@ -50,12 +50,15 @@ class OutputStream {
   }
 
   inline void PushIndent(void) {
-    indent.push_back(' ');
-    indent.push_back(' ');
+    indent.insert(indent.end(), indent_size, ' ');
+  }
+
+  inline void SetIndentSize(unsigned new_size) {
+    indent_size = new_size;
   }
 
   inline void PopIndent(void) {
-    indent.resize(indent.size() - 2u);
+    indent.resize(indent.size() - indent_size);
   }
 
   inline const std::string &Indent(void) const {
@@ -67,6 +70,7 @@ class OutputStream {
   std::ostream &os;
   bool rename_locals{false};
   std::string indent;
+  unsigned indent_size{2u};
 };
 
 }  // namespace hyde

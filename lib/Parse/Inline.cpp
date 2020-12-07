@@ -32,11 +32,11 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
 
   // Strip out leading newlines, as well as trailing newlines and spaces.
   auto fixup_code = [&code] (void) -> bool {
-    while (code.front() == '\n') {
+    while (!code.empty() && code.front() == '\n') {
       code = code.substr(1u);
     }
 
-    while (code.back() == ' ' || code.back() == '\n') {
+    while (!code.empty() && (code.back() == ' ' || code.back() == '\n')) {
       code = code.substr(0, code.size() - 1u);
     }
 
