@@ -46,7 +46,7 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
   // Okay, we need to figure out if we should persist this comparison node.
   // This is a bit tricky. If the comparison sets a condition then definitely
   // we need to. If it doesn't then we need to look at the successors of the
-  // comparison. If any successor can receive a deletion then that mans that
+  // comparison. If any successor can receive a deletion then that means that
   // a bottom-up checker will probably be created for this comparison node.
   // In that case, we will want to create persistent storage for this comparison
   // if this comparison's predecessor (who we have to visit before getting into
@@ -65,6 +65,10 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
     }
   }
 
+  const auto check = CreateCompareRegion(impl, cmp, context, parent);
+  parent->body.Emplace(parent, check);
+  parent = check;
+
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
@@ -75,9 +79,7 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  const auto check = CreateCompareRegion(impl, cmp, context, parent);
-  parent->body.Emplace(parent, check);
-  BuildEagerSuccessorRegions(impl, view, context, check, view.Successors(),
+  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
                              table);
 }
 
@@ -233,7 +235,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
             auto check = CreateCompareRegion(impl, cmp, context, parent);
             check->body.Emplace(
                 check, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                           impl, context, parent, view, view_cols, nullptr,
+                           impl, context, check, view, view_cols, nullptr,
                            pred_view, nullptr));
             return check;
           }
@@ -250,7 +252,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     // recursive call to the predecessor returns true.
     if (done_check) {
       series->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, proc, view, view_cols, nullptr, pred_view, nullptr));
+          impl, context, series, view, view_cols, nullptr, pred_view, nullptr));
 
     // The issue here is that our codegen model of top-down checking treats
     // predecessors as black boxes. We really need to recover the columns from
@@ -274,14 +276,25 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
   auto parent = impl->parallel_regions.Create(cmp);
   cmp->body.Emplace(cmp, parent);
 
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  if (model->table) {
+
+    // The caller didn't already do a state transition, so we can do it.
+    if (already_checked != model->table) {
+      parent->regions.AddUse(BuildBottomUpTryMarkUnknown(
+          impl, model->table, parent, view.Columns(),
+          [&](PARALLEL *par) { parent = par; }));
+    }
+  }
+
   for (auto succ_view : view.Successors()) {
     const auto call = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, parent,
         GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                   already_checked));
+                                   nullptr));
 
     for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
+      const auto var = call->VariableFor(impl, col);
       assert(var != nullptr);
       call->arg_vars.AddUse(var);
     }

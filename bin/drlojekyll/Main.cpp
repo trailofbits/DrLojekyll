@@ -67,6 +67,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
         hyde::GenerateCxxCode(*program_opt, *gCxxCodeStream);
       }
       if (gPyCodeStream) {
+        gPyCodeStream->SetIndentSize(4u);
         hyde::GeneratePythonCode(*program_opt, *gPyCodeStream);
       }
     }

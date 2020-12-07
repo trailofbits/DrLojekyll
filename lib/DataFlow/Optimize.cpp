@@ -416,7 +416,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   OptimizationContext opt(log);
   opt.can_sink_unions = true;
   Canonicalize(opt);
-  do_cse();  // Apply CSE to all canonical views.
+//  do_cse();  // Apply CSE to all canonical views.
 
   auto max_depth = 1u;
   for (auto view : this->inserts) {
@@ -439,6 +439,8 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     RemoveUnusedViews();
     changed = EliminateDeadFlows();
   }
+
+  do_cse();  // Apply CSE to all canonical views.
 
   RemoveUnusedViews();
 }

@@ -1001,6 +1001,10 @@ bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
   //    return false;
   //  }
 
+  if (a->group_ids.empty() || b->group_ids.empty()) {
+    return false;
+  }
+
   for (auto i = 0u, j = 0u;
        i < a->group_ids.size() && j < b->group_ids.size();) {
 

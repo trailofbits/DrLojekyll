@@ -1160,11 +1160,11 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
         << a_var.Type().SpellingRange() << "') and '" << b_var.Name()
         << "' (type '" << b_var.Type().SpellingRange() << "')";
 
-    err.Note(a_var.Type().SpellingRange())
+    err.Note(a_var.Type().SpellingRange(), a_var.Type().SpellingRange())
         << "Variable '" << a_var.Name() << "' with type '"
         << a_var.Type().SpellingRange() << "' is from here";
 
-    err.Note(b_var.Type().SpellingRange())
+    err.Note(b_var.Type().SpellingRange(), b_var.Type().SpellingRange())
         << "Variable '" << b_var.Name() << "' with type '"
         << b_var.Type().SpellingRange() << "' is from here";
 
@@ -1187,11 +1187,11 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
         << a_var.Type().SpellingRange() << "') and parameter '" << b_var.Name()
         << "' (type '" << b_var.Type().SpellingRange() << "')";
 
-    err.Note(a_var.Type().SpellingRange())
+    err.Note(a_var.Type().SpellingRange(), a_var.Type().SpellingRange())
         << "Variable '" << a_var.Name() << "' with type '"
         << a_var.Type().SpellingRange() << "' is from here";
 
-    err.Note(b_var.Type().SpellingRange())
+    err.Note(b_var.Type().SpellingRange(), b_var.Type().SpellingRange())
         << "Parameter '" << b_var.Name() << "' with type '"
         << b_var.Type().SpellingRange() << "' is from here";
 

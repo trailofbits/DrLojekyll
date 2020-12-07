@@ -53,18 +53,53 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
 Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
                                               QueryView view) {
 
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  if (model->table) {
+    return model->table;
+  }
+
   std::vector<QueryColumn> cols;
   if (view.IsInsert()) {
     for (auto col : QueryInsert::From(view).InputColumns()) {
       cols.push_back(col);
     }
+
+    // TODO(pag): Eventually revisit this idea. It needs corresponding support
+    //            in Build.cpp, `BuildDataModel::is_diff_map`.
+    //
+//  // This is a bit hidden away here, but in general, we want to avoid trying
+//  // to save too much stuff in output tables produced from maps, because we
+//  // can recompute that data. That has the effect of possibly pessimizing
+//  // our data modeling, though.
+//  } else if (view.IsMap() && (view.CanReceiveDeletions() ||
+//                              !!view.SetCondition())) {
+//    const auto map = QueryMap::From(view);
+//    const auto functor = map.Functor();
+//
+//    // If a functor is pure, then we won't store the outputs for the output
+//    // data because we can re-compute it.
+//    if (functor.IsPure()) {
+//      for (auto col : map.MappedBoundColumns()) {
+//        cols.push_back(col);
+//      }
+//      for (auto col : map.CopiedColumns()) {
+//        cols.push_back(col);
+//      }
+//
+//    // It's an impure functor, so we need to be able to observe the old and
+//    // new outputs, so we store all data.
+//    } else {
+//      for (auto col : map.Columns()) {
+//        cols.push_back(col);
+//      }
+//    }
+
   } else {
     for (auto col : view.Columns()) {
       cols.push_back(col);
     }
   }
 
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   if (!model->table) {
     model->table = impl->tables.Create(impl->next_id++);
 

@@ -147,7 +147,7 @@ BuildTopDownCheckerStateCheck(ProgramImpl *impl, REGION *parent, TABLE *table,
 
   const auto check = impl->operation_regions.CreateDerived<CHECKSTATE>(parent);
   for (auto col : cols) {
-    const auto var = parent->VariableFor(impl, col);
+    const auto var = check->VariableFor(impl, col);
     check->col_values.AddUse(var);
   }
 
@@ -436,6 +436,12 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
                                 std::vector<QueryColumn> &available_cols,
                                 TABLE *already_checked);
 
+// Build a top-down checker on a map / generator.
+void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
+                                  PROC *proc, QueryMap gen,
+                                  std::vector<QueryColumn> &view_cols,
+                                  TABLE *already_checked);
+
 // Builds an initialization function which does any work that depends purely
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context);
@@ -494,7 +500,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
 void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
-                                   PROC *proc);
+                                   PROC *proc, TABLE *already_checked);
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, PROC *proc,

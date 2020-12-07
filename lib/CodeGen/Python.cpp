@@ -154,14 +154,11 @@ static std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
       suffix = ")";
       break;
     case TypeKind::kBytes:
-      prefix = "b\"";
-      suffix = "\"";
+      prefix = "b";
       break;
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID:
-      prefix = "\"";
-      suffix = "\"";
       break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
@@ -1381,14 +1378,23 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
   os << ":\n";
 
   os.PushIndent();
-  os << os.Indent() << "...  # pragma: no cover\n\n";
+  os << os.Indent() << "return sys.modules[__name__]." << func.Name() << '_'
+     << ParsedDeclaration(func).BindingPattern() << "(";
+  sep_ret = "";
+  for (auto param : func.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep_ret << param.Name();
+      sep_ret = ", ";
+    }
+  }
+  os << ")  # type: ignore\n\n";
   os.PopIndent();
 }
 
 
 static void DeclareFunctors(OutputStream &os, Program program,
                             ParsedModule root_module) {
-  os << os.Indent() << "class " << gClassName << "Functors(Protocol):\n";
+  os << os.Indent() << "class " << gClassName << "Functors:\n";
   os.PushIndent();
 
   std::unordered_set<std::string> seen;
@@ -1787,9 +1793,10 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 void GeneratePythonCode(Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
+     << "import sys\n"
      << "from collections import defaultdict, namedtuple\n"
-     << "from typing import (Callable, cast, DefaultDict, Final, Iterator, "
-     << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union)\n"
+     << "from typing import Callable, cast, DefaultDict, Final, Iterator, "
+     << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union\n"
      << "try:\n";
   os.PushIndent();
   os << os.Indent() << "from typing import Protocol\n";

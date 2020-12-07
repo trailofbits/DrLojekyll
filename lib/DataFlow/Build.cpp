@@ -232,8 +232,8 @@ static void FindUniqueColumns(VIEW *view, std::vector<COL *> &out_cols) {
 // many as possible to the `view_ref`, replacing it each time. We apply this
 // to the filtered initial views, as well as the final views before pushing
 // a head clause.
-static VIEW *GuardWithWithInequality(QueryImpl *query, ParsedClause clause,
-                                     ClauseContext &context, VIEW *view) {
+static VIEW *GuardWithInequality(QueryImpl *query, ParsedClause clause,
+                                 ClauseContext &context, VIEW *view) {
   for (auto cmp : clause.Comparisons()) {
     if (ComparisonOperator::kEqual == cmp.Operator()) {
       continue;
@@ -389,7 +389,7 @@ static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
     }
   }
 
-  view = GuardWithWithInequality(query, clause, context, view);
+  view = GuardWithInequality(query, clause, context, view);
 
   if (view == initial_view) {
     return initial_view;  // We didn't do any filtering.
@@ -772,7 +772,9 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
   } else if (tuple_hash == context.result->Hash()) {
     assert(false && "TODO: What was this??");
+    context.result = tuple;
 
+  // TODO(pag): I don't understand this logic anymore.
   } else if (auto other_tuple = context.result->AsTuple(); other_tuple) {
     MERGE *merge = query->merges.Create();
     merge->merged_views.AddUse(tuple);
@@ -786,8 +788,10 @@ static bool ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
     context.result = merge;
 
+  // TODO(pag): I don't understand this logic anymore.
   } else if (auto merge = context.result->AsMerge(); merge) {
 
+    assert(false);
     // Given that we're saying this MERGE is an equivalence class, we can say
     // that if any two things have the same hash, even if they aren't
     // necessarily unique, we can ignore one of them, because they are
@@ -1210,6 +1214,7 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
   // Nothing left to do but try to publish the view!
   if (num_views == 1u && work_item.functors.empty()) {
+    assert(!context.result);
     ConvertToClauseHead(query, clause, context, log, views[0]);
     return;
   }
@@ -1749,6 +1754,15 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
       }
     }
   }
+
+  auto num_inequalities = 0u;
+  for (auto cmp : impl->compares) {
+    if (cmp->op != ComparisonOperator::kEqual) {
+      ++num_inequalities;
+    }
+  }
+
+//  assert(num_inequalities);
 
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
