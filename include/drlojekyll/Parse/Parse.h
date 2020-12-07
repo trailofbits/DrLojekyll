@@ -1093,6 +1093,15 @@ struct hash<::hyde::ParsedPredicate> {
   }
 };
 
+template <>
+struct hash<::hyde::ParsedComparison> {
+  using argument_type = ::hyde::ParsedComparison;
+  using result_type = uint64_t;
+  inline uint64_t operator()(::hyde::ParsedComparison cmp) const noexcept {
+    return cmp.UniqueId();
+  }
+};
+
 template <typename T>
 struct hash<::hyde::parse::ParsedNode<T>> {
   using argument_type = ::hyde::parse::ParsedNode<T>;

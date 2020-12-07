@@ -304,6 +304,9 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
 std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
     unsigned first_output, const OptimizationContext &opt) noexcept {
 
+  OptimizationContext attached_opt = opt;
+  attached_opt.can_replace_outputs_with_constants = true;
+
   auto i = first_output;
   auto attached_are_canonical = true;
   auto non_local_changes = false;
@@ -312,7 +315,8 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
     auto in_col = attached_columns[j];
     auto out_col = columns[i];
 
-    auto [changed, can_remove] = CanonicalizeColumnPair(in_col, out_col, opt);
+    auto [changed, can_remove] = CanonicalizeColumnPair(
+        in_col, out_col, attached_opt);
 
     non_local_changes = non_local_changes || changed;
     attached_are_canonical = attached_are_canonical && !can_remove;
@@ -329,7 +333,8 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
           k_out_col->ReplaceAllUsesWith(j_out_col);
           non_local_changes = true;
 
-          if (opt.can_remove_unused_columns && !k_out_col->IsUsed()) {
+          if (attached_opt.can_remove_unused_columns &&
+              !k_out_col->IsUsed()) {
             attached_are_canonical = false;
           }
         }

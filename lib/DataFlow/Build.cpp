@@ -53,7 +53,11 @@ struct ClauseContext {
     work_list.clear();
     error_heads.clear();
     result = nullptr;
+
+    unapplied_compares.clear();
   }
+
+  std::unordered_set<ParsedComparison> unapplied_compares;
 
   // Maps vars to cols. We don't map a `ParsedVariable` because then we'd end up
   // with them all being merged.
@@ -87,20 +91,29 @@ struct ClauseContext {
   VIEW *result{nullptr};
 };
 
-// Look up the ID of `var` in context.
-static unsigned VarId(ClauseContext &context, ParsedVariable var) {
+static VarColumn *VarSet(ClauseContext &context, ParsedVariable var) {
   if (auto vc = context.vars[var.Order()].get(); vc) {
-    return vc->FindAs<VarColumn>()->id;
+    return vc->FindAs<VarColumn>();
   }
 
   // If this var is a clause parameter.
   if (auto vc = context.var_to_col[var]; vc) {
-    const auto ret_id = vc->FindAs<VarColumn>()->id;
-    return ret_id;
+    return vc->FindAs<VarColumn>();
   }
 
   assert(false);
-  return ~0u;
+  return nullptr;
+}
+
+// Look up the ID of `var` in context.
+static unsigned VarId(ClauseContext &context, ParsedVariable var) {
+  auto var_col = VarSet(context, var);
+  if (var_col) {
+    return var_col->id;
+  } else {
+    assert(false);
+    return ~0u;
+  }
 }
 
 // Create a disjoint set for `var`, and merge it with any same-named variables
@@ -239,18 +252,33 @@ static VIEW *GuardWithInequality(QueryImpl *query, ParsedClause clause,
       continue;
     }
 
+    if (!context.unapplied_compares.count(cmp)) {
+      continue;
+    }
+
     const auto lhs_var = cmp.LHS();
     const auto rhs_var = cmp.RHS();
-    const auto lhs_id = VarId(context, lhs_var);
-    const auto rhs_id = VarId(context, rhs_var);
+    const auto lhs_set = VarSet(context, lhs_var);
+    const auto rhs_set = VarSet(context, rhs_var);
+
+    const auto lhs_id = lhs_set->id;
+    const auto rhs_id = rhs_set->id;
 
     COL *lhs_col = nullptr;
     COL *rhs_col = nullptr;
 
+    if (lhs_set->col && lhs_set->col->IsConstant()) {
+      lhs_col = lhs_set->col;
+    }
+
+    if (rhs_set->col && rhs_set->col->IsConstant()) {
+      rhs_col = rhs_set->col;
+    }
+
     for (auto col : view->columns) {
-      if (col->id == lhs_id) {
+      if (col->id == lhs_id || col->var == lhs_var) {
         lhs_col = col;
-      } else if (col->id == rhs_id) {
+      } else if (col->id == rhs_id || col->var == rhs_var) {
         rhs_col = col;
       }
     }
@@ -258,6 +286,8 @@ static VIEW *GuardWithInequality(QueryImpl *query, ParsedClause clause,
     if (!lhs_col || !rhs_col) {
       continue;
     }
+
+    context.unapplied_compares.erase(cmp);
 
     CMP *filter = query->compares.Create(cmp.Operator());
     filter->spelling_range = cmp.SpellingRange();
@@ -1084,7 +1114,7 @@ static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
     for (auto pred : work_item.functors) {
       if (auto out_view = TryApplyFunctor(query, context, pred, view);
           out_view) {
-        view = out_view;
+        view = GuardWithInequality(query, clause, context, out_view);
         updated = true;
 
       } else {
@@ -1200,7 +1230,7 @@ static VIEW *ApplyAggregate(QueryImpl *query, ParsedClause clause,
     return nullptr;
   }
 
-  return view;
+  return GuardWithInequality(query, clause, context, view);
 }
 
 // Go find join candidates. This takes the first view in `views` and tries to
@@ -1211,6 +1241,12 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
                                WorkItem &work_item) {
   auto &views = work_item.views;
   const auto num_views = views.size();
+
+  // We applied at least one functor and updated `work_item` in place.
+  if (TryApplyFunctors(query, clause, context, log, work_item)) {
+    context.work_list.emplace_back(std::move(work_item));
+    return;
+  }
 
   // Nothing left to do but try to publish the view!
   if (num_views == 1u && work_item.functors.empty()) {
@@ -1281,7 +1317,9 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
       // than a wide tree of JOINs.
       auto join = CreateJoinFromPivots(query, clause, context, pivots,
                                        num_joined_views);
-      unjoined_views.push_back(CreateIntermediary(query, join));
+
+      unjoined_views.push_back(GuardWithInequality(
+          query, clause, context, CreateIntermediary(query, join)));
 
       context.work_list.emplace_back();
       auto &new_work_item = context.work_list.back();
@@ -1312,11 +1350,11 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   // opportunities. Our next best bet is to try to apply any of the functors or
   // the aggregates.
 
-  // We applied at least one functor and updated `work_item` in place.
-  if (TryApplyFunctors(query, clause, context, log, work_item)) {
-    context.work_list.emplace_back(std::move(work_item));
-    return;
-  }
+//  // We applied at least one functor and updated `work_item` in place.
+//  if (TryApplyFunctors(query, clause, context, log, work_item)) {
+//    context.work_list.emplace_back(std::move(work_item));
+//    return;
+//  }
 
   if (1 == num_views && !work_item.functors.empty()) {
     for (auto pred : work_item.functors) {
@@ -1506,6 +1544,11 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
     if (cmp.Operator() == ComparisonOperator::kEqual) {
       DisjointSet::Union(lhs_vc, rhs_vc);
+
+
+    // At the end, this should be empty.
+    } else {
+      context.unapplied_compares.insert(cmp);
     }
   }
 
@@ -1619,6 +1662,21 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       ConvertToClauseHead(query, clause, context, log, err_head, true);
     }
     return false;
+  }
+
+  // Try to make sure we've applied all inequality comparisons.
+  if (!context.unapplied_compares.empty()) {
+    context.result = GuardWithInequality(
+        query, clause, context, context.result);
+
+    if (!context.unapplied_compares.empty()) {
+      for (auto cmp : context.unapplied_compares) {
+        auto err = log.Append(clause_range, cmp.SpellingRange());
+        err << "Internal error: Failed to apply inequality comparison between '"
+            << cmp.LHS() << "' and '" << cmp.RHS() << "'";
+      }
+      return false;
+    }
   }
 
   const auto decl = ParsedDeclaration::Of(clause);
