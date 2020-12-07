@@ -108,14 +108,96 @@ static bool OptimizeImpl(PARALLEL *par) {
   return changed;
 }
 
-// Clear out empty output regions of inductions.
-static bool OptimizeImpl(INDUCTION *induction) {
+// Optimize induction regions.
+// * Clear out empty output regions of inductions.
+// * Optimize nested loop inductions.
+static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
+  auto changed = false;
+
+  // Clear out empty output regions of inductions.
   if (induction->output_region && induction->output_region->IsNoOp()) {
     induction->output_region->parent = nullptr;
     induction->output_region.Clear();
-    return true;
+    changed = true;
   }
-  return false;
+
+  auto parent_region = induction->parent;
+  if (!parent_region) {
+    return changed;
+  }
+
+  auto parent_induction = parent_region->AsInduction();
+  if (!parent_induction) {
+    return changed;
+  }
+
+  // Optimize nested inductions.
+
+  // Form like
+  // induction
+  //   init
+  //    induction
+  if (induction == parent_induction->init_region.get()) {
+
+    // Fixup vectors
+    for (auto def : induction->vectors) {
+      changed = true;
+      parent_induction->vectors.AddUse(def);
+    }
+    induction->vectors.Clear();
+
+    // Fixup output region
+    if (auto output_region = induction->output_region.get(); output_region) {
+      assert(!induction->output_region->IsNoOp());  // Handled above.
+      induction->output_region.Clear();
+      output_region->parent = parent_induction;
+      if (auto parent_output_region = parent_induction->output_region.get();
+          parent_output_region) {
+        output_region->ExecuteBefore(prog, parent_output_region);
+      } else {
+        parent_induction->output_region.Emplace(parent_induction,
+                                                output_region);
+      }
+    }
+
+    // Fixup init region
+    auto init_region = induction->init_region.get();
+    induction->init_region.Clear();
+    init_region->parent = parent_induction;
+    parent_induction->init_region.Emplace(parent_induction, init_region);
+
+    // Fixup cyclic region
+    auto cyclic_region = induction->cyclic_region.get();
+    induction->cyclic_region.Clear();
+    cyclic_region->parent = parent_induction;
+    if (auto parent_cyclic_region = parent_induction->cyclic_region.get();
+        parent_cyclic_region) {
+      cyclic_region->ExecuteBefore(prog, parent_cyclic_region);
+    } else {
+      parent_induction->cyclic_region.Emplace(parent_induction, cyclic_region);
+    }
+
+    induction->parent = nullptr;
+
+    changed = true;
+
+  // Form like
+  // induction:
+  // init:
+  //   init-code-0
+  // fixpoint-loop:
+  //   induction:
+  //     init:
+  //       init-code-1
+  //     fixpoint-loop:
+  //       code-2
+  //   code-3
+  } else if (induction == parent_induction->cyclic_region.get()) {
+
+    // TODO(ekilmer)
+  }
+
+  return changed;
 }
 
 static bool OptimizeImpl(SERIES *series) {
@@ -549,7 +631,7 @@ void ProgramImpl::Optimize(void) {
     }
 
     for (auto induction : induction_regions) {
-      changed = OptimizeImpl(induction) | changed;
+      changed = OptimizeImpl(this, induction) | changed;
     }
 
     for (auto series : series_regions) {
@@ -596,8 +678,7 @@ void ProgramImpl::Optimize(void) {
   std::unordered_map<uint64_t, std::vector<PROC *>> similar_procs;
   for (auto proc : procedure_regions) {
     if (proc->kind == ProcedureKind::kInitializer ||
-        proc->kind == ProcedureKind::kMessageHandler ||
-        proc->is_alias) {
+        proc->kind == ProcedureKind::kMessageHandler || proc->is_alias) {
       continue;
 
     } else if (proc->IsUsed() || proc->has_raw_use) {
@@ -634,7 +715,8 @@ void ProgramImpl::Optimize(void) {
             j_proc->body.Clear();
             auto seq = series_regions.Create(j_proc);
             auto call_i = operation_regions.CreateDerived<CALL>(
-                next_id++, seq, i_proc, ProgramOperation::kCallProcedureCheckTrue);
+                next_id++, seq, i_proc,
+                ProgramOperation::kCallProcedureCheckTrue);
 
             for (auto arg_var : j_proc->input_vars) {
               call_i->arg_vars.AddUse(arg_var);
