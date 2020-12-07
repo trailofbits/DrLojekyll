@@ -144,7 +144,8 @@ static bool OptimizeImpl(INDUCTION *induction) {
     }
     induction->vectors.Clear();
 
-    if (induction->output_region && !induction->output_region->IsNoOp()) {
+    if (induction->output_region) {
+      assert(!induction->output_region->IsNoOp());  // Handled above.
       auto out_parent_region = parent_induction->output_region->AsSeries();
       auto this_out_region = induction->output_region->AsSeries();
       assert(out_parent_region);
