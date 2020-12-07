@@ -111,7 +111,7 @@ static bool OptimizeImpl(PARALLEL *par) {
 // Optimize induction regions.
 // * Clear out empty output regions of inductions.
 // * Optimize nested loop inductions.
-static bool OptimizeImpl(INDUCTION *induction) {
+static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
   auto changed = false;
 
   // Clear out empty output regions of inductions.
@@ -138,41 +138,44 @@ static bool OptimizeImpl(INDUCTION *induction) {
   //   init
   //    induction
   if (induction == parent_induction->init_region.get()) {
+
+    // Fixup vectors
     for (auto def : induction->vectors) {
       changed = true;
       parent_induction->vectors.AddUse(def);
     }
     induction->vectors.Clear();
 
-    if (induction->output_region) {
+    // Fixup output region
+    if (auto output_region = induction->output_region.get(); output_region) {
       assert(!induction->output_region->IsNoOp());  // Handled above.
-      auto out_parent_region = parent_induction->output_region->AsSeries();
-      auto this_out_region = induction->output_region->AsSeries();
-      assert(out_parent_region);
-      assert(this_out_region);
-      for (auto region : this_out_region->regions) {
-        region->parent = out_parent_region;
-        out_parent_region->regions.AddUse(region);
-      }
-      induction->output_region->parent = nullptr;
       induction->output_region.Clear();
+      output_region->parent = parent_induction;
+      if (auto parent_output_region = parent_induction->output_region.get();
+          parent_output_region) {
+        output_region->ExecuteBefore(prog, parent_output_region);
+      } else {
+        parent_induction->output_region.Emplace(parent_induction,
+                                                output_region);
+      }
     }
 
+    // Fixup init region
     auto init_region = induction->init_region.get();
+    induction->init_region.Clear();
     init_region->parent = parent_induction;
     parent_induction->init_region.Emplace(parent_induction, init_region);
-    induction->init_region.Clear();
 
-    auto cycle_parent_region = parent_induction->cyclic_region->AsSeries();
-    auto this_cycle_region = induction->cyclic_region->AsSeries();
-    assert(cycle_parent_region);
-    assert(this_cycle_region);
-    for (auto region : this_cycle_region->regions) {
-      region->parent = cycle_parent_region;
-      cycle_parent_region->regions.AddUse(region);
-    }
-    induction->cyclic_region->parent = nullptr;
+    // Fixup cyclic region
+    auto cyclic_region = induction->cyclic_region.get();
     induction->cyclic_region.Clear();
+    cyclic_region->parent = parent_induction;
+    if (auto parent_cyclic_region = parent_induction->cyclic_region.get();
+        parent_cyclic_region) {
+      cyclic_region->ExecuteBefore(prog, parent_cyclic_region);
+    } else {
+      parent_induction->cyclic_region.Emplace(parent_induction, cyclic_region);
+    }
 
     induction->parent = nullptr;
 
@@ -628,7 +631,7 @@ void ProgramImpl::Optimize(void) {
     }
 
     for (auto induction : induction_regions) {
-      changed = OptimizeImpl(induction) | changed;
+      changed = OptimizeImpl(this, induction) | changed;
     }
 
     for (auto series : series_regions) {
