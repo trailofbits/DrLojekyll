@@ -916,6 +916,7 @@ PROC *GetOrCreateTopDownChecker(
     const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
 
   assert(CanImplementTopDownChecker(impl, view, available_cols));
+  (void) CanImplementTopDownChecker;
 
   // Make up a string that captures what we have available.
   std::stringstream ss;

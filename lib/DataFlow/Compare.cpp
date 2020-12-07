@@ -85,6 +85,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     is_canonical = false;
   }
 
+  const auto num_cols = columns.Size();
   // Check to see if this comparison is redundant, i.e. it does the same
   // thing as its predecessor. This can be an artifact of the way we apply
   // inequality comparisons in the builder.
@@ -95,7 +96,6 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
   const auto incoming_view = GetIncomingView(input_columns, attached_columns);
   CMP *const incoming_cmp =
       incoming_view ? incoming_view->AsCompare() : nullptr;
-  const auto num_cols = columns.Size();
   if (incoming_cmp && incoming_cmp->op == this->op &&
       incoming_cmp->columns.Size() == num_cols && !sets_condition &&
       positive_conditions.Empty() && negative_conditions.Empty()) {
@@ -233,7 +233,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     rhs_out_col->ReplaceAllUsesWith(new_rhs_out);
   }
 
-  assert(i == 1u || i == 2u);
+  assert((is_equality && i == 1u) || (!is_equality && i == 2u));
   assert((num_cols - i) == attached_columns.Size());
 
   // Little functor that gets us the normal input column, or the constant
@@ -356,7 +356,6 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
       assert(cond);
       positive_conditions.AddUse(cond);
       cond->positive_users.AddUse(this);
-
       is_canonical = false;
       return Canonicalize(query, opt);  // Recursively apply.
     }
