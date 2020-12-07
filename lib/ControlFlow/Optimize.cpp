@@ -143,8 +143,10 @@ static bool OptimizeImpl(INDUCTION *induction) {
 
       if (induction->output_region && !induction->output_region->IsNoOp()) {
         auto out_parent_region = parent_induction->output_region->AsSeries();
+        auto this_out_region = induction->output_region->AsSeries();
         assert(out_parent_region);
-        for (auto region : induction->output_region->AsSeries()->regions) {
+        assert(this_out_region);
+        for (auto region : this_out_region->regions) {
           region->parent = out_parent_region;
           out_parent_region->regions.AddUse(region);
         }
@@ -158,8 +160,10 @@ static bool OptimizeImpl(INDUCTION *induction) {
       induction->init_region.Clear();
 
       auto cycle_parent_region = parent_induction->cyclic_region->AsSeries();
+      auto this_cycle_region = induction->cyclic_region->AsSeries();
       assert(cycle_parent_region);
-      for (auto region : induction->cyclic_region->AsSeries()->regions) {
+      assert(this_cycle_region);
+      for (auto region : this_cycle_region->regions) {
         region->parent = cycle_parent_region;
         cycle_parent_region->regions.AddUse(region);
       }
