@@ -126,7 +126,7 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
     return changed;
   }
 
-  auto parent_induction = induction->parent->AsInduction();
+  auto parent_induction = parent_region->AsInduction();
   if (!parent_induction) {
     return changed;
   }
