@@ -411,6 +411,10 @@ class ProgramGenerateRegion
   // Returns the functor to be applied.
   ParsedFunctor Functor(void) const noexcept;
 
+  // Returns `true` if it's an application of the functor meant to get results,
+  // and `false` if we're testing for the absence of results.
+  bool IsPositive(void) const noexcept;
+
   // List of variables to pass at inputs. The Nth input variable corresponds
   // with the Nth `bound`-attributed variable in the parameter list of
   // `Functor()`.

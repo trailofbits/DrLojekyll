@@ -12,7 +12,7 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
   std::vector<QueryColumn> output_cols;
 
   auto gen = impl->operation_regions.CreateDerived<GENERATOR>(
-      parent, functor, impl->next_id++);
+      parent, functor, impl->next_id++, view.IsPositive());
   auto i = 0u;
 
   // Deal with the functor inputs and outputs.

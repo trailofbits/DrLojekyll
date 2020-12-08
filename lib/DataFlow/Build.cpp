@@ -155,7 +155,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     input->receives.AddUse(view);
 
   } else if (decl.IsFunctor()) {
-    view = query->maps.Create(ParsedFunctor::From(decl), pred.SpellingRange());
+    assert(false);
 
   } else if (decl.IsExport() || decl.IsLocal() || decl.IsQuery()) {
     Node<QueryRelation> *input = nullptr;
@@ -942,7 +942,8 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 
     // Apply `pred` to the columns in `inouts`.
     MAP *map =
-        query->maps.Create(ParsedFunctor::From(redecl), pred.SpellingRange());
+        query->maps.Create(ParsedFunctor::From(redecl), pred.SpellingRange(),
+                           pred.IsPositive());
     VIEW *result = map;
     auto col_index = 0u;
 
@@ -1460,9 +1461,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   for (auto pred : clause.NegatedPredicates()) {
-    if (pred.Arity()) {
+    const auto decl = ParsedDeclaration::Of(pred);
+    if (pred.Arity() && !decl.IsFunctor()) {
       if (auto view = BuildPredicate(query, context, pred, log); view) {
-        assert(false && "TODO: Handle negated predicates");
+        pred_views.push_back(view);
       } else {
         return false;
       }
@@ -1626,6 +1628,13 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   // Go add the functors and aggregates in.
   for (auto pred : clause.PositivePredicates()) {
+    const auto decl = ParsedDeclaration::Of(pred);
+    if (decl.IsFunctor()) {
+      work_item.functors.push_back(pred);
+    }
+  }
+
+  for (auto pred : clause.NegatedPredicates()) {
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
       work_item.functors.push_back(pred);

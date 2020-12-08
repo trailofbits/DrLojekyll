@@ -785,6 +785,14 @@ const ParsedFunctor &QueryMap::Functor(void) const noexcept {
   return impl->functor;
 }
 
+// Is this a positive application of the functor, or a negative application?
+// The meaning of a negative application is that it produces zero outputs. It
+// is invalid to negate a functor that is declared as
+bool QueryMap::IsPositive(void) const noexcept {
+  return impl->is_positive;
+}
+
+
 // Returns the number of columns used for grouping.
 unsigned QueryMap::NumCopiedColumns(void) const noexcept {
   return impl->attached_columns.Size();
