@@ -20,14 +20,21 @@ uint64_t Node<ProgramParallelRegion>::Hash(void) const {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramParallelRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
+                                         Node<ProgramRegion> *that_,
+                                         uint32_t depth) const noexcept {
   const auto that = that_->AsSeries();
   const auto num_regions = regions.Size();
   if (!that || num_regions != that->regions.Size()) {
     return false;
   }
+
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
 
   std::unordered_map<unsigned, std::vector<REGION *>> grouped_regions;
   for (auto region : regions) {
@@ -71,7 +78,7 @@ bool Node<ProgramParallelRegion>::Equals(
       if (found) {
         next_candidates.push_back(this_region);
 
-      } else if (!this_region->Equals(super_eq, that_region)) {
+      } else if (!this_region->Equals(super_eq, that_region, next_depth)) {
         next_candidates.push_back(this_region);
         super_eq.Clear();
 

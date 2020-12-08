@@ -118,7 +118,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
           continue;  // Already removed.
         }
 
-        if (region1->Equals(eq, region2)) {
+        if (region1->Equals(eq, region2, UINT32_MAX)) {
           assert(region1 != region2);
           par->regions.RemoveIf([=](REGION *r) { return r == region2; });
           region2->parent = nullptr;
@@ -872,7 +872,7 @@ void ProgramImpl::Optimize(void) {
         PROC *&j_proc = procs[j];
 
         EqualitySet eq;
-        if (i_proc->Equals(eq, j_proc)) {
+        if (i_proc->Equals(eq, j_proc, UINT32_MAX)) {
 
           // If both need to be used, then make one call the other.
           if (i_proc->has_raw_use && j_proc->has_raw_use) {

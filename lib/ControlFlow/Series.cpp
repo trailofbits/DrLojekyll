@@ -42,17 +42,24 @@ bool Node<ProgramSeriesRegion>::EndsWithReturn(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramSeriesRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramSeriesRegion>::Equals(EqualitySet &eq,
+                                       Node<ProgramRegion> *that_,
+                                       uint32_t depth) const noexcept {
   const auto that = that_->AsSeries();
   const auto num_regions = regions.Size();
   if (!that || num_regions != that->regions.Size()) {
     return false;
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   for (auto i = 0u; i < num_regions; ++i) {
-    if (!regions[i]->Equals(eq, that->regions[i])) {
+    if (!regions[i]->Equals(eq, that->regions[i], next_depth)) {
       return false;
     }
   }

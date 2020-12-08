@@ -146,8 +146,9 @@ Node<ProgramOperationRegion>::AsTupleCompare(void) noexcept {
   return nullptr;
 }
 
-bool Node<ProgramVectorLoopRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -161,13 +162,18 @@ bool Node<ProgramVectorLoopRegion>::Equals(
     return false;
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
 
     for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -217,8 +223,9 @@ bool Node<ProgramLetBindingRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramLetBindingRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -240,12 +247,17 @@ bool Node<ProgramLetBindingRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
     for (auto i = 0u; i < num_vars; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -266,8 +278,9 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
   return hash;
 }
 
-bool Node<ProgramVectorAppendRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -320,8 +333,9 @@ bool Node<ProgramTransitionStateRegion>::IsNoOp(void) const noexcept {
   return false;
 }
 
-bool Node<ProgramTransitionStateRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
+                                                Node<ProgramRegion> *that_,
+                                                uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -341,8 +355,13 @@ bool Node<ProgramTransitionStateRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (body) {
-    return body->Equals(eq, that->body.get());
+    return body->Equals(eq, that->body.get(), next_depth);
   }
 
   return true;
@@ -365,8 +384,9 @@ bool Node<ProgramExistenceCheckRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramExistenceCheckRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramExistenceCheckRegion>::Equals(EqualitySet &eq,
+                                               Node<ProgramRegion> *that_,
+                                               uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op || this->OP::op != that_op->OP::op) {
     FAILED_EQ(that_);
@@ -389,8 +409,13 @@ bool Node<ProgramExistenceCheckRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -420,7 +445,8 @@ bool Node<ProgramExistenceAssertionRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramExistenceAssertionRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_,
+    uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op || this->OP::op != that_op->OP::op) {
     FAILED_EQ(that_);
@@ -474,8 +500,9 @@ uint64_t Node<ProgramVectorClearRegion>::Hash(void) const {
   return hash;
 }
 
-bool Node<ProgramVectorClearRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
+                                            Node<ProgramRegion> *that_,
+                                            uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -512,9 +539,9 @@ uint64_t Node<ProgramVectorSwapRegion>::Hash(void) const {
   return hash;
 }
 
-
-bool Node<ProgramVectorSwapRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -548,8 +575,9 @@ uint64_t Node<ProgramVectorUniqueRegion>::Hash(void) const {
   return hash;
 }
 
-bool Node<ProgramVectorUniqueRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorUniqueRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -588,8 +616,9 @@ bool Node<ProgramTableJoinRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramTableJoinRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
+                                          Node<ProgramRegion> *that_,
+                                          uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -639,6 +668,11 @@ bool Node<ProgramTableJoinRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
     const auto &pivot_vars_1 = pivot_vars;
     const auto &pivot_vars_2 = that->pivot_vars;
@@ -654,7 +688,7 @@ bool Node<ProgramTableJoinRegion>::Equals(
       }
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -676,8 +710,9 @@ uint64_t Node<ProgramTableProductRegion>::Hash(void) const {
   return hash;
 }
 
-bool Node<ProgramTableProductRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -705,6 +740,11 @@ bool Node<ProgramTableProductRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
 
     for (auto i = 0u; i < num_tables; ++i) {
@@ -715,7 +755,7 @@ bool Node<ProgramTableProductRegion>::Equals(
       }
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -740,8 +780,9 @@ bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
   }
 }
 
-bool Node<ProgramTableScanRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
+                                          Node<ProgramRegion> *that_,
+                                          uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -801,8 +842,9 @@ bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramTupleCompareRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -824,8 +866,13 @@ bool Node<ProgramTupleCompareRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -863,9 +910,11 @@ bool Node<ProgramGenerateRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramGenerateRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
+                                         Node<ProgramRegion> *that_,
+                                         uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -886,12 +935,17 @@ bool Node<ProgramGenerateRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   if (auto that_body = that->OP::body.get(); that_body) {
     for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, next_depth);
 
   } else {
     return true;
@@ -946,9 +1000,11 @@ bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramCallRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
+                                     Node<ProgramRegion> *that_,
+                                     uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -988,8 +1044,13 @@ bool Node<ProgramCallRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   // This function tests the true/false return value of the called procedure.
-  if (body && !body->Equals(eq, that->body.get())) {
+  if (body && !body->Equals(eq, that->body.get(), next_depth)) {
     FAILED_EQ(that_);
     return false;
   }
@@ -1006,7 +1067,7 @@ bool Node<ProgramCallRegion>::Equals(
   // Different functions are being called, check to see if their function bodies
   // are the same.
   } else {
-    return this_called_proc->Equals(eq, that_called_proc);
+    return this_called_proc->Equals(eq, that_called_proc, next_depth);
   }
 }
 
@@ -1028,9 +1089,11 @@ uint64_t Node<ProgramPublishRegion>::Hash(void) const {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramPublishRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramPublishRegion>::Equals(EqualitySet &eq,
+                                        Node<ProgramRegion> *that_,
+                                        uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -1076,9 +1139,11 @@ bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramReturnRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramReturnRegion>::Equals(EqualitySet &eq,
+                                       Node<ProgramRegion> *that_,
+                                       uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -1165,9 +1230,11 @@ bool Node<ProgramCheckStateRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramCheckStateRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -1199,9 +1266,16 @@ bool Node<ProgramCheckStateRegion>::Equals(
     }
   }
 
-  if ((body && !body->Equals(eq, that->body.get())) ||
-      (absent_body && !absent_body->Equals(eq, that->absent_body.get())) ||
-      (unknown_body && !unknown_body->Equals(eq, that->unknown_body.get()))) {
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
+  if ((body && !body->Equals(eq, that->body.get(), next_depth)) ||
+      (absent_body &&
+       !absent_body->Equals(eq, that->absent_body.get(), next_depth)) ||
+      (unknown_body &&
+       !unknown_body->Equals(eq, that->unknown_body.get(), next_depth))) {
     FAILED_EQ(that_);
     return false;
   }

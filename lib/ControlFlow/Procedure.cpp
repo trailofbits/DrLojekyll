@@ -26,8 +26,8 @@ bool Node<ProgramProcedure>::IsNoOp(void) const noexcept {
   return ret;
 }
 
-bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
-                                    Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
+                                    uint32_t depth) const noexcept {
   const auto that = that_->AsProcedure();
   if (!that) {
     return false;
@@ -105,8 +105,13 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
 
   eq.Insert(this, that_);
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   // This function tests the true/false return value of the called procedure.
-  if (body && !body->Equals(eq, that->body.get())) {
+  if (body && !body->Equals(eq, that->body.get(), next_depth)) {
     return false;
 
   } else {

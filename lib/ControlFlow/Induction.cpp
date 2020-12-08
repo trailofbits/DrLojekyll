@@ -43,9 +43,11 @@ uint64_t Node<ProgramInductionRegion>::Hash(void) const {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramInductionRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
+                                          Node<ProgramRegion> *that_,
+                                          uint32_t depth) const noexcept {
   const auto that = that_->AsInduction();
   const auto num_vectors = vectors.Size();
   if (!that || num_vectors != that->vectors.Size()) {
@@ -65,12 +67,18 @@ bool Node<ProgramInductionRegion>::Equals(
     }
   }
 
-  if (output_region && !output_region->Equals(eq, that->output_region.get())) {
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
+  if (output_region &&
+      !output_region->Equals(eq, that->output_region.get(), next_depth)) {
     return false;
   }
 
-  return init_region->Equals(eq, that->init_region.get()) &&
-         cyclic_region->Equals(eq, that->cyclic_region.get());
+  return init_region->Equals(eq, that->init_region.get(), next_depth) &&
+         cyclic_region->Equals(eq, that->cyclic_region.get(), next_depth);
   ;
 }
 

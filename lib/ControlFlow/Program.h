@@ -226,9 +226,10 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   virtual bool IsNoOp(void) const noexcept;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
-  // variable renaming).
-  virtual bool Equals(EqualitySet &eq,
-                      Node<ProgramRegion> *that) const noexcept;
+  // variable renaming) after searching down `depth` levels or until leaf,
+  // whichever is first, and where `depth` is 0, compare `this` to `that.
+  virtual bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+                      uint32_t depth) const noexcept;
 
   // Return the nearest enclosing region that is itself enclosed by an
   // induction.
@@ -428,8 +429,8 @@ class Node<ProgramLetBindingRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   inline Node(REGION *parent_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kLetBinding),
@@ -464,8 +465,8 @@ class Node<ProgramVectorLoopRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
 
@@ -496,8 +497,8 @@ class Node<ProgramVectorAppendRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept override;
 
@@ -521,8 +522,8 @@ class Node<ProgramVectorClearRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept override;
 
@@ -545,8 +546,8 @@ class Node<ProgramVectorSwapRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept override;
 
@@ -570,8 +571,8 @@ class Node<ProgramVectorUniqueRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept override;
 
@@ -610,8 +611,8 @@ class Node<ProgramTransitionStateRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   // Variables that make up the tuple.
   UseList<VAR> col_values;
@@ -653,8 +654,8 @@ class Node<ProgramCheckStateRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   // Variables that make up the tuple.
   UseList<VAR> col_values;
@@ -690,8 +691,8 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
 
@@ -721,8 +722,8 @@ class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramReturnRegion> *AsReturn(void) noexcept override;
 
@@ -749,8 +750,8 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramPublishRegion> *AsPublish(void) noexcept override;
 
@@ -781,8 +782,8 @@ class Node<ProgramExistenceCheckRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept override;
 
@@ -810,8 +811,8 @@ class Node<ProgramExistenceAssertionRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramExistenceAssertionRegion> *
   AsExistenceAssertion(void) noexcept override;
@@ -842,8 +843,8 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept override;
 
@@ -885,8 +886,8 @@ class Node<ProgramTableProductRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept override;
 
@@ -920,8 +921,8 @@ class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramTableScanRegion> *AsTableScan(void) noexcept override;
 
@@ -955,8 +956,8 @@ class Node<ProgramTupleCompareRegion> final
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
 
@@ -989,8 +990,8 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
 
@@ -1027,8 +1028,8 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
@@ -1094,8 +1095,8 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   inline void AddRegion(REGION *child) {
     assert(child->parent == this);
@@ -1121,8 +1122,8 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
@@ -1158,8 +1159,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
 
   Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
 
