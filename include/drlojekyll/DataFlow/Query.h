@@ -523,6 +523,11 @@ class QueryMap : public query::QueryNode<QueryMap> {
 
   const ParsedFunctor &Functor(void) const noexcept;
 
+  // Is this a positive application of the functor, or a negative application?
+  // The meaning of a negative application is that it produces zero outputs. It
+  // is invalid to negate a functor that is declared as
+  bool IsPositive(void) const noexcept;
+
   // Returns the number of columns copied along from source views.
   unsigned NumCopiedColumns(void) const noexcept;
 

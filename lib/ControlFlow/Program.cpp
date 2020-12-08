@@ -427,6 +427,12 @@ ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
 }
 
+// Returns `true` if it's an application of the functor meant to get results,
+// and `false` if we're testing for the absence of results.
+bool ProgramGenerateRegion::IsPositive(void) const noexcept {
+  return impl->is_positive;
+}
+
 unsigned ProgramTransitionStateRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }

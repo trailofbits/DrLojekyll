@@ -407,8 +407,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       }
     }
 
-    os << "<TD rowspan=\"2\">" << QueryView(map).KindName() << ' '
-       << ParsedDeclarationName(map.Functor()) << "</TD>";
+    os << "<TD rowspan=\"2\">" << QueryView(map).KindName() << ' ';
+    if (!map.IsPositive()) {
+      os << '!';
+    }
+    os << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.MappedColumns()) {
       os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
     }

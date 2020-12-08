@@ -536,6 +536,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     const auto functor = region.Functor();
     os << Comment(os, "Program Generate Region");
 
+    if (!region.IsPositive()) {
+      os << os.Indent() << "found = False\n";
+    }
+
     auto output_vars = region.OutputVariables();
 
     auto call_functor = [&] (void) {
@@ -549,6 +553,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     };
 
     auto do_body = [&] (void) {
+      if (!region.IsPositive()) {
+        os << os.Indent() << "found = True\n";
+        os.PopIndent();
+        os << os.Indent() << "if not found:\n";
+        os.PushIndent();
+      }
+
       if (auto body = region.Body(); body) {
         body->Accept(*this);
       } else {
@@ -1517,7 +1528,8 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   os << os.Indent() << "state: int = " << kStateUnknown << '\n'
      << os.Indent() << "prev_state: int = " << kStateUnknown << '\n'
      << os.Indent() << "present_bit: int = 0\n"
-     << os.Indent() << "ret: bool = False\n";
+     << os.Indent() << "ret: bool = False\n"
+     << os.Indent() << "found: bool = False\n";
 
   param_index = 0u;
 

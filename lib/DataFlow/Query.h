@@ -689,9 +689,11 @@ class Node<QueryMap> final : public Node<QueryView> {
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
-  inline explicit Node(ParsedFunctor functor_, DisplayRange range_)
+  inline explicit Node(ParsedFunctor functor_, DisplayRange range_,
+                       bool is_positive_)
       : range(range_),
-        functor(functor_) {
+        functor(functor_),
+        is_positive(is_positive_) {
     this->can_produce_deletions = !functor.IsPure();
     for (auto param : functor.Parameters()) {
       if (ParameterBinding::kFree == param.Binding()) {
@@ -706,6 +708,9 @@ class Node<QueryMap> final : public Node<QueryView> {
   // Number of `free` parameters in this functor. This distinguishes this map
   // from being a filter/predicate.
   unsigned num_free_params{0};
+
+  // Is this a positive functor application?
+  const bool is_positive;
 };
 
 using MAP = Node<QueryMap>;
