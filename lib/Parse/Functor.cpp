@@ -299,6 +299,13 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     return;
   }
 
+  if (impure.IsValid()) {
+    context->error_log.Append(scope_range, impure.SpellingRange())
+        << "Impure functors are not yet supported.";
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+    return;
+  }
+
   const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
 
   // If no explicit range syntax was provided, and this is a filter functor,

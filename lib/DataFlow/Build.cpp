@@ -38,6 +38,7 @@ struct VarColumn : DisjointSet {
 struct WorkItem {
   std::vector<VIEW *> views;
   std::vector<ParsedPredicate> functors;
+  std::vector<ParsedPredicate> negated_predicates;
 };
 
 struct ClauseContext {
@@ -160,20 +161,11 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
   } else if (decl.IsExport() || decl.IsLocal() || decl.IsQuery()) {
     Node<QueryRelation> *input = nullptr;
 
-    if (pred.IsPositive()) {
-      auto &rel = query->decl_to_relation[decl];
-      if (!rel) {
-        rel = query->relations.Create(decl);
-      }
-      input = rel;
-
-    } else {
-      log.Append(ParsedClause::Containing(pred).SpellingRange(),
-                 pred.SpellingRange())
-          << "TODO: Negations are not yet supported";
-      return nullptr;
+    auto &rel = query->decl_to_relation[decl];
+    if (!rel) {
+      rel = query->relations.Create(decl);
     }
-
+    input = rel;
     view = query->selects.Create(input, pred.SpellingRange());
     input->selects.AddUse(view);
 
@@ -184,7 +176,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     return nullptr;
   }
 
-  // Add the output columns to the VIEW associated with the precicate.
+  // Add the output columns to the VIEW associated with the predicate.
   auto col_index = 0u;
   for (auto var : pred.Arguments()) {
     auto vc = context.var_id_to_col[var.UniqueId()];
@@ -736,6 +728,12 @@ static COL *FindColVarInView(ClauseContext &context, VIEW *view,
     }
   }
 
+#ifndef NDEBUG
+  for (auto in_col : view->columns) {
+    assert(in_col->var != var);
+  }
+#endif
+
   // Try to find the column as a constant.
   return context.col_id_to_constant[id];
 }
@@ -972,6 +970,12 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       if (check.first) {
         check.first = out_col;
       }
+
+
+      auto var_set = VarSet(context, out_col->var);
+      if (!var_set->col) {
+        var_set->col = out_col;
+      }
     }
 
     // Attach other columns from the view to the functor.
@@ -1096,15 +1100,131 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
   return out_view;
 }
 
-// Try to apply as many functors as possible to `view`.
-static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
-                             ClauseContext &context, const ErrorLog &log,
-                             WorkItem &work_item) {
+// Try to apply a negation. This requires that all named, non-constant variables
+// are present.
+static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
+                              ClauseContext &context, ParsedPredicate pred,
+                              VIEW *view, const ErrorLog &log) {
+  std::vector<ParsedVariable> needed_vars;
+  std::vector<COL *> needed_cols;
+  std::vector<bool> needed_params;
+
+  bool all_needed = true;
+  for (auto var : pred.Arguments()) {
+    auto var_set = VarSet(context, var);
+    if (!var_set) {
+      log.Append(pred.SpellingRange(), var.SpellingRange())
+          << "Internal error: Unable to find variable '" << var
+          << "' used by negation";
+      return nullptr;
+    }
+
+    // The idea here is we may want to say: `!foo(1, _)` and we want this to
+    // mean that there doesn't exist any tuple in the `foo` relation with
+    // first column as `1`, and the second column as not being cared for. If
+    // we give it a name, however, then we
+    if (auto col = FindColVarInView(context, view, var); col) {
+      needed_cols.push_back(col);
+      needed_params.push_back(true);
+      needed_vars.push_back(var);
+
+    } else if (var.IsAssigned()) {
+      log.Append(pred.SpellingRange(), var.SpellingRange())
+          << "Internal error: Failed to discover constant '"
+          << var_set->col->AsConstant()->var << "' used by variable '"
+          << var << "'";
+      return nullptr;
+
+    // This should be an unnamed variable only, e.g. `_`.
+    } else if (var.IsUnnamed()) {
+      needed_params.push_back(false);
+      all_needed = false;
+
+    } else {
+      return nullptr;
+    }
+  }
+
+  auto sel = BuildPredicate(query, context, pred, log);
+  if (!sel) {
+    return nullptr;
+  }
+
+#ifndef NDEBUG
+  sel->producer = "PRED-NEGATION";
+#endif
+
+  if (!all_needed) {
+    const auto tuple = query->tuples.Create();
+#ifndef NDEBUG
+    tuple->producer = "PRED-NEGATION-SUBSET";
+#endif
+    auto i = 0u;
+    auto col_index = 0u;
+    for (auto var : pred.Arguments()) {
+      const auto in_col = sel->columns[i];
+      if (!needed_params[i++]) {
+        continue;
+      }
+      (void) var;
+      (void) tuple->columns.Create(
+          in_col->var, tuple, VarId(context, in_col->var), col_index++);
+      tuple->input_columns.AddUse(in_col);
+    }
+
+    sel = tuple;
+  }
+
+  sel = GuardViewWithFilter(query, clause, context, sel);
+  sel->can_produce_deletions = true;
+  sel->is_used_by_negation = true;
+
+  auto negate = query->negations.Create();
+  negate->negated_view.Emplace(negate, sel);
+
+  auto col_index = 0u;
+  for (auto in_col : needed_cols) {
+    auto var = needed_vars[col_index];
+    negate->input_columns.AddUse(in_col);
+    auto in_vc = context.var_id_to_col[in_col->var.UniqueId()];
+    auto vc = context.var_id_to_col[var.UniqueId()];
+    assert(vc != nullptr);
+    assert(in_vc != nullptr);
+    const auto out_col = negate->columns.Create(
+        in_col->var, negate, in_col->id, col_index++);
+    if (!in_vc->col) {
+      in_vc->col = in_col;
+    }
+    if (!vc->col) {
+      vc->col = out_col;
+    }
+  }
+
+  // Now attach in any other columns that `view` was bringing along but that
+  // aren't used in the negation itself.
+  for (auto in_col : view->columns) {
+    if (std::find(needed_cols.begin(), needed_cols.end(), in_col) ==
+        needed_cols.end()) {
+      negate->attached_columns.AddUse(in_col);
+      (void) negate->columns.Create(in_col->var, negate, in_col->id, col_index++);
+    }
+  }
+
+  return negate;
+}
+
+// Try to apply as many functors and negations as possible to `view`.
+static bool TryApplyFunctorsAndNegations(QueryImpl *query, ParsedClause clause,
+                                         ClauseContext &context,
+                                         const ErrorLog &log,
+                                         WorkItem &work_item) {
 
   const auto num_views = work_item.views.size();
 
   std::vector<ParsedPredicate> unapplied_functors;
+  std::vector<ParsedPredicate> unapplied_negations;
   unapplied_functors.reserve(work_item.functors.size());
+  unapplied_negations.reserve(work_item.negated_predicates.size());
 
   bool updated = false;
 
@@ -1112,19 +1232,42 @@ static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
     auto &view = work_item.views[i];
 
     unapplied_functors.clear();
+    bool updated_functors = false;
     for (auto pred : work_item.functors) {
       if (auto out_view = TryApplyFunctor(query, context, pred, view);
           out_view) {
         view = GuardWithInequality(query, clause, context, out_view);
         updated = true;
+        updated_functors = true;
 
       } else {
         unapplied_functors.push_back(pred);
       }
     }
 
-    if (updated) {
+    // NOTE(pag): We don't `GuardWithInequality` because applying a negation
+    //            doesn't introduce any new variables.
+    unapplied_negations.clear();
+    bool updated_negations = false;
+    for (auto pred : work_item.negated_predicates) {
+      if (auto out_view = TryApplyNegation(query, clause, context, pred,
+                                           view, log);
+          out_view) {
+        view = out_view;
+        updated = true;
+        updated_negations = true;
+
+      } else {
+        unapplied_negations.push_back(pred);
+      }
+    }
+
+    if (updated_functors) {
       work_item.functors.swap(unapplied_functors);
+    }
+
+    if (updated_negations) {
+      work_item.negated_predicates.swap(unapplied_negations);
     }
   }
 
@@ -1244,13 +1387,14 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   const auto num_views = views.size();
 
   // We applied at least one functor and updated `work_item` in place.
-  if (TryApplyFunctors(query, clause, context, log, work_item)) {
+  if (TryApplyFunctorsAndNegations(query, clause, context, log, work_item)) {
     context.work_list.emplace_back(std::move(work_item));
     return;
   }
 
   // Nothing left to do but try to publish the view!
-  if (num_views == 1u && work_item.functors.empty()) {
+  if (num_views == 1u &&
+      !(work_item.functors.size() + work_item.negated_predicates.size())) {
     assert(!context.result);
     ConvertToClauseHead(query, clause, context, log, views[0]);
     return;
@@ -1352,12 +1496,17 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   // the aggregates.
 
 //  // We applied at least one functor and updated `work_item` in place.
-//  if (TryApplyFunctors(query, clause, context, log, work_item)) {
+//  if (TryApplyFunctorAndNegations(query, clause, context, log, work_item)) {
 //    context.work_list.emplace_back(std::move(work_item));
 //    return;
 //  }
 
-  if (1 == num_views && !work_item.functors.empty()) {
+  // We've failed to apply any functors or negations; diagnose the issue.
+
+  if (1 == num_views &&
+      (work_item.functors.size() + work_item.negated_predicates.size())) {
+
+    // Diagnose functor application failures.
     for (auto pred : work_item.functors) {
       auto decl = ParsedDeclaration::Of(pred);
       auto err = log.Append(clause.SpellingRange(), pred.SpellingRange());
@@ -1376,6 +1525,30 @@ static void FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
           err.Note(pred.SpellingRange(), var.SpellingRange())
               << "Variable '" << var << "' is free here";
+        }
+      }
+    }
+
+    // Diagnose negated predicate failures.
+    for (auto pred : work_item.negated_predicates) {
+      assert(pred.IsNegated());
+
+      auto decl = ParsedDeclaration::Of(pred);
+      auto err = log.Append(clause.SpellingRange(), pred.SpellingRange());
+      err << "Unable to negate predicate '" << decl.Name() << "/"
+          << decl.Arity() << "'";
+
+      auto i = 0u;
+      for (auto var : pred.Arguments()) {
+        auto param = decl.NthParameter(i++);
+        if (!FindColVarInView(context, work_item.views[0], var) &&
+            !var.IsUnnamed()) {
+
+          err.Note(pred.SpellingRange(), var.SpellingRange())
+              << "Variable '" << var << "' is free here, but must be bound";
+
+          err.Note(decl.SpellingRange(), param.SpellingRange())
+              << "Variable '" << var << "' corresponds with this parameter";
         }
       }
     }
@@ -1454,17 +1627,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       if (auto view = BuildPredicate(query, context, pred, log); view) {
         pred_views.push_back(view);
 
-      } else {
-        return false;
-      }
-    }
-  }
-
-  for (auto pred : clause.NegatedPredicates()) {
-    const auto decl = ParsedDeclaration::Of(pred);
-    if (pred.Arity() && !decl.IsFunctor()) {
-      if (auto view = BuildPredicate(query, context, pred, log); view) {
-        pred_views.push_back(view);
       } else {
         return false;
       }
@@ -1628,6 +1790,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   // Go add the functors and aggregates in.
   for (auto pred : clause.PositivePredicates()) {
+    assert(pred.IsPositive());
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
       work_item.functors.push_back(pred);
@@ -1635,9 +1798,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   for (auto pred : clause.NegatedPredicates()) {
+    assert(pred.IsNegated());
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
       work_item.functors.push_back(pred);
+    } else {
+      work_item.negated_predicates.push_back(pred);
     }
   }
 
@@ -1821,15 +1987,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
       }
     }
   }
-
-  auto num_inequalities = 0u;
-  for (auto cmp : impl->compares) {
-    if (cmp->op != ComparisonOperator::kEqual) {
-      ++num_inequalities;
-    }
-  }
-
-//  assert(num_inequalities);
 
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();

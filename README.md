@@ -9,6 +9,12 @@ Brass's "push method" of pipelined bottom-up Datalog execution. It operates
 somewhere between full materialization and vectorized execution with respect
 to operating on tuples.
 
+## Use cases
+
+ * **Incremental static analysis.** You have a codebase that you want to analyze, e.g. solidity code. You normally have to re-run Crytic on each commit. Ideally, you want to load up the analysis results from the prior commit, then differentially update them based only on what code has changed.
+ * **Interactive disassembly.** You want to mark addresses as function heads, and then let the system figure out what it can based off of those actions. However, you also want to be able to selectively undo any such decision. Instead of `Ctrl-Z`, you want to have an undo checkbox list.
+ * **Mixed static/dynamic analysis.** You want to do a points-to analysis of some program, and you also want to augment the results with real-world data. You implement your basic points-to analysis in Datalog, but then you also instrument your program (e.g. with something like AddressSanitizer) so that when a pointer is passed to a function as an argument at runtime, you can find who allocated it and where, and instantly send a message to Datalog to update your previously static-only based analysis.
+
 ## Quick Start
 
 Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a

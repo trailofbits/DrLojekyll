@@ -22,6 +22,7 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  assert(hash != 0);
 
   if (out_to_in.empty()) {
     return hash;

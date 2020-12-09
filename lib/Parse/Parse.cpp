@@ -212,8 +212,8 @@ bool ParsedVariable::IsAssigned(void) const noexcept {
   return !impl->context->assignment_uses.empty();
 }
 
-// Returns `true` if this variable, or any other used of this variable,
-// is assigned to any literals.
+// Returns `true` if this variable, or any other use of this variable,
+// is compared with any other variables.
 bool ParsedVariable::IsCompared() const noexcept {
   return !impl->context->comparison_uses.empty();
 }
@@ -557,6 +557,9 @@ ParsedDeclaration::ParsedDeclaration(const ParsedExport &exp)
 
 ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
+
+ParsedDeclaration::ParsedDeclaration(const ParsedPredicate &pred)
+: parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {

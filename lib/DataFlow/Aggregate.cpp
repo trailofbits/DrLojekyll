@@ -20,6 +20,7 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
 
   // Base case for recursion.
   hash = HashInit() ^ functor.Id();
+  assert(hash != 0);
 
   auto local_hash = hash;
 
