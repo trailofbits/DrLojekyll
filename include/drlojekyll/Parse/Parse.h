@@ -184,7 +184,7 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   bool IsAssigned(void) const noexcept;
 
   // Returns `true` if this variable, or any other use of this variable,
-  // is compared with any other body_variables.
+  // is compared with any other variables.
   bool IsCompared(void) const noexcept;
 
   // Returns `true` if this variable is an unnamed variable.
@@ -485,6 +485,7 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   ParsedDeclaration(const ParsedFunctor &functor);
   ParsedDeclaration(const ParsedExport &exp);
   ParsedDeclaration(const ParsedLocal &local);
+  ParsedDeclaration(const ParsedPredicate &pred);
 
   DisplayRange SpellingRange(void) const noexcept;
 

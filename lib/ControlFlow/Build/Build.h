@@ -379,6 +379,10 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryInsert view, Context &context, OP *parent,
                             TABLE *last_model);
 
+// Build an eager region for testing the absence of some data in another view.
+void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
+                            QueryNegate negate, Context &context, OP *parent);
+
 // Build an eager region for deleting it.
 void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
                             OP *parent);
@@ -414,6 +418,12 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
                               QueryTuple tuple,
                               std::vector<QueryColumn> &available_cols,
                               TABLE *already_checked);
+
+// Build a top-down checker on a negation.
+void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context, PROC *proc,
+                                 QueryNegate negate,
+                                 std::vector<QueryColumn> &available_cols,
+                                 TABLE *already_checked);
 
 // Build a top-down checker for a relational insert.
 //
@@ -509,6 +519,9 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, PROC *proc,
                                 TABLE *already_checked);
+
+void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
+                                   QueryView view, PROC *proc);
 
 void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
                                   QueryView view, PROC *proc,
@@ -635,6 +648,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
           }
           [[clang::fallthrough]];
         case InputColumnRole::kCopied:
+        case InputColumnRole::kNegated:
         case InputColumnRole::kJoinPivot:
         case InputColumnRole::kJoinNonPivot:
         case InputColumnRole::kMergedColumn:

@@ -26,7 +26,12 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 
   const auto binding_pattern = ParsedDeclaration(functor).BindingPattern();
 
-  hash ^= RotateRight64(HashInit(), 43) * functor.Id();
+  hash = RotateRight64(HashInit(), 43) ^ functor.Id();
+  assert(hash != 0);
+
+  if (!is_positive) {
+    hash = ~hash;
+  }
   hash ^= RotateRight64(hash, 33) * kStringViewHasher(binding_pattern);
 
   auto local_hash = hash;
@@ -169,7 +174,10 @@ bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
   }
 
   const auto that = that_->AsMap();
-  if (!that || columns.Size() != that->columns.Size() ||
+  if (!that ||
+      is_positive != that->is_positive ||
+      num_free_params != that->num_free_params ||
+      columns.Size() != that->columns.Size() ||
       attached_columns.Size() != that->attached_columns.Size() ||
       functor.Id() != that->functor.Id() ||
       (ParsedDeclaration(functor).BindingPattern() !=

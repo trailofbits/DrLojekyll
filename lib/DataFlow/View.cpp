@@ -78,6 +78,10 @@ const char *Node<QueryDelete>::KindName(void) const noexcept {
   return "DELETE";
 }
 
+const char *Node<QueryNegate>::KindName(void) const noexcept {
+  return "AND-NOT";
+}
+
 const char *Node<QueryInsert>::KindName(void) const noexcept {
   if (declaration.Kind() == DeclarationKind::kQuery) {
     return "MATERIALIZE";
@@ -123,6 +127,10 @@ Node<QueryAggregate> *Node<QueryView>::AsAggregate(void) noexcept {
 }
 
 Node<QueryMerge> *Node<QueryView>::AsMerge(void) noexcept {
+  return nullptr;
+}
+
+Node<QueryNegate> *Node<QueryView>::AsNegate(void) noexcept {
   return nullptr;
 }
 
@@ -564,6 +572,9 @@ bool Node<QueryView>::PrepareToDelete(void) {
       insert->relation.Clear();
       rel->inserts.RemoveIf(is_this_view);
     }
+
+  } else if (auto negate = AsNegate(); negate) {
+    negate->negated_view.Clear();
   }
 
   return true;
@@ -662,6 +673,10 @@ void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
 // Replace all uses of `this` with `that`. The semantic here is that `this`
 // remains valid and used.
 void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
+  if (is_used_by_negation) {
+    that->is_used_by_negation = true;
+  }
+
   unsigned i = 0u;
   for (auto col : columns) {
     col->ReplaceAllUsesWith(that->columns[i++]);

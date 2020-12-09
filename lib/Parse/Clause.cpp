@@ -215,6 +215,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       }
       clause->positive_predicates.emplace_back(std::move(pred));
     }
+    negation_pos = DisplayPosition();
   };
 
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
@@ -295,7 +296,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         } else if (Lexeme::kIdentifierConstant == lexeme) {
           auto unnamed_var = CreateLiteralVariable(
               clause.get(), tok, true, false);
-          unnamed_var->type = TypeLoc(tok.TypeKind());
+          const TypeLoc type_loc(tok.TypeKind());
+          unnamed_var->type = type_loc;
+          auto foreign_const_it = context->foreign_constants.find(
+              tok.IdentifierId());
+          if (foreign_const_it != context->foreign_constants.end()) {
+            unnamed_var->type = foreign_const_it->second->type;
+          }
           state = 3;
           continue;
 
@@ -619,12 +626,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             return;
           }
 
+          const auto pred_range =
+              ParsedPredicate(pred.get()).SpellingRange();
+
           // Not allowed to negate inline declarations, as they might not be
           // backed by actual relations.
           if (pred->negation_pos.IsValid() &&
               pred->declaration->inline_attribute.IsValid()) {
-            const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
-            auto err = context->error_log.Append(scope_range, err_range);
+            auto err = context->error_log.Append(scope_range, pred_range);
             err << "Cannot negate " << pred->declaration->KindName() << " '"
                 << pred->name << "' because it has been marked as inline";
 
@@ -642,9 +651,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               ParsedFunctor::From(pred_decl).IsAggregate()) {
 
             if (pred->negation_pos.IsValid()) {
-              const auto err_range =
-                  ParsedPredicate(pred.get()).SpellingRange();
-              context->error_log.Append(scope_range, err_range)
+              context->error_log.Append(scope_range, pred_range)
                   << "Cannot negate aggregating functor '" << pred->name << "'";
               return;
             }
@@ -656,22 +663,35 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
             const auto kind = pred->declaration->context->kind;
 
-            // We don't allow negation of functors because a requirement that
-            // all argument body_variables be bound.
-            //
-            // For messages, we don't allow negations because we think of them
+            // We don't allow negations of messages because we think of them
             // as ephemeral, i.e. not even part of the database. They come in
             // to trigger some action, and leave.
             //
             // We *do* allow negation of queries because we proxy them
             // externally via later source-to-source transforms.
-            if (kind == DeclarationKind::kFunctor ||
-                kind == DeclarationKind::kMessage) {
-              const auto err_range =
-                  ParsedPredicate(pred.get()).SpellingRange();
-              context->error_log.Append(scope_range, err_range)
-                  << "Cannot negate " << pred->declaration->KindName() << " '"
-                  << pred->name << "'";
+            if (kind == DeclarationKind::kMessage) {
+              context->error_log.Append(scope_range, pred_range)
+                  << "Cannot negate message '" << pred->name
+                  << "'; if you want to test that a message has never been "
+                  << "received then proxy it with a `#local` or `#export`";
+              return;
+
+            // A functor with a range of one-to-one or one-or-more is guaranteed
+            // to produce at least one output, and so negating it would yield
+            // and always-false situation.
+            } else if (kind == DeclarationKind::kFunctor &&
+                       (pred->declaration->range == FunctorRange::kOneToOne ||
+                        pred->declaration->range == FunctorRange::kOneOrMore)) {
+              auto err = context->error_log.Append(scope_range, pred_range);
+              err << "Cannot negate functor '" << pred->name
+                  << "' declared with a one-to-one or one-or-more range";
+
+              err.Note(
+                  ParsedDeclaration(pred->declaration).SpellingRange(),
+                  DisplayRange(pred->declaration->range_begin_opt.Position(),
+                               pred->declaration->range_end_opt.NextPosition()))
+                  << "Range of functor '" << pred->name
+                  << "' is specified here";
               return;
             }
           }

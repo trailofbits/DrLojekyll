@@ -536,6 +536,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     const auto functor = region.Functor();
     os << Comment(os, "Program Generate Region");
 
+    if (!region.IsPositive()) {
+      os << os.Indent() << "found = False\n";
+    }
+
     auto output_vars = region.OutputVariables();
 
     auto call_functor = [&] (void) {
@@ -549,6 +553,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     };
 
     auto do_body = [&] (void) {
+      if (!region.IsPositive()) {
+        os << os.Indent() << "found = True\n";
+        os.PopIndent();
+        os << os.Indent() << "if not found:\n";
+        os.PushIndent();
+      }
+
       if (auto body = region.Body(); body) {
         body->Accept(*this);
       } else {
@@ -787,8 +798,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, "Program VectorLoop Region");
-
     auto vec = region.Vector();
+    if (region.Usage() != VectorUsage::kInductionVector) {
+      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
+    }
     os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
        << Vector(os, vec) << "):\n";
     os.PushIndent();
@@ -906,8 +919,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     // If we're transitioning to present, then add it to our indices.
+    //
+    // NOTE(pag): The codegen for negations depends upon transitioning from
+    //            absent to unknown as a way of preventing race conditions.
     const auto indices = region.Table().Indices();
-    if (region.ToState() == TupleState::kPresent) {
+    if (region.ToState() == TupleState::kPresent ||
+        region.FromState() == TupleState::kAbsent) {
       os << os.Indent() << "if not present_bit:\n";
       os.PushIndent();
 
@@ -1517,7 +1534,8 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   os << os.Indent() << "state: int = " << kStateUnknown << '\n'
      << os.Indent() << "prev_state: int = " << kStateUnknown << '\n'
      << os.Indent() << "present_bit: int = 0\n"
-     << os.Indent() << "ret: bool = False\n";
+     << os.Indent() << "ret: bool = False\n"
+     << os.Indent() << "found: bool = False\n";
 
   param_index = 0u;
 

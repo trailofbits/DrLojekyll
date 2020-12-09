@@ -1299,7 +1299,34 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     for (const auto &assign : clause->assignments) {
       auto lhs_type = assign->lhs.used_var->type;
       if (lhs_type.IsValid()) {
-        assign->rhs.type = lhs_type;
+        if (!assign->rhs.type.IsValid()) {
+          assign->rhs.type = lhs_type;
+
+        // E.g. assigning a type-inferred variable to a named constant.
+        } else if (assign->rhs.type.Kind() != lhs_type.Kind()) {
+          auto lhs_var = ParsedVariable(assign->lhs.used_var);
+          auto rhs_const = ParsedLiteral(&(assign->rhs));
+          auto err = context->error_log.Append(ParsedClause(clause).SpellingRange(),
+                                               lhs_var.SpellingRange());
+          err << "Type mismatch between variable '" << lhs_var.Name() << "' (type '"
+              << lhs_var.Type().SpellingRange() << "') and constant '"
+              << rhs_const.Literal() << "' (type '"
+              << rhs_const.Type().SpellingRange() << "')";
+
+          err.Note(lhs_var.Type().SpellingRange(), lhs_var.Type().SpellingRange())
+              << "Variable '" << lhs_var.Name() << "' with type '"
+              << lhs_var.Type().SpellingRange() << "' is from here";
+
+          err.Note(rhs_const.Type().SpellingRange(), rhs_const.Type().SpellingRange())
+              << "Constant '" << rhs_const.Literal() << "' with type '"
+              << rhs_const.Type().SpellingRange() << "' is from here";
+          return false;
+        }
+
+      // E.g. assigning a variable to a named constant.
+      } else if (assign->rhs.type.IsValid()) {
+        assign->lhs.used_var->type = assign->rhs.type;
+
       } else {
         missing.push_back(assign->lhs.used_var);
       }

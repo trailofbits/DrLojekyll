@@ -14,8 +14,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       decl_to_views;
 
   auto can_connect = [](ParsedDeclaration decl) {
-    return !decl.NumNegatedUses() &&  // Not used in an existence check.
-           !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
+    return !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
   };
 
   // Collect a list of declarations mapping to their inserts and selects.

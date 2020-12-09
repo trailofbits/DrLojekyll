@@ -338,6 +338,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   virtual Node<QueryMap> *AsMap(void) noexcept;
   virtual Node<QueryAggregate> *AsAggregate(void) noexcept;
   virtual Node<QueryMerge> *AsMerge(void) noexcept;
+  virtual Node<QueryNegate> *AsNegate(void) noexcept;
   virtual Node<QueryCompare> *AsCompare(void) noexcept;
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
 
@@ -469,6 +470,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // old ones, a deletion record is produced.
   bool can_receive_deletions{false};
   bool can_produce_deletions{false};
+
+  // Is this view used by a negation?
+  bool is_used_by_negation{false};
 
   // Debug string roughly tracking how or why this node was created.
   std::string producer;
@@ -689,9 +693,11 @@ class Node<QueryMap> final : public Node<QueryView> {
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
 
-  inline explicit Node(ParsedFunctor functor_, DisplayRange range_)
+  inline explicit Node(ParsedFunctor functor_, DisplayRange range_,
+                       bool is_positive_)
       : range(range_),
-        functor(functor_) {
+        functor(functor_),
+        is_positive(is_positive_) {
     this->can_produce_deletions = !functor.IsPure();
     for (auto param : functor.Parameters()) {
       if (ParameterBinding::kFree == param.Binding()) {
@@ -706,6 +712,9 @@ class Node<QueryMap> final : public Node<QueryView> {
   // Number of `free` parameters in this functor. This distinguishes this map
   // from being a filter/predicate.
   unsigned num_free_params{0};
+
+  // Is this a positive functor application?
+  const bool is_positive;
 };
 
 using MAP = Node<QueryMap>;
@@ -824,6 +833,30 @@ class Node<QueryCompare> : public Node<QueryView> {
 
 using CMP = Node<QueryCompare>;
 
+// Represents the check of the absence of a tuple from a relation.
+template <>
+class Node<QueryNegate> : public Node<QueryView> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(void)
+      : Node<QueryView>() {
+    can_receive_deletions = true;
+  }
+
+  const char *KindName(void) const noexcept override;
+  Node<QueryNegate> *AsNegate(void) noexcept override;
+
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  unsigned Depth(void) noexcept override;
+
+  UseRef<VIEW> negated_view;
+};
+
+using NEGATION = Node<QueryNegate>;
+
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.
 template <>
@@ -912,6 +945,9 @@ class QueryImpl {
     for (auto view : merges) {
       views.push_back(view);
     }
+    for (auto view : negations) {
+      views.push_back(view);
+    }
     for (auto view : compares) {
       views.push_back(view);
     }
@@ -948,6 +984,9 @@ class QueryImpl {
       do_view(view);
     }
     for (auto view : merges) {
+      do_view(view);
+    }
+    for (auto view : negations) {
       do_view(view);
     }
     for (auto view : compares) {
@@ -989,6 +1028,10 @@ class QueryImpl {
       views.push_back(view);
     }
     for (auto view : merges) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : negations) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -1041,6 +1084,10 @@ class QueryImpl {
       views.push_back(view);
     }
     for (auto view : merges) {
+      view->depth = 0;
+      views.push_back(view);
+    }
+    for (auto view : negations) {
       view->depth = 0;
       views.push_back(view);
     }
@@ -1120,7 +1167,7 @@ class QueryImpl {
   void FinalizeColumnIDs(void) const;
 
   // Link together views in terms of predecessors and successors.
-  void LinkViews(void) const;
+  void LinkViews(void);
 
   // Root module associated with this query.
   const ParsedModule module;
@@ -1152,6 +1199,7 @@ class QueryImpl {
   DefList<MAP> maps;
   DefList<AGG> aggregates;
   DefList<MERGE> merges;
+  DefList<NEGATION> negations;
   DefList<CMP> compares;
   DefList<INSERT> inserts;
   DefList<DELETE> deletes;

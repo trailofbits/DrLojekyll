@@ -143,6 +143,10 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
   } else if (view.IsDelete()) {
     BuildEagerDeleteRegion(impl, view, context, parent);
 
+  } else if (view.IsNegate()) {
+    const auto negate = QueryNegate::From(view);
+    BuildEagerNegateRegion(impl, pred_view, negate, context, parent);
+
   } else {
     assert(false);
   }
@@ -558,6 +562,12 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
         context.bottom_up_removers_work_list.back();
     context.bottom_up_removers_work_list.pop_back();
 
+    context.work_list.clear();
+    context.view_to_work_item.clear();
+
+    context.view_to_induction.clear();
+    context.product_vector.clear();
+
     if (to_view.IsTuple()) {
       CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
 
@@ -602,6 +612,9 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
         assert(false && "TODO Impure Functors!");
       }
 
+    } else if (to_view.IsNegate()) {
+      CreateBottomUpNegationRemover(impl, context, to_view, proc);
+
     // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
     //            removers jump past SELECTs.
     } else if (to_view.IsSelect()) {
@@ -611,11 +624,7 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       assert(false);
     }
 
-    if (!EndsWithReturn(proc)) {
-      const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-          proc, ProgramOperation::kReturnFalseFromProcedure);
-      ret->ExecuteAfter(impl, proc);
-    }
+    CompleteProcedure(impl, proc, context);
   }
 }
 
@@ -628,6 +637,12 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     auto [view, view_cols, proc, already_checked] =
         context.top_down_checker_work_list.back();
     context.top_down_checker_work_list.pop_back();
+
+    context.work_list.clear();
+    context.view_to_work_item.clear();
+
+    context.view_to_induction.clear();
+    context.product_vector.clear();
 
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
@@ -687,10 +702,17 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
       // Nothing to do.
 
+    } else if (view.IsNegate()) {
+      BuildTopDownNegationChecker(impl, context, proc, QueryNegate::From(view),
+                                  view_cols, already_checked);
+
+
     // Not possible?
     } else {
       assert(false);
     }
+
+    CompleteProcedure(impl, proc, context);
 
     // This view is conditional, wrap whatever we had generated in a big
     // if statement.
@@ -950,15 +972,19 @@ PROC *GetOrCreateTopDownChecker(
         (void) proc->VariableFor(impl, in_col);
       }
 
-      if (out_col) {
-        if (InputColumnRole::kIndexValue != role &&
-            InputColumnRole::kAggregatedColumn != role &&
-            proc->col_id_to_var.count(out_col->Id())) {
+      if (out_col && InputColumnRole::kIndexValue != role &&
+          InputColumnRole::kAggregatedColumn != role) {
+        if (proc->col_id_to_var.count(out_col->Id())) {
           proc->col_id_to_var.emplace(
               in_col.Id(), proc->VariableFor(impl, *out_col));
 
+        } else if (proc->col_id_to_var.count(in_col.Id())) {
+          proc->col_id_to_var.emplace(
+              out_col->Id(), proc->VariableFor(impl, in_col));
+
         } else if (out_col->IsConstantRef()) {
-          (void) proc->VariableFor(impl, *out_col);
+          proc->col_id_to_var.emplace(
+              in_col.Id(), proc->VariableFor(impl, *out_col));
         }
       }
     });
@@ -1178,28 +1204,51 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
   // Create variable bindings for input-to-output columns. Our function has
   // as many columns as `from_view` has, which may be different than what
   // `to_view` uses (i.e. it might use fewer columns).
-  to_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                         std::optional<QueryColumn> out_col) {
-    if (QueryView::Containing(in_col) != from_view || !out_col ||
-        !proc->col_id_to_var.count(in_col.Id()) ||
-        proc->col_id_to_var.count(out_col->Id())) {
-      return;
-    }
+  if (from_view != to_view) {
+    to_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
+      if (QueryView::Containing(in_col) != from_view || !out_col ||
+          !proc->col_id_to_var.count(in_col.Id()) ||
+          proc->col_id_to_var.count(out_col->Id())) {
+        return;
+      }
 
-    switch (role) {
-      case InputColumnRole::kAggregatedColumn:
-      case InputColumnRole::kIndexValue: return;
-      case InputColumnRole::kCompareLHS:
-      case InputColumnRole::kCompareRHS:
-        if (is_equality_cmp) {
-          return;
-        }
-        [[clang::fallthrough]];
-      default: break;
-    }
+      switch (role) {
+        case InputColumnRole::kAggregatedColumn:
+        case InputColumnRole::kIndexValue: return;
+        case InputColumnRole::kCompareLHS:
+        case InputColumnRole::kCompareRHS:
+          if (is_equality_cmp) {
+            return;
+          }
+          [[clang::fallthrough]];
+        default: break;
+      }
 
-    proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
-  });
+      proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
+    });
+
+  } else {
+    to_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
+      if (!out_col) {
+        return;
+      }
+
+      switch (role) {
+        case InputColumnRole::kAggregatedColumn:
+        case InputColumnRole::kIndexValue: return;
+        case InputColumnRole::kCompareLHS:
+        case InputColumnRole::kCompareRHS:
+          if (is_equality_cmp) {
+            return;
+          }
+          [[clang::fallthrough]];
+        default: break;
+      }
+      proc->col_id_to_var.emplace(in_col.Id(), proc->VariableFor(impl, *out_col));
+    });
+  }
 
   // Add it to a work list that will be processed after all main bottom-up
   // (positive) provers are created, so that we have proper access to all
@@ -1218,7 +1267,7 @@ bool MayNeedToBePersisted(QueryView view) {
   // tests a condition, then we might jump back in at some future point if
   // things transition states.
   if (view.SetCondition() || !view.PositiveConditions().empty() ||
-      !view.NegativeConditions().empty()) {
+      !view.NegativeConditions().empty() || view.IsNegate()) {
     return true;
   }
 
@@ -1276,7 +1325,8 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
   //
   // NOTE(pag): The special casing on a MERGE and SELECT is similar to the
   //            JOIN case, where we know that the MERGE will be persisted.
-  if (pred_view.IsJoin() || pred_view.IsMerge() || pred_view.IsSelect()) {
+  if (pred_view.IsJoin() || pred_view.IsMerge() || pred_view.IsSelect() ||
+      pred_view.IsNegate()) {
     det = Context::kCanDeferToPredecessor;
     return true;
   }
@@ -1357,9 +1407,11 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
   }
 
   // Add a default `return false` at the end of normal procedures.
-  const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
+  if (!EndsWithReturn(proc)) {
+    const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+        proc, ProgramOperation::kReturnFalseFromProcedure);
+    ret->ExecuteAfter(impl, proc);
+  }
 }
 
 // Build an eager region. This guards the execution of the region in

@@ -23,6 +23,8 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   // NOTE(pag): We don't include the number of merged views, as there may
   //            be redundancies in them after.
   hash = HashInit();
+  assert(hash != 0);
+
   if (merged_views.Empty()) {
     return hash;
   }
@@ -525,14 +527,15 @@ bool Node<QueryMerge>::SinkThroughMaps(
     // are constants, but we'll mitigate this possibility by injecting in tuples
     // to feed into the sunken merge.
     const auto next_map = inout_view->AsMap();
-    if (first_map->functor != next_map->functor) {
+    if (first_map->functor != next_map->functor ||
+        first_map->is_positive != next_map->is_positive ||
+        first_map->num_free_params != next_map->num_free_params) {
       ++num_failed;
       continue;
     }
 
     assert(ParsedDeclaration(first_map->functor).BindingPattern() ==
            ParsedDeclaration(next_map->functor).BindingPattern());
-
 
     if (!merged_map) {
       first_map->is_canonical = false;
@@ -547,7 +550,8 @@ bool Node<QueryMerge>::SinkThroughMaps(
       }
 
       // Now create the merged MAP that will operate on the sunken MERGE.
-      merged_map = impl->maps.Create(first_map->functor, first_map->range);
+      merged_map = impl->maps.Create(first_map->functor, first_map->range,
+                                     first_map->is_positive);
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_map_col = first_map->columns[j];
         (void) merged_map->columns.Create(

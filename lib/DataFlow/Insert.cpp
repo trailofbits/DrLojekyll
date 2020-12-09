@@ -19,6 +19,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
 
   // Start with an initial hash just in case there's a cycle somewhere.
   hash = HashInit() ^ declaration.Id();
+  assert(hash != 0);
 
   auto local_hash = hash;
 

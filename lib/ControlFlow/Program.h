@@ -945,14 +945,15 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
   inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_,
-              unsigned id_)
+              unsigned id_, bool is_positive_)
       : Node<ProgramOperationRegion>(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
         defined_vars(this),
         used_vars(this),
-        id(id_) {}
+        id(id_),
+        is_positive(is_positive_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
@@ -974,6 +975,8 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
   UseList<VAR> used_vars;
 
   const unsigned id;
+
+  const bool is_positive;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;

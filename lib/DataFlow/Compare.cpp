@@ -21,6 +21,7 @@ uint64_t Node<QueryCompare>::Hash(void) noexcept {
 
   // Base case for recursion.
   hash = HashInit() ^ static_cast<unsigned>(op);
+  assert(hash != 0);
 
   auto local_hash = hash;
 

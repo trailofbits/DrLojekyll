@@ -19,6 +19,8 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  assert(hash != 0);
+
   auto local_hash = hash;
 
   // Mix in the hashes of the tuple by columns; these are ordered.
@@ -37,7 +39,7 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
                                     const OptimizationContext &opt) {
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_used_by_negation || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }

@@ -65,6 +65,7 @@ class QueryInsert;
 class QueryIO;
 class QueryJoin;
 class QueryMerge;
+class QueryNegate;
 class QueryRelation;
 class QuerySelect;
 class QueryStream;
@@ -87,6 +88,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsConstant(void) const noexcept;
   bool IsConstantRef(void) const noexcept;
   bool IsConstantOrConstantRef(void) const noexcept;
+  bool IsNegate(void) const noexcept;
 
   const ParsedVariable &Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
@@ -122,6 +124,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   friend class QueryJoin;
   friend class QueryMap;
   friend class QueryMerge;
+  friend class QueryNegate;
   friend class QueryView;
   friend class QueryAggregate;
 
@@ -171,6 +174,9 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
 
   // The list of SELECTs from this relation.
   UsedNodeRange<QueryView> Selects(void) const;
+
+  // The list of negated uses of this relation.
+  UsedNodeRange<QueryView> Negations(void) const;
 
  private:
   using query::QueryNode<QueryRelation>::QueryNode;
@@ -249,6 +255,9 @@ enum class InputColumnRole {
   // semantic meaning.
   kCopied,
 
+  // This is a column that is read indirectly from a negated by a negation.
+  kNegated,
+
   // The input column is a pivot column in a join node.
   kJoinPivot,
 
@@ -319,6 +328,7 @@ class QueryView : public query::QueryNode<QueryView> {
   QueryView(const QueryMap &view);
   QueryView(const QueryAggregate &view);
   QueryView(const QueryMerge &view);
+  QueryView(const QueryNegate &view);
   QueryView(const QueryCompare &view);
   QueryView(const QueryInsert &view);
 
@@ -334,6 +344,7 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView From(const QueryMap &view) noexcept;
   static QueryView From(const QueryAggregate &view) noexcept;
   static QueryView From(const QueryMerge &view) noexcept;
+  static QueryView From(const QueryNegate &view) noexcept;
   static QueryView From(const QueryCompare &view) noexcept;
   static QueryView From(const QueryInsert &view) noexcept;
 
@@ -347,8 +358,15 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsMap(void) const noexcept;
   bool IsAggregate(void) const noexcept;
   bool IsMerge(void) const noexcept;
+  bool IsNegate(void) const noexcept;
   bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
+
+  // Returns `true` if this node is used by a negation.
+  bool IsUsedByNegation(void) const noexcept;
+
+  // Apply a callback `on_negate` to each negation using this view.
+  void ForEachNegation(std::function<void(QueryNegate)> on_negate) const;
 
   // Can this view receive inputs that should logically "delete" entries?
   bool CanReceiveDeletions(void) const noexcept;
@@ -523,6 +541,11 @@ class QueryMap : public query::QueryNode<QueryMap> {
 
   const ParsedFunctor &Functor(void) const noexcept;
 
+  // Is this a positive application of the functor, or a negative application?
+  // The meaning of a negative application is that it produces zero outputs. It
+  // is invalid to negate a functor that is declared as
+  bool IsPositive(void) const noexcept;
+
   // Returns the number of columns copied along from source views.
   unsigned NumCopiedColumns(void) const noexcept;
 
@@ -684,6 +707,48 @@ class QueryCompare : public query::QueryNode<QueryCompare> {
   friend class QueryView;
 };
 
+// A test for the absence of a specific tuple in a relation.
+class QueryNegate : public query::QueryNode<QueryNegate> {
+ public:
+  static QueryNegate From(QueryView view);
+
+  DefinedNodeRange<QueryColumn> Columns(void) const;
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
+  // The resulting copied columns.
+  DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
+
+  DefinedNodeRange<QueryColumn> NegatedColumns(void) const;
+
+  unsigned NumCopiedColumns(void) const noexcept;
+
+  // Returns the `nth` input copied column.
+  QueryColumn NthInputCopiedColumn(unsigned n) const noexcept;
+
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+  UsedNodeRange<QueryColumn> InputCopiedColumns(void) const noexcept;
+
+  // Incoming view that represents a flow of data between the relation and
+  // the negation.
+  QueryTuple NegatedView(void) const noexcept;
+
+  OutputStream &DebugString(OutputStream &) const noexcept;
+
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                      with_col) const;
+
+ private:
+  using query::QueryNode<QueryNegate>::QueryNode;
+
+  friend class QueryView;
+  friend class QueryRelation;
+};
+
 // An insert of one or more columns into a relation.
 class QueryInsert : public query::QueryNode<QueryInsert> {
  public:
@@ -829,6 +894,7 @@ class Query {
   DefinedNodeRange<QueryRelation> Relations(void) const;
   DefinedNodeRange<QueryInsert> Inserts(void) const;
   DefinedNodeRange<QueryDelete> Deletes(void) const;
+  DefinedNodeRange<QueryNegate> Negations(void) const;
   DefinedNodeRange<QueryMap> Maps(void) const;
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
   DefinedNodeRange<QueryMerge> Merges(void) const;
@@ -863,6 +929,10 @@ class Query {
     }
 
     for (auto view : Merges()) {
+      cb(QueryView::From(view));
+    }
+
+    for (auto view : Negations()) {
       cb(QueryView::From(view));
     }
 

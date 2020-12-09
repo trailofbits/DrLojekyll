@@ -68,7 +68,7 @@ class PassingExamplesParsingSuite : public testing::TestWithParam<fs::path> {
 // Set of examples that can parse but fail to build
 static const std::unordered_set<std::string> kBuildDebugFailExamples{
     "min_block.dr", "pairwise_average_weight.dr", "function_counter.dr",
-    "watched_user_dir.dr", "average_weight.dr"};
+    "average_weight.dr"};
 static const std::unordered_set<std::string> kBuildReleaseFailExamples{
     "min_block.dr", "function_counter.dr"};
 static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
