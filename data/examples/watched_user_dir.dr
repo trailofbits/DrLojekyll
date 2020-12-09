@@ -4,8 +4,8 @@
 
 #message sys_open(utf8 UserName, utf8 FullPath)
 
-#functor is_dir(bound utf8 Path) impure
-#functor dir_entry(bound utf8 Path, free utf8 Entry) impure
+#functor is_dir(bound utf8 Path)
+#functor dir_entry(bound utf8 Path, free utf8 Entry)
 
 #functor join_path(bound utf8 DirName, bound utf8 FileName, free utf8 JoinedPath)
 #functor parent_dir(bound utf8 Path, free utf8 DirPath)
