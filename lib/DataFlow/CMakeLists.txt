@@ -29,6 +29,7 @@ set(DataFlow_SRCS
     "Link.cpp"
     "Map.cpp"
     "Merge.cpp"
+    "Negate.cpp"
     "Optimize.cpp"
     "Query.cpp"
     "Select.cpp"

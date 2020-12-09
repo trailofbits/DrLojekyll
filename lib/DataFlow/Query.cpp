@@ -70,6 +70,10 @@ QueryImpl::~QueryImpl(void) {
     insert->relation.ClearWithoutErasure();
     insert->stream.ClearWithoutErasure();
   }
+
+  for (auto negation : negations) {
+    negation->negated_view.ClearWithoutErasure();
+  }
 }
 
 QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
@@ -118,6 +122,8 @@ QueryView::QueryView(const QueryAggregate &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryMerge &view) : QueryView(view.impl) {}
 
+QueryView::QueryView(const QueryNegate &view) : QueryView(view.impl) {}
+
 QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
@@ -151,6 +157,10 @@ QueryView QueryView::From(const QueryAggregate &view) noexcept {
 }
 
 QueryView QueryView::From(const QueryMerge &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
+}
+
+QueryView QueryView::From(const QueryNegate &view) noexcept {
   return reinterpret_cast<const QueryView &>(view);
 }
 
@@ -221,12 +231,28 @@ bool QueryView::IsMerge(void) const noexcept {
   return impl->AsMerge() != nullptr;
 }
 
+bool QueryView::IsNegate(void) const noexcept {
+  return impl->AsNegate() != nullptr;
+}
+
 bool QueryView::IsCompare(void) const noexcept {
   return impl->AsCompare() != nullptr;
 }
 
 bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
+}
+
+// Returns `true` if this node is used by a negation.
+bool QueryView::IsUsedByNegation(void) const noexcept {
+  return impl->is_used_by_negation;
+}
+
+// Apply a callback `on_negate` to each negation using this view.
+void QueryView::ForEachNegation(std::function<void(QueryNegate)> on_negate) const {
+  impl->ForEachUse<NEGATION>([&on_negate] (NEGATION *negate, VIEW *) {
+    on_negate(QueryNegate(negate));
+  });
 }
 
 // Can this view receive inputs that should logically "delete" entries?
@@ -394,6 +420,9 @@ void QueryView::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   } else if (auto kv = impl->AsKVIndex(); kv) {
     QueryKVIndex(kv).ForEachUse(std::move(with_col));
 
+  } else if (auto neg = impl->AsNegate(); neg) {
+    QueryNegate(neg).ForEachUse(std::move(with_col));
+
   } else {
     assert(false);
   }
@@ -421,6 +450,10 @@ bool QueryColumn::IsAggregate(void) const noexcept {
 
 bool QueryColumn::IsMerge(void) const noexcept {
   return impl->view->AsMerge() != nullptr;
+}
+
+bool QueryColumn::IsNegate(void) const noexcept {
+  return impl->view->AsNegate() != nullptr;
 }
 
 bool QueryColumn::IsConstraint(void) const noexcept {
@@ -1159,6 +1192,98 @@ void QueryCompare::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   }
 }
 
+QueryNegate QueryNegate::From(QueryView view) {
+  assert(view.IsNegate());
+  return reinterpret_cast<QueryNegate &>(view);
+}
+
+// The deleted columns.
+DefinedNodeRange<QueryColumn> QueryNegate::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+QueryColumn QueryNegate::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
+// The resulting copied columns.
+DefinedNodeRange<QueryColumn> QueryNegate::CopiedColumns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
+                                           impl->input_columns.Size()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+// The resulting negated columns.
+DefinedNodeRange<QueryColumn> QueryNegate::NegatedColumns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
+                                           impl->input_columns.Size())};
+}
+
+// Returns the `nth` input copied column.
+QueryColumn QueryNegate::NthInputCopiedColumn(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return QueryColumn(impl->attached_columns[n]);
+}
+
+unsigned QueryNegate::NumCopiedColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->attached_columns.Size());
+}
+
+unsigned QueryNegate::NumInputColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->input_columns.Size());
+}
+
+QueryColumn QueryNegate::NthInputColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->input_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryNegate::InputColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+UsedNodeRange<QueryColumn> QueryNegate::InputCopiedColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->attached_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->attached_columns.end())};
+}
+
+// Incoming view that represents a flow of data between the relation and
+// the negation.
+QueryTuple QueryNegate::NegatedView(void) const noexcept {
+  return QueryTuple(impl->negated_view->AsTuple());
+}
+
+OutputStream &QueryNegate::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryNegate::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                                std::optional<QueryColumn>)>
+                                 with_col) const {
+  auto i = 0u;
+  for (auto in_col : impl->input_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
+             QueryColumn(impl->columns[i++]));
+  }
+  for (auto in_col : impl->attached_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
+             QueryColumn(impl->columns[i++]));
+  }
+
+  i = 0u;
+  for (auto our_in_col : impl->input_columns) {
+    (void) our_in_col;
+    auto negated_in_col = impl->negated_view->columns[i++];
+    with_col(QueryColumn(negated_in_col), InputColumnRole::kNegated,
+             QueryColumn(impl->columns[i++]));
+  }
+}
+
 QueryInsert QueryInsert::From(QueryView view) {
   assert(view.IsInsert());
   return reinterpret_cast<QueryInsert &>(view);
@@ -1475,6 +1600,11 @@ DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
 DefinedNodeRange<QueryDelete> Query::Deletes(void) const {
   return {DefinedNodeIterator<QueryDelete>(impl->deletes.begin()),
           DefinedNodeIterator<QueryDelete>(impl->deletes.end())};
+}
+
+DefinedNodeRange<QueryNegate> Query::Negations(void) const {
+  return {DefinedNodeIterator<QueryNegate>(impl->negations.begin()),
+          DefinedNodeIterator<QueryNegate>(impl->negations.end())};
 }
 
 DefinedNodeRange<QueryMap> Query::Maps(void) const {

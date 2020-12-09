@@ -215,6 +215,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       }
       clause->positive_predicates.emplace_back(std::move(pred));
     }
+    negation_pos = DisplayPosition();
   };
 
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);

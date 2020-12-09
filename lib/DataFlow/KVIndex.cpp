@@ -38,6 +38,8 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  assert(hash != 0);
+
   auto local_hash = hash;
 
   // Mix in the hashes of the tuple by columns; these are ordered.

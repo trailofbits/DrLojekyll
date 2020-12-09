@@ -133,7 +133,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
 
     const auto call = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, parent,
-        GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
+        GetOrCreateBottomUpRemover(impl, context, view, succ_view,
+                                   model->table));
 
     for (auto col : view.Columns()) {
       const auto var = call->VariableFor(impl, col);

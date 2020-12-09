@@ -798,8 +798,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, "Program VectorLoop Region");
-
     auto vec = region.Vector();
+    if (region.Usage() != VectorUsage::kInductionVector) {
+      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
+    }
     os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
        << Vector(os, vec) << "):\n";
     os.PushIndent();
@@ -917,8 +919,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     // If we're transitioning to present, then add it to our indices.
+    //
+    // NOTE(pag): The codegen for negations depends upon transitioning from
+    //            absent to unknown as a way of preventing race conditions.
     const auto indices = region.Table().Indices();
-    if (region.ToState() == TupleState::kPresent) {
+    if (region.ToState() == TupleState::kPresent ||
+        region.FromState() == TupleState::kAbsent) {
       os << os.Indent() << "if not present_bit:\n";
       os.PushIndent();
 

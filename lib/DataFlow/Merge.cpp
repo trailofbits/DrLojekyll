@@ -23,6 +23,8 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   // NOTE(pag): We don't include the number of merged views, as there may
   //            be redundancies in them after.
   hash = HashInit();
+  assert(hash != 0);
+
   if (merged_views.Empty()) {
     return hash;
   }

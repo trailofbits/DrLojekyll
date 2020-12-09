@@ -526,6 +526,65 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     link_conds(agg);
   }
 
+  for (auto neg : query.Negations()) {
+    os << "v" << neg.UniqueId() << " [ label=<" << kBeginTable;
+    do_conds(2, neg);
+
+    auto num_group = neg.NumCopiedColumns();
+    if (num_group) {
+      os << "<TD rowspan=\"2\">COPY</TD>";
+      for (auto col : neg.CopiedColumns()) {
+        os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col)
+           << "</TD>";
+      }
+    }
+
+    os << "<TD rowspan=\"2\">" << QueryView(neg).KindName() << "</TD>";
+    for (auto col : neg.NegatedColumns()) {
+      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+    }
+
+    const auto num_inputs = neg.NumInputColumns();
+    os << "</TR><TR>";
+
+    for (auto i = 0u; i < num_group; ++i) {
+      const auto col = neg.NthInputCopiedColumn(i);
+      os << "<TD port=\"g" << i << "\">" << do_col(col) << "</TD>";
+    }
+
+    for (auto i = 0u; i < num_inputs; ++i) {
+      const auto col = neg.NthInputColumn(i);
+      os << "<TD port=\"p" << i << "\">" << do_col(col) << "</TD>";
+    }
+
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString(os)
+             << "</TD>";)
+
+    os << kEndTable << ">];\n";
+
+    auto color = " [color=purple]";
+
+    for (auto i = 0u; i < num_group; ++i) {
+      auto col = neg.NthInputCopiedColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << neg.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
+    }
+
+    // Link the input columns to their sources.
+    for (auto i = 0u; i < num_inputs; ++i) {
+      auto col = neg.NthInputColumn(i);
+      auto view = QueryView::Containing(col);
+      os << "v" << neg.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
+         << ":c" << col.UniqueId() << color << ";\n";
+    }
+
+    os << "v" << neg.UniqueId() << " -> v"
+       << neg.NegatedView().UniqueId() << color << ";\n";
+
+    link_conds(neg);
+  }
+
   for (auto insert : query.Inserts()) {
     const auto decl = insert.Declaration();
     os << "v" << insert.UniqueId() << " [ label=<" << kBeginTable;

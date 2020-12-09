@@ -26,7 +26,9 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 
   const auto binding_pattern = ParsedDeclaration(functor).BindingPattern();
 
-  hash ^= RotateRight64(HashInit(), 43) * functor.Id();
+  hash = RotateRight64(HashInit(), 43) ^ functor.Id();
+  assert(hash != 0);
+
   if (!is_positive) {
     hash = ~hash;
   }

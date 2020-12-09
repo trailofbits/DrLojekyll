@@ -20,6 +20,7 @@ uint64_t Node<QueryDelete>::Hash(void) noexcept {
 
   // Start with an initial hash just in case there's a cycle somewhere.
   hash = HashInit();
+  assert(hash != 0);
 
   auto local_hash = hash;
 
