@@ -213,16 +213,9 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     std::vector<QueryColumn> view_cols(view.Columns().begin(),
                                        view.Columns().end());
 
-    // Call the predecessors. If any of the predecessors return `false` then that
-    // means we have failed.
+    // Call the predecessors. If any of the predecessors return `false` then
+    // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
-
-      // If this predecessor doesn't produce deletions then we don't need to
-      // double check its index.
-      if (!pred_view.CanProduceDeletions()) {
-        continue;
-      }
-
       const auto index_is_good = CallTopDownChecker(
           impl, context, parent, view, view_cols, pred_view,
           ProgramOperation::kCallProcedureCheckTrue, nullptr);
