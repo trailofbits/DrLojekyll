@@ -175,6 +175,8 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
     }
   }
 
+  TypeLoc Type(void) const noexcept;
+
   std::optional<QueryConstant> query_const;
   std::optional<QueryColumn> query_column;
   std::optional<QueryCondition> query_cond;

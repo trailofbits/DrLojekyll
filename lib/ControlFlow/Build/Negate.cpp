@@ -169,6 +169,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
         negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                               std::optional<QueryColumn> out_col) {
           if (out_col) {
+            assert(in_col.Type() == out_col->Type());
             in_scan->col_id_to_var.emplace(
                 in_col.Id(), in_scan->VariableFor(impl, *out_col));
           }
@@ -200,15 +201,20 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   auto handle_sucesssors = [&] (PARALLEL *par) {
     for (auto succ_view : view.Successors()) {
 
+      const auto called_proc = GetOrCreateBottomUpRemover(
+          impl, context, view, succ_view, model->table);
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par,
-          GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                     model->table));
+          impl->next_id++, par, called_proc);
 
+      auto i = 0u;
       for (auto col : view.Columns()) {
         const auto var = proc->VariableFor(impl, col);
         assert(var != nullptr);
         call->arg_vars.AddUse(var);
+
+        const auto param = called_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
       }
 
       par->regions.AddUse(call);
@@ -277,8 +283,15 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   const auto check = impl->operation_regions.CreateDerived<CALL>(
       impl->next_id++, parent, checker_proc,
       ProgramOperation::kCallProcedureCheckTrue);
+
+  auto i = 0u;
   for (auto col : pred_cols) {
-    check->arg_vars.AddUse(parent->VariableFor(impl, col));
+    const auto var = parent->VariableFor(impl, col);
+    assert(var != nullptr);
+    check->arg_vars.AddUse(var);
+    const auto param = checker_proc->input_vars[i++];
+    assert(var->Type() == param->Type());
+    (void) param;
   }
 
   parent->regions.AddUse(check);
