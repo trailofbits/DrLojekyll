@@ -266,9 +266,13 @@ static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << Var(os, global)
-     << ": Final[" << TypeName(module, type) << "] = "
-     << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
+  os << os.Indent() << Var(os, global);
+  if (global.DefiningRole() == VariableRole::kConstant) {
+    os << ": Final[" << TypeName(module, type) << "] = ";
+  } else {
+    os << ": " << TypeName(module, type) << " = ";
+  }
+  os << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
 }
 
 // Similar to DefineGlobal except has type-hint to enforce const-ness
