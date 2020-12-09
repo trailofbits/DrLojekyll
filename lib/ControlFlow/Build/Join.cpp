@@ -575,14 +575,20 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
 
     auto par = impl->parallel_regions.Create(join);
     for (auto succ_view : view.Successors()) {
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, parent,
-          GetOrCreateBottomUpRemover(impl, context, view, succ_view, nullptr));
 
+      const auto called_proc = GetOrCreateBottomUpRemover(
+          impl, context, view, succ_view, nullptr);
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, parent, called_proc);
+
+      auto i = 0u;
       for (auto col : view.Columns()) {
         const auto var = join->VariableFor(impl, col);
         assert(var != nullptr);
         call->arg_vars.AddUse(var);
+        const auto param = called_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
       }
 
       par->regions.AddUse(call);
