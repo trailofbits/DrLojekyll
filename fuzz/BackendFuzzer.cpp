@@ -10,6 +10,10 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parser.h>
 
+#include <reproc++/drain.hpp>
+#include <reproc++/reproc.hpp>
+
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -17,7 +21,9 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <string_view>
 #include <sstream>
+#include <tuple>
 
 namespace {
 
@@ -186,8 +192,60 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   gStats.num_compiled += 1;
 
   // Third, generate Python code from the program.
-  auto python_output = ProgramToPython(*program_opt);
+  std::string gen_python = ProgramToPython(*program_opt);
   gStats.num_generated_python += 1;
+
+  // Fourth, run the generated Python program. This assumes that the generated
+  // program is self-testing -- for example, including a handwritten Python
+  // test suite in an `#epilogue` section that executes when directly running
+  // the Python module.
+  //
+  const reproc::milliseconds timeout(3000);
+  reproc::options options;
+  options.redirect.parent = true;
+  options.redirect.in.type = reproc::redirect::pipe;
+  options.deadline = timeout;
+
+  // options.input = "hello world";  // doesn't work!?
+
+  // FIXME: plumb the path to the Python binary through to here
+  const std::array cmd{std::string_view("cat")};
+  reproc::process proc;
+  std::error_code ec = proc.start(cmd, options);
+  const auto assert_ec_ok = [&ec](std::string_view what){
+    if (ec) {
+      std::cerr << "Error " << what << ": " << ec.message() << std::endl;
+      abort();
+    }
+  };
+
+  size_t written;
+  std::tie(written, ec) = proc.write(reinterpret_cast<const uint8_t *>(gen_python.data()), gen_python.size());
+  assert_ec_ok("writing Python process stdin");
+  if (written != gen_python.size()) {
+    std::cerr << "Error writing Python process stdin: tried to write "
+              << gen_python.size() << " bytes, but only wrote " << written << std::endl;
+    abort();
+  }
+  ec = proc.close(reproc::stream::in);
+  assert_ec_ok("closing Python process stdin");
+
+  // FIXME: combine both stdout and stderr into one stream
+  std::string p_stdout;
+  std::string p_stderr;
+  ec = reproc::drain(proc, reproc::sink::string(p_stdout), reproc::sink::string(p_stderr));
+  assert_ec_ok("collecting Python process output");
+
+  int status;
+  std::tie(status, ec) = proc.wait(timeout);
+  assert_ec_ok("waiting for Python process");
+
+  if (status != 0) {
+    std::cerr << "Generated Python code exited with code " << status << ":" << std::endl
+              << p_stdout << std::endl
+              << p_stderr << std::endl;
+    abort();
+  }
 
   return 0;
 }

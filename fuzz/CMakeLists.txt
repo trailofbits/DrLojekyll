@@ -28,5 +28,7 @@ if(ENABLE_LIBFUZZER)
         Parse
         Util
         Version
+
+        reproc++
     )
 endif()
