@@ -874,14 +874,24 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
   // just declare a clause without first declaring
   } else if (decl_context->kind == DeclarationKind ::kExport &&
              module != clause->declaration->module) {
-    auto err = context->error_log.Append(scope_range, clause_head_range);
-    err << "Cannot define a clause '" << clause->name
-        << "' for predicate exported by another module";
+    auto found_redecl_in_module = false;
+    for (auto redecl : decl_context->redeclarations) {
+      if (redecl->module == clause->declaration->module) {
+        found_redecl_in_module = true;
+        break;
+      }
+    }
 
-    err.Note(directive_range)
-        << "Predicate '" << clause->name << "' is declared here";
+    if (!found_redecl_in_module) {
+      auto err = context->error_log.Append(scope_range, clause_head_range);
+      err << "Cannot define a clause '" << clause->name
+          << "' for predicate exported by another module";
 
-    return false;
+      err.Note(directive_range)
+          << "Predicate '" << clause->name << "' is declared here";
+
+      return false;
+    }
   }
 
   return true;

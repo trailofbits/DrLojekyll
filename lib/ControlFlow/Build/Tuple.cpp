@@ -236,12 +236,31 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
   const QueryView view(tuple);
   const auto pred_views = view.Predecessors();
 
-  // All inputs are constants so this tuple is trivially true.
+  // All inputs are constants so this tuple is trivially true iff the input
+  // data matches the constants of this tuple. We need to be careful, however,
+  // that we compare the input data and not the constant which are referred to
+  // by `view_cols`.
   //
   // NOTE(pag): Tuples are the only views allowed to have all constant inputs.
   //            Thus, all other views have at least one predecessor.
   if (pred_views.empty()) {
-    proc->body.Emplace(proc, BuildStateCheckCaseReturnTrue(impl, proc));
+    auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+        proc, ComparisonOperator::kEqual);
+    for (auto col : view_cols) {
+      assert(QueryView::Containing(col) == view);
+      const auto col_index = *(col.Index());
+      auto param_var = proc->input_vars[col_index];
+      assert(param_var->query_column == col);
+
+      auto input_col = tuple.InputColumns()[col_index];
+      assert(input_col.IsConstant());
+
+      cmp->lhs_vars.AddUse(param_var);
+      cmp->rhs_vars.AddUse(proc->VariableFor(impl, input_col));
+    }
+
+    cmp->body.Emplace(cmp, BuildStateCheckCaseReturnTrue(impl, cmp));
+    proc->body.Emplace(proc, cmp);
     return;
   }
 

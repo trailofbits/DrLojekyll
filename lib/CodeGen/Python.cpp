@@ -266,8 +266,13 @@ static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << Var(os, global) << ": " << TypeName(module, type) << " = "
-     << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
+  os << os.Indent() << Var(os, global);
+  if (global.DefiningRole() == VariableRole::kConstant) {
+    os << ": Final[" << TypeName(module, type) << "] = ";
+  } else {
+    os << ": " << TypeName(module, type) << " = ";
+  }
+  os << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
 }
 
 // Similar to DefineGlobal except has type-hint to enforce const-ness
@@ -724,8 +729,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, "Program Parallel Region");
 
     // Same as SeriesRegion
+    auto any = false;
     for (auto sub_region : region.Regions()) {
       sub_region.Accept(*this);
+      any = true;
+    }
+
+    if (!any) {
+      os << os.Indent() << "pass\n";
     }
   }
 
@@ -758,8 +769,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramSeriesRegion region) override {
     os << Comment(os, "Program Series Region");
 
+    auto any = false;
     for (auto sub_region : region.Regions()) {
       sub_region.Accept(*this);
+      any = true;
+    }
+
+    if (!any) {
+      os << os.Indent() << "pass\n";
     }
   }
 
@@ -851,9 +868,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void ResolveReference(DataVariable var) {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      os << os.Indent() << Var(os, var)
-         << " = self._resolve_" << foreign_type->Name()
-         << '(' << Var(os, var) << ")\n";
+      if (var.DefiningRegion()) {
+        os << os.Indent() << Var(os, var)
+           << " = self._resolve_" << foreign_type->Name()
+           << '(' << Var(os, var) << ")\n";
+      }
     }
   }
 

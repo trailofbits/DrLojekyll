@@ -472,7 +472,6 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
 // Try to eliminate unnecessary function calls. This is pretty common when
 // generating bottom-up deleters.
 static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
-
   const auto target_func = call->called_proc.get();
   if (!target_func) {
     return false;  // Dead.
