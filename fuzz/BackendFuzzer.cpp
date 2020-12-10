@@ -279,8 +279,11 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   // need to make random choices here.
   std::mt19937_64 gen(Seed);
 
-  // About 2% of the time, fallback to LLVM's default mutator.
-  if (std::uniform_int_distribution(1, 100)(gen) <= 2) {
+  // About 1% of the time, fallback to LLVM's default mutator.
+  //
+  // FIXME: Need to ensure that `#prologue` and `#epilogue` sections aren't mutated?
+  //        Otherwise, the self-testing aspect of an input could be made incorrect via mutation.
+  if (std::uniform_int_distribution(1, 100)(gen) <= 1) {
     gStats.num_custom_fallbacks += 1;
     return LLVMFuzzerMutate(Data, Size, MaxSize);
   }
