@@ -6,12 +6,16 @@ namespace hyde {
 
 Node<ProgramProcedure>::~Node(void) {}
 
-uint64_t Node<ProgramProcedure>::Hash(void) const {
-  if (body) {
-    return body->Hash();
-  } else {
-    return 1u;
+uint64_t Node<ProgramProcedure>::Hash(uint32_t depth) const {
+  uint64_t hash = 1u;
+  if (depth == 0) {
+    return hash;
   }
+
+  if (body) {
+    return body->Hash(depth - 1u);
+  }
+  return hash;
 }
 
 // Returns `true` if this region is a no-op.
@@ -108,10 +112,9 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
   if (depth == 0) {
     return true;
   }
-  auto next_depth = depth - 1;
 
   // This function tests the true/false return value of the called procedure.
-  if (body && !body->Equals(eq, that->body.get(), next_depth)) {
+  if (body && !body->Equals(eq, that->body.get(), depth - 1u)) {
     return false;
 
   } else {

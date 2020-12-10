@@ -28,16 +28,21 @@ Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
       output_region(this, impl->parallel_regions.Create(this)),
       vectors(this) {}
 
-uint64_t Node<ProgramInductionRegion>::Hash(void) const {
+uint64_t Node<ProgramInductionRegion>::Hash(uint32_t depth) const {
   uint64_t hash = 117u;
+  if (depth == 0) {
+    return hash;
+  }
+  auto next_depth = depth - 1u;
+
   if (this->init_region) {
-    hash ^= RotateRight64(hash, 13u) * init_region->Hash();
+    hash ^= RotateRight64(hash, 13u) * init_region->Hash(next_depth);
   }
   if (this->cyclic_region) {
-    hash ^= RotateRight64(hash, 17u) * cyclic_region->Hash();
+    hash ^= RotateRight64(hash, 17u) * cyclic_region->Hash(next_depth);
   }
   if (this->output_region) {
-    hash ^= RotateRight64(hash, 19u) * output_region->Hash();
+    hash ^= RotateRight64(hash, 19u) * output_region->Hash(next_depth);
   }
   return hash;
 }

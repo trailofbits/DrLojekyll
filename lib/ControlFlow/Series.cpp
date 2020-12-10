@@ -12,10 +12,13 @@ Node<ProgramSeriesRegion> *Node<ProgramSeriesRegion>::AsSeries(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramSeriesRegion>::Hash(void) const {
+uint64_t Node<ProgramSeriesRegion>::Hash(uint32_t depth) const {
   uint64_t hash = 956u;
+  if (depth == 0) {
+    return hash;
+  }
   for (auto region : regions) {
-    hash ^= RotateRight64(hash, 13u) * region->Hash();
+    hash ^= RotateRight64(hash, 13u) * region->Hash(depth - 1u);
   }
   return hash;
 }
@@ -56,10 +59,9 @@ bool Node<ProgramSeriesRegion>::Equals(EqualitySet &eq,
   if (depth == 0) {
     return true;
   }
-  auto next_depth = depth - 1;
 
   for (auto i = 0u; i < num_regions; ++i) {
-    if (!regions[i]->Equals(eq, that->regions[i], next_depth)) {
+    if (!regions[i]->Equals(eq, that->regions[i], depth - 1u)) {
       return false;
     }
   }

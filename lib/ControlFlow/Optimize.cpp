@@ -849,7 +849,7 @@ void ProgramImpl::Optimize(void) {
       continue;
 
     } else if (proc->IsUsed() || proc->has_raw_use) {
-      const auto hash = proc->Hash();
+      const auto hash = proc->Hash(UINT32_MAX);
       similar_procs[hash].emplace_back(proc);
     }
   }

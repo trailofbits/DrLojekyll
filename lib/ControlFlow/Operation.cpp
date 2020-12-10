@@ -165,7 +165,6 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   if (depth == 0) {
     return true;
   }
-  auto next_depth = depth - 1;
 
   if (auto that_body = that->OP::body.get(); that_body) {
 
@@ -173,7 +172,7 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -185,14 +184,18 @@ Node<ProgramVectorLoopRegion>::AsVectorLoop(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramVectorLoopRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorLoopRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -206,15 +209,19 @@ Node<ProgramLetBindingRegion>::AsLetBinding(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramLetBindingRegion>::Hash(void) const {
+uint64_t Node<ProgramLetBindingRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : used_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -264,7 +271,7 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
   }
 }
 
-uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
@@ -275,6 +282,7 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  (void) depth;
   return hash;
 }
 
@@ -313,7 +321,7 @@ Node<ProgramTransitionStateRegion>::AsTransitionState(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
+uint64_t Node<ProgramTransitionStateRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(from_state) * 13;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(to_state) * 17;
@@ -323,8 +331,12 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -367,15 +379,19 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-uint64_t Node<ProgramExistenceCheckRegion>::Hash(void) const {
+uint64_t Node<ProgramExistenceCheckRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : cond_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -427,15 +443,19 @@ Node<ProgramExistenceCheckRegion>::AsExistenceCheck(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramExistenceAssertionRegion>::Hash(void) const {
+uint64_t Node<ProgramExistenceAssertionRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : cond_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -491,12 +511,13 @@ Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramVectorClearRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorClearRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  (void) depth;
   return hash;
 }
 
@@ -529,13 +550,14 @@ Node<ProgramVectorSwapRegion>::AsVectorSwap(void) noexcept {
 }
 
 
-uint64_t Node<ProgramVectorSwapRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorSwapRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(lhs->kind) + 1u) * 17;
   hash ^= (static_cast<unsigned>(rhs->kind) + 1u) * 17;
   for (auto type : lhs->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  (void) depth;
   return hash;
 }
 
@@ -566,12 +588,13 @@ bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
   }
 }
 
-uint64_t Node<ProgramVectorUniqueRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorUniqueRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  (void) depth;
   return hash;
 }
 
@@ -598,7 +621,7 @@ Node<ProgramVectorUniqueRegion>::AsVectorUnique(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramTableJoinRegion>::Hash(void) const {
+uint64_t Node<ProgramTableJoinRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto table : this->tables) {
     hash ^= RotateRight64(hash, 17) * (table->id + 17u);
@@ -606,8 +629,12 @@ uint64_t Node<ProgramTableJoinRegion>::Hash(void) const {
   for (auto index : this->indices) {
     hash ^= RotateRight64(hash, 13) * (index->id + 13u);
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -699,13 +726,17 @@ bool Node<ProgramTableProductRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-uint64_t Node<ProgramTableProductRegion>::Hash(void) const {
+uint64_t Node<ProgramTableProductRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto table : this->tables) {
     hash ^= RotateRight64(hash, 17) * (table->id + 17u);
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -762,12 +793,16 @@ bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
   }
 }
 
-uint64_t Node<ProgramTableScanRegion>::Hash(void) const {
+uint64_t Node<ProgramTableScanRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (table->id + 17u);
   hash ^= RotateRight64(hash, 15) * (index->id + 13u);
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -814,7 +849,7 @@ bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
   return eq.Contains(this->output_vector.get(), that->output_vector.get());
 }
 
-uint64_t Node<ProgramTupleCompareRegion>::Hash(void) const {
+uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (static_cast<unsigned>(this->cmp_op) + 17u);
   for (auto var : this->lhs_vars) {
@@ -827,8 +862,12 @@ uint64_t Node<ProgramTupleCompareRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 11u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 13u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -884,7 +923,7 @@ Node<ProgramGenerateRegion>::AsGenerate(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramGenerateRegion>::Hash(void) const {
+uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) *
           (static_cast<unsigned>(this->functor.Id()) + 17u);
@@ -894,8 +933,12 @@ uint64_t Node<ProgramGenerateRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -956,7 +999,7 @@ Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramCallRegion>::Hash(void) const {
+uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
 
   for (auto var : this->arg_vars) {
@@ -971,9 +1014,12 @@ uint64_t Node<ProgramCallRegion>::Hash(void) const {
       hash ^= RotateRight64(hash, 7) * (static_cast<unsigned>(type) + 3u);
     }
   }
+  if (depth == 0) {
+    return hash;
+  }
 
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -1076,7 +1122,7 @@ Node<ProgramPublishRegion>::AsPublish(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramPublishRegion>::Hash(void) const {
+uint64_t Node<ProgramPublishRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * this->message.Id();
 
@@ -1085,6 +1131,7 @@ uint64_t Node<ProgramPublishRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  (void) depth;
   return hash;
 }
 
@@ -1126,7 +1173,8 @@ bool Node<ProgramReturnRegion>::EndsWithReturn(void) const noexcept {
   return true;
 }
 
-uint64_t Node<ProgramReturnRegion>::Hash(void) const {
+uint64_t Node<ProgramReturnRegion>::Hash(uint32_t depth) const {
+  (void) depth;
   return static_cast<unsigned>(this->OP::op) * 53;
 }
 
@@ -1192,7 +1240,7 @@ bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
   return 3 == has_any;
 }
 
-uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {
+uint64_t Node<ProgramCheckStateRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (this->table->id * 13u);
 
@@ -1201,14 +1249,18 @@ uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   if (this->absent_body) {
-    hash ^= RotateRight64(hash, 13) * this->absent_body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->absent_body->Hash(depth - 1u);
   }
   if (this->unknown_body) {
-    hash ^= RotateRight64(hash, 15) * this->unknown_body->Hash();
+    hash ^= RotateRight64(hash, 15) * this->unknown_body->Hash(depth - 1u);
   }
   return hash;
 }

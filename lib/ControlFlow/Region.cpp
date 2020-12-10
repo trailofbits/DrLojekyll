@@ -77,6 +77,7 @@ bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
 // whichever is first, and where `depth` is 0, compare `this` to `that.
 bool Node<ProgramRegion>::Equals(EqualitySet &, Node<ProgramRegion> *,
                                  uint32_t depth) const noexcept {
+  (void) depth;
   return false;
 }
 

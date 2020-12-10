@@ -11,10 +11,14 @@ Node<ProgramParallelRegion>::AsParallel(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramParallelRegion>::Hash(void) const {
+uint64_t Node<ProgramParallelRegion>::Hash(uint32_t depth) const {
   uint64_t hash = 0u;
+  if (depth == 0) {
+    return hash;
+  }
+
   for (auto region : regions) {
-    hash ^= region->Hash();
+    hash ^= region->Hash(depth - 1u);
   }
   return hash;
 }
@@ -30,11 +34,6 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
   if (!that || num_regions != that->regions.Size()) {
     return false;
   }
-
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
 
   std::unordered_map<unsigned, std::vector<REGION *>> grouped_regions;
   for (auto region : regions) {
@@ -54,6 +53,10 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
     }
 
     grouped_regions[index].push_back(region);
+  }
+
+  if (depth == 0) {
+    return true;
   }
 
   EqualitySet super_eq(eq, SuperSet());
@@ -78,7 +81,7 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
       if (found) {
         next_candidates.push_back(this_region);
 
-      } else if (!this_region->Equals(super_eq, that_region, next_depth)) {
+      } else if (!this_region->Equals(super_eq, that_region, depth - 1)) {
         next_candidates.push_back(this_region);
         super_eq.Clear();
 
