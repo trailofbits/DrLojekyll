@@ -176,8 +176,16 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
     const auto check = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, parent, checker_proc,
         ProgramOperation::kCallProcedureCheckFalse);
+
+    auto i = 0u;
     for (auto col : check_cols) {
-      check->arg_vars.AddUse(parent->VariableFor(impl, col));
+      const auto var = parent->VariableFor(impl, col);
+      assert(var != nullptr);
+      check->arg_vars.AddUse(var);
+
+      const auto param = checker_proc->input_vars[i++];
+      assert(var->Type() == param->Type());
+      (void) param;
     }
 
     // Re-parent into the body of the check.
@@ -193,15 +201,20 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
   for (auto succ_view : view.Successors()) {
     assert(!succ_view.IsMerge());
 
+    const auto checker_proc = GetOrCreateBottomUpRemover(
+        impl, context, view, succ_view, already_checked);
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent,
-        GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                   already_checked));
+        impl->next_id++, parent, checker_proc);
 
+    auto i = 0u;
     for (auto col : view.Columns()) {
       const auto var = proc->VariableFor(impl, col);
       assert(var != nullptr);
       call->arg_vars.AddUse(var);
+
+      const auto param = checker_proc->input_vars[i++];
+      assert(var->Type() == param->Type());
+      (void) param;
     }
 
     parent->regions.AddUse(call);

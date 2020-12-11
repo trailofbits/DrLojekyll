@@ -266,16 +266,21 @@ static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << Var(os, global) << ": " << TypeName(module, type) << " = "
-     << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
+  os << os.Indent() << Var(os, global);
+  if (global.DefiningRole() == VariableRole::kConstant) {
+    os << ": Final[" << TypeName(module, type) << "] = ";
+  } else {
+    os << ": " << TypeName(module, type) << " = ";
+  }
+  os << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
 }
 
 // Similar to DefineGlobal except has type-hint to enforce const-ness
 static void DefineConstant(OutputStream &os, ParsedModule module,
                            DataVariable global) {
   auto type = global.Type();
-  os << os.Indent() << Var(os, global) << ": Final[" << TypeName(module, type)
-     << "] = " << TypeValueOrDefault(module, type, global.Value()) << "\n";
+  os << os.Indent() << Var(os, global) << ": " << TypeName(module, type)
+     << " = " << TypeValueOrDefault(module, type, global.Value()) << "\n";
 }
 
 // We want to enable referential transparency in the code, so that if an Nth
@@ -537,6 +542,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, "Program Generate Region");
 
     if (!region.IsPositive()) {
+      assert(functor.Range() != FunctorRange::kOneToOne);
+      assert(functor.Range() != FunctorRange::kOneOrMore);
       os << os.Indent() << "found = False\n";
     }
 
@@ -567,7 +574,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       }
     };
 
-    switch (functor.Range()) {
+    switch (const auto range = functor.Range()) {
       // These behave like iterators.
       case FunctorRange::kOneOrMore:
       case FunctorRange::kZeroOrMore: {
@@ -624,16 +631,27 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           assert(!functor.IsFilter());
 
           const auto out_var = output_vars[0];
-          os << os.Indent() << "tmp_" << region.Id() << ": Optional["
-             << TypeName(module, out_var.Type()) << "] = ";
+          os << os.Indent() << "tmp_" << region.Id() << ": ";
+          if (range == FunctorRange::kZeroOrOne) {
+            os << "Optional[";
+          }
+          os << TypeName(module, out_var.Type());
+          if (range == FunctorRange::kZeroOrOne) {
+            os << ']';
+          }
+          os << " = ";
           call_functor();
-          os << "\n"
-             << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
-          os.PushIndent();
+          os << "\n";
+          if (range == FunctorRange::kZeroOrOne) {
+            os << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+            os.PushIndent();
+          }
           os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
              << '\n';
           do_body();
-          os.PopIndent();
+          if (range == FunctorRange::kZeroOrOne) {
+            os.PopIndent();
+          }
 
         // Produces a tuple of values.
         } else {
@@ -711,8 +729,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, "Program Parallel Region");
 
     // Same as SeriesRegion
+    auto any = false;
     for (auto sub_region : region.Regions()) {
       sub_region.Accept(*this);
+      any = true;
+    }
+
+    if (!any) {
+      os << os.Indent() << "pass\n";
     }
   }
 
@@ -745,8 +769,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramSeriesRegion region) override {
     os << Comment(os, "Program Series Region");
 
+    auto any = false;
     for (auto sub_region : region.Regions()) {
       sub_region.Accept(*this);
+      any = true;
+    }
+
+    if (!any) {
+      os << os.Indent() << "pass\n";
     }
   }
 
@@ -838,9 +868,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void ResolveReference(DataVariable var) {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      os << os.Indent() << Var(os, var)
-         << " = self._resolve_" << foreign_type->Name()
-         << '(' << Var(os, var) << ")\n";
+      if (var.DefiningRegion()) {
+        os << os.Indent() << Var(os, var)
+           << " = self._resolve_" << foreign_type->Name()
+           << '(' << Var(os, var) << ")\n";
+      }
     }
   }
 

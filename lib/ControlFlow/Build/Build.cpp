@@ -944,7 +944,8 @@ PROC *GetOrCreateTopDownChecker(
   std::stringstream ss;
   ss << view.UniqueId();
   for (auto view_col : available_cols) {
-    ss << ',' << view_col.Id();
+    ss << ',' << view_col.Id() << '/'
+       << static_cast<uint32_t>(view_col.Type().Kind());
   }
   ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
   auto &proc = context.view_to_top_down_checker[ss.str()];
@@ -1103,10 +1104,14 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
       impl->operation_regions.CreateDerived<CALL>(
           impl->next_id++, parent, proc, call_op);
 
+  auto i = 0u;
   for (auto col : available_cols) {
     const auto var = parent->VariableFor(impl, col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
+    const auto param = proc->input_vars[i++];
+    assert(var->Type() == param->Type());
+    (void) param;
   }
 
   assert(check->arg_vars.Size() == proc->input_vars.Size());

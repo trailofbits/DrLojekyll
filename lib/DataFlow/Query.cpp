@@ -1278,9 +1278,10 @@ void QueryNegate::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   i = 0u;
   for (auto our_in_col : impl->input_columns) {
     (void) our_in_col;
-    auto negated_in_col = impl->negated_view->columns[i++];
+    auto negated_in_col = impl->negated_view->columns[i];
     with_col(QueryColumn(negated_in_col), InputColumnRole::kNegated,
-             QueryColumn(impl->columns[i++]));
+             QueryColumn(impl->columns[i]));
+    ++i;
   }
 }
 

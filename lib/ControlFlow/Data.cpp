@@ -27,6 +27,24 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 
 }  // namespace
 
+TypeLoc Node<DataVariable>::Type(void) const noexcept {
+  switch (role) {
+    case VariableRole::kConditionRefCount:
+      return TypeKind::kUnsigned64;
+    case VariableRole::kConstant:
+      if (query_const) {
+        return query_const->Literal().Type().Kind();
+      }
+      [[clang::fallthrough]];
+    default:
+      if (query_column) {
+        return query_column->Type().Kind();
+      }
+  }
+  assert(false);
+  return TypeKind::kInvalid;
+}
+
 Node<DataColumn>::~Node(void) {}
 Node<DataIndex>::~Node(void) {}
 Node<DataTable>::~Node(void) {}

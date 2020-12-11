@@ -11,46 +11,57 @@ namespace {
 // we already know the result of that check.
 static OP *RemoveFromNegatedView(ProgramImpl *impl, Context &context,
                                  REGION *parent, QueryNegate negate,
-                                 std::vector<QueryColumn> &view_cols) {
+                                 std::vector<QueryColumn> &view_cols,
+                                 TABLE *table) {
 
-  const auto call = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent,
-      GetOrCreateBottomUpRemover(impl, context, negate, negate,
-                                 nullptr));
-
-  for (auto col : view_cols) {
-    const auto var = parent->VariableFor(impl, col);
-    assert(var != nullptr);
-    call->arg_vars.AddUse(var);
-  }
-
-  return call;
-
-//  // Change the tuple's state to mark it as deleted so that we can't use it
-//  // as its own base case.
-//  const auto table_remove = BuildChangeState(
-//      impl, table, parent, view_cols, TupleState::kPresent, TupleState::kAbsent);
+//  const auto called_proc = GetOrCreateBottomUpRemover(
+//      impl, context, negate, negate, nullptr);
+//  const auto call = impl->operation_regions.CreateDerived<CALL>(
+//      impl->next_id++, parent, called_proc);
 //
-//  const auto par = impl->parallel_regions.Create(table_remove);
-//  table_remove->body.Emplace(table_remove, par);
+//  auto i = 0u;
+//  for (auto col : view_cols) {
+//    const auto var = parent->VariableFor(impl, col);
+//    assert(var != nullptr);
+//    call->arg_vars.AddUse(var);
 //
-//  for (auto succ_view : QueryView(negate).Successors()) {
-//
-//    const auto call = impl->operation_regions.CreateDerived<CALL>(
-//        impl->next_id++, par,
-//        GetOrCreateBottomUpRemover(impl, context, negate, succ_view,
-//                                   table));
-//
-//    for (auto col : negate.Columns()) {
-//      const auto var = par->VariableFor(impl, col);
-//      assert(var != nullptr);
-//      call->arg_vars.AddUse(var);
-//    }
-//
-//    par->regions.AddUse(call);
+//    const auto param = called_proc->input_vars[i++];
+//    assert(var->Type() == param->Type());
+//    (void) param;
 //  }
 //
-//  return table_remove;
+//  return call;
+
+  // Change the tuple's state to mark it as deleted so that we can't use it
+  // as its own base case.
+  const auto table_remove = BuildChangeState(
+      impl, table, parent, view_cols, TupleState::kPresent, TupleState::kAbsent);
+
+  const auto par = impl->parallel_regions.Create(table_remove);
+  table_remove->body.Emplace(table_remove, par);
+
+  for (auto succ_view : QueryView(negate).Successors()) {
+
+    const auto remover_proc = GetOrCreateBottomUpRemover(
+        impl, context, negate, succ_view, table);
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        impl->next_id++, par, remover_proc);
+
+    auto i = 0u;
+    for (auto col : negate.Columns()) {
+      const auto var = par->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+
+      const auto param = remover_proc->input_vars[i++];
+      assert(var->Type() == param->Type());
+      (void) param;
+    }
+
+    par->regions.AddUse(call);
+  }
+
+  return table_remove;
 }
 
 // We want to try to re-add an entry to a negated view that might have
@@ -81,8 +92,16 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
   const auto check = impl->operation_regions.CreateDerived<CALL>(
       impl->next_id++, parent, checker_proc,
       ProgramOperation::kCallProcedureCheckTrue);
+
+  auto i = 0u;
   for (auto col : pred_cols) {
-    check->arg_vars.AddUse(parent->VariableFor(impl, col));
+    const auto var = parent->VariableFor(impl, col);
+    assert(var != nullptr);
+    check->arg_vars.AddUse(var);
+
+    const auto param = checker_proc->input_vars[i++];
+    assert(var->Type() == param->Type());
+    (void) param;
   }
 
   // We've proven the presence of this tuple by checking the predecessor of
@@ -194,7 +213,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
         impl, negate, negate_cols, negate_table, seq,
         [&](REGION *in_scan) -> REGION * {
           return RemoveFromNegatedView(impl, context, in_scan, negate,
-                                       negate_cols);
+                                       negate_cols, negate_table);
         }));
     });
 
@@ -217,12 +236,31 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
   const QueryView view(tuple);
   const auto pred_views = view.Predecessors();
 
-  // All inputs are constants so this tuple is trivially true.
+  // All inputs are constants so this tuple is trivially true iff the input
+  // data matches the constants of this tuple. We need to be careful, however,
+  // that we compare the input data and not the constant which are referred to
+  // by `view_cols`.
   //
   // NOTE(pag): Tuples are the only views allowed to have all constant inputs.
   //            Thus, all other views have at least one predecessor.
   if (pred_views.empty()) {
-    proc->body.Emplace(proc, BuildStateCheckCaseReturnTrue(impl, proc));
+    auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+        proc, ComparisonOperator::kEqual);
+    for (auto col : view_cols) {
+      assert(QueryView::Containing(col) == view);
+      const auto col_index = *(col.Index());
+      auto param_var = proc->input_vars[col_index];
+      assert(param_var->query_column == col);
+
+      auto input_col = tuple.InputColumns()[col_index];
+      assert(input_col.IsConstant());
+
+      cmp->lhs_vars.AddUse(param_var);
+      cmp->rhs_vars.AddUse(proc->VariableFor(impl, input_col));
+    }
+
+    cmp->body.Emplace(cmp, BuildStateCheckCaseReturnTrue(impl, cmp));
+    proc->body.Emplace(proc, cmp);
     return;
   }
 
@@ -342,8 +380,15 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
         ProgramOperation::kCallProcedureCheckFalse);
     parent->regions.AddUse(check);
 
+    auto i = 0u;
     for (auto col : cols) {
-      check->arg_vars.AddUse(parent->VariableFor(impl, col));
+      const auto var = parent->VariableFor(impl, col);
+      assert(var != nullptr);
+      check->arg_vars.AddUse(var);
+
+      const auto param = checker_proc->input_vars[i++];
+      assert(var->Type() == param->Type());
+      (void) param;
     }
 
     // The call to the top-down checker will have changed the state to
@@ -371,15 +416,20 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
 
   for (auto succ_view : view.Successors()) {
 
+    const auto checker_proc = GetOrCreateBottomUpRemover(
+        impl, context, view, succ_view, already_checked);
     const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent,
-        GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                   already_checked));
+        impl->next_id++, parent, checker_proc);
 
+    auto i = 0u;
     for (auto col : view.Columns()) {
       const auto var = proc->VariableFor(impl, col);
       assert(var != nullptr);
       call->arg_vars.AddUse(var);
+
+      const auto param = checker_proc->input_vars[i++];
+      assert(var->Type() == param->Type());
+      (void) param;
     }
 
     parent->regions.AddUse(call);
