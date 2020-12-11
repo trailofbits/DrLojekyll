@@ -81,46 +81,73 @@ struct FuzzerStats
   }
 };
 
-static FuzzerStats gStats;
+// A `DrContext` packages up the several objects that cooperate to parse Dr.
+// Lojekyll input.
+//
+// Why does this exist?  Many Dr. Lojekyll APIs, such as Python codegen,
+// require some these parameters, and they must all come from the same
+// cooperating group, or else you will see baffling results.
+struct DrContext {
+  hyde::DisplayManager display_manager;
+  hyde::ErrorLog error_log;
+  hyde::Parser parser;
+
+  DrContext() :
+    display_manager(),
+    error_log(display_manager),
+    parser(display_manager, error_log)
+  {}
+};
+
+//----------------------------------------------------------------------
+// Global variables and fuzzer configuration
+//----------------------------------------------------------------------
+static FuzzerStats gStats = {};
+
+// Should the fuzzer enable semantics-altering IR mutations?
 static bool gAllowSemanticsModifyingMutations = false;
+
+// Should the fuzzer execute each successfully generated Python program?
 static bool gExecuteGeneratedPython = true;
 
+//----------------------------------------------------------------------
+// Utilities
+//----------------------------------------------------------------------
+
 // Pretty-print a parsed module as a string.
-static std::string ParsedModuleToString(const hyde::ParsedModule &module) {
+static std::string ParsedModuleToString(DrContext &cxt, const hyde::ParsedModule &module) {
+  assert(cxt.error_log.IsEmpty());
   std::stringstream stream;
-  hyde::DisplayManager display_manager;
-  hyde::OutputStream os(display_manager, stream);
+  hyde::OutputStream os(cxt.display_manager, stream);
   return stream.str();
 }
 
 // Emit Python code from a compiled program to a string.
-static std::string ProgramToPython(const hyde::Program &program) {
+static std::string ProgramToPython(DrContext &cxt, const hyde::Program &program) {
+  assert(cxt.error_log.IsEmpty());
   std::stringstream stream;
-  hyde::DisplayManager display_manager;
-  hyde::OutputStream os(display_manager, stream);
+  hyde::OutputStream os(cxt.display_manager, stream);
   hyde::GeneratePythonCode(program, os);
   return stream.str();
 }
 
-static std::optional<hyde::ParsedModule> ParseModule(std::string_view input, const std::string &name) {
-  hyde::DisplayManager display_manager;
-  hyde::ErrorLog error_log(display_manager);
-  hyde::Parser parser(display_manager, error_log);
+static std::optional<hyde::ParsedModule> ParseModule(DrContext &cxt, std::string_view input, const std::string &name) {
+  assert(cxt.error_log.IsEmpty());
   hyde::DisplayConfiguration config = {
       name,  // `name`.
       2,     // `num_spaces_in_tab`.
       true,  // `use_tab_stops`.
   };
-  return parser.ParseBuffer(input, config);
+  return cxt.parser.ParseBuffer(input, config);
 }
 
 // Generate a Dr. Lojekyll `ParsedModule` from the given random generator.
 // This is referentially transparent: given the same input argument, produces
 // the same output.
-static hyde::ParsedModule generate_ast(std::mt19937_64 &gen) {
+static hyde::ParsedModule generate_ast(DrContext &cxt, std::mt19937_64 &gen) {
   // FIXME: do something more interesting here than return an empty module
   std::string input = "";
-  const auto ret = ParseModule(input, "dummy_ast");
+  const auto ret = ParseModule(cxt, input, "dummy_ast");
   assert(ret && "failed to generate dummy AST");
   return *ret;
 }
@@ -167,11 +194,11 @@ static void PythonSelfTest(std::string_view gen_python) {
   assert_ec_ok("waiting for Python process");
 
   if (status != 0) {
-    std::cerr << "!!! Generated Python code:" << std::endl
+    std::cerr << "!!! Error: generated Python code exited with code " << status << ":" << std::endl
+              << output << std::endl
+              << "!!! Generated Python code:" << std::endl
               << gen_python << std::endl
               << std::endl
-              << "!!! Generated Python code exited with code " << status << ":" << std::endl
-              << output << std::endl
               << std::endl;
     abort();
   }
@@ -190,25 +217,24 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   gStats.num_attempts += 1;
 
+  DrContext cxt;
+
   static_assert(sizeof(uint8_t) == sizeof(char));
   static_assert(alignof(uint8_t) == alignof(char));
   std::string_view input(reinterpret_cast<const char *>(Data), Size);
 
-  hyde::DisplayManager display_manager;
-  hyde::ErrorLog error_log(display_manager);
-
   // A helper function to check that the error log is empty.
-  const auto assert_error_log_empty = [&error_log](std::string_view what) {
-    if (!error_log.IsEmpty()) {
+  const auto assert_error_log_empty = [&cxt](std::string_view what) {
+    if (!cxt.error_log.IsEmpty()) {
       std::cerr << "Error: error log is non-empty after " << what << ":" << std::endl;
-      error_log.Render(std::cerr);
+      cxt.error_log.Render(std::cerr);
       abort();
     }
   };
 
   // A helper function to check that the error log is _not_ empty.
-  const auto assert_error_log_nonempty = [&error_log](std::string_view what) {
-    if (error_log.IsEmpty()) {
+  const auto assert_error_log_nonempty = [&cxt](std::string_view what) {
+    if (cxt.error_log.IsEmpty()) {
       std::cerr << "Error: error log is empty after " << what << ":" << std::endl;
       abort();
     }
@@ -218,14 +244,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   //
   // So long as a starting corpus of parseable inputs is used when fuzzing, we
   // expect parsing to succeed nearly all the time.
-  hyde::Parser parser(display_manager, error_log);
   hyde::DisplayConfiguration config = {
       "harness_module",  // `name`.
       2,                 // `num_spaces_in_tab`.
       true,              // `use_tab_stops`.
   };
 
-  const auto module_opt = parser.ParseBuffer(input, config);
+  const auto module_opt = cxt.parser.ParseBuffer(input, config);
   if (!module_opt) {
     // Bail out early if no parse.  Expected to be rare!
     assert_error_log_nonempty("unsuccessful parsing");
@@ -239,7 +264,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   //
   // As with parsing, so long as a starting corpus of compileable inputs is
   // used when fuzzing, we expect compilation to succeed nearly all the time.
-  const auto query_opt = hyde::Query::Build(*module_opt, error_log);
+  const auto query_opt = hyde::Query::Build(*module_opt, cxt.error_log);
   if (!query_opt) {
     // Bail out early if query compilation failed.  Expected to be rare!
     assert_error_log_nonempty("unsuccessful query compilation");
@@ -247,7 +272,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   assert_error_log_empty("successful query compilation");
 
-  const auto program_opt = hyde::Program::Build(*query_opt, error_log);
+  const auto program_opt = hyde::Program::Build(*query_opt, cxt.error_log);
   if (!program_opt) {
     // Bail out early if program compilation failed.  Expected to be rare!
     assert_error_log_nonempty("unsuccessful program compilation");
@@ -258,7 +283,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   gStats.num_compiled += 1;
 
   // Third, generate Python code from the program.
-  std::string gen_python = ProgramToPython(*program_opt);
+  std::string gen_python = ProgramToPython(cxt, *program_opt);
   gStats.num_generated_python += 1;
 
   // Fourth, run the generated Python program.
@@ -316,11 +341,13 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
     }
   }
 
+  DrContext cxt;
+
   // Step 1. Parse the given data.
   std::string_view input(reinterpret_cast<char *>(Data), Size);
-  const auto module_opt = ParseModule(input, "harness_module");
+  const auto module_opt = ParseModule(cxt, input, "harness_module");
 
-  auto module = module_opt ? *module_opt : generate_ast(gen);
+  auto module = module_opt ? *module_opt : generate_ast(cxt, gen);
   if (module_opt) {
     gStats.num_custom_parsed_asts += 1;
   } else {
@@ -347,7 +374,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   // Note: it is possible that the new input written into `Data` is not
   //       syntactically valid Dr. Lojekyll input.
   //       It's also possible that it's not null-terminated.
-  const auto module_string = ParsedModuleToString(module);
+  const auto module_string = ParsedModuleToString(cxt, module);
   size_t output_len = std::min(module_string.size(), MaxSize);
   std::memcpy(Data, module_string.data(), output_len);
   return output_len;
