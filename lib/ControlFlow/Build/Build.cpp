@@ -415,6 +415,27 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     program->view_to_model.emplace(view, model);
   });
 
+  // Inserts and selects from the same relation share the same data models.
+  for (auto rel : query.Relations()) {
+    DataModel *last_model = nullptr;
+    for (auto view : rel.Inserts()) {
+      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
+      if (last_model) {
+        DisjointSet::Union(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+    for (auto view : rel.Inserts()) {
+      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
+      if (last_model) {
+        DisjointSet::Union(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+  }
+
   auto all_cols_match = [](auto cols, auto pred_cols) {
     const auto num_cols = cols.size();
     if (num_cols != pred_cols.size()) {
@@ -844,6 +865,7 @@ bool EndsWithReturn(REGION *region) {
     return false;
 
   } else if (auto proc = region->AsProcedure(); proc) {
+    assert(proc->body.get() != proc);
     return EndsWithReturn(proc->body.get());
 
   } else if (auto series = region->AsSeries(); series) {
@@ -1059,13 +1081,13 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                InputColumnRole::kAggregatedColumn == role) {
       return;
 
-    // Two input values are conditionally merged into one output value. We can
-    // never convert an output into an input in this case.
-    } else if ((InputColumnRole::kCompareLHS == role ||
-                InputColumnRole::kCompareRHS == role) &&
-               (QueryCompare::From(succ_view).Operator() ==
-                ComparisonOperator::kEqual)) {
-      return;
+//    // Two input values are conditionally merged into one output value. We can
+//    // never convert an output into an input in this case.
+//    } else if ((InputColumnRole::kCompareLHS == role ||
+//                InputColumnRole::kCompareRHS == role) &&
+//               (QueryCompare::From(succ_view).Operator() ==
+//                ComparisonOperator::kEqual)) {
+//      return;
 
     // `*succ_view_col` is available in `view_cols`, thus `view_col` is
     // also available.
@@ -1230,7 +1252,9 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
         default: break;
       }
 
-      proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
+      const auto var = proc->VariableFor(impl, in_col);
+      assert(var != nullptr);
+      proc->col_id_to_var.emplace(out_col->Id(), var);
     });
 
   } else {
@@ -1251,7 +1275,9 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
           [[clang::fallthrough]];
         default: break;
       }
-      proc->col_id_to_var.emplace(in_col.Id(), proc->VariableFor(impl, *out_col));
+      const auto var = proc->VariableFor(impl, *out_col);
+      assert(var != nullptr);
+      proc->col_id_to_var.emplace(in_col.Id(), var);
     });
   }
 
@@ -1266,13 +1292,8 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
 
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
-bool MayNeedToBePersisted(QueryView view) {
-
-  // If this view sets a condition then its data must be tracked; if it
-  // tests a condition, then we might jump back in at some future point if
-  // things transition states.
-  if (view.SetCondition() || !view.PositiveConditions().empty() ||
-      !view.NegativeConditions().empty() || view.IsNegate()) {
+bool MayNeedToBePersistedDifferential(QueryView view) {
+  if (MayNeedToBePersisted(view)) {
     return true;
   }
 
@@ -1293,6 +1314,19 @@ bool MayNeedToBePersisted(QueryView view) {
   return false;
 }
 
+// Returns `true` if `view` might need to have its data persisted.
+bool MayNeedToBePersisted(QueryView view) {
+
+  // If this view sets a condition then its data must be tracked; if it
+  // tests a condition, then we might jump back in at some future point if
+  // things transition states.
+  return view.SetCondition() ||
+         !view.PositiveConditions().empty() ||
+         !view.NegativeConditions().empty() ||
+         view.IsNegate() ||
+         view.IsUsedByNegation();
+}
+
 // Decides whether or not `view` can depend on `pred_view` for persistence
 // of its data.
 bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
@@ -1307,9 +1341,15 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
 
   // If this view sets a condition, then the reference counter of that condition
   // partially reflects the arity of this view, i.e. number of records in the
-  // view.
-  if (view.SetCondition() || !view.PositiveConditions().empty() ||
-      !view.NegativeConditions().empty()) {
+  // view. Similarly, if this view has the possiblity of filtering or increasing
+  // the number of tuples admitted by the predecessor, then we can't defer to
+  // the predecessor.
+  if (view.SetCondition() ||
+      !view.PositiveConditions().empty() ||
+      !view.NegativeConditions().empty() ||
+      view.IsNegate() ||
+      view.IsCompare() ||
+      view.IsMap()) {
     det = Context::kCantDeferToPredecessor;
     return false;
   }
@@ -1370,7 +1410,7 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
         return true;
 
       // It's a union, and it will persist the data.
-      } else if (MayNeedToBePersisted(succ_of_pred)) {
+      } else if (MayNeedToBePersistedDifferential(succ_of_pred)) {
         det = Context::kCanDeferToPredecessor;
         return true;
       }

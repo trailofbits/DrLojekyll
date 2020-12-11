@@ -5,7 +5,7 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
-#define DEBUG(...)
+#define DEBUG(...) __VA_ARGS__
 
 namespace hyde {
 namespace {
@@ -557,7 +557,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD port=\"p" << i << "\">" << do_col(col) << "</TD>";
     }
 
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << map.DebugString(os)
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << neg.DebugString(os)
              << "</TD>";)
 
     os << kEndTable << ">];\n";

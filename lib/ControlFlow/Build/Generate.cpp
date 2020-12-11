@@ -129,7 +129,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
   }
 
   for (auto succ_view : view.Successors()) {
-    assert(!succ_view.IsMerge());
+
+    assert(!succ_view.IsMerge());  // TODO(pag): I don't recall why.
 
     const auto called_proc = GetOrCreateBottomUpRemover(
         impl, context, view, succ_view, model->table);

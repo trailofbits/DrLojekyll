@@ -71,6 +71,7 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
                               REGION *parent, QueryNegate negate,
                               std::vector<QueryColumn> &view_cols,
                               TABLE *table) {
+
   const QueryView view(negate);
   const auto pred_view = view.Predecessors()[0];
 
@@ -161,33 +162,50 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
   });
 }
 
-}  // namnespace
+}  // namespace
 
 // Build an eager region for tuple. If the tuple can receive differential
 // updates then its data needs to be saved.
 void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryTuple tuple, Context &context, OP *parent,
-                           TABLE *last_model) {
+                           TABLE *last_table) {
   const QueryView view(tuple);
 
   // NOTE(pag): If this view is used by a negation (tuples are the only such
   //            kinds of views) then we *must* create a table for the view.
   if (view.IsUsedByNegation() ||
-      (MayNeedToBePersisted(view) &&
+      (MayNeedToBePersistedDifferential(view) &&
        !CanDeferPersistingToPredecessor(impl, context, view, pred_view))) {
 
     if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_model) {
+        table != last_table) {
       parent = BuildInsertCheck(
           impl, view, context, parent, table, view.CanReceiveDeletions(),
           view.Columns());
-      last_model = table;
+      last_table = table;
     }
+
+  // We can't pass the table through.
+  } else if (pred_view != view) {
+    const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+    const auto last_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+    if (model != last_model) {
+      last_table = nullptr;
+    }
+
+  // It takes in only constants.
+  } else if (view.Predecessors().empty()) {
+    last_table = nullptr;
+
+  } else {
+    assert(false);
+    last_table = nullptr;
   }
 
   // If this view is used by a negation then we need to go and see if we should
   // do a delete in the negation, then call a bunch of other deletion stuff.
   if (view.IsUsedByNegation()) {
+
     auto seq = impl->series_regions.Create(parent);
     parent->body.Emplace(parent, seq);
 
@@ -222,7 +240,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
   }
 
   BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                             last_model);
+                             last_table);
 }
 
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
@@ -336,6 +354,12 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
   const auto caller_did_check = already_checked == model->table;
   PARALLEL *parent = nullptr;
 
+
+  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                      std::optional<QueryColumn> out_col) {
+    proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
+  });
+
   if (model->table) {
 
     // We've already transitioned for this table, so our job is just to pass
@@ -423,7 +447,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
 
     auto i = 0u;
     for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
+      const auto var = parent->VariableFor(impl, col);
       assert(var != nullptr);
       call->arg_vars.AddUse(var);
 

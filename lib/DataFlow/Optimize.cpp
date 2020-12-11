@@ -235,6 +235,9 @@ bool QueryImpl::RemoveUnusedViews(void) {
   return 0 != all_ret;
 }
 
+// TODO(pag): The join canonicalization introduces a bug in Solypsis if the
+//            dataflow builder builds functors before joins. I'm not sure why
+//            and this is probably a serious bug.
 void QueryImpl::Simplify(const ErrorLog &log) {
   CandidateList views;
 
@@ -397,6 +400,7 @@ bool QueryImpl::ShrinkConditions(void) {
 
 // Apply common subexpression elimination (CSE) to the dataflow.
 void QueryImpl::Optimize(const ErrorLog &log) {
+
   CandidateList views;
 
   auto do_cse = [&](void) {
@@ -404,7 +408,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
 
-    for (auto max_cse = views.size(); CSE(views) && max_cse--; ) {
+    for (auto max_cse = views.size(); max_cse-- && CSE(views); ) {
       RemoveUnusedViews();
       RelabelGroupIDs();
       views.clear();
@@ -414,9 +418,12 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   };
 
   do_cse();  // Apply CSE to all views before most canonicalization.
+
   OptimizationContext opt(log);
   opt.can_sink_unions = true;
   Canonicalize(opt);
+  return;
+
 //  do_cse();  // Apply CSE to all canonical views.
 
   auto max_depth = 1u;

@@ -13,23 +13,35 @@ namespace hyde {
 //            this merge.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryMerge merge, Context &context, OP *parent,
-                           TABLE *last_model) {
+                           TABLE *last_table) {
   const QueryView view(merge);
 
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  if (MayNeedToBePersisted(view)) {
+  if (MayNeedToBePersistedDifferential(view)) {
     if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_model) {
+        table != last_table) {
       parent = BuildInsertCheck(impl, view, context, parent, table,
                                 view.CanReceiveDeletions(), view.Columns());
-      last_model = table;
+      last_table = table;
     }
+
+  // We can't pass the table through.
+  } else if (pred_view != view) {
+    const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+    const auto last_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+    if (model != last_model) {
+      last_table = nullptr;
+    }
+
+  } else {
+    assert(false);
+    last_table = nullptr;
   }
 
   BuildEagerSuccessorRegions(impl, view, context, parent,
-                             QueryView(view).Successors(), last_model);
+                             QueryView(view).Successors(), last_table);
 
   // TODO(pag): Think about whether or not we need to actually de-duplicate
   //            anything. It could be that we only need to dedup if we're on
@@ -91,10 +103,11 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
             table_to_update = nullptr;
             const auto par = impl->parallel_regions.Create(parent);
             call_preds(par);
-            return parent;
+            return par;
           }
         });
 
+    assert(region != proc);
     proc->body.Emplace(proc, region);
 
   // This union doesn't have persistent backing, so we have to call down to

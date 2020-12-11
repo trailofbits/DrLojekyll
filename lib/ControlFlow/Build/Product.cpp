@@ -133,18 +133,18 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 // Build an eager cross-product for a join.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
                              QueryJoin product_view, Context &context,
-                             OP *parent, TABLE *last_model) {
+                             OP *parent, TABLE *last_table) {
   const QueryView view(product_view);
 
-  // First, check if we should push this tuple through the JOIN. If it's
+  // First, check if we should push this tuple through the PRODUCT. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
   const auto table = TABLE::GetOrCreate(impl, pred_view);
-  if (table != last_model) {
+  if (table != last_table) {
     parent =
         BuildInsertCheck(impl, pred_view, context, parent, table,
                          pred_view.CanProduceDeletions(), pred_view.Columns());
-    last_model = table;
+    last_table = table;
   }
 
   // Nothing really to do, this cross-product just needs to pass its data
@@ -161,7 +161,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     });
 
     BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                               last_model);
+                               last_table);
     return;
   }
 

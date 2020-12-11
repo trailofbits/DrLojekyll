@@ -531,9 +531,12 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
                                QueryView from_view, QueryJoin join, PROC *proc,
                                TABLE *already_checked);
 
+// Returns `true` if `view` might need to have its data persisted.
+bool MayNeedToBePersisted(QueryView view);
+
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
-bool MayNeedToBePersisted(QueryView view);
+bool MayNeedToBePersistedDifferential(QueryView view);
 
 // Decides whether or not `view` can depend on `pred_view` for persistence
 // of its data.

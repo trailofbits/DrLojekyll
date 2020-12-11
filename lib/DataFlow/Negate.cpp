@@ -48,8 +48,12 @@ bool Node<QueryNegate>::Canonicalize(
 
   const auto num_in_cols = input_columns.Size();
   bool non_local_changes = false;
+
+  OptimizationContext attached_opt = opt;
+  attached_opt.can_replace_outputs_with_constants = true;
+
   std::tie(is_canonical, non_local_changes) =
-      CanonicalizeAttachedColumns(num_in_cols, opt);
+      CanonicalizeAttachedColumns(num_in_cols, attached_opt);
 
   // Propagate constants.
   for (auto i = 0u; i < num_in_cols; ++i) {

@@ -135,6 +135,8 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
   //  (void) GuardWithTuple(query);
 
   in_to_out.clear();
+
+  // !!!!!!!!!!!!!!!!!
   auto [changed_lhs, can_remove_lhs] =
       CanonicalizeColumnPair(lhs_col, lhs_out_col, opt);
 

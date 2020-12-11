@@ -20,7 +20,7 @@ namespace hyde {
 // up passing things through if this isn't actually a message publication.
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryInsert insert, Context &context, OP *parent,
-                            TABLE *last_model) {
+                            TABLE *last_table) {
   const auto view = QueryView(insert);
   const auto cols = insert.InputColumns();
 
@@ -43,7 +43,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
     if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_model) {
+        table != last_table) {
 
       const auto table_insert =
           impl->operation_regions.CreateDerived<CHANGESTATE>(
@@ -57,11 +57,11 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
       table_insert->table.Emplace(table_insert, table);
       parent->body.Emplace(parent, table_insert);
       parent = table_insert;
-      last_model = table;
+      last_table = table;
     }
 
     BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                               last_model);
+                               last_table);
 
   } else {
     assert(false);

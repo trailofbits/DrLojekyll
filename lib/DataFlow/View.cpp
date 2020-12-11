@@ -277,11 +277,12 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
   if (in_col->IsConstant()) {
     if (opt.can_replace_outputs_with_constants &&
         !IntroducesControlDependency()) {
-      if (!out_col_is_constref || out_col_is_directly_used) {
-        non_local_changes = true;
-      }
-      out_col->CopyConstantFrom(in_col);
-      out_col->ReplaceAllUsesWith(in_col);
+
+        if (!out_col_is_constref || out_col_is_directly_used) {
+          non_local_changes = true;
+        }
+        out_col->CopyConstantFrom(in_col);
+        out_col->ReplaceAllUsesWith(in_col);
 
     } else {
       if (!out_col_is_constref) {
@@ -312,9 +313,6 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
 std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
     unsigned first_output, const OptimizationContext &opt) noexcept {
 
-  OptimizationContext attached_opt = opt;
-  attached_opt.can_replace_outputs_with_constants = true;
-
   auto i = first_output;
   auto attached_are_canonical = true;
   auto non_local_changes = false;
@@ -324,7 +322,7 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
     auto out_col = columns[i];
 
     auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, attached_opt);
+        in_col, out_col, opt);
 
     non_local_changes = non_local_changes || changed;
     attached_are_canonical = attached_are_canonical && !can_remove;
@@ -341,7 +339,7 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
           k_out_col->ReplaceAllUsesWith(j_out_col);
           non_local_changes = true;
 
-          if (attached_opt.can_remove_unused_columns &&
+          if (opt.can_remove_unused_columns &&
               !k_out_col->IsUsed()) {
             attached_are_canonical = false;
           }
@@ -732,8 +730,9 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 
   const auto tuple = query->tuples.Create();
 
+  auto col_index = 0u;
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(col->var, tuple, col->id);
+    auto out_col = tuple->columns.Create(col->var, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 

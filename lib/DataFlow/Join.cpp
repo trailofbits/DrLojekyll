@@ -279,7 +279,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
       old_to_new_col_map.emplace(col, col);
     }
 
-    // Go create a tower of compares, so that all
+    // Go create a tower of compares, so that all constants get compared.
     for (VIEW *prev_view_to_process = nullptr;
          view_to_process != prev_view_to_process;) {
       prev_view_to_process = view_to_process;
@@ -452,6 +452,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // dropped views.
   assert(view_map.size() == joined_views.Size());
   if (all_input_views.size() < joined_views.Size()) {
+    assert(false);
     for (auto [old_in_view, new_in_view_] : view_map) {
       VIEW *const new_in_view = new_in_view_;
       if (std::find(all_input_views.begin(), all_input_views.end(),
@@ -552,27 +553,29 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
 
   is_canonical = false;
 
-  // Go detect if we need to guard the input views with compares.
-  auto need_constant_guard = false;
-
+  // Try to sink comparisons against constants performed above a JOIN, and
+  // against the pivot output columns of the join, into the join, by way of
+  // marking the pivot columns as being constant, and then depending on the
+  // `need_constant_guard` below.
   if (auto user = this->OnlyUser(); user) {
     if (auto cmp = user->AsCompare();
         cmp && cmp->op == ComparisonOperator::kEqual) {
+
       const auto lhs = cmp->input_columns[0];
       const auto rhs = cmp->input_columns[1];
       const auto lhs_const = lhs->AsConstant();
       const auto rhs_const = rhs->AsConstant();
-      if (lhs->view == this && rhs_const) {
-        need_constant_guard = true;
+      if (rhs_const && lhs->view == this && lhs->Index() < num_pivots) {
         lhs->CopyConstantFrom(rhs_const);
 
-      } else if (rhs->view == this && lhs_const) {
-        need_constant_guard = true;
+      } else if (lhs_const && rhs->view == this && rhs->Index() < num_pivots) {
         rhs->CopyConstantFrom(lhs_const);
       }
     }
   }
 
+  // Go detect if we need to guard the input views with compares.
+  auto need_constant_guard = false;
   for (const auto &[out_col, in_cols] : out_to_in) {
     COL *const_col = out_col->AsConstant();
 

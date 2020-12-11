@@ -237,18 +237,18 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                           QueryJoin view, Context &context, OP *parent,
-                          TABLE *last_model) {
+                          TABLE *last_table) {
 
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
   if (const auto table = TABLE::GetOrCreate(impl, pred_view);
-      table != last_model) {
+      table != last_table) {
 
     parent = BuildInsertCheck(impl, pred_view, context, parent, table,
-                              QueryView(view).CanReceiveDeletions(),
+                              pred_view.CanProduceDeletions(),
                               pred_view.Columns());
-    last_model = table;
+    last_table = table;
   }
 
   auto &action = context.view_to_work_item[view];
@@ -332,8 +332,8 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (num_found_pivots == num_pivots) {
     seq->regions.AddUse(add_to_pivot_vec(seq));
 
-  // Second best case: we have a model for this JOIN table, so we can use the model
-  // to find all of the pivots so that later we can do a join.
+  // Second best case: we have a model for this JOIN table, so we can use the
+  // model to find all of the pivots so that later we can do a join.
   } else if (model->table) {
 
     // NOTE(pag): `BuildMaybeScanPartial` will mutate its input column list,
@@ -350,7 +350,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
   // Worst-case, but really not so bad. The JOIN itself doesn't have a data
   // model. We don't yet have all the pivots. We know, however, that all
-  // predecesors of a JOIN have a model, so we can depend upon them.
+  // predecessors of a JOIN have a model, so we can depend upon them.
   } else {
 
     // Go find the most represented view. We will use that in an index scan.

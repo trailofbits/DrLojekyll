@@ -76,9 +76,12 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query,
   auto i = columns.Size() - attached_columns.Size();
   assert(i == functor.Arity());
 
+  OptimizationContext attached_opt = opt;
+  attached_opt.can_replace_outputs_with_constants = true;
+
   bool non_local_changes = false;
   std::tie(is_canonical, non_local_changes) =
-      CanonicalizeAttachedColumns(i, opt);
+      CanonicalizeAttachedColumns(i, attached_opt);
 
   i = 0u;
   for (auto j = 0u; i < functor.Arity(); ++i) {
