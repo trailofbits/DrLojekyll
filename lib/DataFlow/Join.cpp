@@ -452,7 +452,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // dropped views.
   assert(view_map.size() == joined_views.Size());
   if (all_input_views.size() < joined_views.Size()) {
-    assert(false);
+
     for (auto [old_in_view, new_in_view_] : view_map) {
       VIEW *const new_in_view = new_in_view_;
       if (std::find(all_input_views.begin(), all_input_views.end(),
