@@ -284,6 +284,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
   // Third, generate Python code from the program.
   std::string gen_python = ProgramToPython(cxt, *program_opt);
+  std::string gen_python_dup = ProgramToPython(cxt, *program_opt);
+  if (gen_python != gen_python_dup) {
+    std::cerr << "!!! Error: Python code generation multiple times comes out different:" << std::endl
+              << std::endl
+              << "!!! Version 1:"
+              << gen_python
+              << std::endl
+              << "!!! Version 2:"
+              << gen_python_dup
+              << std::endl;
+    abort();
+  }
   gStats.num_generated_python += 1;
 
   // Fourth, run the generated Python program.
