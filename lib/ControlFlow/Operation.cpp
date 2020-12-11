@@ -162,14 +162,14 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   if (auto that_body = that->OP::body.get(); that_body) {
 
     for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
+    }
+
+    if (depth == 0) {
+      return true;
     }
 
     return this->OP::body->Equals(eq, that_body, depth - 1u);
@@ -254,17 +254,17 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
 
   if (auto that_body = that->OP::body.get(); that_body) {
     for (auto i = 0u; i < num_vars; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    if (depth == 0) {
+      return true;
+    }
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -370,10 +370,9 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
   if (depth == 0) {
     return true;
   }
-  auto next_depth = depth - 1;
 
   if (body) {
-    return body->Equals(eq, that->body.get(), next_depth);
+    return body->Equals(eq, that->body.get(), depth - 1u);
   }
 
   return true;
@@ -428,10 +427,9 @@ bool Node<ProgramExistenceCheckRegion>::Equals(EqualitySet &eq,
   if (depth == 0) {
     return true;
   }
-  auto next_depth = depth - 1;
 
   if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -695,10 +693,6 @@ bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
 
   if (auto that_body = that->OP::body.get(); that_body) {
     const auto &pivot_vars_1 = pivot_vars;
@@ -715,7 +709,11 @@ bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
       }
     }
 
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    if (depth == 0) {
+      return true;
+    }
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -771,11 +769,6 @@ bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
-
   if (auto that_body = that->OP::body.get(); that_body) {
 
     for (auto i = 0u; i < num_tables; ++i) {
@@ -786,7 +779,11 @@ bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
       }
     }
 
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    if (depth == 0) {
+      return true;
+    }
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -908,10 +905,9 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
   if (depth == 0) {
     return true;
   }
-  auto next_depth = depth - 1;
 
   if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -978,17 +974,16 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
-
   if (auto that_body = that->OP::body.get(); that_body) {
     for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body, next_depth);
+    if (depth == 0) {
+      return true;
+    }
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
@@ -1090,8 +1085,14 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     }
   }
 
+  const auto this_called_proc = called_proc.get();
+  const auto that_called_proc = that->called_proc.get();
+
+  auto called_proc_equals = this_called_proc == that_called_proc ||
+                            eq.Contains(this_called_proc, that_called_proc);
+
   if (depth == 0) {
-    return true;
+    return called_proc_equals;
   }
   auto next_depth = depth - 1;
 
@@ -1101,18 +1102,12 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  const auto this_called_proc = called_proc.get();
-  const auto that_called_proc = that->called_proc.get();
-
-  if (this_called_proc == that_called_proc) {
+  if (called_proc_equals) {
     return true;
-
-  } else if (eq.Contains(this_called_proc, that_called_proc)) {
-    return true;
-
-  // Different functions are being called, check to see if their function bodies
-  // are the same.
   } else {
+
+    // Different functions are being called, check to see if their function bodies
+    // are the same.
     return this_called_proc->Equals(eq, that_called_proc, next_depth);
   }
 }
