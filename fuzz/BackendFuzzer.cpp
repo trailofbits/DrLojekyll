@@ -78,6 +78,8 @@ struct FuzzerStats
 };
 
 static FuzzerStats gStats;
+static bool gAllowSemanticsModifyingMutations = false;
+static bool gExecuteGeneratedPython = true;
 
 // Pretty-print a parsed module as a string.
 static std::string ParsedModuleToString(const hyde::ParsedModule &module) {
@@ -119,9 +121,66 @@ static hyde::ParsedModule generate_ast(std::mt19937_64 &gen) {
   return *ret;
 }
 
+
+// Execute the given Python script, checking that its exit code is zero.
+static void PythonSelfTest(std::string_view gen_python) {
+  const reproc::milliseconds timeout(3000);
+  reproc::options options;
+  options.redirect.parent = false;
+  options.redirect.in.type = reproc::redirect::pipe;
+  options.redirect.out.type = reproc::redirect::pipe;
+  options.redirect.err.type = reproc::redirect::pipe;
+  options.deadline = timeout;
+
+  // FIXME: plumb the path to the Python binary through to here
+  const std::array cmd{std::string_view("python")};
+  reproc::process proc;
+  std::error_code ec = proc.start(cmd, options);
+  const auto assert_ec_ok = [&ec](std::string_view what){
+    if (ec) {
+      std::cerr << "Error " << what << ": " << ec.message() << std::endl;
+      abort();
+    }
+  };
+
+  size_t written;
+  std::tie(written, ec) = proc.write(reinterpret_cast<const uint8_t *>(gen_python.data()), gen_python.size());
+  assert_ec_ok("writing Python process stdin");
+  if (written != gen_python.size()) {
+    std::cerr << "Error writing Python process stdin: tried to write "
+              << gen_python.size() << " bytes, but only wrote " << written << std::endl;
+    abort();
+  }
+  ec = proc.close(reproc::stream::in);
+  assert_ec_ok("closing Python process stdin");
+
+  std::string output;
+  ec = reproc::drain(proc, reproc::sink::string(output), reproc::sink::string(output));
+  assert_ec_ok("collecting Python process output");
+
+  int status;
+  std::tie(status, ec) = proc.wait(timeout);
+  assert_ec_ok("waiting for Python process");
+
+  if (status != 0) {
+    std::cerr << "!!! Generated Python code:" << std::endl
+              << gen_python << std::endl
+              << std::endl
+              << "!!! Generated Python code exited with code " << status << ":" << std::endl
+              << output << std::endl
+              << std::endl;
+    abort();
+  }
+
+}
+
 }  // namespace
 
 
+
+extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
+  return 0;
+}
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
@@ -198,56 +257,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   std::string gen_python = ProgramToPython(*program_opt);
   gStats.num_generated_python += 1;
 
-  // Fourth, run the generated Python program. This assumes that the generated
-  // program is self-testing -- for example, including a handwritten Python
-  // test suite in an `#epilogue` section that executes when directly running
-  // the Python module.
+  // Fourth, run the generated Python program.
   //
-  const reproc::milliseconds timeout(3000);
-  reproc::options options;
-  options.redirect.parent = true;
-  options.redirect.in.type = reproc::redirect::pipe;
-  options.deadline = timeout;
-
-  // options.input = "hello world";  // doesn't work!?
-
-  // FIXME: plumb the path to the Python binary through to here
-  const std::array cmd{std::string_view("cat")};
-  reproc::process proc;
-  std::error_code ec = proc.start(cmd, options);
-  const auto assert_ec_ok = [&ec](std::string_view what){
-    if (ec) {
-      std::cerr << "Error " << what << ": " << ec.message() << std::endl;
-      abort();
-    }
-  };
-
-  size_t written;
-  std::tie(written, ec) = proc.write(reinterpret_cast<const uint8_t *>(gen_python.data()), gen_python.size());
-  assert_ec_ok("writing Python process stdin");
-  if (written != gen_python.size()) {
-    std::cerr << "Error writing Python process stdin: tried to write "
-              << gen_python.size() << " bytes, but only wrote " << written << std::endl;
-    abort();
-  }
-  ec = proc.close(reproc::stream::in);
-  assert_ec_ok("closing Python process stdin");
-
-  // FIXME: combine both stdout and stderr into one stream
-  std::string p_stdout;
-  std::string p_stderr;
-  ec = reproc::drain(proc, reproc::sink::string(p_stdout), reproc::sink::string(p_stderr));
-  assert_ec_ok("collecting Python process output");
-
-  int status;
-  std::tie(status, ec) = proc.wait(timeout);
-  assert_ec_ok("waiting for Python process");
-
-  if (status != 0) {
-    std::cerr << "Generated Python code exited with code " << status << ":" << std::endl
-              << p_stdout << std::endl
-              << p_stderr << std::endl;
-    abort();
+  // This assumes that the generated program is self-testing -- for example,
+  // including a handwritten Python test suite in an `#epilogue` section that
+  // executes when directly running the Python module.
+  //
+  // We probably only run the generated Python program when we are not fuzzing
+  // with semantics-modifying mutations.  Otherwise, the fuzzer could break the
+  // program's self-tests.  However, control over whether or not to execute the
+  // generated Python program is controlled by a separate option from whether
+  // semantics-modifying mutations are used.
+  if (gExecuteGeneratedPython) {
+    PythonSelfTest(gen_python);
   }
 
   return 0;
@@ -282,13 +304,12 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   // need to make random choices here.
   std::mt19937_64 gen(Seed);
 
-  // About 1% of the time, fallback to LLVM's default mutator.
-  //
-  // FIXME: Need to ensure that `#prologue` and `#epilogue` sections aren't mutated?
-  //        Otherwise, the self-testing aspect of an input could be made incorrect via mutation.
-  if (std::uniform_int_distribution(1, 100)(gen) <= 1) {
-    gStats.num_custom_fallbacks += 1;
-    return LLVMFuzzerMutate(Data, Size, MaxSize);
+  if (gAllowSemanticsModifyingMutations) {
+    // About 1% of the time, fallback to LLVM's default mutator.
+    if (std::uniform_int_distribution(1, 100)(gen) <= 1) {
+      gStats.num_custom_fallbacks += 1;
+      return LLVMFuzzerMutate(Data, Size, MaxSize);
+    }
   }
 
   // Step 1. Parse the given data.
