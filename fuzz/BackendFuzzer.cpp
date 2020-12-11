@@ -44,6 +44,10 @@ struct FuzzerStats
   uint64_t num_custom_parsed_asts{0};
 
   ~FuzzerStats() {
+    PrintStats();
+  }
+
+  void PrintStats() {
     assert(num_attempts >= num_parsed);
     assert(num_parsed >= num_compiled);
     assert(num_custom_calls == num_custom_generated_asts + num_custom_parsed_asts + num_custom_fallbacks);
