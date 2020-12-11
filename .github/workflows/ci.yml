@@ -42,7 +42,7 @@ jobs:
         run: make -C build -j "$(nproc)"
 
       - name: Test
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure -j 2 --schedule-random
 
       - name: Install
         run: |
@@ -78,7 +78,7 @@ jobs:
         run: cmake --build build -j "$(nproc)"
 
       - name: Test
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure -j 2 --schedule-random
 
       - name: Install
         run: cmake --build build --target install
@@ -173,7 +173,7 @@ jobs:
           cmake --build build
 
       - name: Test Release
-        run: cd build && ctest -C RelWithDebInfo --output-on-failure
+        run: cd build && ctest -C RelWithDebInfo --output-on-failure -j 2 --schedule-random
 
       # Just a quick test to make sure the fuzzers don't crash immediately.
       # More thorough fuzzing is done in a separate GitHub Actions workflow.
@@ -208,7 +208,7 @@ jobs:
         run: cmake --build build --config Debug -j "$(sysctl -n hw.ncpu)"
 
       - name: Test
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure -j 2 --schedule-random
 
       - name: Install
         run: cmake --install build --config Debug
@@ -236,7 +236,7 @@ jobs:
         run: cmake --build build --config Debug -j
 
       - name: Test
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure -j 2 --schedule-random
 
       - name: Install
         run: cmake --install build --config Debug
