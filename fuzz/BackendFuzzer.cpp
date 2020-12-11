@@ -108,9 +108,12 @@ static std::optional<hyde::ParsedModule> ParseModule(std::string_view input, con
   return parser.ParseBuffer(input, config);
 }
 
+// Generate a Dr. Lojekyll `ParsedModule` from the given random generator.
+// This is referentially transparent: given the same input argument, produces
+// the same output.
 static hyde::ParsedModule generate_ast(std::mt19937_64 &gen) {
-  // FIXME: do something more interesting here
-  std::string input;
+  // FIXME: do something more interesting here than return an empty module
+  std::string input = "";
   const auto ret = ParseModule(input, "dummy_ast");
   assert(ret && "failed to generate dummy AST");
   return *ret;
@@ -301,7 +304,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
 
   // Step 2. Transform the AST.
   //
-  // FIXME: implement something here, using `Seed` to make it deterministic
+  // FIXME: implement something here, using `gen` to make pseudorandom selection deterministic
   //
   // Ideas:
   //
