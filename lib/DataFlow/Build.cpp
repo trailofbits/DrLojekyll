@@ -230,8 +230,6 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
   // Add the output columns to the VIEW associated with the predicate.
   auto col_index = 0u;
   for (auto var : pred.Arguments()) {
-    auto vc = context.var_id_to_col[var.UniqueId()];
-    assert(vc != nullptr);
     view->columns.Create(var, view, VarId(context, var), col_index++);
   }
 
