@@ -363,9 +363,13 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   //   - consistently rename identifiers
   //   - consistently change parameter types
   //   - reorder rules
+  //   - reordering functors
+  //   - consistently reordering parameters
   //   - duplicate rules
-  //   - add a true clause to an existing rule
-  //   - duplicate a rule and add a false clause to it
+  //   - add a true subterm to an existing rule
+  //   - duplicate a rule and add a false subterm to it
+  //   - weaken an existing rule (i.e., delete subterms), and somehow rephrase
+  //     the deleted subterms
 
   // Step 3. Pretty-print the transformed AST back into `Data`.
   //
