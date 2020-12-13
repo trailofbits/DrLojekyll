@@ -86,8 +86,9 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 //            then there's an orphaned SELECT in `average_weight.dr`. This
 //            is because the RELation or IO holds onto a use of the SELECT
 //            and so the SELECT always looks used.
-bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
-                                     const OptimizationContext &opt) {
+bool Node<QuerySelect>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+
   if (is_dead || sets_condition) {
     return false;
   }

@@ -335,6 +335,19 @@ unsigned QueryView::Depth(void) const noexcept {
   return impl->depth;
 }
 
+// Color value for formatting. This is influenced by the `@highlight`
+// pragma, for example:
+//
+//      predicate(...) @highlight : body0(...), ..., bodyN(...).
+//
+// The color itself is mostly randomly generated, and best effort is applied
+// to maintain the coloring through optimzation. In some cases, new colors
+// are invented, e.g. when merging nodes when doing common sub-expression
+// elimination. In other cases, the color may be lost.
+unsigned QueryView::Color(void) const noexcept {
+  return impl->color;
+}
+
 // Returns a useful string of internal metadata about this view.
 OutputStream &QueryView::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
@@ -567,10 +580,16 @@ bool QueryCondition::CanBeDeleted(void) const noexcept {
 
 // Depth of this node.
 unsigned QueryCondition::Depth(void) const noexcept {
+  if (impl->in_depth_calc) {
+    assert(false);  // Suggests a condition is dependent on itself.
+    return 1u;
+  }
+  impl->in_depth_calc = true;
   auto depth = 1u;
   for (auto setter : impl->setters) {
     depth = std::max(depth, setter->Depth());
   }
+  impl->in_depth_calc = false;
   return depth + 1u;
 }
 

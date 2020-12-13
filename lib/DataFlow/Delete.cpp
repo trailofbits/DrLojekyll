@@ -33,8 +33,9 @@ uint64_t Node<QueryDelete>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryDelete>::Canonicalize(QueryImpl *,
-                                     const OptimizationContext &opt) {
+bool Node<QueryDelete>::Canonicalize(
+    QueryImpl *, const OptimizationContext &opt, const ErrorLog &) {
+
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;

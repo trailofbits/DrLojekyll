@@ -887,6 +887,11 @@ DisplayRange ParsedClause::SpellingRange(void) const noexcept {
                       last_tok.NextPosition());
 }
 
+// Should this clause be highlighted in the data flow representation?
+bool ParsedClause::IsHighlighted(void) const noexcept {
+  return impl->highlight.IsValid();
+}
+
 // Returns the arity of this clause.
 unsigned ParsedClause::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->head_variables.size());

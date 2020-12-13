@@ -354,11 +354,26 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 9;
           continue;
 
+        } else if (Lexeme::kPragmaDebugHighlight == lexeme) {
+          if (clause->highlight.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Cannot repeat pragma '" << tok << "'";
+
+            err.Note(scope_range, clause->highlight.SpellingRange())
+                << "Previous use of the pragma was here";
+            return;
+
+          } else {
+            clause->highlight = tok;
+            state = 4;
+            continue;
+          }
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected colon to denote the beginning of the body "
-              << "of the clause '" << clause->name << "', but got '" << tok
-              << "' instead";
+              << "of the clause '" << clause->name << "', period to mark a "
+              << "fact, or a debug prgram; but got '" << tok << "' instead";
           return;
         }
 

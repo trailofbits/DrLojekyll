@@ -30,6 +30,7 @@ enum class Lexeme : uint8_t {
   kInvalidStreamOrDisplay,
   kInvalidTypeName,
   kInvalidUnknown,
+  kInvalidPragma,
 
   // End of file token; this prevents rules from spanning across files.
   kEndOfFile,
@@ -292,6 +293,11 @@ enum class Lexeme : uint8_t {
   kIdentifierUnnamedVariable,  // `_`.
   kIdentifierType,  // Foreign type names.
   kIdentifierConstant,  // Foreign constant name.
+
+  // `@highlight` is a debugging pragma, used to mark data flow nodes associated
+  // with a particular clause body as "highlighted" so they are easier to
+  // spot in the data flow IR visualizations.
+  kPragmaDebugHighlight
 };
 
 enum class TypeKind : uint32_t;

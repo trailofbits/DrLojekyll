@@ -51,6 +51,8 @@ struct ClauseContext {
     unapplied_compares.clear();
     functors.clear();
     negated_predicates.clear();
+
+    color = 0;
   }
 
   // Maps vars to cols. We don't map a `ParsedVariable` because then we'd end up
@@ -90,6 +92,11 @@ struct ClauseContext {
 
   // List of views that failed to produce valid heads.
   std::vector<VIEW *> error_heads;
+
+  // Color to use in the eventual data flow output. Default is black. This
+  // is influenced by `ParsedClause::IsHighlighted`, which in turn is enabled
+  // by using the `@highlight` pragma after a clause head.
+  unsigned color{0};
 };
 
 static VarColumn *VarSet(ClauseContext &context, ParsedVariable var) {
@@ -171,6 +178,7 @@ static VIEW *PromoteOnlyUniqueColumns(QueryImpl *query, VIEW *result) {
     auto col_index = 0u;
 
     CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
+    cmp->color = result->color;
     cmp->input_columns.AddUse(lhs_col);
     cmp->input_columns.AddUse(rhs_col);
     cmp->columns.Create(lhs_col->var, cmp, lhs_col->id, col_index++);
@@ -204,6 +212,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     }
 
     view = query->selects.Create(input, pred.SpellingRange());
+    view->color = context.color;
     input->receives.AddUse(view);
 
   } else if (decl.IsFunctor()) {
@@ -218,6 +227,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     }
     input = rel;
     view = query->selects.Create(input, pred.SpellingRange());
+    view->color = context.color;
     input->selects.AddUse(view);
 
   } else {
@@ -236,51 +246,6 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
   // Deal with something like `foo(A, A)`, turning it into `foo(A, B), A=B`.
   return PromoteOnlyUniqueColumns(query, view);
 }
-
-//// Used to semi-deterministically sort columns.
-//static bool ColumnSort(COL *a, COL *b) {
-//
-//  const auto a_view_hash = a->view->Hash();
-//  const auto b_view_hash = b->view->Hash();
-//  if (a_view_hash != b_view_hash) {
-//    return a_view_hash < b_view_hash;
-//  }
-//
-//  const auto a_index = a->Index();
-//  const auto b_index = b->Index();
-//  if (a_index != b_index) {
-//    return a_index < b_index;
-//  }
-//
-//  if (a->id != b->id) {
-//    return a->id < b->id;
-//  }
-//
-//  return a->var.Order() < b->var.Order();
-//}
-
-//// Sort first by hash, second by ID, and then third by order (related to ID),
-//// then dedup by ID (after a stable sort), then re-sort after deduping.
-//static void FindUniqueCols(std::vector<COL *> &out_cols) {
-//  std::sort(out_cols.begin(), out_cols.end(), ColumnSort);
-//  std::stable_sort(out_cols.begin(), out_cols.end(),
-//                   [](COL *a, COL *b) { return a->id < b->id; });
-//  auto it = std::unique(out_cols.begin(), out_cols.end(),
-//                        [](COL *a, COL *b) { return a->id == b->id; });
-//  out_cols.erase(it, out_cols.end());
-//  std::sort(out_cols.begin(), out_cols.end(), ColumnSort);
-//}
-//
-//// Find the unique columns proposed by some view. We use this when choosing
-//// pivot views, filtering, etc.
-//static void FindUniqueColumns(VIEW *view, std::vector<COL *> &out_cols) {
-//  out_cols.clear();
-//  for (auto col : view->columns) {
-//    out_cols.push_back(col);
-//  }
-//
-//  FindUniqueCols(out_cols);
-//}
 
 // Go over all inequality comparisons in the clause body and try to apply as
 // many as possible to the `view_ref`, replacing it each time. We apply this
@@ -334,6 +299,7 @@ static VIEW *GuardWithInequality(QueryImpl *query, ParsedClause clause,
     context.unapplied_compares.erase(cmp);
 
     CMP *filter = query->compares.Create(cmp.Operator());
+    filter->color = context.color;
     filter->spelling_range = cmp.SpellingRange();
     filter->input_columns.AddUse(lhs_col);
     filter->input_columns.AddUse(rhs_col);
@@ -393,6 +359,7 @@ static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
       assert(const_col != nullptr);
 
       CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
+      cmp->color = context.color;
       cmp->input_columns.AddUse(const_col);
       cmp->input_columns.AddUse(col);
 
@@ -424,6 +391,7 @@ static VIEW *AllConstantsView(QueryImpl *query, ParsedClause clause,
   }
 
   TUPLE *tuple = query->tuples.Create();
+  tuple->color = context.color;
   auto col_index = 0u;
   for (const auto &[spelling, col] : context.spelling_to_col) {
     (void) tuple->columns.Create(col->var, tuple, col->id, col_index);
@@ -468,6 +436,7 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
   }
 
   TUPLE *tuple = query->tuples.Create();
+  tuple->color = context.color;
 
   auto col_index = 0u;
 
@@ -514,6 +483,7 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 static void CreateProduct(QueryImpl *query, ParsedClause clause,
                           ClauseContext &context, const ErrorLog &log) {
   auto join = query->joins.Create();
+  join->color = context.color;
   auto col_index = 0u;
   for (auto view : context.views) {
 #ifndef NDEBUG
@@ -584,6 +554,7 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
     MAP *map = query->maps.Create(
         ParsedFunctor::From(redecl), pred.SpellingRange(),
         pred.IsPositive());
+    map->color = context.color;
 
     VIEW *result = map;
     auto col_index = 0u;
@@ -663,6 +634,7 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       assert(out_view->columns.Size() == result->columns.Size());
 
       auto merge = query->merges.Create();
+      merge->color = context.color;
 
       // Create output columns for the merge.
       for (auto col : result->columns) {
@@ -735,6 +707,7 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
 
   if (!all_needed) {
     const auto tuple = query->tuples.Create();
+    tuple->color = context.color;
 #ifndef NDEBUG
     tuple->producer = "PRED-NEGATION-SUBSET";
 #endif
@@ -759,17 +732,14 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
   sel->is_used_by_negation = true;
 
   auto negate = query->negations.Create();
+  negate->color = context.color;
   negate->negated_view.Emplace(negate, sel);
 
   auto col_index = 0u;
   for (auto in_col : needed_cols) {
     auto var = needed_vars[col_index];
     negate->input_columns.AddUse(in_col);
-    auto in_vc = context.var_id_to_col[in_col->var.UniqueId()];
-    auto vc = context.var_id_to_col[var.UniqueId()];
-    assert(vc != nullptr);
-    assert(in_vc != nullptr);
-    (void) negate->columns.Create(in_col->var, negate, in_col->id, col_index++);
+    (void) negate->columns.Create(var, negate, in_col->id, col_index++);
   }
 
   // Now attach in any other columns that `view` was bringing along but that
@@ -873,6 +843,7 @@ static VIEW *ApplyAggregate(QueryImpl *query, ParsedClause clause,
   auto functor_pred = agg.Functor();
   auto functor_decl = ParsedFunctor::From(ParsedDeclaration::Of(functor_pred));
   AGG *view = query->aggregates.Create(functor_decl);
+  view->color = context.color;
 
   auto col_index = 0u;
 
@@ -1053,6 +1024,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     }
 
     auto join = query->joins.Create();
+    join->color = context.color;
 
     // Collect the set of views against which we will join.
     next_views.clear();
@@ -1193,6 +1165,14 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   auto &pred_views = context.views;
 
+  if (clause.IsHighlighted()) {
+    auto decl = ParsedDeclaration::Of(clause);
+    uint64_t hash = decl.Hash();
+    hash ^= clause.Hash() * RotateRight64(hash, 13u);
+    context.color = static_cast<uint32_t>(hash) ^
+                    static_cast<uint32_t>(hash >> 32u);
+  }
+
   // NOTE(pag): This applies to body variables, not parameters.
   for (auto var : clause.Variables()) {
     CreateVarId(context, var);
@@ -1245,6 +1225,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     if (!const_col) {
       CONST *stream = query->constants.Create(literal);
       SELECT *select = query->selects.Create(stream, literal.SpellingRange());
+      select->color = context.color;
       const_col = select->columns.Create(var, select, col_id);
 
     // Reset these, just in case they were initialized by another clause.
@@ -1347,6 +1328,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // to operate on these constants, so this is why be bring them in here.
   if (pred_views.empty()) {
     TUPLE *tuple = query->tuples.Create();
+    tuple->color = context.color;
     auto col_index = 0u;
     for (auto const_col : context.col_id_to_constant) {
       if (const_col) {
@@ -1524,6 +1506,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     TUPLE *cond_guard = nullptr;
     if (clause.Arity()) {
       cond_guard = query->tuples.Create();
+      cond_guard->color = context.color;
       for (auto var : clause.Parameters()) {
         cond_guard->input_columns.AddUse(clause_head->columns[col_index]);
         (void) cond_guard->columns.Create(var, cond_guard, VarId(context, var),
@@ -1561,6 +1544,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   if (clause.IsDeletion()) {
     auto col_index = 0u;
     DELETE *const del = query->deletes.Create();
+    del->color = context.color;
     if (clause.Arity()) {
       for (auto var : clause.Parameters()) {
         del->input_columns.AddUse(clause_head->columns[col_index]);
@@ -1588,6 +1572,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       stream = query->ios.Create(decl);
     }
     insert = query->inserts.Create(stream, decl);
+    insert->color = context.color;
     stream->transmits.AddUse(insert);
 
   } else {
@@ -1596,6 +1581,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       rel = query->relations.Create(decl);
     }
     insert = query->inserts.Create(rel, decl);
+    insert->color = context.color;
     rel->inserts.AddUse(insert);
   }
 

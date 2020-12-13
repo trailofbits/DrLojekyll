@@ -387,6 +387,17 @@ class QueryView : public query::QueryNode<QueryView> {
   // nodes are typically responses to queries, or message publications.
   unsigned Depth(void) const noexcept;
 
+  // Color value for formatting. This is influenced by the `@highlight`
+  // pragma, for example:
+  //
+  //      predicate(...) @highlight : body0(...), ..., bodyN(...).
+  //
+  // The color itself is mostly randomly generated, and best effort is applied
+  // to maintain the coloring through optimzation. In some cases, new colors
+  // are invented, e.g. when merging nodes when doing common sub-expression
+  // elimination. In other cases, the color may be lost.
+  unsigned Color(void) const noexcept;
+
   // Returns a useful string of internal metadata about this view.
   OutputStream &DebugString(OutputStream &) const noexcept;
 

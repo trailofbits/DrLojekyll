@@ -409,6 +409,9 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
   DisplayRange SpellingRange(void) const noexcept;
 
+  // Should this clause be highlighted in the data flow representation?
+  bool IsHighlighted(void) const noexcept;
+
   // Returns the arity of this clause.
   unsigned Arity(void) const noexcept;
 

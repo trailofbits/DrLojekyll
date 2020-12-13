@@ -8,6 +8,7 @@
 #include <drlojekyll/Util/DefUse.h>
 
 #include <cassert>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -55,6 +56,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // Returns the real constant associated with this column if this column is
   // a constant or constant reference. Otherwise it returns `nullptr`.
   Node<QueryColumn> *AsConstant(void) noexcept;
+
+  // Try to resolve this column to a constant, and return it, otherwise returns
+  // `this`.
+  Node<QueryColumn> *TryResolveToConstant(void) noexcept;
 
   // Returns `true` if will have a constant value at runtime.
   bool IsConstantRef(void) const noexcept;
@@ -141,6 +146,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
   }
 
+  // Is this a trivial condition?
+  bool IsTrivial(void);
+
   // The declaration of the `ParsedExport` that is associated with this
   // zero-argument predicate.
   const std::optional<ParsedDeclaration> declaration;
@@ -153,6 +161,10 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   //
   // TODO(pag): Consider making this not be a weak use list.
   WeakUseList<Node<QueryView>> setters;
+
+  bool in_trivial_check{false};
+
+  bool in_depth_calc{false};
 };
 
 using COND = Node<QueryCondition>;
@@ -298,6 +310,20 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // can put it into canonical form.
   Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force = false);
 
+  // This is like an "optimized" form of `GuardWithTuple`, that also knows
+  // about attached columns. It tries to propagate constants, and maintains
+  // a backward reference to `this` if it drops all references.
+  //
+  // NOTE(pag): `incoming_view` is there to tell is if `this` ever even had any
+  //            dependencies. This is really only relevant to TUPLEs, and so
+  //            it's permissible for things like MAPs, NEGATEs, etc. to pass
+  //            in `this` for `incoming_view`, to force a non-NULL.
+  //
+  // NOTE(pag): This assumes `in_to_out` is filled up!!
+  Node<QueryTuple> *GuardWithOptimizedTuple(
+      QueryImpl *query, unsigned first_attached_col,
+      Node<QueryView> *incoming_view);
+
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
   Node<QueryTuple> *ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
@@ -305,6 +331,10 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Returns `true` if this view is being used.
   bool IsUsed(void) const noexcept;
+
+  // Is this view directly being used? This does not check columns, but does
+  // check conditions.
+  bool IsUsedDirectly(void) const noexcept;
 
   // Invoked any time time that any of the columns used by this view are
   // modified.
@@ -328,7 +358,24 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
-  virtual bool Canonicalize(QueryImpl *query, const OptimizationContext &opt);
+  virtual bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                            const ErrorLog &);
+
+  struct Discoveries {
+    bool constant_inputs:1;
+    bool non_local_changes:1;
+    bool guardable_constant_output:1;
+    bool duplicated_input_column:1;
+    bool directly_used_column:1;
+    bool unused_column:1;
+  };
+
+  // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
+  // do constant propagation, and possibly to replacements. Sets
+  // `is_canonical = false;` if anything is changed or should be changed.
+  Discoveries CanonicalizeColumn(const OptimizationContext &opt, COL *in_col,
+                                 COL *out_col, bool is_attached,
+                                 Discoveries has);
 
   virtual Node<QueryDelete> *AsDelete(void) noexcept;
   virtual Node<QuerySelect> *AsSelect(void) noexcept;
@@ -461,6 +508,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // not this node may have changed and needs to be re-inspected.
   bool is_canonical{false};
 
+  // Is this node "locked", i.e. are we no longer allowed to canonicalize it?
+  bool is_locked{false};
+
   // Is this node dead?
   bool is_dead{false};
 
@@ -474,8 +524,15 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Is this view used by a negation?
   bool is_used_by_negation{false};
 
+  // Color to use in the eventual data flow output. Default is black. This
+  // is influenced by `ParsedClause::IsHighlighted`, which in turn is enabled
+  // by using the `@highlight` pragma after a clause head.
+  unsigned color{0};
+
+#ifndef NDEBUG
   // Debug string roughly tracking how or why this node was created.
   std::string producer;
+#endif
 
   // Does this code break an invariant?
   enum {
@@ -497,6 +554,25 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   bool CheckIncomingViewsMatch(const UseList<COL> &cols1,
                                const UseList<COL> &cols2) const;
 
+  // If `cols1:cols2` pull their data from a tuple, and if that tuple is
+  // unconditional, or if its conditions are trivial, then update `cols1:cols2`
+  // to point at the source of the data of those tuples.
+  //
+  // Takes in the `incoming_view` pulled from by `cols1:cols2` and returns the
+  // updated `incoming_view`.
+  //
+  // NOTE(pag): This updates `is_canonical = false` if it changes anything.
+  Node<QueryView> *PullDataFromBeyondTrivialTuples(
+      Node<QueryView> *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2);
+
+ private:
+
+  // Similar to, and called by, `PullDataFromBeyondTrivialTuples`.
+  Node<QueryView> *PullDataFromBeyondTrivialUnions(
+      Node<QueryView> *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2);
+
+ public:
+
   // Figure out what the incoming view to `cols1` is.
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
@@ -507,9 +583,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   Node<QueryView> *OnlyUser(void) const noexcept;
 
   // Create or inherit a condition created on `view`.
-  static COND *CreateOrInheritConditionOnView(QueryImpl *query,
-                                              Node<QueryView> *view,
-                                              UseList<COL> cols);
+  void CreateDependencyOnView(QueryImpl *query, Node<QueryView> *view);
 
  protected:
   // Utilities for depth calculation.
@@ -522,7 +596,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   static bool ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
                         const UseList<COL> &c2s);
 
-  // Check if teh `group_ids` of two views have any overlaps.
+  // Check if the `group_ids` of two views have any overlaps.
   static bool InsertSetsOverlap(Node<QueryView> *a, Node<QueryView> *b);
 };
 
@@ -563,7 +637,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   // The instance of the predicate from which we are selecting.
   DisplayPosition position;
@@ -593,7 +668,8 @@ class Node<QueryTuple> final : public Node<QueryView> {
   // replacements easier. Because comparisons are mostly pointer-based, the
   // canonical form of this tuple is one where all columns are sorted by
   // their pointer values.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 };
 
 using TUPLE = Node<QueryTuple>;
@@ -618,7 +694,8 @@ class Node<QueryKVIndex> final : public Node<QueryView> {
   // Put the KV index into a canonical form. The only real internal optimization
   // that will happen is constant propagation of keys, but NOT values (as we can't
   // predict how the merge functors will affect them).
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   // Functors that get called to merge old and new values.
   std::vector<ParsedFunctor> merge_functors;
@@ -642,7 +719,8 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   // Remove all constant uses.
   void RemoveConstants(QueryImpl *query);
@@ -691,7 +769,8 @@ class Node<QueryMap> final : public Node<QueryView> {
 
   // Put this map into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   inline explicit Node(ParsedFunctor functor_, DisplayRange range_,
                        bool is_positive_)
@@ -741,7 +820,8 @@ class Node<QueryAggregate> : public Node<QueryView> {
 
   // Put this aggregate into a canonical form, which will make comparisons and
   // replacements easier.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   // Functor that does the aggregation.
   const ParsedFunctor functor;
@@ -795,7 +875,8 @@ class Node<QueryMerge> : public Node<QueryView> {
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
@@ -823,7 +904,8 @@ class Node<QueryCompare> : public Node<QueryView> {
   // Put this constraint into a canonical form, which will make comparisons and
   // replacements easier. If this constraint's operator is unordered, then we
   // sort the inputs to make comparisons trivial.
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   const ComparisonOperator op;
 
@@ -849,7 +931,8 @@ class Node<QueryNegate> : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
   unsigned Depth(void) noexcept override;
 
   UseRef<VIEW> negated_view;
@@ -877,7 +960,8 @@ class Node<QueryInsert> : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 
   WeakUseRef<REL> relation;
   WeakUseRef<STREAM> stream;
@@ -902,7 +986,8 @@ class Node<QueryDelete> : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt) override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
 };
 
 using DELETE = Node<QueryDelete>;
@@ -1132,7 +1217,7 @@ class QueryImpl {
   // Canonicalize the dataflow. This tries to put each node into its current
   // "most optimal" form. Previously it was more about re-arranging columns
   // to encourange better CSE results.
-  void Canonicalize(const OptimizationContext &opt);
+  void Canonicalize(const OptimizationContext &opt, const ErrorLog &);
 
   // Sometimes we have a bunch of dumb condition patterns, roughly looking like
   // a chain of constant input tuples, conditioned on the next one in the chain,

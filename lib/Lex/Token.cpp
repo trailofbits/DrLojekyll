@@ -24,6 +24,7 @@ bool Token::IsValid(void) const {
     case ::hyde::Lexeme::kInvalidUnterminatedPythonCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
+    case ::hyde::Lexeme::kInvalidPragma:
     case ::hyde::Lexeme::kInvalidUnknown: return false;
     default: return true;
   }
@@ -112,6 +113,7 @@ DisplayPosition Token::NextPosition(void) const {
     case ::hyde::Lexeme::kInvalidUnterminatedPythonCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
+    case ::hyde::Lexeme::kInvalidPragma:
     case ::hyde::Lexeme::kInvalidUnknown: {
       const auto error = As<lex::ErrorToken>();
       index += error.Load<lex::IndexDisp>();
@@ -148,6 +150,7 @@ unsigned Token::SpellingWidth(void) const {
     case ::hyde::Lexeme::kInvalidUnterminatedPythonCode:
     case ::hyde::Lexeme::kInvalidStreamOrDisplay:
     case ::hyde::Lexeme::kInvalidTypeName:
+    case ::hyde::Lexeme::kInvalidPragma:
     case ::hyde::Lexeme::kInvalidUnknown:
     case ::hyde::Lexeme::kLiteralCode:
     case ::hyde::Lexeme::kLiteralCxxCode:

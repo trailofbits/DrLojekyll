@@ -94,6 +94,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 // Convert a trivial join (only has a single input view) into a TUPLE.
 void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
   auto tuple = impl->tuples.Create();
+  tuple->color = color;
 
   auto col_index = 0u;
   for (auto out_col : columns) {
@@ -127,7 +128,7 @@ void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
 // their columns are not used by the JOIN. If so, we proxy those views with
 // TUPLEs.
 bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
-  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  const auto is_used_in_merge = IsUsedDirectly();
   if (is_used_in_merge) {
     return false;
   }
@@ -201,6 +202,7 @@ bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
     }
 
     auto tuple = impl->tuples.Create();
+    tuple->color = color;
     auto col_index = 0u;
     for (auto in_col : joined_view->columns) {
       if (needed_cols[in_col]) {
@@ -291,6 +293,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
         }
 
         CMP *const cmp = impl->compares.Create(ComparisonOperator::kEqual);
+        cmp->color = color;
         COL *const new_col = cmp->columns.Create(col->var, cmp, col->id, 0u);
 
         view_to_process->CopyDifferentialAndGroupIdsTo(cmp);
@@ -425,6 +428,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // JOIN, but uses all the new columns, or uses constant columns where
   // necessary.
   TUPLE *const tuple = impl->tuples.Create();
+  tuple->color = color;
   col_index = 0u;
   for (auto out_col : columns) {
     COL *const new_out_col =
@@ -538,8 +542,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 //
 // TODO(pag): If we make the above transform, then a JOIN could devolve into
 //            a cross-product.
-bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
-                                   const OptimizationContext &opt) {
+bool Node<QueryJoin>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
 
   if (out_to_in.empty()) {
     PrepareToDelete();
