@@ -20,6 +20,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <string_view>
 #include <sstream>
@@ -148,6 +149,7 @@ static std::optional<hyde::ParsedModule> ParseModule(DrContext &cxt, std::string
 // This is referentially transparent: given the same input argument, produces
 // the same output.
 static hyde::ParsedModule generate_ast(DrContext &cxt, std::mt19937_64 &gen) {
+  assert(cxt.error_log.IsEmpty());
   // FIXME: do something more interesting here than return an empty module
   std::string input = "";
   const auto ret = ParseModule(cxt, input, "dummy_ast");
@@ -377,13 +379,25 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
     }
   }
 
-  DrContext cxt;
+  // Note: We use a unique pointer here for the `DrContext` so that we can
+  // effectively re-initialize the object.  The various member variables don't
+  // have copy constructors, assignment operators, or the rvalue equivalents,
+  // nor do they have methods to re-initialize them.
+  //
+  // FIXME: Simplify this once the `DrContext` member variables can be re-initialized
+  std::unique_ptr<DrContext> cxt(new DrContext);
 
   // Step 1. Parse the given data.
   std::string_view input(reinterpret_cast<char *>(Data), Size);
-  const auto module_opt = ParseModule(cxt, input, "harness_module");
+  const auto module_opt = ParseModule(*cxt, input, "harness_module");
 
-  auto module = module_opt ? *module_opt : generate_ast(cxt, gen);
+  if (!module_opt) {
+    // Parsing failed; re-initialize the context so that AST generation doesn't
+    // fail.
+    cxt.reset(new DrContext);
+  }
+
+  auto module = module_opt ? *module_opt : generate_ast(*cxt, gen);
   if (module_opt) {
     gStats.num_custom_parsed_asts += 1;
   } else {
@@ -414,7 +428,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   // Note: it is possible that the new input written into `Data` is not
   //       syntactically valid Dr. Lojekyll input.
   //       It's also possible that it's not null-terminated.
-  const auto module_string = ParsedModuleToString(cxt, module);
+  const auto module_string = ParsedModuleToString(*cxt, module);
   size_t output_len = std::min(module_string.size(), MaxSize);
   std::memcpy(Data, module_string.data(), output_len);
   return output_len;
