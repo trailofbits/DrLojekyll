@@ -58,7 +58,8 @@ struct FuzzerStats
     int col_width = 1;
     for (uint64_t v = num_custom_calls; v > 0; v /= 10, col_width += 1) {}
     auto set_width = std::setw(col_width);
-    std::cerr << "### Final fuzzer statistics ###" << std::endl
+    std::cerr << std::endl
+              << "### Final fuzzer statistics ###" << std::endl
               << std::endl
               << "Custom mutator:" << std::endl
               << "    Total calls:          " << set_width << num_custom_calls << std::endl
@@ -153,7 +154,6 @@ static hyde::ParsedModule generate_ast(DrContext &cxt, std::mt19937_64 &gen) {
   assert(ret && "failed to generate dummy AST");
   return *ret;
 }
-
 
 // Execute the given Python script, checking that its exit code is zero.
 static void PythonSelfTest(std::string_view gen_python) {
