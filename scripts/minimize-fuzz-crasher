@@ -43,10 +43,10 @@ cat <<EOF >"$MINIMIZE_SCRIPT"
 #!/bin/bash
 set -uo pipefail
 "$PWD/build/fuzz/drlojekyll-parser-fuzzer" "$TMP_CRASHING_INPUT"
-if (( \$? == 77 )); then
-    exit 0
-else
+if (( \$? == 0 )); then
     exit 1
+else
+    exit 0
 fi
 EOF
 chmod +x "$MINIMIZE_SCRIPT"
