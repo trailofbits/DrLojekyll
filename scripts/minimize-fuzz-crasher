@@ -42,7 +42,7 @@ cp "$CRASHING_INPUT" "$TMP_CRASHING_INPUT"
 cat <<EOF >"$MINIMIZE_SCRIPT"
 #!/bin/bash
 set -uo pipefail
-"$PWD/build/fuzz/fuzzer" "$TMP_CRASHING_INPUT"
+"$PWD/build/fuzz/drlojekyll-parser-fuzzer" "$TMP_CRASHING_INPUT"
 if (( \$? == 77 )); then
     exit 0
 else
