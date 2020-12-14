@@ -13,6 +13,9 @@
 # comments
 "; "
 
+# pragmas
+"@highlight "
+
 # scoping / exports / imports
 "#local "
 "#export "
