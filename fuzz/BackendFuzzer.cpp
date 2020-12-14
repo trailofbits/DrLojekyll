@@ -25,6 +25,8 @@
 #include <sstream>
 #include <tuple>
 
+using namespace std::literals::string_view_literals;  // for "foo"sv type string view literals
+
 namespace {
 
 // Used to keep track of some coarse fuzzer statistics and print them at
@@ -164,7 +166,7 @@ static void PythonSelfTest(std::string_view gen_python) {
   options.deadline = timeout;
 
   // FIXME: plumb the path to the Python binary through to here
-  const std::array cmd{std::string_view("python")};
+  const std::array cmd{"python"sv};
   reproc::process proc;
   std::error_code ec = proc.start(cmd, options);
   const auto assert_ec_ok = [&ec](std::string_view what){
@@ -210,6 +212,23 @@ static void PythonSelfTest(std::string_view gen_python) {
 
 
 extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
+  char **args = *argv;
+  for (int i = 0, iMax = *argc; i < iMax; i += 1) {
+    const char *arg = args[i];
+    if (strcmp("--enable-all-mutators", arg) == 0) {
+      gAllowSemanticsModifyingMutations = true;
+    } else if (strcmp("--no-execute-generated-python", arg) == 0) {
+      gExecuteGeneratedPython = false;
+    // if only we were using C++20, we could use string_view.starts_with...
+    } else if (strstr(arg, "--") == arg && strcmp(arg, "--") != 0) {
+      std::cerr << "Error: unknown custom fuzzer argument `" << arg << "`" << std::endl
+                << std::endl
+                << "Available custom fuzzer arguments:" << std::endl
+                << "    --enable-all-mutators               enable all mutators, including semantics-altering ones" << std::endl
+                << "    --no-execute-generated-python       do not execute the generated Python code" << std::endl;
+      exit(1);
+    }
+  }
   return 0;
 }
 
