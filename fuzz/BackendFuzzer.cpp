@@ -213,7 +213,7 @@ static void PythonSelfTest(std::string_view gen_python) {
 
 extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
   char **args = *argv;
-  for (int i = 0, iMax = *argc; i < iMax; i += 1) {
+  for (int i = 1, iMax = *argc; i < iMax; i += 1) {
     const char *arg = args[i];
     if (strcmp("--enable-all-mutators", arg) == 0) {
       gAllowSemanticsModifyingMutations = true;
@@ -229,6 +229,11 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
       exit(1);
     }
   }
+
+  const char *prog = args[0];
+  std::cerr << prog << ": using semantics-altering mutators: " << gAllowSemanticsModifyingMutations << std::endl;
+  std::cerr << prog << ": executing generated Python code:   " << gExecuteGeneratedPython << std::endl;
+
   return 0;
 }
 
@@ -339,7 +344,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
 
 
-// Forward-declare the libFuzzer's mutator callback.
+// Forward-declare the libFuzzer's mutator callback; it is explicitly called
+// sometimes within LLVMFuzzerCustomMutator.
 extern "C" size_t
 LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
 
@@ -357,7 +363,6 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
                                           size_t MaxSize, unsigned int Seed) {
 
   assert(Size <= MaxSize);
-  // std::cerr << "!!! LLVMFuzzerCustomMutator Data: " << (void *)Data << " Size: " << Size << " MaxSize: " << MaxSize << " Seed: " << Seed << std::endl;
   gStats.num_custom_calls += 1;
 
   // We use the given seed for deterministic random number generation, when we
