@@ -209,6 +209,29 @@ static void PythonSelfTest(std::string_view gen_python) {
 
 }
 
+// Used to shuffle an array in-place.
+//
+// Copied from cppreference, where it is listed as one possible implementation
+// of `std::shuffle`.  The only change is that here, the random generator is
+// passed by reference, instead of by rvalue reference, so that we can continue
+// to use it later.
+//
+// It seems like a mistake in the standard library that `std::shuffle` takes
+// the random generator by rvalue reference!
+template<class RandomIt, class URBG>
+void shuffle(RandomIt first, RandomIt last, URBG& g)
+{
+    typedef typename std::iterator_traits<RandomIt>::difference_type diff_t;
+    typedef std::uniform_int_distribution<diff_t> distr_t;
+    typedef typename distr_t::param_type param_t;
+
+    distr_t D;
+    diff_t n = last - first;
+    for (diff_t i = n-1; i > 0; --i) {
+        std::swap(first[i], first[D(g, param_t(0, i))]);
+    }
+}
+
 }  // namespace
 
 
