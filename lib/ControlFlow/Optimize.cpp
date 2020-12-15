@@ -175,9 +175,11 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
             // if-transition-state's new parallel region
             auto new_par = prog->parallel_regions.Create(replacement);
-            new_par->parent = transition;
-            UseList<REGION> new_siblings(new_par);
-            new_siblings.AddUse(transition->body.get());
+            auto transition_body = transition->body.get();
+            if (transition_body) {
+              new_par->regions.AddUse(transition_body);
+              transition_body->parent = new_par;
+            }
             transition->body.Clear();
             transition->body.Emplace(transition, new_par);
             for (auto region : combine_regions) {
@@ -186,12 +188,12 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
               auto merge = region->AsOperation()->AsTransitionState();
               const auto merge_body = merge->body.get();
               merge->body.Clear();
-              new_siblings.AddUse(merge_body);
-              merge_body->parent = new_par;
-              merge->ReplaceAllUsesWith(transition);
-              merge->parent = nullptr;
+              if (merge_body && !merge_body->IsNoOp()) {
+                merge->ReplaceAllUsesWith(merge_body);
+                new_par->regions.AddUse(merge_body);
+                merge->col_values.Clear();
+              }
             }
-            new_par->regions.Swap(new_siblings);
           }
         }
       }
