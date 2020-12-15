@@ -716,9 +716,11 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
         DisjointSet::Union(model, pred_model);
       }
 
+#ifndef NDEBUG
       for (auto succ : view.Successors()) {
         assert(succ.IsMerge());
       }
+#endif
 
     // Select predecessors are INSERTs, which don't have output columns.
     // In theory, there could be more than one INSERT. Selects always share
