@@ -192,15 +192,9 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
               auto merge = region->AsOperation()->AsTransitionState();
               const auto merge_body = merge->body.get();
               if (merge_body && !merge_body->IsNoOp()) {
-
-                // merge->ReplaceAllUsesWith(transition);
                 new_par->regions.AddUse(merge_body);
               }
-              // merge->ReplaceAllUsesWith(transition);
               merge->body.Clear();
-
-              // merge->table.Clear();
-              // merge->col_values.Clear();
               merge->parent = nullptr;
             }
             child_regions.AddUse(transition);
