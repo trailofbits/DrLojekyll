@@ -338,8 +338,11 @@ Clauses represent the rules of Datalog. They have two logical parts:
  * **Body.** The body of a clause contains the conditions which must be satisfied
  in order to prove the head. The clause is a conjunction of predicates, where the
  logical "and" operation is represented by a comma. Sometimes, it can be helpful
- to thing of commas as introducing nested loops.
+ to think of commas as introducing nested loops.
 
+
+Clauses can be defined for queries, messages, exports, and locals. Clauses
+cannot be defined for functors.
 
 
 ```antlr
@@ -387,4 +390,50 @@ literal: r"0[1-7][0-7]*"
 literal: r"0x[1-9a-fA-F][0-9a-fA-F]*"
 literal: r"[1-9][0-9]*[.][0-9]+"
 literal: <double quoted string literal>
+```
+
+### Positive Clauses
+
+
+A positive clause is a normal clause that starts with an "atom", i.e.
+an identifier that begins with a lower case, alphabetic character. These
+are associated with queries, messages, exports, and locals.
+
+A positive clause can be thought as "additive": when the conditions of
+its body are satisfied, its head is "added to" to the set of proven facts.
+When a message declaration is used in the head of a clause, the clause is
+treated as "message publication," i.e. when the conditions are satisfied,
+the outside world is told about the addition (or removal, in some cases)
+of that proven fact. The outside world may observe the same message published
+multiple times.
+
+In the following code, `tc(From, To)` is the clause head, and everything
+between the `:` and the `.` is the clause body.
+
+```
+tc(From, To) : tc(From, X), tc(X, To).
+```
+
+### Negative Clauses
+
+A negative clause is a mechanism that allows for the removal of facts.
+Syntactically, a negative clause is a normal clause that begins with a `!`.
+Semantically, a negative clause must depend on a message in its body, and
+all other positive/negative clauses sharing the same name and parameter count
+must also directly depend on messages.
+
+For example, the following code maintains a relation `edge(F, T)` that
+keeps track of edges in a hypothetical graph. When the code receives an
+`add_edge` message, an edge is added to the `edge` relation if it is not
+yet present. When a `remove_edge` message is received, data is removed
+from the `edge` relation if it is present.
+
+```
+#message add_edge(u32 F, u32 T)
+#message remove_edge(u32 F, u32 T)
+#export edge(F, T)
+
+edge(F, T) : add_edge(F, T).
+!edge(F, T) : remove_edge(F, T).
+
 ```
