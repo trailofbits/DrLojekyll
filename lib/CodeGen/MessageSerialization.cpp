@@ -27,7 +27,7 @@ namespace {
 
 [[nodiscard]] auto ParseParameterType(const TypeLoc &type,
                                       const ErrorLog &err) {
-  switch (type.Kind()) {
+  switch (type.UnderlyingKind()) {
     case TypeKind::kSigned8:
     case TypeKind::kUnsigned8:
     case TypeKind::kSigned16:
@@ -42,6 +42,7 @@ namespace {
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
     case TypeKind::kUUID: return "string";
+    case TypeKind::kForeignType: return "record";
     case TypeKind::kInvalid: return "null";
     default: assert(false); return "null";
   }

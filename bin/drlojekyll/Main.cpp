@@ -155,6 +155,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -ir-out <PATH>        Emit IR output to PATH." << std::endl
       << "  -cpp-out <PATH>       Emit transpiled C++ output to PATH." << std::endl
       << "  -py-out <PATH>        Emit transpiled Python output to PATH." << std::endl
+      << "  -messages-dir <DIR>   Emit generated AVRO messages to the directory specified" << std::endl
       << "  -dr-out <PATH>        Emit an amalgamation of all the input and transitively" << std::endl
       << "                        imported modules to PATH." << std::endl
       << "  -dot-out <PATH>       Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
