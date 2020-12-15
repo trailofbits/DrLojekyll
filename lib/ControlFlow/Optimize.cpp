@@ -164,13 +164,10 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
     // Double check candidate lists using `->Equals(depth);`
 
     // This is the new region for this parallel region's children
-    UseList<REGION> child_regions(par);
     for (auto pair : candidates) {
       auto combine_regions = pair.second;
       assert(combine_regions.size() != 0);
-      if (combine_regions.size() == 1) {
-        child_regions.AddUse(combine_regions[0]);
-      } else {
+      if (combine_regions.size() > 1) {
         auto replacement = combine_regions.back();
         if (auto merge_candidate = replacement->AsOperation();
             merge_candidate) {
@@ -197,19 +194,15 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
               if (merge_body && !merge_body->IsNoOp()) {
                 new_par->regions.AddUse(merge_body);
               }
+              par->regions.RemoveIf([=](REGION *r) { return r == region; });
               merge->body.Clear();
               merge->parent = nullptr;
             }
-            child_regions.AddUse(transition);
             combine_regions.clear();
           }
         }
-        for (auto region : combine_regions) {
-          child_regions.AddUse(region);
-        }
       }
     }
-    par->regions.Swap(child_regions);
 
     changed |= mining;
   }
