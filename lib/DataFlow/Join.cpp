@@ -94,6 +94,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 // Convert a trivial join (only has a single input view) into a TUPLE.
 void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
   auto tuple = impl->tuples.Create();
+  tuple->color = color;
 
   auto col_index = 0u;
   for (auto out_col : columns) {
@@ -127,7 +128,7 @@ void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
 // their columns are not used by the JOIN. If so, we proxy those views with
 // TUPLEs.
 bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
-  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  const auto is_used_in_merge = IsUsedDirectly();
   if (is_used_in_merge) {
     return false;
   }
@@ -201,6 +202,7 @@ bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
     }
 
     auto tuple = impl->tuples.Create();
+    tuple->color = color;
     auto col_index = 0u;
     for (auto in_col : joined_view->columns) {
       if (needed_cols[in_col]) {
@@ -279,7 +281,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
       old_to_new_col_map.emplace(col, col);
     }
 
-    // Go create a tower of compares, so that all
+    // Go create a tower of compares, so that all constants get compared.
     for (VIEW *prev_view_to_process = nullptr;
          view_to_process != prev_view_to_process;) {
       prev_view_to_process = view_to_process;
@@ -291,6 +293,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
         }
 
         CMP *const cmp = impl->compares.Create(ComparisonOperator::kEqual);
+        cmp->color = color;
         COL *const new_col = cmp->columns.Create(col->var, cmp, col->id, 0u);
 
         view_to_process->CopyDifferentialAndGroupIdsTo(cmp);
@@ -425,6 +428,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // JOIN, but uses all the new columns, or uses constant columns where
   // necessary.
   TUPLE *const tuple = impl->tuples.Create();
+  tuple->color = color;
   col_index = 0u;
   for (auto out_col : columns) {
     COL *const new_out_col =
@@ -452,6 +456,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // dropped views.
   assert(view_map.size() == joined_views.Size());
   if (all_input_views.size() < joined_views.Size()) {
+
     for (auto [old_in_view, new_in_view_] : view_map) {
       VIEW *const new_in_view = new_in_view_;
       if (std::find(all_input_views.begin(), all_input_views.end(),
@@ -537,8 +542,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 //
 // TODO(pag): If we make the above transform, then a JOIN could devolve into
 //            a cross-product.
-bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
-                                   const OptimizationContext &opt) {
+bool Node<QueryJoin>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
 
   if (out_to_in.empty()) {
     PrepareToDelete();
@@ -552,27 +557,29 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
 
   is_canonical = false;
 
-  // Go detect if we need to guard the input views with compares.
-  auto need_constant_guard = false;
-
+  // Try to sink comparisons against constants performed above a JOIN, and
+  // against the pivot output columns of the join, into the join, by way of
+  // marking the pivot columns as being constant, and then depending on the
+  // `need_constant_guard` below.
   if (auto user = this->OnlyUser(); user) {
     if (auto cmp = user->AsCompare();
         cmp && cmp->op == ComparisonOperator::kEqual) {
+
       const auto lhs = cmp->input_columns[0];
       const auto rhs = cmp->input_columns[1];
       const auto lhs_const = lhs->AsConstant();
       const auto rhs_const = rhs->AsConstant();
-      if (lhs->view == this && rhs_const) {
-        need_constant_guard = true;
+      if (rhs_const && lhs->view == this && lhs->Index() < num_pivots) {
         lhs->CopyConstantFrom(rhs_const);
 
-      } else if (rhs->view == this && lhs_const) {
-        need_constant_guard = true;
+      } else if (lhs_const && rhs->view == this && rhs->Index() < num_pivots) {
         rhs->CopyConstantFrom(lhs_const);
       }
     }
   }
 
+  // Go detect if we need to guard the input views with compares.
+  auto need_constant_guard = false;
   for (const auto &[out_col, in_cols] : out_to_in) {
     COL *const_col = out_col->AsConstant();
 

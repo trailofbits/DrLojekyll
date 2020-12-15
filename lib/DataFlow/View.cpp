@@ -157,6 +157,9 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
   if (is_dead) {
     ss << " dead=1";
   }
+  if (is_locked) {
+    ss << " locked=1";
+  }
   ss << " hash=" << std::hex << this->Hash() << std::dec;
   switch (valid) {
     case kValid: break;
@@ -175,9 +178,11 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
       ss << "</FONT></B>";
       break;
   }
+#ifndef NDEBUG
   if (!producer.empty()) {
     ss << ' ' << producer;
   }
+#endif
   return ss;
 }
 
@@ -188,15 +193,20 @@ uint64_t Node<QueryView>::Sort(void) noexcept {
   return Hash();
 }
 
-// Returns `true` if this view is being used. This is defined in terms of
-// whether or not the view is used in a merge, or whether or not any of its
-// columns are used.
-bool Node<QueryView>::IsUsed(void) const noexcept {
-  if (sets_condition) {
-    assert(!is_dead);
-    return true;
+// Is this view directly being used? This does not check columns, but does
+// check conditions.
+bool Node<QueryView>::IsUsedDirectly(void) const noexcept {
 
-  } else if (this->Def<Node<QueryView>>::IsUsed()) {
+  // If this view sets a condition, and there is at least one user of the
+  // condition, then assume we're used.
+  //
+  // NOTE(pag): We could feasibly do a recursive check against those users.
+  if (sets_condition && 0u < (sets_condition->positive_users.Size() +
+                              sets_condition->negative_users.Size())) {
+    return true;
+  }
+
+  if (this->Def<Node<QueryView>>::IsUsed()) {
     if (is_dead) {
 #ifndef NDEBUG
       ForEachUse<VIEW>([](VIEW *user_view, VIEW *) {
@@ -208,6 +218,17 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
     } else {
       return true;
     }
+  }
+
+  return false;
+}
+
+// Returns `true` if this view is being used. This is defined in terms of
+// whether or not the view is used in a merge, or whether or not any of its
+// columns are used.
+bool Node<QueryView>::IsUsed(void) const noexcept {
+  if (IsUsedDirectly()) {
+    return true;
   }
 
   for (auto col : columns) {
@@ -264,6 +285,56 @@ void Node<QueryView>::OrderConditions(void) {
   negative_conditions.Unique();
 }
 
+// Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
+// do constant propagation, and possibly to replacements. Sets
+// `is_canonical = false;` if anything is changed or should be changed.
+Node<QueryView>::Discoveries
+Node<QueryView>::CanonicalizeColumn(const OptimizationContext &,
+                                    COL *in_col, COL *out_col,
+                                    bool is_attached,
+                                    Node<QueryView>::Discoveries has) {
+  auto [it, added] = in_to_out.emplace(in_col, out_col);
+
+  const auto in_col_is_constant = in_col->IsConstantOrConstantRef();
+  auto out_col_is_constant_ref = out_col->IsConstantRef();
+  if (in_col_is_constant && !out_col_is_constant_ref) {
+
+    // Mark it as a constant.
+    is_canonical = false;
+    has.non_local_changes = true;
+    out_col->CopyConstantFrom(in_col);
+    out_col_is_constant_ref = true;
+  }
+
+  const auto is_directly_used = out_col->IsUsedIgnoreMerges();
+  if (is_directly_used) {
+    has.directly_used_column = true;
+  }
+
+  if (!out_col->IsUsed()) {
+    has.unused_column = true;
+
+    if (is_attached) {
+      is_canonical = false;
+    }
+    if (out_col_is_constant_ref) {
+      has.guardable_constant_output = true;
+    }
+  }
+
+  if (!added) {
+    if (is_directly_used) {
+      out_col->ReplaceAllUsesWith(it->second);
+      has.non_local_changes = true;
+      is_canonical = false;
+    }
+
+    has.duplicated_input_column = true;
+  }
+
+  return has;
+}
+
 // Canonicalizes an input/output column pair. Returns `true` in the first
 // element if non-local changes are made, and `true` in the second element
 // if the column pair can be removed.
@@ -271,23 +342,13 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
     COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept {
 
   const auto out_col_is_constref = out_col->IsConstantRef();
-  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
+//  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
   auto non_local_changes = false;
 
   if (in_col->IsConstant()) {
-    if (opt.can_replace_outputs_with_constants &&
-        !IntroducesControlDependency()) {
-      if (!out_col_is_constref || out_col_is_directly_used) {
-        non_local_changes = true;
-      }
+    if (!out_col_is_constref) {
+      non_local_changes = true;
       out_col->CopyConstantFrom(in_col);
-      out_col->ReplaceAllUsesWith(in_col);
-
-    } else {
-      if (!out_col_is_constref) {
-        non_local_changes = true;
-        out_col->CopyConstantFrom(in_col);
-      }
     }
   } else if (in_col->IsConstantRef()) {
     if (!out_col_is_constref) {
@@ -307,54 +368,9 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
   return {non_local_changes, can_remove};
 }
 
-// Check to see if the attached columns are ordered and unique. If they're
-// not unique then we can deduplicate them.
-std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
-    unsigned first_output, const OptimizationContext &opt) noexcept {
-
-  OptimizationContext attached_opt = opt;
-  attached_opt.can_replace_outputs_with_constants = true;
-
-  auto i = first_output;
-  auto attached_are_canonical = true;
-  auto non_local_changes = false;
-
-  for (auto max_i = columns.Size(), j = 0u; i < max_i; ++i, ++j) {
-    auto in_col = attached_columns[j];
-    auto out_col = columns[i];
-
-    auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, attached_opt);
-
-    non_local_changes = non_local_changes || changed;
-    attached_are_canonical = attached_are_canonical && !can_remove;
-  }
-
-  // Look for equivalent attached columns and try to eliminate them.
-  const auto num_attached_cols = attached_columns.Size();
-  for (auto j = 0u; j < num_attached_cols; ++j) {
-    for (auto k = j + 1u; k < num_attached_cols; ++k) {
-      if (attached_columns[j] == attached_columns[k]) {
-        auto k_out_col = columns[k + first_output];
-        auto j_out_col = columns[j + first_output];
-        if (k_out_col->IsUsedIgnoreMerges()) {
-          k_out_col->ReplaceAllUsesWith(j_out_col);
-          non_local_changes = true;
-
-          if (attached_opt.can_remove_unused_columns &&
-              !k_out_col->IsUsed()) {
-            attached_are_canonical = false;
-          }
-        }
-      }
-    }
-  }
-
-  return {attached_are_canonical, non_local_changes};
-}
-
 // Put this view into a canonical form.
-bool Node<QueryView>::Canonicalize(QueryImpl *, const OptimizationContext &) {
+bool Node<QueryView>::Canonicalize(QueryImpl *, const OptimizationContext &,
+                                   const ErrorLog &) {
   is_canonical = true;
   return false;
 }
@@ -505,11 +521,30 @@ void Node<QueryView>::DropTestedConditions(void) {
 
 // Converts this node to not set any conditions.
 void Node<QueryView>::DropSetConditions(void) {
-  const auto is_this_view = [this](VIEW *v) { return v == this; };
-  if (auto cond = sets_condition.get(); cond) {
-    sets_condition.Clear();
-    cond->setters.RemoveIf(is_this_view);
+  auto cond = sets_condition.get();
+  if (!cond) {
+    return;
   }
+
+  const auto is_this_view = [this](VIEW *v) { return v == this; };
+  sets_condition.Clear();
+  cond->setters.RemoveIf(is_this_view);
+
+  if (!cond->setters.Empty()) {
+    return;
+  }
+
+
+  const auto is_cond = [cond](COND *c) { return c == cond; };
+  for (auto tester : cond->positive_users) {
+    tester->positive_conditions.RemoveIf(is_cond);
+  }
+  for (auto tester : cond->negative_users) {
+    tester->negative_conditions.RemoveIf(is_cond);
+  }
+
+  cond->positive_users.Clear();
+  cond->negative_users.Clear();
 }
 
 // Prepare to delete this node. This tries to drop all dependencies and
@@ -582,14 +617,17 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
 // Copy all positive and negative conditions from `this` into `that`.
 void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
+
   for (auto cond : positive_conditions) {
     assert(cond);
+    assert(cond != that->sets_condition.get());
     that->positive_conditions.AddUse(cond);
     cond->positive_users.AddUse(that);
   }
 
   for (auto cond : negative_conditions) {
     assert(cond);
+    assert(cond != that->sets_condition.get());
     that->negative_conditions.AddUse(cond);
     cond->negative_users.AddUse(that);
   }
@@ -599,58 +637,75 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
 
 // If `sets_condition` is non-null, then transfer the setter to `that`.
 void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
-  if (auto cond = sets_condition.get(); cond) {
-
-    auto is_this_or_that = [=](VIEW *v) { return v == this || v == that; };
-
-    // Simple case: transfer "settership" of the condition.
-    if (!that->sets_condition) {
-      that->sets_condition.Swap(sets_condition);
-      cond->setters.RemoveIf(is_this_or_that);
-      cond->setters.AddUse(that);
-
-    } else if (auto that_cond = that->sets_condition.get()) {
-
-      // Next simplest case: `that` is also setting the same condition, so we'll
-      // just unlink `this` from `cond`s setter list.
-      if (that_cond == cond) {
-        cond->setters.RemoveIf(is_this_or_that);
-        cond->setters.AddUse(that);
-
-      } else {
-
-        // If `cond` is only set by `this`, and `that` already has its own
-        // condition, then we'll let that other condition take over this condition.
-        //
-        // TODO(pag): It's totally possible for `that_cond` to be stronger / more
-        //            constrained than `cond`, which could be problematic.
-        if (cond->setters.Size() == 1u) {
-
-          for (auto view : cond->positive_users) {
-            that_cond->positive_users.AddUse(view);
-          }
-          for (auto view : cond->negative_users) {
-            that_cond->negative_users.AddUse(view);
-          }
-
-          cond->ReplaceAllUsesWith(that_cond);
-          cond->setters.Clear();
-          cond->positive_users.Clear();
-          cond->negative_users.Clear();
-
-        // Our condition is set by multiple different VIEWs. We'll constrain
-        // `that_cond` by adding `cond` as a tested condition to `that`.
-        } else {
-          cond->setters.RemoveIf([=](VIEW *v) { return v == this; });
-          cond->positive_users.AddUse(that);
-          that->positive_conditions.AddUse(cond);
-        }
-        that->is_canonical = false;
-      }
-
-      sets_condition.Clear();
-    }
+  const auto cond = sets_condition.get();
+  if (!cond) {
+    return;
   }
+
+  auto is_this_or_that = [=](VIEW *v) { return v == this || v == that; };
+
+#ifndef NDEBUG
+  // Don't introduce cycles?
+  for (auto tested_cond : that->positive_conditions) {
+    assert(tested_cond != cond);
+  }
+  for (auto tested_cond : that->negative_conditions) {
+    assert(tested_cond != cond);
+  }
+#endif
+
+  // Simple case: transfer "settership" of the condition.
+  const auto that_cond = that->sets_condition.get();
+  if (!that_cond) {
+    that->sets_condition.Swap(sets_condition);
+    cond->setters.RemoveIf(is_this_or_that);
+    cond->setters.AddUse(that);
+    return;
+  }
+
+  // Next simplest case: `that` is also setting the same condition, so we'll
+  // just unlink `this` from `cond`s setter list.
+  if (that_cond == cond) {
+    cond->setters.RemoveIf(is_this_or_that);
+    cond->setters.AddUse(that);
+    sets_condition.Clear();
+    return;
+  }
+
+  // TODO(pag): Think more about refactoring below. Might need to force a guard
+  //            tuple.
+  assert(false);
+
+  // If `cond` is only set by `this`, and `that` already has its own
+  // condition, then we'll let that other condition take over this
+  // condition.
+  //
+  // TODO(pag): It's totally possible for `that_cond` to be stronger / more
+  //            constrained than `cond`, which could be problematic.
+  if (cond->setters.Size() == 1u) {
+
+    for (auto view : cond->positive_users) {
+      that_cond->positive_users.AddUse(view);
+    }
+    for (auto view : cond->negative_users) {
+      that_cond->negative_users.AddUse(view);
+    }
+
+    cond->ReplaceAllUsesWith(that_cond);
+    cond->setters.Clear();
+    cond->positive_users.Clear();
+    cond->negative_users.Clear();
+
+  // Our condition is set by multiple different VIEWs. We'll constrain
+  // `that_cond` by adding `cond` as a tested condition to `that`.
+  } else {
+    cond->setters.RemoveIf([=](VIEW *v) { return v == this; });
+    cond->positive_users.AddUse(that);
+    that->positive_conditions.AddUse(cond);
+  }
+
+  that->is_canonical = false;
+  sets_condition.Clear();
 }
 
 // Copy the group IDs and the receive/produce deletions from `this` to `that`.
@@ -685,6 +740,15 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
 
   CopyDifferentialAndGroupIdsTo(that);
   TransferSetConditionTo(that);
+
+  if (color && that->color) {
+    if (color != that->color) {
+      that->color ^= RotateRight32(color, (color % 13) + 1u);
+    }
+
+  } else if (!that->color) {
+    that->color = color;
+  }
 }
 
 // Replace all uses of `this` with `that`. The semantic here is that `this`
@@ -699,13 +763,15 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
 // control dependency then it generally needs to be kept around.
 bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
   return !positive_conditions.Empty() || !negative_conditions.Empty() ||
-         nullptr != const_cast<VIEW *>(this)->AsCompare();
+         nullptr != const_cast<VIEW *>(this)->AsCompare() ||
+         nullptr != const_cast<VIEW *>(this)->AsMap() ||
+         nullptr != const_cast<VIEW *>(this)->AsNegate();
 }
 
 // Returns `true` if all output columns are used.
 bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
-  if (this->Def<Node<QueryView>>::IsUsed()) {
-    return true;  // Used in a MERGE.
+  if (IsUsedDirectly()) {
+    return true;  // Used in a MERGE or CONDition.
   }
 
   for (auto col : columns) {
@@ -726,14 +792,16 @@ bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
 Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
                                                   bool force) {
 
-  if (!force && !this->Def<Node<QueryView>>::IsUsed()) {
+  if (!force && !IsUsedDirectly()) {
     return nullptr;
   }
 
   const auto tuple = query->tuples.Create();
+  tuple->color = color;
 
+  auto col_index = 0u;
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(col->var, tuple, col->id);
+    auto out_col = tuple->columns.Create(col->var, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 
@@ -757,6 +825,107 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
   return tuple;
 }
 
+// This is like an "optimized" form of `GuardWithTuple`, that also knows
+// about attached columns. It tries to propagate constants, remove duplicates
+// (via `in_to_out`) and maintains a backward reference to `this` if it drops
+// all references.
+//
+// NOTE(pag): `incoming_view` is there to tell is if `this` ever even had any
+//            dependencies. This is really only relevant to TUPLEs, and so
+//            it's permissible for things like MAPs, NEGATEs, etc. to pass
+//            in `this` for `incoming_view`, to force a non-NULL.
+//
+// NOTE(pag): This assumes `in_to_out` is filled up, and operates on
+//            `input_columns` and `attached_columns` to find the best version
+//            of a column from `in_to_out`.
+Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
+    QueryImpl *query, unsigned first_attached_col,
+    Node<QueryView> *incoming_view) {
+
+  auto tuple = query->tuples.Create();
+  tuple->color = color;
+
+#ifndef NDEBUG
+  std::stringstream ss;
+  ss << "OPT-GUARD(" << KindName();
+  if (!producer.empty()) {
+    ss << ": " << producer;
+  }
+  ss << ')';
+  tuple->producer = ss.str();
+#endif
+
+  const auto num_cols = columns.Size();
+  for (auto i = 0u; i < num_cols; ++i) {
+    const auto col = columns[i];
+    const auto new_col = tuple->columns.Create(col->var, tuple, col->id, i);
+    new_col->CopyConstantFrom(col);
+  }
+
+  SubstituteAllUsesWith(tuple);
+  const auto is_map = !!this->AsMap();
+
+  for (auto i = 0u; i < num_cols; ++i) {
+    const auto col = columns[i];
+    if (auto const_col = col->AsConstant(); const_col) {
+      tuple->input_columns.AddUse(const_col);
+
+
+    // If it's not an attached column then map through
+    } else if (i < first_attached_col) {
+
+      // Maps follow non-traditional rules for input-to-output mappings for
+      // columns; there isn't alignment (or even shifted alignment) between
+      // input and output columns because `bound`- and `free`-attributed
+      // parameters can be intermixed, and the output columns follow the same
+      // order as the functor parameters.
+      if (is_map) {
+        tuple->input_columns.AddUse(col);
+
+      } else {
+        tuple->input_columns.AddUse(
+            in_to_out[input_columns[i]]);
+      }
+
+    // Drop duplicates if we have them.
+    } else {
+      tuple->input_columns.AddUse(
+          in_to_out[attached_columns[i - first_attached_col]]);
+    }
+  }
+
+  // We've made our tuple; if it has dropped all references to us then make
+  // it conditional on our refcount.
+  //
+  // We only do this if we `this` actually depended on any incoming views in
+  // the first place, and if they themselves were conditional.
+  if (VIEW::GetIncomingView(tuple->input_columns) != this) {
+
+    // Figure out if it's even reasonable to create a dependency.
+    if (auto this_tuple = this->AsTuple();
+        this_tuple && !this_tuple->IntroducesControlDependency()) {
+
+      auto all_const = true;
+      for (auto in_col : this_tuple->input_columns) {
+        if (!in_col->IsConstant()) {
+          all_const = false;
+          break;
+        }
+      }
+
+      // It's not worth introducing a condition variable against an
+      // unconditional, all constant input tuple.
+      if (all_const) {
+        return tuple;
+      }
+    }
+
+    tuple->CreateDependencyOnView(query, this);
+  }
+
+  return tuple;
+}
+
 // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
 // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
 Node<QueryTuple> *
@@ -776,6 +945,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
 
   auto col_index = 0u;
   CMP *cmp = query->compares.Create(op);
+  cmp->color = color;
 
   cmp->input_columns.AddUse(lhs_col);
   auto lhs_out_col =
@@ -811,6 +981,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
 
   // Create a tuple that re-orders the output of the CMP to preserve it.
   TUPLE *tuple = query->tuples.Create();
+  tuple->color = color;
 
   col_index = 0u;
   for (auto orig_col : columns) {
@@ -869,6 +1040,140 @@ VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1) {
   return nullptr;
 }
 
+// If `cols1:cols2` pull their data from a tuple, and if that tuple is
+// unconditional, or if its conditions are trivial, then update `cols1:cols2`
+// to point at the source of the data of those tuples.
+//
+// Takes in the `incoming_view` pulled from by `cols1:cols2` and returns the
+// updated `incoming_view`.
+//
+// NOTE(pag): This updates `is_canonical = false` if it changes anything.
+Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialTuples(
+    VIEW *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2) {
+
+  if (!incoming_view || this == incoming_view) {
+    return incoming_view;
+  }
+
+  if (!incoming_view->negative_conditions.Empty()) {
+    return incoming_view;
+  }
+
+  for (auto pos_condition : incoming_view->positive_conditions) {
+    if (!pos_condition->IsTrivial()) {
+      return incoming_view;
+    }
+  }
+
+  const auto tuple = incoming_view->AsTuple();
+  if (!tuple) {
+    return PullDataFromBeyondTrivialUnions(incoming_view, cols1, cols2);
+  }
+
+  UseList<COL> new_cols1(this);
+  UseList<COL> new_cols2(this);
+
+  for (auto col : cols1) {
+    if (col->view == tuple) {
+      new_cols1.AddUse(tuple->input_columns[col->Index()]);
+    } else {
+      assert(col->IsConstant());
+      new_cols1.AddUse(col);
+    }
+  }
+
+  for (auto col : cols2) {
+    if (col->view == tuple) {
+      new_cols2.AddUse(tuple->input_columns[col->Index()]);
+    } else {
+      assert(col->IsConstant());
+      new_cols2.AddUse(col);
+    }
+  }
+
+  is_canonical = false;
+
+  cols1.Swap(new_cols1);
+  cols2.Swap(new_cols2);
+
+  // See `recursion.dr`.
+  const auto next_incoming_view = GetIncomingView(cols1, cols2);
+  if (next_incoming_view == incoming_view) {
+    return next_incoming_view;
+  }
+
+  return PullDataFromBeyondTrivialTuples(next_incoming_view, cols1, cols2);
+}
+
+Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialUnions(
+    Node<QueryView> *maybe_merge, UseList<COL> &cols1, UseList<COL> &cols2) {
+
+  const auto merge = maybe_merge->AsMerge();
+  if (!merge) {
+    return maybe_merge;
+  }
+
+  if (!merge->negative_conditions.Empty()) {
+    return maybe_merge;
+  }
+
+  for (auto pos_condition : merge->positive_conditions) {
+    if (!pos_condition->IsTrivial()) {
+      return maybe_merge;
+    }
+  }
+
+  VIEW *incoming_view = nullptr;
+  for (auto merged_view : merge->merged_views) {
+
+    if (merged_view == this ||
+        merged_view == merge ||
+        merged_view == incoming_view) {
+      continue;
+
+    // This is the second non-trivial data source to the merge, thus it's not
+    // a trivial union.
+    } else if (incoming_view) {
+      return maybe_merge;
+
+    } else {
+      incoming_view = merged_view;
+    }
+  }
+
+  if (!incoming_view) {
+    return maybe_merge;
+  }
+
+  UseList<COL> new_cols1(this);
+  UseList<COL> new_cols2(this);
+
+  for (auto col : cols1) {
+    if (col->view == merge) {
+      new_cols1.AddUse(incoming_view->columns[col->Index()]);
+    } else {
+      assert(col->IsConstant());
+      new_cols1.AddUse(col);
+    }
+  }
+
+  for (auto col : cols2) {
+    if (col->view == merge) {
+      new_cols2.AddUse(incoming_view->columns[col->Index()]);
+    } else {
+      assert(col->IsConstant());
+      new_cols2.AddUse(col);
+    }
+  }
+
+  is_canonical = false;
+
+  cols1.Swap(new_cols1);
+  cols2.Swap(new_cols2);
+
+  return PullDataFromBeyondTrivialTuples(incoming_view, cols1, cols2);
+}
+
 VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
                                        const UseList<COL> &cols2) {
   for (auto col : cols1) {
@@ -913,33 +1218,38 @@ Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
 }
 
 // Create or inherit a condition created on `view`.
-COND *Node<QueryView>::CreateOrInheritConditionOnView(QueryImpl *query,
-                                                      Node<QueryView> *view,
-                                                      UseList<COL> cols) {
+void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
+                                             Node<QueryView> *view) {
+  assert(this != view);
   COND *condition = nullptr;
+  if (auto incoming_cond = view->sets_condition.get(); incoming_cond) {
 
-  // Inherit the condition proven by `incoming_view`.
-  if (auto incoming_cond = view->sets_condition.get();
-      incoming_cond && incoming_cond->setters.Size() == 1u) {
-    condition = incoming_cond;
+    // It's safe to inherit the condition of `view`.
+    if (incoming_cond->setters.Size() == 1u) {
+      condition = incoming_cond;
+
+    // It's not safe to inherit the condition of `view`; it looks like it's
+    // set by someone else as well, so inheriting it might result in us testing
+    // a looser condition. We'll force a guard tuple, and the set condition on
+    // `view` will transfer there; then we'll set a new condition on `view`.
+    } else {
+      (void) view->GuardWithTuple(query, true);
+    }
+  }
 
   // Invent a new condition for `incoming_view`.
-  } else {
+  if (!condition) {
     condition = query->conditions.Create();
-
-    //    if (view->IsUsed()) {
-    //      view = query->tuples.Create();
-    //      view->force_is_canonical = true;
-    //      view->input_columns.Swap(cols);
-    //    }
 
     assert(!view->sets_condition);
     view->sets_condition.Emplace(view, condition);
-
     condition->setters.AddUse(view);
   }
 
-  return condition;
+  if (!condition->IsTrivial()) {
+    positive_conditions.AddUse(condition);
+    condition->positive_users.AddUse(this);
+  }
 }
 
 // Check that all non-constant views in `cols1` match.

@@ -99,13 +99,6 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     // Some tests fail to build
     auto allow_mypy_failure = false;
     if (kBuildDebugFailExamples.count(fs::path(path).filename().string())) {
-#if NDEBUG
-      if (kBuildIRReleaseFailExamples.count(
-              fs::path(path).filename().string())) {
-        EXPECT_DEATH(hyde::Program::Build(*query_opt, err_log), "");
-        return;
-      }
-#endif
       EXPECT_DEBUG_DEATH(
           program_opt = hyde::Program::Build(*query_opt, err_log), ".*TODO.*");
 

@@ -174,6 +174,16 @@ void ParserImpl::LexAllTokens(Display display) {
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
 
+        case Lexeme::kInvalidPragma:
+          if (ignore_line) {
+            err << "Unexpected pragma '" << tok << "'";
+            break;
+
+          // Recovery is to drop the token.
+          } else {
+            continue;
+          }
+
         case Lexeme::kInvalidUnknown:
           if (ignore_line) {
             err << "Unexpected character sequence '" << tok.InvalidChar()
@@ -254,7 +264,9 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalidUnterminatedString:
       case Lexeme::kInvalidUnterminatedCxxCode:
       case Lexeme::kInvalidUnterminatedPythonCode:
-      case Lexeme::kComment: continue;
+      case Lexeme::kInvalidPragma:
+      case Lexeme::kComment:
+        continue;
 
       // Adjust for foreign types.
       case Lexeme::kIdentifierAtom:

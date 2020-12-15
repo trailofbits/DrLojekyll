@@ -108,6 +108,8 @@ static void FillViews(T &def_list, CandidateList &views_out) {
       views_out.push_back(view);
     }
   }
+  std::sort(views_out.begin(), views_out.end(),
+            [] (VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
 }
 
 }  // namespace
@@ -235,6 +237,9 @@ bool QueryImpl::RemoveUnusedViews(void) {
   return 0 != all_ret;
 }
 
+// TODO(pag): The join canonicalization introduces a bug in Solypsis if the
+//            dataflow builder builds functors before joins. I'm not sure why
+//            and this is probably a serious bug.
 void QueryImpl::Simplify(const ErrorLog &log) {
   CandidateList views;
 
@@ -243,19 +248,21 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   FillViews(selects, views);
   CSE(views);
 
-  views.clear();
-
-  OptimizationContext opt(log);
+  OptimizationContext opt;
 
   // Now canonicalize JOINs, which will eliminate columns of useless joins.
-  for (auto join : joins) {
-    join->Canonicalize(this, opt);
+  views.clear();
+  FillViews(joins, views);
+  for (auto view : views) {
+    view->Canonicalize(this, opt, log);
   }
 
   // Some of those useless JOINs are converted into TUPLEs, so canonicalize
   // those.
-  for (auto tuple : tuples) {
-    tuple->Canonicalize(this, opt);
+  views.clear();
+  FillViews(joins, views);
+  for (auto view : views) {
+    view->Canonicalize(this, opt, log);
   }
 
   RemoveUnusedViews();
@@ -265,7 +272,9 @@ void QueryImpl::Simplify(const ErrorLog &log) {
 // Canonicalize the dataflow. This tries to put each node into its current
 // "most optimal" form. Previously it was more about re-arranging columns
 // to encourage better CSE results.
-void QueryImpl::Canonicalize(const OptimizationContext &opt) {
+void QueryImpl::Canonicalize(const OptimizationContext &opt,
+                             const ErrorLog &log) {
+
   uint64_t num_views = 0u;
   const_cast<const QueryImpl *>(this)->ForEachView([&num_views](VIEW *view) {
     view->is_canonical = false;
@@ -282,13 +291,13 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt) {
     non_local_changes = false;
     if (opt.bottom_up) {
       ForEachViewInDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt)) {
+        if (view->Canonicalize(this, opt, log)) {
           non_local_changes = true;
         }
       });
     } else {
       ForEachViewInReverseDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt)) {
+        if (view->Canonicalize(this, opt, log)) {
           non_local_changes = true;
         }
       });
@@ -404,7 +413,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
 
-    for (auto max_cse = views.size(); CSE(views) && max_cse--; ) {
+    for (auto max_cse = views.size(); max_cse-- && CSE(views); ) {
       RemoveUnusedViews();
       RelabelGroupIDs();
       views.clear();
@@ -414,9 +423,11 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   };
 
   do_cse();  // Apply CSE to all views before most canonicalization.
-  OptimizationContext opt(log);
+
+  OptimizationContext opt;
   opt.can_sink_unions = true;
-  Canonicalize(opt);
+  Canonicalize(opt, log);
+
 //  do_cse();  // Apply CSE to all canonical views.
 
   auto max_depth = 1u;
@@ -431,10 +442,10 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     opt.can_replace_inputs_with_constants = true;
     opt.can_sink_unions = false;
     opt.bottom_up = false;
-    Canonicalize(opt);
+    Canonicalize(opt, log);
 
     if (ShrinkConditions()) {
-      Canonicalize(opt);
+      Canonicalize(opt, log);
     }
 
     RemoveUnusedViews();

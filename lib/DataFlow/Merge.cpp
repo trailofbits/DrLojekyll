@@ -68,8 +68,9 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 // views might be the same.
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
-bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
-                                    const OptimizationContext &opt) {
+bool Node<QueryMerge>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+
   if (is_dead) {
     is_canonical = true;
     return false;
@@ -119,16 +120,17 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     }
     seen.push_back(view);
 
-    // If we're merging a merge, then copy the lower merge into this one.
-    if (auto incoming_merge = view->AsMerge();
-        incoming_merge &&
-        !incoming_merge->IntroducesControlDependency()) {
+    // NOTE(pag): Can't merge lower merges into higher merges, I don't think,
+    //            otherwise there are inductive cycles we might drop.
 
-      non_local_changes = true;
-      is_canonical = false;
+    // Try to pull data through tuples.
+    if (auto tuple = view->AsTuple(); tuple) {
+      auto tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+      if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
+        unique_merged_views.push_back(tuple_source);
 
-      for (auto i = incoming_merge->merged_views.Size(); i--;) {
-        work_list.push_back(incoming_merge->merged_views[i]);
+      } else {
+        unique_merged_views.push_back(tuple);
       }
 
     // This is a unique view we're adding in.
@@ -142,6 +144,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
 
     // Create a forwarding tuple.
     const auto tuple = query->tuples.Create();
+    tuple->color = color;
     const auto source_view = unique_merged_views[0];
     auto i = 0u;
     for (auto out_col : columns) {
@@ -182,6 +185,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
       assert(view->columns.Size() == num_cols);
 
       TUPLE *const guarded_view = query->tuples.Create();
+      guarded_view->color = color;
 #ifndef NDEBUG
       guarded_view->producer = "MERGE-GUARD";
 #endif
@@ -395,6 +399,7 @@ bool Node<QueryMerge>::SinkThroughTuples(
 
       // Create the sunken merge. It might have more columns than `num_cols`.
       sunk_merge = impl->merges.Create();
+      sunk_merge->color = color;
       for (auto j = 0u; j < num_pred_cols; ++j) {
         const auto first_tuple_pred_col = first_tuple_pred->columns[j];
         sunk_merge->columns.Create(
@@ -404,6 +409,7 @@ bool Node<QueryMerge>::SinkThroughTuples(
       // Now create the merged tuple that will select only the columns of
       // interest from the sunken merge.
       merged_tuple = impl->tuples.Create();
+      merged_tuple->color = color;
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_tuple_col = first_tuple->columns[j];
         const auto first_tuple_pred_col = first_tuple->input_columns[j];
@@ -482,6 +488,7 @@ bool Node<QueryMerge>::SinkThroughMaps(
   // `map`.
   auto proxy_inputs = [&] (MAP *map) -> TUPLE * {
     const auto input_tuple_for_map = impl->tuples.Create();
+    input_tuple_for_map->color = color;
     auto col_index = 0u;
 
     for (auto j = 0u; j < num_input_cols; ++j) {
@@ -543,6 +550,7 @@ bool Node<QueryMerge>::SinkThroughMaps(
 
       // Create the sunken merge.
       sunk_merge = impl->merges.Create();
+      sunk_merge->color = color;
       for (auto j = 0u; j < (num_input_cols + num_attached_cols); ++j) {
         const auto first_tuple_pred_col = first_map_input_tuple->columns[j];
         sunk_merge->columns.Create(
@@ -552,6 +560,7 @@ bool Node<QueryMerge>::SinkThroughMaps(
       // Now create the merged MAP that will operate on the sunken MERGE.
       merged_map = impl->maps.Create(first_map->functor, first_map->range,
                                      first_map->is_positive);
+      merged_map->color = color;
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_map_col = first_map->columns[j];
         (void) merged_map->columns.Create(

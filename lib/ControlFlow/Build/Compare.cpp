@@ -41,30 +41,6 @@ TUPLECMP *CreateCompareRegion(ProgramImpl *impl, QueryCompare view,
 void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
                               Context &context, OP *parent) {
   const QueryView view(cmp);
-  const auto pred_view = view.Predecessors()[0];
-
-  // Okay, we need to figure out if we should persist this comparison node.
-  // This is a bit tricky. If the comparison sets a condition then definitely
-  // we need to. If it doesn't then we need to look at the successors of the
-  // comparison. If any successor can receive a deletion then that means that
-  // a bottom-up checker will probably be created for this comparison node.
-  // In that case, we will want to create persistent storage for this comparison
-  // if this comparison's predecessor (who we have to visit before getting into
-  // this function) doesn't have storage that we can depend upon.
-  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
-  auto should_persist = !!view.SetCondition();
-  if (!should_persist && !pred_model->table) {
-    for (auto succ : view.Successors()) {
-      if (succ.IsJoin()) {
-        should_persist = true;
-        break;
-      } else if (succ.CanReceiveDeletions()) {
-        should_persist = true;
-        break;
-      }
-    }
-  }
-
   const auto check = CreateCompareRegion(impl, cmp, context, parent);
   parent->body.Emplace(parent, check);
   parent = check;
@@ -72,9 +48,9 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  TABLE *table = nullptr;
-  if (should_persist) {
-    table = TABLE::GetOrCreate(impl, view);
+  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  if (table) {
     parent = BuildInsertCheck(impl, view, context, parent, table,
                               view.CanReceiveDeletions(), view.Columns());
   }

@@ -71,6 +71,7 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
                               REGION *parent, QueryNegate negate,
                               std::vector<QueryColumn> &view_cols,
                               TABLE *table) {
+
   const QueryView view(negate);
   const auto pred_view = view.Predecessors()[0];
 
@@ -126,7 +127,9 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
                                 PARALLEL *parent, QueryView view) {
 
   view.ForEachNegation([&] (QueryNegate negate) {
-    const auto negate_table = TABLE::GetOrCreate(impl, negate);
+    DataModel * const negated_model = \
+        impl->view_to_model[negate]->FindAs<DataModel>();
+    TABLE * const negated_table = negated_model->table;
     auto col_index = 0u;
 
     std::vector<QueryColumn> negate_cols;
@@ -144,7 +147,7 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
     // For each thing that we find in the index scan, we will try to push
     // through a re-addition.
     parent->regions.AddUse(BuildMaybeScanPartial(
-      impl, negate, negate_cols, negate_table, parent,
+      impl, negate, negate_cols, negated_table, parent,
       [&](REGION *in_scan) -> REGION * {
 
       negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
@@ -156,61 +159,64 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
         });
 
         return ReAddToNegatedView(impl, context, in_scan, negate, negate_cols,
-                                  negate_table);
+                                  negated_table);
       }));
   });
 }
 
-}  // namnespace
+}  // namespace
 
 // Build an eager region for tuple. If the tuple can receive differential
 // updates then its data needs to be saved.
 void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryTuple tuple, Context &context, OP *parent,
-                           TABLE *last_model) {
+                           TABLE *last_table) {
   const QueryView view(tuple);
 
-  // NOTE(pag): If this view is used by a negation (tuples are the only such
-  //            kinds of views) then we *must* create a table for the view.
-  if (view.IsUsedByNegation() ||
-      (MayNeedToBePersisted(view) &&
-       !CanDeferPersistingToPredecessor(impl, context, view, pred_view))) {
-
-    if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_model) {
+  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  if (table) {
+    if (table != last_table) {
       parent = BuildInsertCheck(
           impl, view, context, parent, table, view.CanReceiveDeletions(),
           view.Columns());
-      last_model = table;
+      last_table = table;
     }
+  } else {
+    last_table = nullptr;
   }
 
   // If this view is used by a negation then we need to go and see if we should
   // do a delete in the negation, then call a bunch of other deletion stuff.
   if (view.IsUsedByNegation()) {
-    auto seq = impl->series_regions.Create(parent);
+    const auto seq = impl->series_regions.Create(parent);
     parent->body.Emplace(parent, seq);
 
+    const auto par = impl->parallel_regions.Create(seq);
+    seq->regions.AddUse(par);
+
     view.ForEachNegation([&] (QueryNegate negate) {
-      const auto negate_table = TABLE::GetOrCreate(impl, negate);
+      DataModel * const negate_model = \
+          impl->view_to_model[negate]->FindAs<DataModel>();
+      TABLE * const negate_table = negate_model->table;
       auto col_index = 0u;
 
       std::vector<QueryColumn> negate_cols;
 
       for (auto col : view.Columns()) {
-        auto in_var = parent->VariableFor(impl, col);
+        auto in_var = par->VariableFor(impl, col);
         auto neg_out_col = negate.Columns()[col_index];
         auto neg_in_col = negate.InputColumns()[col_index];
-        parent->col_id_to_var.emplace(neg_in_col.Id(), in_var);
-        parent->col_id_to_var.emplace(neg_out_col.Id(), in_var);
+        par->col_id_to_var.emplace(neg_in_col.Id(), in_var);
+        par->col_id_to_var.emplace(neg_out_col.Id(), in_var);
         ++col_index;
         negate_cols.push_back(neg_out_col);
       }
 
       // For each thing that we find in the index scan, we will push through
       // a removal.
-      seq->regions.AddUse(BuildMaybeScanPartial(
-        impl, negate, negate_cols, negate_table, seq,
+      par->regions.AddUse(BuildMaybeScanPartial(
+        impl, negate, negate_cols, negate_table, par,
         [&](REGION *in_scan) -> REGION * {
           return RemoveFromNegatedView(impl, context, in_scan, negate,
                                        negate_cols, negate_table);
@@ -222,7 +228,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
   }
 
   BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                             last_model);
+                             last_table);
 }
 
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
@@ -336,6 +342,12 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
   const auto caller_did_check = already_checked == model->table;
   PARALLEL *parent = nullptr;
 
+
+  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                      std::optional<QueryColumn> out_col) {
+    proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
+  });
+
   if (model->table) {
 
     // We've already transitioned for this table, so our job is just to pass
@@ -423,7 +435,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
 
     auto i = 0u;
     for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
+      const auto var = parent->VariableFor(impl, col);
       assert(var != nullptr);
       call->arg_vars.AddUse(var);
 
