@@ -137,7 +137,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   std::unordered_map<uint64_t, std::vector<REGION *>> candidates;
   uint32_t depth = 0;
 
-  for (auto mining = true; mining;) {
+  for (auto mining = true; mining && !changed;) {
     mining = false;
     candidates.clear();
     for (auto region : par->regions) {
@@ -162,17 +162,39 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
     // Combine pairs.
     // Double check candidate lists using `->Equals(depth);`
-    // for (auto pair : candidates) {
-    //   auto combine_regions = pair.second;
-    //   if (combine_regions.size() > 1) {
-    //     mining = true;
-    //     auto replacement = combine_regions.back();
-    //     combine_regions.pop_back();
-    //     for (auto region : combine_regions) {
-    //       // TODO(ek)
-    //     }
-    //   }
-    // }
+    for (auto pair : candidates) {
+      auto combine_regions = pair.second;
+      if (combine_regions.size() > 1) {
+        auto replacement = combine_regions.back();
+        combine_regions.pop_back();
+        if (auto merge_candidate = replacement->AsOperation();
+            merge_candidate) {
+          if (auto transition = merge_candidate->AsTransitionState();
+              transition) {
+            mining = true;
+
+            // if-transition-state's new parallel region
+            auto new_par = prog->parallel_regions.Create(transition);
+            new_par->parent = transition;
+            new_par->regions.AddUse(transition->body.get());
+            transition->body.Emplace(transition, new_par);
+            for (auto region : combine_regions) {
+
+              // TODO Might not be safe
+              auto merge = region->AsOperation()->AsTransitionState();
+              auto merge_body = merge->body.get();
+              new_par->regions.AddUse(merge_body);
+              merge_body->parent = new_par;
+              merge->parent = nullptr;
+              merge->body.Clear();
+              merge->ReplaceAllUsesWith(transition);
+
+              // merge->ReplaceAllUsesWith(new_par);
+            }
+          }
+        }
+      }
+    }
 
     changed |= mining;
   }
