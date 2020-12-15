@@ -162,6 +162,8 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
     // Combine pairs.
     // Double check candidate lists using `->Equals(depth);`
+
+    // This is the new region for this parallel region's children
     UseList<REGION> child_regions(par);
     for (auto pair : candidates) {
       auto combine_regions = pair.second;
@@ -170,12 +172,12 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
         child_regions.AddUse(combine_regions[0]);
       } else {
         auto replacement = combine_regions.back();
-        combine_regions.pop_back();
         if (auto merge_candidate = replacement->AsOperation();
             merge_candidate) {
           if (auto transition = merge_candidate->AsTransitionState();
               transition) {
             mining = true;
+            combine_regions.pop_back();
 
             // if-transition-state's new parallel region
             auto new_par = prog->parallel_regions.Create(replacement);
@@ -190,6 +192,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
               // TODO Might not be safe
               auto merge = region->AsOperation()->AsTransitionState();
+              assert(merge);
               const auto merge_body = merge->body.get();
               if (merge_body && !merge_body->IsNoOp()) {
                 new_par->regions.AddUse(merge_body);
@@ -198,17 +201,11 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
               merge->parent = nullptr;
             }
             child_regions.AddUse(transition);
-          } else {
-            child_regions.AddUse(merge_candidate);
-            for (auto region : combine_regions) {
-              child_regions.AddUse(region);
-            }
+            combine_regions.clear();
           }
-        } else {
-          child_regions.AddUse(replacement);
-          for (auto region : combine_regions) {
-            child_regions.AddUse(region);
-          }
+        }
+        for (auto region : combine_regions) {
+          child_regions.AddUse(region);
         }
       }
     }
