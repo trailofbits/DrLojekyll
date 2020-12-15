@@ -67,8 +67,8 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
-                                        const OptimizationContext &opt) {
+bool Node<QueryAggregate>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
   if (is_canonical) {
     return false;
   }
@@ -90,7 +90,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
   }
 
   VIEW *guard_tuple = nullptr;
-  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
+  const auto is_used_in_merge = IsUsedDirectly();
   auto non_local_changes = false;
   is_canonical = true;
 
@@ -101,8 +101,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
   for (auto in_col : group_by_columns) {
     auto &prev_out_col = in_to_out[in_col];
     const auto out_col = columns[i];
-    const auto in_col_is_const =
-        opt.can_replace_outputs_with_constants && in_col->IsConstant();
+    const auto in_col_is_const = in_col->IsConstant();
     ++i;
 
     const auto [changed, can_remove] =

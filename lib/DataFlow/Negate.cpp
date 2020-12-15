@@ -38,98 +38,103 @@ uint64_t Node<QueryNegate>::Hash(void) noexcept {
 }
 
 bool Node<QueryNegate>::Canonicalize(
-    QueryImpl *, const OptimizationContext & opt) {
-  is_canonical = true;
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+
+  if (is_dead || valid != VIEW::kValid) {
+    is_canonical = true;
+    return false;
+  }
+
   if (valid == VIEW::kValid &&
       !CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
     return false;
   }
 
-  const auto num_in_cols = input_columns.Size();
-  bool non_local_changes = false;
-  std::tie(is_canonical, non_local_changes) =
-      CanonicalizeAttachedColumns(num_in_cols, opt);
+  const auto num_cols = columns.Size();
+  const auto first_attached_col = input_columns.Size();
+  is_canonical = true;  // Updated by `CanonicalizeColumn`.
+  in_to_out.clear();  // Filled in by `CanonicalizeColumn`.
+  Discoveries has = {};
 
-  // Propagate constants.
-  for (auto i = 0u; i < num_in_cols; ++i) {
-    auto out_col = columns[i];
-    if (!out_col->IsConstantRef()) {
-      auto in_col = input_columns[i];
-      if (in_col->IsConstantOrConstantRef()) {
-        out_col->CopyConstantFrom(in_col);
-        non_local_changes = true;
-      }
+  // NOTE(pag): This may update `is_canonical`.
+  const auto incoming_view = PullDataFromBeyondTrivialTuples(
+      GetIncomingView(input_columns, attached_columns),
+      input_columns, attached_columns);
+
+  auto i = 0u;
+  for (; i < first_attached_col; ++i) {
+    has = CanonicalizeColumn(opt, input_columns[i], columns[i], false, has);
+  }
+
+  // NOTE(pag): Mute this, as we always need to maintain the `input_columns`
+  //            and so we don't want to infinitely rewrite this negation if
+  //            there is a duplicate column in `input_columns`.
+  has.duplicated_input_column = false;
+
+  for (auto j = 0u; i < num_cols; ++i, ++j) {
+    has = CanonicalizeColumn(opt, attached_columns[j], columns[i], true, has);
+  }
+
+  // Nothing changed.
+  if (is_canonical) {
+    return has.non_local_changes;
+  }
+
+  // There is at least one output of our negation that is a constant and that
+  // can be guarded, or one duplicated column. Go create a tuple that will
+  // only propagate forward the needed data.
+  if (has.guardable_constant_output || has.duplicated_input_column) {
+    if (!IsUsedDirectly() &&
+        !(OnlyUser() && has.directly_used_column)) {
+      GuardWithOptimizedTuple(query, first_attached_col, incoming_view);
+      has.non_local_changes = true;
     }
   }
 
-  if (!is_canonical) {
+  DefList<COL> new_columns(this);
+  UseList<COL> new_input_columns(this);
+  UseList<COL> new_attached_columns(this);
 
-    in_to_out.clear();
-    DefList<COL> new_columns(this);
-    UseList<COL> new_attached_columns(this);
-
-    // Make new output columns for the inputs.
-    auto i = 0u;
-    for (i = 0u; i < num_in_cols; ++i) {
-      const auto out_col = columns[i];
-      const auto new_out_col =
-          new_columns.Create(out_col->var, this, out_col->id);
-
-      new_out_col->CopyConstantFrom(out_col);
-      out_col->ReplaceAllUsesWith(new_out_col);
-      in_to_out.emplace(input_columns[i], new_out_col);
-    }
-
-    // Make the new attached columns.
-    for (auto in_col : attached_columns) {
-      const auto out_col = columns[i++];
-      auto &prev_out_col = in_to_out[in_col];
-
-      // This is either a re-use of one of the relation columns, or it's a
-      // duplicate attached column; try to remove it.
-      if (prev_out_col) {
-        if (out_col->IsUsedIgnoreMerges()) {
-          non_local_changes = true;
-        }
-        out_col->ReplaceAllUsesWith(prev_out_col);
-
-        if (!out_col->IsUsed()) {
-          in_col->view->is_canonical = false;
-          continue;  // It's safe to remove.
-        }
-      }
-
-      // This attached column isn't used; remove it by not adding it back in.
-      if (opt.can_remove_unused_columns && !out_col->IsUsed()) {
-        in_col->view->is_canonical = false;
-        continue;
-      }
-
-      const auto new_out_col =
-          new_columns.Create(out_col->var, this, out_col->id);
-
-      new_out_col->CopyConstantFrom(out_col);
-      out_col->ReplaceAllUsesWith(new_out_col);
-      new_attached_columns.AddUse(in_col);
-
-      if (!prev_out_col) {
-        prev_out_col = new_out_col;
-      }
-    }
-
-    columns.Swap(new_columns);
-    attached_columns.Swap(new_attached_columns);
-    non_local_changes = true;
+  for (i = 0; i < first_attached_col; ++i) {
+    const auto old_col = columns[i];
+    const auto new_col = new_columns.Create(old_col->var, this, old_col->id, i);
+    old_col->ReplaceAllUsesWith(new_col);
+    new_input_columns.AddUse(input_columns[i]->TryResolveToConstant());
   }
+
+  for (auto j = 0u; i < num_cols; ++i, ++j) {
+    const auto old_col = columns[i];
+    if (old_col->IsUsed()) {
+      const auto new_col = new_columns.Create(old_col->var, this, old_col->id,
+                                              new_columns.Size());
+      old_col->ReplaceAllUsesWith(new_col);
+      new_attached_columns.AddUse(attached_columns[j]->TryResolveToConstant());
+    } else {
+      has.non_local_changes = true;
+    }
+  }
+
+  // We dropped a reference to our predecessor; maintain it via a condition.
+  const auto new_incoming_view = GetIncomingView(new_input_columns,
+                                                 new_attached_columns);
+  if (incoming_view != new_incoming_view) {
+    CreateDependencyOnView(query, incoming_view);
+    has.non_local_changes = true;
+  }
+
+  columns.Swap(new_columns);
+  input_columns.Swap(new_input_columns);
+  attached_columns.Swap(new_attached_columns);
+
+  hash = 0;
+  is_canonical = true;
 
   if (!CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidAfterCanonicalize;
   }
 
-  hash = 0;
-  is_canonical = true;
-  return non_local_changes;
+  return has.non_local_changes;
 }
 
 // Equality over inserts is structural.

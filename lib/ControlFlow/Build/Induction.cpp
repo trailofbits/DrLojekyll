@@ -178,7 +178,8 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     merge_index = 0u;
     for (auto merge : induction_set->merges) {
       OP *const cycle = cycles[merge_index++];
-      const auto table = TABLE::GetOrCreate(impl, merge);
+      DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
+      TABLE * const table = model->table;
       BuildEagerSuccessorRegions(impl, merge, context, cycle,
                                  context.inductive_successors[merge], table);
     }
@@ -257,7 +258,8 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   vec_index = 0u;
   for (auto merge : induction_set->merges) {
     OP *const cycle = cycles[vec_index++];
-    const auto table = TABLE::GetOrCreate(impl, merge);
+    DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
+    TABLE * const table = model->table;
     BuildEagerSuccessorRegions(impl, merge, context, cycle,
                                context.noninductive_successors[merge], table);
   }
@@ -273,17 +275,19 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 // to accumulate everything leading into the inductions before proceeding.
 void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
                                QueryMerge view, Context &context, OP *parent,
-                               TABLE *last_model) {
+                               TABLE *last_table) {
 
   PROC *const proc = parent->containing_procedure;
   INDUCTION *&induction = context.view_to_induction[view];
+  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
 
   // First, check if we should add this tuple to the induction.
-  if (const auto table = TABLE::GetOrCreate(impl, view); last_model != table) {
+  if (last_table != table) {
     parent =
         BuildInsertCheck(impl, view, context, parent, table,
                          QueryView(view).CanReceiveDeletions(), view.Columns());
-    last_model = table;
+    last_table = table;
   }
 
   // This is the first time seeing any MERGE associated with this induction.

@@ -531,9 +531,12 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
                                QueryView from_view, QueryJoin join, PROC *proc,
                                TABLE *already_checked);
 
+// Returns `true` if `view` might need to have its data persisted.
+bool MayNeedToBePersisted(QueryView view);
+
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
-bool MayNeedToBePersisted(QueryView view);
+bool MayNeedToBePersistedDifferential(QueryView view);
 
 // Decides whether or not `view` can depend on `pred_view` for persistence
 // of its data.
@@ -574,15 +577,16 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
 template <typename List>
 void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
                                 Context &context, OP *parent, List &&successors,
-                                TABLE *last_model) {
+                                TABLE *last_table) {
+  for (auto col : view.Columns()) {
+    (void) parent->VariableFor(impl, col);
+  }
 
-  // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
-  if (auto set_cond = view.SetCondition(); set_cond) {
-    if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_model) {
-      last_model = table;
+  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+
+  if (table) {
+    if (last_table != table) {
       const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
           parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
 
@@ -594,7 +598,56 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
       insert->table.Emplace(insert, table);
       parent->body.Emplace(parent, insert);
       parent = insert;
+      last_table = table;
     }
+  } else {
+    last_table = nullptr;
+  }
+
+  // NOTE(pag): At this point, we know that if `view`s data needed to be
+  //            persisted then it has been. If `view` tests any conditions, then
+  //            we evaluate those *after* persisting its data, so that if the
+  //            state of the conditions changes, then we can send through the
+  //
+
+  const auto pos_conds = view.PositiveConditions();
+  const auto neg_conds = view.NegativeConditions();
+
+  // Innermost test for negative conditions.
+  if (!neg_conds.empty()) {
+    assert(table != nullptr);
+    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
+        parent, ProgramOperation::kTestAllZero);
+
+    for (auto cond : neg_conds) {
+      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+    }
+
+    parent->body.Emplace(parent, test);
+    parent = test;
+    last_table = nullptr;
+  }
+
+  // Outermost test for positive conditions.
+  if (!pos_conds.empty()) {
+    assert(table != nullptr);
+    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
+        parent, ProgramOperation::kTestAllNonZero);
+
+    for (auto cond : pos_conds) {
+      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+    }
+
+    parent->body.Emplace(parent, test);
+    parent = test;
+    last_table = nullptr;
+  }
+
+  // Proving this `view` might set a condition. If we set a condition, then
+  // we need to make sure than a CHANGESTATE actually happened. That could
+  // mean re-parenting all successors within a CHANGESTATE.
+  if (auto set_cond = view.SetCondition(); set_cond) {
+    assert(table != nullptr);
 
     const auto seq = impl->series_regions.Create(parent);
     parent->body.Emplace(parent, seq);
@@ -631,52 +684,8 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);
-
-    let->ExecuteAlongside(impl, par);
-
-    succ_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                             std::optional<QueryColumn> out_col) {
-      switch (role) {
-        case InputColumnRole::kCompareLHS:
-        case InputColumnRole::kCompareRHS:
-          switch (
-              QueryCompare::From(QueryView::Containing(*out_col)).Operator()) {
-            case ComparisonOperator::kEqual: return;
-            case ComparisonOperator::kGreaterThan:
-            case ComparisonOperator::kLessThan:
-            case ComparisonOperator::kNotEqual: break;
-          }
-          [[clang::fallthrough]];
-        case InputColumnRole::kCopied:
-        case InputColumnRole::kNegated:
-        case InputColumnRole::kJoinPivot:
-        case InputColumnRole::kJoinNonPivot:
-        case InputColumnRole::kMergedColumn:
-        case InputColumnRole::kIndexKey:
-        case InputColumnRole::kFunctorInput:
-        case InputColumnRole::kAggregateConfig:
-        case InputColumnRole::kAggregateGroup:
-        case InputColumnRole::kMaterialized:
-        case InputColumnRole::kDeleted:
-          if (out_col && in_col.Id() != out_col->Id() &&
-              (QueryView::Containing(in_col) == view || in_col.IsConstant())) {
-
-            const auto src_var = par->VariableFor(impl, in_col);
-            let->used_vars.AddUse(src_var);
-            const auto dst_var = let->defined_vars.Create(
-                impl->next_id++, VariableRole::kLetBinding);
-            dst_var->query_column = *out_col;
-            let->col_id_to_var.emplace(out_col->Id(), dst_var);
-          }
-          return;
-
-        case InputColumnRole::kIndexValue:
-        case InputColumnRole::kAggregatedColumn:
-        case InputColumnRole::kPublished: return;
-      }
-    });
-
-    BuildEagerRegion(impl, view, succ_view, context, let, last_model);
+    par->regions.AddUse(let);
+    BuildEagerRegion(impl, view, succ_view, context, let, last_table);
   }
 }
 

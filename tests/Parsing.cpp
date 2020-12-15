@@ -108,12 +108,6 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   //
   // Note: Some tests fail to build -- handle those specially
   if (kBuildDebugFailExamples.count(path_filename_str)) {
-#if NDEBUG
-    if (kBuildIRReleaseFailExamples.count(path_filename_str)) {
-      ASSERT_DEATH(hyde::Program::Build(*query_opt, err_log), "");
-      return;
-    }
-#endif
     ASSERT_DEBUG_DEATH(hyde::Program::Build(*query_opt, err_log),
                        ".*TODO.*");
     return;

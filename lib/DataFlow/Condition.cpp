@@ -27,6 +27,47 @@ Node<QueryCondition>::~Node(void) {
   setters.Clear();
 }
 
+// Is this a trivial condition?
+bool Node<QueryCondition>::IsTrivial(void) {
+  if (in_trivial_check) {
+    assert(false);  // Suggests a condition is dependent on itself.
+    return true;
+  }
+
+  auto is_trivial = true;
+  in_trivial_check = true;
+
+  for (auto setter : setters) {
+    if (!setter->negative_conditions.Empty()) {
+      is_trivial = false;
+      goto done;
+    }
+
+    for (auto pos_condition : setter->positive_conditions) {
+      if (!pos_condition->IsTrivial()) {
+        is_trivial = false;
+        goto done;
+      }
+    }
+
+    if (auto tuple_setter = setter->AsTuple(); tuple_setter) {
+      for (auto in_col : tuple_setter->input_columns) {
+        if (!in_col->IsConstant()) {
+          is_trivial = false;
+          goto done;
+        }
+      }
+    } else {
+      is_trivial = false;
+      goto done;
+    }
+  }
+
+done:
+  in_trivial_check = false;
+  return is_trivial;
+}
+
 // Extract conditions from regular nodes and force them to belong to only
 // tuple nodes. This simplifies things substantially for downstream users.
 void QueryImpl::ExtractConditionsToTuples(void) {

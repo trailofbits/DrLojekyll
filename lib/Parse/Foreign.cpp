@@ -37,6 +37,7 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         info.can_override = can_override;
         info.is_present = true;
         info.range = scope_range;
+        info.code.clear();
         info.code.insert(info.code.end(), code.begin(), code.end());
         return true;
       };
@@ -297,7 +298,6 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
   DisplayRange tok_range;
   std::string_view code;
 
-  std::unique_ptr<Node<ParsedForeignType>> alloc_type;
   Node<ParsedForeignType> *type = nullptr;
   Node<ParsedForeignConstant> const_val;
   const_val.range = scope_range;
@@ -346,14 +346,19 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           case Lexeme::kTypeIn:
           case Lexeme::kTypeFn: {
             const_val.type = TypeLoc(tok);
+            const auto ident_id = ~static_cast<uint32_t>(const_val.type.Kind());
             state = 1;
-            type = context->foreign_types[tok.IdentifierId()];
+            type = context->foreign_types[ident_id];
             if (!type) {
               type = new Node<ParsedForeignType>;
               type->name = tok;
               type->is_built_in = true;
-              alloc_type.reset(type);
-              context->foreign_types[tok.IdentifierId()] = type;
+              context->foreign_types[ident_id] = type;
+
+              if (!module->root_module->types.empty()) {
+                module->root_module->types.back().get()->next = type;
+              }
+              module->root_module->types.emplace_back(type);
             }
             const_val.parent = type;
             continue;
@@ -516,13 +521,6 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           << "Named constants on built-in types must be have an initializer";
       return;
     }
-  }
-
-  if (alloc_type) {
-    if (!module->root_module->types.empty()) {
-      module->root_module->types.back().get()->next = type;
-    }
-    module->root_module->types.emplace_back(std::move(alloc_type));
   }
 
   const_val.code.insert(const_val.code.end(), code.begin(), code.end());

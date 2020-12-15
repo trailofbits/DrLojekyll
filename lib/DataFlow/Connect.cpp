@@ -178,7 +178,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         }
 
         for (auto col : view->columns) {
-          single_insert->columns.Create(col->var, single_insert, col->id);
           single_insert->input_columns.AddUse(col);
         }
       }

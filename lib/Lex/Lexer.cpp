@@ -450,6 +450,31 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       return true;
     }
 
+    // Pragmas.
+    case '@': {
+      accumulate_if(
+          [](char next_ch) { return kStopChars.find(next_ch) == std::string::npos; });
+      if (impl->data == "@highlight") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaDebugHighlight);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else {
+        auto &error = ret.As<lex::ErrorToken>();
+        error.Store<Lexeme>(Lexeme::kInvalidPragma);
+        error.Store<char>(impl->data.size() == 1u ? impl->data[1] : impl->data[0]);
+        error.Store<lex::ErrorIndexDisp>(1u);
+        error.Store<lex::ErrorLineDisp>(0);
+        error.Store<lex::ErrorColumn>(ret.position.Column() + 1u);
+
+        const auto next_pos = impl->reader.CurrentPosition();
+        error.Store<lex::IndexDisp>(next_pos.Index() - ret.position.Index());
+        error.Store<lex::LineDisp>(next_pos.Line() - ret.position.Line());
+        error.Store<lex::Column>(next_pos.Column());
+      }
+      return true;
+    }
+
     // Directives.
     case '#':
       tentative_lexeme = Lexeme::kInvalidDirective;

@@ -887,6 +887,11 @@ DisplayRange ParsedClause::SpellingRange(void) const noexcept {
                       last_tok.NextPosition());
 }
 
+// Should this clause be highlighted in the data flow representation?
+bool ParsedClause::IsHighlighted(void) const noexcept {
+  return impl->highlight.IsValid();
+}
+
 // Returns the arity of this clause.
 unsigned ParsedClause::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->head_variables.size());
@@ -1395,6 +1400,13 @@ ParsedForeignType::CodeToInline(Language lang_) const noexcept {
   } else {
     return std::nullopt;
   }
+}
+
+// Returns `true` if there is a specialized `lang`-specific instance, and
+// `false` is none is present, or if the default `Language::kUnknown` is used.
+bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  return impl->info[lang].is_present || impl->info[lang].can_override;
 }
 
 // Return the prefix and suffix for construction for this language.

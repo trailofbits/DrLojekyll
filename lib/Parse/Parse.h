@@ -321,6 +321,10 @@ class Node<ParsedClause> {
   Token dot;
   Token last_tok;
 
+  // Signals whether or not we should enable highlighting in the data flow
+  // representation to highlight the nodes associated with this clause body.
+  Token highlight;
+
   // Variables used in this clause.
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;
