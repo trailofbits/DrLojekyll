@@ -1658,9 +1658,10 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->ConvertConstantInputsToTuples();
   impl->RemoveUnusedViews();
   impl->ExtractConditionsToTuples();
+  impl->RemoveUnusedViews();
   impl->TrackDifferentialUpdates(true);
-  impl->FinalizeColumnIDs();
   impl->LinkViews();
+  impl->FinalizeColumnIDs();
 
   return Query(std::move(impl));
 }

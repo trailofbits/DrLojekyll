@@ -59,11 +59,49 @@ bool Node<QueryTuple>::Canonicalize(
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
       GetIncomingView(input_columns), input_columns, attached_columns);
 
+  // Check to see if we can use `incoming_view` in place of `this`. We need
+  // to be extra careful about whether or not `this` and `incoming_view` are
+  // directly used by the same join.
+  if (incoming_view &&
+      !sets_condition &&
+      positive_conditions.Empty() &&
+      negative_conditions.Empty() &&
+      incoming_view->columns.Size() == num_cols) {
+
+    // Make sure all columns are perfectly forwarded.
+    for (auto i = 0u; i < num_cols; ++i) {
+      const auto in_col = input_columns[i];
+      if (in_col->view != incoming_view || in_col->Index() != i) {
+        goto not_replacing_with_self;
+      }
+    }
+
+    std::vector<JOIN *> joins;
+    this->ForEachUse<JOIN>([&joins] (JOIN *join, VIEW *) {
+      joins.emplace_back(join);
+    });
+
+    bool used_by_join = false;
+    incoming_view->ForEachUse<JOIN>(
+        [&joins, &used_by_join] (JOIN *join, VIEW *) {
+          if (std::find(joins.begin(), joins.end(), join) != joins.end()) {
+            used_by_join = true;
+          }
+        });
+
+    if (!used_by_join) {
+      input_columns.Clear();
+      this->ReplaceAllUsesWith(incoming_view);
+      return true;
+    }
+  }
+not_replacing_with_self:
+
   auto i = 0u;
   for (; i < num_cols; ++i) {
 
     // NOTE(pag): We treat all tuple columns as `is_attached=true` so that
-    //            finding unused constant outputs changes `is_canonical`.
+    //            finding unused outputs changes `is_canonical`.
     has = CanonicalizeColumn(opt, input_columns[i], columns[i], true, has);
   }
 
@@ -180,6 +218,46 @@ bool Node<QueryTuple>::Equals(EqualitySet &eq,
   }
 
   return true;
+}
+
+// Does this tuple forward all of its inputs to the same columns as the
+// outputs, and if so, does it forward all columns of its input?
+bool Node<QueryTuple>::ForwardsAllInputsAsIs(void) const noexcept {
+  return ForwardsAllInputsAsIs(GetIncomingView(input_columns));
+}
+
+// Does this tuple forward all of its inputs to the same columns as the
+// outputs, and if so, does it forward all columns of its input?
+bool Node<QueryTuple>::ForwardsAllInputsAsIs(
+    VIEW *incoming_view) const noexcept {
+  if (!incoming_view) {
+    return false;
+  }
+
+  const auto num_cols = columns.Size();
+
+  // Check to see if we can use `incoming_view` in place of `this`. We need
+  // to be extra careful about whether or not `this` and `incoming_view` are
+  // directly used by the same join.
+  if (incoming_view &&
+      !sets_condition &&
+      positive_conditions.Empty() &&
+      negative_conditions.Empty() &&
+      incoming_view->columns.Size() == num_cols) {
+
+    // Make sure all columns are perfectly forwarded.
+    for (auto i = 0u; i < num_cols; ++i) {
+      const auto in_col = input_columns[i];
+      if (in_col->view != incoming_view || in_col->Index() != i) {
+        return false;
+      }
+    }
+
+    return true;
+
+  } else {
+    return false;
+  }
 }
 
 }  // namespace hyde

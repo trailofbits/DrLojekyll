@@ -343,12 +343,6 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Sort the `positive_conditions` and `negative_conditions`.
   void OrderConditions(void);
 
-  // Check to see if the attached columns are ordered and unique. If they're
-  // not unique then we can deduplicate them.
-  std::pair<bool, bool>
-  CanonicalizeAttachedColumns(unsigned i,
-                              const OptimizationContext &opt) noexcept;
-
   // Canonicalizes an input/output column pair. Returns `true` in the first
   // element if non-local changes are made, and `true` in the second element
   // if the column pair can be removed.
@@ -663,6 +657,11 @@ class Node<QueryTuple> final : public Node<QueryView> {
 
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+
+  // Does this tuple forward all of its inputs to the same columns as the
+  // outputs, and if so, does it forward all columns of its input?
+  bool ForwardsAllInputsAsIs(void) const noexcept;
+  bool ForwardsAllInputsAsIs(VIEW *incoming_view) const noexcept;
 
   // Put this tuple into a canonical form, which will make comparisons and
   // replacements easier. Because comparisons are mostly pointer-based, the

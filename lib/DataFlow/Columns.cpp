@@ -10,11 +10,10 @@ namespace hyde {
 // some extent. Two columns with the same ID can be said to have the same
 // value at runtime.
 void QueryImpl::FinalizeColumnIDs(void) const {
-  std::vector<VIEW *> views;
-
   auto next_col_id = 1u;
 
   ForEachView([&](VIEW *v) {
+    assert(!v->is_dead);
     unsigned i = 0u;
     for (auto col : v->columns) {
       col->id = next_col_id++;

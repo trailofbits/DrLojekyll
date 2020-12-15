@@ -237,7 +237,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
   // Actual definitions, if any.
   for (auto lang : {Language::kUnknown, Language::kCxx, Language::kPython}) {
 
-    if (!type.IsBuiltIn()) {
+    if (!type.IsBuiltIn() && type.IsSpecialized(lang)) {
       auto maybe_code = type.CodeToInline(lang);
       if (!maybe_code) {
         continue;

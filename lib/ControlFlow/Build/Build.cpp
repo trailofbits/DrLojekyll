@@ -5,39 +5,6 @@
 #include <algorithm>
 #include <sstream>
 
-// IDEAS
-//
-//    - born_on_same_day:
-//        -   We want both sides to contribute their data to the JOIN, but the
-//            actual execution of the JOIN should be deferred as a pipeline
-//            blocker at a higher level. So what will happen is each side
-//            contributes and records the JOIN pivots into a vector, which is
-//            later sorted and uniqued.
-//
-//        - sort child nodes of a parallel by a hash, but where the hash is
-//          not based on children and only on the superficial aspects of the
-//          region itself, so that we can look for opportunities to join
-//          region bodies
-//
-//    - Make sure all SELECTs reachable from a RECV are entrypoints, put
-//      the INSERTs for them into vectors.
-//
-//    - Right now, no guarantee that the arity of two identical sets of column
-//      IDs will match, and so ARITY is a key issue. Need to add a notion of
-//      provenance or selectors to a table. For example:
-//
-//                 .--- COMPARE --.
-//          RECV --+              +-- JOIN
-//                 '--- TUPLE ----'
-//
-//      In this case, the COMPARE and TUPLE might have identical columns, and
-//      thus appear equivalent, but we should really have an additional field
-//      per row that tells us if the row is present for both the COMPARE and the
-//      TUPLE.
-//
-//    - Think about if the TABLEs entering a JOIN should be based on all data
-//      in the predecessor, or just the data used by the JOIN. Right now it's
-//      the former.
 namespace hyde {
 namespace {
 
@@ -88,14 +55,15 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
 static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
                                           QueryView pred_view, QueryView view,
                                           Context &context, OP *parent,
-                                          TABLE *last_model) {
+                                          TABLE *last_table) {
+
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_model);
+      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
     } else {
       BuildEagerProductRegion(impl, pred_view, join, context, parent,
-                              last_model);
+                              last_table);
     }
 
   } else if (view.IsMerge()) {
@@ -103,10 +71,10 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
     if (context.inductive_successors.count(view) &&
         !context.dominated_merges.count(view)) {
       BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
-                                last_model);
+                                last_table);
     } else {
       BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
-                            last_model);
+                            last_table);
     }
 
   } else if (view.IsAggregate()) {
@@ -129,16 +97,16 @@ static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
 
   } else if (view.IsSelect()) {
     BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                               last_model);
+                               last_table);
 
   } else if (view.IsTuple()) {
     BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
-                          parent, last_model);
+                          parent, last_table);
 
   } else if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
     BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
-                           last_model);
+                           last_table);
 
   } else if (view.IsDelete()) {
     BuildEagerDeleteRegion(impl, view, context, parent);
@@ -404,6 +372,179 @@ static void DiscoverInductions(const Query &query, Context &context) {
   }
 }
 
+// Figure out what data definitely must be stored persistently. We need to do
+// this ahead-of-time, as opposed to just-in-time, because otherwise we run
+// into situations where a node N will have two successors S1 and S2, e.g.
+// two identically-shaped TUPLEs, and those tuples will feed into JOINs.
+// Those tuples will both need persistent storage (because they feed JOINs),
+// but we'll only observe this when we are generating code for the JOINs, and
+// thus when we generate the state changes for the join, we'll generate two
+// identical state changes, where one will make the other one unsatisfiable.
+// For example:
+//
+//      join-tables
+//        vector-loop ...
+//        select ...
+//        select ...
+//          par
+//            if-transition-state {@A:29} in %table:43[...] from ...
+//              ...
+//            if-transition-state {@A:29} in %table:43[...] from ...
+//              ...
+static void FillDataModel(const Query &query, ProgramImpl *impl,
+                          Context &context) {
+
+  // NOTE(pag): TUPLEs are technically the only view types allowed to be used
+  //            by negations.
+  //
+  // The semantics of the usage of positive/negative conditions is that we
+  // perform the operation, add the data to the table, *then* test the
+  // conditions. That way, if the conditions cannot be satisfied now, but can
+  // be satisfied later, then we have the data that we need to send through.
+  //
+  // Set conditions are similar, and they apply *after* conditions are tested.
+  auto is_conditional = +[] (QueryView view) {
+    return view.SetCondition() || view.IsUsedByNegation() ||
+           !view.PositiveConditions().empty() ||
+           !view.NegativeConditions().empty();
+  };
+
+  for (auto merge : query.Merges()) {
+    const QueryView view(merge);
+
+    if (is_conditional(view)) {
+      (void) TABLE::GetOrCreate(impl, view);
+
+    // All inductions need to have persistent storage.
+    } else if (context.inductive_successors.count(view) &&
+               !context.dominated_merges.count(view)) {
+      (void) TABLE::GetOrCreate(impl, view);
+
+    // UNIONs that aren't dominating their inductions, or that aren't part of
+    // inductions, need to be persisted if they are differential.
+    } else if (MayNeedToBePersistedDifferential(view)) {
+      (void) TABLE::GetOrCreate(impl, view);
+    }
+  }
+
+  // Inserting into a relation requires a table.
+  for (auto insert : query.Inserts()) {
+    if (insert.IsRelation()) {
+      (void) TABLE::GetOrCreate(impl, insert);
+    }
+  }
+
+  // Selecting from a relation requires a model.
+  for (auto select : query.Selects()) {
+    if (select.IsRelation()) {
+      (void) TABLE::GetOrCreate(impl, select);
+    }
+  }
+
+  // Negations must be backed by tables.
+  for (auto negate : query.Negations()) {
+    (void) TABLE::GetOrCreate(impl, negate);
+  }
+
+  // All data feeding into a join must be persistently backed.
+  for (auto join : query.Joins()) {
+    for (QueryView pred : QueryView(join).Predecessors()) {
+      (void) TABLE::GetOrCreate(impl, pred);
+    }
+
+    // If this join sets a condition, then persist it.
+    if (is_conditional(join)) {
+      (void) TABLE::GetOrCreate(impl, join);
+    }
+  }
+
+  for (auto cmp : query.Compares()) {
+    if (is_conditional(cmp)) {
+      (void) TABLE::GetOrCreate(impl, cmp);
+    }
+  }
+
+  for (auto map : query.Maps()) {
+    if (is_conditional(map)) {
+      (void) TABLE::GetOrCreate(impl, map);
+    }
+  }
+
+  for (auto tuple : query.Tuples()) {
+    const QueryView view(tuple);
+
+    if (is_conditional(view)) {
+      (void) TABLE::GetOrCreate(impl, view);
+    }
+
+    // NOTE(pag): TUPLEs are the only view types allowed to have all-constant
+    //            inputs.
+    auto predecessors = view.Predecessors();
+    if (predecessors.empty()) {
+      continue;
+    }
+
+    const auto pred_view = predecessors[0];
+    if (MayNeedToBePersistedDifferential(view) &&
+        !CanDeferPersistingToPredecessor(impl, context, view, pred_view)) {
+      (void) TABLE::GetOrCreate(impl, view);
+    }
+  }
+
+  for (auto changed = true; changed; ) {
+    changed = false;
+
+    // Okay, we need to figure out if we should persist this comparison node.
+    // This is a bit tricky. If the comparison sets a condition then definitely
+    // we need to. If it doesn't then we need to look at the successors of the
+    // comparison. If any successor can receive a deletion then that means that
+    // a bottom-up checker will probably be created for this comparison node.
+    // In that case, we will want to create persistent storage for this
+    // comparison if this comparison's predecessor (who we have to visit before
+    // getting into this function) doesn't have storage that we can depend upon.
+    for (auto cmp : query.Compares()) {
+      const QueryView view(cmp);
+      DataModel *model = impl->view_to_model[view]->FindAs<DataModel>();
+      if (model->table) {
+        continue;
+      }
+
+      const auto pred_view = view.Predecessors()[0];
+      const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+      auto should_persist = !!view.SetCondition();
+      if (!should_persist && !pred_model->table) {
+        for (auto succ : view.Successors()) {
+          if (succ.IsJoin()) {
+            should_persist = true;
+            break;
+          } else if (succ.CanReceiveDeletions()) {
+            should_persist = true;
+            break;
+          }
+        }
+      }
+
+      if (should_persist) {
+        (void) TABLE::GetOrCreate(impl, view);
+        changed = true;
+      }
+    }
+
+    for (auto map : query.Maps()) {
+      const QueryView view(map);
+      DataModel *model = impl->view_to_model[view]->FindAs<DataModel>();
+      if (model->table) {
+        continue;
+      }
+
+      if (!!view.SetCondition() || view.CanReceiveDeletions()) {
+        (void) TABLE::GetOrCreate(impl, view);
+        changed = true;
+      }
+    }
+  }
+}
+
 // Building the data model means figuring out which `QueryView`s can share the
 // same backing storage. This doesn't mean that all views will be backed by
 // such storage, but when we need backing storage, we can maximally share it
@@ -451,14 +592,18 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     return true;
   };
 
-  // If the view tests any conditions then it can't share a data model
-  // with its predecessor.
-  //
-  // NOTE(pag): Conditions are a tire fire.
-  auto is_conditional = +[](QueryView view) {
-    return !view.NegativeConditions().empty() ||
-           !view.PositiveConditions().empty() || view.IsCompare() ||
-           view.IsMap();
+  // If this view might admit fewer tuples through than its predecessor, then
+  // we can't have it share a data model with its predecessor.
+  auto may_admit_fewer_tuples_than_pred = +[](QueryView view) {
+    return view.IsCompare() || view.IsMap() || view.IsNegate();
+  };
+
+  // If the output of `view` is conditional, i.e. dependent on the refcount
+  // condition variables, or if a condition variable is dependent on the
+  // output, then successors of `view` can't share the data model with `view`.
+  auto output_is_conditional = +[](QueryView view) {
+    return view.SetCondition() || !view.PositiveConditions().empty() ||
+           !view.NegativeConditions().empty();
   };
 
   // With maps, we try to avoid saving the outputs and attached columns
@@ -485,7 +630,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   };
 
   query.ForEachView([=](QueryView view) {
-    if (is_conditional(view)) {
+    if (may_admit_fewer_tuples_than_pred(view)) {
       return;
     }
 
@@ -500,13 +645,23 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // then we need to be able to distinguish where data is from. This is
     // especially important for comparisons or maps leading into merges.
     if (view.IsMerge()) {
-      const auto can_receive_deletions = view.CanReceiveDeletions();
+      auto has_delete_pred = false;
       for (auto pred : preds) {
-        if (!is_diff_map(pred) &&
-            !pred.IsDelete() && pred.Successors().size() == 1u &&
-            !can_receive_deletions) {
-          const auto pred_model = program->view_to_model[pred];
-          DisjointSet::Union(model, pred_model);
+        if (pred.IsDelete()) {
+          has_delete_pred = true;
+          break;
+        }
+      }
+      if (!has_delete_pred) {
+        for (auto pred : preds) {
+          assert(!pred.IsDelete());
+
+          if (!is_diff_map(pred) &&
+              !output_is_conditional(pred) &&
+              pred.Successors().size() == 1u) {
+            const auto pred_model = program->view_to_model[pred];
+            DisjointSet::Union(model, pred_model);
+          }
         }
       }
 
@@ -516,6 +671,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
         if (!is_diff_map(pred) &&
+            !output_is_conditional(pred) &&
             !pred.IsDelete() &&
             all_cols_match(view.Columns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
@@ -534,6 +690,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
         const auto cols = insert.InputColumns();
         const auto pred_cols = pred.Columns();
         if (!is_diff_map(pred) && !pred.IsDelete() &&
+            !output_is_conditional(pred) &&
             all_cols_match(cols, pred_cols)) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
@@ -547,14 +704,20 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // NOTE(pag): If a DELETE flows into a DELETE then we permit them to
     //            share a data model, for whatever that's worth.
     } else if (view.IsDelete()) {
-      if (preds.size() == 1u) {
-        const auto insert = QueryDelete::From(view);
-        const auto cols = insert.InputColumns();
-        const auto pred_cols = preds[0].Columns();
-        if (!is_diff_map(preds[0]) && all_cols_match(cols, pred_cols)) {
-          const auto pred_model = program->view_to_model[preds[0]];
-          DisjointSet::Union(model, pred_model);
-        }
+      assert(preds.size() == 1u);
+      const auto pred = preds[0];
+      const auto del = QueryDelete::From(view);
+      const auto cols = del.InputColumns();
+      const auto pred_cols = pred.Columns();
+      if (!is_diff_map(pred) &&
+          !output_is_conditional(pred) &&
+          all_cols_match(cols, pred_cols)) {
+        const auto pred_model = program->view_to_model[pred];
+        DisjointSet::Union(model, pred_model);
+      }
+
+      for (auto succ : view.Successors()) {
+        assert(succ.IsMerge());
       }
 
     // Select predecessors are INSERTs, which don't have output columns.
@@ -564,10 +727,10 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // TODO(pag): This more about the interplay with conditional inserts.
     } else if (view.IsSelect()) {
       for (auto pred : preds) {
-        if (pred.IsInsert()) {
-          const auto pred_model = program->view_to_model[pred];
-          DisjointSet::Union(model, pred_model);
-        }
+        assert(pred.IsInsert());
+        assert(!output_is_conditional(pred));
+        const auto pred_model = program->view_to_model[pred];
+        DisjointSet::Union(model, pred_model);
       }
     }
   });
@@ -1463,36 +1626,38 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
 // conditionals if the view itself is conditional.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &usage, OP *parent, TABLE *last_model) {
-  const auto pos_conds = view.PositiveConditions();
-  const auto neg_conds = view.NegativeConditions();
 
-  // Innermost test for negative conditions.
-  if (!neg_conds.empty()) {
-    auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllZero);
+  view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+                      std::optional<QueryColumn> out_col) {
 
-    for (auto cond : neg_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+    if (!out_col) {
+      return;
     }
 
-    parent->body.Emplace(parent, test);
-    parent = test;
-    last_model = nullptr;
-  }
+    assert(in_col.Id() != out_col->Id());
+    assert(QueryView::Containing(*out_col) == view);
 
-  // Outermost test for positive conditions.
-  if (!pos_conds.empty()) {
-    auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllNonZero);
+    // Comparisons merge two inputs into a single output.
+    if ((InputColumnRole::kCompareLHS == role ||
+         InputColumnRole::kCompareRHS == role) &&
+        (ComparisonOperator::kEqual == QueryCompare::From(view).Operator())) {
+      return;
 
-    for (auto cond : pos_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+    // Index values are merged with prior values to form the output. We don't
+    // overwrite join outputs otherwise they don't necessarily get assigned to
+    // the right selection variables.
+    } else if (InputColumnRole::kIndexValue == role) {
+      return;
+
+    } else if (QueryView::Containing(in_col) == pred_view ||
+               in_col.IsConstantOrConstantRef()) {
+      const auto src_var = parent->VariableFor(impl, in_col);
+      auto [it, added] = parent->col_id_to_var.emplace(out_col->Id(), src_var);
+      (void) added;
+      (void) it;
+      assert(it->second != nullptr);
     }
-
-    parent->body.Emplace(parent, test);
-    parent = test;
-    last_model = nullptr;
-  }
+  });
 
   BuildUnconditionalEagerRegion(impl, pred_view, view, usage, parent,
                                 last_model);
@@ -1544,6 +1709,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // predecessors and successors in terms of which ones are inductive and
   // which aren't.
   DiscoverInductions(query, context);
+
+  // Now that we've identified our inductions, we can fill our data model,
+  // i.e. assign persistent tables to each disjoint set of views.
+  FillDataModel(query, program, context);
 
   // Build the initialization procedure, needed to start data flows from
   // things like constant tuples.

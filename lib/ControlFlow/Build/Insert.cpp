@@ -24,6 +24,27 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto view = QueryView(insert);
   const auto cols = insert.InputColumns();
 
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+
+  if (table) {
+    if (table != last_table) {
+      const auto table_insert =
+          impl->operation_regions.CreateDerived<CHANGESTATE>(
+              parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+
+      for (auto col : cols) {
+        const auto var = parent->VariableFor(impl, col);
+        table_insert->col_values.AddUse(var);
+      }
+
+      table_insert->table.Emplace(table_insert, table);
+      parent->body.Emplace(parent, table_insert);
+      parent = table_insert;
+      last_table = table;
+    }
+  }
+
   // This insert represents a message publication.
   if (insert.IsStream()) {
     assert(!view.SetCondition());  // TODO(pag): Is this possible?
@@ -42,24 +63,6 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
-    if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_table) {
-
-      const auto table_insert =
-          impl->operation_regions.CreateDerived<CHANGESTATE>(
-              parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
-
-      for (auto col : cols) {
-        const auto var = parent->VariableFor(impl, col);
-        table_insert->col_values.AddUse(var);
-      }
-
-      table_insert->table.Emplace(table_insert, table);
-      parent->body.Emplace(parent, table_insert);
-      parent = table_insert;
-      last_table = table;
-    }
-
     BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
                                last_table);
 

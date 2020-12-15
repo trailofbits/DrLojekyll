@@ -971,6 +971,10 @@ class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
   // Optional code to inline, specific to a language.
   std::optional<std::string_view> CodeToInline(Language lang) const noexcept;
 
+  // Returns `true` if there is a specialized `lang`-specific instance, and
+  // `false` is none is present, or if the default `Language::kUnknown` is used.
+  bool IsSpecialized(Language lang) const noexcept;
+
   // Return the prefix and suffix for construction for this language.
   std::optional<std::pair<std::string_view, std::string_view>>
   Constructor(Language lang) const noexcept;

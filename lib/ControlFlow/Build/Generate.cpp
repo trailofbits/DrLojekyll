@@ -86,8 +86,6 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   const auto functor = map.Functor();
   assert(functor.IsPure());
 
-  const auto should_persist = !!view.SetCondition() ||
-                              view.CanReceiveDeletions();
   const auto gen = CreateGeneratorCall(impl, map, functor, context, parent);
   parent->body.Emplace(parent, gen);
   parent = gen;
@@ -95,9 +93,9 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  TABLE *table = nullptr;
-  if (should_persist) {
-    table = TABLE::GetOrCreate(impl, view);
+  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  if (table) {
     parent = BuildInsertCheck(impl, view, context, parent, table,
                               view.CanReceiveDeletions(), view.Columns());
   }

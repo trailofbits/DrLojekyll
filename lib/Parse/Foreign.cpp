@@ -37,6 +37,7 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         info.can_override = can_override;
         info.is_present = true;
         info.range = scope_range;
+        info.code.clear();
         info.code.insert(info.code.end(), code.begin(), code.end());
         return true;
       };

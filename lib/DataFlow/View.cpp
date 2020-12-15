@@ -157,6 +157,9 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
   if (is_dead) {
     ss << " dead=1";
   }
+  if (is_locked) {
+    ss << " locked=1";
+  }
   ss << " hash=" << std::hex << this->Hash() << std::dec;
   switch (valid) {
     case kValid: break;
@@ -363,49 +366,6 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
   }
 
   return {non_local_changes, can_remove};
-}
-
-// Check to see if the attached columns are ordered and unique. If they're
-// not unique then we can deduplicate them.
-std::pair<bool, bool> Node<QueryView>::CanonicalizeAttachedColumns(
-    unsigned first_output, const OptimizationContext &opt) noexcept {
-
-  auto i = first_output;
-  auto attached_are_canonical = true;
-  auto non_local_changes = false;
-
-  for (auto max_i = columns.Size(), j = 0u; i < max_i; ++i, ++j) {
-    auto in_col = attached_columns[j];
-    auto out_col = columns[i];
-
-    auto [changed, can_remove] = CanonicalizeColumnPair(
-        in_col, out_col, opt);
-
-    non_local_changes = non_local_changes || changed;
-    attached_are_canonical = attached_are_canonical && !can_remove;
-  }
-
-  // Look for equivalent attached columns and try to eliminate them.
-  const auto num_attached_cols = attached_columns.Size();
-  for (auto j = 0u; j < num_attached_cols; ++j) {
-    for (auto k = j + 1u; k < num_attached_cols; ++k) {
-      if (attached_columns[j] == attached_columns[k]) {
-        auto k_out_col = columns[k + first_output];
-        auto j_out_col = columns[j + first_output];
-        if (k_out_col->IsUsedIgnoreMerges()) {
-          k_out_col->ReplaceAllUsesWith(j_out_col);
-          non_local_changes = true;
-
-          if (opt.can_remove_unused_columns &&
-              !k_out_col->IsUsed()) {
-            attached_are_canonical = false;
-          }
-        }
-      }
-    }
-  }
-
-  return {attached_are_canonical, non_local_changes};
 }
 
 // Put this view into a canonical form.

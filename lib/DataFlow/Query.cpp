@@ -1111,12 +1111,13 @@ OutputStream &QueryMerge::DebugString(OutputStream &os) const noexcept {
 void QueryMerge::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                std::optional<QueryColumn>)>
                                 with_col) const {
-  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
-    const auto out_col = impl->columns[i];
-    for (auto view : impl->merged_views) {
+  const auto num_cols = impl->columns.Size();
+  for (auto view : impl->merged_views) {
+    for (auto i = 0u, max_i = num_cols; i < max_i; ++i) {
+      const auto out_col = impl->columns[i];
       COL *in_col = nullptr;
       if (auto insert = view->AsInsert(); insert) {
-        in_col = view->input_columns[i];
+        in_col = insert->input_columns[i];
       } else {
         in_col = view->columns[i];
       }

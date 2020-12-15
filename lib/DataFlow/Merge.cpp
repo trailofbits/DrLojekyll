@@ -120,16 +120,17 @@ bool Node<QueryMerge>::Canonicalize(
     }
     seen.push_back(view);
 
-    // If we're merging a merge, then copy the lower merge into this one.
-    if (auto incoming_merge = view->AsMerge();
-        incoming_merge &&
-        !incoming_merge->IntroducesControlDependency()) {
+    // NOTE(pag): Can't merge lower merges into higher merges, I don't think,
+    //            otherwise there are inductive cycles we might drop.
 
-      non_local_changes = true;
-      is_canonical = false;
+    // Try to pull data through tuples.
+    if (auto tuple = view->AsTuple(); tuple) {
+      auto tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+      if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
+        unique_merged_views.push_back(tuple_source);
 
-      for (auto i = incoming_merge->merged_views.Size(); i--;) {
-        work_list.push_back(incoming_merge->merged_views[i]);
+      } else {
+        unique_merged_views.push_back(tuple);
       }
 
     // This is a unique view we're adding in.

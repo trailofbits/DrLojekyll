@@ -15,37 +15,26 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryMerge merge, Context &context, OP *parent,
                            TABLE *last_table) {
   const QueryView view(merge);
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
 
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  if (MayNeedToBePersistedDifferential(view)) {
-    if (const auto table = TABLE::GetOrCreate(impl, view);
-        table != last_table) {
+  if (table) {
+    if (table != last_table) {
       parent = BuildInsertCheck(impl, view, context, parent, table,
                                 view.CanReceiveDeletions(), view.Columns());
       last_table = table;
     }
 
   // We can't pass the table through.
-  } else if (pred_view != view) {
-    const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-    const auto last_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
-    if (model != last_model) {
-      last_table = nullptr;
-    }
-
   } else {
-    assert(false);
     last_table = nullptr;
   }
 
   BuildEagerSuccessorRegions(impl, view, context, parent,
                              QueryView(view).Successors(), last_table);
-
-  // TODO(pag): Think about whether or not we need to actually de-duplicate
-  //            anything. It could be that we only need to dedup if we're on
-  //            the edge between eager/lazy, or if we're in lazy.
 }
 
 // Build a top-down checker on a union. This applies to non-differential
@@ -212,6 +201,9 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
   // the successors, or we've proven its absence, and are proceeding to
   // speculatively delete it in the successors.
   for (auto succ_view : view.Successors()) {
+
+    // TODO(pag): I don't recall why this is important, but I have enforced it
+    //            in the data flow side.
     assert(!succ_view.IsMerge());
 
     const auto checker_proc = GetOrCreateBottomUpRemover(

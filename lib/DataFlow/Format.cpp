@@ -194,7 +194,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto i = 0u;
     for (auto col : select.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
       ++i;
     }
 
@@ -216,7 +216,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (!out_copied_cols.empty()) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : out_copied_cols) {
-        os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col)
+        os << "<TD port=\"c" << col.Id() << "\">" << do_col(col)
            << "</TD>";
       }
     }
@@ -275,7 +275,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto col = in_copied_cols[i];
       const auto view = QueryView::Containing(col);
       os << "v" << constraint.UniqueId() << ":g" << i << " -> v"
-         << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+         << view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
     link_conds(constraint);
@@ -287,12 +287,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, kv);
     os << "<TD rowspan=\"2\">KEYS</TD>";
     for (auto col : kv.KeyColumns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
     os << "<TD rowspan=\"2\">VALS</TD>";
     auto i = 0u;
     for (auto col : kv.ValueColumns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">"
+      os << "<TD port=\"c" << col.Id() << "\">"
          << kv.NthValueMergeFunctor(i).Name() << "(" << do_col(col) << ")</TD>";
     }
     os << "</TR><TR>";
@@ -315,12 +315,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto col : kv.InputKeyColumns()) {
       const auto view = QueryView::Containing(col);
       os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
     for (auto col : kv.InputValueColumns()) {
       const auto view = QueryView::Containing(col);
       os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
     link_conds(kv);
   }
@@ -349,7 +349,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto pivot_set_size = join.NthInputPivotSet(i).size();
       const auto col = join.NthOutputPivotColumn(i);
       const auto color = kColors[i];
-      os << "<TD port=\"c" << col.UniqueId() << "\" colspan=\""
+      os << "<TD port=\"c" << col.Id() << "\" colspan=\""
          << pivot_set_size << "\" bgcolor=\"" << color << "\">" << do_col(col)
          << "</TD>";
     }
@@ -358,7 +358,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     for (i = 0u; i < num_outputs; ++i) {
       const auto col = join.NthOutputMergedColumn(i);
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
 
     os << "</TR><TR>";
@@ -393,7 +393,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
         const auto view = QueryView::Containing(col);
         auto color = view.CanProduceDeletions() ? " [color=purple]" : "";
         os << "v" << join.UniqueId() << ":p" << j << " -> v" << view.UniqueId()
-           << ":c" << col.UniqueId() << color << ";\n";
+           << ":c" << col.Id() << color << ";\n";
         j++;
       }
     }
@@ -403,7 +403,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto view = QueryView::Containing(col);
       auto color = view.CanProduceDeletions() ? " [color=purple]" : "";
       os << "v" << join.UniqueId() << ":p" << j << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
       j++;
     }
 
@@ -419,7 +419,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (num_group) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : map.CopiedColumns()) {
-        os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col)
+        os << "<TD port=\"c" << col.Id() << "\">" << do_col(col)
            << "</TD>";
       }
     }
@@ -430,7 +430,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
     os << ParsedDeclarationName(map.Functor()) << "</TD>";
     for (auto col : map.MappedColumns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
 
     const auto num_inputs = map.NumInputColumns();
@@ -464,7 +464,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = map.NthInputCopiedColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << map.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
 
     // Link the input columns to their sources.
@@ -472,7 +472,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = map.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << map.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
 
     link_conds(map);
@@ -485,7 +485,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "<TD rowspan=\"3\">" << QueryView(agg).KindName() << ' '
        << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
     auto num_group = agg.NumGroupColumns();
@@ -526,19 +526,19 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = agg.NthInputGroupColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":g1_" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
     for (auto i = 0u; i < num_config; ++i) {
       auto col = agg.NthInputConfigurationColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":g2_" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
     for (auto i = 0u; i < num_summ; ++i) {
       auto col = agg.NthInputAggregateColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << agg.UniqueId() << ":s" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
 
     link_conds(agg);
@@ -553,14 +553,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (num_group) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : neg.CopiedColumns()) {
-        os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col)
+        os << "<TD port=\"c" << col.Id() << "\">" << do_col(col)
            << "</TD>";
       }
     }
 
     os << "<TD rowspan=\"2\">" << QueryView(neg).KindName() << "</TD>";
     for (auto col : neg.NegatedColumns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
 
     const auto num_inputs = neg.NumInputColumns();
@@ -587,7 +587,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = neg.NthInputCopiedColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << neg.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
 
     // Link the input columns to their sources.
@@ -595,7 +595,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = neg.NthInputColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << neg.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
-         << ":c" << col.UniqueId() << color << ";\n";
+         << ":c" << col.Id() << color << ";\n";
     }
 
     os << "v" << neg.UniqueId() << " -> v"
@@ -629,7 +629,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto col = insert.NthInputColumn(i);
       const auto view = QueryView::Containing(col);
       os << "v" << insert.UniqueId() << ":c" << i << " -> "
-         << "v" << view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+         << "v" << view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
     link_conds(insert);
@@ -641,7 +641,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, view);
     os << "<TD rowspan=\"2\">" << QueryView(view).KindName() << "</TD>";
     for (auto col : view.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
 
@@ -663,7 +663,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = view.NthInputColumn(i);
       auto input_view = QueryView::Containing(col);
       os << "v" << view.UniqueId() << ":p" << i << " -> v"
-         << input_view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+         << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
     link_conds(view);
@@ -675,7 +675,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, view);
     os << "<TD rowspan=\"2\">" << QueryView(view).KindName() << "</TD>";
     for (auto col : view.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
     os << "</TR><TR>";
 
@@ -697,7 +697,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       auto col = view.NthInputColumn(i);
       auto input_view = QueryView::Containing(col);
       os << "v" << view.UniqueId() << ":p" << i << " -> v"
-         << input_view.UniqueId() << ":c" << col.UniqueId() << color << ";\n";
+         << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
     link_conds(view);
@@ -709,7 +709,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     do_conds(2, merge);
     os << "<TD rowspan=\"2\">" << QueryView(merge).KindName() << "</TD>";
     for (auto col : merge.Columns()) {
-      os << "<TD port=\"c" << col.UniqueId() << "\">" << do_col(col) << "</TD>";
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString(os)
              << "</TD>";)

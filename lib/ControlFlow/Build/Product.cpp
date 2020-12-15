@@ -93,15 +93,17 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   }
 
   for (auto pred_view : view.Predecessors()) {
+    DataModel * const pred_model = \
+        impl->view_to_model[pred_view]->FindAs<DataModel>();
+    TABLE * const pred_table = pred_model->table;
 
-    const auto table = TABLE::GetOrCreate(impl, pred_view);
-    auto &vec = context.product_vector[table];
+    auto &vec = context.product_vector[pred_table];
     if (!vec) {
       vec =
           proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
     }
 
-    product->tables.AddUse(table);
+    product->tables.AddUse(pred_table);
     product->input_vecs.AddUse(vec);
 
     // Make a variable for each column of the input table.
@@ -139,12 +141,14 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // First, check if we should push this tuple through the PRODUCT. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  const auto table = TABLE::GetOrCreate(impl, pred_view);
-  if (table != last_table) {
+  DataModel * const pred_model = \
+      impl->view_to_model[pred_view]->FindAs<DataModel>();
+  TABLE * const pred_table = pred_model->table;
+  if (pred_table != last_table) {
     parent =
-        BuildInsertCheck(impl, pred_view, context, parent, table,
+        BuildInsertCheck(impl, pred_view, context, parent, pred_table,
                          pred_view.CanProduceDeletions(), pred_view.Columns());
-    last_table = table;
+    last_table = pred_table;
   }
 
   // Nothing really to do, this cross-product just needs to pass its data
@@ -165,7 +169,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     return;
   }
 
-  auto &vec = context.product_vector[table];
+  auto &vec = context.product_vector[pred_table];
   if (!vec) {
     const auto proc = parent->containing_procedure;
     vec = proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());

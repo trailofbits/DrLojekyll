@@ -1402,6 +1402,13 @@ ParsedForeignType::CodeToInline(Language lang_) const noexcept {
   }
 }
 
+// Returns `true` if there is a specialized `lang`-specific instance, and
+// `false` is none is present, or if the default `Language::kUnknown` is used.
+bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  return impl->info[lang].is_present || impl->info[lang].can_override;
+}
+
 // Return the prefix and suffix for construction for this language.
 std::optional<std::pair<std::string_view, std::string_view>>
 ParsedForeignType::Constructor(Language lang_) const noexcept {

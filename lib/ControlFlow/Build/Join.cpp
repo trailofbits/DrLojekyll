@@ -104,11 +104,13 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
       }
     }
 
-    const auto table = TABLE::GetOrCreate(impl, pred_view);
-    const auto index =
-        table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
-    join->tables.AddUse(table);
-    join->indices.AddUse(index);
+    DataModel * const pred_model = \
+        impl->view_to_model[pred_view]->FindAs<DataModel>();
+    TABLE * const pred_table = pred_model->table;
+    TABLEINDEX * const pred_index =
+        pred_table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
+    join->tables.AddUse(pred_table);
+    join->indices.AddUse(pred_index);
 
     join->pivot_cols.emplace_back(join);
     join->output_cols.emplace_back(join);
@@ -117,7 +119,7 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
 
     auto &pivot_table_cols = join->pivot_cols.back();
     for (auto pivot_col : pivot_cols) {
-      for (auto indexed_col : index->columns) {
+      for (auto indexed_col : pred_index->columns) {
         if (pivot_col.Index() && indexed_col->index == *(pivot_col.Index())) {
           pivot_table_cols.AddUse(indexed_col);
           goto matched_pivot_col;
@@ -132,15 +134,23 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
   // Add in the non-pivot columns.
   join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
                            std::optional<QueryColumn> out_col) {
-    if (in_col.IsConstantOrConstantRef() && out_col &&
-        !out_col->IsConstantOrConstantRef()) {
-      auto in_var = join->VariableFor(impl, in_col);
-      join->col_id_to_var.emplace(out_col->Id(), in_var);
+    assert(out_col);
+    if (!out_col) {
+      return;
     }
 
-    if (InputColumnRole::kJoinNonPivot != role || !out_col ||
-        in_col.IsConstantOrConstantRef() ||
-        out_col->IsConstantOrConstantRef()) {
+    if (out_col->IsConstantOrConstantRef()) {
+      (void) join->VariableFor(impl, *out_col);
+      return;
+
+    } else if (in_col.IsConstantOrConstantRef()) {
+      const auto in_var = join->VariableFor(impl, in_col);
+      join->col_id_to_var.emplace(out_col->Id(), in_var);
+      return;
+
+    } else if (InputColumnRole::kJoinNonPivot != role ||
+               in_col.IsConstantOrConstantRef() ||
+               out_col->IsConstantOrConstantRef()) {
       return;
     }
 
@@ -220,9 +230,6 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
           impl, context, parent, view, view_cols, pred_view,
           ProgramOperation::kCallProcedureCheckTrue, nullptr);
 
-      const auto ret_false =
-          BuildStateCheckCaseReturnFalse(impl, index_is_good);
-      index_is_good->body.Emplace(index_is_good, ret_false);
       parent->body.Emplace(parent, index_is_good);
       parent = index_is_good;
     }
@@ -239,16 +246,18 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                           QueryJoin view, Context &context, OP *parent,
                           TABLE *last_table) {
 
+  DataModel *const pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+  TABLE * const pred_table = pred_model->table;
+
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  if (const auto table = TABLE::GetOrCreate(impl, pred_view);
-      table != last_table) {
+  if (pred_table != last_table) {
 
-    parent = BuildInsertCheck(impl, pred_view, context, parent, table,
+    parent = BuildInsertCheck(impl, pred_view, context, parent, pred_table,
                               pred_view.CanProduceDeletions(),
                               pred_view.Columns());
-    last_table = table;
+    last_table = pred_table;
   }
 
   auto &action = context.view_to_work_item[view];

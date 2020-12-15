@@ -60,7 +60,9 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
 void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryNegate negate, Context &context, OP *parent) {
   const QueryView view(negate);
-  const auto table = TABLE::GetOrCreate(impl, view);
+
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
 
   auto seq = impl->series_regions.Create(parent);
   parent->body.Emplace(parent, seq);
