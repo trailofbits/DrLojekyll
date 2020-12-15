@@ -174,23 +174,24 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
             mining = true;
 
             // if-transition-state's new parallel region
-            auto new_par = prog->parallel_regions.Create(transition);
+            auto new_par = prog->parallel_regions.Create(replacement);
             new_par->parent = transition;
-            new_par->regions.AddUse(transition->body.get());
+            UseList<REGION> new_siblings(new_par);
+            new_siblings.AddUse(transition->body.get());
+            transition->body.Clear();
             transition->body.Emplace(transition, new_par);
             for (auto region : combine_regions) {
 
               // TODO Might not be safe
               auto merge = region->AsOperation()->AsTransitionState();
-              auto merge_body = merge->body.get();
-              new_par->regions.AddUse(merge_body);
-              merge_body->parent = new_par;
-              merge->parent = nullptr;
+              const auto merge_body = merge->body.get();
               merge->body.Clear();
+              new_siblings.AddUse(merge_body);
+              merge_body->parent = new_par;
               merge->ReplaceAllUsesWith(transition);
-
-              // merge->ReplaceAllUsesWith(new_par);
+              merge->parent = nullptr;
             }
+            new_par->regions.Swap(new_siblings);
           }
         }
       }
