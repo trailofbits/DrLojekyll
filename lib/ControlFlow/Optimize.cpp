@@ -162,9 +162,13 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
     // Combine pairs.
     // Double check candidate lists using `->Equals(depth);`
+    UseList<REGION> child_regions(par);
     for (auto pair : candidates) {
       auto combine_regions = pair.second;
-      if (combine_regions.size() > 1) {
+      assert(combine_regions.size() != 0);
+      if (combine_regions.size() == 1) {
+        child_regions.AddUse(combine_regions[0]);
+      } else {
         auto replacement = combine_regions.back();
         combine_regions.pop_back();
         if (auto merge_candidate = replacement->AsOperation();
@@ -187,17 +191,34 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
               // TODO Might not be safe
               auto merge = region->AsOperation()->AsTransitionState();
               const auto merge_body = merge->body.get();
-              merge->body.Clear();
               if (merge_body && !merge_body->IsNoOp()) {
-                merge->ReplaceAllUsesWith(merge_body);
+
+                // merge->ReplaceAllUsesWith(transition);
                 new_par->regions.AddUse(merge_body);
-                merge->col_values.Clear();
               }
+              // merge->ReplaceAllUsesWith(transition);
+              merge->body.Clear();
+
+              // merge->table.Clear();
+              // merge->col_values.Clear();
+              merge->parent = nullptr;
             }
+            child_regions.AddUse(transition);
+          } else {
+            child_regions.AddUse(merge_candidate);
+            for (auto region : combine_regions) {
+              child_regions.AddUse(region);
+            }
+          }
+        } else {
+          child_regions.AddUse(replacement);
+          for (auto region : combine_regions) {
+            child_regions.AddUse(region);
           }
         }
       }
     }
+    par->regions.Swap(child_regions);
 
     changed |= mining;
   }
