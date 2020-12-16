@@ -33,7 +33,6 @@ import_list: ;
 clause_or_decl_list: decl clause_or_decl_list ;
 clause_or_decl_list: inline_code clause_or_decl_list ;
 clause_or_decl_list: clause clause_or_decl_list ;
-clause_or_decl_list: inline_code clause_or_decl_list ;
 clause_or_decl_list: ;
 ```
 
@@ -144,6 +143,7 @@ type: "bytes" ;
 
 // Other.
 type: "uuid" ;
+type: <foreign type name> ;
 ```
 
 ### Foreign Types
