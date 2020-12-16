@@ -8,7 +8,7 @@ members. Let's start by declaring a relation to keep track of parentage.
 We will base everything around the `child_of` relation, which will contain two
 pieces of information: the name of a child, and the name of that child's parent.
 
-```
+```eclipse
 #local child_of(ChildName, ParentName)
 ```
 
@@ -38,7 +38,7 @@ Let's keep track of all the people in our database. We're not going to use this
 in any way, but it's a good first example. We can leverage the `child_of`
 relation to find all the people in our database.
 
-```
+```eclipse
 #local person(Name)
 person(Name) : child_of(Name, _).
 person(Name) : child_of(_, Name).
@@ -77,7 +77,7 @@ query for data from the system. In this case, we are saying that given a
 `SearchName`, we will receive a list of `CousinName` values for which `SearchName`
 and `CousinName` are cousins.
 
-```
+```eclipse
 #query cousin_of(bound str SearchName, free str CousinName)
 
 cousin_of(A, CousinOfA)
@@ -165,7 +165,7 @@ assignments to variables that will make the entire clause body evaluate to true.
 Thus far we've declared relations and rules, but not how data enters into our
 system. For that, we need a message.
 
-```
+```eclipse
 #message born(utf8 ChildName, utf8 ParentName)
 
 child_of(ChildName, ParentName) : born(ChildName, ParentName).
@@ -196,7 +196,7 @@ generated code interacts with the rest of the world is really up to the user.
 Let's compile our Datalog code. Create a file, `/tmp/tutorial_1.dr`, and into that
 file, copy and paste the following code.
 
-```
+```eclipse
 #message born(utf8 ChildName, utf8 ParentName)
 
 #local child_of(ChildName, ParentName)
