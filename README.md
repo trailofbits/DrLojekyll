@@ -97,7 +97,7 @@ representing graph node IDs. These tuples represent edges in the graph. The
 program provides a query interface, where all reachable node IDs (`To`) from
 a given node ID (`From`) can be queried.
 
-```
+```eclipse
 #message directed_edge(i64 From, i64 To)
 #query transitive_closure(bound i64 From, free i64 To)
 
@@ -106,4 +106,8 @@ transitive_closure(From, To) : transitive_closure(From, X)
                              , transitive_closure(X, To).
 ```
 
-
+## Documentation
+ 
+ * [Coding Style](docs/CodingStyle.md) 
+ * [Grammar](docs/Grammar.md)
+ * [Tutorial 1: Keeping track of the family](docs/Tutorials/1_KeepingTrackOfTheFamily.md)
