@@ -202,11 +202,8 @@ static void PythonSelfTest(const std::string &gen_python) {
   assert_ec_ok("waiting for Python process");
 
   if (status != 0) {
-    std::cerr << "!!! Error: generated Python code exited with code " << status << ":" << std::endl
-              << output << std::endl
-              << "!!! Generated Python code:" << std::endl
-              << gen_python << std::endl
-              << std::endl
+    std::cerr << "Error: generated Python code exited with code " << status << ":" << std::endl
+              << output
               << std::endl;
     abort();
   }
@@ -513,12 +510,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   std::string gen_python = ProgramToPython(cxt, *program_opt);
   std::string gen_python_dup = ProgramToPython(cxt, *program_opt);
   if (gen_python != gen_python_dup) {
-    std::cerr << "!!! Error: Python code generation multiple times comes out different:" << std::endl
+    std::cerr << "Error: Python code generation multiple times comes out different:" << std::endl
               << std::endl
-              << "!!! Version 1:"
+              << "<<<Version 1>>>"
               << gen_python
               << std::endl
-              << "!!! Version 2:"
+              << "<<<Version 2>>>"
               << gen_python_dup
               << std::endl;
     abort();
