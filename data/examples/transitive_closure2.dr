@@ -14,7 +14,7 @@ tc2(From, To) : tc2(From, X), tc1(X, To).
 tc2(From, To) : add_edge(From, To).
 
 
-#query is_node(free u64 Node)
+#query is_node(free i64 Node)
 
 is_node(Node) : tc1(Node, _).
 is_node(Node) : tc1(_, Node).
