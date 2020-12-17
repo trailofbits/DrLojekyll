@@ -122,16 +122,6 @@ static bool gExecuteGeneratedPython = true;
 // Utilities
 //----------------------------------------------------------------------
 
-#if 0
-// Pretty-print a parsed module as a string.
-static std::string ParsedModuleToString(DrContext &cxt, const hyde::ParsedModule &module) {
-  assert(cxt.error_log.IsEmpty());
-  std::stringstream stream;
-  hyde::OutputStream os(cxt.display_manager, stream);
-  return stream.str();
-}
-#endif
-
 // Emit Python code from a compiled program to a string.
 static std::string ProgramToPython(DrContext &cxt, const hyde::Program &program) {
   assert(cxt.error_log.IsEmpty());
@@ -266,57 +256,73 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedCl
 // Note: it would be much better if we didn't have to convert the module to a
 // string to mutate it.  However, there is currently no public API for
 // _constructing_ `ParsedModule` values.
+//
+// Note: This conversion-to-string code is adapted from lib/Parse/Format.cpp.
 static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std::mt19937_64 &gen) {
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
 
-  auto shuf = [&gen](auto c) { return shuffled(c, gen); };
-
-  // Note: This conversion-to-string code is largely cribbed from lib/Parse/Format.cpp.
   module = module.RootModule();
 
-  for (auto type : shuf(module.ForeignTypes())) {
+  for (auto type : shuffled(module.ForeignTypes(), gen)) {
     os << type << "\n";
   }
 
   std::unordered_set<hyde::ParsedDeclaration> seen;
-  auto do_decl = [&](hyde::ParsedDeclaration decl) {
-    if (!seen.count(decl)) {
-      seen.insert(decl);
-      os << decl << "\n";
-    }
-  };
-
-  for (auto sub_module : hyde::ParsedModuleIterator(module)) {
-    for (auto decl : shuf(sub_module.Queries())) {
-      for (auto redecl : shuf(decl.Redeclarations())) {
-        do_decl(redecl);
-      }
-    }
-
-    for (auto decl : shuf(sub_module.Messages())) {
-      do_decl(decl);
-    }
-
-    for (auto decl : shuf(sub_module.Functors())) {
-      for (auto redecl : shuf(decl.Redeclarations())) {
-        do_decl(redecl);
-      }
-    }
-
-    for (auto decl : shuf(sub_module.Exports())) {
-      if (decl.Arity()) {
-        do_decl(decl);
-      }
-    }
-
-    for (auto decl : shuf(sub_module.Locals())) {
-      do_decl(decl);
-    }
-  }
 
   // Note: we do _not_ shuffle the submodules, since the order they are
   // iterated in is designed to respect interdependencies between them.
+  for (auto sub_module : hyde::ParsedModuleIterator(module)) {
+    // We emit all the components of the submodule as individual strings into a
+    // vector that we finally shuffle once at the end.  This will result in a
+    // greater degree of shuffling than shuffling and emitting each
+    // subcomponent type sequentially.
+    std::vector<std::string> strings;
+    auto AddStringForDecl = [&cxt, &seen, &strings](hyde::ParsedDeclaration decl) {
+      if (seen.count(decl)) {
+        return;
+      }
+      seen.insert(decl);
+      std::stringstream stream;
+      hyde::OutputStream out(cxt.display_manager, stream);
+      out << decl;
+      strings.push_back(stream.str());
+    };
+
+    for (auto decl : sub_module.Queries()) {
+      for (auto redecl : decl.Redeclarations()) {
+        AddStringForDecl(redecl);
+      }
+    }
+
+    for (auto decl : sub_module.Messages()) {
+      AddStringForDecl(decl);
+    }
+
+    for (auto decl : sub_module.Functors()) {
+      for (auto redecl : decl.Redeclarations()) {
+        AddStringForDecl(redecl);
+      }
+    }
+
+    for (auto decl : sub_module.Exports()) {
+      if (decl.Arity()) {
+        AddStringForDecl(decl);
+      }
+    }
+
+    for (auto decl : sub_module.Locals()) {
+      AddStringForDecl(decl);
+    }
+
+    shuffle(strings.begin(), strings.end(), gen);
+
+    for (auto str : strings) {
+      os << str << "\n";
+    }
+  }
+
+  // Note: not shuffling submodules, again like before
   for (auto sub_module : hyde::ParsedModuleIterator(module)) {
     for (auto code : sub_module.Inlines()) {
       if (code.IsPrologue()) {
@@ -324,11 +330,15 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std:
       }
     }
 
-    for (auto clause : shuf(sub_module.Clauses())) {
-      ShuffleClause(cxt, os, clause, gen);
+    std::vector<hyde::ParsedClause> all_clauses;
+    for (auto clause : sub_module.Clauses()) {
+      all_clauses.push_back(clause);
     }
-
-    for (auto clause : shuf(sub_module.DeletionClauses())) {
+    for (auto clause : sub_module.DeletionClauses()) {
+      all_clauses.push_back(clause);
+    }
+    shuffle(all_clauses.begin(), all_clauses.end(), gen);
+    for (auto clause : all_clauses) {
       ShuffleClause(cxt, os, clause, gen);
     }
 
@@ -391,10 +401,10 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedCl
 
   shuffle(strings.begin(), strings.end(), gen);
 
-  auto comma = "";
+  auto delim = "";
   for (auto str : strings) {
-    os << comma << str;
-    comma = ", ";
+    os << delim << str;
+    delim = ", ";
   }
 
   os << "." << "\n";
