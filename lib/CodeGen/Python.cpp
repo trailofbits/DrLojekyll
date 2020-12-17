@@ -1272,28 +1272,33 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << "]] = []\n";
 
     i = 0u;
-    for (auto outer_vec : region.Vectors()) {
-      auto outer_table = region.Table(i);
+    // Products work by having tables and vectors for each proposer. We want
+    // to take the product of each proposer's vector against all other tables.
+    // The outer loop deals with the vectors.
+    for (auto outer_table : region.Tables()) {
+      const auto outer_vars = region.OutputVariables(i);
+      const auto outer_vec = region.Vector(i++);
       (void) outer_table;
 
       os << os.Indent();
       sep = "for ";
 
-      for (auto var : region.OutputVariables(i)) {
+      for (auto var : outer_vars) {
         os << sep << Var(os, var);
         sep = ", ";
       }
 
       os << " in " << Vector(os, outer_vec) << ":\n";
+      auto indents = 1u;
       os.PushIndent();
 
-      ++i;
-
+      // The inner loop deals with the tables.
       auto j = 0u;
       for (auto inner_table : region.Tables()) {
-        const auto inner_vars = region.OutputVariables(j);
-        const auto inner_vec = region.Vector(j++);
-        if (outer_vec == inner_vec) {
+        const auto inner_vars = region.OutputVariables(j++);
+
+        // NOTE(pag): Both `i` and `j` are already `+1`d.
+        if (i == j) {
           continue;
         }
 
@@ -1305,8 +1310,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         }
         os << " in " << Table(os, inner_table) << ":\n";
         os.PushIndent();
+        ++indents;
       }
 
+      // Collect all product things into a vector.
       os << os.Indent() << "vec_" << region.Id();
       sep = ".append((";
       auto k = 0u;
@@ -1319,8 +1326,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       }
       os << "))\n";
 
-      for (auto outer_vec : region.Vectors()) {
+      // De-dent everything.
+      for (auto outer_vec : region.Tables()) {
         os.PopIndent();
+        assert(0u < indents);
+        indents--;
         (void) outer_vec;
       }
     }
