@@ -658,6 +658,9 @@ class ProgramTableProductRegion
  public:
   static ProgramTableProductRegion From(ProgramRegion) noexcept;
 
+  // Unique ID of this region.
+  unsigned Id(void) const noexcept;
+
   // The body that conditionally executes for each produced result. Variable
   // bindings are applied.
   std::optional<ProgramRegion> Body(void) const noexcept;
@@ -669,6 +672,9 @@ class ProgramTableProductRegion
   // The input vectors that need to be merged with all entries of the tables
   // that don't correspond to the input vectors themselves.
   UsedNodeRange<DataVector> Vectors(void) const;
+
+  // The table used by the Nth table scan.
+  DataTable Table(unsigned table_index) const noexcept;
 
   // The index used by the Nth table scan.
   DataVector Vector(unsigned table_index) const noexcept;

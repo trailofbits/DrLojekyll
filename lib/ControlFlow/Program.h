@@ -848,11 +848,13 @@ class Node<ProgramTableProductRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_,
+              unsigned id_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCrossProduct),
         query_join(query_join_),
         tables(this),
-        input_vecs(this) {}
+        input_vecs(this),
+        id(id_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(void) const override;
@@ -870,6 +872,7 @@ class Node<ProgramTableProductRegion> final
   UseList<TABLE> tables;
   UseList<VECTOR> input_vecs;
   std::vector<DefList<VAR>> output_vars;
+  const unsigned id;
 };
 
 using TABLEPRODUCT = Node<ProgramTableProductRegion>;

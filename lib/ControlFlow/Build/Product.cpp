@@ -20,7 +20,7 @@ class ContinueProductWorkItem final : public WorkItem {
 
   void Run(ProgramImpl *program, Context &context) override;
 
-  std::unordered_set<VECTOR *> vectors;
+  std::vector<VECTOR *> vectors;
   std::vector<OP *> appends;
 
  private:
@@ -80,7 +80,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
   const auto product =
-      impl->operation_regions.CreateDerived<TABLEPRODUCT>(seq, join_view);
+      impl->operation_regions.CreateDerived<TABLEPRODUCT>(
+          seq, join_view, impl->next_id++);
   product->ExecuteAfter(impl, seq);
 
   // Clear out the input vectors that might have been filled up before the
@@ -170,7 +171,9 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   }
 
   auto &vec = context.product_vector[pred_table];
+  bool is_new_vec = false;
   if (!vec) {
+    is_new_vec = true;
     const auto proc = parent->containing_procedure;
     vec = proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
   }
@@ -193,7 +196,9 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     context.work_list.emplace_back(action);
   }
 
-  dynamic_cast<ContinueProductWorkItem *>(action)->vectors.insert(vec);
+  if (is_new_vec) {
+    dynamic_cast<ContinueProductWorkItem *>(action)->vectors.push_back(vec);
+  }
   dynamic_cast<ContinueProductWorkItem *>(action)->appends.push_back(append);
 }
 
