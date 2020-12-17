@@ -522,6 +522,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   gStats.num_generated_python += 1;
 
+  // FIXME: also, optionally run mypy on the generated Python code
+
   // Fourth, run the generated Python program.
   //
   // This assumes that the generated program is self-testing -- for example,
