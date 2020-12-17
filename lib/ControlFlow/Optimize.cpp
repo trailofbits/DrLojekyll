@@ -213,6 +213,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
               const auto merge_body = merge->body.get();
               if (merge_body && !merge_body->IsNoOp()) {
                 new_par->regions.AddUse(merge_body);
+                merge_body->parent = new_par;
               }
               par->regions.RemoveIf([=](REGION *r) { return r == region; });
               merge->body.Clear();
