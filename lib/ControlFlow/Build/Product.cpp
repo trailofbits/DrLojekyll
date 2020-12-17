@@ -80,7 +80,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
   const auto product =
-      impl->operation_regions.CreateDerived<TABLEPRODUCT>(seq, join_view);
+      impl->operation_regions.CreateDerived<TABLEPRODUCT>(
+          seq, join_view, impl->next_id++);
   product->ExecuteAfter(impl, seq);
 
   // Clear out the input vectors that might have been filled up before the

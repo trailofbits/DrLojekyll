@@ -1256,7 +1256,94 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableProductRegion region) override {
     os << Comment(os, "Program TableProduct Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramTableProductRegion\n";
+
+    os << os.Indent() << "vec_" << region.Id();
+
+    auto i = 0u;
+    auto sep = ": List[Tuple[";
+    for (auto table : region.Tables()) {
+      (void) table;
+      for (auto var : region.OutputVariables(i++)) {
+        os << sep << TypeName(module, var.Type());
+        sep = ", ";
+      }
+    }
+
+    os << "]] = []\n";
+
+    i = 0u;
+    for (auto outer_vec : region.Vectors()) {
+      auto outer_table = region.Table(i);
+      (void) outer_table;
+
+      os << os.Indent();
+      sep = "for ";
+
+      for (auto var : region.OutputVariables(i)) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+
+      os << " in " << Vector(os, outer_vec) << ":\n";
+      os.PushIndent();
+
+      ++i;
+
+      auto j = 0u;
+      for (auto inner_table : region.Tables()) {
+        const auto inner_vars = region.OutputVariables(j);
+        const auto inner_vec = region.Vector(j++);
+        if (outer_vec == inner_vec) {
+          continue;
+        }
+
+        os << os.Indent();
+        sep = "for ";
+        for (auto var : inner_vars) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+        os << " in " << Table(os, inner_table) << ":\n";
+        os.PushIndent();
+      }
+
+      os << os.Indent() << "vec_" << region.Id();
+      sep = ".append((";
+      auto k = 0u;
+      for (auto table : region.Tables()) {
+        (void) table;
+        for (auto var : region.OutputVariables(k++)) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+      }
+      os << "))\n";
+
+      for (auto outer_vec : region.Vectors()) {
+        os.PopIndent();
+        (void) outer_vec;
+      }
+    }
+
+    os << os.Indent();
+    sep = "for ";
+    auto k = 0u;
+    for (auto table : region.Tables()) {
+      (void) table;
+      for (auto var : region.OutputVariables(k++)) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+    }
+
+    os << " in vec_" << region.Id() << ":\n";
+    os.PushIndent();
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
+    }
+    os.PopIndent();
   }
 
   void Visit(ProgramTableScanRegion region) override {
