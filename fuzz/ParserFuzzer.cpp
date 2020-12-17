@@ -89,16 +89,16 @@ static void ParseAndVerify(std::string_view data) {
       2,  //  `num_spaces_in_tab`.
       true,  //  `use_tab_stops`.
   };
-  auto v_opt_module = v_parser.ParseBuffer(data, v_config);
+  auto opt_v_module = v_parser.ParseBuffer(data, v_config);
 
   // Finally, make sure the parsed result is equal to what we first parsed (the
   // "round-trip" property).
-  if (!v_opt_module) {
+  if (!opt_v_module) {
     std::cerr << "Failed to re-parse module:\n";
     v_error_log.Render(std::cerr);
     abort();
   }
-  hyde::ParsedModule v_module = *v_opt_module;
+  hyde::ParsedModule v_module = *opt_v_module;
   if (!v_error_log.IsEmpty()) {
     std::cerr << "Error log is non-empty after reparsing:\n";
     v_error_log.Render(std::cerr);

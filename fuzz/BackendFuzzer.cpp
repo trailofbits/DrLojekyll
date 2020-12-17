@@ -8,6 +8,7 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
 
 #include <reproc++/drain.hpp>
@@ -16,15 +17,18 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <random>
-#include <string_view>
 #include <sstream>
+#include <string_view>
+#include <sys/errno.h>
 #include <tuple>
+#include <unordered_set>
 
 using namespace std::literals::string_view_literals;  // for "foo"sv type string view literals
 
@@ -118,6 +122,7 @@ static bool gExecuteGeneratedPython = true;
 // Utilities
 //----------------------------------------------------------------------
 
+#if 0
 // Pretty-print a parsed module as a string.
 static std::string ParsedModuleToString(DrContext &cxt, const hyde::ParsedModule &module) {
   assert(cxt.error_log.IsEmpty());
@@ -125,6 +130,7 @@ static std::string ParsedModuleToString(DrContext &cxt, const hyde::ParsedModule
   hyde::OutputStream os(cxt.display_manager, stream);
   return stream.str();
 }
+#endif
 
 // Emit Python code from a compiled program to a string.
 static std::string ProgramToPython(DrContext &cxt, const hyde::Program &program) {
@@ -158,25 +164,28 @@ static hyde::ParsedModule generate_ast(DrContext &cxt, std::mt19937_64 &gen) {
 }
 
 // Execute the given Python script, checking that its exit code is zero.
-static void PythonSelfTest(std::string_view gen_python) {
+static void PythonSelfTest(const std::string &gen_python) {
   const reproc::milliseconds timeout(3000);
   reproc::options options;
   options.redirect.parent = false;
   options.redirect.in.type = reproc::redirect::pipe;
   options.redirect.out.type = reproc::redirect::pipe;
-  options.redirect.err.type = reproc::redirect::pipe;
+  options.redirect.err.type = reproc::redirect::stdout_;
   options.deadline = timeout;
 
-  // FIXME: plumb the path to the Python binary through to here
-  const std::array cmd{"python"sv};
-  reproc::process proc;
-  std::error_code ec = proc.start(cmd, options);
+  std::error_code ec;
   const auto assert_ec_ok = [&ec](std::string_view what){
     if (ec) {
       std::cerr << "Error " << what << ": " << ec.message() << std::endl;
       abort();
     }
   };
+
+  // FIXME: plumb the path to the Python binary through to here
+  const std::array cmd{"python"sv};
+  reproc::process proc;
+  ec = proc.start(cmd, options);
+  assert_ec_ok("starting Python process");
 
   size_t written;
   std::tie(written, ec) = proc.write(reinterpret_cast<const uint8_t *>(gen_python.data()), gen_python.size());
@@ -190,7 +199,12 @@ static void PythonSelfTest(std::string_view gen_python) {
   assert_ec_ok("closing Python process stdin");
 
   std::string output;
-  ec = reproc::drain(proc, reproc::sink::string(output), reproc::sink::string(output));
+  // The `reproc++` library doesn't gracefully handle interrupted system calls
+  // in its implementation.  So we have to explicitly loop around that here.
+  // <Sigh>
+  do {
+    ec = reproc::drain(proc, reproc::sink::string(output), reproc::sink::null);
+  } while (ec.value() == EINTR);
   assert_ec_ok("collecting Python process output");
 
   int status;
@@ -206,7 +220,6 @@ static void PythonSelfTest(std::string_view gen_python) {
               << std::endl;
     abort();
   }
-
 }
 
 // Used to shuffle an array in-place.
@@ -219,8 +232,7 @@ static void PythonSelfTest(std::string_view gen_python) {
 // It seems like a mistake in the standard library that `std::shuffle` takes
 // the random generator by rvalue reference!
 template<class RandomIt, class URBG>
-void shuffle(RandomIt first, RandomIt last, URBG& g)
-{
+static void shuffle(RandomIt first, RandomIt last, URBG& g) {
     typedef typename std::iterator_traits<RandomIt>::difference_type diff_t;
     typedef std::uniform_int_distribution<diff_t> distr_t;
     typedef typename distr_t::param_type param_t;
@@ -230,6 +242,105 @@ void shuffle(RandomIt first, RandomIt last, URBG& g)
     for (diff_t i = n-1; i > 0; --i) {
         std::swap(first[i], first[D(g, param_t(0, i))]);
     }
+}
+
+template<class T, class URBG>
+static std::vector<T> shuffled(hyde::NodeRange<T> c, URBG& g) {
+  // Note: we should preallocate the vector for the appropriate size, but
+  // NodeRange doesn't implement everything needed to make `std::distance` or
+  // similar work.
+  std::vector<T> v;
+  for (auto t : c) {
+    v.push_back(t);
+  }
+  shuffle(v.begin(), v.end(), g);
+  return v;
+}
+
+
+// Mutates `module` by permuting the order of its rules using `gen`.
+// This ought to be a semantics-preserving transformation.
+// The mutated module is returned as a pretty-printed string version of the module.
+//
+// Note: it would be much better if we didn't have to convert the module to a
+// string to mutate it.  However, there is currently no public API for
+// _constructing_ `ParsedModule` values.
+static std::string PermuteDatalogRules(DrContext &cxt, hyde::ParsedModule module, std::mt19937_64 &gen) {
+  std::stringstream stream;
+  hyde::OutputStream os(cxt.display_manager, stream);
+
+  auto shuf = [&gen](auto c) { return shuffled(c, gen); };
+
+  // Note: This conversion-to-string code is largely cribbed from lib/Parse/Format.cpp.
+  module = module.RootModule();
+
+  for (auto type : shuf(module.ForeignTypes())) {
+    os << type << "\n";
+  }
+
+  std::unordered_set<hyde::ParsedDeclaration> seen;
+  auto do_decl = [&](hyde::ParsedDeclaration decl) {
+    if (!seen.count(decl)) {
+      seen.insert(decl);
+      os << decl << "\n";
+    }
+  };
+
+  for (auto sub_module : hyde::ParsedModuleIterator(module)) {
+    for (auto decl : shuf(sub_module.Queries())) {
+      for (auto redecl : shuf(decl.Redeclarations())) {
+        do_decl(redecl);
+      }
+    }
+
+    for (auto decl : shuf(sub_module.Messages())) {
+      do_decl(decl);
+    }
+
+    for (auto decl : shuf(sub_module.Functors())) {
+      for (auto redecl : shuf(decl.Redeclarations())) {
+        do_decl(redecl);
+      }
+    }
+
+    for (auto decl : shuf(sub_module.Exports())) {
+      if (decl.Arity()) {
+        do_decl(decl);
+      }
+    }
+
+    for (auto decl : shuf(sub_module.Locals())) {
+      do_decl(decl);
+    }
+  }
+
+  // Note: we do _not_ shuffle the submodules, since the order they are
+  // iterated in is designed to respect interdependencies between them.
+  for (auto sub_module : hyde::ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      if (code.IsPrologue()) {
+        os << code << "\n";
+      }
+    }
+
+    for (auto clause : shuf(sub_module.Clauses())) {
+      os << clause << "\n";
+    }
+
+    for (auto clause : shuf(sub_module.DeletionClauses())) {
+      os << clause << "\n";
+    }
+
+    // We also do _not_ shuffle inline code snippets, as there are likely
+    // ordering constraints among those.
+    for (auto code : sub_module.Inlines()) {
+      if (!code.IsPrologue()) {
+        os << code << "\n";
+      }
+    }
+  }
+
+  return stream.str();
 }
 
 }  // namespace
@@ -410,7 +521,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   // FIXME: Simplify this once the `DrContext` member variables can be re-initialized
   std::unique_ptr<DrContext> cxt(new DrContext);
 
-  // Step 1. Parse the given data.
+  // Step 1. Parse the given data into an AST.
   std::string_view input(reinterpret_cast<char *>(Data), Size);
   const auto module_opt = ParseModule(*cxt, input, "harness_module");
 
@@ -444,14 +555,17 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   //   - weaken an existing rule (i.e., delete subterms), and somehow rephrase
   //     the deleted subterms
 
-  // Step 3. Pretty-print the transformed AST back into `Data`.
+  const auto module_string = PermuteDatalogRules(*cxt, module, gen);
+
+  // Step 3. Write the mutated AST back into `Data`.
   //
-  // FIXME: write the output in-place in `Data` without extra copies
+  // FIXME: write the output in-place in `Data` without making extra copies
   //
   // Note: it is possible that the new input written into `Data` is not
   //       syntactically valid Dr. Lojekyll input.
   //       It's also possible that it's not null-terminated.
-  const auto module_string = ParsedModuleToString(*cxt, module);
+  //       However, if the starting corpus comprises only valid Dr. Lojekyll
+  //       inputs, these should be rare occurrences!
   size_t output_len = std::min(module_string.size(), MaxSize);
   std::memcpy(Data, module_string.data(), output_len);
   return output_len;
