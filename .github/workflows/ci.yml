@@ -157,7 +157,7 @@ jobs:
       - name: Debug Backend Fuzzer Sanity Check
         run: |
           mkdir -p backend-fuzz-run/Debug
-          cp -r data/examples backend-fuzz-run/Debug/corpus
+          cp -r data/self_testing_examples backend-fuzz-run/Debug/corpus
           cd backend-fuzz-run/Debug
           if ! ../../build/fuzz/Debug/drlojekyll-backend-fuzzer \
                  -max_total_time=60 \
@@ -215,7 +215,7 @@ jobs:
       - name: Release Backend Fuzzer Sanity Check
         run: |
           mkdir -p backend-fuzz-run/RelWithDebInfo
-          cp -r data/examples backend-fuzz-run/RelWithDebInfo/corpus
+          cp -r data/self_testing_examples backend-fuzz-run/RelWithDebInfo/corpus
           cd backend-fuzz-run/RelWithDebInfo
           if ! ../../build/fuzz/RelWithDebInfo/drlojekyll-backend-fuzzer \
                  -max_total_time=60 \
