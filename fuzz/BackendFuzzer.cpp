@@ -257,15 +257,16 @@ static std::vector<T> shuffled(hyde::NodeRange<T> c, URBG& g) {
   return v;
 }
 
+static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedClause clause, std::mt19937_64 &gen);
 
-// Mutates `module` by permuting the order of its rules using `gen`.
+// Mutates `module` by permuting the order of many of its components using `gen`.
 // This ought to be a semantics-preserving transformation.
 // The mutated module is returned as a pretty-printed string version of the module.
 //
 // Note: it would be much better if we didn't have to convert the module to a
 // string to mutate it.  However, there is currently no public API for
 // _constructing_ `ParsedModule` values.
-static std::string PermuteDatalogRules(DrContext &cxt, hyde::ParsedModule module, std::mt19937_64 &gen) {
+static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std::mt19937_64 &gen) {
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
 
@@ -324,11 +325,11 @@ static std::string PermuteDatalogRules(DrContext &cxt, hyde::ParsedModule module
     }
 
     for (auto clause : shuf(sub_module.Clauses())) {
-      os << clause << "\n";
+      ShuffleClause(cxt, os, clause, gen);
     }
 
     for (auto clause : shuf(sub_module.DeletionClauses())) {
-      os << clause << "\n";
+      ShuffleClause(cxt, os, clause, gen);
     }
 
     // We also do _not_ shuffle inline code snippets, as there are likely
@@ -341,6 +342,62 @@ static std::string PermuteDatalogRules(DrContext &cxt, hyde::ParsedModule module
   }
 
   return stream.str();
+}
+
+// Print `clause` to `os`, but shuffling the components using the pseudorandom
+// generator `gen`.
+//
+// This is cribbed from lib/Parse/Format.cpp.
+static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedClause clause, std::mt19937_64 &gen) {
+  if (clause.IsDeletion()) {
+    os << '!';
+  }
+  os << hyde::ParsedClauseHead(clause);
+  if (clause.IsHighlighted()) {
+    os << " @highlight";
+  }
+  os << " : ";
+
+  // We emit all the components as individual strings into a vector that we
+  // finally shuffle once at the end.  This will result in a greater degree of
+  // shuffling than handling each subcomponent type individually.
+  std::vector<std::string> strings;
+  auto AddString = [&cxt, &strings](auto val) {
+    std::stringstream stream;
+    hyde::OutputStream out(cxt.display_manager, stream);
+    out << val;
+    strings.push_back(stream.str());
+  };
+
+  for (auto assign : clause.Assignments()) {
+    AddString(assign);
+  }
+
+  for (auto compare : clause.Comparisons()) {
+    AddString(compare);
+  }
+
+  for (auto pred : clause.PositivePredicates()) {
+    AddString(pred);
+  }
+
+  for (auto pred : clause.NegatedPredicates()) {
+    AddString(pred);
+  }
+
+  for (auto agg : clause.Aggregates()) {
+    AddString(agg);
+  }
+
+  shuffle(strings.begin(), strings.end(), gen);
+
+  auto comma = "";
+  for (auto str : strings) {
+    os << comma << str;
+    comma = ", ";
+  }
+
+  os << "." << "\n";
 }
 
 }  // namespace
@@ -540,8 +597,6 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
 
   // Step 2. Transform the AST.
   //
-  // FIXME: implement something here, using `gen` to make pseudorandom selection deterministic
-  //
   // Ideas:
   //
   //   - consistently rename identifiers
@@ -555,7 +610,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   //   - weaken an existing rule (i.e., delete subterms), and somehow rephrase
   //     the deleted subterms
 
-  const auto module_string = PermuteDatalogRules(*cxt, module, gen);
+  const auto module_string = ShuffleModule(*cxt, module, gen);
 
   // Step 3. Write the mutated AST back into `Data`.
   //
