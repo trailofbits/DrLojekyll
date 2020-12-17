@@ -736,6 +736,17 @@ ProgramTableJoinRegion::OutputVariables(unsigned table_index) const {
           DefinedNodeIterator<DataVariable>(vars.end())};
 }
 
+// Unique ID of this region.
+unsigned ProgramTableProductRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
+// The table used by the Nth table scan.
+DataTable ProgramTableProductRegion::Table(unsigned table_index) const noexcept {
+  assert(table_index < impl->tables.Size());
+  return DataTable(impl->tables[table_index]);
+}
+
 // The index used by the Nth table scan.
 DataVector
 ProgramTableProductRegion::Vector(unsigned table_index) const noexcept {

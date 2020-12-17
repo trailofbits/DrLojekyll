@@ -1256,7 +1256,104 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableProductRegion region) override {
     os << Comment(os, "Program TableProduct Region");
-    os << os.Indent() << "pass  # TODO(ekilmer): ProgramTableProductRegion\n";
+
+    os << os.Indent() << "vec_" << region.Id();
+
+    auto i = 0u;
+    auto sep = ": List[Tuple[";
+    for (auto table : region.Tables()) {
+      (void) table;
+      for (auto var : region.OutputVariables(i++)) {
+        os << sep << TypeName(module, var.Type());
+        sep = ", ";
+      }
+    }
+
+    os << "]] = []\n";
+
+    i = 0u;
+    // Products work by having tables and vectors for each proposer. We want
+    // to take the product of each proposer's vector against all other tables.
+    // The outer loop deals with the vectors.
+    for (auto outer_table : region.Tables()) {
+      const auto outer_vars = region.OutputVariables(i);
+      const auto outer_vec = region.Vector(i++);
+      (void) outer_table;
+
+      os << os.Indent();
+      sep = "for ";
+
+      for (auto var : outer_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+
+      os << " in " << Vector(os, outer_vec) << ":\n";
+      auto indents = 1u;
+      os.PushIndent();
+
+      // The inner loop deals with the tables.
+      auto j = 0u;
+      for (auto inner_table : region.Tables()) {
+        const auto inner_vars = region.OutputVariables(j++);
+
+        // NOTE(pag): Both `i` and `j` are already `+1`d.
+        if (i == j) {
+          continue;
+        }
+
+        os << os.Indent();
+        sep = "for ";
+        for (auto var : inner_vars) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+        os << " in " << Table(os, inner_table) << ":\n";
+        os.PushIndent();
+        ++indents;
+      }
+
+      // Collect all product things into a vector.
+      os << os.Indent() << "vec_" << region.Id();
+      sep = ".append((";
+      auto k = 0u;
+      for (auto table : region.Tables()) {
+        (void) table;
+        for (auto var : region.OutputVariables(k++)) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+      }
+      os << "))\n";
+
+      // De-dent everything.
+      for (auto outer_vec : region.Tables()) {
+        os.PopIndent();
+        assert(0u < indents);
+        indents--;
+        (void) outer_vec;
+      }
+    }
+
+    os << os.Indent();
+    sep = "for ";
+    auto k = 0u;
+    for (auto table : region.Tables()) {
+      (void) table;
+      for (auto var : region.OutputVariables(k++)) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+    }
+
+    os << " in vec_" << region.Id() << ":\n";
+    os.PushIndent();
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
+    }
+    os.PopIndent();
   }
 
   void Visit(ProgramTableScanRegion region) override {
