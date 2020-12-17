@@ -144,39 +144,61 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
       candidates[region->Hash(depth)].push_back(region);
     }
 
-#ifndef NDEBUG
-
     // Double check candidate lists using `->Equals(depth);`
+    std::vector<std::vector<REGION *>> equal_candidates = {};
+    EqualitySet eq;
     for (auto pair : candidates) {
       auto combine_regions = pair.second;
-      if (combine_regions.size() > 1) {
-        for (auto region1 : combine_regions) {
-          for (auto region2 : combine_regions) {
-            eq.Clear();
-            assert(region1->Equals(eq, region2, depth));
-          }
+      if (combine_regions.size() <= 1) {
+        continue;
+      }
+
+      auto size = combine_regions.size();
+      while (size != 0) {
+        const auto checker = combine_regions.back();
+        combine_regions.pop_back();
+
+        // combine_regions contains non-Equals regions and equals contains Equals regions
+        auto it = std::stable_partition(combine_regions.begin(),
+                                        combine_regions.end(), [=](REGION *r) {
+                                          EqualitySet e;
+                                          return !checker->Equals(e, r, 0);
+                                        });
+        std::vector<REGION *> equals(
+            std::make_move_iterator(it),
+            std::make_move_iterator(combine_regions.end()));
+        combine_regions.erase(it, combine_regions.end());
+
+        // std::vector<REGION *> equals = {};
+        // auto remove_start = std::remove_copy_if(combine_regions.begin(), combine_regions.end(), equals.begin(), [=](REGION *r) { EqualitySet e; return checker->Equals(e, r, 0); });
+        // combine_regions.erase(remove_start, combine_regions.end());
+
+        if (equals.size() > 0) {
+          equals.push_back(checker);
+          equal_candidates.emplace_back(equals);
         }
+        size = combine_regions.size();
       }
     }
-#endif
 
     // Combine pairs.
     // Double check candidate lists using `->Equals(depth);`
 
     // This is the new region for this parallel region's children
-    for (auto pair : candidates) {
-      auto combine_regions = pair.second;
-      assert(combine_regions.size() != 0);
+    for (auto combine_regions : equal_candidates) {
+      assert(combine_regions.size() > 1);  // Should be enforced above
       if (combine_regions.size() > 1) {
         auto replacement = combine_regions.back();
+
+        // TODO: Could probably work around this pop_back and clear() at the end
+        combine_regions.pop_back();
         if (auto merge_candidate = replacement->AsOperation();
             merge_candidate) {
           if (auto transition = merge_candidate->AsTransitionState();
               transition) {
             mining = true;
-            combine_regions.pop_back();
 
-            // if-transition-state's new parallel region
+            // if-transition-state's new parallel region for merged bodies
             auto new_par = prog->parallel_regions.Create(replacement);
             auto transition_body = transition->body.get();
             if (transition_body) {
@@ -186,10 +208,8 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
             transition->body.Clear();
             transition->body.Emplace(transition, new_par);
             for (auto region : combine_regions) {
-
-              // TODO Might not be safe
               auto merge = region->AsOperation()->AsTransitionState();
-              assert(merge);
+              assert(merge);  // These should all be the same type
               const auto merge_body = merge->body.get();
               if (merge_body && !merge_body->IsNoOp()) {
                 new_par->regions.AddUse(merge_body);

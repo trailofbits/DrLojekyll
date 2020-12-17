@@ -368,15 +368,15 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   for (auto i = 0u, max_i = col_values.Size(); i < max_i; ++i) {
     if (!eq.Contains(col_values[i], that->col_values[i])) {
       FAILED_EQ(that_);
       return false;
     }
+  }
+
+  if (depth == 0) {
+    return true;
   }
 
   if (!body != !(that->body)) {
