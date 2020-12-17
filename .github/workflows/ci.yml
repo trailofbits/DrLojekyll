@@ -135,11 +135,11 @@ jobs:
 
       # Just a quick test to make sure the fuzzers don't crash immediately.
       # More thorough fuzzing is done in a separate GitHub Actions workflow.
-      - name: Test Debug Fuzzers
+      - name: Debug Parser Fuzzer Sanity Check
         run: |
-          mkdir -p fuzz-run/Debug
-          cp -r data/examples fuzz-run/Debug/corpus
-          cd fuzz-run/Debug
+          mkdir -p parser-fuzz-run/Debug
+          cp -r data/examples parser-fuzz-run/Debug/corpus
+          cd parser-fuzz-run/Debug
           if ! ../../build/fuzz/Debug/drlojekyll-parser-fuzzer \
                  -max_total_time=3 \
                  -timeout=1 \
@@ -148,7 +148,24 @@ jobs:
                  -dict=../../fuzz/dict.txt \
                  -exact_artifact_path=boom.txt \
                  corpus; then
-            echo >&2 "Fuzzing smoke test failed!"
+            echo >&2 "Parser fuzzer smoke test failed!"
+            echo >&2 "Base64-encoded input that triggered the failure:"
+            base64 >&2 boom.txt
+            exit 1
+          fi
+
+      - name: Debug Backend Fuzzer Sanity Check
+        run: |
+          mkdir -p backend-fuzz-run/Debug
+          cp -r data/examples backend-fuzz-run/Debug/corpus
+          cd backend-fuzz-run/Debug
+          if ! ../../build/fuzz/Debug/drlojekyll-backend-fuzzer \
+                 -max_total_time=60 \
+                 -timeout=3 \
+                 -print_final_stats=1 \
+                 -exact_artifact_path=boom.txt \
+                 corpus; then
+            echo >&2 "Backend fuzzer smoke test failed!"
             echo >&2 "Base64-encoded input that triggered the failure:"
             base64 >&2 boom.txt
             exit 1
@@ -177,18 +194,41 @@ jobs:
 
       # Just a quick test to make sure the fuzzers don't crash immediately.
       # More thorough fuzzing is done in a separate GitHub Actions workflow.
-      - name: Test Release Fuzzers
+      - name: Release Parser Fuzzer Sanity Check
         run: |
-          mkdir -p fuzz-run/RelWithDebInfo
-          cp -r data/examples fuzz-run/RelWithDebInfo/corpus
-          cd fuzz-run/RelWithDebInfo
-          ../../build/fuzz/RelWithDebInfo/drlojekyll-parser-fuzzer \
-            -max_total_time=3 \
-            -timeout=1 \
-            -max_len=400 \
-            -print_final_stats=1 \
-            -dict=../../fuzz/dict.txt \
-            corpus
+          mkdir -p parser-fuzz-run/RelWithDebInfo
+          cp -r data/examples parser-fuzz-run/RelWithDebInfo/corpus
+          cd parser-fuzz-run/RelWithDebInfo
+          if ! ../../build/fuzz/RelWithDebInfo/drlojekyll-parser-fuzzer \
+                 -max_total_time=3 \
+                 -timeout=1 \
+                 -max_len=400 \
+                 -print_final_stats=1 \
+                 -dict=../../fuzz/dict.txt \
+                 corpus; then
+            echo >&2 "Fuzzing smoke test failed!"
+            echo >&2 "Base64-encoded input that triggered the failure:"
+            base64 >&2 boom.txt
+            exit 1
+          fi
+
+      - name: Release Backend Fuzzer Sanity Check
+        run: |
+          mkdir -p backend-fuzz-run/RelWithDebInfo
+          cp -r data/examples backend-fuzz-run/RelWithDebInfo/corpus
+          cd backend-fuzz-run/RelWithDebInfo
+          if ! ../../build/fuzz/RelWithDebInfo/drlojekyll-backend-fuzzer \
+                 -max_total_time=60 \
+                 -timeout=3 \
+                 -print_final_stats=1 \
+                 -exact_artifact_path=boom.txt \
+                 corpus; then
+            echo >&2 "Backend fuzzer smoke test failed!"
+            echo >&2 "Base64-encoded input that triggered the failure:"
+            base64 >&2 boom.txt
+            exit 1
+          fi
+
 
   build4:
     name: macOS 10.15 / Debug / Sanitizers
