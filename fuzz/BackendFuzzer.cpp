@@ -27,8 +27,8 @@
 #include <sstream>
 #include <string_view>
 #include <sys/errno.h>
+#include <set>
 #include <tuple>
-#include <unordered_set>
 
 using namespace std::literals::string_view_literals;  // for "foo"sv type string view literals
 
@@ -265,7 +265,7 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std:
     os << type << "\n";
   }
 
-  std::unordered_set<hyde::ParsedDeclaration> seen;
+  std::set<hyde::ParsedDeclaration> seen;
 
   // Note: we do _not_ shuffle the submodules, since the order they are
   // iterated in is designed to respect interdependencies between them.
