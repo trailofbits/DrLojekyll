@@ -35,6 +35,7 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
 // How many kinds of messages are there in the given parsed module?
 static size_t NumMessages(const hyde::ParsedModule &module) {
   size_t num_messages = 0;
+
   // Note: would use std::distance here, but `hyde::ParsedModule` doesn't
   // implement all the necessary APIs.
   for (auto message : module.Messages()) {
@@ -93,7 +94,8 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 
   // Generate code for message schemas
   for (auto module : hyde::ParsedModuleIterator(*mmod)) {
-    auto schemas = hyde::GenerateAvroMessageSchemas(display_mgr, module, err_log);
+    auto schemas =
+        hyde::GenerateAvroMessageSchemas(display_mgr, module, err_log);
     EXPECT_TRUE(err_log.IsEmpty())
         << "Message schema generation failed:" << std::endl
         << err_log;
@@ -108,15 +110,15 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   //
   // Note: Some tests fail to build -- handle those specially
   if (kBuildDebugFailExamples.count(path_filename_str)) {
-    ASSERT_DEBUG_DEATH(hyde::Program::Build(*query_opt, err_log),
-                       ".*TODO.*");
+    ASSERT_DEBUG_DEATH(hyde::Program::Build(*query_opt, err_log), ".*TODO.*");
     return;
   }
 
   auto program_opt = hyde::Program::Build(*query_opt, err_log);
   ASSERT_TRUE(program_opt.has_value());
 
-  auto generated_file_base = fs::path(kGeneratedFilesDir) / path_filename.stem();
+  auto generated_file_base =
+      fs::path(kGeneratedFilesDir) / path_filename.stem();
 
   // Save the IR
   {
@@ -140,6 +142,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 
   // Type-check the generated Python code with mypy, if available
 #ifdef MYPY_PATH
+
   // Note, mypy can take input from a command line string via '-c STRING'
   // but that sounds unsafe to do from here, so pass the path to the file
   // instead.
@@ -148,8 +151,8 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   std::string cmd = std::string(MYPY_PATH) + " " + py_out_path;
   int ret_code = std::system(cmd.c_str());
   EXPECT_TRUE(ret_code == 0)
-    << "Python mypy type-checking failed! Saved generated code at "
-    << py_out_path << std::endl;
+      << "Python mypy type-checking failed! Saved generated code at "
+      << py_out_path << std::endl;
 #endif  // MYPY_PATH
 }
 

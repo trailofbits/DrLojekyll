@@ -10,9 +10,7 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
-
-#include <reproc++/drain.hpp>
-#include <reproc++/reproc.hpp>
+#include <sys/errno.h>
 
 #include <array>
 #include <cassert>
@@ -24,13 +22,15 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <reproc++/drain.hpp>
+#include <reproc++/reproc.hpp>
+#include <set>
 #include <sstream>
 #include <string_view>
-#include <sys/errno.h>
-#include <set>
 #include <tuple>
 
-using namespace std::literals::string_view_literals;  // for "foo"sv type string view literals
+using namespace std::literals::
+    string_view_literals;  // for "foo"sv type string view literals
 
 namespace {
 
@@ -38,8 +38,7 @@ namespace {
 // shutdown.
 //
 // FIXME: the stats should also be printed even upon abnormal shutdown, like if `abort()` is called
-struct FuzzerStats
-{
+struct FuzzerStats {
   uint64_t num_attempts{0};
   uint64_t num_parsed{0};
   uint64_t num_compiled{0};
@@ -57,31 +56,42 @@ struct FuzzerStats
   void PrintStats() {
     assert(num_attempts >= num_parsed);
     assert(num_parsed >= num_compiled);
-    assert(num_custom_calls == num_custom_generated_asts + num_custom_parsed_asts + num_custom_fallbacks);
+    assert(num_custom_calls == num_custom_generated_asts +
+                                   num_custom_parsed_asts +
+                                   num_custom_fallbacks);
 
     // Figure out how wide to make the numeric column in the first section
     int col_width = 1;
-    for (uint64_t v = num_custom_calls; v > 0; v /= 10, col_width += 1) {}
+    for (uint64_t v = num_custom_calls; v > 0; v /= 10, col_width += 1) {
+    }
     auto set_width = std::setw(col_width);
     std::cerr << std::endl
               << "### Final fuzzer statistics ###" << std::endl
               << std::endl
               << "Custom mutator:" << std::endl
-              << "    Total calls:          " << set_width << num_custom_calls << std::endl
-              << "    Fallbacks to default: " << set_width << num_custom_fallbacks << std::endl
-              << "    Parsed ASTs:          " << set_width << num_custom_parsed_asts << std::endl
-              << "    Generated ASTs:       " << set_width << num_custom_generated_asts << std::endl
+              << "    Total calls:          " << set_width << num_custom_calls
+              << std::endl
+              << "    Fallbacks to default: " << set_width
+              << num_custom_fallbacks << std::endl
+              << "    Parsed ASTs:          " << set_width
+              << num_custom_parsed_asts << std::endl
+              << "    Generated ASTs:       " << set_width
+              << num_custom_generated_asts << std::endl
               << std::endl;
 
     // Figure out how wide to make the numeric column in the second section
     col_width = 1;
-    for (uint64_t v = num_attempts; v > 0; v /= 10, col_width += 1) {}
+    for (uint64_t v = num_attempts; v > 0; v /= 10, col_width += 1) {
+    }
     set_width = std::setw(col_width);
 
-    const auto print_funnel_stats = [set_width](std::string_view name, uint64_t passed, uint64_t total) {
-      double percent = (double)passed / (double)total * 100.0;
-      std::cerr << name << set_width << passed << "/" << set_width << total << " (" << std::setprecision(4) << percent << "%)" << std::endl;
-    };
+    const auto print_funnel_stats =
+        [set_width](std::string_view name, uint64_t passed, uint64_t total) {
+          double percent = (double) passed / (double) total * 100.0;
+          std::cerr << name << set_width << passed << "/" << set_width << total
+                    << " (" << std::setprecision(4) << percent << "%)"
+                    << std::endl;
+        };
 
     std::cerr << "Fuzz target:" << std::endl;
     print_funnel_stats("    Successful parses:   ", num_parsed, num_attempts);
@@ -100,11 +110,10 @@ struct DrContext {
   hyde::ErrorLog error_log;
   hyde::Parser parser;
 
-  DrContext() :
-    display_manager(),
-    error_log(display_manager),
-    parser(display_manager, error_log)
-  {}
+  DrContext()
+      : display_manager(),
+        error_log(display_manager),
+        parser(display_manager, error_log) {}
 };
 
 //----------------------------------------------------------------------
@@ -123,7 +132,8 @@ static bool gExecuteGeneratedPython = true;
 //----------------------------------------------------------------------
 
 // Emit Python code from a compiled program to a string.
-static std::string ProgramToPython(DrContext &cxt, const hyde::Program &program) {
+static std::string ProgramToPython(DrContext &cxt,
+                                   const hyde::Program &program) {
   assert(cxt.error_log.IsEmpty());
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
@@ -131,11 +141,12 @@ static std::string ProgramToPython(DrContext &cxt, const hyde::Program &program)
   return stream.str();
 }
 
-static std::optional<hyde::ParsedModule> ParseModule(DrContext &cxt, std::string_view input, const std::string &name) {
+static std::optional<hyde::ParsedModule>
+ParseModule(DrContext &cxt, std::string_view input, const std::string &name) {
   assert(cxt.error_log.IsEmpty());
   hyde::DisplayConfiguration config = {
       name,  // `name`.
-      2,     // `num_spaces_in_tab`.
+      2,  // `num_spaces_in_tab`.
       true,  // `use_tab_stops`.
   };
   return cxt.parser.ParseBuffer(input, config);
@@ -146,6 +157,7 @@ static std::optional<hyde::ParsedModule> ParseModule(DrContext &cxt, std::string
 // the same output.
 static hyde::ParsedModule generate_ast(DrContext &cxt, std::mt19937_64 &gen) {
   assert(cxt.error_log.IsEmpty());
+
   // FIXME: do something more interesting here than return an empty module
   std::string input = "";
   const auto ret = ParseModule(cxt, input, "dummy_ast");
@@ -164,7 +176,7 @@ static void PythonSelfTest(const std::string &gen_python) {
   options.deadline = timeout;
 
   std::error_code ec;
-  const auto assert_ec_ok = [&ec](std::string_view what){
+  const auto assert_ec_ok = [&ec](std::string_view what) {
     if (ec) {
       std::cerr << "Error " << what << ": " << ec.message() << std::endl;
       abort();
@@ -178,17 +190,20 @@ static void PythonSelfTest(const std::string &gen_python) {
   assert_ec_ok("starting Python process");
 
   size_t written;
-  std::tie(written, ec) = proc.write(reinterpret_cast<const uint8_t *>(gen_python.data()), gen_python.size());
+  std::tie(written, ec) = proc.write(
+      reinterpret_cast<const uint8_t *>(gen_python.data()), gen_python.size());
   assert_ec_ok("writing Python process stdin");
   if (written != gen_python.size()) {
     std::cerr << "Error writing Python process stdin: tried to write "
-              << gen_python.size() << " bytes, but only wrote " << written << std::endl;
+              << gen_python.size() << " bytes, but only wrote " << written
+              << std::endl;
     abort();
   }
   ec = proc.close(reproc::stream::in);
   assert_ec_ok("closing Python process stdin");
 
   std::string output;
+
   // The `reproc++` library doesn't gracefully handle interrupted system calls
   // in its implementation.  So we have to explicitly loop around that here.
   // <Sigh>
@@ -202,9 +217,9 @@ static void PythonSelfTest(const std::string &gen_python) {
   assert_ec_ok("waiting for Python process");
 
   if (status != 0) {
-    std::cerr << "Error: generated Python code exited with code " << status << ":" << std::endl
-              << output
-              << std::endl;
+    std::cerr << "Error: generated Python code exited with code " << status
+              << ":" << std::endl
+              << output << std::endl;
     abort();
   }
 }
@@ -218,21 +233,22 @@ static void PythonSelfTest(const std::string &gen_python) {
 //
 // It seems like a mistake in the standard library that `std::shuffle` takes
 // the random generator by rvalue reference!
-template<class RandomIt, class URBG>
-static void shuffle(RandomIt first, RandomIt last, URBG& g) {
-    typedef typename std::iterator_traits<RandomIt>::difference_type diff_t;
-    typedef std::uniform_int_distribution<diff_t> distr_t;
-    typedef typename distr_t::param_type param_t;
+template <class RandomIt, class URBG>
+static void shuffle(RandomIt first, RandomIt last, URBG &g) {
+  typedef typename std::iterator_traits<RandomIt>::difference_type diff_t;
+  typedef std::uniform_int_distribution<diff_t> distr_t;
+  typedef typename distr_t::param_type param_t;
 
-    distr_t D;
-    diff_t n = last - first;
-    for (diff_t i = n-1; i > 0; --i) {
-        std::swap(first[i], first[D(g, param_t(0, i))]);
-    }
+  distr_t D;
+  diff_t n = last - first;
+  for (diff_t i = n - 1; i > 0; --i) {
+    std::swap(first[i], first[D(g, param_t(0, i))]);
+  }
 }
 
-template<class T, class URBG>
-static std::vector<T> shuffled(hyde::NodeRange<T> c, URBG& g) {
+template <class T, class URBG>
+static std::vector<T> shuffled(hyde::NodeRange<T> c, URBG &g) {
+
   // Note: we should preallocate the vector for the appropriate size, but
   // NodeRange doesn't implement everything needed to make `std::distance` or
   // similar work.
@@ -244,7 +260,8 @@ static std::vector<T> shuffled(hyde::NodeRange<T> c, URBG& g) {
   return v;
 }
 
-static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedClause clause, std::mt19937_64 &gen);
+static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os,
+                          hyde::ParsedClause clause, std::mt19937_64 &gen);
 
 // Mutates `module` by permuting the order of many of its components using `gen`.
 // This ought to be a semantics-preserving transformation.
@@ -255,7 +272,8 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedCl
 // _constructing_ `ParsedModule` values.
 //
 // Note: This conversion-to-string code is adapted from lib/Parse/Format.cpp.
-static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std::mt19937_64 &gen) {
+static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
+                                 std::mt19937_64 &gen) {
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
 
@@ -270,12 +288,14 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std:
   // Note: we do _not_ shuffle the submodules, since the order they are
   // iterated in is designed to respect interdependencies between them.
   for (auto sub_module : hyde::ParsedModuleIterator(module)) {
+
     // We emit all the components of the submodule as individual strings into a
     // vector that we finally shuffle once at the end.  This will result in a
     // greater degree of shuffling than shuffling and emitting each
     // subcomponent type sequentially.
     std::vector<std::string> strings;
-    auto AddStringForDecl = [&cxt, &seen, &strings](hyde::ParsedDeclaration decl) {
+    auto AddStringForDecl = [&cxt, &seen,
+                             &strings](hyde::ParsedDeclaration decl) {
       if (seen.count(decl)) {
         return;
       }
@@ -355,7 +375,8 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module, std:
 // generator `gen`.
 //
 // This is cribbed from lib/Parse/Format.cpp.
-static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedClause clause, std::mt19937_64 &gen) {
+static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os,
+                          hyde::ParsedClause clause, std::mt19937_64 &gen) {
   if (clause.IsDeletion()) {
     os << '!';
   }
@@ -404,11 +425,11 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os, hyde::ParsedCl
     delim = ", ";
   }
 
-  os << "." << "\n";
+  os << "."
+     << "\n";
 }
 
 }  // namespace
-
 
 
 extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
@@ -419,20 +440,27 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
       gAllowSemanticsModifyingMutations = true;
     } else if (strcmp("--no-execute-generated-python", arg) == 0) {
       gExecuteGeneratedPython = false;
+
     // if only we were using C++20, we could use string_view.starts_with...
     } else if (strstr(arg, "--") == arg && strcmp(arg, "--") != 0) {
-      std::cerr << "Error: unknown custom fuzzer argument `" << arg << "`" << std::endl
-                << std::endl
-                << "Available custom fuzzer arguments:" << std::endl
-                << "    --enable-all-mutators               enable all mutators, including semantics-altering ones" << std::endl
-                << "    --no-execute-generated-python       do not execute the generated Python code" << std::endl;
+      std::cerr
+          << "Error: unknown custom fuzzer argument `" << arg << "`"
+          << std::endl
+          << std::endl
+          << "Available custom fuzzer arguments:" << std::endl
+          << "    --enable-all-mutators               enable all mutators, including semantics-altering ones"
+          << std::endl
+          << "    --no-execute-generated-python       do not execute the generated Python code"
+          << std::endl;
       exit(1);
     }
   }
 
   const char *prog = args[0];
-  std::cerr << prog << ": using semantics-altering mutators: " << gAllowSemanticsModifyingMutations << std::endl;
-  std::cerr << prog << ": executing generated Python code:   " << gExecuteGeneratedPython << std::endl;
+  std::cerr << prog << ": using semantics-altering mutators: "
+            << gAllowSemanticsModifyingMutations << std::endl;
+  std::cerr << prog << ": executing generated Python code:   "
+            << gExecuteGeneratedPython << std::endl;
 
   return 0;
 }
@@ -450,7 +478,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   // A helper function to check that the error log is empty.
   const auto assert_error_log_empty = [&cxt](std::string_view what) {
     if (!cxt.error_log.IsEmpty()) {
-      std::cerr << "Error: error log is non-empty after " << what << ":" << std::endl;
+      std::cerr << "Error: error log is non-empty after " << what << ":"
+                << std::endl;
       cxt.error_log.Render(std::cerr);
       abort();
     }
@@ -459,7 +488,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   // A helper function to check that the error log is _not_ empty.
   const auto assert_error_log_nonempty = [&cxt](std::string_view what) {
     if (cxt.error_log.IsEmpty()) {
-      std::cerr << "Error: error log is empty after " << what << ":" << std::endl;
+      std::cerr << "Error: error log is empty after " << what << ":"
+                << std::endl;
       abort();
     }
   };
@@ -470,12 +500,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   // expect parsing to succeed nearly all the time.
   hyde::DisplayConfiguration config = {
       "harness_module",  // `name`.
-      2,                 // `num_spaces_in_tab`.
-      true,              // `use_tab_stops`.
+      2,  // `num_spaces_in_tab`.
+      true,  // `use_tab_stops`.
   };
 
   const auto module_opt = cxt.parser.ParseBuffer(input, config);
   if (!module_opt) {
+
     // Bail out early if no parse.  Expected to be rare!
     assert_error_log_nonempty("unsuccessful parsing");
     return 0;
@@ -490,6 +521,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   // used when fuzzing, we expect compilation to succeed nearly all the time.
   const auto query_opt = hyde::Query::Build(*module_opt, cxt.error_log);
   if (!query_opt) {
+
     // Bail out early if query compilation failed.  Expected to be rare!
     assert_error_log_nonempty("unsuccessful query compilation");
     return 0;
@@ -498,6 +530,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
   const auto program_opt = hyde::Program::Build(*query_opt, cxt.error_log);
   if (!program_opt) {
+
     // Bail out early if program compilation failed.  Expected to be rare!
     assert_error_log_nonempty("unsuccessful program compilation");
     return 0;
@@ -510,14 +543,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   std::string gen_python = ProgramToPython(cxt, *program_opt);
   std::string gen_python_dup = ProgramToPython(cxt, *program_opt);
   if (gen_python != gen_python_dup) {
-    std::cerr << "Error: Python code generation multiple times comes out different:" << std::endl
-              << std::endl
-              << "<<<Version 1>>>"
-              << gen_python
-              << std::endl
-              << "<<<Version 2>>>"
-              << gen_python_dup
-              << std::endl;
+    std::cerr
+        << "Error: Python code generation multiple times comes out different:"
+        << std::endl
+        << std::endl
+        << "<<<Version 1>>>" << gen_python << std::endl
+        << "<<<Version 2>>>" << gen_python_dup << std::endl;
     abort();
   }
   gStats.num_generated_python += 1;
@@ -543,14 +574,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 }
 
 
-
-
-
 // Forward-declare the libFuzzer's mutator callback; it is explicitly called
 // sometimes within LLVMFuzzerCustomMutator.
-extern "C" size_t
-LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
-
+extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
 
 
 // The custom mutator does the following:
@@ -572,6 +598,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   std::mt19937_64 gen(Seed);
 
   if (gAllowSemanticsModifyingMutations) {
+
     // About 1% of the time, fallback to LLVM's default mutator.
     if (std::uniform_int_distribution(1, 100)(gen) <= 1) {
       gStats.num_custom_fallbacks += 1;
@@ -592,6 +619,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   const auto module_opt = ParseModule(*cxt, input, "harness_module");
 
   if (!module_opt) {
+
     // Parsing failed; re-initialize the context so that AST generation doesn't
     // fail.
     cxt.reset(new DrContext);
@@ -634,9 +662,6 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   std::memcpy(Data, module_string.data(), output_len);
   return output_len;
 }
-
-
-
 
 
 // This isn't well-documented in LibFuzzer, but is an optional API we might

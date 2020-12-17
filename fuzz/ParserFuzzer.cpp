@@ -29,20 +29,26 @@ namespace {
 
 // Used to keep track of some coarse fuzzer statistics and print them at
 // shutdown.
-struct FuzzerStats
-{
+struct FuzzerStats {
   uint64_t num_successful_parses{0};
   uint64_t num_failed_parses{0};
 
   ~FuzzerStats() {
     auto num_total = num_successful_parses + num_failed_parses;
-    double success_percent = (double)num_successful_parses / (double)num_total * 100.0;
-    double failed_percent = (double)num_failed_parses / (double)num_total * 100.0;
+    double success_percent =
+        (double) num_successful_parses / (double) num_total * 100.0;
+    double failed_percent =
+        (double) num_failed_parses / (double) num_total * 100.0;
 
     std::cerr << "### Final fuzzer statistics ###" << std::endl
-              << "    Total attempts:    " << std::setw(12) << num_total << std::endl
-              << "    Failed parses:     " << std::setw(12) << num_failed_parses << " (" << std::setprecision(4) << failed_percent << "%)"  << std::endl
-              << "    Successful parses: " << std::setw(12) << num_successful_parses << " (" << std::setprecision(4) << success_percent << "%)" << std::endl;
+              << "    Total attempts:    " << std::setw(12) << num_total
+              << std::endl
+              << "    Failed parses:     " << std::setw(12) << num_failed_parses
+              << " (" << std::setprecision(4) << failed_percent << "%)"
+              << std::endl
+              << "    Successful parses: " << std::setw(12)
+              << num_successful_parses << " (" << std::setprecision(4)
+              << success_percent << "%)" << std::endl;
   }
 };
 
@@ -57,6 +63,7 @@ static std::string ParsedModuleToString(const hyde::ParsedModule &module) {
 }
 
 static void ParseAndVerify(std::string_view data) {
+
   // First, parse the given data.
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log(display_manager);
@@ -69,6 +76,7 @@ static void ParseAndVerify(std::string_view data) {
   auto opt_module = parser.ParseBuffer(data, config);
   if (!opt_module) {
     gStats.num_failed_parses += 1;
+
     // bail out early if no parse
     // error_log.Render(std::cerr);
     return;
