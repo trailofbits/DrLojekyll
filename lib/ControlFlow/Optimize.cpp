@@ -134,22 +134,26 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   }
 
   // Strip-mining for similarity and merge
+  // Candidate regions for merging in this parallel's regions
   std::unordered_map<uint64_t, std::vector<REGION *>> candidates;
   uint32_t depth = 0;
 
   for (auto mining = true; mining && !changed;) {
     mining = false;
     candidates.clear();
+
+    // Populate candidates based on Hash.
+    // This doesn't necessarily mean they're 'Equals' though.
     for (auto region : par->regions) {
       candidates[region->Hash(depth)].push_back(region);
     }
 
-    // Double check candidate lists using `->Equals(depth);`
+    // Refine candidates with zero-depth 'Equals' to ensure merging isn't
+    // destructive, since equal Hash doesn't mean 'Equals' is true.
     std::vector<std::vector<REGION *>> equal_candidates = {};
     EqualitySet eq;
-    for (auto pair : candidates) {
-      auto combine_regions = pair.second;
-      if (combine_regions.size() <= 1) {
+    for (auto [_, combine_regions] : candidates) {
+      if (combine_regions.size() < 2) {
         continue;
       }
 
@@ -158,21 +162,20 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
         const auto checker = combine_regions.back();
         combine_regions.pop_back();
 
-        // combine_regions contains non-Equals regions and equals contains Equals regions
+        // The following statements will have the following effect:
+        // 'combine_regions' contains non-'Equals' regions, and 'equals' contains
+        // 'Equals' regions as compared to 'checker'
         auto it = std::stable_partition(combine_regions.begin(),
-                                        combine_regions.end(), [=](REGION *r) {
-                                          EqualitySet e;
-                                          return !checker->Equals(e, r, 0);
+                                        combine_regions.end(), [&](REGION *r) {
+                                          eq.Clear();
+                                          return !checker->Equals(eq, r, 0);
                                         });
         std::vector<REGION *> equals(
             std::make_move_iterator(it),
             std::make_move_iterator(combine_regions.end()));
         combine_regions.erase(it, combine_regions.end());
 
-        // std::vector<REGION *> equals = {};
-        // auto remove_start = std::remove_copy_if(combine_regions.begin(), combine_regions.end(), equals.begin(), [=](REGION *r) { EqualitySet e; return checker->Equals(e, r, 0); });
-        // combine_regions.erase(remove_start, combine_regions.end());
-
+        // Only add vectors where we've found a match
         if (equals.size() > 0) {
           equals.push_back(checker);
           equal_candidates.emplace_back(equals);
@@ -181,45 +184,39 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
       }
     }
 
-    // Combine pairs.
-    // Double check candidate lists using `->Equals(depth);`
-
-    // This is the new region for this parallel region's children
+    // Combine candidates in 'equal_candidates'.
     for (auto combine_regions : equal_candidates) {
       assert(combine_regions.size() > 1);  // Should be enforced above
-      if (combine_regions.size() > 1) {
-        auto replacement = combine_regions.back();
+      auto replacement = combine_regions.back();
+      combine_regions.pop_back();
 
-        // TODO: Could probably work around this pop_back and clear() at the end
-        combine_regions.pop_back();
-        if (auto merge_candidate = replacement->AsOperation();
-            merge_candidate) {
-          if (auto transition = merge_candidate->AsTransitionState();
-              transition) {
-            mining = true;
+      // TODO(ek) only checking TransitionState as tractable prototype
+      // Works on 'data/examples/evm_array_parse.dr'
+      if (auto merge_candidate = replacement->AsOperation(); merge_candidate) {
+        if (auto transition = merge_candidate->AsTransitionState();
+            transition) {
+          mining = true;
 
-            // if-transition-state's new parallel region for merged bodies
-            auto new_par = prog->parallel_regions.Create(replacement);
-            auto transition_body = transition->body.get();
-            if (transition_body) {
-              new_par->regions.AddUse(transition_body);
-              transition_body->parent = new_par;
+          // New parallel region for merged bodies into 'transition'
+          auto new_par = prog->parallel_regions.Create(replacement);
+          auto transition_body = transition->body.get();
+          if (transition_body) {
+            new_par->regions.AddUse(transition_body);
+            transition_body->parent = new_par;
+          }
+          transition->body.Clear();
+          transition->body.Emplace(transition, new_par);
+          for (auto region : combine_regions) {
+            auto merge = region->AsOperation()->AsTransitionState();
+            assert(merge);  // These should all be the same type
+            const auto merge_body = merge->body.get();
+            if (merge_body) {
+              new_par->regions.AddUse(merge_body);
+              merge_body->parent = new_par;
             }
-            transition->body.Clear();
-            transition->body.Emplace(transition, new_par);
-            for (auto region : combine_regions) {
-              auto merge = region->AsOperation()->AsTransitionState();
-              assert(merge);  // These should all be the same type
-              const auto merge_body = merge->body.get();
-              if (merge_body && !merge_body->IsNoOp()) {
-                new_par->regions.AddUse(merge_body);
-                merge_body->parent = new_par;
-              }
-              par->regions.RemoveIf([=](REGION *r) { return r == region; });
-              merge->body.Clear();
-              merge->parent = nullptr;
-            }
-            combine_regions.clear();
+            par->regions.RemoveIf([=](REGION *r) { return r == region; });
+            merge->body.Clear();
+            merge->parent = nullptr;
           }
         }
       }
