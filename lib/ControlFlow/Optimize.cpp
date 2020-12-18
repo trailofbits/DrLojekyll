@@ -190,34 +190,11 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
       auto replacement = combine_regions.back();
       combine_regions.pop_back();
 
-      // TODO(ek) only checking TransitionState as tractable prototype
-      // Works on 'data/examples/evm_array_parse.dr'
-      if (auto merge_candidate = replacement->AsOperation(); merge_candidate) {
-        if (auto transition = merge_candidate->AsTransitionState();
-            transition) {
-          mining = true;
-
-          // New parallel region for merged bodies into 'transition'
-          auto new_par = prog->parallel_regions.Create(replacement);
-          auto transition_body = transition->body.get();
-          if (transition_body) {
-            new_par->regions.AddUse(transition_body);
-            transition_body->parent = new_par;
-          }
-          transition->body.Clear();
-          transition->body.Emplace(transition, new_par);
-          for (auto region : combine_regions) {
-            auto merge = region->AsOperation()->AsTransitionState();
-            assert(merge);  // These should all be the same type
-            const auto merge_body = merge->body.get();
-            if (merge_body) {
-              new_par->regions.AddUse(merge_body);
-              merge_body->parent = new_par;
-            }
-            par->regions.RemoveIf([=](REGION *r) { return r == region; });
-            merge->body.Clear();
-            merge->parent = nullptr;
-          }
+      if (auto merged = replacement->MergeEqual(prog, combine_regions);
+          merged) {
+        mining = true;
+        for (auto region : combine_regions) {
+          par->regions.RemoveIf([=](REGION *r) { return r == region; });
         }
       }
     }

@@ -212,6 +212,15 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
     this->parent = nullptr;
   }
 
+  // Returns 'true' if 'this' was able to merge all of the regions in 'merges'.
+  // Merging takes the form of a new PARALLEL region to execute the bodies of
+  // 'Equals' regions.
+  // This method assumes that all elements in 'merges' are 'Equals' at depth 0.
+  virtual const bool MergeEqual(ProgramImpl *prog,
+                                std::vector<Node<ProgramRegion> *> &merges) {
+    return false;
+  }
+
   // Gets or creates a local variable in the procedure.
   VAR *VariableFor(ProgramImpl *impl, QueryColumn col);
   VAR *VariableForRec(QueryColumn col);
@@ -614,6 +623,9 @@ class Node<ProgramTransitionStateRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
@@ -872,8 +884,7 @@ class Node<ProgramTableProductRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_,
-              unsigned id_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_, unsigned id_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCrossProduct),
         query_join(query_join_),
         tables(this),

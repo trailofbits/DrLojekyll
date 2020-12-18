@@ -390,6 +390,32 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
+const bool Node<ProgramTransitionStateRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  // New parallel region for merged bodies into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  auto transition_body = this->body.get();
+  if (transition_body) {
+    new_par->regions.AddUse(transition_body);
+    transition_body->parent = new_par;
+  }
+  this->body.Clear();
+  this->body.Emplace(this, new_par);
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsTransitionState();
+    assert(merge);  // These should all be the same type
+    const auto merge_body = merge->body.get();
+    if (merge_body) {
+      new_par->regions.AddUse(merge_body);
+      merge_body->parent = new_par;
+    }
+    merge->body.Clear();
+    merge->parent = nullptr;
+  }
+  return true;
+}
+
 uint64_t Node<ProgramExistenceCheckRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : cond_vars) {
