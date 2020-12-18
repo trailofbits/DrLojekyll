@@ -160,7 +160,7 @@ jobs:
           cp -r data/self_testing_examples backend-fuzz-run/Debug/corpus
           cd backend-fuzz-run/Debug
           if ! ../../build/fuzz/Debug/drlojekyll-backend-fuzzer \
-                 -max_total_time=5 \
+                 -max_total_time=60 \
                  -timeout=3 \
                  -print_final_stats=1 \
                  -exact_artifact_path=boom.txt \
@@ -218,7 +218,7 @@ jobs:
           cp -r data/self_testing_examples backend-fuzz-run/RelWithDebInfo/corpus
           cd backend-fuzz-run/RelWithDebInfo
           if ! ../../build/fuzz/RelWithDebInfo/drlojekyll-backend-fuzzer \
-                 -max_total_time=60 \
+                 -max_total_time=3 \
                  -timeout=3 \
                  -print_final_stats=1 \
                  -exact_artifact_path=boom.txt \
