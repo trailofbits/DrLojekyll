@@ -375,12 +375,12 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   if (!body != !(that->body)) {
     return false;
+  }
+
+  if (depth == 0) {
+    return true;
   }
 
   if (body) {
