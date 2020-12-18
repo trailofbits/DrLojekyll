@@ -16,8 +16,7 @@ HANDLE handle_destroy(HANDLE handle)
     return HANDLE_INVALID;
   }
 
-  int r = CloseHandle(handle);
-  ASSERT_UNUSED(r != 0);
+  (void) CloseHandle(handle);
 
   return HANDLE_INVALID;
 }

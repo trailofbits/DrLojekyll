@@ -254,8 +254,7 @@ SOCKET pipe_destroy(SOCKET pipe)
     return PIPE_INVALID;
   }
 
-  int r = closesocket(pipe);
-  ASSERT_UNUSED(r == 0);
+  (void) closesocket(pipe);
 
   return PIPE_INVALID;
 }

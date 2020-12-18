@@ -35,8 +35,10 @@ int handle_destroy(int handle)
     return HANDLE_INVALID;
   }
 
-  int r = close(handle);
-  ASSERT_UNUSED(r == 0);
+  int r = 0;
+  do {
+    r = close(handle);
+  } while (r == -1 && errno == EINTR);
 
   return HANDLE_INVALID;
 }
