@@ -395,13 +395,13 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
-  auto transition_body = this->body.get();
+  auto transition_body = body.get();
   if (transition_body) {
     new_par->regions.AddUse(transition_body);
     transition_body->parent = new_par;
   }
-  this->body.Clear();
-  this->body.Emplace(this, new_par);
+  body.Clear();
+  body.Emplace(this, new_par);
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsTransitionState();
     assert(merge);  // These should all be the same type
