@@ -166,7 +166,10 @@ install(
 # --------------------------------------------
 add_subdirectory(lib)
 add_subdirectory(bin)
-add_subdirectory(fuzz)
+
+if(ENABLE_LIBFUZZER)
+  add_subdirectory(fuzz)
+endif()
 
 if(ENABLE_TESTS)
   add_subdirectory(tests)

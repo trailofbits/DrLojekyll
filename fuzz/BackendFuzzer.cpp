@@ -37,7 +37,8 @@ namespace {
 // Used to keep track of some coarse fuzzer statistics and print them at
 // shutdown.
 //
-// FIXME: the stats should also be printed even upon abnormal shutdown, like if `abort()` is called
+// FIXME(brad): The stats should also be printed even upon abnormal shutdown,
+//              like if `abort()` is called.
 struct FuzzerStats {
   uint64_t num_attempts{0};
   uint64_t num_parsed{0};
@@ -49,16 +50,16 @@ struct FuzzerStats {
   uint64_t num_custom_generated_asts{0};
   uint64_t num_custom_parsed_asts{0};
 
-  ~FuzzerStats() {
+  ~FuzzerStats(void) {
     PrintStats();
   }
 
-  void PrintStats() {
+  void PrintStats(void) {
     assert(num_attempts >= num_parsed);
     assert(num_parsed >= num_compiled);
-    assert(num_custom_calls == num_custom_generated_asts +
-                                   num_custom_parsed_asts +
-                                   num_custom_fallbacks);
+    assert(num_custom_calls == (num_custom_generated_asts +
+                                num_custom_parsed_asts +
+                                num_custom_fallbacks));
 
     // Figure out how wide to make the numeric column in the first section
     int col_width = 1;
@@ -110,7 +111,7 @@ struct DrContext {
   hyde::ErrorLog error_log;
   hyde::Parser parser;
 
-  DrContext()
+  DrContext(void)
       : display_manager(),
         error_log(display_manager),
         parser(display_manager, error_log) {}
@@ -155,7 +156,7 @@ ParseModule(DrContext &cxt, std::string_view input, const std::string &name) {
 // Generate a Dr. Lojekyll `ParsedModule` from the given random generator.
 // This is referentially transparent: given the same input argument, produces
 // the same output.
-static hyde::ParsedModule generate_ast(DrContext &cxt, std::mt19937_64 &gen) {
+static hyde::ParsedModule GenerateAST(DrContext &cxt, std::mt19937_64 &gen) {
   assert(cxt.error_log.IsEmpty());
 
   // FIXME: do something more interesting here than return an empty module
@@ -234,7 +235,7 @@ static void PythonSelfTest(const std::string &gen_python) {
 // It seems like a mistake in the standard library that `std::shuffle` takes
 // the random generator by rvalue reference!
 template <class RandomIt, class URBG>
-static void shuffle(RandomIt first, RandomIt last, URBG &g) {
+static void Shuffle(RandomIt first, RandomIt last, URBG &g) {
   typedef typename std::iterator_traits<RandomIt>::difference_type diff_t;
   typedef std::uniform_int_distribution<diff_t> distr_t;
   typedef typename distr_t::param_type param_t;
@@ -247,7 +248,7 @@ static void shuffle(RandomIt first, RandomIt last, URBG &g) {
 }
 
 template <class T, class URBG>
-static std::vector<T> shuffled(hyde::NodeRange<T> c, URBG &g) {
+static std::vector<T> Shuffled(hyde::NodeRange<T> c, URBG &g) {
 
   // Note: we should preallocate the vector for the appropriate size, but
   // NodeRange doesn't implement everything needed to make `std::distance` or
@@ -285,8 +286,14 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
 
   std::set<hyde::ParsedDeclaration> seen;
 
-  // Note: we do _not_ shuffle the submodules, since the order they are
-  // iterated in is designed to respect interdependencies between them.
+  // NOTE(brad): We do _not_ shuffle the submodules, since the order they are
+  //             iterated in is designed to respect interdependencies between
+  //             them.
+  //
+  // TODO(pag): Add special support for ordering declarations with `mutable`-
+  //            attributed parameters. These induce a partial order that must
+  //            be satisfied, where the referenced merge functor must be
+  //            declared prior to the mutable use.
   for (auto sub_module : hyde::ParsedModuleIterator(module)) {
 
     // We emit all the components of the submodule as individual strings into a
@@ -332,7 +339,7 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
       AddStringForDecl(decl);
     }
 
-    shuffle(strings.begin(), strings.end(), gen);
+    Shuffle(strings.begin(), strings.end(), gen);
 
     for (auto str : strings) {
       os << str << "\n";
@@ -354,7 +361,7 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     for (auto clause : sub_module.DeletionClauses()) {
       all_clauses.push_back(clause);
     }
-    shuffle(all_clauses.begin(), all_clauses.end(), gen);
+    Shuffle(all_clauses.begin(), all_clauses.end(), gen);
     for (auto clause : all_clauses) {
       ShuffleClause(cxt, os, clause, gen);
     }
@@ -417,7 +424,7 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os,
     AddString(agg);
   }
 
-  shuffle(strings.begin(), strings.end(), gen);
+  Shuffle(strings.begin(), strings.end(), gen);
 
   auto delim = "";
   for (auto str : strings) {
@@ -425,8 +432,7 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os,
     delim = ", ";
   }
 
-  os << "."
-     << "\n";
+  os << ".\n";
 }
 
 }  // namespace
@@ -625,7 +631,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
     cxt.reset(new DrContext);
   }
 
-  auto module = module_opt ? *module_opt : generate_ast(*cxt, gen);
+  auto module = module_opt ? *module_opt : GenerateAST(*cxt, gen);
   if (module_opt) {
     gStats.num_custom_parsed_asts += 1;
   } else {
