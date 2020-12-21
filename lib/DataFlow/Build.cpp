@@ -73,6 +73,8 @@ struct ClauseContext {
   std::unordered_map<ParsedVariable, VarColumn *> var_to_col;
 
   // Spelling of a literal to its associated column.
+  //
+  // NOTE(pag): This persists beyond the liftime of a clause.
   std::unordered_map<std::string, COL *> spelling_to_col;
 
   // Mapping of constants to its var column. E.g. if we have `A=1, B=1`, then
@@ -452,7 +454,8 @@ static VIEW *AllConstantsView(QueryImpl *query, ParsedClause clause,
   TUPLE *tuple = query->tuples.Create();
   tuple->color = context.color;
   auto col_index = 0u;
-  for (const auto &[spelling, col] : context.spelling_to_col) {
+  for (const auto &[col, vc] : context.const_to_vc) {
+    (void) vc;
     (void) tuple->columns.Create(col->var, tuple, col->id, col_index);
     tuple->input_columns.AddUse(col);
   }
