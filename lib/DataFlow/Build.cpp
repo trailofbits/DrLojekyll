@@ -457,7 +457,12 @@ static VIEW *AllConstantsView(QueryImpl *query, ParsedClause clause,
     tuple->input_columns.AddUse(col);
   }
 
-  return tuple;
+#ifndef NDEBUG
+  tuple->producer = "ALL-CONSTS";
+#endif
+
+  auto view = GuardViewWithFilter(query, clause, context, tuple);
+  return  PromoteOnlyUniqueColumns(query, view);
 }
 
 // Propose `view` as being a source of data for the clause head.
@@ -474,6 +479,10 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
   TUPLE *tuple = query->tuples.Create();
   tuple->color = context.color;
+
+#ifndef NDEBUG
+  tuple->producer = "CLAUSE-HEAD";
+#endif
 
   auto col_index = 0u;
 
@@ -1386,17 +1395,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // constants. It's possible that we have functors or comparisons that need
   // to operate on these constants, so this is why be bring them in here.
   if (pred_views.empty()) {
-    TUPLE *tuple = query->tuples.Create();
-    tuple->color = context.color;
-    auto col_index = 0u;
-    for (auto const_col : context.col_id_to_constant) {
-      if (const_col) {
-        tuple->input_columns.AddUse(const_col);
-        (void) tuple->columns.Create(const_col->var, tuple, const_col->id,
-                                     col_index++);
-      }
-    }
-    pred_views.push_back(tuple);
+    pred_views.push_back(AllConstantsView(query, clause, context));
   }
 
   // Make sure every view only exposes unique columns being contributed. E.g.
@@ -1431,18 +1430,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // might have something like `pred(1, 2).` and that's it, or
   // `pred(1) : foo(2).`
   if (pred_views.empty()) {
-    if (auto const_view = AllConstantsView(query, clause, context);
-        const_view) {
-
-      auto view = GuardViewWithFilter(query, clause, context, const_view);
-      view = PromoteOnlyUniqueColumns(query, view);
-      pred_views.push_back(view);
-
-    } else {
-      log.Append(clause_range)
-          << "Internal error: Failed to create any data flow nodes for clause";
-      return false;
-    }
+    log.Append(clause_range)
+        << "Internal error: Failed to create any data flow nodes for clause";
+    return false;
   }
 
   // Process the work list until we find some order of things that works.
