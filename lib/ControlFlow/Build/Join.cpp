@@ -78,7 +78,7 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
       var->query_const = QueryConstant::From(pivot_col);
     }
 
-    join->col_id_to_var.emplace(pivot_col.Id(), var);
+    join->col_id_to_var[pivot_col.Id()] = var;
   }
 
   std::vector<unsigned> pivot_col_indices;
@@ -145,7 +145,7 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
 
     } else if (in_col.IsConstantOrConstantRef()) {
       const auto in_var = join->VariableFor(impl, in_col);
-      join->col_id_to_var.emplace(out_col->Id(), in_var);
+      join->col_id_to_var[out_col->Id()] = in_var;
       return;
 
     } else if (InputColumnRole::kJoinNonPivot != role ||
@@ -164,8 +164,8 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
     auto var = out_vars.Create(impl->next_id++, VariableRole::kJoinNonPivot);
     var->query_column = *out_col;
 
-    join->col_id_to_var.emplace(in_col.Id(), var);
-    join->col_id_to_var.emplace(out_col->Id(), var);
+    join->col_id_to_var[in_col.Id()] = var;
+    join->col_id_to_var[out_col->Id()] = var;
   });
 
   return join;
@@ -328,7 +328,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
       if (!in_col.IsConstant()) {
         const auto param_var = proc->VariableFor(impl, *out_col);
-        proc->col_id_to_var.emplace(in_col.Id(), param_var);
+        proc->col_id_to_var[in_col.Id()] = param_var;
         pred_cols[QueryView::Containing(in_col)].push_back(in_col);
       }
     }
@@ -391,7 +391,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
             if (!in_col.IsConstant() &&
                 QueryView::Containing(in_col) == max_view) {
               const auto in_var = parent->VariableFor(impl, in_col);
-              parent->col_id_to_var.emplace(out_col->Id(), in_var);
+              parent->col_id_to_var[out_col->Id()] = in_var;
             }
           });
 
@@ -561,7 +561,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       for (auto i = 0u; i < num_pivots; ++i) {
         const auto param_var = proc->VariableFor(impl, from_view_pivots[i]);
         assert(param_var != nullptr);
-        proc->col_id_to_var.emplace(pred_pivots[i].Id(), param_var);
+        proc->col_id_to_var[pred_pivots[i].Id()] = param_var;
       }
     }
   }
@@ -571,7 +571,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                              std::optional<QueryColumn> out_col) {
       if (auto in_var = join->VariableFor(impl, in_col); in_var && out_col) {
-        join->col_id_to_var.emplace(out_col->Id(), in_var);
+        join->col_id_to_var[out_col->Id()] = in_var;
       }
     });
 

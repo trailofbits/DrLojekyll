@@ -163,7 +163,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
         const auto var = cycle->defined_vars.Create(
             impl->next_id++, VariableRole::kVectorVariable);
         var->query_column = col;
-        cycle->col_id_to_var.emplace(col.Id(), var);
+        cycle->col_id_to_var[col.Id()] = var;
       }
 
       cycle->vector.Emplace(cycle, swap_vec);
@@ -246,7 +246,7 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
       const auto var = cycle->defined_vars.Create(
           impl->next_id++, VariableRole::kVectorVariable);
       var->query_column = col;
-      cycle->col_id_to_var.emplace(col.Id(), var);
+      cycle->col_id_to_var[col.Id()] = var;
     }
 
     cycle->vector.Emplace(cycle, handler_proc->input_vecs[vec_index++]);

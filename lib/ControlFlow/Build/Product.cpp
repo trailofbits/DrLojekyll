@@ -161,7 +161,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
       if (out_col) {
         const auto in_var = parent->VariableFor(impl, in_col);
         assert(in_var != nullptr);
-        parent->col_id_to_var.emplace(out_col->Id(), in_var);
+        parent->col_id_to_var[out_col->Id()] = in_var;
       }
     });
 

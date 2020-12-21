@@ -23,13 +23,13 @@ TUPLECMP *CreateCompareRegion(ProgramImpl *impl, QueryCompare view,
   cmp->rhs_vars.AddUse(rhs_var);
 
   if (is_eq) {
-    cmp->col_id_to_var.emplace(view.InputLHS().Id(), lhs_var);
-    cmp->col_id_to_var.emplace(view.InputRHS().Id(), lhs_var);
-    cmp->col_id_to_var.emplace(view.LHS().Id(), lhs_var);
+    cmp->col_id_to_var[view.InputLHS().Id()] = lhs_var;
+    cmp->col_id_to_var[view.InputRHS().Id()] = lhs_var;
+    cmp->col_id_to_var[view.LHS().Id()] = lhs_var;
 
   } else {
-    cmp->col_id_to_var.emplace(view.LHS().Id(), lhs_var);
-    cmp->col_id_to_var.emplace(view.RHS().Id(), rhs_var);
+    cmp->col_id_to_var[view.LHS().Id()] = lhs_var;
+    cmp->col_id_to_var[view.RHS().Id()] = rhs_var;
   }
 
   return cmp;
@@ -127,7 +127,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
         if (out_col) {
           const auto out_var = region->VariableFor(impl, *out_col);
           assert(out_var != nullptr);
-          region->col_id_to_var.emplace(in_col.Id(), out_var);
+          region->col_id_to_var[in_col.Id()] = out_var;
         }
       });
     };
