@@ -1,6 +1,7 @@
 // Copyright 2019, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/DataFlow/Format.h>
+#include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
@@ -236,11 +237,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     const auto input_rhs_view = QueryView::Containing(input_rhs);
 
     if (lhs == rhs) {
-      os << "</TD><TD port=\"c" << lhs.UniqueId() << "\" colspan=\"2\">"
+      os << "</TD><TD port=\"c" << lhs.Id() << "\" colspan=\"2\">"
          << do_col(lhs);
     } else {
-      os << "</TD><TD port=\"c" << lhs.UniqueId() << "\">" << do_col(lhs)
-         << "</TD><TD port=\"c" << rhs.UniqueId() << "\">" << do_col(rhs);
+      os << "</TD><TD port=\"c" << lhs.Id() << "\">" << do_col(lhs)
+         << "</TD><TD port=\"c" << rhs.Id() << "\">" << do_col(rhs);
     }
 
     os << "</TD></TR><TR>";
@@ -265,10 +266,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << kEndTable << ">];\n"
        << "v" << constraint.UniqueId() << ":p0 -> v"
-       << input_lhs_view.UniqueId() << ":c" << input_lhs.UniqueId() << color
+       << input_lhs_view.UniqueId() << ":c" << input_lhs.Id() << color
        << ";\n"
        << "v" << constraint.UniqueId() << ":p1 -> v"
-       << input_rhs_view.UniqueId() << ":c" << input_rhs.UniqueId() << color
+       << input_rhs_view.UniqueId() << ":c" << input_rhs.Id() << color
        << ";\n";
 
     for (auto i = 0u; i < in_copied_cols.size(); ++i) {
@@ -415,8 +416,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << "label=<" << kBeginTable;
     do_conds(2, map);
 
-    auto num_group = map.NumCopiedColumns();
-    if (num_group) {
+    auto num_copied = map.NumCopiedColumns();
+    if (num_copied) {
       os << "<TD rowspan=\"2\">COPY</TD>";
       for (auto col : map.CopiedColumns()) {
         os << "<TD port=\"c" << col.Id() << "\">" << do_col(col)
@@ -429,22 +430,28 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << '!';
     }
     os << ParsedDeclarationName(map.Functor()) << "</TD>";
-    for (auto col : map.MappedColumns()) {
+
+    for (auto param : map.Functor().Parameters()) {
+      auto col = map.MappedColumns()[param.Index()];
       os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
 
     const auto num_inputs = map.NumInputColumns();
-    if (num_group + num_inputs) {
-      os << "</TR><TR>";
+    os << "</TR><TR>";
 
-      for (auto i = 0u; i < num_group; ++i) {
-        const auto col = map.NthInputCopiedColumn(i);
-        os << "<TD port=\"g" << i << "\">" << do_col(col) << "</TD>";
-      }
+    for (auto i = 0u; i < num_copied; ++i) {
+      const auto col = map.NthInputCopiedColumn(i);
+      os << "<TD port=\"g" << i << "\">" << do_col(col) << "</TD>";
+    }
 
-      for (auto i = 0u; i < num_inputs; ++i) {
-        const auto col = map.NthInputColumn(i);
-        os << "<TD port=\"p" << i << "\">" << do_col(col) << "</TD>";
+    auto i = 0u;
+    for (auto param : map.Functor().Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        auto in_col = map.NthInputColumn(i);
+        os << "<TD port=\"p" << i << "\">" << do_col(in_col) << "</TD>";
+        ++i;
+      } else {
+        os << "<TD> </TD>";
       }
     }
 
@@ -460,7 +467,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto color = QueryView(map).CanReceiveDeletions() ? " [color=purple]" : "";
 
-    for (auto i = 0u; i < num_group; ++i) {
+    for (auto i = 0u; i < num_copied; ++i) {
       auto col = map.NthInputCopiedColumn(i);
       auto view = QueryView::Containing(col);
       os << "v" << map.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
