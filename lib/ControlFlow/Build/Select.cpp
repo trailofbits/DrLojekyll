@@ -38,8 +38,8 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
     for (auto col : select.Columns()) {
       const QueryColumn in_col = insert.InputColumns()[*(col.Index())];
       insert_cols.push_back(in_col);
-      parent->col_id_to_var.emplace(
-          in_col.Id(), parent->VariableFor(impl, col));
+      parent->col_id_to_var[in_col.Id()] =
+          parent->VariableFor(impl, col);
     }
 
     return ReturnTrueWithUpdateIfPredecessorCallSucceeds(

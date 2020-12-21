@@ -1232,7 +1232,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     // that might give us the output of a mutable column in a key/value store.
     } else if (view_col.IsConstantRef()) {
       const auto succ_var = parent->VariableFor(impl, view_col);
-      parent->col_id_to_var.emplace(view_col.Id(), succ_var);
+      parent->col_id_to_var[view_col.Id()] = succ_var;
       available_cols.push_back(view_col);
 
     // The input column from `view` is not present in `succ_view`.
@@ -1260,7 +1260,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                succ_cols.end()) {
       available_cols.push_back(view_col);
       const auto succ_var = parent->VariableFor(impl, *succ_view_col);
-      parent->col_id_to_var.emplace(view_col.Id(), succ_var);
+      parent->col_id_to_var[view_col.Id()] = succ_var;
 
     // Realistically, this shouldn't be possible, as it suggests a possible
     // bug in the dataflow optimizers.
@@ -1268,7 +1268,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
       assert(false);
       available_cols.push_back(view_col);
       const auto succ_var = parent->VariableFor(impl, *succ_view_col);
-      parent->col_id_to_var.emplace(view_col.Id(), succ_var);
+      parent->col_id_to_var[view_col.Id()] = succ_var;
     }
   });
 
@@ -1654,10 +1654,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     } else if (QueryView::Containing(in_col) == pred_view ||
                in_col.IsConstantOrConstantRef()) {
       const auto src_var = parent->VariableFor(impl, in_col);
-      auto [it, added] = parent->col_id_to_var.emplace(out_col->Id(), src_var);
-      (void) added;
-      (void) it;
-      assert(it->second != nullptr);
+      parent->col_id_to_var[out_col->Id()] = src_var;
     }
   });
 

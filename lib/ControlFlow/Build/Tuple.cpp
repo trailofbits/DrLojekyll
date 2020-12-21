@@ -138,8 +138,8 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
       auto in_var = parent->VariableFor(impl, col);
       auto neg_out_col = negate.Columns()[col_index];
       auto neg_in_col = negate.InputColumns()[col_index];
-      parent->col_id_to_var.emplace(neg_in_col.Id(), in_var);
-      parent->col_id_to_var.emplace(neg_out_col.Id(), in_var);
+      parent->col_id_to_var[neg_in_col.Id()] = in_var;
+      parent->col_id_to_var[neg_out_col.Id()] = in_var;
       ++col_index;
       negate_cols.push_back(neg_out_col);
     }
@@ -153,8 +153,8 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
       negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                             std::optional<QueryColumn> out_col) {
           if (out_col) {
-            in_scan->col_id_to_var.emplace(
-                in_col.Id(), in_scan->VariableFor(impl, *out_col));
+            in_scan->col_id_to_var[in_col.Id()] =
+                in_scan->VariableFor(impl, *out_col);
           }
         });
 
@@ -207,8 +207,8 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
         auto in_var = par->VariableFor(impl, col);
         auto neg_out_col = negate.Columns()[col_index];
         auto neg_in_col = negate.InputColumns()[col_index];
-        par->col_id_to_var.emplace(neg_in_col.Id(), in_var);
-        par->col_id_to_var.emplace(neg_out_col.Id(), in_var);
+        par->col_id_to_var[neg_in_col.Id()] = in_var;
+        par->col_id_to_var[neg_out_col.Id()] = in_var;
         ++col_index;
         negate_cols.push_back(neg_out_col);
       }
@@ -342,10 +342,9 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
   const auto caller_did_check = already_checked == model->table;
   PARALLEL *parent = nullptr;
 
-
   view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                       std::optional<QueryColumn> out_col) {
-    proc->col_id_to_var.emplace(out_col->Id(), proc->VariableFor(impl, in_col));
+    proc->col_id_to_var[out_col->Id()] = proc->VariableFor(impl, in_col);
   });
 
   if (model->table) {

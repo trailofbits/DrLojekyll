@@ -312,7 +312,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     const auto var =
         loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
     var->query_column = col;
-    loop->col_id_to_var.emplace(col.Id(), var);
+    loop->col_id_to_var[col.Id()] = var;
   }
 
   for (auto pred_col : view.Columns()) {

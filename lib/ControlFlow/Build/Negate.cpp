@@ -172,8 +172,8 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
                               std::optional<QueryColumn> out_col) {
           if (out_col) {
             assert(in_col.Type() == out_col->Type());
-            in_scan->col_id_to_var.emplace(
-                in_col.Id(), in_scan->VariableFor(impl, *out_col));
+            in_scan->col_id_to_var[in_col.Id()] =
+                in_scan->VariableFor(impl, *out_col);
           }
         });
 
