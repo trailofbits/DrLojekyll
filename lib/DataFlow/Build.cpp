@@ -21,7 +21,11 @@
 
 #include "Query.h"
 
+#define DEBUG(...)
+
 namespace hyde {
+
+DEBUG(extern OutputStream *gOut;)
 
 namespace {
 
@@ -41,6 +45,7 @@ struct ClauseContext {
 
     // NOTE(pag): We don't reset `spelling_to_col`.
     col_id_to_constant.clear();
+    const_to_vc.clear();
     vars.clear();
 
     // NOTE(pag): The `hash_join_cache` is preserved.
@@ -53,7 +58,11 @@ struct ClauseContext {
     negated_predicates.clear();
 
     color = 0;
+    sealed = false;
   }
+
+  // Should we stop allowing for the adding of variables?
+  bool sealed{false};
 
   // Maps vars to cols. We don't map a `ParsedVariable` because then we'd end up
   // with them all being merged.
@@ -64,7 +73,13 @@ struct ClauseContext {
   std::unordered_map<ParsedVariable, VarColumn *> var_to_col;
 
   // Spelling of a literal to its associated column.
+  //
+  // NOTE(pag): This persists beyond the liftime of a clause.
   std::unordered_map<std::string, COL *> spelling_to_col;
+
+  // Mapping of constants to its var column. E.g. if we have `A=1, B=1`, then
+  // we treat it like `A=B, A=1`.
+  std::unordered_map<COL *, VarColumn *> const_to_vc;
 
   // Mapping of IDs to constant columns.
   std::vector<COL *> col_id_to_constant;
@@ -100,7 +115,7 @@ struct ClauseContext {
 };
 
 static VarColumn *VarSet(ClauseContext &context, ParsedVariable var) {
-  if (auto vc = context.vars[var.Order()].get(); vc) {
+  if (auto vc = context.var_id_to_col[var.UniqueId()]; vc) {
     return vc->FindAs<VarColumn>();
   }
 
@@ -125,13 +140,16 @@ static unsigned VarId(ClauseContext &context, ParsedVariable var) {
 }
 
 // Create a disjoint set for `var`, and merge it with any same-named variables
-// in the currentl clause.
+// in the current clause.
 static void CreateVarId(ClauseContext &context, ParsedVariable var) {
+  assert(!context.sealed);
   const auto order = var.Order();
   if (auto min_size = order + 1u; min_size > context.vars.size()) {
     context.vars.resize(min_size);
   }
   const auto vc_ptr = new VarColumn(var);
+  DEBUG( (*gOut) << "Creating variable " << var
+                 << " with ID " << vc_ptr->id << '\n'; )
   std::unique_ptr<VarColumn> vc(vc_ptr);
   context.vars[order].swap(vc);
   assert(!vc);
@@ -142,6 +160,8 @@ static void CreateVarId(ClauseContext &context, ParsedVariable var) {
   if (!prev_vc) {
     prev_vc = vc_ptr;
   } else {
+    DEBUG( (*gOut) << "Merging " << prev_vc->var << "(" << prev_vc->id
+                   << ") with " << var << " (" << vc_ptr->id << ")\n"; )
     DisjointSet::UnionInto(vc_ptr, prev_vc);
   }
 }
@@ -277,10 +297,15 @@ static VIEW *GuardWithInequality(QueryImpl *query, ParsedClause clause,
     COL *rhs_col = nullptr;
 
     for (auto col : view->columns) {
-      if (col->id == lhs_id || col->var == lhs_var) {
+      if (col->id == lhs_id) {
         lhs_col = col;
-      } else if (col->id == rhs_id || col->var == rhs_var) {
+
+      } else if (col->id == rhs_id) {
         rhs_col = col;
+
+      } else {
+        assert(col->var != lhs_var);
+        assert(col->var != rhs_var);
       }
     }
 
@@ -322,6 +347,35 @@ static VIEW *GuardWithInequality(QueryImpl *query, ParsedClause clause,
   return view;
 }
 
+// Find `var` in the output columns of `view`, or as a constant.
+static COL *FindColVarInView(ClauseContext &context, VIEW *view,
+                             ParsedVariable var) {
+  const auto id = VarId(context, var);
+
+  // Try to find the column in `view`.
+  for (auto in_col : view->columns) {
+    if (in_col->id == id) {
+      return in_col;
+    }
+  }
+
+#ifndef NDEBUG
+  for (auto in_col : view->columns) {
+    if (in_col->var == var) {
+      DEBUG( (*gOut) << "Found " << in_col->var << " ("
+                     << in_col->var.UniqueId() << " vs. " << var.UniqueId()
+                     << ") equal but with ids " << in_col->id << " and "
+                     << id << '\n'; )
+      DEBUG( gOut->Flush(); )
+    }
+    assert(in_col->var != var);
+  }
+#endif
+
+  // Try to find the column as a constant.
+  return context.col_id_to_constant[id];
+}
+
 // If we have something like `foo(A, A)` or `foo(A, B), A=B`, then we want to
 // put a filter above this view that actually implements this requirement.
 //
@@ -347,16 +401,24 @@ static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
   // Now, compare the remaining columns against constants.
   for (auto assign : clause.Assignments()) {
     const auto lhs_var = assign.LHS();
-    auto lhs_id = VarId(context, lhs_var);
 
-    for (auto col : view->columns) {
-      if (col->id != lhs_id) {
+    if (auto col = FindColVarInView(context, view, lhs_var); col) {
+      auto const_id = VarId(context, lhs_var);
+      auto const_col = context.col_id_to_constant[const_id];
+
+      // Don't both comparing the constant against itself.
+      if (col == const_col) {
         continue;
       }
 
-      auto const_id = context.var_id_to_col[lhs_var.UniqueId()]->id;
-      auto const_col = context.col_id_to_constant[const_id];
       assert(const_col != nullptr);
+      if (const_id != col->id) {
+        DEBUG( (*gOut) << "Constant ID " << const_id << " for "
+                       << const_col->var << " doesn't match " << col->id
+                       << " for " << col->var << '\n'; )
+      }
+      assert(const_id == col->id);
+      assert(const_col->id == col->id);
 
       CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
       cmp->color = context.color;
@@ -368,14 +430,13 @@ static VIEW *GuardViewWithFilter(QueryImpl *query, ParsedClause clause,
 
       for (auto other_col : view->columns) {
         if (other_col != col) {
+          assert(other_col->id != col->id);
           cmp->attached_columns.AddUse(other_col);
           cmp->columns.Create(other_col->var, cmp, other_col->id, col_index++);
         }
       }
 
       view = cmp;
-
-      break;
     }
   }
 
@@ -393,34 +454,18 @@ static VIEW *AllConstantsView(QueryImpl *query, ParsedClause clause,
   TUPLE *tuple = query->tuples.Create();
   tuple->color = context.color;
   auto col_index = 0u;
-  for (const auto &[spelling, col] : context.spelling_to_col) {
+  for (const auto &[col, vc] : context.const_to_vc) {
+    (void) vc;
     (void) tuple->columns.Create(col->var, tuple, col->id, col_index);
     tuple->input_columns.AddUse(col);
   }
 
-  return tuple;
-}
-
-// Find `var` in the output columns of `view`, or as a constant.
-static COL *FindColVarInView(ClauseContext &context, VIEW *view,
-                             ParsedVariable var) {
-  const auto id = VarId(context, var);
-
-  // Try to find the column in `view`.
-  for (auto in_col : view->columns) {
-    if (in_col->id == id) {
-      return in_col;
-    }
-  }
-
 #ifndef NDEBUG
-  for (auto in_col : view->columns) {
-    assert(in_col->var != var);
-  }
+  tuple->producer = "ALL-CONSTS";
 #endif
 
-  // Try to find the column as a constant.
-  return context.col_id_to_constant[id];
+  auto view = GuardViewWithFilter(query, clause, context, tuple);
+  return  PromoteOnlyUniqueColumns(query, view);
 }
 
 // Propose `view` as being a source of data for the clause head.
@@ -437,6 +482,10 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
   TUPLE *tuple = query->tuples.Create();
   tuple->color = context.color;
+
+#ifndef NDEBUG
+  tuple->producer = "CLAUSE-HEAD";
+#endif
 
   auto col_index = 0u;
 
@@ -543,8 +592,8 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
     // Go through and see if we can satisfy the binding requirements.
     for (auto param : redecl.Parameters()) {
       const auto var = pred.NthArgument(param.Index());
-      const auto bound_col = FindColVarInView(context, view, var);
-      if (param.Binding() == ParameterBinding::kBound && !bound_col) {
+      if (param.Binding() == ParameterBinding::kBound &&
+          !FindColVarInView(context, view, var)) {
         goto try_next_redecl;
       }
     }
@@ -562,15 +611,16 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 
     for (auto param : redecl.Parameters()) {
       const auto var = pred.NthArgument(param.Index());
-      const auto bound_col = FindColVarInView(context, view, var);
-      const auto id = VarId(context, var);
 
       if (param.Binding() == ParameterBinding::kBound) {
+        const auto bound_col = FindColVarInView(context, view, var);
         assert(bound_col);
+        assert(VarId(context, var) == bound_col->id);
         map->input_columns.AddUse(bound_col);
-        map->columns.Create(var, map, id, col_index);
+        map->columns.Create(var, map, bound_col->id, col_index);
 
       } else {
+        const auto id = VarId(context, var);
         map->columns.Create(var, map, id, col_index);
       }
 
@@ -592,6 +642,8 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
           map->columns.Create(bound_col->var, map, id, col_index);
           ++col_index;
           ++needs_compares;
+          DEBUG( (*gOut) << "Found bound var (" << bound_col->var
+                         << " vs. " << var << ") for param " << param << "\n"; )
         }
       }
     }
@@ -637,10 +689,9 @@ static VIEW *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
       merge->color = context.color;
 
       // Create output columns for the merge.
+      auto merge_col_index = 0u;
       for (auto col : result->columns) {
-        auto vc = context.vars[col->id].get();
-        assert(vc != nullptr);
-        (void) merge->columns.Create(vc->var, merge, vc->id, col->index);
+        merge->columns.Create(col->var, merge, col->id, merge_col_index++);
       }
 
       merge->merged_views.AddUse(out_view);
@@ -719,8 +770,7 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
         continue;
       }
       (void) var;
-      (void) tuple->columns.Create(
-          in_col->var, tuple, VarId(context, in_col->var), col_index++);
+      tuple->columns.Create(in_col->var, tuple, in_col->id, col_index++);
       tuple->input_columns.AddUse(in_col);
     }
 
@@ -748,7 +798,7 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
     if (std::find(needed_cols.begin(), needed_cols.end(), in_col) ==
         needed_cols.end()) {
       negate->attached_columns.AddUse(in_col);
-      (void) negate->columns.Create(in_col->var, negate, in_col->id, col_index++);
+      negate->columns.Create(in_col->var, negate, in_col->id, col_index++);
     }
   }
 
@@ -1162,6 +1212,7 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
 // many ways in which they can be joined.
 static bool BuildClause(QueryImpl *query, ParsedClause clause,
                         ClauseContext &context, const ErrorLog &log) {
+  DEBUG( (*gOut) << "Building clause: " << clause << '\n'; )
 
   auto &pred_views = context.views;
 
@@ -1174,25 +1225,52 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   // NOTE(pag): This applies to body variables, not parameters.
+  for (auto var : clause.Parameters()) {
+    CreateVarId(context, var);
+  }
   for (auto var : clause.Variables()) {
     CreateVarId(context, var);
   }
 
-  for (auto pred : clause.PositivePredicates()) {
-    const auto decl = ParsedDeclaration::Of(pred);
-    if (pred.Arity() && !decl.IsFunctor()) {
-      if (auto view = BuildPredicate(query, context, pred, log); view) {
-        pred_views.push_back(view);
-
-      } else {
-        return false;
-      }
-    }
-  }
+  context.sealed = true;
 
   context.col_id_to_constant.resize(context.vars.size(), nullptr);
 
   const auto clause_range = clause.SpellingRange();
+
+  // Go through the comparisons and merge disjoint sets when we have equality
+  // comparisons, e.g. `A=B`.
+  for (auto cmp : clause.Comparisons()) {
+    const auto lhs_var = cmp.LHS();
+    const auto rhs_var = cmp.RHS();
+    const auto lhs_vc = VarSet(context, lhs_var);
+    const auto rhs_vc = VarSet(context, rhs_var);
+
+    if (!lhs_vc) {
+      log.Append(clause_range, lhs_var.SpellingRange())
+          << "Internal error: Could not find column for variable '" << lhs_var
+          << "'";
+      continue;
+    }
+
+    if (!rhs_vc) {
+      log.Append(clause_range, rhs_var.SpellingRange())
+          << "Internal error: Could not find column for variable '" << rhs_var
+          << "'";
+      continue;
+    }
+
+    if (cmp.Operator() == ComparisonOperator::kEqual) {
+      DisjointSet::Union(lhs_vc, rhs_vc);
+      DEBUG( (*gOut) << "Merging " << lhs_vc->var << "(" << lhs_vc->id
+                     << ") with " << rhs_vc->var << " (" << rhs_vc->id
+                     << ") by compare\n"; )
+
+    // At the end, this should be empty.
+    } else {
+      context.unapplied_compares.insert(cmp);
+    }
+  }
 
   for (auto assign : clause.Assignments()) {
     const auto var = assign.LHS();
@@ -1211,7 +1289,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
     const auto key = ss.str();
 
-    auto vc = context.var_id_to_col[var.UniqueId()];
+    auto vc = VarSet(context, var);
     if (!vc) {
       log.Append(clause_range, var.SpellingRange())
           << "Internal error: Could not find column for variable '" << var
@@ -1220,55 +1298,47 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
 
     auto &const_col = context.spelling_to_col[key];
-    auto col_id = vc->FindAs<VarColumn>()->id;
+    auto col_id = vc->id;
 
     if (!const_col) {
       CONST *stream = query->constants.Create(literal);
       SELECT *select = query->selects.Create(stream, literal.SpellingRange());
       select->color = context.color;
       const_col = select->columns.Create(var, select, col_id);
+      context.const_to_vc.emplace(const_col, vc);
 
     // Reset these, just in case they were initialized by another clause.
     } else {
+      auto &prev_const_vc = context.const_to_vc[const_col];
+      if (!prev_const_vc) {
+        prev_const_vc = vc;
+      } else {
+        vc = DisjointSet::Union(vc, prev_const_vc)->FindAs<VarColumn>();
+        prev_const_vc = vc;
+        col_id = vc->id;
+      }
+
       const_col->var = var;
       const_col->id = col_id;
     }
 
+    DEBUG( (*gOut) << "Constant " << var << " = " << literal.Literal()
+                   << " with key " << key << " has ID " << col_id
+                   << " and " << vc->id << "(" << vc->var << ")\n"; )
+
     context.col_id_to_constant[vc->id] = const_col;
-    if (col_id != vc->id) {
-      context.col_id_to_constant[col_id] = const_col;
+
+    // Fixup all constant column IDs so that they match with their set.
+    for (auto &[var_id, found_vc] : context.var_id_to_col) {
+      if (found_vc->FindAs<VarColumn>() == vc) {
+        context.col_id_to_constant[found_vc->id] = const_col;
+      }
     }
   }
 
-  // Go through the comparisons and merge disjoint sets when we have equality
-  // comparisons, e.g. `A=B`.
-  for (auto cmp : clause.Comparisons()) {
-    const auto lhs_var = cmp.LHS();
-    const auto rhs_var = cmp.RHS();
-    const auto lhs_vc = context.var_id_to_col[lhs_var.UniqueId()];
-    const auto rhs_vc = context.var_id_to_col[rhs_var.UniqueId()];
-
-    if (!lhs_vc) {
-      log.Append(clause_range, lhs_var.SpellingRange())
-          << "Internal error: Could not find column for variable '" << lhs_var
-          << "'";
-      continue;
-    }
-
-    if (!rhs_vc) {
-      log.Append(clause_range, rhs_var.SpellingRange())
-          << "Internal error: Could not find column for variable '" << rhs_var
-          << "'";
-      continue;
-    }
-
-    if (cmp.Operator() == ComparisonOperator::kEqual) {
-      DisjointSet::Union(lhs_vc, rhs_vc);
-
-    // At the end, this should be empty.
-    } else {
-      context.unapplied_compares.insert(cmp);
-    }
+  // Fixup all `vc` IDs so that within a set they all match.
+  for (auto &vc : context.vars) {
+    vc->id = vc->FindAs<VarColumn>()->id;
   }
 
   // Go back through the comparisons and look for clause-local unsatisfiable
@@ -1286,15 +1356,16 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   }
 
-  // Go back through the assignments and propagate constants.
-  for (auto assign : clause.Assignments()) {
-    const auto vc = context.var_id_to_col[assign.LHS().UniqueId()];
-    const auto final_vc = vc->FindAs<VarColumn>();
-    const auto const_col = context.col_id_to_constant[vc->id];
-    const_col->id = final_vc->id;
-    for (auto &[var_id, found_vc] : context.var_id_to_col) {
-      if (found_vc->FindAs<VarColumn>() == final_vc) {
-        context.col_id_to_constant[found_vc->id] = const_col;
+  // Build one view per predicate/relation. This represents a SELECT from each
+  // underlying relation, and these will get joined together.
+  for (auto pred : clause.PositivePredicates()) {
+    const auto decl = ParsedDeclaration::Of(pred);
+    if (pred.Arity() && !decl.IsFunctor()) {
+      if (auto view = BuildPredicate(query, context, pred, log); view) {
+        pred_views.push_back(view);
+
+      } else {
+        return false;
       }
     }
   }
@@ -1327,17 +1398,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // constants. It's possible that we have functors or comparisons that need
   // to operate on these constants, so this is why be bring them in here.
   if (pred_views.empty()) {
-    TUPLE *tuple = query->tuples.Create();
-    tuple->color = context.color;
-    auto col_index = 0u;
-    for (auto const_col : context.col_id_to_constant) {
-      if (const_col) {
-        tuple->input_columns.AddUse(const_col);
-        (void) tuple->columns.Create(const_col->var, tuple, const_col->id,
-                                     col_index++);
-      }
-    }
-    pred_views.push_back(tuple);
+    pred_views.push_back(AllConstantsView(query, clause, context));
   }
 
   // Make sure every view only exposes unique columns being contributed. E.g.
@@ -1372,18 +1433,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // might have something like `pred(1, 2).` and that's it, or
   // `pred(1) : foo(2).`
   if (pred_views.empty()) {
-    if (auto const_view = AllConstantsView(query, clause, context);
-        const_view) {
-
-      auto view = GuardViewWithFilter(query, clause, context, const_view);
-      view = PromoteOnlyUniqueColumns(query, view);
-      pred_views.push_back(view);
-
-    } else {
-      log.Append(clause_range)
-          << "Internal error: Failed to create any data flow nodes for clause";
-      return false;
-    }
+    log.Append(clause_range)
+        << "Internal error: Failed to create any data flow nodes for clause";
+    return false;
   }
 
   // Process the work list until we find some order of things that works.
@@ -1545,19 +1597,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     auto col_index = 0u;
     DELETE *const del = query->deletes.Create();
     del->color = context.color;
-    if (clause.Arity()) {
-      for (auto var : clause.Parameters()) {
-        del->input_columns.AddUse(clause_head->columns[col_index]);
-        (void) del->columns.Create(var, del, VarId(context, var), col_index);
-        ++col_index;
-      }
-    } else {
-      for (auto col : clause_head->columns) {
-        del->input_columns.AddUse(col);
-        (void) del->columns.Create(col->var, del, VarId(context, col->var),
-                                   col_index);
-        ++col_index;
-      }
+
+    for (auto col : clause_head->columns) {
+      del->input_columns.AddUse(col);
+      (void) del->columns.Create(col->var, del, col->id, col_index++);
     }
 
     assert(0u < col_index);
