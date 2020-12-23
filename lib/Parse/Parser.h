@@ -32,17 +32,14 @@ class SharedParserContext {
       : display_manager(display_manager_),
         error_log(error_log_) {
 
-    // FIXME(blarsen): grabbing the current path in parser construction is a hidden dependency
+    // TODO(blarsen): Grabbing the current path in parser construction
+    //                is a hidden dependency.
     std::filesystem::path cwd = std::filesystem::current_path();
     import_search_paths.push_back(cwd);
-    include_search_paths[1].push_back(cwd);
   }
 
   // Search paths for looking for imports.
   std::vector<std::filesystem::path> import_search_paths;
-
-  // Search paths for looking for includes.
-  std::vector<std::filesystem::path> include_search_paths[2];
 
   // All parsed modules.
   Node<ParsedModule> *root_module{nullptr};
@@ -60,6 +57,12 @@ class SharedParserContext {
 
   // Keeps track of the global locals. All parsed modules shared this.
   std::unordered_map<uint64_t, Node<ParsedDeclaration> *> declarations;
+
+  // Maps identifier IDs to foreign types.
+  std::unordered_map<uint32_t, Node<ParsedForeignType> *> foreign_types;
+
+  // Maps identifier IDs to foreign constants.
+  std::unordered_map<uint32_t, Node<ParsedForeignConstant> *> foreign_constants;
 };
 
 class ParserImpl {
@@ -153,11 +156,16 @@ class ParserImpl {
   void ParseLocalExport(Node<ParsedModule> *module,
                         std::vector<std::unique_ptr<Node<NodeType>>> &out_vec);
 
+  // Try to parse `sub_range` as a foreign type declaration, adding it to
+  // module if successful.
+  void ParseForeignTypeDecl(Node<ParsedModule> *module);
+
+  // Try to parse `sub_range` as a foreign constant declaration, adding it to
+  // module if successful.
+  void ParseForeignConstantDecl(Node<ParsedModule> *module);
+
   // Try to parse `sub_range` as an import.
   void ParseImport(Node<ParsedModule> *module);
-
-  // Try to parse `sub_range` as an include of C/C++ code.
-  void ParseInclude(Node<ParsedModule> *module);
 
   // Try to resolve the given path to a file on the filesystem, searching the
   // provided directories in order.
@@ -169,7 +177,7 @@ class ParserImpl {
 
   // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
   // module.
-  void ParseInline(Node<ParsedModule> *module);
+  void ParseInlineCode(Node<ParsedModule> *module);
 
   // Try to match a clause with a declaration.
   bool TryMatchClauseWithDecl(Node<ParsedModule> *module,
@@ -312,14 +320,17 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
       decl->range = FunctorRange::kOneToOne;
     }
 
-    // The range specifications don't match.
-    if (prev_decl->range != decl->range) {
+    // The inferred range specifications don't match.
+    if (prev_decl->range != decl->range &&
+        (ParsedDeclaration(prev_decl).BindingPattern() ==
+         ParsedDeclaration(decl.get()).BindingPattern())) {
       DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
                                    prev_decl->range_end_opt.NextPosition());
 
       DisplayRange curr_range_spec(decl->range_begin_opt.Position(),
                                    decl->range_end_opt.NextPosition());
 
+      // Examine the concrete syntax to produce a meaningful error message.
       if (prev_decl->range_begin_opt.IsValid() &&
           decl->range_begin_opt.IsValid()) {
         auto err = context->error_log.Append(scope_range, curr_range_spec);
@@ -345,9 +356,13 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
         note << "Previous declaration uses the implicit zero-or-more range "
              << "specification";
 
-      // Neither is valid.
+      // Neither functor has explicit `range` syntax, and they disagree.
       } else {
-        assert(false);
+        auto err = context->error_log.Append(scope_range);
+        err << "Inferred functor range differs from prior inferred range";
+
+        auto note = err.Note(T(prev_decl).SpellingRange());
+        note << "Previous declaration is here";
       }
 
       RemoveDecl(std::move(decl));
@@ -359,8 +374,10 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
     for (size_t i = 0; i < num_params; ++i) {
       const auto prev_param = prev_decl->parameters[i].get();
       const auto curr_param = decl->parameters[i].get();
-      if (prev_param->opt_binding.Lexeme() !=
-          curr_param->opt_binding.Lexeme()) {
+      if ((prev_param->opt_binding.Lexeme() !=
+           curr_param->opt_binding.Lexeme()) &&
+          prev_decl->context->kind != DeclarationKind::kFunctor &&
+          prev_decl->context->kind != DeclarationKind::kQuery) {
         auto err = context->error_log.Append(
             scope_range, curr_param->opt_binding.SpellingRange());
         err << "Parameter binding attribute differs";

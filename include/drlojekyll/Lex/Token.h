@@ -3,6 +3,10 @@
 #pragma once
 
 #include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Util/OpaqueData.h>
+
+#include <functional>
+#include <utility>
 
 namespace hyde {
 
@@ -14,13 +18,19 @@ enum class Lexeme : uint8_t {
   kInvalid,
   kInvalidDirective,  // Invalid declaration (starts with a `hash`).
   kInvalidNumber,
+  kInvalidOctalNumber,
+  kInvalidHexadecimalNumber,
+  kInvalidBinaryNumber,
   kInvalidNewLineInString,
   kInvalidEscapeInString,
   kInvalidUnterminatedString,
   kInvalidUnterminatedCode,
+  kInvalidUnterminatedCxxCode,
+  kInvalidUnterminatedPythonCode,
   kInvalidStreamOrDisplay,
   kInvalidTypeName,
   kInvalidUnknown,
+  kInvalidPragma,
 
   // End of file token; this prevents rules from spanning across files.
   kEndOfFile,
@@ -83,12 +93,6 @@ enum class Lexeme : uint8_t {
   // `entrypoint_function` rule.
   kHashMessageDecl,
 
-  // Used to import another module.
-  //
-  //    #import "path"
-  //
-  kHashImportModuleStmt,
-
   // Declares a user-defined functor. These are functions that are defined
   // by native code modules. They must have globally unique names. When called
   // with all bound arguments, they must be pure, so that two uses can be
@@ -105,24 +109,58 @@ enum class Lexeme : uint8_t {
   // store of state.
   kHashFunctorDecl,
 
-  // Used to include a C/C++ header our source file. This is translated down
-  // into an equivalent include statement in generated C++ code.
+  // Used to declare a "foreign" type. Foreign types can be "forward declared"
+  // with no codegen, e.g.
   //
-  //    #include "path"
-  kHashIncludeStmt,
+  //    #foreign std_string
+  //
+  // And/or be re-declared with concrete implementation types in code, with the
+  // syntax:
+  //
+  //    #foreign <type name> <type name code>
+  //
+  // For example:
+  //
+  //    #foreign std_string ```python str```
+  //    #foreign std_string ```c++ std::string```
+  //
+  // Once declared, foreign types are globally visible. There can be at most
+  // one concrete implementation declaration per language for each foreign
+  // type. If no language specifier is given for the concrete implementation,
+  // then it applies to target languages uniformly.
+  kHashForeignTypeDecl,
 
-  // Used to insert some C/C++ code "inline" into the Datalog code. This is
-  // an alternative to `#include`, and may itself contain `#include`s. The
+  // Used to declare a foreign constant of a particular foreign type.
+  //
+  //    #constant <foreign type> ```<lang> value```
+  //
+  // Foreign constants can be used to translate things like `sizeof` expressions
+  // from C++, enumeration constants, global variables, etc. Realistically, one
+  // could expand a foreign constant to a function call that (should) always
+  // return the same value.
+  kHashForeignConstantDecl,
+
+  // Used to import another module.
+  //
+  //    #import "path"
+  //
+  kHashImportModuleStmt,
+
+  // Used to insert some C/C++/Python code inline into the Datalog code. The
   // usage looks like:
   //
-  //    #inline <!
+  //    #prologue ```<lang>
   //    ... code here ...
-  //    !>
+  //    ```
   //
-  // Inline code is placed into the generated C/C++ code *after* all `#include`
-  // statements, regardless of whether or not the `#include`s came before or
-  // after the `#inline` statements.
-  kHashInlineStmt,
+  //    #epilogue ```<lang>
+  //    ... code here ...
+  //    ```
+  //
+  // Inline code can either be in the "prologue" (before) or "epilogue" (after)
+  // any of the generated code.
+  kHashInlinePrologueStmt,
+  kHashInlineEpilogueStmt,
 
   // Unsigned/signed integral types. `n` must be one of 8, 16, 32, or 64.
   // For example, `i32` is a signed 32-bit integer, whereas `u32` is
@@ -245,16 +283,27 @@ enum class Lexeme : uint8_t {
   //
   // <! ... stuff here ... !>
   kLiteralCode,
+  kLiteralCxxCode,
+  kLiteralPythonCode,
 
   // Identifiers, e.g. for atoms, functors, messages, etc.
   kIdentifierAtom,
   kIdentifierUnnamedAtom,
   kIdentifierVariable,
-  kIdentifierUnnamedVariable  // `_`.
+  kIdentifierUnnamedVariable,  // `_`.
+  kIdentifierType,  // Foreign type names.
+  kIdentifierConstant,  // Foreign constant name.
+
+  // `@highlight` is a debugging pragma, used to mark data flow nodes associated
+  // with a particular clause body as "highlighted" so they are easier to
+  // spot in the data flow IR visualizations.
+  kPragmaDebugHighlight
 };
 
+enum class TypeKind : uint32_t;
+
 // Represents a single token of input.
-class Token {
+class Token final : public OpaqueData {
  public:
   bool IsValid(void) const;
 
@@ -271,7 +320,8 @@ class Token {
   // invalid token.
   DisplayPosition ErrorPosition(void) const;
 
-  // Return the range of characters covered by this token.
+  // Return the range of characters covered by this token. This is an open range
+  // of the form `[begin, end)`.
   DisplayRange SpellingRange(void) const;
 
   // Return the position of the first character immediately following
@@ -309,6 +359,9 @@ class Token {
     return position.Column();
   }
 
+  // Returns a hash of this token.
+  uint64_t Hash(void) const noexcept;
+
   // Return the ID of the corresponding code, or `0` if not a string.
   unsigned CodeId(void) const;
 
@@ -324,8 +377,9 @@ class Token {
   // Return the length of the corresponding identifier, or `0` if not a string.
   unsigned IdentifierLength(void) const;
 
-  // Return the size, in bytes, of the corresponding type.
-  unsigned TypeSizeInBytes(void) const;
+  // Return the kind of this type. This works for foreign types, as well as
+  // for foreign constants.
+  ::hyde::TypeKind TypeKind(void) const;
 
   // Returns the invalid char, or `\0` if not present.
   char InvalidChar(void) const;
@@ -333,9 +387,23 @@ class Token {
   // Return a fake token at `range`.
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
+  inline bool operator==(const Token that) const noexcept {
+    return this->OpaqueData::operator==(that) && position == that.position;
+  }
+
+  inline bool operator!=(const Token that) const noexcept {
+    return this->OpaqueData::operator!=(that) || position != that.position;
+  }
+
  private:
   friend class Lexer;
   friend class ParserImpl;
+
+  // Returns this token, converted to be a foreign type.
+  Token AsForeignType(void) const;
+
+  // Returns this token, converted to be a foreign constant of a specific type.
+  Token AsForeignConstant(::hyde::TypeKind kind) const;
 
   // Return an EOF token at `position`.
   static Token FakeEndOfFile(DisplayPosition position);
@@ -355,7 +423,18 @@ class Token {
   static Token FakeType(DisplayPosition position, unsigned spelling_width);
 
   DisplayPosition position;
-  uint64_t opaque_data{0};
 };
 
 }  // namespace hyde
+namespace std {
+
+template <>
+struct hash<::hyde::Token> {
+  using argument_type = ::hyde::Token;
+  using result_type = uint64_t;
+  inline uint64_t operator()(::hyde::Token tok) const noexcept {
+    return tok.Hash();
+  }
+};
+
+}  // namespace std

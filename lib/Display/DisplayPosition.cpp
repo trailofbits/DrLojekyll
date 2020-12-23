@@ -3,11 +3,42 @@
 #include "DisplayPosition.h"
 
 namespace hyde {
+namespace display {
+
+void Position::Emplace(uint64_t display_id, uint64_t index, uint64_t line,
+                       uint64_t col, PositionStatus status_) {
+  Store<display::DisplayId>(display_id);
+  Store<display::Index>(index);
+  Store<display::Line>(line);
+  Store<display::Column>(col);
+
+  unsigned status = status_;
+  if (Load<display::DisplayId>() != display_id) {
+    Store<display::DisplayId>(0u);
+    status |= display::kPositionStatusDisplayIdOverflow;
+  }
+  if (Load<display::Index>() != index) {
+    Store<display::Index>(DisplayPosition::kInvalidIndex);
+    status |= display::kPositionStatusIndexOverflow;
+  }
+  if (Load<display::Line>() != line) {
+    Store<display::Line>(0u);
+    status |= display::kPositionStatusLineNumberOverflow;
+  }
+  if (Load<display::Column>() != col) {
+    Store<display::Column>(0u);
+    status |= display::kPositionStatusColumnNumberOverflow;
+  }
+
+  Store<display::PositionStatus>(static_cast<PositionStatus>(status));
+}
+
+}  // namespace display
 
 // Returns `true` if the display position is valid.
 bool DisplayPosition::IsValid(void) const {
-  display::PositionInterpreter interpreter = {opaque_data};
-  if (interpreter.position.status) {
+  if (As<display::Position>().Load<display::PositionStatus>() !=
+      display::PositionStatus::kPositionStatusOK) {
     return false;
   } else {
     return HasData();
@@ -16,163 +47,144 @@ bool DisplayPosition::IsValid(void) const {
 
 // Returns `true` if the display position has data.
 bool DisplayPosition::HasData(void) const {
-  display::PositionInterpreter interpreter = {opaque_data};
-  return 0 < interpreter.position.column && 0 < interpreter.position.line &&
-         0 < interpreter.position.display_id;
+  const auto pos = As<display::Position>();
+  return 0 < pos.Load<display::Column>() && 0 < pos.Load<display::Line>() &&
+         0 < pos.Load<display::DisplayId>();
 }
 
 // Return the display ID, or `~0U` (32 0s, followed by 32 1s) if invalid.
 uint64_t DisplayPosition::DisplayId(void) const {
-  display::PositionInterpreter interpreter = {opaque_data};
-  const auto status = interpreter.position.status;
+  const auto pos = As<display::Position>();
+  const auto status = pos.Load<display::PositionStatus>();
   if (display::kPositionStatusDisplayIdOverflow & status) {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidDisplayId;
   } else if (HasData()) {
-    return static_cast<unsigned>(interpreter.position.display_id);
+    return pos.Load<display::DisplayId>();
   } else {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidDisplayId;
   }
 }
 
 // Index of the character at this position, or `~0U` (32 0s, followed by
 // 32 1s) if invalid.
 uint64_t DisplayPosition::Index(void) const {
-  display::PositionInterpreter interpreter = {opaque_data};
-  const auto status = interpreter.position.status;
+  const auto pos = As<display::Position>();
+  const auto status = pos.Load<display::PositionStatus>();
   if (display::kPositionStatusIndexOverflow & status) {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidIndex;
   } else if (HasData()) {
-    return static_cast<unsigned>(interpreter.position.index);
+    return pos.Load<display::Index>();
   } else {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidIndex;
   }
 }
 
 // Return the line number (starting at `1`) from the display referenced
 // by this position, or `~0U` (32 0s, followed by 32 1s) if invalid.
 uint64_t DisplayPosition::Line(void) const {
-  display::PositionInterpreter interpreter = {opaque_data};
-  const auto status = interpreter.position.status;
+  const auto pos = As<display::Position>();
+  const auto status = pos.Load<display::PositionStatus>();
   if (display::kPositionStatusLineNumberOverflow & status) {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidLine;
   } else if (HasData()) {
-    return static_cast<unsigned>(interpreter.position.line);
+    return pos.Load<display::Line>();
   } else {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidLine;
   }
 }
 
 // Return the column number (starting at `1`) from the display referenced
 // by this position, or `~0U` (32 0s, followed by 32 1s) if invalid.
 uint64_t DisplayPosition::Column(void) const {
-  display::PositionInterpreter interpreter = {opaque_data};
-  const auto status = interpreter.position.status;
+  const auto pos = As<display::Position>();
+  const auto status = pos.Load<display::PositionStatus>();
   if (display::kPositionStatusColumnNumberOverflow & status) {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidColumn;
   } else if (HasData()) {
-    return static_cast<unsigned>(interpreter.position.column);
+    return pos.Load<display::Column>();
   } else {
-    return static_cast<uint32_t>(~0u);
+    return DisplayPosition::kInvalidColumn;
   }
 }
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wconversion"
-#endif
 
 DisplayPosition::DisplayPosition(uint64_t display_id, uint64_t index,
                                  uint64_t line, uint64_t column) {
-  display::PositionInterpreter interpreter = {};
-  interpreter.position.line = line;
-  interpreter.position.column = column;
-  interpreter.position.index = index;
-  interpreter.position.display_id = display_id;
-
-  if (line != interpreter.position.line) {
-    interpreter.position.line = 0;
-    interpreter.position.line = ~interpreter.position.line;
-    interpreter.position.status |= display::kPositionStatusLineNumberOverflow;
-  }
-
-  if (column != interpreter.position.column) {
-    interpreter.position.column = 0;
-    interpreter.position.column = ~interpreter.position.column;
-    interpreter.position.status |= display::kPositionStatusColumnNumberOverflow;
-  }
-
-  if (index != interpreter.position.index) {
-    interpreter.position.index = 0;
-    interpreter.position.index = ~interpreter.position.index;
-    interpreter.position.status |= display::kPositionStatusIndexOverflow;
-  }
-
-  if (display_id != interpreter.position.display_id) {
-    interpreter.position.display_id = 0;
-    interpreter.position.status |= display::kPositionStatusDisplayIdOverflow;
-  }
-
-  opaque_data = interpreter.flat;
+  As<display::Position>().Emplace(display_id, index, line, column);
 }
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
-
 // Tries to compute the distance between two positions.
-bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to, int *num_bytes,
-                                           int *num_lines,
-                                           int *num_cols) const {
+bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to,
+                                           int64_t *num_bytes,
+                                           int64_t *num_lines,
+                                           int64_t *num_cols) const {
 
-  display::PositionInterpreter from_interpreter = {opaque_data};
-  display::PositionInterpreter to_interpreter = {to.opaque_data};
+  const auto from_pos = As<display::Position>();
+  const auto to_pos = to.As<display::Position>();
+  const auto status = from_pos.Load<display::PositionStatus>() |
+                      to_pos.Load<display::PositionStatus>();
 
-  if (IsValid() && to.IsValid() &&
-      from_interpreter.position.display_id ==
-          to_interpreter.position.display_id) {
-
-    if (num_bytes) {
-      *num_bytes = static_cast<int>(to_interpreter.position.index) -
-                   static_cast<int>(from_interpreter.position.index);
-    }
-    if (num_lines) {
-      *num_lines = static_cast<int>(to_interpreter.position.line) -
-                   static_cast<int>(from_interpreter.position.line);
-    }
-    if (num_cols) {
-      *num_cols = static_cast<int>(to_interpreter.position.column) -
-                  static_cast<int>(from_interpreter.position.column);
-    }
-    return true;
-
-  } else if (!HasData() && to.IsValid()) {
-    if (num_bytes) {
-      *num_bytes = static_cast<int>(to_interpreter.position.index);
-    }
-
-    // NOTE(pag): Minus `1` to be relative to the first column of first line.
-    if (num_lines) {
-      *num_lines = static_cast<int>(to_interpreter.position.line) - 1;
-    }
-
-    // NOTE(pag): Minus `1` to be relative to the first column of first line.
-    if (num_cols) {
-      *num_cols = static_cast<int>(to_interpreter.position.column) - 1;
-    }
-    return true;
-
-  } else {
+  if (status & display::kPositionStatusDisplayIdOverflow) {
     return false;
   }
+
+  if (from_pos.Load<display::DisplayId>() !=
+      to_pos.Load<display::DisplayId>()) {
+    return false;
+  }
+
+  if (num_bytes) {
+    if (status & display::kPositionStatusIndexOverflow) {
+      return false;
+    }
+    const auto from_index =
+        static_cast<int64_t>(from_pos.Load<display::Index>());
+    const auto to_index = static_cast<int64_t>(to_pos.Load<display::Index>());
+    *num_bytes = (to_index - from_index);
+  }
+
+  if (num_lines) {
+    if (status & display::kPositionStatusLineNumberOverflow) {
+      return false;
+    }
+    const auto from_index =
+        static_cast<int64_t>(from_pos.Load<display::Line>());
+    const auto to_index = static_cast<int64_t>(to_pos.Load<display::Line>());
+    *num_lines = (to_index - from_index);
+  }
+
+  if (num_cols) {
+    if (status & display::kPositionStatusColumnNumberOverflow) {
+      return false;
+    }
+    const auto from_index =
+        static_cast<int64_t>(from_pos.Load<display::Column>());
+    const auto to_index = static_cast<int64_t>(to_pos.Load<display::Column>());
+    *num_cols = (to_index - from_index);
+  }
+
+  return true;
 }
 
 bool DisplayRange::IsValid(void) const {
-  display::PositionInterpreter from_interpreter = {from.opaque_data};
-  display::PositionInterpreter to_interpreter = {to.opaque_data};
-  return !from_interpreter.position.status && !to_interpreter.position.status &&
-         from_interpreter.position.display_id ==
-             to_interpreter.position.display_id &&
-         from_interpreter.position.index < to_interpreter.position.index;
+  const auto from_pos = from.As<display::Position>();
+  const auto to_pos = to.As<display::Position>();
+  const auto status = from_pos.Load<display::PositionStatus>() |
+                      to_pos.Load<display::PositionStatus>();
+
+  if (status != display::kPositionStatusOK) {
+    return false;
+  }
+
+  if (from_pos.Load<display::DisplayId>() !=
+      to_pos.Load<display::DisplayId>()) {
+    return false;
+  }
+
+  const auto from_index = static_cast<int64_t>(from_pos.Load<display::Index>());
+  const auto to_index = static_cast<int64_t>(to_pos.Load<display::Index>());
+
+  // NOTE(pag): Ranges are exclusive.
+  return from_index < to_index;
 }
 
 }  // namespace hyde

@@ -3,15 +3,17 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <cassert>
+#include <unordered_set>
 
 namespace hyde {
 
 OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   auto name = var.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
-    os << "V" << var.Id();
+    os << 'V' << var.Id();
   } else {
     os << name;
   }
@@ -24,7 +26,12 @@ OutputStream &operator<<(OutputStream &os, TypeKind type) {
 }
 
 OutputStream &operator<<(OutputStream &os, TypeLoc type) {
-  os << type.Kind();
+  auto range = type.SpellingRange();
+  if (range.IsValid()) {
+    os << range;
+  } else {
+    os << type.Kind();
+  }
   return os;
 }
 
@@ -184,89 +191,168 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   if (clause.IsDeletion()) {
     os << '!';
   }
-  os << ParsedClauseHead(clause) << " : " << ParsedClauseBody(clause) << ".";
-  return os;
-}
-
-OutputStream &operator<<(OutputStream &os, ParsedInclude include) {
-  if (include.IsSystemInclude()) {
-    os << "#include <" << include.IncludedFilePath() << ">";
-  } else {
-    os << "#include \"" << include.IncludedFilePath() << "\"";
+  os << ParsedClauseHead(clause);
+  if (clause.IsHighlighted()) {
+    os << " @highlight";
   }
+  os << " : " << ParsedClauseBody(clause) << ".";
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   const auto code = code_.CodeToInline();
-
   if (code.empty()) {
     return os;
   }
 
-  os << "#inline <!";
-  if (code.front() == '\n' && code.back() == '\n') {
-    os << code;
-  } else if (code.front() == '\n') {
-    os << code << '\n';
-  } else if (code.back() == '\n') {
-    os << '\n' << code;
+  if (code_.IsPrologue()) {
+    os << "#prologue ```";
+  } else {
+    os << "#epilogue ```";
   }
-  os << "!>";
+
+  switch (code_.Language()) {
+    case Language::kUnknown:
+      os << '\n';
+      break;
+    case Language::kCxx:
+      os << "c++\n";
+      break;
+    case Language::kPython:
+      os << "python\n";
+      break;
+  }
+
+  os << code << "\n```";
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
+
+  // Forward declaration.
+  if (!type.IsBuiltIn()) {
+    os << "#foreign " << type.Name();
+  }
+
+  // Actual definitions, if any.
+  for (auto lang : {Language::kUnknown, Language::kCxx, Language::kPython}) {
+
+    if (!type.IsBuiltIn() && type.IsSpecialized(lang)) {
+      auto maybe_code = type.CodeToInline(lang);
+      if (!maybe_code) {
+        continue;
+      }
+
+      const auto code = *maybe_code;
+      os << "\n#foreign " << type.Name() << " ```";
+
+      switch (lang) {
+        case Language::kUnknown:
+          break;
+        case Language::kCxx:
+          os << "c++ ";
+          break;
+        case Language::kPython:
+          os << "python ";
+          break;
+      }
+
+      os << code << "```";
+
+      if (auto constructor = type.Constructor(lang); constructor) {
+        os << " ```" << constructor->first << '$'
+           << constructor->second << "```";
+      }
+    }
+
+    for (auto foreign_const : type.Constants(lang)) {
+      os << '\n' << foreign_const;
+    }
+  }
+
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
+  os << "#constant " << constant.Type() << ' ' << constant.Name() << " ```";
+  switch (constant.Language()) {
+    case Language::kUnknown:
+      break;
+    case Language::kCxx:
+      os << "c++ ";
+      break;
+    case Language::kPython:
+      os << "python ";
+      break;
+  }
+
+  os << constant.Constructor() << "```";
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedModule module) {
-  if (os.KeepImports()) {
-    for (auto import : module.Imports()) {
-      os << import.SpellingRange() << "\n";
+  module = module.RootModule();
+
+  for (auto type : module.ForeignTypes()) {
+    os << type << "\n";
+  }
+
+  std::unordered_set<ParsedDeclaration> seen;
+  auto do_decl = [&](ParsedDeclaration decl) {
+    if (!seen.count(decl)) {
+      seen.insert(decl);
+      os << decl << '\n';
+    }
+  };
+
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (ParsedQuery decl : sub_module.Queries()) {
+      for (auto redecl : decl.Redeclarations()) {
+        do_decl(redecl);
+      }
+    }
+
+    for (ParsedMessage decl : sub_module.Messages()) {
+      do_decl(decl);
+    }
+
+    for (ParsedFunctor decl : sub_module.Functors()) {
+      for (auto redecl : decl.Redeclarations()) {
+        do_decl(redecl);
+      }
+    }
+
+    for (ParsedExport decl : sub_module.Exports()) {
+      if (decl.Arity()) {
+        do_decl(decl);
+      }
+    }
+
+    for (ParsedLocal decl : sub_module.Locals()) {
+      do_decl(decl);
     }
   }
 
-  for (auto include : module.Includes()) {
-    if (include.IsSystemInclude()) {
-      os << include << "\n";
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      if (code.IsPrologue()) {
+        os << code << "\n";
+      }
     }
-  }
 
-  for (auto include : module.Includes()) {
-    if (!include.IsSystemInclude()) {
-      os << include << "\n";
+    for (auto clause : sub_module.Clauses()) {
+      os << clause << "\n";
     }
-  }
 
-  for (auto code : module.Inlines()) {
-    os << code << "\n";
-  }
-
-  for (auto decl : module.Queries()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto decl : module.Messages()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto decl : module.Functors()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto decl : module.Exports()) {
-    if (decl.Arity()) {
-      os << ParsedDeclaration(decl) << "\n";
+    for (auto clause : sub_module.DeletionClauses()) {
+      os << clause << "\n";
     }
-  }
 
-  for (auto decl : module.Locals()) {
-    os << ParsedDeclaration(decl) << "\n";
-  }
-
-  for (auto clause : module.Clauses()) {
-    os << clause << "\n";
-  }
-
-  for (auto clause : module.DeletionClauses()) {
-    os << clause << "\n";
+    for (auto code : sub_module.Inlines()) {
+      if (!code.IsPrologue()) {
+        os << code << "\n";
+      }
+    }
   }
 
   return os;

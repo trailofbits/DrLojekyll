@@ -5,7 +5,7 @@
 namespace hyde {
 
 // Identify which data flows can receive and produce deletions.
-void QueryImpl::TrackDifferentialUpdates(void) const {
+void QueryImpl::TrackDifferentialUpdates(bool check_conds) const {
 
   std::unordered_map<ParsedDeclaration, std::vector<SELECT *>> decl_to_selects;
 
@@ -30,6 +30,14 @@ void QueryImpl::TrackDifferentialUpdates(void) const {
   for (auto changed = true; changed;) {
     changed = false;
     ForEachView([&](VIEW *view) {
+      // If a node is conditional then we treat it as differential.
+      if (check_conds && !view->can_produce_deletions &&
+          (!view->positive_conditions.Empty() ||
+           !view->negative_conditions.Empty())) {
+        view->can_produce_deletions = true;
+        changed = true;
+      }
+
       if (view->can_receive_deletions && !view->can_produce_deletions) {
         view->can_produce_deletions = true;
         changed = true;

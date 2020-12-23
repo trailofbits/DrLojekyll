@@ -250,6 +250,9 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         }
 
       case 8:
+
+        // Infer functor range based on what was explicitly provided in the
+        // syntax.
         if (Lexeme::kPuncPeriod == lexeme) {
           functor->range = FunctorRange::kOneToOne;
 
@@ -296,9 +299,17 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
     return;
   }
 
+  if (impure.IsValid()) {
+    context->error_log.Append(scope_range, impure.SpellingRange())
+        << "Impure functors are not yet supported.";
+    RemoveDecl<ParsedFunctor>(std::move(functor));
+    return;
+  }
+
   const auto is_aggregate = last_summary.IsValid() || last_aggregate.IsValid();
 
-  // If this is a filter functor then change the default range behavior.
+  // If no explicit range syntax was provided, and this is a filter functor,
+  // then change the default range behavior.
   if (functor->range_begin_opt.IsInvalid() && !num_free_params &&
       !is_aggregate) {
     functor->range = FunctorRange::kZeroOrOne;

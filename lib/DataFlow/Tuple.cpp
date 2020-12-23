@@ -19,6 +19,8 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  assert(hash != 0);
+
   auto local_hash = hash;
 
   // Mix in the hashes of the tuple by columns; these are ordered.
@@ -34,215 +36,133 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 // replacements easier. Because comparisons are mostly pointer-based, the
 // canonical form of this tuple is one where all input columns are sorted,
 // deduplicated, and where all output columns are guaranteed to be used.
-bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
-                                    const OptimizationContext &opt) {
+bool Node<QueryTuple>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_locked || is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
 
-  bool has_replaceable_constref_inputs = false;
-  if (is_canonical && opt.can_replace_inputs_with_constants) {
-
-    for (auto in_col : input_columns) {
-      if (in_col->IsConstantRef()) {
-        is_canonical = false;
-        has_replaceable_constref_inputs = true;
-        break;
-      }
-    }
-  }
-
-  assert(attached_columns.Empty());
-  if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
+  if (valid == VIEW::kValid &&
+      !CheckIncomingViewsMatch(input_columns, attached_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
-    is_canonical = true;
     return false;
   }
 
-  const auto is_used_in_merge = this->Def<Node<QueryView>>::IsUsed();
-  const auto incoming_view = GetIncomingView(input_columns);
-  const auto introduces_control_dep = IntroducesControlDependency();
-  const auto max_i = columns.Size();
+  const auto num_cols = columns.Size();
+  is_canonical = true;  // Updated by `CanonicalizeColumn`.
+  in_to_out.clear();  // Filled in by `CanonicalizeColumn`.
+  Discoveries has = {};
 
-  // This tuple forwards all its data to something else; merge upward. The one
-  // case where we can't forward our data along is when the outgoing view is
-  // a JOIN, because otherwise we might have a diamond pattern where there the
-  // tuples exist to introduce two separate flows into a JOIN, e.g. as in
-  // `transitive_closure.dr`.
-  if (!is_used_in_merge && !introduces_control_dep && !sets_condition &&
-      AllColumnsAreUsed()) {
-    if (auto outgoing_view = OnlyUser();
-        outgoing_view && !outgoing_view->AsJoin()) {
-      assert(!outgoing_view->AsMerge());
+  // NOTE(pag): This may update `is_canonical`.
+  const auto incoming_view = PullDataFromBeyondTrivialTuples(
+      GetIncomingView(input_columns), input_columns, attached_columns);
 
-      for (auto i = 0u; i < max_i; ++i) {
-        const auto in_col = input_columns[i];
-        const auto out_col = columns[i];
-        out_col->ReplaceAllUsesWith(in_col);
-        in_col->view->is_canonical = false;
-      }
-
-      PrepareToDelete();
-      return true;
-    }
+  // If this tuple is proxing a DELETE, then replace it with the DELETE.
+  if (incoming_view && incoming_view->AsDelete() &&
+      this->ForwardsAllInputsAsIs(incoming_view)) {
+    input_columns.Clear();
+    this->ReplaceAllUsesWith(incoming_view);
+    return true;
   }
 
+  auto i = 0u;
+  for (; i < num_cols; ++i) {
+
+    // NOTE(pag): We treat all tuple columns as `is_attached=true` so that
+    //            finding unused outputs changes `is_canonical`.
+    has = CanonicalizeColumn(opt, input_columns[i], columns[i], true, has);
+  }
+
+  // Nothing changed.
   if (is_canonical) {
-    return false;
+    return has.non_local_changes;
   }
 
-  bool non_local_changes = false;
-  bool has_unused_columns = false;
+  // NOTE(pag): We don't both with `has.guardable_constant_output`, as it is
+  //            only triggered if `out_col->IsUsed()`, and thus we will preserve
+  //            the output column here.
 
-  in_to_out.clear();
-  for (auto i = 0u; i < max_i; ++i) {
-    const auto in_col = input_columns[i];
-    const auto out_col = columns[i];
-    const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
-    auto &prev_out_col = in_to_out[in_col];
+  // NOTE(pag): We don't both with `has.duplicated_input_column`, because we'll
+  //            either drop it below if `!out_col->IsUsed()`, or we'll preserve
+  //            it, which would be equivalent but less wasteful than what
+  //            `GuardWithOptimizedTuple` would do, given that it'd be a tuple
+  //            guarding a tuple.
 
-    if (prev_out_col) {
-      if (out_col_is_directly_used) {
-        non_local_changes = true;
-      }
+  DefList<COL> new_columns(this);
+  UseList<COL> new_input_columns(this);
 
-      out_col->ReplaceAllUsesWith(prev_out_col);
-
-      // If the input column is represented more than once, then we can remove
-      // any secondary representations safely.
-      if (opt.can_remove_unused_columns && !out_col->IsUsed()) {
-        has_unused_columns = true;
-      }
-
+  for (i = 0; i < num_cols; ++i) {
+    const auto old_col = columns[i];
+    if (old_col->IsUsed()) {
+      const auto new_col = new_columns.Create(
+          old_col->var, this, old_col->id, i);
+      old_col->ReplaceAllUsesWith(new_col);
+      new_input_columns.AddUse(input_columns[i]->TryResolveToConstant());
     } else {
-      prev_out_col = out_col;
-    }
-
-    const auto [changed, can_remove] =
-        CanonicalizeColumnPair(in_col, out_col, opt);
-
-    if (opt.can_replace_inputs_with_constants && in_col->IsConstantRef()) {
-      has_replaceable_constref_inputs = true;
-    }
-
-    non_local_changes = non_local_changes || changed;
-    has_unused_columns = has_unused_columns || can_remove;
-  }
-
-  // We can replace the view with `incoming_view` if `incoming_view` only has
-  // one use (this TUPLE), if order of columns doesn't matter, and if all
-  // columns are preserved.
-  if (incoming_view && incoming_view->NumUses() == 1 &&
-      incoming_view->columns.Size() == columns.Size() &&
-      !introduces_control_dep) {
-
-    assert(incoming_view != this);
-
-    // If this view is used in a MERGE then it's only safe to replace it with
-    // `incoming_view` if the columns are in the same order.
-    if (is_used_in_merge) {
-      if (incoming_view->columns.Size() == columns.Size()) {
-
-        auto i = 0u;
-        auto all_in_order = true;
-        for (auto in_col : input_columns) {
-          if (in_col->IsConstant() || in_col->Index() != i) {
-            all_in_order = false;
-            break;
-          }
-          ++i;
-        }
-
-        if (all_in_order) {
-          ReplaceAllUsesWith(incoming_view);
-          return true;
-        }
-      }
-
-    // `this` is not used in a MERGE, so there are no ordering constraints
-    // on `incoming_view`.
-    } else {
-      CopyTestedConditionsTo(incoming_view);
-      TransferSetConditionTo(incoming_view);
-
-      for (auto [in_col, out_col] : in_to_out) {
-        out_col->ReplaceAllUsesWith(in_col);
-      }
-
-      // NOTE(pag): There might be weak uses of `this`, i.e. in a JOIN.
-      this->Def<Node<QueryView>>::ReplaceAllUsesWith(incoming_view);
-      PrepareToDelete();
-      return true;
+      has.non_local_changes = true;
     }
   }
 
-  if (has_unused_columns || has_replaceable_constref_inputs) {
-
-    DefList<COL> new_columns(this);
-    UseList<COL> new_input_columns(this);
-
-    in_to_out.clear();
-
-    for (auto i = 0u; i < max_i; ++i) {
-      const auto in_col = input_columns[i];
-      const auto out_col = columns[i];
-      const auto out_col_is_used = out_col->IsUsed();
-      auto &prev_out_col = in_to_out[in_col];
-
-      if (prev_out_col && !out_col_is_used) {
-        non_local_changes = true;
-        continue;  // Always safe to remove; it's already represented.
-      }
-
-      // Remove it.
-      if (opt.can_remove_unused_columns && !out_col_is_used) {
-        in_col->view->is_canonical = false;
-        non_local_changes = true;
-        continue;
-      }
-
-      auto new_out_col = new_columns.Create(out_col->var, this, out_col->id);
-      out_col->ReplaceAllUsesWith(new_out_col);
-      new_out_col->CopyConstant(out_col);
-
-      if (opt.can_replace_inputs_with_constants && in_col->IsConstantRef()) {
-
-        new_input_columns.AddUse(in_col->AsConstant());
-        in_col->view->is_canonical = false;
-        non_local_changes = true;
-
-      } else {
-        new_input_columns.AddUse(in_col);
-      }
-
-      if (!prev_out_col) {
-        prev_out_col = new_out_col;
-      }
-    }
-
-    input_columns.Swap(new_input_columns);
-    columns.Swap(new_columns);
-
-    if (auto new_incoming_view = GetIncomingView(input_columns);
-        new_incoming_view != incoming_view) {
-      assert(incoming_view);
-      assert(!new_incoming_view);
-      COND *condition = CreateOrInheritConditionOnView(
-          query, incoming_view, std::move(new_input_columns));
-      positive_conditions.AddUse(condition);
-      condition->positive_users.AddUse(this);
+  // We dropped a reference to our predecessor; maintain it via a condition.
+  if (incoming_view) {
+    const auto new_incoming_view = GetIncomingView(new_input_columns);
+    if (incoming_view != new_incoming_view) {
+      CreateDependencyOnView(query, incoming_view);
+      has.non_local_changes = true;
     }
   }
 
-  if (!CheckIncomingViewsMatch(input_columns)) {
-    valid = VIEW::kInvalidAfterCanonicalize;
-  }
+  columns.Swap(new_columns);
+  input_columns.Swap(new_input_columns);
 
   hash = 0;
   is_canonical = true;
-  return non_local_changes;
+
+  if (!CheckIncomingViewsMatch(input_columns, attached_columns)) {
+    valid = VIEW::kInvalidAfterCanonicalize;
+  }
+
+  // We've eliminated all columns. Likely this means that we had a tuple that
+  // was full of constants. Now we're in the unenviable position where we need
+  // to deal with any conditions.
+  if (columns.Empty()) {
+
+    // This might happen as a result of `SkipPastForwardingTuples`.
+    if (!IsUsed()) {
+      PrepareToDelete();
+      return false;
+    }
+
+    // This tuple doesn't test any conditions.
+    if (positive_conditions.Empty() && negative_conditions.Empty()) {
+      PrepareToDelete();
+      return true;
+
+    // This tuple only tests trivial positive conditions.
+    } else if (negative_conditions.Empty()) {
+      auto all_trivial = true;
+      for (auto cond : positive_conditions) {
+        if (!cond->IsTrivial()) {
+          all_trivial = false;
+          break;
+        }
+      }
+
+      if (all_trivial) {
+        PrepareToDelete();
+        return true;
+      }
+    }
+
+    // Restore the old columns.
+    columns.Swap(new_columns);
+    input_columns.Swap(new_input_columns);
+    is_locked = true;
+  }
+
+  return has.non_local_changes;
 }
 
 // Equality over tuples is structural.
@@ -268,6 +188,46 @@ bool Node<QueryTuple>::Equals(EqualitySet &eq,
   }
 
   return true;
+}
+
+// Does this tuple forward all of its inputs to the same columns as the
+// outputs, and if so, does it forward all columns of its input?
+bool Node<QueryTuple>::ForwardsAllInputsAsIs(void) const noexcept {
+  return ForwardsAllInputsAsIs(GetIncomingView(input_columns));
+}
+
+// Does this tuple forward all of its inputs to the same columns as the
+// outputs, and if so, does it forward all columns of its input?
+bool Node<QueryTuple>::ForwardsAllInputsAsIs(
+    VIEW *incoming_view) const noexcept {
+  if (!incoming_view) {
+    return false;
+  }
+
+  const auto num_cols = columns.Size();
+
+  // Check to see if we can use `incoming_view` in place of `this`. We need
+  // to be extra careful about whether or not `this` and `incoming_view` are
+  // directly used by the same join.
+  if (incoming_view &&
+      !sets_condition &&
+      positive_conditions.Empty() &&
+      negative_conditions.Empty() &&
+      incoming_view->columns.Size() == num_cols) {
+
+    // Make sure all columns are perfectly forwarded.
+    for (auto i = 0u; i < num_cols; ++i) {
+      const auto in_col = input_columns[i];
+      if (in_col->view != incoming_view || in_col->Index() != i) {
+        return false;
+      }
+    }
+
+    return true;
+
+  } else {
+    return false;
+  }
 }
 
 }  // namespace hyde

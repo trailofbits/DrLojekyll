@@ -19,6 +19,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
 
   // Start with an initial hash just in case there's a cycle somewhere.
   hash = HashInit() ^ declaration.Id();
+  assert(hash != 0);
 
   auto local_hash = hash;
 
@@ -31,12 +32,25 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &) {
+bool Node<QueryInsert>::Canonicalize(
+    QueryImpl *, const OptimizationContext &, const ErrorLog &) {
   is_canonical = true;
   if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
   }
+
+  assert(columns.Empty());
   assert(attached_columns.Empty());
+
+  // NOTE(pag): This may update `is_canonical`.
+  (void) PullDataFromBeyondTrivialTuples(
+      GetIncomingView(input_columns), input_columns, attached_columns);
+
+  if (!is_canonical) {
+    is_canonical = true;
+    return true;
+  }
+
   return false;
 }
 
@@ -48,8 +62,7 @@ bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   }
 
   const auto that = that_->AsInsert();
-  if (!that || is_insert != that->is_insert ||
-      can_produce_deletions != that->can_produce_deletions ||
+  if (!that || can_produce_deletions != that->can_produce_deletions ||
       declaration.Id() != that->declaration.Id() ||
       columns.Size() != that->columns.Size() ||
       positive_conditions != that->positive_conditions ||

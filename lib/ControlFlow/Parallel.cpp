@@ -11,6 +11,14 @@ Node<ProgramParallelRegion>::AsParallel(void) noexcept {
   return this;
 }
 
+uint64_t Node<ProgramParallelRegion>::Hash(void) const {
+  uint64_t hash = 0u;
+  for (auto region : regions) {
+    hash ^= region->Hash();
+  }
+  return hash;
+}
+
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming).
 bool Node<ProgramParallelRegion>::Equals(

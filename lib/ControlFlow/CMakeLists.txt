@@ -11,14 +11,19 @@ set(ControlFlow_SRCS
     "Build/Build.h"
     "Build/Build.cpp"
     "Build/Compare.cpp"
+    "Build/Delete.cpp"
     "Build/Generate.cpp"
     "Build/Induction.cpp"
     "Build/Init.cpp"
     "Build/Insert.cpp"
     "Build/Join.cpp"
+    "Build/Negate.cpp"
     "Build/Product.cpp"
+    "Build/Select.cpp"
+    "Build/Tuple.cpp"
     "Build/Union.cpp"
     
+    "Data.cpp"
     "Format.cpp"
     "Induction.cpp"
     "Operation.cpp"
@@ -28,7 +33,7 @@ set(ControlFlow_SRCS
     "Program.cpp"
     "Region.cpp"
     "Series.cpp"
-    "Table.cpp"
+    "Visitor.cpp"
 )
 
 set(ControlFlow_PRIV_DEPS

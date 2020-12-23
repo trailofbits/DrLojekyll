@@ -212,8 +212,8 @@ bool ParsedVariable::IsAssigned(void) const noexcept {
   return !impl->context->assignment_uses.empty();
 }
 
-// Returns `true` if this variable, or any other used of this variable,
-// is assigned to any literals.
+// Returns `true` if this variable, or any other use of this variable,
+// is compared with any other variables.
 bool ParsedVariable::IsCompared() const noexcept {
   return !impl->context->comparison_uses.empty();
 }
@@ -306,8 +306,26 @@ DisplayRange ParsedLiteral::SpellingRange(void) const noexcept {
   return impl->literal.SpellingRange();
 }
 
-std::string_view ParsedLiteral::Spelling(void) const noexcept {
-  return impl->data;
+std::optional<std::string_view>
+ParsedLiteral::Spelling(Language lang) const noexcept {
+  if (IsConstant()) {
+    const auto &info = impl->foreign_type->info[static_cast<unsigned>(lang)];
+    const auto id = impl->literal.IdentifierId();
+    for (const auto &const_ptr : info.constants) {
+      if (const_ptr->lang == lang && const_ptr->name.IdentifierId() == id) {
+        return const_ptr->code;
+      }
+    }
+    return std::nullopt;
+
+  } else {
+    return impl->data;
+  }
+}
+
+// Is this a foreign constant?
+bool ParsedLiteral::IsConstant(void) const noexcept {
+  return impl->literal.Lexeme() == Lexeme::kIdentifierConstant;
 }
 
 bool ParsedLiteral::IsNumber(void) const noexcept {
@@ -320,6 +338,11 @@ bool ParsedLiteral::IsString(void) const noexcept {
 
 TypeLoc ParsedLiteral::Type(void) const noexcept {
   return impl->type;
+}
+
+// Token representing the use of this constant.
+Token ParsedLiteral::Literal(void) const noexcept {
+  return impl->literal;
 }
 
 DisplayRange ParsedComparison::SpellingRange(void) const noexcept {
@@ -535,6 +558,9 @@ ParsedDeclaration::ParsedDeclaration(const ParsedExport &exp)
 ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
 
+ParsedDeclaration::ParsedDeclaration(const ParsedPredicate &pred)
+: parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
+
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
     auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
@@ -618,12 +644,7 @@ bool ParsedDeclaration::IsLocal(void) const noexcept {
 // Does this declaration have a `mutable`-attributed parameter? If so, then
 // this relation must be materialized.
 bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
-  for (const auto &param : impl->parameters) {
-    if (param->opt_merge) {
-      return true;
-    }
-  }
-  return false;
+  return impl->has_mutable_parameter;
 }
 
 // Does this declaration have a clause that directly depends on a `#message`?
@@ -635,11 +656,9 @@ bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
 
   context->checked_takes_input = true;
   for (const auto &clause : context->clauses) {
-    for (const auto &pred : clause->positive_predicates) {
-      if (ParsedDeclaration(pred->declaration).IsMessage()) {
-        context->takes_input = true;
-        return true;
-      }
+    if (clause->depends_on_messages) {
+      context->takes_input = true;
+      return true;
     }
   }
 
@@ -818,6 +837,7 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 
 // Create a new variable in this context of this clause.
 ParsedVariable ParsedClause::CreateVariable(TypeLoc type) {
+  assert(type.UnderlyingKind() != TypeKind::kInvalid);
   auto var = new Node<ParsedVariable>;
   var->type = type;
   var->name =
@@ -860,10 +880,16 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
-  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
+  auto last_tok =
+      impl->last_tok.IsValid() && false ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
                       last_tok.NextPosition());
+}
+
+// Should this clause be highlighted in the data flow representation?
+bool ParsedClause::IsHighlighted(void) const noexcept {
+  return impl->highlight.IsValid();
 }
 
 // Returns the arity of this clause.
@@ -1152,6 +1178,14 @@ DisplayRange ParsedMessage::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
+NodeRange<ParsedParameter> ParsedMessage::Parameters(void) const {
+  if (impl->parameters.empty()) {
+    return NodeRange<ParsedParameter>();
+  } else {
+    return NodeRange<ParsedParameter>(impl->parameters.front().get());
+  }
+}
+
 NodeRange<ParsedMessage> ParsedMessage::Redeclarations(void) const {
   return NodeRange<ParsedMessage>(reinterpret_cast<Node<ParsedMessage> *>(
                                       impl->context->redeclarations.front()),
@@ -1218,14 +1252,6 @@ NodeRange<ParsedImport> ParsedModule::Imports(void) const {
   }
 }
 
-NodeRange<ParsedInclude> ParsedModule::Includes(void) const {
-  if (impl->includes.empty()) {
-    return NodeRange<ParsedInclude>();
-  } else {
-    return NodeRange<ParsedInclude>(impl->includes.front().get());
-  }
-}
-
 NodeRange<ParsedInline> ParsedModule::Inlines(void) const {
   if (impl->inlines.empty()) {
     return NodeRange<ParsedInline>();
@@ -1286,6 +1312,44 @@ NodeRange<ParsedClause> ParsedModule::DeletionClauses(void) const {
   }
 }
 
+NodeRange<ParsedForeignType> ParsedModule::ForeignTypes(void) const {
+
+  if (impl->root_module->types.empty()) {
+    return NodeRange<ParsedForeignType>();
+  } else {
+    return NodeRange<ParsedForeignType>(
+        impl->root_module->types.front().get(),
+        __builtin_offsetof(Node<ParsedForeignType>, next));
+  }
+}
+
+// Try to return the foreign type associated with a particular type location
+// or type kind.
+std::optional<ParsedForeignType>
+ParsedModule::ForeignType(TypeLoc loc) const noexcept {
+  return ForeignType(loc.Kind());
+}
+
+std::optional<ParsedForeignType>
+ParsedModule::ForeignType(TypeKind kind_) const noexcept {
+  const auto kind = static_cast<uint32_t>(kind_);
+  const auto hi = kind >> 8u;
+  const auto lo = kind & 0xffu;
+
+  if (static_cast<TypeKind>(lo) != TypeKind::kForeignType) {
+    return std::nullopt;
+  }
+
+  const auto &types = impl->root_module->foreign_types;
+  auto it = types.find(hi);
+  if (it == types.end()) {
+    return std::nullopt;
+  }
+
+  assert(it->second != nullptr);
+  return ParsedForeignType(it->second);
+}
+
 // The root module of this parse.
 ParsedModule ParsedModule::RootModule(void) const {
   if (impl->root_module == impl.get()) {
@@ -1303,16 +1367,96 @@ ParsedModule ParsedImport::ImportedModule(void) const noexcept {
   return ParsedModule(impl->imported_module->shared_from_this());
 }
 
-DisplayRange ParsedInclude::SpellingRange(void) const noexcept {
+std::filesystem::path ParsedImport::ImportedPath(void) const noexcept {
+  return impl->resolved_path;
+}
+
+// Type name of this token.
+Token ParsedForeignType::Name(void) const noexcept {
+  return impl->name;
+}
+
+// Is this type actually built-in?
+bool ParsedForeignType::IsBuiltIn(void) const noexcept {
+  return impl->is_built_in;
+}
+
+std::optional<DisplayRange>
+ParsedForeignType::SpellingRange(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  if (impl->info[lang].is_present) {
+    return impl->info[lang].range;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Optional code to inline, specific to a language.
+std::optional<std::string_view>
+ParsedForeignType::CodeToInline(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  if (impl->info[lang].is_present) {
+    return impl->info[lang].code;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Returns `true` if there is a specialized `lang`-specific instance, and
+// `false` is none is present, or if the default `Language::kUnknown` is used.
+bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  return impl->info[lang].is_present || impl->info[lang].can_override;
+}
+
+// Return the prefix and suffix for construction for this language.
+std::optional<std::pair<std::string_view, std::string_view>>
+ParsedForeignType::Constructor(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  const auto &info = impl->info[lang];
+  if (lang_ != Language::kUnknown && info.is_present &&
+      (!info.constructor_prefix.empty() || !info.constructor_suffix.empty())) {
+    return std::make_pair<std::string_view, std::string_view>(
+        info.constructor_prefix,
+        info.constructor_suffix);
+  } else {
+    return std::nullopt;
+  }
+}
+
+// List of constants defined on this type for a particular language.
+NodeRange<ParsedForeignConstant> ParsedForeignType::Constants(
+    Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+  const auto &info = impl->info[lang];
+  if (info.constants.empty()) {
+    return NodeRange<ParsedForeignConstant>();
+  } else {
+    return NodeRange<ParsedForeignConstant>(
+        info.constants.front().get(),
+        __builtin_offsetof(Node<ParsedForeignConstant>, next));
+  }
+}
+
+TypeLoc ParsedForeignConstant::Type(void) const noexcept {
+  return impl->type;
+}
+
+// Name of this constant.
+Token ParsedForeignConstant::Name(void) const noexcept {
+  return impl->name;
+}
+
+::hyde::Language ParsedForeignConstant::Language(void) const noexcept {
+  return impl->lang;
+}
+
+DisplayRange ParsedForeignConstant::SpellingRange(void) const noexcept {
   return impl->range;
 }
 
-std::string_view ParsedInclude::IncludedFilePath(void) const noexcept {
-  return impl->path;
-}
-
-bool ParsedInclude::IsSystemInclude(void) const noexcept {
-  return impl->is_angled;
+std::string_view ParsedForeignConstant::Constructor(void) const noexcept {
+  return impl->code;
 }
 
 DisplayRange ParsedInline::SpellingRange(void) const noexcept {
@@ -1321,6 +1465,18 @@ DisplayRange ParsedInline::SpellingRange(void) const noexcept {
 
 std::string_view ParsedInline::CodeToInline(void) const noexcept {
   return impl->code;
+}
+
+::hyde::Language ParsedInline::Language(void) const noexcept {
+  return impl->language;
+}
+
+bool ParsedInline::IsPrologue(void) const noexcept {
+  return impl->is_prologue;
+}
+
+bool ParsedInline::IsEpilogue(void) const noexcept {
+  return !impl->is_prologue;
 }
 
 }  // namespace hyde

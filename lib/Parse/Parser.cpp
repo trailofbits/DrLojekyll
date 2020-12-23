@@ -64,7 +64,7 @@ void ParserImpl::LexAllTokens(Display display) {
   auto ignore_line = false;
 
   while (lexer.TryGetNextToken(context->string_pool, &tok)) {
-    const auto lexeme = tok.Lexeme();
+    auto lexeme = tok.Lexeme();
 
     if (Lexeme::kWhitespace == lexeme &&
         tok.Line() < tok.NextPosition().Line()) {
@@ -115,6 +115,21 @@ void ParserImpl::LexAllTokens(Display display) {
           tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
           break;
 
+        case Lexeme::kInvalidOctalNumber:
+          err << "Invalid octal digit in number literal '" << tok << "'";
+          tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
+          break;
+
+        case Lexeme::kInvalidHexadecimalNumber:
+          err << "Invalid hexadecimal digit in number literal '" << tok << "'";
+          tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
+          break;
+
+        case Lexeme::kInvalidBinaryNumber:
+          err << "Invalid binary digit in number literal '" << tok << "'";
+          tok = Token::FakeNumberLiteral(tok.Position(), tok.SpellingWidth());
+          break;
+
         case Lexeme::kInvalidNewLineInString:
           err << "Invalid new line character in string literal";
           tok = Token::FakeStringLiteral(tok.Position(), tok.SpellingWidth());
@@ -139,11 +154,35 @@ void ParserImpl::LexAllTokens(Display display) {
           break;
 
         case Lexeme::kInvalidUnterminatedCode:
-          err << "Unterminated code literal";
+          err << "Unterminated code literal of unknown language";
           ignore_line = true;
 
           // NOTE(pag): No recovery, i.e. exclude the token.
           break;
+
+        case Lexeme::kInvalidUnterminatedCxxCode:
+          err << "Unterminated C++ code literal";
+          ignore_line = true;
+
+          // NOTE(pag): No recovery, i.e. exclude the token.
+          break;
+
+        case Lexeme::kInvalidUnterminatedPythonCode:
+          err << "Unterminated Python code literal";
+          ignore_line = true;
+
+          // NOTE(pag): No recovery, i.e. exclude the token.
+          break;
+
+        case Lexeme::kInvalidPragma:
+          if (ignore_line) {
+            err << "Unexpected pragma '" << tok << "'";
+            break;
+
+          // Recovery is to drop the token.
+          } else {
+            continue;
+          }
 
         case Lexeme::kInvalidUnknown:
           if (ignore_line) {
@@ -180,7 +219,7 @@ void ParserImpl::LexAllTokens(Display display) {
     // line mode when we encounter unrecognized directives.
     } else if (ignore_line) {
 
-      int num_lines = 0;
+      int64_t num_lines = 0;
       prev_pos.TryComputeDistanceTo(tok.NextPosition(), nullptr, &num_lines,
                                     nullptr);
       if (num_lines) {
@@ -210,18 +249,37 @@ void ParserImpl::LexAllTokens(Display display) {
 // Read the next token.
 bool ParserImpl::ReadNextToken(Token &tok_out) {
   while (next_tok_index < tokens.size()) {
-    const auto &next_tok = tokens[next_tok_index];
+    auto &next_tok = tokens[next_tok_index];
     ++next_tok_index;
 
     switch (next_tok.Lexeme()) {
       case Lexeme::kInvalid:
       case Lexeme::kInvalidDirective:
       case Lexeme::kInvalidNumber:
+      case Lexeme::kInvalidOctalNumber:
+      case Lexeme::kInvalidHexadecimalNumber:
+      case Lexeme::kInvalidBinaryNumber:
       case Lexeme::kInvalidNewLineInString:
       case Lexeme::kInvalidEscapeInString:
       case Lexeme::kInvalidUnterminatedString:
-      case Lexeme::kInvalidUnterminatedCode:
-      case Lexeme::kComment: continue;
+      case Lexeme::kInvalidUnterminatedCxxCode:
+      case Lexeme::kInvalidUnterminatedPythonCode:
+      case Lexeme::kInvalidPragma:
+      case Lexeme::kComment:
+        continue;
+
+      // Adjust for foreign types.
+      case Lexeme::kIdentifierAtom:
+      case Lexeme::kIdentifierVariable: {
+        const auto id = next_tok.IdentifierId();
+        if (context->foreign_types.count(id)) {
+          next_tok = next_tok.AsForeignType();
+        } else if (context->foreign_constants.count(id)) {
+          next_tok = next_tok.AsForeignConstant(
+              context->foreign_constants[id]->type.Kind());
+        }
+      }
+      [[clang::fallthrough]];
 
       // We pass these through so that we can report more meaningful
       // errors in locations relevant to specific parses.
@@ -379,6 +437,8 @@ void ParserImpl::ParseLocalExport(
 
   DisplayPosition next_pos;
   Token name;
+
+  bool has_mutable_parameter = false;
 
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
@@ -548,6 +608,7 @@ void ParserImpl::ParseLocalExport(
             return;
           }
 
+          has_mutable_parameter = true;
           param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
           param->opt_merge->is_merge = true;
           assert(param->opt_merge->parameters.size() == 3);
@@ -724,6 +785,7 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local to the module.
   } else {
+    local->has_mutable_parameter = has_mutable_parameter;
     FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
   }
 }
@@ -824,14 +886,24 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
   // just declare a clause without first declaring
   } else if (decl_context->kind == DeclarationKind ::kExport &&
              module != clause->declaration->module) {
-    auto err = context->error_log.Append(scope_range, clause_head_range);
-    err << "Cannot define a clause '" << clause->name
-        << "' for predicate exported by another module";
+    auto found_redecl_in_module = false;
+    for (auto redecl : decl_context->redeclarations) {
+      if (redecl->module == clause->declaration->module) {
+        found_redecl_in_module = true;
+        break;
+      }
+    }
 
-    err.Note(directive_range)
-        << "Predicate '" << clause->name << "' is declared here";
+    if (!found_redecl_in_module) {
+      auto err = context->error_log.Append(scope_range, clause_head_range);
+      err << "Cannot define a clause '" << clause->name
+          << "' for predicate exported by another module";
 
-    return false;
+      err.Note(directive_range)
+          << "Predicate '" << clause->name << "' is declared here";
+
+      return false;
+    }
   }
 
   return true;
@@ -982,6 +1054,22 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         }
         break;
 
+      case Lexeme::kHashForeignTypeDecl:
+        ReadLine();
+        ParseForeignTypeDecl(module);
+        if (first_non_import.IsInvalid()) {
+          first_non_import = SubTokenRange();
+        }
+        break;
+
+      case Lexeme::kHashForeignConstantDecl:
+        ReadLine();
+        ParseForeignConstantDecl(module);
+        if (first_non_import.IsInvalid()) {
+          first_non_import = SubTokenRange();
+        }
+        break;
+
       // Import another module, e.g. `#import "foo/bar"`.
       case Lexeme::kHashImportModuleStmt:
         ReadLine();
@@ -998,22 +1086,19 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         }
         continue;
 
-      // Specify that the generated C++ code should contain a pre-processor
-      // include of some file.
-      case Lexeme::kHashIncludeStmt:
-        ReadLine();
-        ParseInclude(module);
-        continue;
-
-      // Specify that the generated C++ code should contain a pre-processor
-      // include of some file.
+      // Specify that the generated code should contain a prologue or epilogue
+      // of specified code
       //
-      //    #inline <!
+      //    #prologue ```
       //    ...
-      //    !>
-      case Lexeme::kHashInlineStmt:
+      //    ```
+      //    #epilogue ```
+      //    ...
+      //    ```
+      case Lexeme::kHashInlinePrologueStmt:
+      case Lexeme::kHashInlineEpilogueStmt:
         ReadLine();
-        ParseInline(module);
+        ParseInlineCode(module);
         continue;
 
       // A clause. For example:
@@ -1079,7 +1164,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 }
 
 // Perform type checking/assignment. Returns `false` if there was an error.
-bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
+bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
 
   auto var_var_eq_p = [=](Node<ParsedVariable> *a,
                           Node<ParsedVariable> *b) -> bool {
@@ -1097,11 +1182,11 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
         << a_var.Type().SpellingRange() << "') and '" << b_var.Name()
         << "' (type '" << b_var.Type().SpellingRange() << "')";
 
-    err.Note(a_var.Type().SpellingRange())
+    err.Note(a_var.Type().SpellingRange(), a_var.Type().SpellingRange())
         << "Variable '" << a_var.Name() << "' with type '"
         << a_var.Type().SpellingRange() << "' is from here";
 
-    err.Note(b_var.Type().SpellingRange())
+    err.Note(b_var.Type().SpellingRange(), b_var.Type().SpellingRange())
         << "Variable '" << b_var.Name() << "' with type '"
         << b_var.Type().SpellingRange() << "' is from here";
 
@@ -1124,11 +1209,11 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
         << a_var.Type().SpellingRange() << "') and parameter '" << b_var.Name()
         << "' (type '" << b_var.Type().SpellingRange() << "')";
 
-    err.Note(a_var.Type().SpellingRange())
+    err.Note(a_var.Type().SpellingRange(), a_var.Type().SpellingRange())
         << "Variable '" << a_var.Name() << "' with type '"
         << a_var.Type().SpellingRange() << "' is from here";
 
-    err.Note(b_var.Type().SpellingRange())
+    err.Note(b_var.Type().SpellingRange(), b_var.Type().SpellingRange())
         << "Parameter '" << b_var.Name() << "' with type '"
         << b_var.Type().SpellingRange() << "' is from here";
 
@@ -1236,7 +1321,34 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
     for (const auto &assign : clause->assignments) {
       auto lhs_type = assign->lhs.used_var->type;
       if (lhs_type.IsValid()) {
-        assign->rhs.type = lhs_type;
+        if (!assign->rhs.type.IsValid()) {
+          assign->rhs.type = lhs_type;
+
+        // E.g. assigning a type-inferred variable to a named constant.
+        } else if (assign->rhs.type.Kind() != lhs_type.Kind()) {
+          auto lhs_var = ParsedVariable(assign->lhs.used_var);
+          auto rhs_const = ParsedLiteral(&(assign->rhs));
+          auto err = context->error_log.Append(ParsedClause(clause).SpellingRange(),
+                                               lhs_var.SpellingRange());
+          err << "Type mismatch between variable '" << lhs_var.Name() << "' (type '"
+              << lhs_var.Type().SpellingRange() << "') and constant '"
+              << rhs_const.Literal() << "' (type '"
+              << rhs_const.Type().SpellingRange() << "')";
+
+          err.Note(lhs_var.Type().SpellingRange(), lhs_var.Type().SpellingRange())
+              << "Variable '" << lhs_var.Name() << "' with type '"
+              << lhs_var.Type().SpellingRange() << "' is from here";
+
+          err.Note(rhs_const.Type().SpellingRange(), rhs_const.Type().SpellingRange())
+              << "Constant '" << rhs_const.Literal() << "' with type '"
+              << rhs_const.Type().SpellingRange() << "' is from here";
+          return false;
+        }
+
+      // E.g. assigning a variable to a named constant.
+      } else if (assign->rhs.type.IsValid()) {
+        assign->lhs.used_var->type = assign->rhs.type;
+
       } else {
         missing.push_back(assign->lhs.used_var);
       }
@@ -1298,15 +1410,17 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
     changed = false;
     missing.clear();
 
-    for (auto clause : module->clauses) {
-      if (!do_clause(clause)) {
-        return false;
+    for (auto module : root_module->all_modules) {
+      for (auto clause : module->clauses) {
+        if (!do_clause(clause)) {
+          return false;
+        }
       }
-    }
 
-    for (auto clause : module->deletion_clauses) {
-      if (!do_clause(clause)) {
-        return false;
+      for (auto clause : module->deletion_clauses) {
+        if (!do_clause(clause)) {
+          return false;
+        }
       }
     }
   }
@@ -1346,8 +1460,10 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *module) {
     }
   };
 
-  type_redecls(module->locals);
-  type_redecls(module->exports);
+  for (auto module : root_module->all_modules) {
+    type_redecls(module->locals);
+    type_redecls(module->exports);
+  }
 
   return true;
 }
@@ -1390,6 +1506,40 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
   }
 
   return prev_num_errors == log.Size();
+}
+
+// Check that if we have any deletion clause, i.e. `!foo(...) : bar(...).`, that
+// all positive clauses of `foo(...)` depend directly on a message.
+static bool CheckDeletions(Node<ParsedModule> *root_module,
+                           const ErrorLog &log) {
+
+  auto all_good = true;
+  for (auto module : root_module->all_modules) {
+    for (auto del_clause : module->deletion_clauses) {
+      const auto decl = del_clause->declaration;
+
+      // Check that all other insertions depend on messages? The key here is to
+      // not permit a situation where you ask to remove a tuple, but where that
+      // tuple is independently provable via multiple "paths" (that don't use
+      // messages). Because a message is ultimately ephemeral, there is no prior
+      // record of its receipt per se, and so there is no prior evidence to re-
+      // prove a clause head that we're asking to remove.
+      for (const auto &clause : decl->context->clauses) {
+        if (!clause->depends_on_messages) {
+          auto err = log.Append(ParsedClause(del_clause).SpellingRange(),
+                                del_clause->negation.Position());
+          err << "All positive clauses of " << decl->name << '/'
+              << decl->parameters.size() << " must directly depend on a message"
+              << " because of the presence of a deletion clause";
+
+          auto note = err.Note(ParsedClause(clause.get()).SpellingRange());
+          note << "Clause without a direct message dependency is here";
+          all_good = false;
+        }
+      }
+    }
+  }
+  return all_good;
 }
 
 // Parse a display, returning the parsed module.
@@ -1442,7 +1592,8 @@ ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   // Only do usage and type checking when we're done parsing the root module.
   if (module->root_module == module.get()) {
     if (!AllDeclarationsAreDefined(module.get(), context->error_log) ||
-        !AssignTypes(module.get())) {
+        !AssignTypes(module.get()) ||
+        !CheckDeletions(module.get(), context->error_log)) {
       return std::nullopt;
     }
   }
@@ -1505,13 +1656,6 @@ Parser::ParseStream(std::istream &is,
 // Add a directory as a search path for files.
 void Parser::AddModuleSearchPath(std::string_view path) const {
   impl->context->import_search_paths.emplace_back(path);
-}
-
-// Add a directory as a search path for includes.
-void Parser::AddIncludeSearchPath(std::string_view path,
-                                  IncludeSearchPathKind kind) const {
-  unsigned ukind = static_cast<unsigned>(kind);
-  impl->context->include_search_paths[ukind].emplace_back(path);
 }
 
 }  // namespace hyde

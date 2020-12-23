@@ -1,7 +1,8 @@
 
-#message add_edge(i64 From, i64 To)
-#query reachable_from(bound i64 From, free i64 To)
-#query reaching_to(free i64 From, bound i64 To)
+
+#message add_edge(u64 From, u64 To)
+#query reachable_from(bound u64 From, free u64 To)
+#query reaching_to(free u64 From, bound u64 To)
 #local tc(From, To)
 
 reachable_from(From, To) : tc(From, To).
@@ -9,3 +10,19 @@ reaching_to(From, To) : tc(From, To).
 
 tc(From, To) : tc(From, X), tc(X, To).
 tc(From, To) : add_edge(From, To).
+
+#epilogue ```python
+class Functors(DatabaseFunctors):
+  pass
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), Functors())
+  db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  assert len(reached_from_zero) == 4
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  assert 3 in reached_from_zero  # 0 -> 2 -> 3
+
+```

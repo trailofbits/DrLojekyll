@@ -3,6 +3,8 @@
 #include "Query.h"
 
 #include <cassert>
+#include <functional>
+#include <optional>
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
@@ -68,6 +70,10 @@ QueryImpl::~QueryImpl(void) {
     insert->relation.ClearWithoutErasure();
     insert->stream.ClearWithoutErasure();
   }
+
+  for (auto negation : negations) {
+    negation->negated_view.ClearWithoutErasure();
+  }
 }
 
 QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
@@ -100,6 +106,8 @@ QueryView QueryView::Containing(QueryColumn col) {
 
 QueryView::QueryView(const QueryView &view) : QueryView(view.impl) {}
 
+QueryView::QueryView(const QueryDelete &view) : QueryView(view.impl) {}
+
 QueryView::QueryView(const QuerySelect &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryTuple &view) : QueryView(view.impl) {}
@@ -114,44 +122,54 @@ QueryView::QueryView(const QueryAggregate &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryMerge &view) : QueryView(view.impl) {}
 
+QueryView::QueryView(const QueryNegate &view) : QueryView(view.impl) {}
+
 QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
 
-QueryView QueryView::From(QuerySelect &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryDelete &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryTuple &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QuerySelect &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryKVIndex &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryTuple &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryJoin &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryKVIndex &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryMap &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryJoin &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryAggregate &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryMap &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryMerge &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryAggregate &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryCompare &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryMerge &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
-QueryView QueryView::From(QueryInsert &view) noexcept {
-  return reinterpret_cast<QueryView &>(view);
+QueryView QueryView::From(const QueryNegate &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
+}
+
+QueryView QueryView::From(const QueryCompare &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
+}
+
+QueryView QueryView::From(const QueryInsert &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
 }
 
 DefinedNodeRange<QueryColumn> QueryView::Columns(void) const {
@@ -179,6 +197,10 @@ DefinedNodeRange<QueryColumn> QueryJoin::MergedColumns(void) const noexcept {
 
 const char *QueryView::KindName(void) const noexcept {
   return impl->KindName();
+}
+
+bool QueryView::IsDelete(void) const noexcept {
+  return impl->AsDelete() != nullptr;
 }
 
 bool QueryView::IsSelect(void) const noexcept {
@@ -209,12 +231,28 @@ bool QueryView::IsMerge(void) const noexcept {
   return impl->AsMerge() != nullptr;
 }
 
+bool QueryView::IsNegate(void) const noexcept {
+  return impl->AsNegate() != nullptr;
+}
+
 bool QueryView::IsCompare(void) const noexcept {
   return impl->AsCompare() != nullptr;
 }
 
 bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
+}
+
+// Returns `true` if this node is used by a negation.
+bool QueryView::IsUsedByNegation(void) const noexcept {
+  return impl->is_used_by_negation;
+}
+
+// Apply a callback `on_negate` to each negation using this view.
+void QueryView::ForEachNegation(std::function<void(QueryNegate)> on_negate) const {
+  impl->ForEachUse<NEGATION>([&on_negate] (NEGATION *negate, VIEW *) {
+    on_negate(QueryNegate(negate));
+  });
 }
 
 // Can this view receive inputs that should logically "delete" entries?
@@ -227,11 +265,87 @@ bool QueryView::CanProduceDeletions(void) const noexcept {
   return impl->can_produce_deletions;
 }
 
+// Returns `true` if all users of this view use all the columns of this
+// view.
+bool QueryView::AllUsersUseAllColumns(void) const noexcept {
+  const auto is_insert = IsInsert();
+  auto num_cols = Columns().size();
+  if (is_insert) {
+    num_cols = QueryInsert::From(*this).NumInputColumns();
+  }
+
+  std::vector<bool> used_cols(num_cols);
+  for (auto succ : Successors()) {
+    succ.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                        std::optional<QueryColumn> out_col) {
+      if (QueryView::Containing(in_col) == *this) {
+        if (is_insert) {  // `out_col` is a select.
+          used_cols[*(out_col->Index())] = true;
+        } else {
+
+          used_cols[*(in_col.Index())] = true;
+        }
+      }
+    });
+
+    for (auto i = 0u; i < num_cols; ++i) {
+      auto is_used_ref = used_cols[i];
+      if (!is_used_ref) {
+        return false;  // Found an unused column for `succ`.
+      }
+
+      // Reset for the next successor.
+      is_used_ref = false;
+    }
+  }
+
+  return true;
+}
+
+// Returns `true` if this view has a single predecessor, and if all of the
+// columns of that predecessor are used.
+bool QueryView::AllColumnsOfSinglePredecessorAreUsed(void) const noexcept {
+  const auto preds = Predecessors();
+  if (preds.size() != 1) {
+    return false;
+  }
+
+  const auto pred = preds[0];
+  std::vector<bool> is_used(pred.Columns().size());
+  this->ForEachUse(
+      [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
+        if (QueryView::Containing(in_col) == pred) {
+          is_used[*(in_col.Index())] = true;
+        }
+      });
+
+  for (auto col_is_used : is_used) {
+    if (!col_is_used) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Returns the depth of this node in the graph. This is defined as depth
 // from an input (associated with a message receive) node, where the deepest
 // nodes are typically responses to queries, or message publications.
 unsigned QueryView::Depth(void) const noexcept {
   return impl->depth;
+}
+
+// Color value for formatting. This is influenced by the `@highlight`
+// pragma, for example:
+//
+//      predicate(...) @highlight : body0(...), ..., bodyN(...).
+//
+// The color itself is mostly randomly generated, and best effort is applied
+// to maintain the coloring through optimzation. In some cases, new colors
+// are invented, e.g. when merging nodes when doing common sub-expression
+// elimination. In other cases, the color may be lost.
+unsigned QueryView::Color(void) const noexcept {
+  return impl->color;
 }
 
 // Returns a useful string of internal metadata about this view.
@@ -310,11 +424,17 @@ void QueryView::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   } else if (auto insert = impl->AsInsert(); insert) {
     QueryInsert(insert).ForEachUse(std::move(with_col));
 
+  } else if (auto del = impl->AsDelete(); del) {
+    QueryDelete(del).ForEachUse(std::move(with_col));
+
   } else if (auto tuple = impl->AsTuple(); tuple) {
     QueryTuple(tuple).ForEachUse(std::move(with_col));
 
   } else if (auto kv = impl->AsKVIndex(); kv) {
     QueryKVIndex(kv).ForEachUse(std::move(with_col));
+
+  } else if (auto neg = impl->AsNegate(); neg) {
+    QueryNegate(neg).ForEachUse(std::move(with_col));
 
   } else {
     assert(false);
@@ -343,6 +463,10 @@ bool QueryColumn::IsAggregate(void) const noexcept {
 
 bool QueryColumn::IsMerge(void) const noexcept {
   return impl->view->AsMerge() != nullptr;
+}
+
+bool QueryColumn::IsNegate(void) const noexcept {
+  return impl->view->AsNegate() != nullptr;
 }
 
 bool QueryColumn::IsConstraint(void) const noexcept {
@@ -456,10 +580,16 @@ bool QueryCondition::CanBeDeleted(void) const noexcept {
 
 // Depth of this node.
 unsigned QueryCondition::Depth(void) const noexcept {
+  if (impl->in_depth_calc) {
+    assert(false);  // Suggests a condition is dependent on itself.
+    return 1u;
+  }
+  impl->in_depth_calc = true;
   auto depth = 1u;
   for (auto setter : impl->setters) {
     depth = std::max(depth, setter->Depth());
   }
+  impl->in_depth_calc = false;
   return depth + 1u;
 }
 
@@ -467,9 +597,9 @@ const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
   return impl->literal;
 }
 
-QueryConstant QueryConstant::From(QueryStream &stream) {
+QueryConstant QueryConstant::From(const QueryStream &stream) {
   assert(stream.IsConstant());
-  return reinterpret_cast<QueryConstant &>(stream);
+  return reinterpret_cast<const QueryConstant &>(stream);
 }
 
 QueryConstant QueryConstant::From(QueryColumn col) {
@@ -478,9 +608,9 @@ QueryConstant QueryConstant::From(QueryColumn col) {
       col.impl->AsConstant()->view->AsSelect()->stream->AsConstant());
 }
 
-QueryIO QueryIO::From(QueryStream &stream) {
+QueryIO QueryIO::From(const QueryStream &stream) {
   assert(stream.IsIO());
-  return reinterpret_cast<QueryIO &>(stream);
+  return reinterpret_cast<const QueryIO &>(stream);
 }
 
 const ParsedDeclaration &QueryIO::Declaration(void) const noexcept {
@@ -556,7 +686,7 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
     for (auto i = 0u; i < max_i; ++i) {
       const auto out_col = impl->columns[i];
       const auto in_col = view->columns[i];
-      with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+      with_col(QueryColumn(in_col), InputColumnRole::kCopied,
                QueryColumn(out_col));
     }
   }
@@ -707,6 +837,14 @@ const ParsedFunctor &QueryMap::Functor(void) const noexcept {
   return impl->functor;
 }
 
+// Is this a positive application of the functor, or a negative application?
+// The meaning of a negative application is that it produces zero outputs. It
+// is invalid to negate a functor that is declared as
+bool QueryMap::IsPositive(void) const noexcept {
+  return impl->is_positive;
+}
+
+
 // Returns the number of columns used for grouping.
 unsigned QueryMap::NumCopiedColumns(void) const noexcept {
   return impl->attached_columns.Size();
@@ -732,12 +870,13 @@ OutputStream &QueryMap::DebugString(OutputStream &os) const noexcept {
 }
 
 // Apply a callback `with_col` to each input column of this view.
-void QueryMap::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
-                                             std::optional<QueryColumn>)>
-                              with_col) const {
+void QueryMap::ForEachUse(
+    std::function<void(QueryColumn, InputColumnRole,
+                       std::optional<QueryColumn>)> with_col) const {
   auto i = 0u;
+  auto j = 0u;
   auto max_i = impl->functor.Arity();
-  for (auto j = 0u; i < max_i; ++i) {
+  for (j = 0u; i < max_i; ++i) {
     if (impl->functor.NthParameter(i).Binding() == ParameterBinding::kFree) {
       continue;  // It's an output column.
     }
@@ -747,12 +886,16 @@ void QueryMap::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
     with_col(QueryColumn(in_col), InputColumnRole::kFunctorInput,
              QueryColumn(out_col));
   }
-  for (auto j = 0u; i < max_i; ++i, ++j) {
+  assert(j == impl->input_columns.Size());
+
+  max_i = impl->columns.Size();
+  for (j = 0u; i < max_i; ++i, ++j) {
     const auto out_col = impl->columns[i];
     const auto in_col = impl->attached_columns[j];
     with_col(QueryColumn(in_col), InputColumnRole::kCopied,
              QueryColumn(out_col));
   }
+  assert(j == impl->attached_columns.Size());
 }
 
 QueryAggregate QueryAggregate::From(QueryView view) {
@@ -968,12 +1111,13 @@ OutputStream &QueryMerge::DebugString(OutputStream &os) const noexcept {
 void QueryMerge::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                std::optional<QueryColumn>)>
                                 with_col) const {
-  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
-    const auto out_col = impl->columns[i];
-    for (auto view : impl->merged_views) {
+  const auto num_cols = impl->columns.Size();
+  for (auto view : impl->merged_views) {
+    for (auto i = 0u, max_i = num_cols; i < max_i; ++i) {
+      const auto out_col = impl->columns[i];
       COL *in_col = nullptr;
       if (auto insert = view->AsInsert(); insert) {
-        in_col = view->input_columns[i];
+        in_col = insert->input_columns[i];
       } else {
         in_col = view->columns[i];
       }
@@ -1068,6 +1212,98 @@ void QueryCompare::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   }
 }
 
+QueryNegate QueryNegate::From(QueryView view) {
+  assert(view.IsNegate());
+  return reinterpret_cast<QueryNegate &>(view);
+}
+
+// The deleted columns.
+DefinedNodeRange<QueryColumn> QueryNegate::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+QueryColumn QueryNegate::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
+// The resulting copied columns.
+DefinedNodeRange<QueryColumn> QueryNegate::CopiedColumns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
+                                           impl->input_columns.Size()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+// The resulting negated columns.
+DefinedNodeRange<QueryColumn> QueryNegate::NegatedColumns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
+                                           impl->input_columns.Size())};
+}
+
+// Returns the `nth` input copied column.
+QueryColumn QueryNegate::NthInputCopiedColumn(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return QueryColumn(impl->attached_columns[n]);
+}
+
+unsigned QueryNegate::NumCopiedColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->attached_columns.Size());
+}
+
+unsigned QueryNegate::NumInputColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->input_columns.Size());
+}
+
+QueryColumn QueryNegate::NthInputColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->input_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryNegate::InputColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+UsedNodeRange<QueryColumn> QueryNegate::InputCopiedColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->attached_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->attached_columns.end())};
+}
+
+// Incoming view that represents a flow of data between the relation and
+// the negation.
+QueryTuple QueryNegate::NegatedView(void) const noexcept {
+  return QueryTuple(impl->negated_view->AsTuple());
+}
+
+OutputStream &QueryNegate::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryNegate::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                                std::optional<QueryColumn>)>
+                                 with_col) const {
+  auto i = 0u;
+  for (auto in_col : impl->input_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
+             QueryColumn(impl->columns[i++]));
+  }
+  for (auto in_col : impl->attached_columns) {
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
+             QueryColumn(impl->columns[i++]));
+  }
+
+  i = 0u;
+  for (auto our_in_col : impl->input_columns) {
+    (void) our_in_col;
+    auto negated_in_col = impl->negated_view->columns[i];
+    with_col(QueryColumn(negated_in_col), InputColumnRole::kNegated,
+             QueryColumn(impl->columns[i]));
+    ++i;
+  }
+}
 
 QueryInsert QueryInsert::From(QueryView view) {
   assert(view.IsInsert());
@@ -1076,10 +1312,6 @@ QueryInsert QueryInsert::From(QueryView view) {
 
 ParsedDeclaration QueryInsert::Declaration(void) const noexcept {
   return impl->declaration;
-}
-
-bool QueryInsert::IsDelete(void) const noexcept {
-  return !impl->is_insert;
 }
 
 bool QueryInsert::IsRelation(void) const noexcept {
@@ -1124,8 +1356,79 @@ OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
 void QueryInsert::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                 std::optional<QueryColumn>)>
                                  with_col) const {
-  for (auto in_col : impl->input_columns) {
-    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough, std::nullopt);
+  if (IsStream()) {
+    for (auto in_col : impl->input_columns) {
+      with_col(QueryColumn(in_col), InputColumnRole::kPublished, std::nullopt);
+    }
+
+  } else if (IsRelation()) {
+    if (impl->successors.Empty()) {
+      for (auto in_col : impl->input_columns) {
+        with_col(QueryColumn(in_col), InputColumnRole::kMaterialized,
+                 std::nullopt);
+      }
+    } else {
+      for (auto user : impl->successors) {
+        if (user->AsMerge() || user->AsSelect()) {
+          for (auto out_col : user->columns) {
+            auto in_col = impl->input_columns[out_col->index];
+            with_col(QueryColumn(in_col), InputColumnRole::kMaterialized,
+                     QueryColumn(out_col));
+          }
+        } else {
+          assert(false);
+        }
+      }
+    }
+
+  } else {
+    assert(false);
+  }
+}
+
+QueryDelete QueryDelete::From(QueryView view) {
+  assert(view.IsDelete());
+  return reinterpret_cast<QueryDelete &>(view);
+}
+
+// The deleted columns.
+DefinedNodeRange<QueryColumn> QueryDelete::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+QueryColumn QueryDelete::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
+unsigned QueryDelete::NumInputColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->input_columns.Size());
+}
+
+QueryColumn QueryDelete::NthInputColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->input_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryDelete::InputColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+OutputStream &QueryDelete::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
+}
+
+// Apply a callback `with_col` to each input column of this view.
+void QueryDelete::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                                std::optional<QueryColumn>)>
+                                 with_col) const {
+  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
+    const auto out_col = impl->columns[i];
+    const auto in_col = impl->input_columns[i];
+    with_col(QueryColumn(in_col), InputColumnRole::kDeleted,
+             QueryColumn(out_col));
   }
 }
 
@@ -1174,7 +1477,7 @@ void QueryTuple::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
     const auto out_col = impl->columns[i];
     const auto in_col = impl->input_columns[i];
-    with_col(QueryColumn(in_col), InputColumnRole::kPassThrough,
+    with_col(QueryColumn(in_col), InputColumnRole::kCopied,
              QueryColumn(out_col));
   }
 }
@@ -1315,6 +1618,16 @@ DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
           DefinedNodeIterator<QueryInsert>(impl->inserts.end())};
 }
 
+DefinedNodeRange<QueryDelete> Query::Deletes(void) const {
+  return {DefinedNodeIterator<QueryDelete>(impl->deletes.begin()),
+          DefinedNodeIterator<QueryDelete>(impl->deletes.end())};
+}
+
+DefinedNodeRange<QueryNegate> Query::Negations(void) const {
+  return {DefinedNodeIterator<QueryNegate>(impl->negations.begin()),
+          DefinedNodeIterator<QueryNegate>(impl->negations.end())};
+}
+
 DefinedNodeRange<QueryMap> Query::Maps(void) const {
   return {DefinedNodeIterator<QueryMap>(impl->maps.begin()),
           DefinedNodeIterator<QueryMap>(impl->maps.end())};
@@ -1336,6 +1649,10 @@ DefinedNodeRange<QueryCompare> Query::Compares(void) const {
 }
 
 Query::~Query(void) {}
+
+::hyde::ParsedModule Query::ParsedModule(void) const noexcept {
+  return impl->module;
+}
 
 }  // namespace hyde
 

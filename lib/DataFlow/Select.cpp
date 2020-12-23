@@ -18,6 +18,7 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
   }
 
   hash = HashInit();
+  assert(hash != 0);
   const auto hash_ror = RotateRight64(hash, 33u);
 
   if (relation) {
@@ -25,8 +26,13 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
 
   } else if (stream) {
     if (auto const_stream = stream->AsConstant()) {
-      hash ^= hash_ror *
-              std::hash<std::string_view>()(const_stream->literal.Spelling());
+      if (const_stream->literal.IsConstant()) {
+        hash ^= hash_ror * const_stream->literal.Literal().IdentifierId();
+      } else {
+        hash ^= hash_ror *
+            std::hash<std::string_view>()(
+                *const_stream->literal.Spelling(Language::kUnknown));
+      }
 
     } else if (auto input_stream = stream->AsIO()) {
       hash ^= hash_ror * input_stream->declaration.Id();
@@ -80,8 +86,9 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 //            then there's an orphaned SELECT in `average_weight.dr`. This
 //            is because the RELation or IO holds onto a use of the SELECT
 //            and so the SELECT always looks used.
-bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
-                                     const OptimizationContext &opt) {
+bool Node<QuerySelect>::Canonicalize(
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+
   if (is_dead || sets_condition) {
     return false;
   }

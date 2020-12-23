@@ -14,8 +14,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       decl_to_views;
 
   auto can_connect = [](ParsedDeclaration decl) {
-    return !decl.NumNegatedUses() &&  // Not used in an existence check.
-           !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
+    return !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
   };
 
   // Collect a list of declarations mapping to their inserts and selects.
@@ -71,30 +70,29 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       for (auto insert : insert_views) {
         VIEW *ins_proxy = insert;
 
+        // A DELETE feeds into the insert, so mark the merge as taking
+        // differential updates.
+        if (insert->can_receive_deletions) {
+          merge->can_receive_deletions = true;
+        }
+
         // Only proxy an INSERT if it actually inserts data; otherwise it's a
         // DELETE and we want to maintain that.
-        if (insert->is_insert) {
-          ins_proxy = tuples.Create();
+        ins_proxy = tuples.Create();
 
 #ifndef NDEBUG
-          ins_proxy->producer = "INSERT";
+        ins_proxy->producer = "INSERT";
 #endif
 
-          ins_proxy->group_ids.swap(insert->group_ids);
-          ins_proxy->sets_condition.Swap(insert->sets_condition);
-          insert->CopyTestedConditionsTo(ins_proxy);
+        ins_proxy->group_ids.swap(insert->group_ids);
+        ins_proxy->sets_condition.Swap(insert->sets_condition);
+        insert->CopyTestedConditionsTo(ins_proxy);
 
-          for (auto in_col : insert->input_columns) {
-            auto out_col =
-                ins_proxy->columns.Create(in_col->var, ins_proxy, in_col->id);
-            ins_proxy->input_columns.AddUse(in_col);
-            out_col->CopyConstant(in_col);
-          }
-
-        // It's a DELETE, so maintain it, which will mean the MERGE will have
-        // to handle differential updates.
-        } else {
-          merge->can_receive_deletions = true;
+        for (auto in_col : insert->input_columns) {
+          auto out_col =
+              ins_proxy->columns.Create(in_col->var, ins_proxy, in_col->id);
+          ins_proxy->input_columns.AddUse(in_col);
+          out_col->CopyConstantFrom(in_col);
         }
 
         for (auto in_col : ins_proxy->input_columns) {
@@ -180,15 +178,12 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         }
 
         for (auto col : view->columns) {
-          single_insert->columns.Create(col->var, single_insert, col->id);
           single_insert->input_columns.AddUse(col);
         }
       }
 
       for (auto insert : insert_views) {
-        if (insert->is_insert) {
-          insert->PrepareToDelete();
-        }
+        insert->PrepareToDelete();
       }
 
       if (!can_connect_decl) {

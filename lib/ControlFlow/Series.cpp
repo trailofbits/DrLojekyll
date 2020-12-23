@@ -1,5 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <drlojekyll/Util/BitManipulation.h>
+
 #include "Program.h"
 
 namespace hyde {
@@ -8,6 +10,14 @@ Node<ProgramSeriesRegion>::~Node(void) {}
 
 Node<ProgramSeriesRegion> *Node<ProgramSeriesRegion>::AsSeries(void) noexcept {
   return this;
+}
+
+uint64_t Node<ProgramSeriesRegion>::Hash(void) const {
+  uint64_t hash = 956u;
+  for (auto region : regions) {
+    hash ^= RotateRight64(hash, 13u) * region->Hash();
+  }
+  return hash;
 }
 
 // Returns true if this region is a no-op.

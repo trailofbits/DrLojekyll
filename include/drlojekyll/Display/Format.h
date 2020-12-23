@@ -21,6 +21,10 @@ class OutputStream {
     indent.reserve(16);
   }
 
+  OutputStream &DisplayNameOr(DisplayPosition pos, std::string_view);
+  OutputStream &LineNumberOr(DisplayPosition pos, std::string_view);
+  OutputStream &ColumnNumberOr(DisplayPosition pos, std::string_view);
+
   OutputStream &operator<<(DisplayRange range);
 
   inline OutputStream &operator<<(OutputStream &that) {
@@ -33,16 +37,8 @@ class OutputStream {
     return *this;
   }
 
-  inline void SetKeepImports(bool state) {
-    include_imports = state;
-  }
-
   inline void SetRenameLocals(bool state) {
     rename_locals = state;
-  }
-
-  inline bool KeepImports(void) const {
-    return include_imports;
   }
 
   inline bool RenameLocals(void) const {
@@ -54,12 +50,15 @@ class OutputStream {
   }
 
   inline void PushIndent(void) {
-    indent.push_back(' ');
-    indent.push_back(' ');
+    indent.insert(indent.end(), indent_size, ' ');
+  }
+
+  inline void SetIndentSize(unsigned new_size) {
+    indent_size = new_size;
   }
 
   inline void PopIndent(void) {
-    indent.resize(indent.size() - 2u);
+    indent.resize(indent.size() - indent_size);
   }
 
   inline const std::string &Indent(void) const {
@@ -69,9 +68,9 @@ class OutputStream {
  private:
   const DisplayManager &display_manager;
   std::ostream &os;
-  bool include_imports{true};
   bool rename_locals{false};
   std::string indent;
+  unsigned indent_size{2u};
 };
 
 }  // namespace hyde

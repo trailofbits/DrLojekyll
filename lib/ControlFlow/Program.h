@@ -29,28 +29,18 @@ struct hash<std::pair<::hyde::QueryView, ::hyde::QueryView>> {
 }  // namespace std
 namespace hyde {
 
-class Program;
-class ProgramImpl;
-
-class ProgramRegion;
 class ProgramInductionRegion;
 class ProgramOperationRegion;
-class ProgramParallelRegion;
-class ProgramProcedure;
-class ProgramSeriesRegion;
-
-class DataIndex;
-class DataVariable;
-class DataTable;
-class DataVector;
 
 // A column within a table.
 template <>
-class Node<DataColumn> : public Def<Node<DataColumn>>, public User {
+class Node<DataColumn> final : public Def<Node<DataColumn>>, public User {
  public:
   virtual ~Node(void);
 
   Node(unsigned id_, TypeKind type_, Node<DataTable> *table_);
+
+  void Accept(ProgramVisitor &visitor);
 
   const unsigned id;
   const unsigned index;
@@ -65,16 +55,19 @@ using TABLECOLUMN = Node<DataColumn>;
 
 // Represents an index on some subset of columns in a table.
 template <>
-class Node<DataIndex> : public Def<Node<DataIndex>>, public User {
+class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
  public:
   virtual ~Node(void);
 
   Node(unsigned id_, Node<DataTable> *table_, std::string column_spec_);
 
+  void Accept(ProgramVisitor &visitor);
+
   const unsigned id;
   const std::string column_spec;
 
   UseList<TABLECOLUMN> columns;
+  UseList<TABLECOLUMN> mapped_columns;
 
   WeakUseRef<Node<DataTable>> table;
 };
@@ -85,7 +78,7 @@ using TABLEINDEX = Node<DataIndex>;
 //
 // NOTE(pag): By default all tables already have a UNIQUE index on them.
 template <>
-class Node<DataTable> : public Def<Node<DataTable>>, public User {
+class Node<DataTable> final : public Def<Node<DataTable>>, public User {
  public:
   virtual ~Node(void);
 
@@ -95,6 +88,8 @@ class Node<DataTable> : public Def<Node<DataTable>>, public User {
         id(id_),
         columns(this),
         indices(this) {}
+
+  void Accept(ProgramVisitor &visitor);
 
   // Get or create a table in the program.
   static Node<DataTable> *GetOrCreate(ProgramImpl *impl, QueryView view);
@@ -136,6 +131,10 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
     }
   }
 
+  bool IsRead(void) const;
+
+  void Accept(ProgramVisitor &visitor);
+
   const unsigned id;
   const VectorKind kind;
   std::vector<TypeKind> col_types;
@@ -153,6 +152,8 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
         role(role_),
         id(id_) {}
 
+  void Accept(ProgramVisitor &visitor);
+
   const VariableRole role;
 
   // Unique ID for this variable. Unrelated to column IDs.
@@ -165,6 +166,16 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
   inline unsigned Sort(void) const noexcept {
     return id;
   }
+
+  inline bool IsGlobal(void) const noexcept {
+    switch (role) {
+      case VariableRole::kConditionRefCount:
+      case VariableRole::kConstant: return true;
+      default: return false;
+    }
+  }
+
+  TypeLoc Type(void) const noexcept;
 
   std::optional<QueryConstant> query_const;
   std::optional<QueryColumn> query_column;
@@ -180,6 +191,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   virtual ~Node(void);
   explicit Node(Node<ProgramProcedure> *containing_procedure_);
   explicit Node(Node<ProgramRegion> *parent_);
+
+  virtual void Accept(ProgramVisitor &visitor) = 0;
+  virtual uint64_t Hash(void) const = 0;
 
   virtual Node<ProgramProcedure> *AsProcedure(void) noexcept;
   virtual Node<ProgramOperationRegion> *AsOperation(void) noexcept;
@@ -245,14 +259,19 @@ enum class ProgramOperation {
 
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then
-  // execution descends into `body`. The table into which we are inserting is
-  // `views[0]`.
+  // execution descends into `body`.
   kInsertIntoTable,
+
+  // Check the state of a tuple from a table. This executes one of three
+  // bodies: `body` if the tuple is present, `absent_body` if the tuple is
+  // absent, and `unknown_body` if the tuple may have been deleted.
+  kCheckStateInTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendInductionInputToVector,
   kLoopOverInductionInputVector,
   kClearInductionInputVector,
+  kSwapInductionVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
   // cycle.
@@ -280,6 +299,11 @@ enum class ProgramOperation {
   kSortAndUniqueProductInputVector,
   kClearProductInputVector,
 
+  // Used to implement table/index scanning.
+  kScanTable,
+  kLoopOverScanVector,
+  kClearScanVector,
+
   // Loop over a vector of inputs. The format of the vector is based off of
   // the variables in `variables`. The region `body` is executed for each
   // loop iteration.
@@ -298,6 +322,7 @@ enum class ProgramOperation {
 
   // Publish a message.
   kPublishMessage,
+  kPublishMessageRemoval,
 
   // Creates a let binding, which assigns uses of variables to definitions of
   // variables. In practice, let bindings are eliminated during the process
@@ -309,10 +334,18 @@ enum class ProgramOperation {
   kTestAllNonZero,
   kTestAllZero,
   kIncrementAll,
+  kIncrementAllAndTest,
   kDecrementAll,
+  kDecrementAllAndTest,
 
   // Call another procedure.
   kCallProcedure,
+  kCallProcedureCheckTrue,
+  kCallProcedureCheckFalse,
+
+  // Return from a procedure.
+  kReturnTrueFromProcedure,
+  kReturnFalseFromProcedure,
 
   // TODO: use in future.
 
@@ -335,24 +368,28 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   explicit Node(REGION *parent_, ProgramOperation op_);
 
   virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
+  virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
   virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
   virtual Node<ProgramExistenceAssertionRegion> *
   AsExistenceAssertion(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
-  virtual Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept;
+  virtual Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept;
+  virtual Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
   virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
+  virtual Node<ProgramTableScanRegion> *AsTableScan(void) noexcept;
   virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
   virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
   virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
+  virtual Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept;
   virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
-  const ProgramOperation op;
+  ProgramOperation op;
 
   // If this operation does something conditional then this is the body it
   // executes.
@@ -361,13 +398,16 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
 using OP = Node<ProgramOperationRegion>;
 
-// A let binding, i.e. an assignment of zero or more variables.
+// A let binding, i.e. an assignment of zero or more variables. Variables
+// are assigned pairwise from `used_vars` into `defined_vars`.
 template <>
 class Node<ProgramLetBindingRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -389,18 +429,21 @@ class Node<ProgramLetBindingRegion> final
 
 using LET = Node<ProgramLetBindingRegion>;
 
-// A loop over a vector, specified in `tables[0]`. This also performs variable
-// binding into the variables specified in `variables`.
+// Loop over the vector `vector` and bind the extracted tuple elements into
+// the variables specified in `defined_vars`.
 template <>
 class Node<ProgramVectorLoopRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
+  void Accept(ProgramVisitor &visitor) override;
+
   inline Node(REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
         defined_vars(this) {}
 
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -419,17 +462,21 @@ class Node<ProgramVectorLoopRegion> final
 
 using VECTORLOOP = Node<ProgramVectorLoopRegion>;
 
-// An append of a tuple (specified in terms of `variables`) into a vector,
-// specified in terms of `tables[0]`.
+// Append a tuple into a vector. The elements in the tuple must match the
+// element/column types of the vector.
 template <>
 class Node<ProgramVectorAppendRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
+  void Accept(ProgramVisitor &visitor) override;
+
   inline Node(REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
         tuple_vars(this) {}
+
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -452,6 +499,10 @@ class Node<ProgramVectorClearRegion> final
   virtual ~Node(void);
   using Node<ProgramOperationRegion>::Node;
 
+  void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
+
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
@@ -464,6 +515,31 @@ class Node<ProgramVectorClearRegion> final
 
 using VECTORCLEAR = Node<ProgramVectorClearRegion>;
 
+// Swap the contents of two vectors.
+template <>
+class Node<ProgramVectorSwapRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+  using Node<ProgramOperationRegion>::Node;
+
+  void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept override;
+
+  UseRef<VECTOR> lhs;
+  UseRef<VECTOR> rhs;
+};
+
+using VECTORSWAP = Node<ProgramVectorSwapRegion>;
+
 // Sort and unique a vector.
 template <>
 class Node<ProgramVectorUniqueRegion> final
@@ -471,6 +547,10 @@ class Node<ProgramVectorUniqueRegion> final
  public:
   virtual ~Node(void);
   using Node<ProgramOperationRegion>::Node;
+
+  void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -484,19 +564,32 @@ class Node<ProgramVectorUniqueRegion> final
 
 using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
 
-// An append of a tuple (specified in terms of `variables`) into a vector,
-// specified in terms of `tables[0]`.
+// Set the state of a tuple in a view. In the simplest case, this behaves like
+// a SQL `INSERT` statement: it says that some data exists in a relation. There
+// are two other states that can be set: absent, which is like a `DELETE`, and
+// unknown, which has no SQL equivalent, but it like a tentative `DELETE`. An
+// unknown tuple is one which has been speculatively marked as deleted, and
+// needs to be re-proven in order via alternate means in order for it to be
+// used.
 template <>
-class Node<ProgramTableInsertRegion> final
+class Node<ProgramTransitionStateRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_)
+
+  inline Node(Node<ProgramRegion> *parent_, TupleState from_state_,
+              TupleState to_state_)
       : Node<ProgramOperationRegion>(parent_,
                                      ProgramOperation::kInsertIntoTable),
-        col_values(this) {}
+        col_values(this),
+        from_state(from_state_),
+        to_state(to_state_) {}
 
-  Node<ProgramTableInsertRegion> *AsTableInsert(void) noexcept override;
+  void Accept(ProgramVisitor &visitor) override;
+
+  Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
+
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -508,22 +601,71 @@ class Node<ProgramTableInsertRegion> final
 
   // View into which the tuple is being inserted.
   UseRef<TABLE> table;
+
+  const TupleState from_state;
+  const TupleState to_state;
 };
 
-using TABLEINSERT = Node<ProgramTableInsertRegion>;
+using CHANGESTATE = Node<ProgramTransitionStateRegion>;
 
-// A call of one procedure from within another.
+// Check the state of a tuple. This is sort of like asking if something exists,
+// but has three conditionally executed children, based off of the state.
+// One state is that the tuple os missing from a view. The second state is
+// that the tuple is present in the view. The final state is that we are
+// not sure if the tuple is present or absent, because it has been marked
+// as a candidate for deletion, and thus we need to re-prove it.
+template <>
+class Node<ProgramCheckStateRegion> final
+    : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(Node<ProgramRegion> *parent_)
+      : Node<ProgramOperationRegion>(parent_,
+                                     ProgramOperation::kCheckStateInTable),
+        col_values(this) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  // Variables that make up the tuple.
+  UseList<VAR> col_values;
+
+  // View into which the tuple is being inserted.
+  UseRef<TABLE> table;
+
+  // Region that is conditionally executed if the tuple is not present.
+  UseRef<REGION> absent_body;
+
+  // Region that is conditionally executed if the tuple was deleted and hasn't
+  // been re-checked.
+  UseRef<REGION> unknown_body;
+};
+
+using CHECKSTATE = Node<ProgramCheckStateRegion>;
+
+// Calls another IR procedure. All IR procedures return `true` or `false`. This
+// return value can be tested, and if it is, a body can be conditionally
+// executed based off of the result of that test.
 template <>
 class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, Node<ProgramProcedure> *called_proc_)
-      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCallProcedure),
-        called_proc(called_proc_),
-        arg_vars(this),
-        arg_vecs(this) {}
+  Node(unsigned id_, Node<ProgramRegion> *parent_,
+       Node<ProgramProcedure> *called_proc_,
+       ProgramOperation op_ = ProgramOperation::kCallProcedure);
 
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -534,28 +676,53 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
 
   // Procedure being called.
-  Node<ProgramProcedure> *const called_proc;
+  UseRef<Node<ProgramProcedure>, REGION> called_proc;
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
 
   // Vectors passed as arguments.
   UseList<VECTOR> arg_vecs;
+
+  const unsigned id;
 };
 
 using CALL = Node<ProgramCallRegion>;
 
-// A call of one procedure from within another.
+// Returns true/false from a procedure.
+template <>
+class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
+      : Node<ProgramOperationRegion>(parent_, op_) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
+  bool IsNoOp(void) const noexcept override;
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramReturnRegion> *AsReturn(void) noexcept override;
+};
+
+using RETURN = Node<ProgramReturnRegion>;
+
+// Publishes a message to the pub/sub.
 template <>
 class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, ParsedMessage message_)
-      : Node<ProgramOperationRegion>(parent_,
-                                     ProgramOperation::kPublishMessage),
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_,
+       ProgramOperation op_ = ProgramOperation::kPublishMessage)
+      : Node<ProgramOperationRegion>(parent_, op_),
         message(message_),
         arg_vars(this) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -584,6 +751,9 @@ class Node<ProgramExistenceCheckRegion> final
       : Node<ProgramOperationRegion>(parent_, op_),
         cond_vars(this) {}
 
+  void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -610,6 +780,9 @@ class Node<ProgramExistenceAssertionRegion> final
       : Node<ProgramOperationRegion>(parent_, op_),
         cond_vars(this) {}
 
+  void Accept(ProgramVisitor &visitor) override;
+
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -631,14 +804,17 @@ template <>
 class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_, unsigned id_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kJoinTables),
         query_join(query_join_),
+        id(id_),
         tables(this),
         indices(this),
         pivot_vars(this),
         pivot_cols() {}
 
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -649,12 +825,13 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
   Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept override;
 
   const QueryJoin query_join;
+  const unsigned id;
 
   UseList<TABLE> tables;
   UseList<TABLEINDEX> indices;
   UseRef<VECTOR> pivot_vec;
 
-  // There is a `1:N` correspondence bween `pivot_vars` and `pivot_cols`.
+  // There is a `1:N` correspondence between `pivot_vars` and `pivot_cols`.
   DefList<VAR> pivot_vars;
   std::vector<UseList<TABLECOLUMN>> pivot_cols;
 
@@ -671,12 +848,16 @@ class Node<ProgramTableProductRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_)
+  inline Node(Node<ProgramRegion> *parent_, QueryJoin query_join_,
+              unsigned id_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCrossProduct),
         query_join(query_join_),
         tables(this),
-        input_vectors(this) {}
+        input_vecs(this),
+        id(id_) {}
 
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -689,11 +870,49 @@ class Node<ProgramTableProductRegion> final
   const QueryJoin query_join;
 
   UseList<TABLE> tables;
-  UseList<VECTOR> input_vectors;
+  UseList<VECTOR> input_vecs;
   std::vector<DefList<VAR>> output_vars;
+  const unsigned id;
 };
 
 using TABLEPRODUCT = Node<ProgramTableProductRegion>;
+
+// Perform a scan over a table, possibly using an index. If an index is being
+// used the input variables are provided to perform equality matching against
+// column values. The results of the scan fill a vector.
+template <>
+class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(Node<ProgramRegion> *parent_)
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kScanTable),
+        out_cols(this),
+        in_cols(this),
+        in_vars(this) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramTableScanRegion> *AsTableScan(void) noexcept override;
+
+  UseRef<TABLE> table;
+  UseList<TABLECOLUMN> out_cols;
+
+  UseRef<TABLEINDEX> index;
+  UseList<TABLECOLUMN> in_cols;
+  UseList<VAR> in_vars;
+
+  UseRef<VECTOR> output_vector;
+};
+
+using TABLESCAN = Node<ProgramTableScanRegion>;
 
 // Comparison between two tuples.
 template <>
@@ -707,6 +926,8 @@ class Node<ProgramTupleCompareRegion> final
         lhs_vars(this),
         rhs_vars(this) {}
 
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -728,22 +949,27 @@ template <>
 class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
-  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_)
+  inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_,
+              unsigned id_, bool is_positive_)
       : Node<ProgramOperationRegion>(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
         defined_vars(this),
-        used_vars(this) {}
+        used_vars(this),
+        id(id_),
+        is_positive(is_positive_) {}
 
-  Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
-
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
 
   const ParsedFunctor functor;
 
@@ -752,6 +978,10 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
 
   // Bound variables passed in as arguments to the functor.
   UseList<VAR> used_vars;
+
+  const unsigned id;
+
+  const bool is_positive;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;
@@ -766,11 +996,16 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
       : Node<ProgramRegion>(this),
         id(id_),
         kind(kind_),
-        tables(this) {}
+        tables(this),
+        input_vecs(this),
+        input_vars(this),
+        vectors(this) {}
 
-
-  // Returns `true` if this region is a no-op.
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
+  bool Equals(EqualitySet &eq,
+              Node<ProgramRegion> *that) const noexcept override;
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
@@ -791,7 +1026,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   UseRef<REGION> body;
 
   // Input vectors and variables.
-  DefList<VECTOR> input_vectors;
+  DefList<VECTOR> input_vecs;
   DefList<VAR> input_vars;
 
   // Vectors defined in this procedure. If this is a vector procedure then
@@ -801,6 +1036,16 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // Are we currently checking if this procedure is being used? This is to
   // avoid infinite recursion when doing a procedure call NoOp checks.
   mutable bool checking_if_nop{false};
+
+  // Do we need to keep this procedure around? This happens if we're holding
+  // a raw, non-`UseRef`/`UseList` pointer to this procedure, such as inside
+  // of `ProgramQuery` specifications.
+  bool has_raw_use{false};
+
+  // Should we not bother trying to merge this function with another one? This
+  // comes up when this function has been converted into a call to another one
+  // (due to equivalence, but where both are marked with `has_raw_use`).
+  bool is_alias{false};
 };
 
 using PROC = Node<ProgramProcedure>;
@@ -813,13 +1058,17 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
   inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
 
   virtual ~Node(void);
-  Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
 };
@@ -833,14 +1082,18 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
   inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
 
   virtual ~Node(void);
-  Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
+
+  void Accept(ProgramVisitor &visitor) override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
 
+  uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
+
+  Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
 };
@@ -855,14 +1108,18 @@ template <>
 class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
-  Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
+
+  void Accept(ProgramVisitor &visitor) override;
 
   explicit Node(ProgramImpl *impl, REGION *parent_);
+  uint64_t Hash(void) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
 
   // Initial regions that fill up one or more of the inductive vectors.
   UseRef<REGION> init_region;
@@ -880,18 +1137,14 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // going into a co-mingled induction, as is the case in
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
   std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_input_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_induction_vec;
 
   // List of append to vector regions inside this induction.
   std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
 
-  // List of append to vector regions inside this induction.
-  std::unordered_map<QueryView, UseList<REGION>> view_to_cycle_appends;
-
-  // Maps views to their cycles inside of the `cyclic_region`.
-  std::unordered_map<QueryView, UseRef<REGION>> view_to_cycle_loop;
-
-  // Maps views to their cycles inside of the `output_region`.
-  std::unordered_map<QueryView, UseRef<REGION>> view_to_output_loop;
+  PROC *cycle_proc{nullptr};
+  PROC *output_proc{nullptr};
 
   enum State {
     kAccumulatingInputRegions,
@@ -909,17 +1162,24 @@ class ProgramImpl : public User {
   inline explicit ProgramImpl(Query query_)
       : User(this),
         query(query_),
+        query_checkers(this),
         procedure_regions(this),
         series_regions(this),
         parallel_regions(this),
         induction_regions(this),
         operation_regions(this),
-        tables(this) {}
+        tables(this),
+        global_vars(this),
+        const_vars(this) {}
 
   void Optimize(void);
 
-  // The dataflow from which this was created.
+  // The data flow representation from which this was created.
   const Query query;
+
+  // List of query entry points.
+  std::vector<ProgramQuery> queries;
+  UseList<REGION> query_checkers;
 
   DefList<PROC> procedure_regions;
   DefList<SERIES> series_regions;

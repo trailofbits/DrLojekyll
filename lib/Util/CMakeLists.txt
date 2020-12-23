@@ -6,6 +6,7 @@ set(Util_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/DisjointSet.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/EqualitySet.h"
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/Node.h"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Util/OpaqueData.h"
 )
 
 set(Util_SRCS

@@ -1,0 +1,6 @@
+#message add_x(i32 X)
+#local foo(i32 X, i32 Y)
+#query bar(free i32 Y)
+
+foo(1, 2).
+bar(Y) : foo(X, Y), add_x(X).

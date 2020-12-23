@@ -9,16 +9,18 @@ class ContinueProductWorkItem final : public WorkItem {
  public:
   virtual ~ContinueProductWorkItem(void) {}
 
-  ContinueProductWorkItem(QueryView view_)
-      : WorkItem(view_.Depth()),
-        view(view_) {}
+  ContinueProductWorkItem(Context &context, QueryView view_)
+      : WorkItem(context, view_.Depth()),
+        view(view_) {
+    this->product_vector = context.product_vector;
+  }
 
   // Find the common ancestor of all insert regions.
   REGION *FindCommonAncestorOfAppendRegions(void) const;
 
   void Run(ProgramImpl *program, Context &context) override;
 
-  std::unordered_set<VECTOR *> vectors;
+  std::vector<VECTOR *> vectors;
   std::vector<OP *> appends;
 
  private:
@@ -70,7 +72,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   for (auto vec : vectors) {
     const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
         seq, ProgramOperation::kSortAndUniqueProductInputVector);
-    UseRef<VECTOR>(unique, vec).Swap(unique->vector);
+    unique->vector.Emplace(unique, vec);
     unique->ExecuteAfter(impl, seq);
   }
 
@@ -78,7 +80,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
   const auto product =
-      impl->operation_regions.CreateDerived<TABLEPRODUCT>(seq, join_view);
+      impl->operation_regions.CreateDerived<TABLEPRODUCT>(
+          seq, join_view, impl->next_id++);
   product->ExecuteAfter(impl, seq);
 
   // Clear out the input vectors that might have been filled up before the
@@ -86,21 +89,23 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   for (auto vec : vectors) {
     auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
         seq, ProgramOperation::kClearProductInputVector);
-    UseRef<VECTOR>(clear, vec).Swap(clear->vector);
+    clear->vector.Emplace(clear, vec);
     clear->ExecuteAfter(impl, seq);
   }
 
   for (auto pred_view : view.Predecessors()) {
+    DataModel * const pred_model = \
+        impl->view_to_model[pred_view]->FindAs<DataModel>();
+    TABLE * const pred_table = pred_model->table;
 
-    const auto table = TABLE::GetOrCreate(impl, pred_view);
-    auto &vec = context.product_vector[table];
+    auto &vec = context.product_vector[pred_table];
     if (!vec) {
       vec =
           proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
     }
 
-    product->tables.AddUse(table);
-    product->input_vectors.AddUse(vec);
+    product->tables.AddUse(pred_table);
+    product->input_vecs.AddUse(vec);
 
     // Make a variable for each column of the input table.
     auto &out_vars = product->output_vars.emplace_back(product);
@@ -130,30 +135,45 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
 // Build an eager cross-product for a join.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryJoin view, Context &context, OP *parent,
-                             TABLE *last_model) {
+                             QueryJoin product_view, Context &context,
+                             OP *parent, TABLE *last_table) {
+  const QueryView view(product_view);
 
-  // First, check if we should push this tuple through the JOIN. If it's
+  // First, check if we should push this tuple through the PRODUCT. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  const auto table = TABLE::GetOrCreate(impl, pred_view);
-  if (table != last_model) {
-
-    const auto insert =
-        impl->operation_regions.CreateDerived<TABLEINSERT>(parent);
-
-    for (auto col : pred_view.Columns()) {
-      const auto var = parent->VariableFor(impl, col);
-      insert->col_values.AddUse(var);
-    }
-
-    UseRef<TABLE>(insert, table).Swap(insert->table);
-    UseRef<REGION>(parent, insert).Swap(parent->body);
-    parent = insert;
+  DataModel * const pred_model = \
+      impl->view_to_model[pred_view]->FindAs<DataModel>();
+  TABLE * const pred_table = pred_model->table;
+  if (pred_table != last_table) {
+    parent =
+        BuildInsertCheck(impl, pred_view, context, parent, pred_table,
+                         pred_view.CanProduceDeletions(), pred_view.Columns());
+    last_table = pred_table;
   }
 
-  auto &vec = context.product_vector[table];
+  // Nothing really to do, this cross-product just needs to pass its data
+  // through. This is some kind of weird degenerate case that might happen
+  // due to a failure in optimization.
+  if (view.Predecessors().size() == 1u) {
+    product_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                                std::optional<QueryColumn> out_col) {
+      if (out_col) {
+        const auto in_var = parent->VariableFor(impl, in_col);
+        assert(in_var != nullptr);
+        parent->col_id_to_var[out_col->Id()] = in_var;
+      }
+    });
+
+    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+                               last_table);
+    return;
+  }
+
+  auto &vec = context.product_vector[pred_table];
+  bool is_new_vec = false;
   if (!vec) {
+    is_new_vec = true;
     const auto proc = parent->containing_procedure;
     vec = proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
   }
@@ -167,16 +187,18 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     append->tuple_vars.AddUse(var);
   }
 
-  UseRef<VECTOR>(append, vec).Swap(append->vector);
-  UseRef<REGION>(parent, append).Swap(parent->body);
+  append->vector.Emplace(append, vec);
+  parent->body.Emplace(parent, append);
 
-  auto &action = context.view_to_work_item[view];
+  auto &action = context.view_to_work_item[product_view];
   if (!action) {
-    action = new ContinueProductWorkItem(view);
+    action = new ContinueProductWorkItem(context, product_view);
     context.work_list.emplace_back(action);
   }
 
-  dynamic_cast<ContinueProductWorkItem *>(action)->vectors.insert(vec);
+  if (is_new_vec) {
+    dynamic_cast<ContinueProductWorkItem *>(action)->vectors.push_back(vec);
+  }
   dynamic_cast<ContinueProductWorkItem *>(action)->appends.push_back(append);
 }
 

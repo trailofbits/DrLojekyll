@@ -2,14 +2,11 @@
 
 #include "Program.h"
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
-
 namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
+  query_checkers.ClearWithoutErasure();
+
   for (auto table : tables) {
     for (auto column : table->columns) {
       column->table.ClearWithoutErasure();
@@ -32,15 +29,6 @@ ProgramImpl::~ProgramImpl(void) {
     for (auto &entry : induction->view_to_init_appends) {
       entry.second.ClearWithoutErasure();
     }
-    for (auto &entry : induction->view_to_cycle_appends) {
-      entry.second.ClearWithoutErasure();
-    }
-    for (auto &entry : induction->view_to_cycle_loop) {
-      entry.second.ClearWithoutErasure();
-    }
-    for (auto &entry : induction->view_to_output_loop) {
-      entry.second.ClearWithoutErasure();
-    }
     for (auto &entry : induction->view_to_vec) {
       entry.second.ClearWithoutErasure();
     }
@@ -52,6 +40,7 @@ ProgramImpl::~ProgramImpl(void) {
 
   for (auto op : operation_regions) {
     op->body.ClearWithoutErasure();
+
     if (auto let = op->AsLetBinding(); let) {
       let->used_vars.ClearWithoutErasure();
 
@@ -65,7 +54,14 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto vec_clear = op->AsVectorClear(); vec_clear) {
       vec_clear->vector.ClearWithoutErasure();
 
-    } else if (auto view_insert = op->AsTableInsert(); view_insert) {
+    } else if (auto vec_swap = op->AsVectorSwap(); vec_swap) {
+      vec_swap->lhs.ClearWithoutErasure();
+      vec_swap->rhs.ClearWithoutErasure();
+
+    } else if (auto vec_unique = op->AsVectorUnique(); vec_unique) {
+      vec_unique->vector.ClearWithoutErasure();
+
+    } else if (auto view_insert = op->AsTransitionState(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
 
@@ -80,6 +76,17 @@ ProgramImpl::~ProgramImpl(void) {
       for (auto &cols : view_join->output_cols) {
         cols.ClearWithoutErasure();
       }
+
+    } else if (auto view_product = op->AsTableProduct(); view_product) {
+      view_product->tables.ClearWithoutErasure();
+      view_product->input_vecs.ClearWithoutErasure();
+
+    } else if (auto view_scan = op->AsTableScan(); view_scan) {
+      view_scan->index.ClearWithoutErasure();
+      view_scan->in_cols.ClearWithoutErasure();
+      view_scan->in_vars.ClearWithoutErasure();
+      view_scan->output_vector.ClearWithoutErasure();
+      view_scan->table.ClearWithoutErasure();
 
     } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
       exists_check->cond_vars.ClearWithoutErasure();
@@ -97,6 +104,13 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto call = op->AsCall(); call) {
       call->arg_vars.ClearWithoutErasure();
       call->arg_vecs.ClearWithoutErasure();
+      call->called_proc.ClearWithoutErasure();
+
+    } else if (auto check = op->AsCheckState(); check) {
+      check->col_values.ClearWithoutErasure();
+      check->table.ClearWithoutErasure();
+      check->absent_body.ClearWithoutErasure();
+      check->unknown_body.ClearWithoutErasure();
 
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
@@ -112,6 +126,21 @@ Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
 Program::~Program(void) {}
 
+// List of query entry points.
+const std::vector<ProgramQuery> &Program::Queries(void) const noexcept {
+  return impl->queries;
+}
+
+// Return the query used to build this program.
+::hyde::Query Program::Query(void) const noexcept {
+  return impl->query;
+}
+
+// Return the parsed module used to build the query.
+::hyde::ParsedModule Program::ParsedModule(void) const noexcept {
+  return impl->query.ParsedModule();
+}
+
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
 
@@ -120,6 +149,19 @@ ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
 
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
     : program::ProgramNode<ProgramRegion>(region.impl) {}
+
+std::optional<ProgramRegion>
+ProgramRegion::Containing(ProgramRegion &self) noexcept {
+  if (self.impl->parent != self.impl->containing_procedure) {
+    return ProgramRegion(self.impl->parent);
+  } else {
+    return std::nullopt;
+  }
+}
+
+void ProgramRegion::Accept(ProgramVisitor &visitor) const {
+  impl->Accept(visitor);
+}
 
 bool ProgramRegion::IsInduction(void) const noexcept {
   return impl->AsInduction() != nullptr;
@@ -145,18 +187,22 @@ bool ProgramRegion::IsParallel(void) const noexcept {
   }
 
 IS_OP(Call)
+IS_OP(Return)
 IS_OP(ExistenceAssertion)
 IS_OP(ExistenceCheck)
 IS_OP(Generate)
 IS_OP(LetBinding)
 IS_OP(Publish)
-IS_OP(TableInsert)
+IS_OP(TransitionState)
+IS_OP(CheckState)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
+IS_OP(TableScan)
 IS_OP(TupleCompare)
 IS_OP(VectorLoop)
 IS_OP(VectorAppend)
 IS_OP(VectorClear)
+IS_OP(VectorSwap)
 IS_OP(VectorUnique)
 
 #undef IS_OP
@@ -183,11 +229,13 @@ bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
 }
 
 bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
-  return impl->op == ProgramOperation::kIncrementAll;
+  return impl->op == ProgramOperation::kIncrementAll ||
+         impl->op == ProgramOperation::kIncrementAllAndTest;
 }
 
 bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
-  return impl->op == ProgramOperation::kDecrementAll;
+  return impl->op == ProgramOperation::kDecrementAll ||
+         impl->op == ProgramOperation::kDecrementAllAndTest;
 }
 
 #define OPTIONAL_BODY(name) \
@@ -200,13 +248,15 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
   }
 
 OPTIONAL_BODY(ProgramExistenceCheckRegion)
+OPTIONAL_BODY(ProgramExistenceAssertionRegion)
 OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)
-OPTIONAL_BODY(ProgramTableInsertRegion)
+OPTIONAL_BODY(ProgramTransitionStateRegion)
 OPTIONAL_BODY(ProgramTableJoinRegion)
 OPTIONAL_BODY(ProgramTableProductRegion)
 OPTIONAL_BODY(ProgramTupleCompareRegion)
+OPTIONAL_BODY(ProgramCallRegion)
 
 #undef OPTIONAL_BODY
 
@@ -220,17 +270,21 @@ OPTIONAL_BODY(ProgramTupleCompareRegion)
   }
 
 FROM_OP(ProgramCallRegion, AsCall)
+FROM_OP(ProgramReturnRegion, AsReturn)
 FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
 FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
 FROM_OP(ProgramPublishRegion, AsPublish)
-FROM_OP(ProgramTableInsertRegion, AsTableInsert)
+FROM_OP(ProgramTransitionStateRegion, AsTransitionState)
+FROM_OP(ProgramCheckStateRegion, AsCheckState)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
+FROM_OP(ProgramTableScanRegion, AsTableScan)
 FROM_OP(ProgramVectorLoopRegion, AsVectorLoop)
 FROM_OP(ProgramVectorAppendRegion, AsVectorAppend)
 FROM_OP(ProgramVectorClearRegion, AsVectorClear)
+FROM_OP(ProgramVectorSwapRegion, AsVectorSwap)
 FROM_OP(ProgramVectorUniqueRegion, AsVectorUnique)
 
 #undef FROM_OP
@@ -252,7 +306,7 @@ DEFINED_RANGE(ProgramGenerateRegion, OutputVariables, DataVariable, defined_vars
 DEFINED_RANGE(ProgramVectorLoopRegion, TupleVariables, DataVariable, defined_vars)
 DEFINED_RANGE(DataTable, Columns, DataColumn, columns)
 DEFINED_RANGE(DataTable, Indices, DataIndex, indices)
-DEFINED_RANGE(ProgramProcedure, VectorParameters, DataVector, input_vectors)
+DEFINED_RANGE(ProgramProcedure, VectorParameters, DataVector, input_vecs)
 DEFINED_RANGE(ProgramProcedure, VariableParameters, DataVariable, input_vars)
 DEFINED_RANGE(ProgramProcedure, DefinedVectors, DataVector, vectors)
 DEFINED_RANGE(Program, Tables, DataTable, tables)
@@ -271,8 +325,10 @@ USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
-USED_RANGE(ProgramTableInsertRegion, TupleVariables, DataVariable, col_values)
-USED_RANGE(DataIndex, Columns, DataColumn, columns)
+USED_RANGE(ProgramTransitionStateRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckStateRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(DataIndex, KeyColumns, DataColumn, columns)
+USED_RANGE(DataIndex, ValueColumns, DataColumn, mapped_columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
 USED_RANGE(ProgramTupleCompareRegion, RHS, DataVariable, rhs_vars)
 USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
@@ -281,7 +337,10 @@ USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
 USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
 USED_RANGE(ProgramTableProductRegion, Tables, DataTable, tables)
-USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vectors)
+USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vecs)
+USED_RANGE(ProgramTableScanRegion, IndexedColumns, DataColumn, in_cols)
+USED_RANGE(ProgramTableScanRegion, SelectedColumns, DataColumn, out_cols)
+USED_RANGE(ProgramTableScanRegion, InputVariables, DataVariable, in_vars)
 
 // clang-format on
 
@@ -297,6 +356,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kAppendInductionInputToVector:
     case ProgramOperation::kClearInductionInputVector:
     case ProgramOperation::kLoopOverInductionInputVector:
+    case ProgramOperation::kSwapInductionVector:
       return VectorUsage::kInductionVector;
     case ProgramOperation::kAppendUnionInputToVector:
     case ProgramOperation::kLoopOverUnionInputVector:
@@ -309,6 +369,9 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kSortAndUniqueProductInputVector:
     case ProgramOperation::kClearProductInputVector:
       return VectorUsage::kProductInputVector;
+    case ProgramOperation::kScanTable:
+    case ProgramOperation::kLoopOverScanVector:
+    case ProgramOperation::kClearScanVector: return VectorUsage::kTableScan;
     default: assert(false); return VectorUsage::kInvalid;
   }
 }
@@ -329,6 +392,18 @@ VECTOR_OPS(ProgramVectorClearRegion)
 VECTOR_OPS(ProgramVectorUniqueRegion)
 
 #undef VECTOR_OPS
+
+DataVector ProgramVectorSwapRegion::LHS(void) const noexcept {
+  return DataVector(impl->lhs.get());
+}
+
+DataVector ProgramVectorSwapRegion::RHS(void) const noexcept {
+  return DataVector(impl->rhs.get());
+}
+
+unsigned ProgramGenerateRegion::Id(void) const noexcept {
+  return impl->id;
+}
 
 // Does this functor application behave like a filter function?
 bool ProgramGenerateRegion::IsFilter(void) const noexcept {
@@ -352,20 +427,68 @@ ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
 }
 
-unsigned ProgramTableInsertRegion::Arity(void) const noexcept {
+// Returns `true` if it's an application of the functor meant to get results,
+// and `false` if we're testing for the absence of results.
+bool ProgramGenerateRegion::IsPositive(void) const noexcept {
+  return impl->is_positive;
+}
+
+unsigned ProgramTransitionStateRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramTableInsertRegion::Table(void) const {
+DataTable ProgramTransitionStateRegion::Table(void) const {
   return DataTable(impl->table.get());
+}
+
+TupleState ProgramTransitionStateRegion::FromState(void) const noexcept {
+  return impl->from_state;
+}
+
+TupleState ProgramTransitionStateRegion::ToState(void) const noexcept {
+  return impl->to_state;
+}
+
+unsigned ProgramCheckStateRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
+}
+
+DataTable ProgramCheckStateRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+std::optional<ProgramRegion>
+ProgramCheckStateRegion::IfPresent(void) const noexcept {
+  if (auto body = impl->body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramCheckStateRegion::IfAbsent(void) const noexcept {
+  if (auto body = impl->absent_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramCheckStateRegion::IfUnknown(void) const noexcept {
+  if (auto body = impl->unknown_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
 }
 
 VariableRole DataVariable::DefiningRole(void) const noexcept {
   return impl->role;
 }
 
-// The region which defined this local variable. If this variable has no
-// defining region then it is a global variable.
+// The region which defined this local variable.
 std::optional<ProgramRegion> DataVariable::DefiningRegion(void) const noexcept {
   if (impl->defining_region) {
     return ProgramRegion(impl->defining_region);
@@ -405,26 +528,19 @@ std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
 }
 
 // Type of this variable.
-TypeKind DataVariable::Type(void) const noexcept {
-  switch (impl->role) {
-    case VariableRole::kConditionRefCount: return TypeKind::kUnsigned64;
+TypeLoc DataVariable::Type(void) const noexcept {
+  return impl->Type();
+}
+
+// Whether this variable is global.
+bool DataVariable::IsGlobal(void) const noexcept {
+  switch (DefiningRole()) {
+    case VariableRole::kConditionRefCount:
     case VariableRole::kConstant:
-      if (impl->query_const) {
-        return impl->query_const->Literal().Type().Kind();
-      }
-      [[clang::fallthrough]];
-    case VariableRole::kVectorVariable:
-    case VariableRole::kLetBinding:
-    case VariableRole::kJoinPivot:
-    case VariableRole::kJoinNonPivot:
-    case VariableRole::kProductOutput:
-    case VariableRole::kFunctorOutput:
-      if (impl->query_column) {
-        return impl->query_column->Type().Kind();
-      }
+      return true;
+    default:
+      return false;
   }
-  assert(false);
-  return TypeKind::kInvalid;
 }
 
 // Unique ID of this column.
@@ -467,6 +583,20 @@ unsigned DataTable::Id(void) const noexcept {
   return impl->id;
 }
 
+// Visit the users of this vector.
+void DataTable::VisitUsers(ProgramVisitor &visitor) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&](Node<ProgramRegion> *region, Node<DataTable> *) {
+        region->Accept(visitor);
+      });
+}
+
+// Apply a function to each user.
+void DataTable::ForEachUser(std::function<void(ProgramRegion)> cb) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&](Node<ProgramRegion> *region, Node<DataTable> *) { cb(region); });
+}
+
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;
 }
@@ -481,6 +611,25 @@ bool DataVector::IsInputVector(void) const noexcept {
 
 const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
   return impl->col_types;
+}
+
+// Visit the users of this vector.
+void DataVector::VisitUsers(ProgramVisitor &visitor) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&](Node<ProgramRegion> *region, Node<DataVector> *) {
+        region->Accept(visitor);
+      });
+}
+
+// Apply a function to each user.
+void DataVector::ForEachUser(std::function<void(ProgramRegion)> cb) {
+  impl->ForEachUse<Node<ProgramRegion>>(
+      [&](Node<ProgramRegion> *region, Node<DataVector> *) { cb(region); });
+}
+
+// Return the procedure containing another region.
+ProgramProcedure ProgramProcedure::Containing(ProgramRegion region) noexcept {
+  return ProgramProcedure(region.impl->containing_procedure);
 }
 
 // Unique ID of this procedure.
@@ -544,6 +693,11 @@ ComparisonOperator ProgramTupleCompareRegion::Operator(void) const noexcept {
   return impl->cmp_op;
 }
 
+// Unique ID for this join.
+unsigned ProgramTableJoinRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
 // The index used by the Nth table scan.
 DataIndex ProgramTableJoinRegion::Index(unsigned table_index) const noexcept {
   assert(table_index < impl->indices.Size());
@@ -582,11 +736,22 @@ ProgramTableJoinRegion::OutputVariables(unsigned table_index) const {
           DefinedNodeIterator<DataVariable>(vars.end())};
 }
 
+// Unique ID of this region.
+unsigned ProgramTableProductRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
+// The table used by the Nth table scan.
+DataTable ProgramTableProductRegion::Table(unsigned table_index) const noexcept {
+  assert(table_index < impl->tables.Size());
+  return DataTable(impl->tables[table_index]);
+}
+
 // The index used by the Nth table scan.
 DataVector
 ProgramTableProductRegion::Vector(unsigned table_index) const noexcept {
-  assert(table_index < impl->input_vectors.Size());
-  return DataVector(impl->input_vectors[table_index]);
+  assert(table_index < impl->input_vecs.Size());
+  return DataVector(impl->input_vecs[table_index]);
 }
 
 DefinedNodeRange<DataVariable>
@@ -597,16 +762,58 @@ ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
           DefinedNodeIterator<DataVariable>(vars.end())};
 }
 
+// The table being scanned.
+DataTable ProgramTableScanRegion::Table(void) const noexcept {
+  return DataTable(impl->table.get());
+}
+
+// Optional index being scanned.
+std::optional<DataIndex> ProgramTableScanRegion::Index(void) const noexcept {
+  if (impl->index) {
+    return DataIndex(impl->index.get());
+  } else {
+    return std::nullopt;
+  }
+}
+
+// The scanned results are filled into this vector.
+DataVector ProgramTableScanRegion::FilledVector(void) const {
+  return DataVector(impl->output_vector.get());
+}
+
+unsigned ProgramCallRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
-  return ProgramProcedure(impl->called_proc);
+  return ProgramProcedure(impl->called_proc.get());
+}
+
+// Should we execute the body if the called procedure returns `true`?
+bool ProgramCallRegion::ExecuteBodyIfReturnIsTrue(void) const noexcept {
+  return impl->op == ProgramOperation::kCallProcedureCheckTrue;
+}
+
+// Should we execute the body if the called procedure returns `false`?
+bool ProgramCallRegion::ExecuteBodyIfReturnIsFalse(void) const noexcept {
+  return impl->op == ProgramOperation::kCallProcedureCheckFalse;
+}
+
+bool ProgramReturnRegion::ReturnsTrue(void) const noexcept {
+  return impl->op == ProgramOperation::kReturnTrueFromProcedure;
+}
+
+bool ProgramReturnRegion::ReturnsFalse(void) const noexcept {
+  return impl->op == ProgramOperation::kReturnFalseFromProcedure;
 }
 
 ParsedMessage ProgramPublishRegion::Message(void) const noexcept {
   return impl->message;
 }
 
-}  // namespace hyde
+// Are we publishing the removal of some tuple?
+bool ProgramPublishRegion::IsRemoval(void) const noexcept {
+  return impl->op == ProgramOperation::kPublishMessageRemoval;
+}
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
+}  // namespace hyde

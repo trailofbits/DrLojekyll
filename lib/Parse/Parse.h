@@ -9,6 +9,7 @@
 #include <drlojekyll/Parse/Parse.h>
 
 #include <cassert>
+#include <filesystem>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -110,6 +111,7 @@ class Node<ParsedLiteral> {
   Token literal;
   TypeLoc type;
   std::string data;
+  Node<ParsedForeignType> *foreign_type{nullptr};
 };
 
 class UseBase {
@@ -319,6 +321,10 @@ class Node<ParsedClause> {
   Token dot;
   Token last_tok;
 
+  // Signals whether or not we should enable highlighting in the data flow
+  // representation to highlight the nodes associated with this clause body.
+  Token highlight;
+
   // Variables used in this clause.
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;
@@ -396,9 +402,23 @@ class Node<ParsedDeclaration> {
   FunctorRange range{FunctorRange::kZeroOrMore};
   Token inline_attribute;
   Token last_tok;
+
+  // Is this decl a functor, and if so, does it have `aggregate`- and
+  // `summary`-attributed parameters.
   bool is_aggregate{false};
+
+  // Is this decl a functor, and if so, does it always produce the same outputs
+  // given the same inputs, or has it been attributed with `impure` and thus
+  // might behave non-deterministically.
   bool is_pure{true};
+
+  // Is this decl a functor, and if so, is it used as a merge functor to a
+  // `mutable`-attributed parameter of another decl.
   bool is_merge{false};
+
+  // Does this declaration have any `mutable`-attributed parameter?
+  bool has_mutable_parameter{false};
+
   std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
   std::string binding_pattern;
 
@@ -444,37 +464,71 @@ class Node<ParsedImport> {
 
   DisplayPosition directive_pos;
   Token path;
+  std::filesystem::path resolved_path;
   Node<ParsedModule> *imported_module{nullptr};
 };
 
 template <>
-class Node<ParsedInclude> {
+class Node<ParsedForeignConstant> {
  public:
-  inline Node(DisplayRange range_, std::string_view path_, bool is_angled_)
-      : range(range_),
-        path(path_),
-        is_angled(is_angled_) {}
 
-  // Next include in this module.
-  Node<ParsedInclude> *next{nullptr};
+  // The next foreign constant defined on this type for a particular language.
+  Node<ParsedForeignConstant> *next{nullptr};
+  Node<ParsedForeignConstant> *next_with_same_name{nullptr};
+  Node<ParsedForeignType> *parent{nullptr};
 
-  const DisplayRange range;
-  const std::string path;
-  const bool is_angled;
+  Language lang{Language::kUnknown};
+  DisplayRange range;
+  std::string code;
+  Token name;
+  TypeLoc type;
+  bool can_overide{true};
+};
+
+template <>
+class Node<ParsedForeignType> {
+ public:
+
+  // The next foreign type anywhere in the parse.
+  Node<ParsedForeignType> *next{nullptr};
+
+  // The name of this type.
+  Token name;
+
+  // Display ranges for all declarations.
+  std::vector<DisplayRange> decls;
+
+  // Is this a built-in type?
+  bool is_built_in{false};
+
+  struct Info {
+    DisplayRange range;
+    std::string code;
+    std::string constructor_prefix;
+    std::string constructor_suffix;
+    bool can_override{true};
+    bool is_present{false};
+    std::vector<std::unique_ptr<Node<ParsedForeignConstant>>> constants;
+  } info[kNumLanguages];
 };
 
 template <>
 class Node<ParsedInline> {
  public:
-  inline Node(DisplayRange range_, std::string_view code_)
+  inline Node(DisplayRange range_, std::string_view code_, Language language_,
+              bool is_prologue_)
       : range(range_),
-        code(code_) {}
+        code(code_),
+        language(language_),
+        is_prologue(is_prologue_) {}
 
   // Next inline in this module.
   Node<ParsedInline> *next{nullptr};
 
   const DisplayRange range;
   const std::string code;
+  const Language language;
+  const bool is_prologue;
 };
 
 template <>
@@ -503,13 +557,19 @@ class Node<ParsedModule>
   std::vector<std::shared_ptr<Node<ParsedModule>>> non_root_modules;
 
   std::vector<std::unique_ptr<Node<ParsedImport>>> imports;
-  std::vector<std::unique_ptr<Node<ParsedInclude>>> includes;
   std::vector<std::unique_ptr<Node<ParsedInline>>> inlines;
   std::vector<std::unique_ptr<Node<ParsedExport>>> exports;
   std::vector<std::unique_ptr<Node<ParsedLocal>>> locals;
   std::vector<std::unique_ptr<Node<ParsedQuery>>> queries;
   std::vector<std::unique_ptr<Node<ParsedFunctor>>> functors;
   std::vector<std::unique_ptr<Node<ParsedMessage>>> messages;
+  std::vector<std::unique_ptr<Node<ParsedForeignType>>> types;
+
+  // Mapping of identifier IDs to foreign types.
+  std::unordered_map<uint32_t, Node<ParsedForeignType> *> foreign_types;
+
+  // Maps identifier IDs to foreign constants.
+  std::unordered_map<uint32_t, Node<ParsedForeignConstant> *> foreign_constants;
 
   // All clauses defined in this module.
   std::vector<Node<ParsedClause> *> clauses;

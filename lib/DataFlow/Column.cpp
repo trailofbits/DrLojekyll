@@ -20,6 +20,16 @@ Node<QueryColumn> *Node<QueryColumn>::AsConstant(void) noexcept {
   return nullptr;
 }
 
+// Try to resolve this column to a constant, and return it, otherwise returns
+// `this`.
+Node<QueryColumn> *Node<QueryColumn>::TryResolveToConstant(void) noexcept {
+  if (auto const_col = referenced_constant.get(); const_col) {
+    return const_col;
+  } else {
+    return this;
+  }
+}
+
 // Returns `true` if will have a constant value at runtime.
 bool Node<QueryColumn>::IsConstantRef(void) const noexcept {
   return referenced_constant;
@@ -49,7 +59,8 @@ bool Node<QueryColumn>::IsConstant(void) const noexcept {
   return false;
 }
 
-// Returns `true` if this view is being used.
+// Returns `true` if this column is being used directly, or indirectly via
+// a usage of the view (e.g. by a merge, a join, a condition, a negation, etc.)
 //
 // NOTE(pag): Even if the column doesn't look used, it might be used indirectly
 //            via a merge, and thus we want to capture this.
@@ -58,7 +69,7 @@ bool Node<QueryColumn>::IsUsed(void) const noexcept {
     return true;
   }
 
-  return view->Def<Node<QueryView>>::IsUsed();
+  return view->IsUsedDirectly();
 }
 
 // Return the index of this column inside of its view.
@@ -94,7 +105,7 @@ uint64_t Node<QueryColumn>::Sort(void) noexcept {
   return Hash();
 }
 
-void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
+void Node<QueryColumn>::CopyConstantFrom(Node<QueryColumn> *maybe_const_col) {
   if (auto const_col = maybe_const_col->AsConstant();
       const_col && !referenced_constant) {
 
@@ -103,7 +114,7 @@ void Node<QueryColumn>::CopyConstant(Node<QueryColumn> *maybe_const_col) {
     this->ForEachUse<VIEW>(
         [](VIEW *view, COL *) { view->is_canonical = false; });
 
-    UseRef<COL>(view, const_col).Swap(referenced_constant);
+    referenced_constant.Emplace(view, const_col);
   }
 }
 
@@ -119,7 +130,7 @@ void Node<QueryColumn>::ReplaceAllUsesWith(COL *that) {
   //
   //  } else {
   if (referenced_constant && !that->IsConstantOrConstantRef()) {
-    that->CopyConstant(referenced_constant.get());
+    that->CopyConstantFrom(referenced_constant.get());
   }
   this->Def<Node<QueryColumn>>::ReplaceAllUsesWith(that);
 

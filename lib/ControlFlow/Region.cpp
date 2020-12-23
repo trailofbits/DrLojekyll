@@ -10,13 +10,21 @@ Node<ProgramRegion>::Node(Node<ProgramProcedure> *containing_procedure_)
     : Def<Node<ProgramRegion>>(this),
       User(this),
       containing_procedure(containing_procedure_),
-      parent(containing_procedure_) {}
+      parent(containing_procedure_) {
+  if (parent && parent != parent->parent) {
+    col_id_to_var = parent->col_id_to_var;
+  }
+}
 
 Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
     : Def<Node<ProgramRegion>>(this),
       User(this),
       containing_procedure(parent_->containing_procedure),
-      parent(parent_) {}
+      parent(parent_) {
+  if (parent && parent != parent->parent) {
+    col_id_to_var = parent->col_id_to_var;
+  }
+}
 
 Node<ProgramProcedure> *Node<ProgramRegion>::AsProcedure(void) noexcept {
   return nullptr;
@@ -117,7 +125,7 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
       this->ExecuteBefore(program, proc_body);
 
     } else {
-      UseRef<REGION>(proc, this).Swap(proc->body);
+      proc->body.Emplace(proc, this);
       this->parent = proc;
     }
 
@@ -145,7 +153,7 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
       this->ExecuteAfter(program, proc_body);
 
     } else {
-      UseRef<REGION>(proc, this).Swap(proc->body);
+      proc->body.Emplace(proc, this);
       this->parent = proc;
     }
 
@@ -170,7 +178,7 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
     if (auto proc_body = proc->body.get(); proc_body) {
       this->ExecuteAlongside(program, proc_body);
     } else {
-      UseRef<REGION>(proc, this).Swap(proc->body);
+      proc->body.Emplace(proc, this);
       this->parent = proc;
     }
 
@@ -187,7 +195,9 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
 // Return a lexically available use of a variable.
 VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
   if (col.IsConstantOrConstantRef()) {
-    return impl->const_to_var[QueryConstant::From(col)];
+    auto &var = col_id_to_var[col.Id()];
+    var = impl->const_to_var[QueryConstant::From(col)];
+    return var;
   } else {
     return VariableForRec(col);
   }

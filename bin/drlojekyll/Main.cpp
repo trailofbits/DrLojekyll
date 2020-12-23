@@ -1,5 +1,7 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#include <drlojekyll/CodeGen/CodeGen.h>
+#include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/DataFlow/Format.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
@@ -14,6 +16,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -21,36 +24,57 @@
 #include <type_traits>
 #include <unordered_map>
 
+namespace fs = std::filesystem;
+
 namespace hyde {
 
 OutputStream *gOut = nullptr;
+
+struct FileStream {
+  FileStream(hyde::DisplayManager &dm_, const fs::path path_)
+      : fs(path_),
+        os(dm_, fs) {}
+
+  std::ofstream fs;
+  hyde::OutputStream os;
+};
 
 namespace {
 
 OutputStream *gDOTStream = nullptr;
 OutputStream *gDRStream = nullptr;
-OutputStream *gCodeStream = nullptr;
-
+OutputStream *gCxxCodeStream = nullptr;
+OutputStream *gPyCodeStream = nullptr;
+OutputStream *gIRStream = nullptr;
+std::optional<fs::path> gMSGDir = std::nullopt;
 
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
 
-  if (auto query_opt = Query::Build(module, error_log); query_opt) {
+  if (auto query_opt = Query::Build(module, error_log)) {
     if (gDOTStream) {
       (*gDOTStream) << *query_opt;
       gDOTStream->Flush();
     }
 
-    if (auto program_opt = Program::Build(*query_opt, error_log); program_opt) {
-      (void) program_opt;
-      if (gCodeStream) {
-        (*gCodeStream) << *program_opt;
-        gCodeStream->Flush();
+    if (auto program_opt = Program::Build(*query_opt, error_log)) {
+      if (gIRStream) {
+        (*gIRStream) << *program_opt;
+        gIRStream->Flush();
+      }
+
+      if (gCxxCodeStream) {
+        gCxxCodeStream->SetIndentSize(2u);
+        hyde::GenerateCxxCode(*program_opt, *gCxxCodeStream);
+      }
+
+      if (gPyCodeStream) {
+        gPyCodeStream->SetIndentSize(4u);
+        hyde::GeneratePythonCode(*program_opt, *gPyCodeStream);
       }
     }
 
     return EXIT_SUCCESS;
-
   } else {
     return EXIT_FAILURE;
   }
@@ -61,12 +85,21 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   // Output the amalgamation of all files.
   if (gDRStream) {
-    gDRStream->SetKeepImports(false);
     gDRStream->SetRenameLocals(true);
-    for (auto module : ParsedModuleIterator(module)) {
-      (*gDRStream) << module;
-    }
+    (*gDRStream) << module;
     gDRStream->Flush();
+  }
+
+  // Output all message serializations.
+  if (gMSGDir) {
+    for (auto module : ParsedModuleIterator(module)) {
+      for (auto schema_info :
+           GenerateAvroMessageSchemas(display_manager, module, error_log)) {
+        FileStream schema_stream(
+            display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
+        schema_stream.os << schema_info.schema.dump(2);
+      }
+    }
   }
 
   // Round-trip test of the parser.
@@ -77,12 +110,8 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     os << module;
   } while (false);
 
-  Parser parser(display_manager, error_log);
-
-  // FIXME(blarsen): Using ParseStream do re-parse a pretty-printed module
-  //                 doesn't work, due to differences in module search paths
-  //                 with ParseStream and ParsePath.
-  auto module2_opt = parser.ParseStream(ss, hyde::DisplayConfiguration());
+  Parser parser2(display_manager, error_log);
+  auto module2_opt = parser2.ParseStream(ss, hyde::DisplayConfiguration());
   if (!module2_opt) {
     return EXIT_FAILURE;
   }
@@ -93,31 +122,50 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     os << *module2_opt;
   } while (false);
 
-  assert(ss.str() == ss2.str());
+  Parser parser3(display_manager, error_log);
+  auto module3_opt = parser3.ParseStream(ss2, hyde::DisplayConfiguration());
+  if (!module3_opt) {
+    return EXIT_FAILURE;
+  }
+
+  std::stringstream ss3;
+  do {
+    OutputStream os(display_manager, ss3);
+    os << *module3_opt;
+  } while (false);
+
+  assert(ss2.str() == ss3.str());
 #endif
 
   return CompileModule(display_manager, error_log, module);
 }
 
-// Our current clang-format configuration reformats the long lines in following function into something very hard to read...
+// Our current clang-format configuration reformats the long lines in following
+// function into something very hard to read, so explicitly disable
+// clang-format for this bit.
 //
 // clang-format off
 static int HelpMessage(const char *argv[]) {
   std::cout
       << "OVERVIEW: Dr. Lojekyll compiler" << std::endl
       << std::endl
-      << "USAGE: " << argv[0] << " [options] file..." << std::endl
+      << "USAGE: " << argv[0] << " [options] <DATALOG_PATH>..." << std::endl
       << std::endl
-      << "OPTIONS:" << std::endl
-      << "  -version              Show version number and exit." << std::endl
-      << "  -o <PATH>             C++ output file produced as a result of transpiling Datalog to C++." << std::endl
-      << "  -amalgamation <PATH>  Datalog output file representing all input and transitively" << std::endl
-      << "                        imported modules amalgamated into a single Datalog module." << std::endl
-      << "  -dot <PATH>           GraphViz DOT digraph output file of the data flow graph." << std::endl
+      << "OUTPUT OPTIONS:" << std::endl
+      << "  -ir-out <PATH>        Emit IR output to PATH." << std::endl
+      << "  -cpp-out <PATH>       Emit transpiled C++ output to PATH." << std::endl
+      << "  -py-out <PATH>        Emit transpiled Python output to PATH." << std::endl
+      << "  -messages-dir <DIR>   Emit generated AVRO messages to the directory specified" << std::endl
+      << "  -dr-out <PATH>        Emit an amalgamation of all the input and transitively" << std::endl
+      << "                        imported modules to PATH." << std::endl
+      << "  -dot-out <PATH>       Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
+      << std::endl
+      << "COMPILATION OPTIONS:" << std::endl
       << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
-      << "  -isystem <PATH>       Directory where system C++ include files can be found." << std::endl
-      << "  -I <PATH>             Directory where user C++ include files can be found." << std::endl
-      << "  <PATH>                Path to an input Datalog module to parse and transpile." << std::endl
+      << std::endl
+      << "OTHER OPTIONS:" << std::endl
+      << "  -help, -h             Show help and exit." << std::endl
+      << "  -version              Show version number and exit." << std::endl
       << std::endl;
 
   return EXIT_SUCCESS;
@@ -153,15 +201,6 @@ static int VersionMessage(void) {
   return EXIT_SUCCESS;
 }
 
-struct FileStream {
-  FileStream(hyde::DisplayManager &dm_, const char *path_)
-      : fs(path_),
-        os(dm_, fs) {}
-
-  std::ofstream fs;
-  hyde::OutputStream os;
-};
-
 }  // namespace
 }  // namespace hyde
 
@@ -173,7 +212,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::string input_path;
 
   std::string file_path;
-  auto num_input_paths = 0;
+  int num_input_paths = 0;
 
   std::stringstream linked_module;
 
@@ -182,99 +221,108 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
+  std::unique_ptr<hyde::FileStream> py_out;
+  std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
   // Parse the command-line arguments.
-  for (auto i = 1; i < argc; ++i) {
+  for (int i = 1; i < argc; ++i) {
 
     // C++ output file of the transpiled from the Dr. Lojekyll source code.
-    if (!strcmp(argv[i], "-o")) {
+    if (!strcmp(argv[i], "-cpp-out") || !strcmp(argv[i], "--cpp-out")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '-o' must be followed by a file path for "
-            << "C++ code output";
-        error_log.Append(std::move(err));
+        error_log.Append()
+            << "Command-line argument " << argv[i]
+            << " must be followed by a file path for C++ code output";
       } else {
         cpp_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gCodeStream = &(cpp_out->os);
+        hyde::gCxxCodeStream = &(cpp_out->os);
+      }
+
+    // C++ output file of the transpiled from the Dr. Lojekyll source code.
+    } else if (!strcmp(argv[i], "-py-out") || !strcmp(argv[i], "--py-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument " << argv[i]
+            << " must be followed by a file path for Python code output";
+      } else {
+        py_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gPyCodeStream = &(py_out->os);
+      }
+
+    } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument " << argv[i]
+                           << " must be followed by a file path for IR output";
+      } else {
+        ir_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gIRStream = &(ir_out->os);
       }
 
     // Option to output a single Dr. Lojekyll Datalog file that is equivalent
     // to the amalagamation of all input files, and transitively imported files.
-    } else if (!strcmp(argv[i], "--amalgamation") ||
-               !strcmp(argv[i], "-amalgamation")) {
+    } else if (!strcmp(argv[i], "--dr-out") || !strcmp(argv[i], "-dr-out")) {
       ++i;
       if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '" << argv[i - 1]
-            << "' must be followed by a file path for "
-            << "alamgamated Datalog output";
-        error_log.Append(std::move(err));
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "alamgamated Datalog output";
       } else {
         dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDRStream = &(dr_out->os);
       }
 
-    // GraphViz DOT digraph output, which is useful for debugging the data flow.
-    } else if (!strcmp(argv[i], "--dot") || !strcmp(argv[i], "-dot")) {
+    // Write message schemas to an output directory
+    } else if (!strcmp(argv[i], "--messages-dir") ||
+               !strcmp(argv[i], "-messages-dir")) {
       ++i;
       if (i >= argc) {
         hyde::Error err(display_manager);
         err << "Command-line argument '" << argv[i - 1]
-            << "' must be followed by a file path for "
-            << "GraphViz DOT digraph output";
+            << "' must be followed by a directory path for "
+            << "message serialization output";
         error_log.Append(std::move(err));
+      } else {
+        hyde::gMSGDir = fs::path(argv[i]);
+
+        if (!fs::is_directory(*hyde::gMSGDir) || !fs::exists(*hyde::gMSGDir)) {
+          std::error_code errcode;
+          if (!fs::create_directories(*hyde::gMSGDir, errcode)) {
+            hyde::Error err(display_manager);
+            err << "Directory '" << argv[i] << "' could not be created. "
+                << "(" << errcode.message() << ")";
+            error_log.Append(std::move(err));
+
+            hyde::gMSGDir = std::nullopt;
+          }
+        }
+      }
+
+    // GraphViz DOT digraph output, which is useful for debugging the data flow.
+    } else if (!strcmp(argv[i], "--dot-out") || !strcmp(argv[i], "-dot-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "GraphViz DOT digraph output";
       } else {
         dot_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDOTStream = &(dot_out->os);
       }
 
     // Datalog module file search path.
-    } else if (argv[i] == strstr(argv[i], "-M")) {
-      const char *path = nullptr;
-      if (strlen(argv[i]) == 2) {
-        path = &(argv[i][2]);
-      } else {
-        if (i >= argc) {
-          hyde::Error err(display_manager);
-          err << "Command-line argument '-M' must be followed by a directory path";
-          error_log.Append(std::move(err));
-          continue;
-        }
-        path = argv[++i];
+    } else if (strstr(argv[i], "-M")) {
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument '-M' must be followed by a directory path";
+        continue;
       }
+      const char *path = argv[++i];
 
       parser.AddModuleSearchPath(path);
-
-    // Include file search path.
-    } else if (!strcmp(argv[i], "-isystem")) {
-      ++i;
-      if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '-isystem' must be followed by a directory path";
-        error_log.Append(std::move(err));
-
-      } else {
-        parser.AddIncludeSearchPath(argv[i], hyde::Parser::kSystemInclude);
-      }
-
-    // Include file search path.
-    } else if (!strcmp(argv[i], "-I")) {
-      const char *path = nullptr;
-      if (strlen(argv[i]) == 2) {
-        path = &(argv[i][2]);
-      } else {
-        if (i >= argc) {
-          hyde::Error err(display_manager);
-          err << "Command-line argument '-I' must be followed by a directory path";
-          error_log.Append(std::move(err));
-          continue;
-        }
-        path = argv[++i];
-      }
-
-      parser.AddIncludeSearchPath(path, hyde::Parser::kUserInclude);
 
     // Help message :-)
     } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
@@ -289,9 +337,8 @@ extern "C" int main(int argc, const char *argv[]) {
     // Does this look like a command-line option?
     } else if (strstr(argv[i], "--") == argv[i] ||
                strchr(argv[i], '-') == argv[i]) {
-      hyde::Error err(display_manager);
-      err << "Unrecognized command-line argument '" << argv[i] << "'";
-      error_log.Append(std::move(err));
+      error_log.Append() << "Unrecognized command-line argument '" << argv[i]
+                         << "'";
       continue;
 
     // Input datalog file, add it to the list of paths to parse.
@@ -322,12 +369,13 @@ extern "C" int main(int argc, const char *argv[]) {
     }
   }
 
-  auto code = EXIT_FAILURE;
+  int code = EXIT_FAILURE;
 
-  if (!num_input_paths) {
-    hyde::Error err(display_manager);
-    err << "No input files to parse";
-    error_log.Append(std::move(err));
+  // Exit early if command-line option parsing failed.
+  if (!error_log.IsEmpty()) {
+
+  } else if (!num_input_paths) {
+    error_log.Append() << "No input files to parse";
 
   // Parse a single module.
   } else if (1 == num_input_paths) {
@@ -357,6 +405,8 @@ extern "C" int main(int argc, const char *argv[]) {
 
   if (code) {
     error_log.Render(std::cerr);
+  } else {
+    assert(error_log.IsEmpty());
   }
 
   return code;
