@@ -36,6 +36,7 @@ static OP *RemoveFromNegatedView(ProgramImpl *impl, Context &context,
   // as its own base case.
   const auto table_remove = BuildChangeState(
       impl, table, parent, view_cols, TupleState::kPresent, TupleState::kAbsent);
+  table_remove->comment = "Remove from negated view";
 
   const auto par = impl->parallel_regions.Create(table_remove);
   table_remove->body.Emplace(table_remove, par);
@@ -113,8 +114,11 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
       TupleState::kPresent);
   check->body.Emplace(check, insert);
 
+  insert->comment = "Re-adding to negated view";
+
   // Now that we have everything transitioned we can call an eager region on
   // this tuple to re-insert stuff.
+//  assert(view.Successors().empty() && "TODO(pag): Think about this.");
   BuildEagerSuccessorRegions(impl, view, context, insert, view.Successors(),
                              table);
 
@@ -127,6 +131,7 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
                                 PARALLEL *parent, QueryView view) {
 
   view.ForEachNegation([&] (QueryNegate negate) {
+
     DataModel * const negated_model = \
         impl->view_to_model[negate]->FindAs<DataModel>();
     TABLE * const negated_table = negated_model->table;
@@ -134,33 +139,36 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
 
     std::vector<QueryColumn> negate_cols;
 
+    const auto let = impl->operation_regions.CreateDerived<LET>(parent);
+    parent->regions.AddUse(let);
+
     for (auto col : view.Columns()) {
-      auto in_var = parent->VariableFor(impl, col);
+      auto in_var = let->VariableFor(impl, col);
       auto neg_out_col = negate.Columns()[col_index];
       auto neg_in_col = negate.InputColumns()[col_index];
-      parent->col_id_to_var[neg_in_col.Id()] = in_var;
-      parent->col_id_to_var[neg_out_col.Id()] = in_var;
+      let->col_id_to_var[neg_in_col.Id()] = in_var;
+      let->col_id_to_var[neg_out_col.Id()] = in_var;
       ++col_index;
       negate_cols.push_back(neg_out_col);
     }
 
     // For each thing that we find in the index scan, we will try to push
     // through a re-addition.
-    parent->regions.AddUse(BuildMaybeScanPartial(
-      impl, negate, negate_cols, negated_table, parent,
-      [&](REGION *in_scan) -> REGION * {
+    let->body.Emplace(let, BuildMaybeScanPartial(
+        impl, negate, negate_cols, negated_table, let,
+        [&](REGION *in_scan) -> REGION * {
 
-      negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                            std::optional<QueryColumn> out_col) {
-          if (out_col) {
-            in_scan->col_id_to_var[in_col.Id()] =
-                in_scan->VariableFor(impl, *out_col);
-          }
-        });
+          negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                                std::optional<QueryColumn> out_col) {
+            if (out_col) {
+              in_scan->col_id_to_var[in_col.Id()] =
+                  in_scan->VariableFor(impl, *out_col);
+            }
+          });
 
-        return ReAddToNegatedView(impl, context, in_scan, negate, negate_cols,
-                                  negated_table);
-      }));
+          return ReAddToNegatedView(impl, context, in_scan, negate,
+                                    negate_cols, negated_table);
+        }));
   });
 }
 
@@ -446,9 +454,15 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
     parent->regions.AddUse(call);
   }
 
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, parent);
+  // NOTE(pag): We don't end this with a `return-false` because removing from
+  //            the tuple may trigger the insertion into a negation, which
+  //            would be an eager insertion region, which could lead to
+  //            something like an induction "taking over" the procedure, and we
+  //            wouldn't want to return too early from the induction.
+
+//  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+//      proc, ProgramOperation::kReturnFalseFromProcedure);
+//  ret->ExecuteAfter(impl, parent);
 }
 
 }  // namespace hyde

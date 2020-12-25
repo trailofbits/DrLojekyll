@@ -11,9 +11,7 @@ class ContinueJoinWorkItem final : public WorkItem {
 
   ContinueJoinWorkItem(Context &context, QueryView view_)
       : WorkItem(context, view_.Depth()),
-        view(view_) {
-    this->view_to_induction = context.view_to_induction;
-  }
+        view(view_) {}
 
   // Find the common ancestor of all insert regions.
   REGION *FindCommonAncestorOfInsertRegions(void) const;
@@ -177,10 +175,10 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     return;
   }
 
-  context.view_to_work_item.erase(view);
-
   const auto join_view = QueryJoin::From(view);
   PROC *const proc = inserts[0]->containing_procedure;
+
+  context.view_to_work_item.erase({proc, view.UniqueId()});
 
   auto pivot_vec =
       proc->VectorFor(impl, VectorKind::kJoinPivots, join_view.PivotColumns());
@@ -260,7 +258,8 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     last_table = pred_table;
   }
 
-  auto &action = context.view_to_work_item[view];
+  auto &action = context.view_to_work_item[{parent->containing_procedure,
+                                            view.UniqueId()}];
   if (!action) {
     action = new ContinueJoinWorkItem(context, view);
     context.work_list.emplace_back(action);

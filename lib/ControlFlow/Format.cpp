@@ -687,6 +687,9 @@ class FormatDispatcher final : public ProgramVisitor {
 
 OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
   FormatDispatcher dispatcher(os);
+  if (!region.Comment().empty()) {
+    os << os.Indent() << "; " << region.Comment() << '\n';
+  }
   region.Accept(dispatcher);
   return os;
 }

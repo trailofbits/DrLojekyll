@@ -724,7 +724,11 @@ uint64_t Node<ProgramTableScanRegion>::Hash(void) const {
 }
 
 bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
-  return !output_vector->IsRead();
+  if (output_vector->NumUses() == 1u) {
+    return true;
+  } else {
+    return !output_vector->IsRead();
+  }
 }
 
 bool Node<ProgramTableScanRegion>::Equals(

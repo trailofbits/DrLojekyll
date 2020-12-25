@@ -24,6 +24,16 @@ static std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
         frontier.push_back(pred_view);
       }
     }
+
+    // TODO(pag): Think about this.
+    if (false && view.IsNegate()) {
+      const auto negate = QueryNegate::From(view);
+      const auto pred_view = negate.NegatedView();
+      if (!dependencies.count(pred_view)) {
+        dependencies.insert(pred_view);
+        frontier.push_back(pred_view);
+      }
+    }
   }
 
   return dependencies;
@@ -43,6 +53,16 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
         dependents.insert(succ_view);
         frontier.push_back(succ_view);
       }
+    }
+
+    // TODO(pag): Think about this.
+    if (false && view.IsUsedByNegation()) {
+      view.ForEachNegation([&] (QueryNegate negate) {
+        if (!dependents.count(negate)) {
+          dependents.insert(negate);
+          frontier.push_back(negate);
+        }
+      });
     }
   }
 
@@ -143,6 +163,10 @@ static void MapVariables(REGION *region) {
           var->defining_region = region;
         }
       }
+    } else if (auto gen = op->AsGenerate(); gen) {
+      for (auto var : gen->defined_vars) {
+        var->defining_region = region;
+      }
     }
 
     MapVariables(op->body.get());
@@ -160,6 +184,11 @@ static void MapVariables(REGION *region) {
     for (auto sub_region : series->regions) {
       MapVariables(sub_region);
     }
+  } else if (auto proc = region->AsProcedure(); proc) {
+    for (auto var : proc->input_vars) {
+      var->defining_region = proc;
+    }
+    MapVariables(proc->body.get());
   }
 }
 
@@ -192,11 +221,13 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
   loop->vector.Emplace(loop, vec);
   proc->body.Emplace(proc, loop);
 
-  context.work_list.clear();
-  context.view_to_work_item.clear();
+  assert(context.work_list.empty());
+  assert(context.view_to_work_item.empty());
 
-  context.view_to_induction.clear();
-  context.product_vector.clear();
+  context.work_list.clear();
+//  context.view_to_work_item.clear();
+//  context.view_to_induction.clear();
+//  context.product_vector.clear();
 
   for (auto receive : io.Receives()) {
     auto let = impl->operation_regions.CreateDerived<LET>(par);
@@ -236,6 +267,7 @@ static void DiscoverInductions(const Query &query, Context &context) {
     for (auto succ_view : QueryView(view).Successors()) {
       if (preds.count(succ_view)) {
         context.inductive_successors[view].insert(succ_view);
+
       } else {
         context.noninductive_successors[view].insert(succ_view);
       }
@@ -258,7 +290,7 @@ static void DiscoverInductions(const Query &query, Context &context) {
   std::vector<QueryView> frontier;
   std::set<std::pair<QueryView, QueryView>> disallowed_edges;
 
-  for (auto &[view, noninductive_predecessors] :
+  for (const auto &[view, noninductive_predecessors] :
        context.noninductive_predecessors) {
     for (QueryView pred_view : noninductive_predecessors) {
       disallowed_edges.emplace(pred_view, view);
@@ -717,9 +749,9 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
       }
 
 #ifndef NDEBUG
-      for (auto succ : view.Successors()) {
-        assert(succ.IsMerge());
-      }
+//      for (auto succ : view.Successors()) {
+//        assert(succ.IsMerge());
+//      }
 #endif
 
     // Select predecessors are INSERTs, which don't have output columns.
@@ -742,17 +774,17 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
 // as being in an unknown state. We want to do this after building all
 // (positive) bottom-up provers so that we can know which views correspond
 // with which tables.
-static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
+static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
+  auto changed = false;
   while (!context.bottom_up_removers_work_list.empty()) {
     auto [from_view, to_view, proc, already_checked] =
         context.bottom_up_removers_work_list.back();
     context.bottom_up_removers_work_list.pop_back();
 
-    context.work_list.clear();
-    context.view_to_work_item.clear();
+    changed = true;
 
-    context.view_to_induction.clear();
-    context.product_vector.clear();
+    assert(context.work_list.empty());
+    context.work_list.clear();
 
     if (to_view.IsTuple()) {
       CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
@@ -812,23 +844,24 @@ static void BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
 
     CompleteProcedure(impl, proc, context);
   }
+
+  return changed;
 }
 
 // Build out all the top-down checkers. We want to do this after building all
 // bottom-up provers so that we can know which views correspond with which
 // tables.
-static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
+static bool BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
+  auto changed = false;
 
   while (!context.top_down_checker_work_list.empty()) {
     auto [view, view_cols, proc, already_checked] =
         context.top_down_checker_work_list.back();
     context.top_down_checker_work_list.pop_back();
+    changed = true;
 
+    assert(context.work_list.empty());
     context.work_list.clear();
-    context.view_to_work_item.clear();
-
-    context.view_to_induction.clear();
-    context.product_vector.clear();
 
     if (view.IsJoin()) {
       const auto join = QueryJoin::From(view);
@@ -938,6 +971,7 @@ static void BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
       ret->ExecuteAfter(impl, proc);
     }
   }
+  return changed;
 }
 
 // Add entry point records for each query to the program.
@@ -1603,7 +1637,6 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
   while (!context.work_list.empty()) {
 
-    //    context.view_to_work_item.clear();
     std::stable_sort(context.work_list.begin(), context.work_list.end(),
                      [](const WorkItemPtr &a, const WorkItemPtr &b) {
                        return a->order > b->order;
@@ -1611,8 +1644,6 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
 
     WorkItemPtr action = std::move(context.work_list.back());
     context.work_list.pop_back();
-    context.product_vector.swap(action->product_vector);
-    context.view_to_induction.swap(action->view_to_induction);
     action->Run(impl, context);
   }
 
@@ -1731,12 +1762,9 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     }
   }
 
-  // Build top-down provers.
-  BuildTopDownCheckers(program, context);
-
-  // Build bottom-up removers. These follow Stefan Brass's push method of
-  // pipelined Datalog execution.
-  BuildBottomUpRemovalProvers(program, context);
+  // Build top-down provers and the bottom-up removers.
+  while (BuildTopDownCheckers(program, context) ||
+         BuildBottomUpRemovalProvers(program, context)) {}
 
   for (auto proc : impl->procedure_regions) {
     if (!EndsWithReturn(proc)) {
@@ -1753,7 +1781,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   //            process because otherwise every time we replaced all uses of
   //            one region with another, we'd screw up the mapping.
   for (auto proc : impl->procedure_regions) {
-    MapVariables(proc->body.get());
+    MapVariables(proc);
   }
 
   return Program(std::move(impl));

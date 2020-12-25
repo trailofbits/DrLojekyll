@@ -134,6 +134,8 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsPublish(void) const noexcept;
   bool IsTupleCompare(void) const noexcept;
 
+  std::string_view Comment(void) const noexcept;
+
  private:
   friend class ProgramCallRegion;
   friend class ProgramReturnRegion;

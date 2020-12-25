@@ -250,6 +250,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // NOTE(pag): Only valid before optimization, during the building of the
   //            control flow IR.
   std::unordered_map<unsigned, VAR *> col_id_to_var;
+
+  // A comment about the creation of this node.
+  std::string comment;
 };
 
 using REGION = Node<ProgramRegion>;

@@ -68,9 +68,11 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   parent->body.Emplace(parent, seq);
 
   // Prevents race conditions and ensures data is in our index.
-  seq->regions.AddUse(BuildChangeState(
+  const auto race_check = BuildChangeState(
       impl, table, seq, negate.Columns(), TupleState::kAbsent,
-      TupleState::kUnknown));
+      TupleState::kUnknown);
+  race_check->comment = "Eager insert before negation to prevent race";
+  seq->regions.AddUse(race_check);
 
   // Okay, if we're inside of some kind of check that our predecessor has the
   // data and so now we need to make sure that the negated view doesn't have

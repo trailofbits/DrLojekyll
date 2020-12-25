@@ -5,6 +5,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <map>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -42,14 +43,6 @@ class WorkItem {
   explicit WorkItem(Context &context, unsigned order_);
 
   const unsigned order;
-
-  // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
-  // the same INDUCTION if they belong to the same "inductive set". This happens
-  // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
-  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
-
-  // Maps tables to their product input vectors.
-  std::unordered_map<TABLE *, VECTOR *> product_vector;
 };
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
@@ -93,10 +86,10 @@ class Context {
   // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
   // the same INDUCTION if they belong to the same "inductive set". This happens
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
-  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
+  std::map<std::pair<PROC *, uint64_t>, INDUCTION *> view_to_induction;
 
   // Maps tables to their product input vectors.
-  std::unordered_map<TABLE *, VECTOR *> product_vector;
+  std::map<std::pair<PROC *, TABLE *>, VECTOR *> product_vector;
 
   //  // Boolean variable to test if we've ever produced anything for this product,
   //  // and thus should push data through.
@@ -104,7 +97,7 @@ class Context {
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
-  std::unordered_map<QueryView, WorkItem *> view_to_work_item;
+  std::map<std::pair<PROC *, uint64_t>, WorkItem *> view_to_work_item;
 
   // Maps views to procedures for top-down execution. The top-down executors
   // exist to determine if a tuple is actually PRESENT (returning false if so),
@@ -587,6 +580,13 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
   if (table) {
     if (last_table != table) {
+
+      // NOTE(pag): Negations "pre-insert" their data into their tables, so
+      //            we don't want to double-insert here. Similar happens for
+      //            maps.
+      assert(!view.IsNegate());
+      assert(!view.IsMap());
+
       const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
           parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
 

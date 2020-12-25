@@ -87,6 +87,9 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   const auto functor = map.Functor();
   assert(functor.IsPure());
 
+  // TODO(pag): Think about requiring persistence of the predecessor, so that
+  //            we always have the inputs persisted.
+
   const auto gen = CreateGeneratorCall(
       impl, map, functor, context, parent, true);
   parent->body.Emplace(parent, gen);

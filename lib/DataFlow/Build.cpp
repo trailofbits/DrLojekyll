@@ -497,8 +497,18 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
     if (auto in_col = FindColVarInView(context, view, var); in_col) {
       tuple->input_columns.AddUse(in_col);
 
-    // TODO(pag): This comes up intermittently for some tests, but sometimes
-    //            some clause orderings succeed. Investigate the failing ones.
+    // If there's a variable that has no basis, then it's not range restricted.
+    //
+    // TODO(pag): Think about if we want to support something like `foo(A, A).`
+    //            where the implication is that it's really:
+    //
+    //                foo(A, A) : foo(A, A).
+    //
+    //            Really though, this is a tautology in bottom-up proving, as
+    //            if we have a `foo(A, A)` then of course we have a `foo(A, A)`.
+    //            In a top-down context, it is more meaningful. If anything,
+    //            this is more of a usage-site type of thing, e.g. if we do
+    //            `..., foo(1, 1), ...` then it is `true`.
     } else {
       tuple->input_columns.Clear();
 
@@ -513,8 +523,7 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
       const auto clause_range = clause.SpellingRange();
       auto err = log.Append(clause_range, var.SpellingRange());
-      err << "Internal error: could not match variable '" << var
-          << "' against any columns";
+      err << "Variable '" << var << "' is not range-restricted";
 
       for (auto in_col : view->columns) {
         err.Note(clause_range, in_col->var.SpellingRange())
@@ -808,7 +817,8 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
 // Try to apply as many functors and negations as possible to `view`.
 static bool TryApplyFunctorsAndNegations(QueryImpl *query, ParsedClause clause,
                                          ClauseContext &context,
-                                         const ErrorLog &log) {
+                                         const ErrorLog &log,
+                                         bool only_filters) {
 
   const auto num_views = context.views.size();
 
@@ -851,12 +861,20 @@ static bool TryApplyFunctorsAndNegations(QueryImpl *query, ParsedClause clause,
       auto applied_functors = false;
       unapplied_functors.clear();
       for (auto pred : context.functors) {
+        const auto functor = ParsedFunctor::From(ParsedDeclaration::Of(pred));
+        const auto range = functor.Range();
 
         // If we've already applied a functor, and if there's a chance that
         // there are negations that could depend on the results of the functor
         // application then we'll loop back to try to apply the negations
         // before trying the next functor.
         if (applied_functors && !context.negated_predicates.empty()) {
+          unapplied_functors.push_back(pred);
+
+        // We're restricting things to only apply filter functors.
+        } else if (only_filters &&
+                   range != FunctorRange::kZeroOrOne &&
+                   range != FunctorRange::kOneToOne) {
           unapplied_functors.push_back(pred);
 
         // If we succeed at applying a functor then update the view.
@@ -1445,8 +1463,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     changed = false;
 
     // We applied at least one functor or negation and updated `pred_views`
-    // in place (view `context.views`).
-    if (TryApplyFunctorsAndNegations(query, clause, context, log)) {
+    // in place (view `context.views`). Here we limit the functors to ones that
+    // have a range of zero-or-one, i.e. filter functors.
+    if (TryApplyFunctorsAndNegations(query, clause, context, log, true)) {
       changed = true;
       continue;
     }
@@ -1454,6 +1473,13 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     // Try to join two or more views together. Updates `pred_views` in place
     // (view `context.views`).
     if (FindJoinCandidates(query, clause, context, log)) {
+      changed = true;
+      continue;
+    }
+
+    // Try to apply functors that are not just filter functors, i.e. have
+    // all other ranges.
+    if (TryApplyFunctorsAndNegations(query, clause, context, log, false)) {
       changed = true;
       continue;
     }

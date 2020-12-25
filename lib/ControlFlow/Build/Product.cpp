@@ -11,9 +11,7 @@ class ContinueProductWorkItem final : public WorkItem {
 
   ContinueProductWorkItem(Context &context, QueryView view_)
       : WorkItem(context, view_.Depth()),
-        view(view_) {
-    this->product_vector = context.product_vector;
-  }
+        view(view_) {}
 
   // Find the common ancestor of all insert regions.
   REGION *FindCommonAncestorOfAppendRegions(void) const;
@@ -54,10 +52,10 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     return;
   }
 
-  context.view_to_work_item.erase(view);
-
   const auto join_view = QueryJoin::From(view);
   PROC *const proc = appends[0]->containing_procedure;
+
+  context.view_to_work_item.erase({proc, view.UniqueId()});
 
   // Find the common ancestor of all of the appends associated with whatever
   // flows we saw into the PRODUCT node. We want to execute the ancestor
@@ -98,7 +96,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
         impl->view_to_model[pred_view]->FindAs<DataModel>();
     TABLE * const pred_table = pred_model->table;
 
-    auto &vec = context.product_vector[pred_table];
+    auto &vec = context.product_vector[{proc, pred_table}];
     if (!vec) {
       vec =
           proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
@@ -170,11 +168,11 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     return;
   }
 
-  auto &vec = context.product_vector[pred_table];
+  const auto proc = parent->containing_procedure;
+  auto &vec = context.product_vector[{proc, pred_table}];
   bool is_new_vec = false;
   if (!vec) {
     is_new_vec = true;
-    const auto proc = parent->containing_procedure;
     vec = proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
   }
 
@@ -190,7 +188,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   append->vector.Emplace(append, vec);
   parent->body.Emplace(parent, append);
 
-  auto &action = context.view_to_work_item[product_view];
+  auto &action = context.view_to_work_item[{proc, product_view.UniqueId()}];
   if (!action) {
     action = new ContinueProductWorkItem(context, product_view);
     context.work_list.emplace_back(action);

@@ -356,6 +356,58 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       cmp->ReplaceAllUsesWith(body);
       changed = true;
     }
+
+  } else {
+    auto has_matching = false;
+    for (auto i = 0u; i < max_i; ++i) {
+      if (cmp->lhs_vars[i] == cmp->rhs_vars[i]) {
+        has_matching = true;
+        break;
+      }
+    }
+
+    if (has_matching) {
+      if (cmp->cmp_op == ComparisonOperator::kEqual) {
+        UseList<VAR> new_lhs_vars(cmp);
+        UseList<VAR> new_rhs_vars(cmp);
+        for (auto i = 0u; i < max_i; ++i) {
+          if (cmp->lhs_vars[i] != cmp->rhs_vars[i]) {
+            new_lhs_vars.AddUse(cmp->lhs_vars[i]);
+            new_rhs_vars.AddUse(cmp->rhs_vars[i]);
+          }
+        }
+
+        // This comparison is trivially true, replace it with its body.
+        if (new_lhs_vars.Empty()) {
+          cmp->lhs_vars.Clear();
+          cmp->rhs_vars.Clear();
+          const auto body = cmp->body.get();
+          cmp->body.Clear();
+          if (body) {
+            body->parent = cmp->parent;
+            cmp->ReplaceAllUsesWith(body);
+          }
+
+        // This comparison had some redundant comparisons, swap in the less
+        // redundant ones.
+        } else {
+          cmp->lhs_vars.Swap(new_lhs_vars);
+          cmp->rhs_vars.Swap(new_rhs_vars);
+        }
+
+      // This tuple compare with never be satisfiable, and so everything inside
+      // it is dead.
+      } else {
+        if (const auto body = cmp->body.get(); body) {
+          body->parent = nullptr;
+        }
+        cmp->body.Clear();
+        cmp->lhs_vars.Clear();
+        cmp->rhs_vars.Clear();
+      }
+
+      changed = true;
+    }
   }
 
   return changed;
@@ -390,14 +442,18 @@ FindReturnAfterSimpleCalls(const UseList<Node<ProgramRegion>> &regions) {
       if (auto target_call = target_op->AsCall(); target_call) {
         if (!target_call->arg_vecs.Empty()) {
           return {false, nullptr};
+
         } else if (target_call->op != ProgramOperation::kCallProcedure) {
           return {false, nullptr};
+
         } else {
           assert(!target_call->body);
         }
 
       } else if (auto found_return = target_op->AsReturn(); found_return) {
-        assert(!target_return);
+        if (target_return) {
+          return {false, nullptr};
+        }
         target_return = found_return;
 
       // Found something that isn't a call or return.
@@ -523,6 +579,8 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
       // so remove it.
       if (can_remove) {
         if (call_body) {
+          call->comment = "!!!!! what?";
+          return false;
           call_body->parent = nullptr;
         }
 
