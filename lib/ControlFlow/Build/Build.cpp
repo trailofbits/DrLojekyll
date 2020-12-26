@@ -677,23 +677,13 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // then we need to be able to distinguish where data is from. This is
     // especially important for comparisons or maps leading into merges.
     if (view.IsMerge()) {
-      auto has_delete_pred = false;
       for (auto pred : preds) {
-        if (pred.IsDelete()) {
-          has_delete_pred = true;
-          break;
-        }
-      }
-      if (!has_delete_pred) {
-        for (auto pred : preds) {
-          assert(!pred.IsDelete());
-
-          if (!is_diff_map(pred) &&
-              !output_is_conditional(pred) &&
-              pred.Successors().size() == 1u) {
-            const auto pred_model = program->view_to_model[pred];
-            DisjointSet::Union(model, pred_model);
-          }
+        if (!pred.IsDelete() &&
+            !is_diff_map(pred) &&
+            !output_is_conditional(pred) &&
+            pred.Successors().size() == 1u) {
+          const auto pred_model = program->view_to_model[pred];
+          DisjointSet::Union(model, pred_model);
         }
       }
 

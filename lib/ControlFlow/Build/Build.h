@@ -548,6 +548,9 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
     const auto check =
         CallTopDownChecker(impl, context, parent, view, view,
                            ProgramOperation::kCallProcedureCheckFalse);
+
+    check->comment = __FILE__ ": BuildInsertCheck";
+
     parent->body.Emplace(parent, check);
     parent = check;
   }

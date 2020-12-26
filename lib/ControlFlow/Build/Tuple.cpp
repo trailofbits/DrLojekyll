@@ -95,6 +95,8 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
       impl->next_id++, parent, checker_proc,
       ProgramOperation::kCallProcedureCheckTrue);
 
+  check->comment = __FILE__ ": ReAddToNegatedView";
+
   auto i = 0u;
   for (auto col : pred_cols) {
     const auto var = parent->VariableFor(impl, col);
@@ -291,9 +293,11 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
     TABLE *table_to_update = model->table;
 
     auto call_pred = [&](REGION *parent) -> REGION * {
-      return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols, table_to_update, pred_view,
           already_checked);
+      check->comment = __FILE__ ": BuildTopDownTupleChecker::call_pred";
+      return check;
     };
 
     // If the predecessor persists the same data then we'll call the
@@ -397,7 +401,8 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
     const auto check = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, parent, checker_proc,
         ProgramOperation::kCallProcedureCheckFalse);
-    parent->regions.AddUse(check);
+
+    check->comment = __FILE__ ": CreateBottomUpTupleRemover";
 
     auto i = 0u;
     for (auto col : cols) {
@@ -409,6 +414,8 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
       assert(var->Type() == param->Type());
       (void) param;
     }
+
+    parent->regions.AddUse(check);
 
     // The call to the top-down checker will have changed the state to
     // absent.

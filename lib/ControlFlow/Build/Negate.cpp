@@ -40,6 +40,9 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   const auto check = CallTopDownChecker(
       impl, context, let, negated_view, view_cols, negated_view,
       call_op, nullptr);
+
+  check->comment = __FILE__ ": CheckInNegatedView";
+
   let->body.Emplace(let, check);
 
   check->body.Emplace(check, with_check_absent(check));
@@ -287,6 +290,8 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   const auto check = impl->operation_regions.CreateDerived<CALL>(
       impl->next_id++, parent, checker_proc,
       ProgramOperation::kCallProcedureCheckTrue);
+
+  check->comment = __FILE__ ": CreateBottomUpNegationRemover";
 
   auto i = 0u;
   for (auto col : pred_cols) {

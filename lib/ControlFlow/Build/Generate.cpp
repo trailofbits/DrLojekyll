@@ -189,9 +189,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     assert(model->table != pred_model->table);
 
     auto call_pred = [&](PARALLEL *par) {
-      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, table_to_update, pred_view,
-          already_checked));
+          already_checked);
+      check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred";
+      par->regions.AddUse(check);
     };
 
     auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {

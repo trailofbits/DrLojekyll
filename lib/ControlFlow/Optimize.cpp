@@ -39,6 +39,7 @@ static bool OptimizeImpl(PARALLEL *par) {
 
     // Erase any empty child regions.
   }
+
   auto changed = false;
   par->regions.RemoveIf([&changed](REGION *child_region) {
     if (child_region->IsNoOp()) {
@@ -51,6 +52,7 @@ static bool OptimizeImpl(PARALLEL *par) {
   });
 
   if (changed) {
+    OptimizeImpl(par);
     return true;
   }
 
@@ -103,6 +105,10 @@ static bool OptimizeImpl(PARALLEL *par) {
         eq.Clear();
       }
     }
+  }
+
+  if (changed) {
+    OptimizeImpl(par);
   }
 
   return changed;
@@ -248,15 +254,42 @@ static bool OptimizeImpl(SERIES *series) {
   // Erase any empty child regions.
   } else {
     auto changed = false;
-    series->regions.RemoveIf([&changed](REGION *child_region) {
-      if (child_region->IsNoOp()) {
-        child_region->parent = nullptr;
-        changed = true;
-        return true;
-      } else {
-        return false;
+
+    auto has_unneeded = false;
+    auto seen_return = false;
+    for (auto region : series->regions) {
+      if (region->IsNoOp() || seen_return) {
+        has_unneeded = true;
+        break;
+
+      } else if (auto op = region->AsOperation(); op) {
+        if (op->AsReturn()) {
+          seen_return = true;
+        }
       }
-    });
+    }
+
+    // Remove no-op regions, and unreachable regions.
+    if (has_unneeded) {
+      UseList<REGION> new_regions(series);
+      for (auto region : series->regions) {
+        if (region->IsNoOp()) {
+          region->parent = nullptr;
+
+        } else if (auto op = region->AsOperation(); op) {
+          new_regions.AddUse(op);
+          if (op->AsReturn()) {
+            break;
+          }
+        } else {
+          new_regions.AddUse(op);
+        }
+      }
+
+      changed = true;
+      series->regions.Swap(new_regions);
+    }
+
     return changed;
   }
 }
@@ -495,6 +528,10 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
         auto copied_call = impl->operation_regions.CreateDerived<CALL>(
             impl->next_id++, into_parent, target_call->called_proc.get(),
             target_call->op);
+        if (!target_call->comment.empty()) {
+          copied_call->comment = __FILE__ ": InlineCalls: " +
+                                 target_call->comment;
+        }
         into_parent_regions.AddUse(copied_call);
 
         for (auto target_var : target_call->arg_vars) {
@@ -681,6 +718,7 @@ static bool OptimizeImpl(PROC *proc) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
+
   for (auto changed = true; changed;) {
     changed = false;
 
@@ -775,6 +813,8 @@ void ProgramImpl::Optimize(void) {
             auto call_i = operation_regions.CreateDerived<CALL>(
                 next_id++, seq, i_proc,
                 ProgramOperation::kCallProcedureCheckTrue);
+
+            call_i->comment = __FILE__ ": ProgramImpl::Optimize";
 
             for (auto arg_var : j_proc->input_vars) {
               call_i->arg_vars.AddUse(arg_var);

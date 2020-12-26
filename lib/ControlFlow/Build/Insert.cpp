@@ -143,6 +143,8 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
     check->arg_vars.AddUse(parent->VariableFor(impl, col));
   }
 
+  check->comment = __FILE__ ": CreateBottomUpInsertRemover";
+
   // Now we're inside of the check, and we know for certain this tuple has
   // been removed because the checker function returned `false`.
   parent_body->Emplace(parent, check);
@@ -232,6 +234,8 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
         ProgramOperation::kCallProcedureCheckTrue, already_checked);
     proc->body.Emplace(proc, check);
 
+    check->comment = __FILE__ ": BuildTopDownInsertChecker";
+
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
     check->body.Emplace(check, ret_true);
     return;
@@ -247,9 +251,11 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   already_checked = model->table;
 
   auto call_pred = [&](REGION *parent) -> REGION * {
-    return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+    const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
         impl, context, parent, view, view_cols, table_to_update, pred_view,
         already_checked);
+    check->comment = __FILE__ ": BuildTopDownInsertChecker::call_pred";
+    return check;
   };
 
   proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(

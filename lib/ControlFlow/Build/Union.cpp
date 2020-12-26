@@ -66,6 +66,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
+        check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds";
         par->regions.AddUse(check);
       }
     };
@@ -178,6 +179,8 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
     const auto check = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, parent, checker_proc,
         ProgramOperation::kCallProcedureCheckFalse);
+
+    check->comment = __FILE__ ": CreateBottomUpUnionRemover";
 
     auto i = 0u;
     for (auto col : check_cols) {

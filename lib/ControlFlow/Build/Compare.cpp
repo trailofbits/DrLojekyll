@@ -133,9 +133,11 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     };
 
     auto call_pred = [&](PARALLEL *parent) {
-      parent->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols, table_to_update, pred_view,
-          already_checked));
+          already_checked);
+      check->comment = __FILE__ ": BuildTopDownCompareChecker::call_pred";
+      parent->regions.AddUse(check);
     };
 
     auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
