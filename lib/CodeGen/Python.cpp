@@ -1548,7 +1548,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
   os << ":\n";
 
   os.PushIndent();
-  os << os.Indent() << "return sys.modules[__name__]." << func.Name() << '_'
+  os << os.Indent() << "return " << func.Name() << '_'
      << ParsedDeclaration(func).BindingPattern() << "(";
   sep_ret = "";
   for (auto param : func.Parameters()) {

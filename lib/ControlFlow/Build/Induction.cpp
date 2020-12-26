@@ -294,10 +294,6 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     induction = impl->induction_regions.Create(impl, parent);
 
     const auto induction_set = context.merge_sets[view].FindAs<InductionSet>();
-    for (auto other_view : induction_set->merges) {
-      context.view_to_induction[{proc, other_view.UniqueId()}] = induction;
-      induction->view_to_init_appends.emplace(other_view, induction);
-    }
 
     const auto action = new ContinueInductionWorkItem(
         context, induction, induction_set);
@@ -314,6 +310,12 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
         cycle_proc->VectorFor(impl, VectorKind::kInputOutputParameter,
                               merge.Columns());
       }
+    }
+
+    for (auto other_view : induction_set->merges) {
+      context.view_to_induction[{proc, other_view.UniqueId()}] = induction;
+      context.view_to_induction[{cycle_proc, view.UniqueId()}] = induction;
+      induction->view_to_init_appends.emplace(other_view, induction);
     }
 
     // Tell the induction about the vector parameters for the handler. Done
@@ -390,8 +392,6 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
       output_seq->regions.AddUse(clear);
     }
-  } else {
-    assert(proc == induction->containing_procedure);
   }
 
   auto &vec = induction->view_to_vec[view];
@@ -411,10 +411,13 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:
+      assert(proc == induction->containing_procedure);
       append_to_vec->vector.Emplace(append_to_vec, vec.get());
       induction->view_to_init_appends.find(view)->second.AddUse(append_to_vec);
       break;
+
     case INDUCTION::kAccumulatingCycleRegions:
+      assert(proc == induction->cycle_proc);
       if (auto input_vec = induction->view_to_cycle_input_vec[view]; input_vec) {
         append_to_vec->vector.Emplace(append_to_vec, input_vec);
       } else {
@@ -422,6 +425,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
       }
       break;
     default:
+      assert(proc == induction->output_proc);
       assert(false); break;
   }
 }

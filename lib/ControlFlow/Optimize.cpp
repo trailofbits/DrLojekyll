@@ -2,6 +2,8 @@
 
 #include "Program.h"
 
+#include <iostream>
+
 namespace hyde {
 namespace {
 
@@ -258,14 +260,22 @@ static bool OptimizeImpl(SERIES *series) {
     auto has_unneeded = false;
     auto seen_return = false;
     for (auto region : series->regions) {
-      if (region->IsNoOp() || seen_return) {
+      if (region->IsNoOp()) {
         has_unneeded = true;
         break;
 
       } else if (auto op = region->AsOperation(); op) {
         if (op->AsReturn()) {
           seen_return = true;
+          continue;
         }
+      }
+
+      // There's a region following a `RETURN` in a series. This is unreachable.
+      if (seen_return) {
+        assert(false && "Unreachable code in SERIES region");
+        has_unneeded = true;
+        break;
       }
     }
 
@@ -361,6 +371,7 @@ static bool OptimizeImpl(EXISTS *exists) {
 // Propagate comparisons upwards, trying to join towers of comparisons into
 // single tuple group comparisons.
 static bool OptimizeImpl(TUPLECMP *cmp) {
+
   bool changed = false;
 
   auto max_i = cmp->lhs_vars.Size();
@@ -372,6 +383,7 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       for (auto i = 0u; i < max_i; ++i) {
         parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
         parent_cmp->rhs_vars.AddUse(cmp->rhs_vars[i]);
+        changed = true;
       }
 
       cmp->lhs_vars.Clear();
@@ -390,60 +402,57 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       changed = true;
     }
 
-  } else {
-    auto has_matching = false;
-    for (auto i = 0u; i < max_i; ++i) {
-      if (cmp->lhs_vars[i] == cmp->rhs_vars[i]) {
-        has_matching = true;
-        break;
-      }
-    }
+    return changed;
 
-    if (has_matching) {
-      if (cmp->cmp_op == ComparisonOperator::kEqual) {
-        UseList<VAR> new_lhs_vars(cmp);
-        UseList<VAR> new_rhs_vars(cmp);
-        for (auto i = 0u; i < max_i; ++i) {
-          if (cmp->lhs_vars[i] != cmp->rhs_vars[i]) {
-            new_lhs_vars.AddUse(cmp->lhs_vars[i]);
-            new_rhs_vars.AddUse(cmp->rhs_vars[i]);
-          }
-        }
-
-        // This comparison is trivially true, replace it with its body.
-        if (new_lhs_vars.Empty()) {
-          cmp->lhs_vars.Clear();
-          cmp->rhs_vars.Clear();
-          const auto body = cmp->body.get();
-          cmp->body.Clear();
-          if (body) {
-            body->parent = cmp->parent;
-            cmp->ReplaceAllUsesWith(body);
-          }
-
-        // This comparison had some redundant comparisons, swap in the less
-        // redundant ones.
-        } else {
-          cmp->lhs_vars.Swap(new_lhs_vars);
-          cmp->rhs_vars.Swap(new_rhs_vars);
-        }
-
-      // This tuple compare with never be satisfiable, and so everything inside
-      // it is dead.
-      } else {
-        if (const auto body = cmp->body.get(); body) {
-          body->parent = nullptr;
-        }
-        cmp->body.Clear();
-        cmp->lhs_vars.Clear();
-        cmp->rhs_vars.Clear();
-      }
-
-      changed = true;
+  }
+  auto has_matching = false;
+  for (auto i = 0u; i < max_i; ++i) {
+    if (cmp->lhs_vars[i] == cmp->rhs_vars[i]) {
+      has_matching = true;
+      break;
     }
   }
 
-  return changed;
+  if (!has_matching) {
+    return changed;
+  }
+
+  if (cmp->cmp_op == ComparisonOperator::kEqual) {
+    UseList<VAR> new_lhs_vars(cmp);
+    UseList<VAR> new_rhs_vars(cmp);
+    for (auto i = 0u; i < max_i; ++i) {
+      if (cmp->lhs_vars[i] != cmp->rhs_vars[i]) {
+        new_lhs_vars.AddUse(cmp->lhs_vars[i]);
+        new_rhs_vars.AddUse(cmp->rhs_vars[i]);
+      }
+    }
+
+    // This comparison is trivially true, replace it with its body.
+    if (new_lhs_vars.Empty()) {
+      cmp->lhs_vars.Clear();
+      cmp->rhs_vars.Clear();
+      OptimizeImpl(cmp);
+      return true;
+
+    // This comparison had some redundant comparisons, swap in the less
+    // redundant ones.
+    } else {
+      cmp->lhs_vars.Swap(new_lhs_vars);
+      cmp->rhs_vars.Swap(new_rhs_vars);
+    }
+
+  // This tuple compare with never be satisfiable, and so everything inside
+  // it is dead.
+  } else {
+    if (const auto body = cmp->body.get(); body) {
+      body->parent = nullptr;
+    }
+    cmp->body.Clear();
+    cmp->lhs_vars.Clear();
+    cmp->rhs_vars.Clear();
+  }
+
+  return true;
 }
 
 // Process a function as if it contains just simple function calls and a return.
@@ -616,8 +625,6 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
       // so remove it.
       if (can_remove) {
         if (call_body) {
-          call->comment = "!!!!! what?";
-          return false;
           call_body->parent = nullptr;
         }
 

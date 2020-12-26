@@ -692,10 +692,11 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     } else if (view.IsTuple()) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
+        const auto tuple = QueryTuple::From(view);
         if (!is_diff_map(pred) &&
             !output_is_conditional(pred) &&
             !pred.IsDelete() &&
-            all_cols_match(view.Columns(), pred.Columns())) {
+            all_cols_match(tuple.InputColumns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -709,11 +710,9 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
         const auto insert = QueryInsert::From(view);
-        const auto cols = insert.InputColumns();
-        const auto pred_cols = pred.Columns();
         if (!is_diff_map(pred) && !pred.IsDelete() &&
             !output_is_conditional(pred) &&
-            all_cols_match(cols, pred_cols)) {
+            all_cols_match(insert.InputColumns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -729,11 +728,9 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
       assert(preds.size() == 1u);
       const auto pred = preds[0];
       const auto del = QueryDelete::From(view);
-      const auto cols = del.InputColumns();
-      const auto pred_cols = pred.Columns();
       if (!is_diff_map(pred) &&
           !output_is_conditional(pred) &&
-          all_cols_match(cols, pred_cols)) {
+          all_cols_match(del.InputColumns(), pred.Columns())) {
         const auto pred_model = program->view_to_model[pred];
         DisjointSet::Union(model, pred_model);
       }
