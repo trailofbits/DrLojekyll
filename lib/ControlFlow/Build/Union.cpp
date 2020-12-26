@@ -33,8 +33,16 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
     last_table = nullptr;
   }
 
+#ifndef NDEBUG
+  if (1u < view.Predecessors().size()) {
+    for (auto col : view.Columns()) {
+      assert(!col.IsConstantRef());
+    }
+  }
+#endif
+
   BuildEagerSuccessorRegions(impl, view, context, parent,
-                             QueryView(view).Successors(), last_table);
+                             view.Successors(), last_table);
 }
 
 // Build a top-down checker on a union. This applies to non-differential
@@ -66,7 +74,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
-        check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds";
+        COMMENT( check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds"; )
         par->regions.AddUse(check);
       }
     };
@@ -180,7 +188,7 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
         impl->next_id++, parent, checker_proc,
         ProgramOperation::kCallProcedureCheckFalse);
 
-    check->comment = __FILE__ ": CreateBottomUpUnionRemover";
+    COMMENT( check->comment = __FILE__ ": CreateBottomUpUnionRemover"; )
 
     auto i = 0u;
     for (auto col : check_cols) {

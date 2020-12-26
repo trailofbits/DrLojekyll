@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <vector>
 
+#define COMMENT(...)
+
 namespace std {
 
 template <>

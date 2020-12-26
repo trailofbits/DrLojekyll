@@ -192,7 +192,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, table_to_update, pred_view,
           already_checked);
-      check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred";
+      COMMENT( check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred"; )
       par->regions.AddUse(check);
     };
 

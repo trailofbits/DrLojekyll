@@ -46,7 +46,7 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
         impl, context, parent, insert, insert_cols, table_to_update, insert,
         already_checked);
 
-    check->comment = __FILE__ ": BuildTopDownSelectChecker::call_pred";
+    COMMENT( check->comment = __FILE__ ": BuildTopDownSelectChecker::call_pred"; )
 
     return check;
   };

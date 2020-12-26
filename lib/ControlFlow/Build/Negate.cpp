@@ -41,7 +41,7 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
       impl, context, let, negated_view, view_cols, negated_view,
       call_op, nullptr);
 
-  check->comment = __FILE__ ": CheckInNegatedView";
+  COMMENT( check->comment = __FILE__ ": CheckInNegatedView"; )
 
   let->body.Emplace(let, check);
 
@@ -74,7 +74,7 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   const auto race_check = BuildChangeState(
       impl, table, seq, negate.Columns(), TupleState::kAbsent,
       TupleState::kUnknown);
-  race_check->comment = "Eager insert before negation to prevent race";
+  COMMENT( race_check->comment = "Eager insert before negation to prevent race"; )
   seq->regions.AddUse(race_check);
 
   // Okay, if we're inside of some kind of check that our predecessor has the
@@ -291,7 +291,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
       impl->next_id++, parent, checker_proc,
       ProgramOperation::kCallProcedureCheckTrue);
 
-  check->comment = __FILE__ ": CreateBottomUpNegationRemover";
+  COMMENT( check->comment = __FILE__ ": CreateBottomUpNegationRemover"; )
 
   auto i = 0u;
   for (auto col : pred_cols) {

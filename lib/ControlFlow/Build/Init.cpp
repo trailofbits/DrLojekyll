@@ -35,19 +35,19 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
       continue;
     }
 
-    const auto parent = impl->operation_regions.CreateDerived<LET>(par);
-    parent->ExecuteAlongside(impl, par);
+    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+    par->regions.AddUse(let);
 
     // Add variable mappings.
     view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                         std::optional<QueryColumn> out_col) {
-      const auto const_var = parent->VariableFor(impl, in_col);
+      const auto const_var = let->VariableFor(impl, in_col);
       if (out_col) {
-        parent->col_id_to_var[out_col->Id()] = const_var;
+        let->col_id_to_var[out_col->Id()] = const_var;
       }
     });
 
-    BuildEagerRegion(impl, view, view, context, parent, nullptr);
+    BuildEagerRegion(impl, view, view, context, let, nullptr);
   }
 
   CompleteProcedure(impl, init_proc, context);

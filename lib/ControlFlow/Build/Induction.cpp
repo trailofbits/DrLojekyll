@@ -456,7 +456,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
       const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, table_to_update, pred_view,
           table);
-      rec_check->comment = __FILE__ ": BuildTopDownInductionChecker::build_rule_checks";
+      COMMENT( rec_check->comment = __FILE__ ": BuildTopDownInductionChecker::build_rule_checks"; )
       par->regions.AddUse(rec_check);
     }
   };

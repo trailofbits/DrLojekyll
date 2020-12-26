@@ -136,7 +136,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
       const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols, table_to_update, pred_view,
           already_checked);
-      check->comment = __FILE__ ": BuildTopDownCompareChecker::call_pred";
+      COMMENT( check->comment = __FILE__ ": BuildTopDownCompareChecker::call_pred"; )
       parent->regions.AddUse(check);
     };
 

@@ -228,7 +228,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
           impl, context, parent, view, view_cols, pred_view,
           ProgramOperation::kCallProcedureCheckTrue, nullptr);
 
-      index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run";
+      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
 
       parent->body.Emplace(parent, index_is_good);
       parent = index_is_good;
@@ -474,7 +474,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
         impl, context, par, view, view_cols, pred_view,
         ProgramOperation::kCallProcedureCheckFalse, already_checked);
 
-    one_is_bad->comment = __FILE__ ": BuildTopDownJoinChecker";
+    COMMENT( one_is_bad->comment = __FILE__ ": BuildTopDownJoinChecker"; )
 
     const auto ret_false = BuildStateCheckCaseReturnFalse(impl, one_is_bad);
     one_is_bad->body.Emplace(one_is_bad, ret_false);

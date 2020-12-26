@@ -1669,10 +1669,17 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     } else if (InputColumnRole::kIndexValue == role) {
       return;
 
-    } else if (QueryView::Containing(in_col) == pred_view ||
-               in_col.IsConstantOrConstantRef()) {
+    } else if (QueryView::Containing(in_col) == pred_view) {
       const auto src_var = parent->VariableFor(impl, in_col);
       parent->col_id_to_var[out_col->Id()] = src_var;
+
+    // NOTE(pag): This is subtle. We use `emplace` here instead of `[...] =`
+    //            to give preference to the constant matching the incoming view.
+    //            The key issue here is when we have a column of a MERGE node
+    //            taking in a lot constants.
+    } else if (in_col.IsConstantOrConstantRef()) {
+      const auto src_var = parent->VariableFor(impl, in_col);
+      parent->col_id_to_var.emplace(out_col->Id(), src_var);
     }
   });
 

@@ -36,7 +36,7 @@ static OP *RemoveFromNegatedView(ProgramImpl *impl, Context &context,
   // as its own base case.
   const auto table_remove = BuildChangeState(
       impl, table, parent, view_cols, TupleState::kPresent, TupleState::kAbsent);
-  table_remove->comment = "Remove from negated view";
+  COMMENT( table_remove->comment = "Remove from negated view"; )
 
   const auto par = impl->parallel_regions.Create(table_remove);
   table_remove->body.Emplace(table_remove, par);
@@ -95,7 +95,7 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
       impl->next_id++, parent, checker_proc,
       ProgramOperation::kCallProcedureCheckTrue);
 
-  check->comment = __FILE__ ": ReAddToNegatedView";
+  COMMENT( check->comment = __FILE__ ": ReAddToNegatedView"; )
 
   auto i = 0u;
   for (auto col : pred_cols) {
@@ -116,7 +116,7 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
       TupleState::kPresent);
   check->body.Emplace(check, insert);
 
-  insert->comment = "Re-adding to negated view";
+  COMMENT( insert->comment = "Re-adding to negated view"; )
 
   // Now that we have everything transitioned we can call an eager region on
   // this tuple to re-insert stuff.
@@ -296,7 +296,7 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
       const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols, table_to_update, pred_view,
           already_checked);
-      check->comment = __FILE__ ": BuildTopDownTupleChecker::call_pred";
+      COMMENT( check->comment = __FILE__ ": BuildTopDownTupleChecker::call_pred"; )
       return check;
     };
 
@@ -402,7 +402,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
         impl->next_id++, parent, checker_proc,
         ProgramOperation::kCallProcedureCheckFalse);
 
-    check->comment = __FILE__ ": CreateBottomUpTupleRemover";
+    COMMENT( check->comment = __FILE__ ": CreateBottomUpTupleRemover"; )
 
     auto i = 0u;
     for (auto col : cols) {

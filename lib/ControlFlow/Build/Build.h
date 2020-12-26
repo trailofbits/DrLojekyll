@@ -549,7 +549,7 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
         CallTopDownChecker(impl, context, parent, view, view,
                            ProgramOperation::kCallProcedureCheckFalse);
 
-    check->comment = __FILE__ ": BuildInsertCheck";
+    COMMENT( check->comment = __FILE__ ": BuildInsertCheck"; )
 
     parent->body.Emplace(parent, check);
     parent = check;
@@ -592,6 +592,8 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
       const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
           parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+
+      COMMENT( insert->comment = __FILE__ ": BuildEagerSuccessorRegions"; )
 
       for (auto col : view.Columns()) {
         const auto var = parent->VariableFor(impl, col);

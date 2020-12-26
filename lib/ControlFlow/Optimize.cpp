@@ -538,8 +538,8 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
             impl->next_id++, into_parent, target_call->called_proc.get(),
             target_call->op);
         if (!target_call->comment.empty()) {
-          copied_call->comment = __FILE__ ": InlineCalls: " +
-                                 target_call->comment;
+          COMMENT( copied_call->comment = __FILE__ ": InlineCalls: " +
+                                          target_call->comment; )
         }
         into_parent_regions.AddUse(copied_call);
 
@@ -821,7 +821,7 @@ void ProgramImpl::Optimize(void) {
                 next_id++, seq, i_proc,
                 ProgramOperation::kCallProcedureCheckTrue);
 
-            call_i->comment = __FILE__ ": ProgramImpl::Optimize";
+            COMMENT( call_i->comment = __FILE__ ": ProgramImpl::Optimize"; )
 
             for (auto arg_var : j_proc->input_vars) {
               call_i->arg_vars.AddUse(arg_var);
