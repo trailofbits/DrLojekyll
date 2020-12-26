@@ -196,7 +196,9 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
 VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
   if (col.IsConstantOrConstantRef()) {
     auto &var = col_id_to_var[col.Id()];
-    var = impl->const_to_var[QueryConstant::From(col)];
+    if (!var) {
+      var = impl->const_to_var[QueryConstant::From(col)];
+    }
     return var;
   } else {
     return VariableForRec(col);

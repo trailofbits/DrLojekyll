@@ -1174,27 +1174,47 @@ PROC *GetOrCreateTopDownChecker(
       proc->col_id_to_var.emplace(param_col.Id(), var);
     }
 
-    // Map available inputs to output vars.
+    // First, map in available output variables that aren't constant.
+    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+                       std::optional<QueryColumn> out_col) {
+      if (in_col.IsConstantOrConstantRef()) {
+        return;
+      }
+
+      if (out_col &&
+          InputColumnRole::kIndexValue != role &&
+          InputColumnRole::kAggregatedColumn != role) {
+
+        if (proc->col_id_to_var.count(out_col->Id()) ||
+            out_col->IsConstantRef()) {
+          proc->col_id_to_var[in_col.Id()] = proc->VariableFor(impl, *out_col);
+        }
+      }
+    });
+
+    // Then, any input columns that match the outputs, map those.
+    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+                       std::optional<QueryColumn> out_col) {
+      if (in_col.IsConstantOrConstantRef()) {
+        return;
+      }
+
+      if (out_col &&
+          InputColumnRole::kIndexValue != role &&
+          InputColumnRole::kAggregatedColumn != role) {
+
+        if (!proc->col_id_to_var.count(out_col->Id()) &&
+            proc->col_id_to_var.count(in_col.Id())) {
+          proc->col_id_to_var[out_col->Id()] = proc->VariableFor(impl, in_col);
+        }
+      }
+    });
+
+    // Finally, map available constants to output vars.
     view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                        std::optional<QueryColumn> out_col) {
       if (in_col.IsConstantOrConstantRef()) {
         (void) proc->VariableFor(impl, in_col);
-      }
-
-      if (out_col && InputColumnRole::kIndexValue != role &&
-          InputColumnRole::kAggregatedColumn != role) {
-        if (proc->col_id_to_var.count(out_col->Id())) {
-          proc->col_id_to_var.emplace(
-              in_col.Id(), proc->VariableFor(impl, *out_col));
-
-        } else if (proc->col_id_to_var.count(in_col.Id())) {
-          proc->col_id_to_var.emplace(
-              out_col->Id(), proc->VariableFor(impl, in_col));
-
-        } else if (out_col->IsConstantRef()) {
-          proc->col_id_to_var.emplace(
-              in_col.Id(), proc->VariableFor(impl, *out_col));
-        }
       }
     });
 
@@ -1461,6 +1481,11 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
           [[clang::fallthrough]];
         default: break;
       }
+
+      // TODO(pag): Think about implication of MERGEs here, especially w.r.t.
+      //            constants. Things appear OK given that we're assigning to
+      //            `in_col.Id()`.
+
       const auto var = proc->VariableFor(impl, *out_col);
       assert(var != nullptr);
       proc->col_id_to_var.emplace(in_col.Id(), var);
