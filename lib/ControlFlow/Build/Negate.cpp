@@ -75,12 +75,12 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
       impl, table, seq, negate.Columns(), TupleState::kAbsent,
       TupleState::kUnknown);
   COMMENT( race_check->comment = "Eager insert before negation to prevent race"; )
-  seq->regions.AddUse(race_check);
+  seq->AddRegion(race_check);
 
   // Okay, if we're inside of some kind of check that our predecessor has the
   // data and so now we need to make sure that the negated view doesn't have
   // the data.
-  seq->regions.AddUse(CheckInNegatedView(
+  seq->AddRegion(CheckInNegatedView(
       impl, negate, context, seq, ProgramOperation::kCallProcedureCheckFalse,
       [&] (OP *if_absent) {
 
@@ -119,7 +119,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
     auto seq = impl->series_regions.Create(if_present);
 
     // If the tuple isn't present in the negated view then we can return true.
-    seq->regions.AddUse(CheckInNegatedView(
+    seq->AddRegion(CheckInNegatedView(
         impl, negate, context, seq, ProgramOperation::kCallProcedureCheckFalse,
         [=] (REGION *if_absent) {
           return BuildStateCheckCaseReturnTrue(impl, if_absent);
@@ -134,7 +134,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
     //            up remover here would be problematic. But reaching this state
     //            suggests some other problem.
 
-    seq->regions.AddUse(BuildChangeState(
+    seq->AddRegion(BuildChangeState(
         impl, model->table, seq, view_cols,
         TupleState::kPresent, TupleState::kAbsent));
 
@@ -148,7 +148,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
   auto do_check_on_unknown_not_checked = [&] (ProgramImpl *, REGION *if_unknown) {
     return BuildTopDownTryMarkAbsent(impl, model->table, if_unknown, view.Columns(),
                                      [&](PARALLEL *par) {
-      par->regions.AddUse(CheckInNegatedView(
+      par->AddRegion(CheckInNegatedView(
           impl, negate, context, par, ProgramOperation::kCallProcedureCheckFalse,
           [&] (REGION *if_absent) {
             return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
@@ -224,7 +224,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
         (void) param;
       }
 
-      par->regions.AddUse(call);
+      par->AddRegion(call);
     }
   };
 
@@ -235,14 +235,14 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
       [&](PARALLEL *par) {
         auto seq = impl->series_regions.Create(par);
         parent = seq;
-        par->regions.AddUse(seq);
+        par->AddRegion(seq);
       }));
 
   // The state is now unknown. Check the negated view. If the tuple is present
   // then change our state to absent and keep going.
 
   const auto negate = QueryNegate::From(view);
-  parent->regions.AddUse(CheckInNegatedView(
+  parent->AddRegion(CheckInNegatedView(
       impl, negate, context, parent,
       ProgramOperation::kCallProcedureCheckTrue,
       [&] (REGION *if_present) {
@@ -250,7 +250,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
         auto change = BuildChangeState(
             impl, model->table, seq, view.Columns(),
             TupleState::kUnknown, TupleState::kAbsent);
-        seq->regions.AddUse(change);
+        seq->AddRegion(change);
 
         auto par = impl->parallel_regions.Create(change);
         change->body.Emplace(change, par);
@@ -258,7 +258,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
         handle_sucesssors(par);
 
         // Return early after marking the successors.
-        seq->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, seq));
+        seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
 
         return seq;
       }));
@@ -303,7 +303,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
     (void) param;
   }
 
-  parent->regions.AddUse(check);
+  parent->AddRegion(check);
 
   // If we're down here then it means that we've proven that the tuple exists
   // and so we want to return early.
@@ -312,8 +312,8 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   auto change = BuildChangeState(
       impl, model->table, seq, view.Columns(),
       TupleState::kAbsentOrUnknown, TupleState::kPresent);
-  seq->regions.AddUse(change);
-  seq->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, seq));
+  seq->AddRegion(change);
+  seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
 
   // If we're down here then it means the data isn't present in the negated
   // view, but it's also not present in our predecessor, so it's time to keep
@@ -322,7 +322,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   change = BuildChangeState(
       impl, model->table, parent, view.Columns(),
       TupleState::kAbsentOrUnknown, TupleState::kAbsent);
-  parent->regions.AddUse(change);
+  parent->AddRegion(change);
   auto par = impl->parallel_regions.Create(change);
   change->body.Emplace(change, par);
   handle_sucesssors(par);

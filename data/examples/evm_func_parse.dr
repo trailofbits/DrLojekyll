@@ -1,0 +1,165 @@
+; This example can parse EVM array declarations
+
+#foreign Token ```Tuple[str, int]```
+#foreign Lexeme ```str```
+#foreign ASTNode ```Tuple```
+
+#query type_name(free ASTNode BaseType)
+
+#functor left_corner(bound ASTNode Node, free Token LeftCorner) range(.)
+#functor right_corner(bound ASTNode Node, free Token RightCorner) range(.)
+#message next_token(Token Tok, Token NextTok)
+#functor lexeme_of_token(bound Token Tok, free Lexeme L) range(.)
+#functor start_function_type(bound Token FuncTok, bound Token LParen, free ASTNode Header) range(.)
+#functor add_function_type_param(bound ASTNode Header, bound ASTNode ParamType, free ASTNode ExtendedHeader) range(.)
+#functor finish_function_type_params(bound ASTNode Header, bound Token RParen, free ASTNode FinishedHeader) range(.)
+
+
+#message other_type(ASTNode Node)
+
+#constant Lexeme PUNC_L_PAREN ```"("```
+#constant Lexeme PUNC_R_PAREN ```")"```
+#constant Lexeme PUNC_COMMA ```","```
+#constant Lexeme KEYWORD_FUNCTION ```"function"```
+#constant Lexeme KEYWORD_TYPE_BYTE ```"byte"```
+#constant Lexeme KEYWORD_TYPE_BYTES ```"bytes"```
+#constant Lexeme KEYWORD_RETURNS ```"returns"```
+#constant Token FAKE_R_PAREN ```(")", -1)```
+
+type_name(OtherType) : other_type(OtherType).
+
+#local type_name_use(StartToken, Type)
+type_name_use(StartToken, Type)
+    : type_name(Type)
+    , left_corner(Type, StartToken).
+
+
+;#local elementary_type_lexeme(L)
+;elementary_type_lexeme(KEYWORD_TYPE_BYTE).
+;elementary_type_lexeme(KEYWORD_TYPE_BYTES).
+;
+;type_name(Node)
+;    : token(T)
+;    , lexeme_of_token(T, L)
+;    , elementary_type_lexeme(L)
+;    , build_elementary_type(T, Node).
+
+
+#local function_head(HeaderNode, NextTok)
+function_head(HeaderNode, NextTok)
+    : next_token(Function, LParen)
+    , lexeme_of_token(Function, KEYWORD_FUNCTION)
+    , lexeme_of_token(LParen, PUNC_L_PAREN)
+    , next_token(LParen, NextTok)
+    , start_function_type(Function, LParen, HeaderNode).
+    
+; If we see something half unexpected, then inject in a closing parenthesis
+; to model being done with the parameter list.
+#local fixed_function_head(HeaderNode, LParen, RParen, NotRParen)
+fixed_function_head(FinishedHeaderNode, LParen, FAKE_R_PAREN, NotRParen)
+    : function_head(HeaderNode, NotRParen)
+    , lexeme_of_token(NotRParen, NotRParenLexeme)
+    , NotRParenLexeme != PUNC_R_PAREN
+    , NotRParenLexeme != PUNC_COMMA
+    , !type_name_use(NotRParen, _)
+    , finish_function_type_params(HeaderNode, FAKE_R_PAREN, FinishedHeaderNode)
+    , right_corner(HeaderNode, LParen).
+
+#local function_type_param_delimiter(L)
+function_type_param_delimiter(PUNC_COMMA).
+function_type_param_delimiter(PUNC_R_PAREN).
+
+; Base case for a parameter list, i.e. it is a function head, followed by a type.
+#local function_head_with_param_type(Node, NextTok)
+function_head_with_param_type(HeaderNodeWithParam, NextTok)
+    : function_head(HeaderNode, FirstTokOfParamType)
+    , type_name_use(FirstTokOfParamType, ParamType)
+    , right_corner(ParamType, LastTokOfParamType)
+    , next_token(LastTokOfParamType, NextTok)
+    , lexeme_of_token(NextTok, NextLexeme)
+    , function_type_param_delimiter(NextLexeme)
+    , add_function_type_param(HeaderNode, ParamType, HeaderNodeWithParam).
+
+#local modified_function_type(HeaderNode, NextTok)
+
+; The next base case for a modified function type is one that is based on a function type head that has
+; been fixed up, i.e. by injecting in a closing right parenthesis.
+modified_function_type(HeaderNode, NextTok)
+    : fixed_function_head(HeaderNode, _, _, NextTok).
+
+
+; If we get to the end of the parameter list, i.e. we find a `)`, then we can
+; have established the base case for modifiers.
+modified_function_type(FinishedHeaderNode, NextTok)
+    : function_head_with_param_type(HeaderNode, RParen)
+    , lexeme_of_token(RParen, PUNC_R_PAREN)
+    , finish_function_type_params(HeaderNode, RParen, FinishedHeaderNode)
+    , next_token(RParen, NextTok).
+
+
+
+; A modified function type followed by something that's not the `returns` keyword
+; is a finished function type.
+type_name(FunctionType)
+    : modified_function_type(FunctionType, NextToken)
+    , lexeme_of_token(NextToken, NextLexeme)
+    , NextLexeme != KEYWORD_RETURNS.
+
+#epilogue ```python
+def left_corner_bf(node):
+    print("left_corner({})".format(node))
+    return node[0]
+  
+def right_corner_bf(node):
+    print("right_corner({})".format(node))
+    return node[-1]
+
+def lexeme_of_token_bf(tok: Tuple[str, int]):
+    print("lexeme_of_token_bf({})".format(tok))
+    return tok[0]
+
+def start_function_type_bbf(func_tok, l_paren):
+    print("start_function_type_bbf({}, {})".format(func_tok, l_paren))
+    return (func_tok, l_paren)
+    
+def add_function_type_param_bbf(base_type, param):
+    print("add_function_type_param_bbf({}, {})".format(base_type, param))
+    base_type = list(base_type)
+    if isinstance(param, tuple):
+      base_type.extend(param)
+    else:
+      base_type.append(param)
+    return tuple(base_type)
+
+def finish_function_type_params_bbf(base_type, r_paren):
+    print("finish_function_type_bbf({}, {})".format(base_type, r_paren))
+    base_type = list(base_type)
+    base_type.append(r_paren)
+    return tuple(base_type)
+
+if __name__ == "__main__":
+    functors = DatabaseFunctors()
+    log = DatabaseLog()
+    db = Database(log, functors)
+    tokens = [("function", 0), ("(", 1), ("bytes", 2), (")", 3), ("foo", 4)]
+    for i in range(1, len(tokens)):
+        db.next_token_2([(tokens[i-1], tokens[i])])
+    db.other_type_1([(tokens[2],)])
+    
+    good = set([(('bytes', 2),),
+                (('function', 0), ('(', 1), ('bytes', 2), (')', 3))])
+    
+    # If negation handling is broken then `function()` with a fake `)` will
+    # appear.
+                
+    passed = True
+    for t in db.type_name_f():
+        if t not in good:
+            print(t)
+            passed = False
+        else:
+          good.remove(t)
+
+    assert 0 == len(good)
+    assert passed
+```

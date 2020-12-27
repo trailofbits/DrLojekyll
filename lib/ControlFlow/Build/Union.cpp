@@ -75,7 +75,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
         COMMENT( check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds"; )
-        par->regions.AddUse(check);
+        par->AddRegion(check);
       }
     };
 
@@ -122,7 +122,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         continue;
       }
 
-      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      par->AddRegion(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, nullptr, pred_view, nullptr));
     }
   }
@@ -202,7 +202,7 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
     }
 
     // Re-parent into the body of the check.
-    parent->regions.AddUse(check);
+    parent->AddRegion(check);
     parent = impl->parallel_regions.Create(check);
     check->body.Emplace(check, parent);
   }
@@ -233,7 +233,7 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(call);
+    parent->AddRegion(call);
   }
 
   auto ret = impl->operation_regions.CreateDerived<RETURN>(

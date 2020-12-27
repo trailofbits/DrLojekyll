@@ -28,7 +28,7 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
         impl, context, view, succ_view);
     const auto call = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, par, called_proc);
-    par->regions.AddUse(call);
+    par->AddRegion(call);
 
     auto i = 0u;
     for (auto col : view.Columns()) {

@@ -59,7 +59,7 @@ static OP *RemoveFromNegatedView(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    par->regions.AddUse(call);
+    par->AddRegion(call);
   }
 
   return table_remove;
@@ -142,7 +142,7 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
     std::vector<QueryColumn> negate_cols;
 
     const auto let = impl->operation_regions.CreateDerived<LET>(parent);
-    parent->regions.AddUse(let);
+    parent->AddRegion(let);
 
     for (auto col : view.Columns()) {
       auto in_var = let->VariableFor(impl, col);
@@ -203,7 +203,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
     parent->body.Emplace(parent, seq);
 
     const auto par = impl->parallel_regions.Create(seq);
-    seq->regions.AddUse(par);
+    seq->AddRegion(par);
 
     view.ForEachNegation([&] (QueryNegate negate) {
       DataModel * const negate_model = \
@@ -225,7 +225,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 
       // For each thing that we find in the index scan, we will push through
       // a removal.
-      par->regions.AddUse(BuildMaybeScanPartial(
+      par->AddRegion(BuildMaybeScanPartial(
         impl, negate, negate_cols, negate_table, par,
         [&](REGION *in_scan) -> REGION * {
           return RemoveFromNegatedView(impl, context, in_scan, negate,
@@ -234,7 +234,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
     });
 
     parent = impl->operation_regions.CreateDerived<LET>(seq);
-    seq->regions.AddUse(parent);
+    seq->AddRegion(parent);
   }
 
   BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
@@ -415,7 +415,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(check);
+    parent->AddRegion(check);
 
     // The call to the top-down checker will have changed the state to
     // absent.
@@ -458,7 +458,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(call);
+    parent->AddRegion(call);
   }
 
   // NOTE(pag): We don't end this with a `return-false` because removing from

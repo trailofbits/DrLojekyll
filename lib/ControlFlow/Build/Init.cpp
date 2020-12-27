@@ -16,8 +16,8 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
   const auto seq = impl->series_regions.Create(init_proc);
   init_proc->body.Emplace(init_proc, seq);
 
-  const auto par = impl->parallel_regions.Create(init_proc);
-  seq->regions.AddUse(par);
+  const auto par = impl->parallel_regions.Create(seq);
+  seq->AddRegion(par);
 
   // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
   // as those are dataflow dependent.
@@ -36,7 +36,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
     }
 
     const auto let = impl->operation_regions.CreateDerived<LET>(par);
-    par->regions.AddUse(let);
+    par->AddRegion(let);
 
     // Add variable mappings.
     view.ForEachUse([&](QueryColumn in_col, InputColumnRole,

@@ -130,7 +130,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
       const auto swap = impl->operation_regions.CreateDerived<VECTORSWAP>(
           seq, ProgramOperation::kSwapInductionVector);
-      seq->regions.AddUse(swap);
+      seq->AddRegion(swap);
       swap->lhs.Emplace(swap, vec);
       swap->rhs.Emplace(swap, swap_vec);
 
@@ -140,7 +140,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     // Cycle  through all of the input vectors (by way of the local swapped
     // vectors).
     const auto cycle_par = impl->parallel_regions.Create(seq);
-    seq->regions.AddUse(cycle_par);
+    seq->AddRegion(cycle_par);
 
     std::vector<OP *> cycles;
 
@@ -203,18 +203,19 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   PROC * const cycle_handler = induction->cycle_proc;
   if (!EndsWithReturn(cycle_handler)) {
     const auto seq = impl->series_regions.Create(cycle_handler);
-    seq->regions.AddUse(cycle_handler->body.get());
+    cycle_handler->body->parent = seq;
+    seq->AddRegion(cycle_handler->body.get());
     cycle_handler->body.Emplace(cycle_handler, seq);
 
     for (auto [merge, vec] : induction->view_to_cycle_induction_vec) {
       const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
           seq, ProgramOperation::kClearInductionInputVector);
       clear->vector.Emplace(clear, vec);
-      seq->regions.AddUse(clear);
+      seq->AddRegion(clear);
       (void) merge;
     }
 
-    seq->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, seq));
+    seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
   }
 
   // Nothing to do if we've already generated code for the output region.
@@ -237,7 +238,7 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     // results.
     const auto cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
         cycle_par, ProgramOperation::kLoopOverInductionInputVector);
-    cycle_par->regions.AddUse(cycle);
+    cycle_par->AddRegion(cycle);
 
     for (auto col : merge.Columns()) {
       const auto var = cycle->defined_vars.Create(
@@ -371,8 +372,8 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     //            the induction's base case through the rest of the dataflow,
     //            then we use the base base to build up the next case in the
     //            cycle function, which does vector referencing/swapping.
-    cycle_seq->regions.AddUse(call_output);
-    cycle_seq->regions.AddUse(call_cycle);
+    cycle_seq->AddRegion(call_output);
+    cycle_seq->AddRegion(call_cycle);
 
     // Now build the inductive output regions and add them in. We'll do this
     // before we actually add the successor regions in.
@@ -390,7 +391,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
           output_seq, ProgramOperation::kClearInductionInputVector);
       clear->vector.Emplace(clear, vec);
 
-      output_seq->regions.AddUse(clear);
+      output_seq->AddRegion(clear);
     }
   }
 
@@ -457,7 +458,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
           impl, context, par, view, view_cols, table_to_update, pred_view,
           table);
       COMMENT( rec_check->comment = __FILE__ ": BuildTopDownInductionChecker::build_rule_checks"; )
-      par->regions.AddUse(rec_check);
+      par->AddRegion(rec_check);
     }
   };
 

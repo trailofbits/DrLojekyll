@@ -1167,56 +1167,63 @@ PROC *GetOrCreateTopDownChecker(
     proc = impl->procedure_regions.Create(impl->next_id++,
                                           ProcedureKind::kTupleFinder);
 
+    // Preferentially map constants now. This might help with dead arg
+    // elimination later.
+    for (auto col : view.Columns()) {
+      if (col.IsConstantRef()) {
+        (void) proc->VariableFor(impl, col);
+      }
+    }
+
     for (auto param_col : available_cols) {
       const auto var =
           proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
       var->query_column = param_col;
+
+      // NOTE(pag): `emplace` so that constants mapped in above are given
+      //            preference.
       proc->col_id_to_var.emplace(param_col.Id(), var);
     }
 
-    // First, map in available output variables that aren't constant.
+    // Now, map outputs to inputs.
     view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                        std::optional<QueryColumn> out_col) {
-      if (in_col.IsConstantOrConstantRef()) {
-        return;
-      }
 
       if (out_col &&
           InputColumnRole::kIndexValue != role &&
           InputColumnRole::kAggregatedColumn != role) {
 
-        if (proc->col_id_to_var.count(out_col->Id()) ||
-            out_col->IsConstantRef()) {
-          proc->col_id_to_var[in_col.Id()] = proc->VariableFor(impl, *out_col);
+        if (proc->col_id_to_var.count(out_col->Id())) {
+          proc->col_id_to_var.emplace(in_col.Id(),
+                                      proc->VariableFor(impl, *out_col));
         }
       }
     });
 
-    // Then, any input columns that match the outputs, map those.
+    // Then, any input columns that match the outputs, map those. For example,
+    // it may be the case that a single input column feeds multiple output
+    // columns, but not all of the output columns are available.
     view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                        std::optional<QueryColumn> out_col) {
-      if (in_col.IsConstantOrConstantRef()) {
-        return;
-      }
-
       if (out_col &&
           InputColumnRole::kIndexValue != role &&
-          InputColumnRole::kAggregatedColumn != role) {
+          InputColumnRole::kAggregatedColumn != role &&
+          InputColumnRole::kMergedColumn != role) {
 
-        if (!proc->col_id_to_var.count(out_col->Id()) &&
-            proc->col_id_to_var.count(in_col.Id())) {
-          proc->col_id_to_var[out_col->Id()] = proc->VariableFor(impl, in_col);
+        if (proc->col_id_to_var.count(in_col.Id())) {
+          proc->col_id_to_var.emplace(out_col->Id(),
+                                      proc->VariableFor(impl, in_col));
         }
       }
     });
 
-    // Finally, map available constants to output vars.
-    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                       std::optional<QueryColumn> out_col) {
-      if (in_col.IsConstantOrConstantRef()) {
-        (void) proc->VariableFor(impl, in_col);
-      }
-    });
+//    // Finally, map available constants to output vars.
+//    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
+//                       std::optional<QueryColumn> out_col) {
+//      if (in_col.IsConstantOrConstantRef()) {
+//        (void) proc->VariableFor(impl, in_col);
+//      }
+//    });
 
     context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
                                                     already_checked);
@@ -1268,14 +1275,6 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     if (QueryView::Containing(view_col) != view) {
       return;
 
-    // If it's a constant ref then we have it. Note that we take `view_col`
-    // as the lookup for the `VariableFor` and not `*succ_view_col` because
-    // that might give us the output of a mutable column in a key/value store.
-    } else if (view_col.IsConstantRef()) {
-      const auto succ_var = parent->VariableFor(impl, view_col);
-      parent->col_id_to_var[view_col.Id()] = succ_var;
-      available_cols.push_back(view_col);
-
     // The input column from `view` is not present in `succ_view`.
     } else if (!succ_view_col) {
       return;
@@ -1303,13 +1302,17 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
       const auto succ_var = parent->VariableFor(impl, *succ_view_col);
       parent->col_id_to_var[view_col.Id()] = succ_var;
 
-    // Realistically, this shouldn't be possible, as it suggests a possible
-    // bug in the dataflow optimizers.
+    // If it's a constant ref then we have it. Note that we take `view_col`
+    // as the lookup for the `VariableFor` and not `*succ_view_col` because
+    // that might give us the output of a mutable column in a key/value store.
+    //
+    // NOTE(pag): This follows a check that `view_col` belongs to `view` so that
+    //            multiple constants flowing into a column in a MERGE/UNION
+    //            don't end up all getting matched.
     } else if (succ_view_col->IsConstantRef()) {
-      assert(false);
-      available_cols.push_back(view_col);
-      const auto succ_var = parent->VariableFor(impl, *succ_view_col);
+      auto succ_var = parent->VariableFor(impl, *succ_view_col);
       parent->col_id_to_var[view_col.Id()] = succ_var;
+      available_cols.push_back(view_col);
     }
   });
 
@@ -1702,7 +1705,8 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     //            to give preference to the constant matching the incoming view.
     //            The key issue here is when we have a column of a MERGE node
     //            taking in a lot constants.
-    } else if (in_col.IsConstantOrConstantRef()) {
+    } else if (in_col.IsConstantOrConstantRef() &&
+               InputColumnRole::kMergedColumn != role) {
       const auto src_var = parent->VariableFor(impl, in_col);
       parent->col_id_to_var.emplace(out_col->Id(), src_var);
     }

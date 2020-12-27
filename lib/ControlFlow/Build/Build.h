@@ -147,14 +147,17 @@ BuildTopDownCheckerStateCheck(ProgramImpl *impl, REGION *parent, TABLE *table,
   check->table.Emplace(check, table);
 
   if (REGION *present_op = if_present_cb(impl, check); present_op) {
+    assert(present_op->parent == check);
     check->OP::body.Emplace(check, present_op);
   }
 
   if (REGION *absent_op = if_absent_cb(impl, check); absent_op) {
+    assert(absent_op->parent == check);
     check->absent_body.Emplace(check, absent_op);
   }
 
   if (REGION *unknown_op = if_unknown_cb(impl, check); unknown_op) {
+    assert(unknown_op->parent == check);
     check->unknown_body.Emplace(check, unknown_op);
   }
 
@@ -196,6 +199,12 @@ static CHANGESTATE *BuildTopDownTryMarkAbsent(ProgramImpl *impl, TABLE *table,
 
   with_par_node(par);
 
+#ifndef NDEBUG
+  for (auto region : par->regions) {
+    assert(region->parent == par);
+  }
+#endif
+
   return table_remove;
 }
 
@@ -215,6 +224,12 @@ BuildBottomUpTryMarkUnknown(ProgramImpl *impl, TABLE *table, REGION *parent,
   table_remove->OP::body.Emplace(table_remove, par);
 
   with_par_node(par);
+
+#ifndef NDEBUG
+  for (auto region : par->regions) {
+    assert(region->parent == par);
+  }
+#endif
 
   return table_remove;
 }
@@ -246,7 +261,11 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // then we can just use `cb`, which assumes the availability of all columns.
   const auto num_cols = view.Columns().size();
   if (view_cols.size() == num_cols) {
-    return cb(parent);
+    const auto ret = cb(parent);
+    if (ret) {
+      assert(ret->parent == parent);
+    }
+    return ret;
   }
 
   std::vector<unsigned> in_col_indices;
@@ -276,7 +295,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // Scan an index, using the columns from the tuple to find the columns
   // from the tuple's predecessor.
   const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
-  scan->ExecuteAfter(impl, seq);
+  seq->AddRegion(scan);
   scan->table.Emplace(scan, table);
   scan->index.Emplace(scan, index);
   scan->output_vector.Emplace(scan, vec);
@@ -298,7 +317,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // Loop over the results of the table scan.
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       seq, ProgramOperation::kLoopOverScanVector);
-  loop->ExecuteAfter(impl, seq);
+  seq->AddRegion(loop);
   loop->vector.Emplace(loop, vec);
 
   for (auto col : selected_cols) {
@@ -321,7 +340,8 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     view_cols.push_back(col);
   }
 
-  auto in_loop = cb(loop);
+  const auto in_loop = cb(loop);
+  assert(in_loop->parent == loop);
   loop->body.Emplace(loop, in_loop);
 
   return seq;
@@ -682,14 +702,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   //
   // A key benefit of PARALLEL regions is that within them, CSE can be performed
   // to identify and eliminate repeated branches.
-  PARALLEL *par = nullptr;
-
-  par = impl->parallel_regions.Create(parent);
+  PARALLEL *par = impl->parallel_regions.Create(parent);
   parent->body.Emplace(parent, par);
 
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);
-    par->regions.AddUse(let);
+    par->AddRegion(let);
     BuildEagerRegion(impl, view, succ_view, context, let, last_table);
   }
 }

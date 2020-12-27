@@ -23,6 +23,7 @@ uint64_t Node<ProgramSeriesRegion>::Hash(void) const {
 // Returns true if this region is a no-op.
 bool Node<ProgramSeriesRegion>::IsNoOp(void) const noexcept {
   for (auto region : regions) {
+    assert(region->parent == this);
     if (!region->IsNoOp()) {
       return false;
     }

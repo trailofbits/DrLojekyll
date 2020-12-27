@@ -95,7 +95,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
           impl, model->table, proc, insert_cols,
           [&](PARALLEL *par) {
             auto let = impl->operation_regions.CreateDerived<LET>(par);
-            par->regions.AddUse(let);
+            par->AddRegion(let);
             parent = let;
             parent_body = &(let->body);
           });
@@ -198,7 +198,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
           call->arg_vars.AddUse(var);
         }
 
-        par->regions.AddUse(call);
+        par->AddRegion(call);
       }
     }
   }

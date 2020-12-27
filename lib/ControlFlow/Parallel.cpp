@@ -96,6 +96,7 @@ bool Node<ProgramParallelRegion>::Equals(
 // Returns true if this region is a no-op.
 bool Node<ProgramParallelRegion>::IsNoOp(void) const noexcept {
   for (auto region : regions) {
+    assert(region->parent == this);
     if (!region->IsNoOp()) {
       return false;
     }

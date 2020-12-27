@@ -18,13 +18,9 @@ static bool OptimizeImpl(PARALLEL *par) {
   // This is a parallel region with only one child, so we can elevate the
   // child to replace the parent.
   } else if (par->regions.Size() == 1u) {
-    auto only_region = par->regions[0u];
+    const auto only_region = par->regions[0u];
     par->regions.Clear();
-
-    if (!only_region->IsNoOp()) {
-      par->ReplaceAllUsesWith(only_region);
-    }
-
+    par->ReplaceAllUsesWith(only_region);
     return true;
 
   // This parallel node's parent is also a parallel node.
@@ -32,16 +28,16 @@ static bool OptimizeImpl(PARALLEL *par) {
              parent_par && !par->regions.Empty()) {
 
     for (auto child_region : par->regions) {
+      assert(child_region->parent == par);
       child_region->parent = parent_par;
-      parent_par->regions.AddUse(child_region);
+      parent_par->AddRegion(child_region);
     }
 
     par->regions.Clear();
     return true;
-
-    // Erase any empty child regions.
   }
 
+  // Erase any empty or no-op child regions.
   auto changed = false;
   par->regions.RemoveIf([&changed](REGION *child_region) {
     if (child_region->IsNoOp()) {
@@ -61,13 +57,16 @@ static bool OptimizeImpl(PARALLEL *par) {
   // The PARALLEL node is "canonical" as far as we can tell, so check to see
   // if any of its child regions might be mergeable.
 
-  std::unordered_map<unsigned, std::vector<REGION *>> grouped_regions;
+  std::unordered_map<uint64_t, std::vector<REGION *>> grouped_regions;
   for (auto region : par->regions) {
+    assert(region->parent == par);
     unsigned index = 0u;
     if (region->AsSeries()) {
       index = ~0u;
+
     } else if (region->AsInduction()) {
       index = ~0u - 1u;
+
     } else if (auto op = region->AsOperation(); op) {
       index = static_cast<unsigned>(op->op);
 
@@ -156,7 +155,7 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
 
     // Fixup output region
     if (auto output_region = induction->output_region.get(); output_region) {
-      assert(!induction->output_region->IsNoOp());  // Handled above.
+      assert(!output_region->IsNoOp());  // Handled above.
       induction->output_region.Clear();
       output_region->parent = parent_induction;
       if (auto parent_output_region = parent_induction->output_region.get();
@@ -217,36 +216,31 @@ static bool OptimizeImpl(SERIES *series) {
   } else if (series->regions.Size() == 1u) {
     const auto only_region = series->regions[0u];
     series->regions.Clear();
-
-    if (!only_region->IsNoOp()) {
-      series->ReplaceAllUsesWith(only_region);
-    }
-
+    series->ReplaceAllUsesWith(only_region);
     return true;
 
   // This series node's parent is also a series node.
   } else if (auto parent_series = series->parent->AsSeries();
              parent_series && !series->regions.Empty()) {
-
     UseList<REGION> new_siblings(parent_series);
+    auto found = false;
+
     for (auto sibling_region : parent_series->regions) {
-      if (!sibling_region->IsNoOp()) {
-        if (sibling_region == series) {
-          for (auto child_region : series->regions) {
-            if (!child_region->IsNoOp()) {
-              new_siblings.AddUse(child_region);
-              child_region->parent = parent_series;
-            } else {
-              child_region->parent = nullptr;
-            }
-          }
-        } else {
-          new_siblings.AddUse(sibling_region);
+      assert(sibling_region->parent == parent_series);
+      if (sibling_region == series) {
+        for (auto child_region : series->regions) {
+          assert(child_region->parent == series);
+          new_siblings.AddUse(child_region);
+          child_region->parent = parent_series;
+          found = true;
         }
       } else {
-        sibling_region->parent = nullptr;
+        new_siblings.AddUse(sibling_region);
       }
     }
+
+    assert(found);
+    (void) found;
 
     series->regions.Clear();
     series->parent = nullptr;
@@ -255,52 +249,55 @@ static bool OptimizeImpl(SERIES *series) {
 
   // Erase any empty child regions.
   } else {
-    auto changed = false;
 
     auto has_unneeded = false;
     auto seen_return = false;
+
     for (auto region : series->regions) {
-      if (region->IsNoOp()) {
+      assert(region->parent == series);
+
+      // There's a region following a `RETURN` in a series. This is unreachable.
+      if (seen_return) {
+        assert(region->AsOperation() && region->AsOperation()->AsReturn() &&
+               "Unreachable code in SERIES region");
+        has_unneeded = true;
+        break;
+
+      // This region is a No-op, it's not needed.
+      } else if (region->IsNoOp()) {
         has_unneeded = true;
         break;
 
       } else if (auto op = region->AsOperation(); op) {
         if (op->AsReturn()) {
           seen_return = true;
-          continue;
         }
-      }
-
-      // There's a region following a `RETURN` in a series. This is unreachable.
-      if (seen_return) {
-        assert(false && "Unreachable code in SERIES region");
-        has_unneeded = true;
-        break;
       }
     }
 
     // Remove no-op regions, and unreachable regions.
-    if (has_unneeded) {
-      UseList<REGION> new_regions(series);
-      for (auto region : series->regions) {
-        if (region->IsNoOp()) {
-          region->parent = nullptr;
-
-        } else if (auto op = region->AsOperation(); op) {
-          new_regions.AddUse(op);
-          if (op->AsReturn()) {
-            break;
-          }
-        } else {
-          new_regions.AddUse(op);
-        }
-      }
-
-      changed = true;
-      series->regions.Swap(new_regions);
+    if (!has_unneeded) {
+      return false;
     }
 
-    return changed;
+    UseList<REGION> new_regions(series);
+    for (auto region : series->regions) {
+      assert(region->parent == series);
+      if (region->IsNoOp()) {
+        region->parent = nullptr;
+
+      } else if (auto op = region->AsOperation(); op) {
+        new_regions.AddUse(op);
+        if (op->AsReturn()) {
+          break;
+        }
+      } else {
+        new_regions.AddUse(region);
+      }
+    }
+
+    series->regions.Swap(new_regions);
+    return true;
   }
 }
 
@@ -315,22 +312,18 @@ static bool OptimizeImpl(LET *let) {
     var_def->ReplaceAllUsesWith(var_use);
   }
 
+  let->defined_vars.Clear();
+  let->used_vars.Clear();
+
   const auto body = let->body.get();
   let->body.Clear();
 
-  if (body && !body->IsNoOp()) {
+  if (body) {
     changed = true;
     let->ReplaceAllUsesWith(body);
   }
 
-  if (changed) {
-    let->defined_vars.Clear();
-    let->used_vars.Clear();
-    return true;
-
-  } else {
-    return false;
-  }
+  return changed;
 }
 
 static bool OptimizeImpl(EXISTS *exists) {
@@ -517,7 +510,6 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
                         ProgramImpl *impl, REGION *into_parent,
                         UseList<Node<ProgramRegion>> &into_parent_regions,
                         std::unordered_map<VAR *, VAR *> &target_to_local) {
-
   for (auto target_region : from_regions) {
     if (auto target_par = target_region->AsParallel(); target_par) {
       const auto copied_par = impl->parallel_regions.Create(into_parent);
@@ -725,22 +717,59 @@ static bool OptimizeImpl(PROC *proc) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
+#ifndef NDEBUG
+  for (auto par : parallel_regions) {
+    assert(par->parent != nullptr);
+    for (auto region : par->regions) {
+      if (region->parent != par) {
+        assert(false);
+        region->parent = par;
+      }
+    }
+  }
+
+  for (auto series : series_regions) {
+    assert(series->parent != nullptr);
+    for (auto region : series->regions) {
+      if (region->parent != series) {
+        assert(false);
+        region->parent = series;
+      }
+    }
+  }
+
+  for (auto op : operation_regions) {
+    assert(op->parent != nullptr);
+  }
+#endif
+
+  // A bunch of the optimizations check `region->IsNoOp()`, which looks down
+  // to their children, or move children nodes into parent nodes. Thus, we want
+  // to start deep and "bubble up" removal of no-ops and other things.
+  auto depth_cmp = +[] (REGION *a, REGION *b) {
+    return a->CachedDepth() > b->CachedDepth();
+  };
 
   for (auto changed = true; changed;) {
     changed = false;
+
+    parallel_regions.Sort(depth_cmp);
 
     for (auto par : parallel_regions) {
       changed = OptimizeImpl(par) | changed;
     }
 
+    induction_regions.Sort(depth_cmp);
     for (auto induction : induction_regions) {
       changed = OptimizeImpl(this, induction) | changed;
     }
 
+    series_regions.Sort(depth_cmp);
     for (auto series : series_regions) {
       changed = OptimizeImpl(series) | changed;
     }
 
+    operation_regions.Sort(depth_cmp);
     for (auto i = 0u; i < operation_regions.Size(); ++i) {
       const auto op = operation_regions[i];
       if (!op->IsUsed() || !op->parent) {
@@ -765,10 +794,14 @@ void ProgramImpl::Optimize(void) {
 
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.
-      } else if (op->body && op->body->IsNoOp()) {
-        op->body->parent = nullptr;
-        op->body.Clear();
-        changed = true;
+      } else if (op->body) {
+        assert(op->body->parent == op);
+        if (op->body->IsNoOp()) {
+          op->body->comment = "NOP? " + op->body->comment;
+//        op->body->parent = nullptr;
+//        op->body.Clear();
+//        changed = true;
+        }
       }
     }
 

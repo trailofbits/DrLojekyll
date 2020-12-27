@@ -48,10 +48,22 @@ Node<ProgramInductionRegion> *Node<ProgramRegion>::AsInduction(void) noexcept {
 
 // Returns the lexical level of this node.
 unsigned Node<ProgramRegion>::Depth(void) const noexcept {
-  if (parent == containing_procedure || parent == this) {
+  if (parent == containing_procedure || parent == this || !parent) {
     return 0u;
   } else {
     return parent->Depth() + 1u;
+  }
+}
+
+// Returns the lexical level of this node.
+unsigned Node<ProgramRegion>::CachedDepth(void) noexcept {
+  if (depth) {
+    return depth;
+  } else if (parent == containing_procedure || parent == this || !parent) {
+    return 0u;
+  } else {
+    depth = parent->CachedDepth() + 1u;
+    return depth;
   }
 }
 
@@ -115,6 +127,7 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
     UseList<REGION> new_regions(series);
     new_regions.AddUse(this);
     for (auto later_region : series->regions) {
+      assert(later_region->parent == series);
       new_regions.AddUse(later_region);
     }
     series->regions.Swap(new_regions);

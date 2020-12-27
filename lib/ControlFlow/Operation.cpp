@@ -311,6 +311,10 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
   return hash;
 }
 
+bool Node<ProgramTransitionStateRegion>::IsNoOp(void) const noexcept {
+  return false;
+}
+
 bool Node<ProgramTransitionStateRegion>::Equals(
     EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -916,7 +920,24 @@ uint64_t Node<ProgramCallRegion>::Hash(void) const {
 }
 
 bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
-  return !called_proc || called_proc->IsNoOp();
+  return false;
+
+  // NOTE(pag): Not really worth checking as even trivial procedures are
+  //            treated as non-no-ops.
+
+//  if (!called_proc) {
+//    return true;
+//
+//  } else if (this->OP::body) {
+//    if (this->OP::body->IsNoOp()) {
+//      return called_proc->IsNoOp();
+//    } else {
+//      return false;
+//    }
+//
+//  } else {
+//    return called_proc->IsNoOp();
+//  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1037,7 +1058,11 @@ uint64_t Node<ProgramReturnRegion>::Hash(void) const {
 }
 
 bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
-  return false;
+  if (parent->AsProcedure()) {
+    return true;
+  } else {
+    return false;
+  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after

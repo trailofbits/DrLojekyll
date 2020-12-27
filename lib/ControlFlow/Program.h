@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#define COMMENT(...)
+#define COMMENT(...) __VA_ARGS__
 
 namespace std {
 
@@ -216,6 +216,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // Returns the lexical level of this node.
   unsigned Depth(void) const noexcept;
 
+  // Returns the lexical level of this node.
+  unsigned CachedDepth(void) noexcept;
+
   // Returns `true` if this region is a no-op.
   virtual bool IsNoOp(void) const noexcept;
 
@@ -255,6 +258,8 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   // A comment about the creation of this node.
   std::string comment;
+
+  unsigned depth{0};
 };
 
 using REGION = Node<ProgramRegion>;
@@ -595,6 +600,7 @@ class Node<ProgramTransitionStateRegion> final
   Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
 
   uint64_t Hash(void) const override;
+  bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -1073,6 +1079,11 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
 
+  inline void AddRegion(REGION *child) {
+    assert(child->parent == this);
+    regions.AddUse(child);
+  }
+
   Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
 
   UseList<Node<ProgramRegion>> regions;
@@ -1097,6 +1108,11 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
 
   uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
+
+  inline void AddRegion(REGION *child) {
+    assert(child->parent == this);
+    regions.AddUse(child);
+  }
 
   Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
 

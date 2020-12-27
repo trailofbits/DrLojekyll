@@ -619,10 +619,17 @@ OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region) {
-  auto sep = "";
-  for (auto sub_region : region.Regions()) {
-    os << sep << sub_region;
-    sep = "\n";
+  if (auto regions = region.Regions(); !regions.empty()) {
+    auto sep = "";
+    os << os.Indent() << "seq\n";
+    os.PushIndent();
+    for (auto sub_region : regions) {
+      os << sep << sub_region;
+      sep = "\n";
+    }
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty (seq)";
   }
   return os;
 }
@@ -638,7 +645,7 @@ OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
     }
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty (par)";
   }
   return os;
 }

@@ -119,9 +119,9 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                            std::optional<QueryColumn> out_col) {
     if (out_col) {
-      const auto in_var = product->col_id_to_var[in_col.Id()];
+      const auto in_var = product->VariableFor(impl, in_col);
       assert(in_var != nullptr);
-      product->col_id_to_var.emplace(out_col->Id(), in_var);
+      product->col_id_to_var[out_col->Id()] = in_var;
     }
   });
 

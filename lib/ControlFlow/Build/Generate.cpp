@@ -126,7 +126,7 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we can do it.
     if (already_checked != model->table) {
-      parent->regions.AddUse(BuildBottomUpTryMarkUnknown(
+      parent->AddRegion(BuildBottomUpTryMarkUnknown(
           impl, model->table, parent, view.Columns(),
           [&](PARALLEL *par) { parent = par; }));
     }
@@ -152,7 +152,7 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(call);
+    parent->AddRegion(call);
   }
 
   auto ret = impl->operation_regions.CreateDerived<RETURN>(
@@ -193,7 +193,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
           impl, context, par, view, view_cols, table_to_update, pred_view,
           already_checked);
       COMMENT( check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred"; )
-      par->regions.AddUse(check);
+      par->AddRegion(check);
     };
 
     auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
@@ -201,7 +201,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
                                        view_cols, call_pred);
     };
 
-    series->regions.AddUse(BuildMaybeScanPartial(
+    series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
         [&](REGION *parent) -> REGION * {
           if (already_checked != model->table) {
@@ -229,8 +229,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     // Get a list of output columns of the predecessor that we have.
     gen.ForEachUse(
         [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
-          if (auto in_var = proc->col_id_to_var[in_col.Id()];
-              in_var && QueryView::Containing(in_col) == pred_view) {
+          if (in_col.IsConstantOrConstantRef()) {
+            pred_view_cols.push_back(in_col);
+
+          } else if (QueryView::Containing(in_col) == pred_view &&
+                     proc->col_id_to_var.count(in_col.Id())) {
             pred_view_cols.push_back(in_col);
           }
         });
@@ -241,7 +244,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       goto handle_worst_case;
     }
 
-    series->regions.AddUse(BuildMaybeScanPartial(
+    series->AddRegion(BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_model->table, series,
         [&](REGION *parent) -> REGION * {
           const auto call = CreateGeneratorCall(
@@ -297,7 +300,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 
       const auto call = CreateGeneratorCall(
           impl, gen, gen.Functor(), context, series, false);
-      series->regions.AddUse(call);
+      series->AddRegion(call);
 
       call->body.Emplace(call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, call, view, view_cols, nullptr, pred_view, nullptr));
@@ -310,7 +313,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     } else {
       assert(false &&
              "TODO(pag): Handle worst case of top-down generator checker");
-      series->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, series));
+      series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));
     }
   }
 }

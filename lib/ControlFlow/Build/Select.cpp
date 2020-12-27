@@ -54,10 +54,10 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // Mark the tuple as absent and return false.
   auto remove = [&] (REGION *parent) -> REGION * {
     const auto seq = impl->series_regions.Create(parent);
-    seq->regions.AddUse(BuildChangeState(
+    seq->AddRegion(BuildChangeState(
         impl, model->table, seq, view.Columns(), TupleState::kUnknown,
         TupleState::kAbsent));
-    seq->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, seq));
+    seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
     return seq;
   };
 
