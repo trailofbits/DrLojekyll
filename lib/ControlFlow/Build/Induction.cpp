@@ -106,12 +106,6 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   induction->init_region.Emplace(induction, ancestor_of_inits);
   ancestor_of_inits->parent = induction;
 
-  // Pass in the induction vectors to the handlers.
-  for (auto merge : induction_set->merges) {
-    context.view_to_work_item.erase({induction->containing_procedure,
-                                     merge.UniqueId()});
-  }
-
   // We haven't yet built the cyclic function.
   const auto handler_proc = induction->cycle_proc;
   if (!handler_proc->body) {
@@ -195,6 +189,12 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 //
 // NOTE(pag): This is basically the same as above with some minor differences.
 void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
+
+  // Pass in the induction vectors to the handlers.
+  for (auto merge : induction_set->all_merges) {
+    context.view_to_work_item.erase({induction->containing_procedure,
+                                     merge.UniqueId()});
+  }
 
   induction->state = INDUCTION::kBuildingOutputRegions;
 
@@ -313,18 +313,18 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
       }
     }
 
-    for (auto other_view : induction_set->merges) {
+    for (auto other_view : induction_set->all_merges) {
       context.view_to_induction[{proc, other_view.UniqueId()}] = induction;
-      context.view_to_induction[{cycle_proc, view.UniqueId()}] = induction;
-      induction->view_to_init_appends.emplace(other_view, induction);
+      context.view_to_induction[{cycle_proc, other_view.UniqueId()}] = induction;
     }
 
     // Tell the induction about the vector parameters for the handler. Done
     // separately if the induction handler is created separately.
     auto vec_index = 0u;
-    for (auto merge : induction_set->merges) {
+    for (auto other_view : induction_set->merges) {
       const auto input_vec = cycle_proc->input_vecs[vec_index++];
-      induction->view_to_cycle_input_vec.emplace(merge, input_vec);
+      induction->view_to_init_appends.emplace(other_view, induction);
+      induction->view_to_cycle_input_vec.emplace(other_view, input_vec);
     }
 
     // Create the output procedure if it's missing.
@@ -334,9 +334,9 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
           impl->next_id++, ProcedureKind::kInductionOutputHandler);
 
       // Add in the vector parameters for this induction handler procedure.
-      for (auto merge : induction_set->merges) {
+      for (auto other_view : induction_set->merges) {
         (void) output_proc->VectorFor(
-            impl, VectorKind::kParameter, merge.Columns());
+            impl, VectorKind::kParameter, other_view.Columns());
       }
     }
 
@@ -345,10 +345,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
     // Add an induction vector for each `QueryMerge` node in this induction
     // set.
-    for (auto merge : induction_set->merges) {
-      auto &vec = induction->view_to_vec[merge];
+    for (auto other_view : induction_set->merges) {
+      auto &vec = induction->view_to_vec[other_view];
       const auto incoming_vec =
-          proc->VectorFor(impl, VectorKind::kInduction, merge.Columns());
+          proc->VectorFor(impl, VectorKind::kInduction, other_view.Columns());
       vec.Emplace(induction, incoming_vec);
       induction->vectors.AddUse(incoming_vec);
     }
@@ -367,6 +367,14 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     const auto call_cycle = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, cycle_seq, cycle_proc);
 
+    // This is indicative of a bug in induction recognition or work list
+    // handling. The cycle function shouldn't call itself, because it should
+    // be the caller of the cycle function that calls it.
+    assert(call_output->containing_procedure != output_proc);
+    assert(call_output->containing_procedure != cycle_proc);
+    assert(call_cycle->containing_procedure != output_proc);
+    assert(call_cycle->containing_procedure != cycle_proc);
+
     // NOTE(pag): We call the output function *first*, before calling the
     //            cycle function! This is so that we can immediately process
     //            the induction's base case through the rest of the dataflow,
@@ -375,11 +383,13 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     cycle_seq->AddRegion(call_output);
     cycle_seq->AddRegion(call_cycle);
 
+    for (auto other_view : induction_set->all_merges) {
+      context.view_to_work_item[{proc, other_view.UniqueId()}] = action;
+    }
+
     // Now build the inductive output regions and add them in. We'll do this
     // before we actually add the successor regions in.
     for (auto merge : induction_set->merges) {
-      context.view_to_work_item[{proc, merge.UniqueId()}] = action;
-
       const auto vec = induction->view_to_vec[merge].get();
       assert(!!vec);
 

@@ -123,8 +123,11 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
 OutputStream &operator<<(OutputStream &os, DataVariable var) {
   os << '@';
   if (auto name = var.Name(); name.Lexeme() == Lexeme::kIdentifierAtom ||
-                              name.Lexeme() == Lexeme::kIdentifierVariable) {
+                              name.Lexeme() == Lexeme::kIdentifierVariable ||
+                              name.Lexeme() == Lexeme::kIdentifierConstant) {
     os << name << ':';
+  } else if (auto val = var.Value(); val && val->IsConstant()) {
+    os << *val << ':';
   }
   os << var.Id();
   return os;
