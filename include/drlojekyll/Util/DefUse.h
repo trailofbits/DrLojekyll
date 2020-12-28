@@ -600,6 +600,8 @@ void UseList<T>::AddUse(Def<T> *def) {
     }
     new_use->index = static_cast<unsigned>(uses.size());
     uses.push_back(new_use);
+  } else {
+    assert(false);
   }
 }
 

@@ -28,7 +28,7 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
         impl, context, view, succ_view);
     const auto call = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, par, called_proc);
-    par->regions.AddUse(call);
+    par->AddRegion(call);
 
     auto i = 0u;
     for (auto col : view.Columns()) {
@@ -70,10 +70,6 @@ void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
 
     call->ExecuteAlongside(impl, proc);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

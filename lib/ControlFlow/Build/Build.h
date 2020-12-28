@@ -5,6 +5,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <map>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -42,14 +43,6 @@ class WorkItem {
   explicit WorkItem(Context &context, unsigned order_);
 
   const unsigned order;
-
-  // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
-  // the same INDUCTION if they belong to the same "inductive set". This happens
-  // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
-  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
-
-  // Maps tables to their product input vectors.
-  std::unordered_map<TABLE *, VECTOR *> product_vector;
 };
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
@@ -93,10 +86,10 @@ class Context {
   // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
   // the same INDUCTION if they belong to the same "inductive set". This happens
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
-  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
+  std::map<std::pair<PROC *, uint64_t>, INDUCTION *> view_to_induction;
 
   // Maps tables to their product input vectors.
-  std::unordered_map<TABLE *, VECTOR *> product_vector;
+  std::map<std::pair<PROC *, TABLE *>, VECTOR *> product_vector;
 
   //  // Boolean variable to test if we've ever produced anything for this product,
   //  // and thus should push data through.
@@ -104,7 +97,7 @@ class Context {
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
-  std::unordered_map<QueryView, WorkItem *> view_to_work_item;
+  std::map<std::pair<PROC *, uint64_t>, WorkItem *> view_to_work_item;
 
   // Maps views to procedures for top-down execution. The top-down executors
   // exist to determine if a tuple is actually PRESENT (returning false if so),
@@ -154,14 +147,17 @@ BuildTopDownCheckerStateCheck(ProgramImpl *impl, REGION *parent, TABLE *table,
   check->table.Emplace(check, table);
 
   if (REGION *present_op = if_present_cb(impl, check); present_op) {
+    assert(present_op->parent == check);
     check->OP::body.Emplace(check, present_op);
   }
 
   if (REGION *absent_op = if_absent_cb(impl, check); absent_op) {
+    assert(absent_op->parent == check);
     check->absent_body.Emplace(check, absent_op);
   }
 
   if (REGION *unknown_op = if_unknown_cb(impl, check); unknown_op) {
+    assert(unknown_op->parent == check);
     check->unknown_body.Emplace(check, unknown_op);
   }
 
@@ -203,6 +199,12 @@ static CHANGESTATE *BuildTopDownTryMarkAbsent(ProgramImpl *impl, TABLE *table,
 
   with_par_node(par);
 
+#ifndef NDEBUG
+  for (auto region : par->regions) {
+    assert(region->parent == par);
+  }
+#endif
+
   return table_remove;
 }
 
@@ -222,6 +224,12 @@ BuildBottomUpTryMarkUnknown(ProgramImpl *impl, TABLE *table, REGION *parent,
   table_remove->OP::body.Emplace(table_remove, par);
 
   with_par_node(par);
+
+#ifndef NDEBUG
+  for (auto region : par->regions) {
+    assert(region->parent == par);
+  }
+#endif
 
   return table_remove;
 }
@@ -253,7 +261,11 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // then we can just use `cb`, which assumes the availability of all columns.
   const auto num_cols = view.Columns().size();
   if (view_cols.size() == num_cols) {
-    return cb(parent);
+    const auto ret = cb(parent, false);
+    if (ret) {
+      assert(ret->parent == parent);
+    }
+    return ret;
   }
 
   std::vector<unsigned> in_col_indices;
@@ -283,7 +295,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // Scan an index, using the columns from the tuple to find the columns
   // from the tuple's predecessor.
   const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
-  scan->ExecuteAfter(impl, seq);
+  seq->AddRegion(scan);
   scan->table.Emplace(scan, table);
   scan->index.Emplace(scan, index);
   scan->output_vector.Emplace(scan, vec);
@@ -305,14 +317,14 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // Loop over the results of the table scan.
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       seq, ProgramOperation::kLoopOverScanVector);
-  loop->ExecuteAfter(impl, seq);
+  seq->AddRegion(loop);
   loop->vector.Emplace(loop, vec);
 
   for (auto col : selected_cols) {
     const auto var =
         loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
     var->query_column = col;
-    loop->col_id_to_var.emplace(col.Id(), var);
+    loop->col_id_to_var[col.Id()] = var;
   }
 
   for (auto pred_col : view.Columns()) {
@@ -328,7 +340,8 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     view_cols.push_back(col);
   }
 
-  auto in_loop = cb(loop);
+  const auto in_loop = cb(loop, true);
+  assert(in_loop->parent == loop);
   loop->body.Emplace(loop, in_loop);
 
   return seq;
@@ -460,7 +473,13 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context);
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
 
 // Returns `true` if all paths through `region` ends with a `return` region.
-bool EndsWithReturn(REGION *region);
+inline bool EndsWithReturn(REGION *region) {
+  if (region) {
+    return region->EndsWithReturn();
+  } else {
+    return false;
+  }
+}
 
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
@@ -555,6 +574,9 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
     const auto check =
         CallTopDownChecker(impl, context, parent, view, view,
                            ProgramOperation::kCallProcedureCheckFalse);
+
+    COMMENT( check->comment = __FILE__ ": BuildInsertCheck"; )
+
     parent->body.Emplace(parent, check);
     parent = check;
   }
@@ -587,8 +609,17 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
 
   if (table) {
     if (last_table != table) {
+
+      // NOTE(pag): Negations "pre-insert" their data into their tables, so
+      //            we don't want to double-insert here. Similar happens for
+      //            maps.
+      assert(!view.IsNegate());
+      assert(!view.IsMap());
+
       const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
           parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+
+      COMMENT( insert->comment = __FILE__ ": BuildEagerSuccessorRegions"; )
 
       for (auto col : view.Columns()) {
         const auto var = parent->VariableFor(impl, col);
@@ -677,14 +708,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   //
   // A key benefit of PARALLEL regions is that within them, CSE can be performed
   // to identify and eliminate repeated branches.
-  PARALLEL *par = nullptr;
-
-  par = impl->parallel_regions.Create(parent);
+  PARALLEL *par = impl->parallel_regions.Create(parent);
   parent->body.Emplace(parent, par);
 
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);
-    par->regions.AddUse(let);
+    par->AddRegion(let);
     BuildEagerRegion(impl, view, succ_view, context, let, last_table);
   }
 }

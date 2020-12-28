@@ -163,6 +163,10 @@ void ProgramRegion::Accept(ProgramVisitor &visitor) const {
   impl->Accept(visitor);
 }
 
+std::string_view ProgramRegion::Comment(void) const noexcept {
+  return impl->comment;
+}
+
 bool ProgramRegion::IsInduction(void) const noexcept {
   return impl->AsInduction() != nullptr;
 }

@@ -7,7 +7,7 @@ namespace {
 
 static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
                                       ParsedFunctor functor, Context &context,
-                                      REGION *parent) {
+                                      REGION *parent, bool bottom_up) {
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
@@ -24,21 +24,22 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
       const auto out_var = gen->defined_vars.Create(
           impl->next_id++, VariableRole::kFunctorOutput);
       out_var->query_column = out_col;
-      gen->col_id_to_var.emplace(out_col.Id(), out_var);
+      gen->col_id_to_var[out_col.Id()] = out_var;
 
     // Inputs correspond to `bound`-attributed parameters.
     } else {
-      const auto in_col = view.NthInputColumn(j++);
-      VAR *in_var = nullptr;
-      if (parent->col_id_to_var.count(out_col.Id())) {
-        in_var = parent->VariableFor(impl, out_col);
-      } else {
-        in_var = parent->VariableFor(impl, in_col);
-      }
+      assert(functor.NthParameter(i).Binding() == ParameterBinding::kBound);
 
-      parent->col_id_to_var.emplace(in_col.Id(), in_var);
-      gen->col_id_to_var.emplace(in_col.Id(), in_var);
-      gen->col_id_to_var.emplace(out_col.Id(), in_var);
+      const auto in_col = view.NthInputColumn(j++);
+
+      VAR *in_var = nullptr;
+      if (bottom_up) {
+        in_var = parent->VariableFor(impl, in_col);
+        gen->col_id_to_var[out_col.Id()] = in_var;
+      } else {
+        in_var = parent->VariableFor(impl, out_col);
+        gen->col_id_to_var[in_col.Id()] = in_var;
+      }
 
       gen->used_vars.AddUse(in_var);
       if (!in_var->query_column) {
@@ -56,21 +57,21 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
     auto out_col = view.NthCopiedColumn(j);
     auto in_col = view.NthInputCopiedColumn(j);
     VAR *in_var = nullptr;
-    if (parent->col_id_to_var.count(out_col.Id())) {
-      in_var = parent->VariableFor(impl, out_col);
-    } else {
+
+    if (bottom_up) {
       in_var = parent->VariableFor(impl, in_col);
+      gen->col_id_to_var[out_col.Id()] = in_var;
+    } else {
+      in_var = parent->VariableFor(impl, out_col);
+      gen->col_id_to_var[in_col.Id()] = in_var;
     }
+
     if (!in_var->query_column) {
       in_var->query_column = in_col;
     }
     if (in_col.IsConstantOrConstantRef() && !in_var->query_const) {
       in_var->query_const = QueryConstant::From(in_col);
     }
-
-    parent->col_id_to_var.emplace(in_col.Id(), in_var);
-    gen->col_id_to_var.emplace(in_col.Id(), in_var);
-    gen->col_id_to_var.emplace(out_col.Id(), in_var);
   }
 
   return gen;
@@ -86,7 +87,11 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   const auto functor = map.Functor();
   assert(functor.IsPure());
 
-  const auto gen = CreateGeneratorCall(impl, map, functor, context, parent);
+  // TODO(pag): Think about requiring persistence of the predecessor, so that
+  //            we always have the inputs persisted.
+
+  const auto gen = CreateGeneratorCall(
+      impl, map, functor, context, parent, true);
   parent->body.Emplace(parent, gen);
   parent = gen;
 
@@ -100,8 +105,8 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent,
-                             QueryView(view).Successors(), table);
+  BuildEagerSuccessorRegions(
+      impl, view, context, parent, view.Successors(), table);
 }
 
 // Build a bottom-up remover for generator calls.
@@ -109,7 +114,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
                                    PROC *proc, TABLE *already_checked) {
   QueryView view(map);
-  const auto gen = CreateGeneratorCall(impl, map, functor, context, proc);
+  const auto gen = CreateGeneratorCall(
+      impl, map, functor, context, proc, true);
   proc->body.Emplace(proc, gen);
 
   auto parent = impl->parallel_regions.Create(gen);
@@ -120,7 +126,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we can do it.
     if (already_checked != model->table) {
-      parent->regions.AddUse(BuildBottomUpTryMarkUnknown(
+      const auto orig_parent = parent;
+      orig_parent->AddRegion(BuildBottomUpTryMarkUnknown(
           impl, model->table, parent, view.Columns(),
           [&](PARALLEL *par) { parent = par; }));
     }
@@ -146,12 +153,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(call);
+    parent->AddRegion(call);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 // Build a top-down checker on a map / generator.
@@ -183,9 +186,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     assert(model->table != pred_model->table);
 
     auto call_pred = [&](PARALLEL *par) {
-      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, table_to_update, pred_view,
-          already_checked));
+          already_checked);
+      COMMENT( check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred"; )
+      par->AddRegion(check);
     };
 
     auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
@@ -193,9 +198,9 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
                                        view_cols, call_pred);
     };
 
-    series->regions.AddUse(BuildMaybeScanPartial(
+    series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
             return BuildTopDownCheckerStateCheck(
@@ -221,8 +226,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     // Get a list of output columns of the predecessor that we have.
     gen.ForEachUse(
         [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
-          if (auto in_var = proc->col_id_to_var[in_col.Id()];
-              in_var && QueryView::Containing(in_col) == pred_view) {
+          if (in_col.IsConstantOrConstantRef()) {
+            pred_view_cols.push_back(in_col);
+
+          } else if (QueryView::Containing(in_col) == pred_view &&
+                     proc->col_id_to_var.count(in_col.Id())) {
             pred_view_cols.push_back(in_col);
           }
         });
@@ -233,11 +241,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       goto handle_worst_case;
     }
 
-    series->regions.AddUse(BuildMaybeScanPartial(
+    series->AddRegion(BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_model->table, series,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           const auto call = CreateGeneratorCall(
-              impl, gen, gen.Functor(), context, parent);
+              impl, gen, gen.Functor(), context, parent, false);
           call->body.Emplace(
               call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
                         impl, context, call, view, view_cols, nullptr,
@@ -284,12 +292,12 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       for (auto out_of_in_col : bound_cols) {
         auto out_var = series->VariableFor(impl, out_of_in_col);
         auto in_col = gen.NthInputColumn(*(out_of_in_col.Index()));
-        series->col_id_to_var.emplace(in_col.Id(), out_var);
+        series->col_id_to_var[in_col.Id()] = out_var;
       }
 
       const auto call = CreateGeneratorCall(
-          impl, gen, gen.Functor(), context, series);
-      series->regions.AddUse(call);
+          impl, gen, gen.Functor(), context, series, false);
+      series->AddRegion(call);
 
       call->body.Emplace(call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, call, view, view_cols, nullptr, pred_view, nullptr));
@@ -302,7 +310,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     } else {
       assert(false &&
              "TODO(pag): Handle worst case of top-down generator checker");
-      series->regions.AddUse(BuildStateCheckCaseReturnFalse(impl, series));
+      series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));
     }
   }
 }

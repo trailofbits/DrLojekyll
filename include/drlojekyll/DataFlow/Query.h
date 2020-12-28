@@ -315,11 +315,16 @@ enum class InputColumnRole {
 // or a join.
 class QueryView : public query::QueryNode<QueryView> {
  public:
+
   static QueryView Containing(QueryColumn col);
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
 
-  QueryView(const QueryView &view);
+  QueryView(const QueryView &view) noexcept = default;
+  QueryView(QueryView &&view) noexcept = default;
+  QueryView &operator=(const QueryView &) noexcept = default;
+  QueryView &operator=(QueryView &&) noexcept = default;
+
   QueryView(const QueryDelete &view);
   QueryView(const QuerySelect &view);
   QueryView(const QueryTuple &view);

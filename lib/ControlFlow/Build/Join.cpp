@@ -11,9 +11,7 @@ class ContinueJoinWorkItem final : public WorkItem {
 
   ContinueJoinWorkItem(Context &context, QueryView view_)
       : WorkItem(context, view_.Depth()),
-        view(view_) {
-    this->view_to_induction = context.view_to_induction;
-  }
+        view(view_) {}
 
   // Find the common ancestor of all insert regions.
   REGION *FindCommonAncestorOfInsertRegions(void) const;
@@ -78,7 +76,7 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
       var->query_const = QueryConstant::From(pivot_col);
     }
 
-    join->col_id_to_var.emplace(pivot_col.Id(), var);
+    join->col_id_to_var[pivot_col.Id()] = var;
   }
 
   std::vector<unsigned> pivot_col_indices;
@@ -145,12 +143,10 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
 
     } else if (in_col.IsConstantOrConstantRef()) {
       const auto in_var = join->VariableFor(impl, in_col);
-      join->col_id_to_var.emplace(out_col->Id(), in_var);
+      join->col_id_to_var[out_col->Id()] = in_var;
       return;
 
-    } else if (InputColumnRole::kJoinNonPivot != role ||
-               in_col.IsConstantOrConstantRef() ||
-               out_col->IsConstantOrConstantRef()) {
+    } else if (InputColumnRole::kJoinNonPivot != role) {
       return;
     }
 
@@ -164,8 +160,8 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
     auto var = out_vars.Create(impl->next_id++, VariableRole::kJoinNonPivot);
     var->query_column = *out_col;
 
-    join->col_id_to_var.emplace(in_col.Id(), var);
-    join->col_id_to_var.emplace(out_col->Id(), var);
+    join->col_id_to_var[in_col.Id()] = var;
+    join->col_id_to_var[out_col->Id()] = var;
   });
 
   return join;
@@ -177,10 +173,10 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     return;
   }
 
-  context.view_to_work_item.erase(view);
-
   const auto join_view = QueryJoin::From(view);
   PROC *const proc = inserts[0]->containing_procedure;
+
+  context.view_to_work_item.erase({proc, view.UniqueId()});
 
   auto pivot_vec =
       proc->VectorFor(impl, VectorKind::kJoinPivots, join_view.PivotColumns());
@@ -205,7 +201,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto ancestor = FindCommonAncestorOfInsertRegions();
   const auto seq = impl->series_regions.Create(ancestor->parent);
   ancestor->ReplaceAllUsesWith(seq);
-  ancestor->ExecuteAfter(impl, seq);
+  ancestor->parent = seq;
+  seq->AddRegion(ancestor);
 
   // Sort and unique the pivot vector before looping.
   const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
@@ -229,6 +226,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       const auto index_is_good = CallTopDownChecker(
           impl, context, parent, view, view_cols, pred_view,
           ProgramOperation::kCallProcedureCheckTrue, nullptr);
+
+      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
 
       parent->body.Emplace(parent, index_is_good);
       parent = index_is_good;
@@ -260,7 +259,8 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     last_table = pred_table;
   }
 
-  auto &action = context.view_to_work_item[view];
+  auto &action = context.view_to_work_item[{parent->containing_procedure,
+                                            view.UniqueId()}];
   if (!action) {
     action = new ContinueJoinWorkItem(context, view);
     context.work_list.emplace_back(action);
@@ -328,7 +328,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
       if (!in_col.IsConstant()) {
         const auto param_var = proc->VariableFor(impl, *out_col);
-        proc->col_id_to_var.emplace(in_col.Id(), param_var);
+        proc->col_id_to_var[in_col.Id()] = param_var;
         pred_cols[QueryView::Containing(in_col)].push_back(in_col);
       }
     }
@@ -339,7 +339,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // Best case: we already have all of the pivots, so we'll be able to go
   // directly and do a join.
   if (num_found_pivots == num_pivots) {
-    seq->regions.AddUse(add_to_pivot_vec(seq));
+    seq->AddRegion(add_to_pivot_vec(seq));
 
   // Second best case: we have a model for this JOIN table, so we can use the
   // model to find all of the pivots so that later we can do a join.
@@ -353,9 +353,11 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
     //            the original is preserved.
     auto view_cols_copy = view_cols;
 
-    seq->regions.AddUse(BuildMaybeScanPartial(
+    seq->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols_copy, model->table, seq,
-        [&](REGION *parent) -> REGION * { return add_to_pivot_vec(parent); }));
+        [&](REGION *parent, bool) -> REGION * {
+          return add_to_pivot_vec(parent);
+        }));
 
   // Worst-case, but really not so bad. The JOIN itself doesn't have a data
   // model. We don't yet have all the pivots. We know, however, that all
@@ -381,9 +383,9 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
     assert(pred_model->table != nullptr);
 
     auto &pred_view_cols = *max_view_cols;
-    seq->regions.AddUse(BuildMaybeScanPartial(
+    seq->AddRegion(BuildMaybeScanPartial(
         impl, max_view, pred_view_cols, pred_model->table, seq,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           // Map the `max_view` variables to be named in the same way as `view`s
           // variables so that we can use `add_to_pivot_vec`.
           join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
@@ -391,7 +393,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
             if (!in_col.IsConstant() &&
                 QueryView::Containing(in_col) == max_view) {
               const auto in_var = parent->VariableFor(impl, in_col);
-              parent->col_id_to_var.emplace(out_col->Id(), in_var);
+              parent->col_id_to_var[out_col->Id()] = in_var;
             }
           });
 
@@ -405,7 +407,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
       seq, ProgramOperation::kSortAndUniquePivotVector);
   unique->vector.Emplace(unique, pivot_vec);
-  seq->regions.AddUse(unique);
+  seq->AddRegion(unique);
 
   const auto join = BuildJoin(impl, join_view, pivot_vec, seq);
 
@@ -418,9 +420,9 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
                            std::optional<QueryColumn> out_col) {
     if (InputColumnRole::kJoinNonPivot == role) {
       auto join_var = join->VariableFor(impl, in_col);
-      auto param_var = proc->col_id_to_var[in_col.Id()];
-      if (param_var) {
-        check->lhs_vars.AddUse(param_var);
+      const auto param_var_it = proc->col_id_to_var.find(in_col.Id());
+      if (param_var_it != proc->col_id_to_var.end() && param_var_it->second) {
+        check->lhs_vars.AddUse(param_var_it->second);
         check->rhs_vars.AddUse(join_var);
       }
     }
@@ -437,7 +439,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   auto do_state_transition = false;
 
   if (model->table && already_checked != model->table) {
-    in_check->regions.AddUse(BuildTopDownCheckerStateCheck(
+    in_check->AddRegion(BuildTopDownCheckerStateCheck(
         impl, in_check, model->table, view.Columns(),
         BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
         [&](ProgramImpl *, REGION *parent) -> REGION * {
@@ -449,7 +451,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
   } else {
     par = impl->parallel_regions.Create(in_check);
-    in_check->regions.AddUse(par);
+    in_check->AddRegion(par);
   }
 
   already_checked = model->table;  // May be `nullptr`.
@@ -473,21 +475,23 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
         impl, context, par, view, view_cols, pred_view,
         ProgramOperation::kCallProcedureCheckFalse, already_checked);
 
+    COMMENT( one_is_bad->comment = __FILE__ ": BuildTopDownJoinChecker"; )
+
     const auto ret_false = BuildStateCheckCaseReturnFalse(impl, one_is_bad);
     one_is_bad->body.Emplace(one_is_bad, ret_false);
-    par->regions.AddUse(one_is_bad);
+    par->AddRegion(one_is_bad);
   }
 
   // If all predecessors return `true`, then we can change this tuple's state
   // if it has a model and the caller isn't doing it for us, and then return
   // true.
   if (do_state_transition) {
-    in_check->regions.AddUse(
+    in_check->AddRegion(
         BuildChangeState(impl, model->table, in_check, view_cols,
                          TupleState::kAbsentOrUnknown, TupleState::kPresent));
   }
 
-  in_check->regions.AddUse(BuildStateCheckCaseReturnTrue(impl, in_check));
+  in_check->AddRegion(BuildStateCheckCaseReturnTrue(impl, in_check));
 }
 
 // Build a bottom-up join remover.
@@ -513,7 +517,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
         BuildChangeState(impl, pred_model->table, parent, from_view.Columns(),
                          TupleState::kPresent, TupleState::kUnknown);
 
-    parent->regions.AddUse(table_remove);
+    parent->AddRegion(table_remove);
 
     // Make a new series region inside of the state change check.
     parent = impl->series_regions.Create(table_remove);
@@ -561,17 +565,17 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       for (auto i = 0u; i < num_pivots; ++i) {
         const auto param_var = proc->VariableFor(impl, from_view_pivots[i]);
         assert(param_var != nullptr);
-        proc->col_id_to_var.emplace(pred_pivots[i].Id(), param_var);
+        proc->col_id_to_var[pred_pivots[i].Id()] = param_var;
       }
     }
   }
 
   // Called within the context of a join on an index scan.
-  auto with_join = [&](REGION *join) -> REGION * {
+  auto with_join = [&](REGION *join, bool) -> REGION * {
     join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                              std::optional<QueryColumn> out_col) {
       if (auto in_var = join->VariableFor(impl, in_col); in_var && out_col) {
-        join->col_id_to_var.emplace(out_col->Id(), in_var);
+        join->col_id_to_var[out_col->Id()] = in_var;
       }
     });
 
@@ -581,7 +585,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       const auto called_proc = GetOrCreateBottomUpRemover(
           impl, context, view, succ_view, nullptr);
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, parent, called_proc);
+          impl->next_id++, par, called_proc);
 
       auto i = 0u;
       for (auto col : view.Columns()) {
@@ -593,7 +597,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
         (void) param;
       }
 
-      par->regions.AddUse(call);
+      par->AddRegion(call);
     }
     return par;
   };
@@ -611,7 +615,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     // vector.
     const auto add_to_vec = impl->operation_regions.CreateDerived<VECTORAPPEND>(
         parent, ProgramOperation::kAppendJoinPivotsToVector);
-    parent->regions.AddUse(add_to_vec);
+    parent->AddRegion(add_to_vec);
 
     add_to_vec->vector.Emplace(add_to_vec, pivot_vec);
 
@@ -627,7 +631,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     //            future so that the bottom-up removers from all predecessor
     //            nodes can "share" this common JOIN code.
     const auto join = BuildJoin(impl, join_view, pivot_vec, parent);
-    join->body.Emplace(join, with_join(join));
+    join->body.Emplace(join, with_join(join, true));
 
   // JOINing two tables; all we can do is an index-scan of the other table; no
   // need for a join region.
@@ -636,17 +640,13 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     const auto other_model =
         impl->view_to_model[other_view]->FindAs<DataModel>();
     assert(other_model->table != nullptr);
-    parent->regions.AddUse(
+    parent->AddRegion(
         BuildMaybeScanPartial(impl, other_view, pivot_cols[other_view],
                               other_model->table, parent, with_join));
 
   } else {
     assert(false);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

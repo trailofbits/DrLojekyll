@@ -16,8 +16,8 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
   const auto seq = impl->series_regions.Create(init_proc);
   init_proc->body.Emplace(init_proc, seq);
 
-  const auto par = impl->parallel_regions.Create(init_proc);
-  seq->regions.AddUse(par);
+  const auto par = impl->parallel_regions.Create(seq);
+  seq->AddRegion(par);
 
   // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
   // as those are dataflow dependent.
@@ -35,19 +35,19 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
       continue;
     }
 
-    const auto parent = impl->operation_regions.CreateDerived<LET>(par);
-    parent->ExecuteAlongside(impl, par);
+    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(let);
 
     // Add variable mappings.
     view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                         std::optional<QueryColumn> out_col) {
-      (void) parent->VariableFor(impl, in_col);
+      const auto const_var = let->VariableFor(impl, in_col);
       if (out_col) {
-        (void) parent->VariableFor(impl, *out_col);
+        let->col_id_to_var[out_col->Id()] = const_var;
       }
     });
 
-    BuildEagerRegion(impl, view, view, context, parent, nullptr);
+    BuildEagerRegion(impl, view, view, context, let, nullptr);
   }
 
   CompleteProcedure(impl, init_proc, context);
