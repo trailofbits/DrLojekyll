@@ -233,7 +233,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   proc->body.Emplace(proc, BuildBottomUpTryMarkUnknown(
       impl, model->table, proc, view.Columns(),
       [&](PARALLEL *par) {
-        auto seq = impl->series_regions.Create(par);
+        const auto seq = impl->series_regions.Create(par);
         parent = seq;
         par->AddRegion(seq);
       }));

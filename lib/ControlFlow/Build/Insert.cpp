@@ -94,7 +94,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       auto remove = BuildBottomUpTryMarkUnknown(
           impl, model->table, proc, insert_cols,
           [&](PARALLEL *par) {
-            auto let = impl->operation_regions.CreateDerived<LET>(par);
+            const auto let = impl->operation_regions.CreateDerived<LET>(par);
             par->AddRegion(let);
             parent = let;
             parent_body = &(let->body);

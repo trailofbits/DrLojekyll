@@ -272,7 +272,8 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we can do it.
     if (already_checked != model->table) {
-      parent->AddRegion(BuildBottomUpTryMarkUnknown(
+      const auto orig_parent = parent;
+      orig_parent->AddRegion(BuildBottomUpTryMarkUnknown(
           impl, model->table, parent, view.Columns(),
           [&](PARALLEL *par) { parent = par; }));
     }
