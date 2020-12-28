@@ -203,7 +203,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
             return BuildTopDownCheckerStateCheck(
@@ -246,7 +246,7 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_model->table, series,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           const auto call = CreateGeneratorCall(
               impl, gen, gen.Functor(), context, parent, false);
           call->body.Emplace(

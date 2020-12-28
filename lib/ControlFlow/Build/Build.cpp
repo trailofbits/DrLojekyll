@@ -1045,56 +1045,6 @@ static bool CanImplementTopDownChecker(
 
 }  // namespace
 
-// Returns `true` if all paths through `region` ends with a `return` region.
-bool EndsWithReturn(REGION *region) {
-  if (!region) {
-    return false;
-
-  } else if (auto proc = region->AsProcedure(); proc) {
-    assert(proc->body.get() != proc);
-    return EndsWithReturn(proc->body.get());
-
-  } else if (auto series = region->AsSeries(); series) {
-    if (auto num_regions = series->regions.Size(); num_regions) {
-      return EndsWithReturn(series->regions[num_regions - 1u]);
-    } else {
-      return false;
-    }
-
-  } else if (auto par = region->AsParallel(); par) {
-    if (par->regions.Empty()) {
-      return false;
-    }
-
-    for (auto sub_region : par->regions) {
-      if (!EndsWithReturn(sub_region)) {
-        return false;
-      }
-    }
-
-    return true;
-
-  } else if (auto induction = region->AsInduction(); induction) {
-    if (auto output = induction->output_region.get(); output) {
-      return EndsWithReturn(output);
-    } else {
-      return false;
-    }
-
-  } else if (auto op = region->AsOperation(); op) {
-    if (op->AsReturn()) {
-      return true;
-
-    } else if (auto cs = op->AsCheckState(); cs) {
-      return EndsWithReturn(cs->body.get()) &&
-             EndsWithReturn(cs->absent_body.get()) &&
-             EndsWithReturn(cs->unknown_body.get());
-    }
-  }
-
-  return false;
-}
-
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   auto &cond_var = impl->cond_ref_counts[cond];

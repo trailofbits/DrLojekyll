@@ -43,6 +43,11 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramOperationRegion>::EndsWithReturn(void) const noexcept {
+  return false;
+}
+
 Node<ProgramCallRegion>::Node(unsigned id_, Node<ProgramRegion> *parent_,
                               Node<ProgramProcedure> *called_proc_,
                               ProgramOperation op_)
@@ -1053,6 +1058,11 @@ Node<ProgramReturnRegion> *Node<ProgramReturnRegion>::AsReturn(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramReturnRegion>::EndsWithReturn(void) const noexcept {
+  return true;
+}
+
 uint64_t Node<ProgramReturnRegion>::Hash(void) const {
   return static_cast<unsigned>(this->OP::op) * 53;
 }
@@ -1087,6 +1097,38 @@ bool Node<ProgramReturnRegion>::Equals(
 Node<ProgramCheckStateRegion> *
 Node<ProgramCheckStateRegion>::AsCheckState(void) noexcept {
   return this;
+}
+
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
+  auto has_any = 0;
+  auto num = 0;
+  if (body) {
+    ++num;
+    if (!body->EndsWithReturn()) {
+      return false;
+    } else {
+      ++has_any;
+    }
+  }
+  if (absent_body) {
+    ++num;
+    if (!absent_body->EndsWithReturn()) {
+      return false;
+    } else {
+      ++has_any;
+    }
+  }
+  if (unknown_body) {
+    ++num;
+    if (!unknown_body->EndsWithReturn()) {
+      return false;
+    } else {
+      ++has_any;
+    }
+  }
+
+  return num == has_any;
 }
 
 uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {

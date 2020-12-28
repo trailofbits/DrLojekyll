@@ -164,7 +164,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
             return BuildTopDownCheckerStateCheck(
@@ -216,7 +216,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_model->table, series,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (done_check) {
             return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
                 impl, context, parent, view, view_cols, nullptr, pred_view,

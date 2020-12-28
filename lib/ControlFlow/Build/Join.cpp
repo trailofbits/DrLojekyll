@@ -355,7 +355,9 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     seq->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols_copy, model->table, seq,
-        [&](REGION *parent) -> REGION * { return add_to_pivot_vec(parent); }));
+        [&](REGION *parent, bool) -> REGION * {
+          return add_to_pivot_vec(parent);
+        }));
 
   // Worst-case, but really not so bad. The JOIN itself doesn't have a data
   // model. We don't yet have all the pivots. We know, however, that all
@@ -383,7 +385,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
     auto &pred_view_cols = *max_view_cols;
     seq->AddRegion(BuildMaybeScanPartial(
         impl, max_view, pred_view_cols, pred_model->table, seq,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           // Map the `max_view` variables to be named in the same way as `view`s
           // variables so that we can use `add_to_pivot_vec`.
           join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
@@ -569,7 +571,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   }
 
   // Called within the context of a join on an index scan.
-  auto with_join = [&](REGION *join) -> REGION * {
+  auto with_join = [&](REGION *join, bool) -> REGION * {
     join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                              std::optional<QueryColumn> out_col) {
       if (auto in_var = join->VariableFor(impl, in_col); in_var && out_col) {
@@ -629,7 +631,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     //            future so that the bottom-up removers from all predecessor
     //            nodes can "share" this common JOIN code.
     const auto join = BuildJoin(impl, join_view, pivot_vec, parent);
-    join->body.Emplace(join, with_join(join));
+    join->body.Emplace(join, with_join(join, true));
 
   // JOINing two tables; all we can do is an index-scan of the other table; no
   // need for a join region.

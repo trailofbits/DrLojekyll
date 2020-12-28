@@ -158,7 +158,7 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
     // through a re-addition.
     let->body.Emplace(let, BuildMaybeScanPartial(
         impl, negate, negate_cols, negated_table, let,
-        [&](REGION *in_scan) -> REGION * {
+        [&](REGION *in_scan, bool) -> REGION * {
 
           negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                                 std::optional<QueryColumn> out_col) {
@@ -227,7 +227,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
       // a removal.
       par->AddRegion(BuildMaybeScanPartial(
         impl, negate, negate_cols, negate_table, par,
-        [&](REGION *in_scan) -> REGION * {
+        [&](REGION *in_scan, bool) -> REGION * {
           return RemoveFromNegatedView(impl, context, in_scan, negate,
                                        negate_cols, negate_table);
         }));
@@ -284,7 +284,6 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
 
-
   // TODO(pag): We don't handle the case where `succ_view` is passing us a
   //            subset of the columns of `view`.
 
@@ -292,7 +291,7 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (model->table) {
     TABLE *table_to_update = model->table;
 
-    auto call_pred = [&](REGION *parent) -> REGION * {
+    auto call_pred = [&](REGION *parent, bool) -> REGION * {
       const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols, table_to_update, pred_view,
           already_checked);
@@ -314,23 +313,24 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
     } else {
       const auto region = BuildMaybeScanPartial(
           impl, view, view_cols, model->table, proc,
-          [&](REGION *parent) -> REGION * {
+          [&](REGION *parent, bool in_scan) -> REGION * {
             if (already_checked != model->table) {
               already_checked = model->table;
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseReturnTrue,
+                  BuildStateCheckCaseReturnFalse,
                   [&](ProgramImpl *, REGION *parent) -> REGION * {
                     return BuildTopDownTryMarkAbsent(
                         impl, model->table, parent, view.Columns(),
                         [&](PARALLEL *par) {
-                          call_pred(par)->ExecuteAlongside(impl, par);
+                          call_pred(par, in_scan)->ExecuteAlongside(impl, par);
                         });
                   });
 
             } else {
               table_to_update = nullptr;
-              return call_pred(parent);
+              return call_pred(parent, in_scan);
             }
           });
 

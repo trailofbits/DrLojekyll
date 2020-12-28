@@ -261,7 +261,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // then we can just use `cb`, which assumes the availability of all columns.
   const auto num_cols = view.Columns().size();
   if (view_cols.size() == num_cols) {
-    const auto ret = cb(parent);
+    const auto ret = cb(parent, false);
     if (ret) {
       assert(ret->parent == parent);
     }
@@ -340,7 +340,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     view_cols.push_back(col);
   }
 
-  const auto in_loop = cb(loop);
+  const auto in_loop = cb(loop, true);
   assert(in_loop->parent == loop);
   loop->body.Emplace(loop, in_loop);
 
@@ -473,7 +473,13 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context);
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
 
 // Returns `true` if all paths through `region` ends with a `return` region.
-bool EndsWithReturn(REGION *region);
+inline bool EndsWithReturn(REGION *region) {
+  if (region) {
+    return region->EndsWithReturn();
+  } else {
+    return false;
+  }
+}
 
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);

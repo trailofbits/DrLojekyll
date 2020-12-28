@@ -63,7 +63,7 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
   const auto region = BuildMaybeScanPartial(
       impl, view, view_cols, model->table, proc,
-      [&](REGION *parent) -> REGION * {
+      [&](REGION *parent, bool in_scan) -> REGION * {
         if (already_checked != model->table) {
           already_checked = model->table;
 
@@ -89,10 +89,38 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
                 }
               });
 
-        // No predecessors, not our job to chnage states; return true to the
+        // No predecessors, not our job to change states; return true to the
         // caller so they can change states.
         } else if (pred_views.empty()) {
-          return BuildStateCheckCaseReturnTrue(impl, parent);
+
+          // We're in a scan, i.e. we've gone and selected a tuple and found it.
+          //
+          // TODO(pag): This should imply that `already_checked` doesn't match
+          //            the parent...
+          if (in_scan) {
+
+            // TODO(pag): Finding it in a scan with no predecessors ought to
+            //            mean that there is no way for that data to be deleted.
+            //            However, it could be that the SELECT has some
+            //            conditions which would make it behave differentially,
+            //            so complain if we see that.
+            assert(view.PositiveConditions().empty());
+            assert(view.NegativeConditions().empty());
+
+            return BuildStateCheckCaseReturnTrue(impl, parent);
+
+          // We aren't actually in a scan, thus we were called with all the
+          // data we need. The predecessor did the check, and presumably called
+          // us because the data wasn't available, and our model is the same
+          // as the predecessor's, so we have nothing to add, so return false.
+          //
+          // NOTE(pag): This generally comes up for `select.IsStream()`, i.e.
+          //            a RECEIVE of a message.
+          } else {
+            auto ret = BuildStateCheckCaseReturnFalse(impl, parent);
+            COMMENT( ret->comment = __FILE__ ": BuildTopDownSelectChecker, not in scan, no preds, already checked"; )
+            return ret;
+          }
 
         // There's a predecessor, and it will do the state changing
         } else {

@@ -81,7 +81,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     const auto region = BuildMaybeScanPartial(
         impl, view, view_cols, model->table, proc,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
 

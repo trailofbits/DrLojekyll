@@ -477,7 +477,8 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
   proc->body.Emplace(
       proc,
       BuildMaybeScanPartial(
-          impl, view, view_cols, table, proc, [&](REGION *parent) -> REGION * {
+          impl, view, view_cols, table, proc,
+          [&](REGION *parent, bool) -> REGION * {
             if (already_checked != table) {
               already_checked = table;
               return BuildTopDownCheckerStateCheck(

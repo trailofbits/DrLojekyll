@@ -171,7 +171,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
   proc->body.Emplace(proc, BuildMaybeScanPartial(
       impl, view, view_cols, model->table, proc,
-      [&](REGION *in_scan) -> REGION * {
+      [&](REGION *in_scan, bool) -> REGION * {
 
         negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                               std::optional<QueryColumn> out_col) {

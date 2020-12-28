@@ -11,7 +11,11 @@ namespace {
 //            `ProgramCheckStateRegion` operate on the same tuple in
 //            parallel, and if so, merge their bodies.
 
-static bool OptimizeImpl(PARALLEL *par) {
+// TODO(pag): Find all ending returns in the children of the par, and if there
+//            are any, check that they all match, and if so, create a sequence
+//            that moves the `return <X>` to after the parallel, and also
+//            assert(false).
+static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   if (!par->IsUsed() || !par->parent) {
     return false;
 
@@ -39,7 +43,13 @@ static bool OptimizeImpl(PARALLEL *par) {
 
   // Erase any empty or no-op child regions.
   auto changed = false;
-  par->regions.RemoveIf([&changed](REGION *child_region) {
+  auto has_ends_with_return = false;
+  par->regions.RemoveIf([&changed, &has_ends_with_return](REGION *child_region) {
+
+    if (child_region->EndsWithReturn()) {
+      has_ends_with_return = true;
+    }
+
     if (child_region->IsNoOp()) {
       child_region->parent = nullptr;
       changed = true;
@@ -50,9 +60,20 @@ static bool OptimizeImpl(PARALLEL *par) {
   });
 
   if (changed) {
-    OptimizeImpl(par);
+    OptimizeImpl(prog, par);
     return true;
   }
+
+  assert(!has_ends_with_return);
+
+//  // One or more of the children of the parallel regions ends with a return.
+//  // That's a bit problematic.
+//  if (has_ends_with_return) {
+//    auto seq = prog->series_regions.Create(par->parent);
+//    par->ReplaceAllUsesWith(seq);
+//    par->parent = seq;
+//    seq->AddRegion(par);
+//  }
 
   // The PARALLEL node is "canonical" as far as we can tell, so check to see
   // if any of its child regions might be mergeable.
@@ -109,7 +130,7 @@ static bool OptimizeImpl(PARALLEL *par) {
   }
 
   if (changed) {
-    OptimizeImpl(par);
+    OptimizeImpl(prog, par);
   }
 
   return changed;
@@ -118,6 +139,9 @@ static bool OptimizeImpl(PARALLEL *par) {
 // Optimize induction regions.
 // * Clear out empty output regions of inductions.
 // * Optimize nested loop inductions.
+//
+// TODO(pag): Check if the fixpoint loop region ends in a return. If so, bail
+//            out.
 static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
   auto changed = false;
 
@@ -756,7 +780,7 @@ void ProgramImpl::Optimize(void) {
     parallel_regions.Sort(depth_cmp);
 
     for (auto par : parallel_regions) {
-      changed = OptimizeImpl(par) | changed;
+      changed = OptimizeImpl(this, par) | changed;
     }
 
     induction_regions.Sort(depth_cmp);
@@ -797,10 +821,11 @@ void ProgramImpl::Optimize(void) {
       } else if (op->body) {
         assert(op->body->parent == op);
         if (op->body->IsNoOp()) {
-          op->body->comment = "NOP? " + op->body->comment;
-//        op->body->parent = nullptr;
-//        op->body.Clear();
-//        changed = true;
+//          op->body->comment = "NOP? " + op->body->comment;
+
+          op->body->parent = nullptr;
+          op->body.Clear();
+          changed = true;
         }
       }
     }

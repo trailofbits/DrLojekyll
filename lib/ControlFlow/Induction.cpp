@@ -13,6 +13,15 @@ Node<ProgramInductionRegion>::AsInduction(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
+  if (auto output = output_region.get(); output) {
+    return output->EndsWithReturn();
+  } else {
+    return false;
+  }
+}
+
 Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
     : Node<ProgramRegion>(parent_->containing_procedure),
       cyclic_region(this, impl->parallel_regions.Create(this)),
