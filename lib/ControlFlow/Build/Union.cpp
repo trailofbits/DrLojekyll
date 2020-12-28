@@ -33,8 +33,16 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
     last_table = nullptr;
   }
 
+#ifndef NDEBUG
+  if (1u < view.Predecessors().size()) {
+    for (auto col : view.Columns()) {
+      assert(!col.IsConstantRef());
+    }
+  }
+#endif
+
   BuildEagerSuccessorRegions(impl, view, context, parent,
-                             QueryView(view).Successors(), last_table);
+                             view.Successors(), last_table);
 }
 
 // Build a top-down checker on a union. This applies to non-differential
@@ -66,13 +74,14 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
-        par->regions.AddUse(check);
+        COMMENT( check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds"; )
+        par->AddRegion(check);
       }
     };
 
     const auto region = BuildMaybeScanPartial(
         impl, view, view_cols, model->table, proc,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
 
@@ -113,7 +122,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         continue;
       }
 
-      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      par->AddRegion(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, nullptr, pred_view, nullptr));
     }
   }
@@ -179,6 +188,8 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
         impl->next_id++, parent, checker_proc,
         ProgramOperation::kCallProcedureCheckFalse);
 
+    COMMENT( check->comment = __FILE__ ": CreateBottomUpUnionRemover"; )
+
     auto i = 0u;
     for (auto col : check_cols) {
       const auto var = parent->VariableFor(impl, col);
@@ -191,7 +202,7 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
     }
 
     // Re-parent into the body of the check.
-    parent->regions.AddUse(check);
+    parent->AddRegion(check);
     parent = impl->parallel_regions.Create(check);
     check->body.Emplace(check, parent);
   }
@@ -222,12 +233,8 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(call);
+    parent->AddRegion(call);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

@@ -157,7 +157,7 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
-  auto comma = "";
+  auto comma = " : ";
 
   for (auto assign : clause.clause.Assignments()) {
     os << comma << assign;
@@ -195,7 +195,7 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   if (clause.IsHighlighted()) {
     os << " @highlight";
   }
-  os << " : " << ParsedClauseBody(clause) << ".";
+  os << ParsedClauseBody(clause) << ".";
   return os;
 }
 

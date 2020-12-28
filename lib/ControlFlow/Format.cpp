@@ -123,8 +123,11 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
 OutputStream &operator<<(OutputStream &os, DataVariable var) {
   os << '@';
   if (auto name = var.Name(); name.Lexeme() == Lexeme::kIdentifierAtom ||
-                              name.Lexeme() == Lexeme::kIdentifierVariable) {
+                              name.Lexeme() == Lexeme::kIdentifierVariable ||
+                              name.Lexeme() == Lexeme::kIdentifierConstant) {
     os << name << ':';
+  } else if (auto val = var.Value(); val && val->IsConstant()) {
+    os << *val << ':';
   }
   os << var.Id();
   return os;
@@ -619,10 +622,17 @@ OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region) {
-  auto sep = "";
-  for (auto sub_region : region.Regions()) {
-    os << sep << sub_region;
-    sep = "\n";
+  if (auto regions = region.Regions(); !regions.empty()) {
+    auto sep = "";
+    os << os.Indent() << "seq\n";
+    os.PushIndent();
+    for (auto sub_region : regions) {
+      os << sep << sub_region;
+      sep = "\n";
+    }
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty (seq)";
   }
   return os;
 }
@@ -638,7 +648,7 @@ OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
     }
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty (par)";
   }
   return os;
 }
@@ -687,6 +697,9 @@ class FormatDispatcher final : public ProgramVisitor {
 
 OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
   FormatDispatcher dispatcher(os);
+  if (!region.Comment().empty()) {
+    os << os.Indent() << "; " << region.Comment() << '\n';
+  }
   region.Accept(dispatcher);
   return os;
 }

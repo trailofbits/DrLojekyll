@@ -53,7 +53,7 @@ static void StoreToPair(uint64_t &a, uint64_t &b, uint64_t val) {
 
   // Storing to `a`.
   } else if constexpr ((kOffsetBits + kSizeBits) <= 64u) {
-    static constexpr uint64_t kHighBitMask = kBitMask << kOffsetBits;
+    static constexpr uint64_t kHighBitMask = (kBitMask << kOffsetBits);
     a = (a & ~kHighBitMask) | ((val & kBitMask) << kOffsetBits);
 
   // Extract `b:a`, i.e. high bits from `a` to form the low bits of our

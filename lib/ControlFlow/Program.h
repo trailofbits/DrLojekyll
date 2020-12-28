@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <vector>
 
+#define COMMENT(...) __VA_ARGS__
+
 namespace std {
 
 template <>
@@ -201,6 +203,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   virtual Node<ProgramParallelRegion> *AsParallel(void) noexcept;
   virtual Node<ProgramInductionRegion> *AsInduction(void) noexcept;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  virtual bool EndsWithReturn(void) const noexcept = 0;
+
   inline void ReplaceAllUsesWith(Node<ProgramRegion> *that) {
     this->Def<Node<ProgramRegion>>::ReplaceAllUsesWith(that);
     that->parent = this->parent;
@@ -213,6 +218,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   // Returns the lexical level of this node.
   unsigned Depth(void) const noexcept;
+
+  // Returns the lexical level of this node.
+  unsigned CachedDepth(void) noexcept;
 
   // Returns `true` if this region is a no-op.
   virtual bool IsNoOp(void) const noexcept;
@@ -250,6 +258,11 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // NOTE(pag): Only valid before optimization, during the building of the
   //            control flow IR.
   std::unordered_map<unsigned, VAR *> col_id_to_var;
+
+  // A comment about the creation of this node.
+  std::string comment;
+
+  unsigned depth{0};
 };
 
 using REGION = Node<ProgramRegion>;
@@ -388,6 +401,9 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   ProgramOperation op;
 
@@ -590,6 +606,7 @@ class Node<ProgramTransitionStateRegion> final
   Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
 
   uint64_t Hash(void) const override;
+  bool IsNoOp(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -630,6 +647,9 @@ class Node<ProgramCheckStateRegion> final
   bool IsNoOp(void) const noexcept override;
 
   Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
@@ -705,6 +725,9 @@ class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
               Node<ProgramRegion> *that) const noexcept override;
 
   Node<ProgramReturnRegion> *AsReturn(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 };
 
 using RETURN = Node<ProgramReturnRegion>;
@@ -1009,6 +1032,9 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
   // Create a new vector in this procedure for a list of columns.
   VECTOR *VectorFor(ProgramImpl *impl, VectorKind kind,
                     DefinedNodeRange<QueryColumn> cols);
@@ -1063,10 +1089,18 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
   uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming).
   bool Equals(EqualitySet &eq,
               Node<ProgramRegion> *that) const noexcept override;
+
+  inline void AddRegion(REGION *child) {
+    assert(child->parent == this);
+    regions.AddUse(child);
+  }
 
   Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
 
@@ -1092,6 +1126,14 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
 
   uint64_t Hash(void) const override;
   bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
+  inline void AddRegion(REGION *child) {
+    assert(child->parent == this);
+    regions.AddUse(child);
+  }
 
   Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
 
@@ -1120,6 +1162,9 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
               Node<ProgramRegion> *that) const noexcept override;
 
   Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   // Initial regions that fill up one or more of the inductive vectors.
   UseRef<REGION> init_region;
