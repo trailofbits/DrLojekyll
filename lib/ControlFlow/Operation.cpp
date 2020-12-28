@@ -1102,9 +1102,7 @@ Node<ProgramCheckStateRegion>::AsCheckState(void) noexcept {
 // Returns `true` if all paths through `this` ends with a `return` region.
 bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
   auto has_any = 0;
-  auto num = 0;
   if (body) {
-    ++num;
     if (!body->EndsWithReturn()) {
       return false;
     } else {
@@ -1112,7 +1110,6 @@ bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
     }
   }
   if (absent_body) {
-    ++num;
     if (!absent_body->EndsWithReturn()) {
       return false;
     } else {
@@ -1120,7 +1117,6 @@ bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
     }
   }
   if (unknown_body) {
-    ++num;
     if (!unknown_body->EndsWithReturn()) {
       return false;
     } else {
@@ -1128,7 +1124,7 @@ bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
     }
   }
 
-  return num == has_any;
+  return 3 == has_any;
 }
 
 uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {

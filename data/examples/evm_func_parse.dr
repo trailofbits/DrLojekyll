@@ -107,23 +107,23 @@ type_name(FunctionType)
 
 #epilogue ```python
 def left_corner_bf(node):
-    print("left_corner({})".format(node))
+    #print("left_corner({})".format(node))
     return node[0]
   
 def right_corner_bf(node):
-    print("right_corner({})".format(node))
+    #print("right_corner({})".format(node))
     return node[-1]
 
 def lexeme_of_token_bf(tok: Tuple[str, int]):
-    print("lexeme_of_token_bf({})".format(tok))
+    #print("lexeme_of_token_bf({})".format(tok))
     return tok[0]
 
 def start_function_type_bbf(func_tok, l_paren):
-    print("start_function_type_bbf({}, {})".format(func_tok, l_paren))
+    #print("start_function_type_bbf({}, {})".format(func_tok, l_paren))
     return (func_tok, l_paren)
     
 def add_function_type_param_bbf(base_type, param):
-    print("add_function_type_param_bbf({}, {})".format(base_type, param))
+    #print("add_function_type_param_bbf({}, {})".format(base_type, param))
     base_type = list(base_type)
     if isinstance(param, tuple):
       base_type.extend(param)
@@ -132,7 +132,7 @@ def add_function_type_param_bbf(base_type, param):
     return tuple(base_type)
 
 def finish_function_type_params_bbf(base_type, r_paren):
-    print("finish_function_type_bbf({}, {})".format(base_type, r_paren))
+    #print("finish_function_type_bbf({}, {})".format(base_type, r_paren))
     base_type = list(base_type)
     base_type.append(r_paren)
     return tuple(base_type)
