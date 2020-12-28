@@ -235,10 +235,6 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
 
     parent->AddRegion(call);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

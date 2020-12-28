@@ -466,10 +466,6 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
   //            would be an eager insertion region, which could lead to
   //            something like an induction "taking over" the procedure, and we
   //            wouldn't want to return too early from the induction.
-
-//  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-//      proc, ProgramOperation::kReturnFalseFromProcedure);
-//  ret->ExecuteAfter(impl, parent);
 }
 
 }  // namespace hyde

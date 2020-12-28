@@ -70,10 +70,6 @@ void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
 
     call->ExecuteAlongside(impl, proc);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

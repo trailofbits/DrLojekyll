@@ -647,10 +647,6 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   } else {
     assert(false);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

@@ -146,11 +146,11 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
     auto series = program->series_regions.Create(that->parent);
     that->ReplaceAllUsesWith(series);
 
-    series->regions.AddUse(this);
-    series->regions.AddUse(that);
-
     that->parent = series;
     this->parent = series;
+
+    series->AddRegion(this);
+    series->AddRegion(that);
   }
 }
 
@@ -158,8 +158,8 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
 void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
                                        Node<ProgramRegion> *that) noexcept {
   if (auto series = that->AsSeries(); series) {
-    series->regions.AddUse(this);
     this->parent = series;
+    series->AddRegion(this);
 
   } else if (auto proc = that->AsProcedure(); proc) {
     if (auto proc_body = proc->body.get(); proc_body) {
@@ -173,10 +173,10 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
   } else {
     auto series = program->series_regions.Create(that->parent);
     that->ReplaceAllUsesWith(series);
-    series->regions.AddUse(that);
-    series->regions.AddUse(this);
     that->parent = series;
     this->parent = series;
+    series->AddRegion(that);
+    series->AddRegion(this);
   }
 }
 
@@ -184,8 +184,8 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
 void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
                                            Node<ProgramRegion> *that) noexcept {
   if (auto par = that->AsParallel(); par) {
-    par->regions.AddUse(this);
     this->parent = par;
+    par->AddRegion(this);
 
   } else if (auto proc = that->AsProcedure()) {
     if (auto proc_body = proc->body.get(); proc_body) {
@@ -198,10 +198,10 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
   } else {
     auto par = program->parallel_regions.Create(that->parent);
     that->ReplaceAllUsesWith(par);
-    par->regions.AddUse(that);
-    par->regions.AddUse(this);
     that->parent = par;
     this->parent = par;
+    par->AddRegion(that);
+    par->AddRegion(this);
   }
 }
 

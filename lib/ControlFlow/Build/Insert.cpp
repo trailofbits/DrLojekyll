@@ -202,10 +202,6 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       }
     }
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 // Build a top-down checker for a relational insert.

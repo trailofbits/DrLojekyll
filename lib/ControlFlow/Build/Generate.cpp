@@ -154,10 +154,6 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
 
     parent->AddRegion(call);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 // Build a top-down checker on a map / generator.
