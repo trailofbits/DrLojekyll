@@ -360,6 +360,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
               }
               module->root_module->types.emplace_back(type);
             }
+            assert(type != nullptr);
             const_val.parent = type;
             continue;
           }
@@ -566,6 +567,10 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
       auto alloc_const = new Node<ParsedForeignConstant>(const_val);
       module->root_module->foreign_constants.emplace(
           const_val.name.IdentifierId(), alloc_const);
+
+      assert(alloc_const->type.IsValid());
+      assert(alloc_const->parent != nullptr);
+
       alloc_const->lang = lang;
       if (lang == Language::kUnknown) {
         alloc_const->can_overide = false;

@@ -67,6 +67,7 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
   if (Lexeme::kIdentifierConstant == tok.Lexeme()) {
     auto const_ptr = context->foreign_constants[tok.IdentifierId()];
     assert(const_ptr != nullptr);
+    assert(const_ptr->parent != nullptr);
     assign->rhs.type = const_ptr->type;
     assign->rhs.foreign_type = const_ptr->parent;
   }
