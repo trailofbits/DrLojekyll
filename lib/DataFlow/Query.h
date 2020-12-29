@@ -1043,44 +1043,68 @@ class QueryImpl {
     }
 
     for (auto view : views) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
   }
 
   template <typename CB>
   void ForEachView(CB do_view) const {
     for (auto view : selects) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : tuples) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : kv_indices) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : joins) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : maps) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : aggregates) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : merges) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : negations) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : compares) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : inserts) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : deletes) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
   }
 
@@ -1089,47 +1113,69 @@ class QueryImpl {
     std::vector<VIEW *> views;
     for (auto view : selects) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : tuples) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : kv_indices) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : joins) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : maps) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : aggregates) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : merges) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : negations) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : compares) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : inserts) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : deletes) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
 
     std::sort(views.begin(), views.end(),
@@ -1145,47 +1191,69 @@ class QueryImpl {
     std::vector<VIEW *> views;
     for (auto view : selects) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : tuples) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : kv_indices) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : joins) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : maps) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : aggregates) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : merges) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : negations) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : compares) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : inserts) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : deletes) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
 
     std::sort(views.begin(), views.end(),
