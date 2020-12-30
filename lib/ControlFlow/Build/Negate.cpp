@@ -187,7 +187,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
           return BuildTopDownCheckerStateCheck(
               impl, in_scan, model->table, view.Columns(),
               do_check_on_true_not_checked,
-              BuildStateCheckCaseNothing,
+              BuildStateCheckCaseReturnFalse,
               do_check_on_unknown_not_checked);
 
         // If we're here then it means our caller has found a candidate tuple

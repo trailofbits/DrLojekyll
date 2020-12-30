@@ -475,6 +475,9 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 
   // Negations must be backed by tables.
   for (auto negate : query.Negations()) {
+    QueryView view(negate);
+    (void) TABLE::GetOrCreate(impl, negate);
+    (void) TABLE::GetOrCreate(impl, view.Predecessors()[0]);
     (void) TABLE::GetOrCreate(impl, negate);
   }
 
@@ -549,9 +552,13 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
           if (succ.IsJoin()) {
             should_persist = true;
             break;
+
           } else if (succ.CanReceiveDeletions()) {
             should_persist = true;
             break;
+
+          } else {
+            assert(!view.CanProduceDeletions());
           }
         }
       }

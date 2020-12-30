@@ -256,8 +256,7 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
     err << "Cannot re-declare '" << first_decl->name << "' as a "
         << first_decl->KindName();
 
-    DisplayRange first_decl_range(first_decl->directive_pos,
-                                  first_decl->rparen.NextPosition());
+    DisplayRange first_decl_range(ParsedDeclaration(first_decl).SpellingRange());
     err.Note(first_decl_range) << "Original declaration is here";
 
     return nullptr;
