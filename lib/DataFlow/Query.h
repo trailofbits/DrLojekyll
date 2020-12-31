@@ -599,8 +599,9 @@ using VIEW = Node<QueryView>;
 template <>
 class Node<QuerySelect> final : public Node<QueryView> {
  public:
-  inline Node(Node<QueryRelation> *relation_, DisplayRange range)
-      : position(range.From()),
+  inline Node(Node<QueryRelation> *relation_, ParsedPredicate pred_)
+      : pred(pred_),
+        position(pred_.SpellingRange().From()),
         relation(this, relation_),
         inserts(this) {
     this->can_receive_deletions =
@@ -608,8 +609,21 @@ class Node<QuerySelect> final : public Node<QueryView> {
     this->can_produce_deletions = this->can_receive_deletions;
   }
 
-  inline Node(Node<QueryStream> *stream_, DisplayRange range)
-      : position(range.From()),
+  inline Node(Node<QueryStream> *stream_, ParsedPredicate pred_)
+      : pred(pred_),
+        position(pred_.SpellingRange().From()),
+        stream(this, stream_),
+        inserts(this) {
+    if (auto input_stream = stream->AsIO(); input_stream) {
+      this->can_receive_deletions =
+          0u < input_stream->declaration.NumDeletionClauses();
+      this->can_produce_deletions = this->can_receive_deletions;
+    }
+  }
+
+  inline Node(Node<QueryStream> *stream_, DisplayRange spelling_range)
+      : pred(std::nullopt),
+        position(spelling_range.From()),
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
@@ -635,6 +649,9 @@ class Node<QuerySelect> final : public Node<QueryView> {
                     const ErrorLog &) override;
 
   // The instance of the predicate from which we are selecting.
+  const std::optional<ParsedPredicate> pred;
+
+  // The beginning location of the predicate. Used for sorting.
   DisplayPosition position;
 
   // The table from which this select takes its columns.

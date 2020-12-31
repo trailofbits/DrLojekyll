@@ -286,21 +286,59 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
 
   // Canonicalize all views.
   uint64_t iter = 0u;
+
+  constexpr auto kNumHistories = 8u;
+  uint64_t hash_history[kNumHistories] = {};
+  auto curr_hash_index = 0u;
+
   for (auto non_local_changes = true; non_local_changes && iter < max_iters;
        ++iter) {
     non_local_changes = false;
+
+    // Running hash of which views produced non-local changes.
+    uint64_t hash = 0u;
+
     if (opt.bottom_up) {
       ForEachViewInDepthOrder([&](VIEW *view) {
         if (view->Canonicalize(this, opt, log)) {
+          hash = RotateRight64(hash, 13) ^ view->Hash();
           non_local_changes = true;
         }
       });
+
     } else {
       ForEachViewInReverseDepthOrder([&](VIEW *view) {
         if (view->Canonicalize(this, opt, log)) {
+          hash = RotateRight64(hash, 13) ^ view->Hash();
           non_local_changes = true;
         }
       });
+    }
+
+    // Store our running hash into our history of hashes.
+    const auto prev_hash = hash_history[curr_hash_index];
+    hash_history[curr_hash_index] = hash;
+    curr_hash_index = (curr_hash_index + 1u) % kNumHistories;
+
+    // Now check if all hashes in our history of hashes match. This is a pretty
+    // easy way to detect if we've converged to some kind of cyclic pattern
+    // that keeps popping up and this lets us break out of a loop.
+    //
+    // TODO(pag): Really, there are deeper problems of monotonicity that need
+    //            to be solved, and this is a convenient band-aid.
+    if (prev_hash == hash) {
+      auto all_eq = true;
+      for (auto existing_hash : hash_history) {
+        if (existing_hash != hash) {
+          all_eq = false;
+          break;
+        }
+      }
+
+      // Looks like we've converged.
+      if (all_eq) {
+        break;
+      }
     }
   }
 
@@ -406,7 +444,6 @@ bool QueryImpl::ShrinkConditions(void) {
 
 // Apply common subexpression elimination (CSE) to the dataflow.
 void QueryImpl::Optimize(const ErrorLog &log) {
-  return;
   CandidateList views;
 
   auto do_cse = [&](void) {
