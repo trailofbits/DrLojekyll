@@ -406,6 +406,7 @@ bool QueryImpl::ShrinkConditions(void) {
 
 // Apply common subexpression elimination (CSE) to the dataflow.
 void QueryImpl::Optimize(const ErrorLog &log) {
+  return;
   CandidateList views;
 
   auto do_cse = [&](void) {
