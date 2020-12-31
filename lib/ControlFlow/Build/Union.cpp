@@ -88,14 +88,24 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
             // TODO(pag): We should be able to optimize
             //            `BuildTopDownTryMarkAbsent` to not actually
             //            have to check during its state change, but oh well.
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                [&](ProgramImpl *, REGION *parent) -> REGION * {
-                  return BuildTopDownTryMarkAbsent(
-                      impl, model->table, parent, view.Columns(),
-                      [&](PARALLEL *par) { call_preds(par); });
-                });
+
+            if (view.CanProduceDeletions()) {
+              return BuildTopDownCheckerStateCheck(
+                   impl, parent, model->table, view.Columns(),
+                   BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                   [&](ProgramImpl *, REGION *parent) -> REGION * {
+                     return BuildTopDownTryMarkAbsent(
+                         impl, model->table, parent, view.Columns(),
+                         [&](PARALLEL *par) { call_preds(par); });
+                   });
+            } else {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue,
+                  BuildStateCheckCaseReturnFalse,
+                  BuildStateCheckCaseReturnFalse);
+            }
+
 
           } else {
             table_to_update = nullptr;

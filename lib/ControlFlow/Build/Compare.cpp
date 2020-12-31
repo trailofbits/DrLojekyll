@@ -167,10 +167,17 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
         [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                if_unknown);
+            if (view.CanProduceDeletions()) {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  if_unknown);
+            } else {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  BuildStateCheckCaseReturnFalse);
+            }
 
           } else {
 
@@ -258,6 +265,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     //            the comparators, or if one of the comparators is a constant,
     //            then send both down.
     } else {
+      assert(false && "TODO(pag): Handle worst case of top-down compare checker");
       assert(!view.CanReceiveDeletions());
       assert(!view.CanProduceDeletions());
       series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));

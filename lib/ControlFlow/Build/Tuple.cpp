@@ -316,17 +316,25 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
           [&](REGION *parent, bool in_scan) -> REGION * {
             if (already_checked != model->table) {
               already_checked = model->table;
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseReturnFalse,
-                  [&](ProgramImpl *, REGION *parent) -> REGION * {
-                    return BuildTopDownTryMarkAbsent(
-                        impl, model->table, parent, view.Columns(),
-                        [&](PARALLEL *par) {
-                          call_pred(par, in_scan)->ExecuteAlongside(impl, par);
-                        });
-                  });
+              if (view.CanProduceDeletions()) {
+                return BuildTopDownCheckerStateCheck(
+                    impl, parent, model->table, view.Columns(),
+                    BuildStateCheckCaseReturnTrue,
+                    BuildStateCheckCaseReturnFalse,
+                    [&](ProgramImpl *, REGION *parent) -> REGION * {
+                      return BuildTopDownTryMarkAbsent(
+                          impl, model->table, parent, view.Columns(),
+                          [&](PARALLEL *par) {
+                            call_pred(par, in_scan)->ExecuteAlongside(impl, par);
+                          });
+                    });
+              } else {
+                return BuildTopDownCheckerStateCheck(
+                    impl, parent, model->table, view.Columns(),
+                    BuildStateCheckCaseReturnTrue,
+                    BuildStateCheckCaseReturnFalse,
+                    BuildStateCheckCaseReturnFalse);
+              }
 
             } else {
               table_to_update = nullptr;

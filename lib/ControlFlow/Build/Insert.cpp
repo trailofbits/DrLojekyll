@@ -254,16 +254,23 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
     return check;
   };
 
-  proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
-      impl, proc, model->table, view_cols,
-      BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-      [&](ProgramImpl *, REGION *parent) -> REGION * {
-        return BuildTopDownTryMarkAbsent(
-            impl, model->table, parent, view_cols,
-            [&](PARALLEL *par) {
-              call_pred(par)->ExecuteAlongside(impl, par);
-            });
-      }));
+  if (view.CanReceiveDeletions()) {
+    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
+        impl, proc, model->table, view_cols,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+        [&](ProgramImpl *, REGION *parent) -> REGION * {
+          return BuildTopDownTryMarkAbsent(
+              impl, model->table, parent, view_cols,
+              [&](PARALLEL *par) {
+                call_pred(par)->ExecuteAlongside(impl, par);
+              });
+        }));
+  } else {
+    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
+        impl, proc, model->table, view_cols,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+        BuildStateCheckCaseReturnFalse));
+  }
 }
 
 }  // namespace hyde

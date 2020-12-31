@@ -477,8 +477,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   for (auto negate : query.Negations()) {
     QueryView view(negate);
     (void) TABLE::GetOrCreate(impl, negate);
-    (void) TABLE::GetOrCreate(impl, view.Predecessors()[0]);
-    (void) TABLE::GetOrCreate(impl, negate);
+    (void) TABLE::GetOrCreate(impl, negate.NegatedView());
   }
 
   // All data feeding into a join must be persistently backed.

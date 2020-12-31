@@ -443,10 +443,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on an induction.
 void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMerge view,
+                                  PROC *proc, QueryMerge merge,
                                   std::vector<QueryColumn> &view_cols,
                                   TABLE *already_checked) {
-
+  const QueryView view(merge);
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto table = model->table;
   assert(table != nullptr);
@@ -454,7 +454,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
   TABLE *table_to_update = table;
 
   auto build_rule_checks = [=, &context, &view_cols](PARALLEL *par) {
-    for (auto pred_view : view.MergedViews()) {
+    for (auto pred_view : merge.MergedViews()) {
 
       // Deletes signal to their successors that data should be deleted, thus
       // there isn't much we can do in terms of actually checking if something
@@ -491,10 +491,17 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
           [&](REGION *parent, bool) -> REGION * {
             if (already_checked != table) {
               already_checked = table;
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                  build_unknown);
+              if (view.CanProduceDeletions()) {
+                return BuildTopDownCheckerStateCheck(
+                    impl, parent, table, view.Columns(),
+                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                    BuildStateCheckCaseReturnFalse);
+              } else {
+                return BuildTopDownCheckerStateCheck(
+                    impl, parent, table, view.Columns(),
+                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                    BuildStateCheckCaseReturnFalse);
+              }
 
             } else {
               table_to_update = nullptr;  // The caller will update.

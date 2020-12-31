@@ -203,10 +203,17 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
         [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view_cols,
-                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                if_unknown);
+            if (view.CanProduceDeletions()) {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view_cols,
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  if_unknown);
+            } else {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view_cols,
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  BuildStateCheckCaseReturnFalse);
+            }
 
           } else {
             table_to_update = nullptr;
