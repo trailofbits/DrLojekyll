@@ -443,7 +443,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (model->table && already_checked != model->table) {
     in_check->AddRegion(BuildTopDownCheckerStateCheck(
         impl, in_check, model->table, view.Columns(),
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
         [&](ProgramImpl *, REGION *parent) -> REGION * {
           do_state_transition = true;
           return BuildTopDownTryMarkAbsent(

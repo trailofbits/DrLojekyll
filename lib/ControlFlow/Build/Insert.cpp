@@ -257,7 +257,7 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (view.CanReceiveDeletions()) {
     proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
         impl, proc, model->table, view_cols,
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
         [&](ProgramImpl *, REGION *parent) -> REGION * {
           return BuildTopDownTryMarkAbsent(
               impl, model->table, parent, view_cols,
