@@ -63,6 +63,9 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     // Call all of the predecessors.
     auto call_preds = [&](PARALLEL *par) {
+
+      // TODO(pag): Find a way to not bother re-appearing non-inductive
+      //            successors?
       for (QueryView pred_view : view.Predecessors()) {
 
         // Deletes have no backing data; they signal to their successors that
@@ -92,7 +95,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                    impl, parent, model->table, view.Columns(),
-                   BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                   BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
                    [&](ProgramImpl *, REGION *parent) -> REGION * {
                      return BuildTopDownTryMarkAbsent(
                          impl, model->table, parent, view.Columns(),
@@ -102,15 +105,16 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
                   BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseReturnFalse,
-                  BuildStateCheckCaseReturnFalse);
+                  BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseNothing);
             }
-
 
           } else {
             table_to_update = nullptr;
             const auto par = impl->parallel_regions.Create(parent);
-            call_preds(par);
+            if (view.CanProduceDeletions()) {
+              call_preds(par);
+            }
             return par;
           }
         });

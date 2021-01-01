@@ -170,13 +170,13 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
                   if_unknown);
             } else {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-                  BuildStateCheckCaseReturnFalse);
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseNothing);
             }
 
           } else {

@@ -206,13 +206,13 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
                   if_unknown);
             } else {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-                  BuildStateCheckCaseReturnFalse);
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseNothing);
             }
 
           } else {

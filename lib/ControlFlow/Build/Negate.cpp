@@ -182,21 +182,15 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
           }
         });
 
+        assert(view.CanProduceDeletions());
+
         if (already_checked != model->table) {
           already_checked = model->table;
-          if (view.CanProduceDeletions()) {
-            return BuildTopDownCheckerStateCheck(
-                impl, in_scan, model->table, view.Columns(),
-                do_check_on_true_not_checked,
-                BuildStateCheckCaseReturnFalse,
-                do_check_on_unknown_not_checked);
-          } else {
-            return BuildTopDownCheckerStateCheck(
-                impl, in_scan, model->table, view.Columns(),
-                do_check_on_true_not_checked,
-                BuildStateCheckCaseReturnFalse,
-                BuildStateCheckCaseReturnFalse);
-          }
+          return BuildTopDownCheckerStateCheck(
+              impl, in_scan, model->table, view.Columns(),
+              do_check_on_true_not_checked,
+              BuildStateCheckCaseNothing,
+              do_check_on_unknown_not_checked);
 
         // If we're here then it means our caller has found a candidate tuple
         // in the output of `view` and is responsible for state transitions.

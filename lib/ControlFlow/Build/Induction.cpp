@@ -453,7 +453,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
 
   TABLE *table_to_update = table;
 
-  auto build_rule_checks = [=, &context, &view_cols](PARALLEL *par) {
+  auto build_rule_checks = [&](PARALLEL *par) {
     for (auto pred_view : merge.MergedViews()) {
 
       // Deletes signal to their successors that data should be deleted, thus
@@ -473,13 +473,6 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
   };
 
   auto build_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
-    // If this induction can't receive deletions, then there's nothing else to
-    // do because if it's not present here, then it won't be present in any of
-    // the children.
-    if (!QueryView::From(view).CanReceiveDeletions()) {
-      return BuildStateCheckCaseReturnFalse(impl, parent);
-    }
-
     return BuildTopDownTryMarkAbsent(impl, table, parent, view.Columns(),
                                      build_rule_checks);
   };
@@ -494,18 +487,24 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
               if (view.CanProduceDeletions()) {
                 return BuildTopDownCheckerStateCheck(
                     impl, parent, table, view.Columns(),
-                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-                    BuildStateCheckCaseReturnFalse);
+                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                    build_unknown);
               } else {
                 return BuildTopDownCheckerStateCheck(
                     impl, parent, table, view.Columns(),
-                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-                    BuildStateCheckCaseReturnFalse);
+                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                    BuildStateCheckCaseNothing);
               }
 
-            } else {
+            } else if (view.CanProduceDeletions()) {
               table_to_update = nullptr;  // The caller will update.
               return build_unknown(impl, parent);
+
+            // If this induction can't receive produce, then there's nothing
+            // else to do because if it's not present here, then it won't be
+            // present in any of the children.
+            } else {
+              return BuildStateCheckCaseReturnFalse(impl, parent);
             }
           }));
 }

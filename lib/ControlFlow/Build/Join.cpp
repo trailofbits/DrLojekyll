@@ -409,6 +409,8 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   unique->vector.Emplace(unique, pivot_vec);
   seq->AddRegion(unique);
 
+  // TODO(pag): Only do the join if we *don't* have all columns available.
+  //            Otherwise we can just loop over the vector.
   const auto join = BuildJoin(impl, join_view, pivot_vec, seq);
 
   // Make sure any non-pivot inputs are checked for equality; we don't care
@@ -441,7 +443,7 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (model->table && already_checked != model->table) {
     in_check->AddRegion(BuildTopDownCheckerStateCheck(
         impl, in_check, model->table, view.Columns(),
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
         [&](ProgramImpl *, REGION *parent) -> REGION * {
           do_state_transition = true;
           return BuildTopDownTryMarkAbsent(

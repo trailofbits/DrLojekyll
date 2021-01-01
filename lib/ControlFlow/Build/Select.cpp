@@ -71,7 +71,7 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseReturnFalse,
+                BuildStateCheckCaseNothing,
                 [&](ProgramImpl *, REGION *parent) -> REGION * {
 
                   // No predecessors, and the tuple is marked as unknown, so
@@ -93,8 +93,8 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseReturnFalse,
-                BuildStateCheckCaseReturnFalse);
+                BuildStateCheckCaseNothing,
+                BuildStateCheckCaseNothing);
           }
 
         // No predecessors, not our job to change states; return true to the
