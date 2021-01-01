@@ -1754,6 +1754,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   PythonCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
 
+  os << os.Indent() << "return False\n";  // Just in case.
   os.PopIndent();
   os << '\n';
 }

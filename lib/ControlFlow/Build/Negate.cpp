@@ -182,6 +182,8 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
           }
         });
 
+        assert(view.CanProduceDeletions());
+
         if (already_checked != model->table) {
           already_checked = model->table;
           return BuildTopDownCheckerStateCheck(

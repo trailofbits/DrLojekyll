@@ -105,7 +105,7 @@ class NodeRange {
   }
 
   inline bool empty(void) const noexcept {
-    return impl != nullptr;
+    return impl == nullptr;
   }
 
  private:

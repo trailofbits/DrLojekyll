@@ -443,18 +443,18 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on an induction.
 void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMerge view,
+                                  PROC *proc, QueryMerge merge,
                                   std::vector<QueryColumn> &view_cols,
                                   TABLE *already_checked) {
-
+  const QueryView view(merge);
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto table = model->table;
   assert(table != nullptr);
 
   TABLE *table_to_update = table;
 
-  auto build_rule_checks = [=, &context, &view_cols](PARALLEL *par) {
-    for (auto pred_view : view.MergedViews()) {
+  auto build_rule_checks = [&](PARALLEL *par) {
+    for (auto pred_view : merge.MergedViews()) {
 
       // Deletes signal to their successors that data should be deleted, thus
       // there isn't much we can do in terms of actually checking if something
@@ -473,13 +473,6 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
   };
 
   auto build_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
-    // If this induction can't receive deletions, then there's nothing else to
-    // do because if it's not present here, then it won't be present in any of
-    // the children.
-    if (!QueryView::From(view).CanReceiveDeletions()) {
-      return BuildStateCheckCaseReturnFalse(impl, parent);
-    }
-
     return BuildTopDownTryMarkAbsent(impl, table, parent, view.Columns(),
                                      build_rule_checks);
   };
@@ -491,14 +484,27 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
           [&](REGION *parent, bool) -> REGION * {
             if (already_checked != table) {
               already_checked = table;
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                  build_unknown);
+              if (view.CanProduceDeletions()) {
+                return BuildTopDownCheckerStateCheck(
+                    impl, parent, table, view.Columns(),
+                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                    build_unknown);
+              } else {
+                return BuildTopDownCheckerStateCheck(
+                    impl, parent, table, view.Columns(),
+                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                    BuildStateCheckCaseNothing);
+              }
 
-            } else {
+            } else if (view.CanProduceDeletions()) {
               table_to_update = nullptr;  // The caller will update.
               return build_unknown(impl, parent);
+
+            // If this induction can't produce deletions, then there's nothing
+            // else to do because if it's not present here, then it won't be
+            // present in any of the children.
+            } else {
+              return BuildStateCheckCaseReturnFalse(impl, parent);
             }
           }));
 }

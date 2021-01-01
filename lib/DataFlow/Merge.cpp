@@ -79,10 +79,12 @@ bool Node<QueryMerge>::Canonicalize(
   // If one of the columns of the merged views isn't needed, then mark this as
   // non-canonical.
   auto has_unused_col = false;
-  for (auto col : columns) {
-    if (!col->IsUsed() && opt.can_remove_unused_columns) {
-      is_canonical = false;
-      has_unused_col = true;
+  if (opt.can_remove_unused_columns && !IsUsedDirectly()) {
+    for (auto col : columns) {
+      if (!col->Def<COL>::IsUsed()) {
+        is_canonical = false;
+        has_unused_col = true;
+      }
     }
   }
 
@@ -97,8 +99,8 @@ bool Node<QueryMerge>::Canonicalize(
   std::vector<VIEW *> seen;
   std::vector<VIEW *> work_list;
 
-  for (auto i = merged_views.Size(); i--;) {
-    work_list.push_back(merged_views[i]);
+  for (auto i = merged_views.Size(); i;) {
+    work_list.push_back(merged_views[--i]);
   }
 
   const auto num_cols = columns.Size();
@@ -113,24 +115,41 @@ bool Node<QueryMerge>::Canonicalize(
       continue;
     }
 
-    // Don't double-process any reached views.
+    // Don't double-process any reached views. If the merge wasn't unique
+    // before then that could affect `VIEW::OnlyUser()`.
     const auto end = seen.end();
     if (std::find(seen.begin(), end, view) != end) {
+      non_local_changes = true;
       continue;
     }
     seen.push_back(view);
 
-    // NOTE(pag): Can't merge lower merges into higher merges, I don't think,
-    //            otherwise there are inductive cycles we might drop.
-
-    // Try to pull data through tuples.
-    if (auto tuple = view->AsTuple(); tuple) {
+    // Try to pull data through tuples. We can do this if the tuple isn't used
+    // by anything else, and if it forwards its incoming view perfectly.
+    if (auto tuple = view->AsTuple(); tuple && tuple->OnlyUser()) {
       auto tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+
+      // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
-        unique_merged_views.push_back(tuple_source);
+        non_local_changes = true;
+        work_list.push_back(tuple_source);
 
       } else {
         unique_merged_views.push_back(tuple);
+      }
+
+    // If we've found a merge, and it is only used by us, and if it doesn't
+    // set or test conditions, then we can flatten this merge into our merge.
+    // Otherwise, we can't, as we'd risk breaking inductive cycles.
+    } else if (auto merge = view->AsMerge();
+               merge && !merge->sets_condition &&
+               merge->positive_conditions.Empty() &&
+               merge->negative_conditions.Empty() &&
+               merge->OnlyUser()) {
+
+      non_local_changes = true;
+      for (auto i = merge->merged_views.Size(); i;) {
+        work_list.push_back(merge->merged_views[--i]);
       }
 
     // This is a unique view we're adding in.
@@ -143,9 +162,10 @@ bool Node<QueryMerge>::Canonicalize(
   if (1 == unique_merged_views.size()) {
 
     // Create a forwarding tuple.
-    const auto tuple = query->tuples.Create();
-    tuple->color = color;
     const auto source_view = unique_merged_views[0];
+    const auto tuple = query->tuples.Create();
+    tuple->color = color ? color : source_view->color;
+
     auto i = 0u;
     for (auto out_col : columns) {
       (void) tuple->columns.Create(out_col->var, tuple, out_col->id);
@@ -178,7 +198,7 @@ bool Node<QueryMerge>::Canonicalize(
 
   // There's an unused column; go and guard the incoming views with TUPLEs that
   // don't use that column.
-  if (has_unused_col && opt.can_remove_unused_columns) {
+  if (has_unused_col) {
 
     UseList<VIEW> new_merged_views(this);
     for (auto view : merged_views) {
@@ -228,7 +248,8 @@ bool Node<QueryMerge>::Canonicalize(
 
   // Lets go see if we can sink merges/unions deeper into
   // the dataflow. The idea here is that sometimes you have two or more
-  // superficially similar
+  // superficially similar inputs flowing into a MERGE, and you'd like
+  // to instead merge those two inputs together.
   if (opt.can_sink_unions) {
     if (sink_penalty) {
       sink_penalty -= 1u;
@@ -285,7 +306,7 @@ bool Node<QueryMerge>::Canonicalize(
     }
 
     if (changed) {
-      sink_penalty = Depth();
+      sink_penalty = Depth() + 1u;
       non_local_changes = true;
       merged_views.Swap(new_merged_views);
     }

@@ -1,5 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
 #include "Query.h"
@@ -81,16 +82,26 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 // Put this view into a canonical form. Returns `true` if changes were made
 // beyond the scope of this view.
 //
+// NOTE(pag): We have a kind of manual/duplicate version of VIEW::IsUsed here
+//            because the actual RELATION or STREAM nodes might be holding
+//            references to this VIEW, and thus make it look used when it's
+//            not.
+//
 // TODO(pag): This really shouldn't be needed. We probably have a bug in
-//            `connect` or somethng like that. If we disable this function
+//            `connect` or something like that. If we disable this function
 //            then there's an orphaned SELECT in `average_weight.dr`. This
 //            is because the RELation or IO holds onto a use of the SELECT
 //            and so the SELECT always looks used.
 bool Node<QuerySelect>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &err) {
 
   if (is_dead || sets_condition) {
     return false;
+  }
+
+  if (sets_condition && 0u < (sets_condition->positive_users.Size() +
+                              sets_condition->negative_users.Size())) {
+    return true;
   }
 
   for (auto col : columns) {
@@ -104,6 +115,20 @@ bool Node<QuerySelect>::Canonicalize(
       [&is_really_used](VIEW *, VIEW *) { is_really_used = true; });
 
   if (!is_really_used) {
+
+    // We're dropping a `RECEIVE` on a message. This could be a sign of a bug,
+    // or of a condition not being satisfiable higher up.
+    if (stream) {
+      if (auto io = stream->AsIO(); io && io->receives.Size() == 1u) {
+        auto predicate = *pred;
+        auto decl = ParsedDeclaration::Of(predicate);
+        auto clause = ParsedClause::Containing(predicate);
+        err.Append(clause.SpellingRange(), predicate.SpellingRange())
+            << "Last receive of message '" << decl.Name() << '/' << decl.Arity()
+            << "' is unused";
+      }
+    }
+
     PrepareToDelete();
     return true;
 

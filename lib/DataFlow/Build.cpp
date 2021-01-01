@@ -231,7 +231,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
       input = query->ios.Create(decl);
     }
 
-    view = query->selects.Create(input, pred.SpellingRange());
+    view = query->selects.Create(input, pred);
     view->color = context.color;
     input->receives.AddUse(view);
 
@@ -246,7 +246,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
       rel = query->relations.Create(decl);
     }
     input = rel;
-    view = query->selects.Create(input, pred.SpellingRange());
+    view = query->selects.Create(input, pred);
     view->color = context.color;
     input->selects.AddUse(view);
 
@@ -1697,6 +1697,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
       context.Reset();
       if (!BuildClause(impl.get(), clause, context, log)) {
         return std::nullopt;
+      }
+    }
+
+    for (auto message : sub_module.Messages()) {
+      if (message.Clauses().empty() && !message.NumUses()) {
+        log.Append(message.SpellingRange())
+            << "Message '" << message.Name() << '/' << message.Arity()
+            << "' is never published or received";
       }
     }
   }

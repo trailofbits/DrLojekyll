@@ -282,7 +282,6 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
   const QueryView pred_view = pred_views[0];
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
 
   // TODO(pag): We don't handle the case where `succ_view` is passing us a
   //            subset of the columns of `view`.
@@ -299,27 +298,16 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
       return check;
     };
 
-    // If the predecessor persists the same data then we'll call the
-    // predecessor's checker.
-    if (model->table == pred_model->table) {
-      table_to_update = nullptr;  // Let the predecessor do the state change.
-
-      proc->body.Emplace(
-          proc, BuildMaybeScanPartial(impl, view, view_cols, model->table, proc,
-                                      call_pred));
-
-    // The predecessor persists different data, so we'll check in the tuple,
-    // and if it's not present, /then/ we'll call the predecessor handler.
-    } else {
-      const auto region = BuildMaybeScanPartial(
-          impl, view, view_cols, model->table, proc,
-          [&](REGION *parent, bool in_scan) -> REGION * {
-            if (already_checked != model->table) {
-              already_checked = model->table;
+    const auto region = BuildMaybeScanPartial(
+        impl, view, view_cols, model->table, proc,
+        [&](REGION *parent, bool in_scan) -> REGION * {
+          if (already_checked != model->table) {
+            already_checked = model->table;
+            if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
                   BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseReturnFalse,
+                  BuildStateCheckCaseNothing,
                   [&](ProgramImpl *, REGION *parent) -> REGION * {
                     return BuildTopDownTryMarkAbsent(
                         impl, model->table, parent, view.Columns(),
@@ -327,15 +315,26 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
                           call_pred(par, in_scan)->ExecuteAlongside(impl, par);
                         });
                   });
-
             } else {
-              table_to_update = nullptr;
-              return call_pred(parent, in_scan);
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue,
+                  BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseNothing);
             }
-          });
 
-      proc->body.Emplace(proc, region);
-    }
+          // This tuple is differential, so check its predecessor.
+          } else if (view.CanProduceDeletions()) {
+            table_to_update = nullptr;
+            return call_pred(parent, in_scan);
+
+          // Don't check the predecessor.
+          } else {
+            return BuildStateCheckCaseReturnFalse(impl, parent);
+          }
+        });
+
+    proc->body.Emplace(proc, region);
 
   // Our best option at this point is to just call the predecessor; this tuple's
   // data is not persisted.
