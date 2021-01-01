@@ -500,7 +500,7 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
               table_to_update = nullptr;  // The caller will update.
               return build_unknown(impl, parent);
 
-            // If this induction can't receive produce, then there's nothing
+            // If this induction can't produce deletions, then there's nothing
             // else to do because if it's not present here, then it won't be
             // present in any of the children.
             } else {

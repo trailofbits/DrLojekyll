@@ -241,7 +241,7 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // and if it's not present, /then/ we'll call the predecessor handler.
   assert(view_cols.size() == insert.NumInputColumns());
 
-  // This tuple was persisted, thus we can check it.
+  // This INSERT was persisted, thus we can check it.
   assert(model->table);
   TABLE *table_to_update = model->table;
   already_checked = model->table;
@@ -257,7 +257,7 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (view.CanReceiveDeletions()) {
     proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
         impl, proc, model->table, view_cols,
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
         [&](ProgramImpl *, REGION *parent) -> REGION * {
           return BuildTopDownTryMarkAbsent(
               impl, model->table, parent, view_cols,

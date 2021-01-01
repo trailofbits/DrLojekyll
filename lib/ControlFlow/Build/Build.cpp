@@ -475,7 +475,6 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 
   // Negations must be backed by tables.
   for (auto negate : query.Negations()) {
-    QueryView view(negate);
     (void) TABLE::GetOrCreate(impl, negate);
     (void) TABLE::GetOrCreate(impl, negate.NegatedView());
   }
