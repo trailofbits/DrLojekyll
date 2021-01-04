@@ -280,7 +280,7 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
 
   module = module.RootModule();
 
-  for (auto type : shuffled(module.ForeignTypes(), gen)) {
+  for (auto type : Shuffled(module.ForeignTypes(), gen)) {
     os << type << "\n";
   }
 
