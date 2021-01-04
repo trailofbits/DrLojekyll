@@ -86,4 +86,10 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
          cyclic_region->Equals(eq, that->cyclic_region.get(), next_depth);
 }
 
+const bool Node<ProgramInductionRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramInductionRegion");
+  return false;
+}
+
 }  // namespace hyde

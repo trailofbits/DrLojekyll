@@ -103,6 +103,12 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
+const bool Node<ProgramParallelRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramParallelRegion");
+  return false;
+}
+
 // Returns true if this region is a no-op.
 bool Node<ProgramParallelRegion>::IsNoOp(void) const noexcept {
   for (auto region : regions) {

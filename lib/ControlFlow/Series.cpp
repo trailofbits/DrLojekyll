@@ -69,4 +69,10 @@ bool Node<ProgramSeriesRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
+const bool Node<ProgramSeriesRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramSeriesRegion");
+  return false;
+}
+
 }  // namespace hyde

@@ -12,9 +12,6 @@
   std::cerr << __LINE__ << ": " << this->containing_procedure->id \
             << " != " << that->containing_procedure->id << std::endl
 
-#define NOTE(msg) \
-  std::cerr << msg << "\n"
-
 namespace hyde {
 
 Node<ProgramOperationRegion>::~Node(void) {}
@@ -159,27 +156,41 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsVectorLoop();
-  if (!that || (!eq.Contains(vector.get(), that->vector.get()) && depth != 0) ||
-      (!body.get()) != (!that->body.get())) {
+  if (!that || !eq.Contains(vector.get(), that->vector.get()) ||
+      defined_vars.Size() != that->defined_vars.Size()) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+    if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
+      FAILED_EQ(that_);
+      return false;
+    } else {
+      eq.Insert(defined_vars[i], that->defined_vars[i]);
+    }
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!body.get()) != (!that->body.get())) {
     FAILED_EQ(that_);
     return false;
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
-
-    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
-      eq.Insert(defined_vars[i], that->defined_vars[i]);
-    }
-
-    if (depth == 0) {
-      return true;
-    }
-
     return this->OP::body->Equals(eq, that_body, depth - 1u);
-
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramVectorLoopRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramVectorLoopRegion");
+  return false;
 }
 
 Node<ProgramVectorLoopRegion> *
@@ -312,10 +323,6 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   if (!eq.Contains(vector.get(), that->vector.get())) {
     return false;
   }
@@ -327,7 +334,17 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
   return true;
+}
+
+const bool Node<ProgramVectorAppendRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramVectorAppendRegion");
+  return false;
 }
 
 Node<ProgramVectorAppendRegion> *
@@ -485,6 +502,12 @@ bool Node<ProgramExistenceCheckRegion>::Equals(EqualitySet &eq,
   }
 }
 
+const bool Node<ProgramExistenceCheckRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramExistenceCheckRegion");
+  return false;
+}
+
 Node<ProgramExistenceCheckRegion> *
 Node<ProgramExistenceCheckRegion>::AsExistenceCheck(void) noexcept {
   return this;
@@ -538,6 +561,12 @@ bool Node<ProgramExistenceAssertionRegion>::Equals(
   return true;
 }
 
+const bool Node<ProgramExistenceAssertionRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramExistenceAssertionRegion");
+  return false;
+}
+
 Node<ProgramExistenceAssertionRegion> *
 Node<ProgramExistenceAssertionRegion>::AsExistenceAssertion(void) noexcept {
   return this;
@@ -584,6 +613,12 @@ bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramVectorClearRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramVectorClearRegion");
+  return false;
 }
 
 Node<ProgramVectorClearRegion> *
@@ -635,6 +670,12 @@ bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
   }
 }
 
+const bool Node<ProgramVectorSwapRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramVectorSwapRegion");
+  return false;
+}
+
 uint64_t Node<ProgramVectorUniqueRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
@@ -661,6 +702,12 @@ bool Node<ProgramVectorUniqueRegion>::Equals(EqualitySet &eq,
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramVectorUniqueRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramVectorUniqueRegion");
+  return false;
 }
 
 Node<ProgramVectorUniqueRegion> *
@@ -769,6 +816,12 @@ bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
   }
 }
 
+const bool Node<ProgramTableJoinRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramTableJoinRegion");
+  return false;
+}
+
 bool Node<ProgramTableProductRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
@@ -839,6 +892,12 @@ bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
   }
 }
 
+const bool Node<ProgramTableProductRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramTableProductRegion");
+  return false;
+}
+
 uint64_t Node<ProgramTableScanRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (table->id + 17u);
@@ -895,6 +954,12 @@ bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
   return eq.Contains(this->output_vector.get(), that->output_vector.get());
 }
 
+const bool Node<ProgramTableScanRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramTableScanRegion");
+  return false;
+}
+
 uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (static_cast<unsigned>(this->cmp_op) + 17u);
@@ -942,10 +1007,6 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   if ((!this->OP::body.get()) != (!that->OP::body.get())) {
     return false;
   }
@@ -958,12 +1019,22 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
   if (auto that_body = that->OP::body.get(); that_body) {
     return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramTupleCompareRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramTupleCompareRegion");
+  return false;
 }
 
 Node<ProgramGenerateRegion> *
@@ -1019,15 +1090,15 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   for (auto i = 0u, max_i = used_vars.Size(); i < max_i; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
+  }
+
+  if (depth == 0) {
+    return true;
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
@@ -1040,6 +1111,12 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramGenerateRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramGenerateRegion");
+  return false;
 }
 
 Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
@@ -1077,19 +1154,19 @@ bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
   // NOTE(pag): Not really worth checking as even trivial procedures are
   //            treated as non-no-ops.
 
-//  if (!called_proc) {
-//    return true;
-//
-//  } else if (this->OP::body) {
-//    if (this->OP::body->IsNoOp()) {
-//      return called_proc->IsNoOp();
-//    } else {
-//      return false;
-//    }
-//
-//  } else {
-//    return called_proc->IsNoOp();
-//  }
+  //  if (!called_proc) {
+  //    return true;
+  //
+  //  } else if (this->OP::body) {
+  //    if (this->OP::body->IsNoOp()) {
+  //      return called_proc->IsNoOp();
+  //    } else {
+  //      return false;
+  //    }
+  //
+  //  } else {
+  //    return called_proc->IsNoOp();
+  //  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1121,12 +1198,6 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
   const auto this_called_proc = called_proc.get();
   const auto that_called_proc = that->called_proc.get();
 
-
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
-
   for (auto i = 0u, max_i = num_arg_vars; i < max_i; ++i) {
     if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
       FAILED_EQ(that_);
@@ -1147,7 +1218,7 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
   }
 
   // This function tests the true/false return value of the called procedure.
-  if (body && !body->Equals(eq, that->body.get(), next_depth)) {
+  if (depth != 0 && body && !body->Equals(eq, that->body.get(), depth - 1)) {
     FAILED_EQ(that_);
     return false;
   }
@@ -1156,11 +1227,19 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
       eq.Contains(this_called_proc, that_called_proc)) {
     return true;
   } else {
-
+    if (depth == 0) {
+      return false;
+    }
     // Different functions are being called, check to see if their function bodies
     // are the same.
-    return this_called_proc->Equals(eq, that_called_proc, next_depth);
+    return this_called_proc->Equals(eq, that_called_proc, depth - 1);
   }
+}
+
+const bool Node<ProgramCallRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramCallRegion");
+  return false;
 }
 
 Node<ProgramPublishRegion> *
@@ -1209,6 +1288,11 @@ bool Node<ProgramPublishRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
+const bool Node<ProgramPublishRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramPublishRegion");
+  return false;
+}
 
 Node<ProgramReturnRegion> *Node<ProgramReturnRegion>::AsReturn(void) noexcept {
   return this;
@@ -1251,6 +1335,12 @@ bool Node<ProgramReturnRegion>::Equals(EqualitySet &eq,
   }
 
   return this->OP::op == that->OP::op;
+}
+
+const bool Node<ProgramReturnRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramReturnRegion");
+  return false;
 }
 
 Node<ProgramCheckStateRegion> *
@@ -1379,6 +1469,12 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
   }
 
   return true;
+}
+
+const bool Node<ProgramCheckStateRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("Unimplemented merging of ProgramCheckStateRegion");
+  return false;
 }
 
 }  // namespace hyde

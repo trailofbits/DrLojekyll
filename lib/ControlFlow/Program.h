@@ -9,14 +9,14 @@
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#define NOTE_UNIMP() std::cerr << "Unimplemented\n"
 
-#include <iostream>
-#define NOTE_UNIMP() \
-  std::cerr << "Unimplemented\n"
+#define NOTE(msg) std::cerr << msg << "\n"
 
 #define COMMENT(...) __VA_ARGS__
 
@@ -485,6 +485,9 @@ class Node<ProgramVectorLoopRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
 
   // Local variables bound to the vector being looped.
@@ -517,6 +520,9 @@ class Node<ProgramVectorAppendRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept override;
 
   UseList<VAR> tuple_vars;
@@ -542,6 +548,9 @@ class Node<ProgramVectorClearRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept override;
 
   UseRef<VECTOR> vector;
@@ -566,6 +575,8 @@ class Node<ProgramVectorSwapRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
   Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept override;
 
   UseRef<VECTOR> lhs;
@@ -590,6 +601,9 @@ class Node<ProgramVectorUniqueRegion> final
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept override;
 
@@ -677,6 +691,9 @@ class Node<ProgramCheckStateRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
@@ -714,6 +731,9 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
 
   // Procedure being called.
@@ -745,6 +765,9 @@ class Node<ProgramReturnRegion> final : public Node<ProgramOperationRegion> {
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramReturnRegion> *AsReturn(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
@@ -772,6 +795,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramPublishRegion> *AsPublish(void) noexcept override;
 
@@ -805,6 +831,9 @@ class Node<ProgramExistenceCheckRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept override;
 
   // Variables associated with these existence checks.
@@ -833,6 +862,9 @@ class Node<ProgramExistenceAssertionRegion> final
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramExistenceAssertionRegion> *
   AsExistenceAssertion(void) noexcept override;
@@ -865,6 +897,9 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept override;
 
@@ -908,6 +943,9 @@ class Node<ProgramTableProductRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept override;
 
   const QueryJoin query_join;
@@ -942,6 +980,9 @@ class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramTableScanRegion> *AsTableScan(void) noexcept override;
 
@@ -978,6 +1019,9 @@ class Node<ProgramTupleCompareRegion> final
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
 
   const ComparisonOperator cmp_op;
@@ -1011,6 +1055,9 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
 
@@ -1049,6 +1096,9 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   bool IsNoOp(void) const noexcept override;
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramProcedure> *AsProcedure(void) noexcept override;
 
@@ -1117,6 +1167,9 @@ class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   inline void AddRegion(REGION *child) {
     assert(child->parent == this);
     regions.AddUse(child);
@@ -1150,6 +1203,9 @@ class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
 
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
   inline void AddRegion(REGION *child) {
     assert(child->parent == this);
     regions.AddUse(child);
@@ -1180,6 +1236,9 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
 
