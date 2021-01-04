@@ -71,7 +71,8 @@ bool Node<ProgramSeriesRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramSeriesRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramSeriesRegion");
+
+  // NOTE(ekilmer): Special region that has its own merging code in Optimize.cpp
   return false;
 }
 

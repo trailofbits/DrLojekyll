@@ -80,6 +80,12 @@ bool Node<ProgramRegion>::Equals(EqualitySet &, Node<ProgramRegion> *,
   return false;
 }
 
+const bool
+Node<ProgramRegion>::MergeEqual(ProgramImpl *prog,
+                                std::vector<Node<ProgramRegion> *> &merges) {
+  return false;
+}
+
 // Return the nearest enclosing region that is itself enclosed by an
 // induction.
 Node<ProgramRegion> *

@@ -125,7 +125,8 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
 const bool
 Node<ProgramProcedure>::MergeEqual(ProgramImpl *prog,
                                    std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramProcedure");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramProcedure");
+  assert(false);
   return false;
 }
 

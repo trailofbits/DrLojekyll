@@ -2,15 +2,15 @@
 
 #include <drlojekyll/Util/BitManipulation.h>
 
-#include <iostream>
+// #include <iostream>
 
 #include "Program.h"
 
-// #define FAILED_EQ(...)
+#define FAILED_EQ(...)
 
-#define FAILED_EQ(that) \
-  std::cerr << __LINE__ << ": " << this->containing_procedure->id \
-            << " != " << that->containing_procedure->id << std::endl
+// #define FAILED_EQ(that) \
+//   std::cerr << __LINE__ << ": " << this->containing_procedure->id \
+//             << " != " << that->containing_procedure->id << std::endl
 
 namespace hyde {
 
@@ -166,8 +166,6 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
     if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
       FAILED_EQ(that_);
       return false;
-    } else {
-      eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
   }
 
@@ -181,6 +179,10 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
+    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+      eq.Insert(defined_vars[i], that->defined_vars[i]);
+    }
+
     return this->OP::body->Equals(eq, that_body, depth - 1u);
   } else {
     return true;
@@ -189,7 +191,8 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramVectorLoopRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramVectorLoopRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorLoopRegion");
+  assert(false);
   return false;
 }
 
@@ -288,7 +291,8 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
 const bool Node<ProgramLetBindingRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
   if (defined_vars.Size() > 0 || used_vars.Size() > 0) {
-    NOTE("Unimplemented merging of ProgramLetBinding");
+    NOTE("TODO(ekilmer): Unimplemented merging of ProgramLetBinding");
+    assert(false);
   }
   return false;
 }
@@ -343,7 +347,8 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramVectorAppendRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramVectorAppendRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorAppendRegion");
+  assert(false);
   return false;
 }
 
@@ -504,7 +509,8 @@ bool Node<ProgramExistenceCheckRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramExistenceCheckRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramExistenceCheckRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramExistenceCheckRegion");
+  assert(false);
   return false;
 }
 
@@ -563,7 +569,9 @@ bool Node<ProgramExistenceAssertionRegion>::Equals(
 
 const bool Node<ProgramExistenceAssertionRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramExistenceAssertionRegion");
+  NOTE(
+      "TODO(ekilmer): Unimplemented merging of ProgramExistenceAssertionRegion");
+  assert(false);
   return false;
 }
 
@@ -617,7 +625,8 @@ bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramVectorClearRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramVectorClearRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorClearRegion");
+  assert(false);
   return false;
 }
 
@@ -672,7 +681,8 @@ bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramVectorSwapRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramVectorSwapRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorSwapRegion");
+  assert(false);
   return false;
 }
 
@@ -706,7 +716,8 @@ bool Node<ProgramVectorUniqueRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramVectorUniqueRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramVectorUniqueRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorUniqueRegion");
+  assert(false);
   return false;
 }
 
@@ -818,7 +829,8 @@ bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramTableJoinRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramTableJoinRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableJoinRegion");
+  assert(false);
   return false;
 }
 
@@ -894,7 +906,8 @@ bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramTableProductRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramTableProductRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableProductRegion");
+  assert(false);
   return false;
 }
 
@@ -956,7 +969,8 @@ bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramTableScanRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramTableScanRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableScanRegion");
+  assert(false);
   return false;
 }
 
@@ -1033,7 +1047,8 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramTupleCompareRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramTupleCompareRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTupleCompareRegion");
+  assert(false);
   return false;
 }
 
@@ -1085,7 +1100,8 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
 
   const auto that = op->AsGenerate();
   if (!that || this->OP::op != that->OP::op || functor != that->functor ||
-      (!this->OP::body.get()) != (!that->OP::body.get())) {
+      used_vars.Size() != that->used_vars.Size() ||
+      defined_vars.Size() != that->defined_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
@@ -1097,8 +1113,20 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
     }
   }
 
+  for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+    if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
   if (depth == 0) {
     return true;
+  }
+
+  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
+    FAILED_EQ(that_);
+    return false;
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
@@ -1115,7 +1143,8 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramGenerateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramGenerateRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramGenerateRegion");
+  assert(false);
   return false;
 }
 
@@ -1238,7 +1267,8 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramCallRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramCallRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramCallRegion");
+  assert(false);
   return false;
 }
 
@@ -1290,7 +1320,8 @@ bool Node<ProgramPublishRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramPublishRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramPublishRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramPublishRegion");
+  assert(false);
   return false;
 }
 
@@ -1339,7 +1370,8 @@ bool Node<ProgramReturnRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramReturnRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramReturnRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramReturnRegion");
+  assert(false);
   return false;
 }
 
@@ -1473,7 +1505,8 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramCheckStateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("Unimplemented merging of ProgramCheckStateRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramCheckStateRegion");
+  assert(false);
   return false;
 }
 

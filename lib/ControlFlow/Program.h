@@ -14,7 +14,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#define NOTE_UNIMP() std::cerr << "Unimplemented\n"
 
 #define NOTE(msg) std::cerr << msg << "\n"
 
@@ -221,10 +220,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // 'Equals' regions.
   // This method assumes that all elements in 'merges' are 'Equals' at depth 0.
   virtual const bool MergeEqual(ProgramImpl *prog,
-                                std::vector<Node<ProgramRegion> *> &merges) {
-    NOTE_UNIMP();
-    return false;
-  }
+                                std::vector<Node<ProgramRegion> *> &merges);
 
   // Gets or creates a local variable in the procedure.
   VAR *VariableFor(ProgramImpl *impl, QueryColumn col);
