@@ -12,6 +12,9 @@
   std::cerr << __LINE__ << ": " << this->containing_procedure->id \
             << " != " << that->containing_procedure->id << std::endl
 
+#define NOTE(msg) \
+  std::cerr << msg << "\n"
+
 namespace hyde {
 
 Node<ProgramOperationRegion>::~Node(void) {}
@@ -269,6 +272,14 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramLetBindingRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  if (defined_vars.Size() > 0 || used_vars.Size() > 0) {
+    NOTE("Unimplemented merging of ProgramLetBinding");
+  }
+  return false;
 }
 
 uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {

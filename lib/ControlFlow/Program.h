@@ -14,6 +14,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include <iostream>
+#define NOTE_UNIMP() \
+  std::cerr << "Unimplemented\n"
+
 #define COMMENT(...) __VA_ARGS__
 
 namespace std {
@@ -218,6 +222,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // This method assumes that all elements in 'merges' are 'Equals' at depth 0.
   virtual const bool MergeEqual(ProgramImpl *prog,
                                 std::vector<Node<ProgramRegion> *> &merges) {
+    NOTE_UNIMP();
     return false;
   }
 
@@ -440,6 +445,9 @@ class Node<ProgramLetBindingRegion> final
   // variable renaming).
   bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
               uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
 
   inline Node(REGION *parent_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kLetBinding),
