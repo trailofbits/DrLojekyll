@@ -133,6 +133,54 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
     OptimizeImpl(prog, par);
   }
 
+  // Strip-mining for similarity and merge
+  std::unordered_map<uint64_t, std::vector<REGION *>> candidates;
+  uint32_t depth = 0;
+
+  for (auto mining = true; mining;) {
+    mining = false;
+    candidates.clear();
+    for (auto region : par->regions) {
+      candidates[region->Hash(depth)].push_back(region);
+    }
+
+#ifndef NDEBUG
+
+    // Double check candidate lists using `->Equals(depth);`
+    for (auto pair : candidates) {
+      auto combine_regions = pair.second;
+      if (combine_regions.size() > 1) {
+        for (auto region1 : combine_regions) {
+          for (auto region2 : combine_regions) {
+            eq.Clear();
+            assert(region1->Equals(eq, region2, depth));
+          }
+        }
+      }
+    }
+#endif
+
+    // Combine pairs.
+    // Double check candidate lists using `->Equals(depth);`
+    // for (auto pair : candidates) {
+    //   auto combine_regions = pair.second;
+    //   if (combine_regions.size() > 1) {
+    //     mining = true;
+    //     auto replacement = combine_regions.back();
+    //     combine_regions.pop_back();
+    //     for (auto region : combine_regions) {
+    //       // TODO(ek)
+    //     }
+    //   }
+    // }
+
+    changed |= mining;
+  }
+
+  if (changed) {
+    OptimizeImpl(prog, par);
+  }
+
   return changed;
 }
 

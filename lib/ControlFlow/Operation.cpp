@@ -2,15 +2,15 @@
 
 #include <drlojekyll/Util/BitManipulation.h>
 
+#include <iostream>
+
 #include "Program.h"
 
-//#include <iostream>
+// #define FAILED_EQ(...)
 
-#define FAILED_EQ(...)
-
-//#define FAILED_EQ(that)
-//  std::cerr << __LINE__ << ": " << this->containing_procedure->id
-//            << " != " << that->containing_procedure->id << std::endl
+#define FAILED_EQ(that) \
+  std::cerr << __LINE__ << ": " << this->containing_procedure->id \
+            << " != " << that->containing_procedure->id << std::endl
 
 namespace hyde {
 
@@ -156,7 +156,7 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsVectorLoop();
-  if (!that || !eq.Contains(vector.get(), that->vector.get()) ||
+  if (!that || (!eq.Contains(vector.get(), that->vector.get()) && depth != 0) ||
       (!body.get()) != (!that->body.get())) {
     FAILED_EQ(that_);
     return false;
@@ -247,7 +247,7 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  for (auto i = 0u; i < num_vars; ++i) {
+  for (auto i = 0u; i < num_vars && depth != 0; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
       FAILED_EQ(that_);
       return false;
@@ -296,8 +296,16 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsVectorAppend();
-  if (!that || !eq.Contains(vector.get(), that->vector.get())) {
+  if (!that) {
     FAILED_EQ(that_);
+    return false;
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if (!eq.Contains(vector.get(), that->vector.get())) {
     return false;
   }
 
@@ -355,9 +363,13 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsTransitionState();
-  if (!that || table.get() != that->table.get() || !body != !(that->body)) {
+  if (!that || table.get() != that->table.get()) {
     FAILED_EQ(that_);
     return false;
+  }
+
+  if (depth == 0) {
+    return true;
   }
 
   for (auto i = 0u, max_i = col_values.Size(); i < max_i; ++i) {
@@ -367,8 +379,8 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
+  if (!body != !(that->body)) {
+    return false;
   }
 
   if (body) {
@@ -888,9 +900,16 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
   }
   const auto num_vars = lhs_vars.Size();
   const auto that = op->AsTupleCompare();
-  if (!that || cmp_op != that->cmp_op || num_vars != that->lhs_vars.Size() ||
-      (!this->OP::body.get()) != (!that->OP::body.get())) {
+  if (!that || cmp_op != that->cmp_op || num_vars != that->lhs_vars.Size()) {
     FAILED_EQ(that_);
+    return false;
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
     return false;
   }
 
@@ -900,10 +919,6 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
       FAILED_EQ(that_);
       return false;
     }
-  }
-
-  if (depth == 0) {
-    return true;
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
@@ -967,6 +982,10 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
   for (auto i = 0u, max_i = used_vars.Size(); i < max_i; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
       FAILED_EQ(that_);
@@ -977,10 +996,6 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
   if (auto that_body = that->OP::body.get(); that_body) {
     for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
-    }
-
-    if (depth == 0) {
-      return true;
     }
 
     return this->OP::body->Equals(eq, that_body, depth - 1u);
@@ -1058,11 +1073,6 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (!body != !that->body) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
   const auto num_arg_vars = arg_vars.Size();
   const auto num_arg_vecs = arg_vecs.Size();
   if (num_arg_vars != that->arg_vars.Size() ||
@@ -1070,6 +1080,15 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     FAILED_EQ(that_);
     return false;
   }
+
+  const auto this_called_proc = called_proc.get();
+  const auto that_called_proc = that->called_proc.get();
+
+
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
 
   for (auto i = 0u, max_i = num_arg_vars; i < max_i; ++i) {
     if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
@@ -1085,16 +1104,10 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  const auto this_called_proc = called_proc.get();
-  const auto that_called_proc = that->called_proc.get();
-
-  auto called_proc_equals = this_called_proc == that_called_proc ||
-                            eq.Contains(this_called_proc, that_called_proc);
-
-  if (depth == 0) {
-    return called_proc_equals;
+  if (!body != !that->body) {
+    FAILED_EQ(that_);
+    return false;
   }
-  auto next_depth = depth - 1;
 
   // This function tests the true/false return value of the called procedure.
   if (body && !body->Equals(eq, that->body.get(), next_depth)) {
@@ -1102,7 +1115,8 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (called_proc_equals) {
+  if (this_called_proc == that_called_proc ||
+      eq.Contains(this_called_proc, that_called_proc)) {
     return true;
   } else {
 

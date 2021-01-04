@@ -76,8 +76,7 @@ bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
 bool Node<ProgramRegion>::Equals(EqualitySet &, Node<ProgramRegion> *,
-                                 uint32_t depth) const noexcept {
-  (void) depth;
+                                 uint32_t) const noexcept {
   return false;
 }
 

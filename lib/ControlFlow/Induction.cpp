@@ -65,17 +65,17 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   // Their vectors (after possible renaming) are not the same.
   for (auto i = 0u; i < num_vectors; ++i) {
     if (!eq.Contains(vectors[i], that->vectors[i])) {
       return false;
     }
   }
-
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
 
   if (output_region &&
       !output_region->Equals(eq, that->output_region.get(), next_depth)) {
@@ -84,7 +84,6 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
 
   return init_region->Equals(eq, that->init_region.get(), next_depth) &&
          cyclic_region->Equals(eq, that->cyclic_region.get(), next_depth);
-  ;
 }
 
 }  // namespace hyde
