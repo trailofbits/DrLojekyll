@@ -276,6 +276,7 @@ static bool OptimizeImpl(SERIES *series) {
 
     auto has_unneeded = false;
     auto seen_return = false;
+    auto seen_indirect_return = false;
 
     for (auto region : series->regions) {
       assert(region->parent == series);
@@ -287,13 +288,19 @@ static bool OptimizeImpl(SERIES *series) {
         has_unneeded = true;
         break;
 
+      } else if (seen_indirect_return) {
+        assert(false);
+        has_unneeded = true;
+        break;
+
       // This region is a No-op, it's not needed.
       } else if (region->IsNoOp()) {
         has_unneeded = true;
         break;
 
-      } else if (auto op = region->AsOperation(); op) {
-        if (op->AsReturn()) {
+      } else if (region->EndsWithReturn()) {
+        seen_indirect_return = true;
+        if (auto op = region->AsOperation(); op && op->AsReturn()) {
           seen_return = true;
         }
       }
@@ -310,11 +317,10 @@ static bool OptimizeImpl(SERIES *series) {
       if (region->IsNoOp()) {
         region->parent = nullptr;
 
-      } else if (auto op = region->AsOperation(); op) {
-        new_regions.AddUse(op);
-        if (op->AsReturn()) {
-          break;
-        }
+      } else if (region->EndsWithReturn()) {
+        new_regions.AddUse(region);
+        break;
+
       } else {
         new_regions.AddUse(region);
       }

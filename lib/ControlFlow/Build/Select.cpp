@@ -67,27 +67,35 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
         if (already_checked != model->table) {
           already_checked = model->table;
 
-          return BuildTopDownCheckerStateCheck(
-              impl, parent, model->table, view.Columns(),
-              BuildStateCheckCaseReturnTrue,
-              BuildStateCheckCaseNothing,
-              [&](ProgramImpl *, REGION *parent) -> REGION * {
+          if (view.CanProduceDeletions()) {
+            return BuildTopDownCheckerStateCheck(
+                impl, parent, model->table, view.Columns(),
+                BuildStateCheckCaseReturnTrue,
+                BuildStateCheckCaseNothing,
+                [&](ProgramImpl *, REGION *parent) -> REGION * {
 
-                // No predecessors, and the tuple is marked as unknown, so
-                // change it to absent and return `false` to our caller.
-                if (pred_views.empty()) {
-                  return remove(parent);
+                  // No predecessors, and the tuple is marked as unknown, so
+                  // change it to absent and return `false` to our caller.
+                  if (pred_views.empty()) {
+                    return remove(parent);
 
-                // Predecessors, so mark the tuple as absent, then try to
-                // prove it in terms of its own absence.
-                } else {
-                  return BuildTopDownTryMarkAbsent(
-                      impl, model->table, parent, view.Columns(),
-                      [&](PARALLEL *par) {
-                        call_pred(par)->ExecuteAlongside(impl, par);
-                      });
-                }
-              });
+                  // Predecessors, so mark the tuple as absent, then try to
+                  // prove it in terms of its own absence.
+                  } else {
+                    return BuildTopDownTryMarkAbsent(
+                        impl, model->table, parent, view.Columns(),
+                        [&](PARALLEL *par) {
+                          call_pred(par)->ExecuteAlongside(impl, par);
+                        });
+                  }
+                });
+          } else {
+            return BuildTopDownCheckerStateCheck(
+                impl, parent, model->table, view.Columns(),
+                BuildStateCheckCaseReturnTrue,
+                BuildStateCheckCaseNothing,
+                BuildStateCheckCaseNothing);
+          }
 
         // No predecessors, not our job to change states; return true to the
         // caller so they can change states.

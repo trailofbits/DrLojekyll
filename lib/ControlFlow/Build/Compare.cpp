@@ -167,10 +167,17 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
         [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                if_unknown);
+            if (view.CanProduceDeletions()) {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  if_unknown);
+            } else {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseNothing);
+            }
 
           } else {
 
@@ -248,11 +255,19 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     // The issue here is that our codegen model of top-down checking treats
     // predecessors as black boxes. We really need to recover the columns from
     // the predecessor that are used for comparison, so that we can apply the
-    // check to them, but we don't (yet) have a way of doing this. This is
-    // also kind of a problem for
+    // check to them, but we don't (yet) have a way of doing this.
+    //
+    // TODO(pag): Think about if returning `true` here is valid or not.
+    //            presumably if we get to here, then it means we've "left"
+    //            differential code.
+    //
+    // TODO(pag): Consider special casing the `eq` case and if we have one of
+    //            the comparators, or if one of the comparators is a constant,
+    //            then send both down.
     } else {
-      assert(false &&
-             "TODO(pag): Handle worst case of top-down compare checker");
+      assert(false && "TODO(pag): Handle worst case of top-down compare checker");
+      assert(!view.CanReceiveDeletions());
+      assert(!view.CanProduceDeletions());
       series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));
     }
   }

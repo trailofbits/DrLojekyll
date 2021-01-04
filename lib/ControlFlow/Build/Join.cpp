@@ -409,6 +409,8 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
   unique->vector.Emplace(unique, pivot_vec);
   seq->AddRegion(unique);
 
+  // TODO(pag): Only do the join if we *don't* have all columns available.
+  //            Otherwise we can just loop over the vector.
   const auto join = BuildJoin(impl, join_view, pivot_vec, seq);
 
   // Make sure any non-pivot inputs are checked for equality; we don't care
