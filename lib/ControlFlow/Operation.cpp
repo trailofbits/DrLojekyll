@@ -8,8 +8,8 @@
 
 #define FAILED_EQ(...)
 
-// #define FAILED_EQ(that) \
-//   std::cerr << __LINE__ << ": " << this->containing_procedure->id \
+// #define FAILED_EQ(that)
+//   std::cerr << __LINE__ << ": " << this->containing_procedure->id
 //             << " != " << that->containing_procedure->id << std::endl
 
 namespace hyde {
