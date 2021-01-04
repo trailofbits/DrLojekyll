@@ -94,8 +94,8 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       auto remove = BuildBottomUpTryMarkUnknown(
           impl, model->table, proc, insert_cols,
           [&](PARALLEL *par) {
-            auto let = impl->operation_regions.CreateDerived<LET>(par);
-            par->regions.AddUse(let);
+            const auto let = impl->operation_regions.CreateDerived<LET>(par);
+            par->AddRegion(let);
             parent = let;
             parent_body = &(let->body);
           });
@@ -142,6 +142,8 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
   for (auto col : available_cols) {
     check->arg_vars.AddUse(parent->VariableFor(impl, col));
   }
+
+  COMMENT( check->comment = __FILE__ ": CreateBottomUpInsertRemover"; )
 
   // Now we're inside of the check, and we know for certain this tuple has
   // been removed because the checker function returned `false`.
@@ -196,14 +198,10 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
           call->arg_vars.AddUse(var);
         }
 
-        par->regions.AddUse(call);
+        par->AddRegion(call);
       }
     }
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 // Build a top-down checker for a relational insert.
@@ -232,6 +230,8 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
         ProgramOperation::kCallProcedureCheckTrue, already_checked);
     proc->body.Emplace(proc, check);
 
+    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker"; )
+
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
     check->body.Emplace(check, ret_true);
     return;
@@ -241,27 +241,36 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // and if it's not present, /then/ we'll call the predecessor handler.
   assert(view_cols.size() == insert.NumInputColumns());
 
-  // This tuple was persisted, thus we can check it.
+  // This INSERT was persisted, thus we can check it.
   assert(model->table);
   TABLE *table_to_update = model->table;
   already_checked = model->table;
 
   auto call_pred = [&](REGION *parent) -> REGION * {
-    return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+    const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
         impl, context, parent, view, view_cols, table_to_update, pred_view,
         already_checked);
+    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker::call_pred"; )
+    return check;
   };
 
-  proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
-      impl, proc, model->table, view_cols,
-      BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-      [&](ProgramImpl *, REGION *parent) -> REGION * {
-        return BuildTopDownTryMarkAbsent(
-            impl, model->table, parent, view_cols,
-            [&](PARALLEL *par) {
-              call_pred(par)->ExecuteAlongside(impl, par);
-            });
-      }));
+  if (view.CanReceiveDeletions()) {
+    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
+        impl, proc, model->table, view_cols,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+        [&](ProgramImpl *, REGION *parent) -> REGION * {
+          return BuildTopDownTryMarkAbsent(
+              impl, model->table, parent, view_cols,
+              [&](PARALLEL *par) {
+                call_pred(par)->ExecuteAlongside(impl, par);
+              });
+        }));
+  } else {
+    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
+        impl, proc, model->table, view_cols,
+        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+        BuildStateCheckCaseReturnFalse));
+  }
 }
 
 }  // namespace hyde

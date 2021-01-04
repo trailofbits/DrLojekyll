@@ -599,8 +599,9 @@ using VIEW = Node<QueryView>;
 template <>
 class Node<QuerySelect> final : public Node<QueryView> {
  public:
-  inline Node(Node<QueryRelation> *relation_, DisplayRange range)
-      : position(range.From()),
+  inline Node(Node<QueryRelation> *relation_, ParsedPredicate pred_)
+      : pred(pred_),
+        position(pred_.SpellingRange().From()),
         relation(this, relation_),
         inserts(this) {
     this->can_receive_deletions =
@@ -608,8 +609,21 @@ class Node<QuerySelect> final : public Node<QueryView> {
     this->can_produce_deletions = this->can_receive_deletions;
   }
 
-  inline Node(Node<QueryStream> *stream_, DisplayRange range)
-      : position(range.From()),
+  inline Node(Node<QueryStream> *stream_, ParsedPredicate pred_)
+      : pred(pred_),
+        position(pred_.SpellingRange().From()),
+        stream(this, stream_),
+        inserts(this) {
+    if (auto input_stream = stream->AsIO(); input_stream) {
+      this->can_receive_deletions =
+          0u < input_stream->declaration.NumDeletionClauses();
+      this->can_produce_deletions = this->can_receive_deletions;
+    }
+  }
+
+  inline Node(Node<QueryStream> *stream_, DisplayRange spelling_range)
+      : pred(std::nullopt),
+        position(spelling_range.From()),
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
@@ -635,6 +649,9 @@ class Node<QuerySelect> final : public Node<QueryView> {
                     const ErrorLog &) override;
 
   // The instance of the predicate from which we are selecting.
+  const std::optional<ParsedPredicate> pred;
+
+  // The beginning location of the predicate. Used for sorting.
   DisplayPosition position;
 
   // The table from which this select takes its columns.
@@ -1043,44 +1060,68 @@ class QueryImpl {
     }
 
     for (auto view : views) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
   }
 
   template <typename CB>
   void ForEachView(CB do_view) const {
     for (auto view : selects) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : tuples) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : kv_indices) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : joins) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : maps) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : aggregates) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : merges) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : negations) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : compares) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : inserts) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
     for (auto view : deletes) {
-      do_view(view);
+      if (!view->is_dead) {
+        do_view(view);
+      }
     }
   }
 
@@ -1089,47 +1130,69 @@ class QueryImpl {
     std::vector<VIEW *> views;
     for (auto view : selects) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : tuples) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : kv_indices) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : joins) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : maps) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : aggregates) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : merges) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : negations) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : compares) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : inserts) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : deletes) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
 
     std::sort(views.begin(), views.end(),
@@ -1145,47 +1208,69 @@ class QueryImpl {
     std::vector<VIEW *> views;
     for (auto view : selects) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : tuples) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : kv_indices) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : joins) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : maps) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : aggregates) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : merges) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : negations) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : compares) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : inserts) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
     for (auto view : deletes) {
       view->depth = 0;
-      views.push_back(view);
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
     }
 
     std::sort(views.begin(), views.end(),

@@ -33,8 +33,16 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
     last_table = nullptr;
   }
 
+#ifndef NDEBUG
+  if (1u < view.Predecessors().size()) {
+    for (auto col : view.Columns()) {
+      assert(!col.IsConstantRef());
+    }
+  }
+#endif
+
   BuildEagerSuccessorRegions(impl, view, context, parent,
-                             QueryView(view).Successors(), last_table);
+                             view.Successors(), last_table);
 }
 
 // Build a top-down checker on a union. This applies to non-differential
@@ -55,6 +63,9 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     // Call all of the predecessors.
     auto call_preds = [&](PARALLEL *par) {
+
+      // TODO(pag): Find a way to not bother re-appearing non-inductive
+      //            successors?
       for (QueryView pred_view : view.Predecessors()) {
 
         // Deletes have no backing data; they signal to their successors that
@@ -66,32 +77,44 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
-        par->regions.AddUse(check);
+        COMMENT( check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds"; )
+        par->AddRegion(check);
       }
     };
 
     const auto region = BuildMaybeScanPartial(
         impl, view, view_cols, model->table, proc,
-        [&](REGION *parent) -> REGION * {
+        [&](REGION *parent, bool) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
 
             // TODO(pag): We should be able to optimize
             //            `BuildTopDownTryMarkAbsent` to not actually
             //            have to check during its state change, but oh well.
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                [&](ProgramImpl *, REGION *parent) -> REGION * {
-                  return BuildTopDownTryMarkAbsent(
-                      impl, model->table, parent, view.Columns(),
-                      [&](PARALLEL *par) { call_preds(par); });
-                });
+
+            if (view.CanProduceDeletions()) {
+              return BuildTopDownCheckerStateCheck(
+                   impl, parent, model->table, view.Columns(),
+                   BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                   [&](ProgramImpl *, REGION *parent) -> REGION * {
+                     return BuildTopDownTryMarkAbsent(
+                         impl, model->table, parent, view.Columns(),
+                         [&](PARALLEL *par) { call_preds(par); });
+                   });
+            } else {
+              return BuildTopDownCheckerStateCheck(
+                  impl, parent, model->table, view.Columns(),
+                  BuildStateCheckCaseReturnTrue,
+                  BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseNothing);
+            }
 
           } else {
             table_to_update = nullptr;
             const auto par = impl->parallel_regions.Create(parent);
-            call_preds(par);
+            if (view.CanProduceDeletions()) {
+              call_preds(par);
+            }
             return par;
           }
         });
@@ -113,7 +136,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
         continue;
       }
 
-      par->regions.AddUse(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+      par->AddRegion(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, nullptr, pred_view, nullptr));
     }
   }
@@ -153,53 +176,9 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
     proc->body.Emplace(proc, parent);
   }
 
-  // By this point, we know that we have a data model, and that we or our caller
-  // has marked this tuple as being unknown. If we're actually in an induction,
-  // then we want to be really sure about calling the successors, which may go
-  // and do lots and lots of loops (via recursion) and remove tons of stuff, but
-  // maybe we can avoid that by finding an alternate proof for our tuple (via
-  // this exact induction) so we want to avoid pushing forward a delete.
-  //
-  // NOTE(pag): Some inductive unions are actually handled by the normal union
-  //            code if all paths out of those apparently inductive unions are
-  //            post-dominated by another co-inductive union.
-  if (model->table && context.inductive_successors.count(view)) {
-
-    std::vector<QueryColumn> check_cols;
-    for (auto col : view.Columns()) {
-      check_cols.push_back(col);
-    }
-
-    const auto checker_proc = GetOrCreateTopDownChecker(
-        impl, context, view, check_cols, model->table);
-
-    // Now call the checker procedure. Unlike in normal checkers, we're doing
-    // a check on `false`.
-    const auto check = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent, checker_proc,
-        ProgramOperation::kCallProcedureCheckFalse);
-
-    auto i = 0u;
-    for (auto col : check_cols) {
-      const auto var = parent->VariableFor(impl, col);
-      assert(var != nullptr);
-      check->arg_vars.AddUse(var);
-
-      const auto param = checker_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-
-    // Re-parent into the body of the check.
-    parent->regions.AddUse(check);
-    parent = impl->parallel_regions.Create(check);
-    check->body.Emplace(check, parent);
-  }
-
   // Okay, by this point, we've either marked the tuple as unknown
   // (non-inductive) and we are proceeding to speculatively delete it in
-  // the successors, or we've proven its absence, and are proceeding to
-  // speculatively delete it in the successors.
+  // the successors.
   for (auto succ_view : view.Successors()) {
 
     // TODO(pag): I don't recall why this is important, but I have enforced it
@@ -222,12 +201,8 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
       (void) param;
     }
 
-    parent->regions.AddUse(call);
+    parent->AddRegion(call);
   }
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      proc, ProgramOperation::kReturnFalseFromProcedure);
-  ret->ExecuteAfter(impl, proc);
 }
 
 }  // namespace hyde

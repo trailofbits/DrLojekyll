@@ -118,6 +118,15 @@ Node<ProgramProcedure> *Node<ProgramProcedure>::AsProcedure(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramProcedure>::EndsWithReturn(void) const noexcept {
+  if (body) {
+    return body->EndsWithReturn();
+  } else {
+    return false;
+  }
+}
+
 // Get or create a table in a procedure.
 VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl, VectorKind kind,
                                           DefinedNodeRange<QueryColumn> cols) {

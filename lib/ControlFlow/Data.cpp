@@ -190,7 +190,8 @@ bool Node<DataVector>::IsRead(void) const {
   auto is_used = false;
   ForEachUse<OP>([&](OP *op, VECTOR *) {
     if (dynamic_cast<VECTORLOOP *>(op) || dynamic_cast<TABLEJOIN *>(op) ||
-        dynamic_cast<INDUCTION *>(op) || dynamic_cast<CALL *>(op)) {
+        dynamic_cast<TABLEPRODUCT *>(op) || dynamic_cast<INDUCTION *>(op) ||
+        dynamic_cast<CALL *>(op) || dynamic_cast<VECTORSWAP *>(op)) {
       is_used = true;
     }
   });

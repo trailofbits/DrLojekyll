@@ -29,7 +29,7 @@ class DisjointSet {
   // to union by
   static void UnionInto(DisjointSet *child, DisjointSet *parent);
 
-  const unsigned id;
+  unsigned id;
 };
 
 }  // namespace hyde

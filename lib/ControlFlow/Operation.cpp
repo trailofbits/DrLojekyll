@@ -43,6 +43,11 @@ Node<ProgramOperationRegion>::AsOperation(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramOperationRegion>::EndsWithReturn(void) const noexcept {
+  return false;
+}
+
 Node<ProgramCallRegion>::Node(unsigned id_, Node<ProgramRegion> *parent_,
                               Node<ProgramProcedure> *called_proc_,
                               ProgramOperation op_)
@@ -309,6 +314,10 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
   }
   return hash;
+}
+
+bool Node<ProgramTransitionStateRegion>::IsNoOp(void) const noexcept {
+  return false;
 }
 
 bool Node<ProgramTransitionStateRegion>::Equals(
@@ -724,7 +733,11 @@ uint64_t Node<ProgramTableScanRegion>::Hash(void) const {
 }
 
 bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
-  return !output_vector->IsRead();
+  if (output_vector->NumUses() == 1u) {
+    return true;
+  } else {
+    return !output_vector->IsRead();
+  }
 }
 
 bool Node<ProgramTableScanRegion>::Equals(
@@ -912,7 +925,24 @@ uint64_t Node<ProgramCallRegion>::Hash(void) const {
 }
 
 bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
-  return !called_proc || called_proc->IsNoOp();
+  return false;
+
+  // NOTE(pag): Not really worth checking as even trivial procedures are
+  //            treated as non-no-ops.
+
+//  if (!called_proc) {
+//    return true;
+//
+//  } else if (this->OP::body) {
+//    if (this->OP::body->IsNoOp()) {
+//      return called_proc->IsNoOp();
+//    } else {
+//      return false;
+//    }
+//
+//  } else {
+//    return called_proc->IsNoOp();
+//  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1028,12 +1058,21 @@ Node<ProgramReturnRegion> *Node<ProgramReturnRegion>::AsReturn(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramReturnRegion>::EndsWithReturn(void) const noexcept {
+  return true;
+}
+
 uint64_t Node<ProgramReturnRegion>::Hash(void) const {
   return static_cast<unsigned>(this->OP::op) * 53;
 }
 
 bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
-  return false;
+  if (parent->AsProcedure()) {
+    return true;
+  } else {
+    return false;
+  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1058,6 +1097,34 @@ bool Node<ProgramReturnRegion>::Equals(
 Node<ProgramCheckStateRegion> *
 Node<ProgramCheckStateRegion>::AsCheckState(void) noexcept {
   return this;
+}
+
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
+  auto has_any = 0;
+  if (body) {
+    if (!body->EndsWithReturn()) {
+      return false;
+    } else {
+      ++has_any;
+    }
+  }
+  if (absent_body) {
+    if (!absent_body->EndsWithReturn()) {
+      return false;
+    } else {
+      ++has_any;
+    }
+  }
+  if (unknown_body) {
+    if (!unknown_body->EndsWithReturn()) {
+      return false;
+    } else {
+      ++has_any;
+    }
+  }
+
+  return 3 == has_any;
 }
 
 uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {

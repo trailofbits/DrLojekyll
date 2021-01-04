@@ -30,12 +30,16 @@ constexpr auto kPresentBit = 0x4u;
 constexpr auto gClassName = "Database";
 
 // Make a comment in code for debugging purposes
-static OutputStream &Comment(OutputStream &os, const char *message) {
+static OutputStream &Comment(OutputStream &os, ProgramRegion region,
+                             const char *message) {
 #ifndef NDEBUG
   os << os.Indent() << "# " << message << "\n";
 #else
   (void) message;
 #endif
+  if (!region.Comment().empty()) {
+    os << os.Indent() << "# " << region.Comment() << "\n";
+  }
   return os;
 }
 
@@ -345,7 +349,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         module(module_) {}
 
   void Visit(ProgramCallRegion region) override {
-    os << Comment(os, "Program Call Region");
+    os << Comment(os, region, "Program Call Region");
 
     auto param_index = 0u;
     const auto called_proc = region.CalledProcedure();
@@ -453,7 +457,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramReturnRegion region) override {
-    os << Comment(os, "Program Return Region");
+    os << Comment(os, region, "Program Return Region");
 
     auto proc = ProgramProcedure::Containing(region);
     auto param_index = 0u;
@@ -481,7 +485,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramExistenceAssertionRegion region) override {
-    os << Comment(os, "Program ExistenceAssertion Region");
+    os << Comment(os, region, "Program ExistenceAssertion Region");
     const auto vars = region.ReferenceCounts();
     for (auto var : vars) {
       if (region.IsIncrement()) {
@@ -505,7 +509,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramExistenceCheckRegion region) override {
-    os << Comment(os, "Program ExistenceCheck Region");
+    os << Comment(os, region, "Program ExistenceCheck Region");
     const auto vars = region.ReferenceCounts();
     auto sep = "if ";
     os << os.Indent();
@@ -539,12 +543,24 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramGenerateRegion region) override {
     const auto functor = region.Functor();
-    os << Comment(os, "Program Generate Region");
+    os << Comment(os, region, "Program Generate Region");
 
     if (!region.IsPositive()) {
       assert(functor.Range() != FunctorRange::kOneToOne);
       assert(functor.Range() != FunctorRange::kOneOrMore);
       os << os.Indent() << "found = False\n";
+    }
+
+    switch (functor.Range()) {
+      case FunctorRange::kZeroOrOne:
+      case FunctorRange::kZeroOrMore:
+        for (auto var : region.OutputVariables()) {
+          os << os.Indent() << Var(os, var) << ": Optional["
+             << TypeName(module, var.Type()) << "] = None\n";
+        }
+        break;
+      default:
+        break;
     }
 
     auto output_vars = region.OutputVariables();
@@ -681,13 +697,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramInductionRegion region) override {
-    os << Comment(os, "Program Induction Init Region");
+    os << Comment(os, region, "Program Induction Init Region");
 
     // Base case
     region.Initializer().Accept(*this);
 
     // Fixpoint
-    os << Comment(os, "Induction Fixpoint Loop Region");
+    os << Comment(os, region, "Induction Fixpoint Loop Region");
     os << os.Indent() << "while ";
     auto sep = "";
     for (auto vec : region.Vectors()) {
@@ -705,13 +721,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       for (auto vec : region.Vectors()) {
         os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
       }
-      os << Comment(os, "Induction Output Region");
+      os << Comment(os, region, "Induction Output Region");
       output->Accept(*this);
     }
   }
 
   void Visit(ProgramLetBindingRegion region) override {
-    os << Comment(os, "Program LetBinding Region");
+    os << Comment(os, region, "Program LetBinding Region");
     auto i = 0u;
     const auto used_vars = region.UsedVariables();
     for (auto var : region.DefinedVariables()) {
@@ -726,7 +742,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramParallelRegion region) override {
-    os << Comment(os, "Program Parallel Region");
+    os << Comment(os, region, "Program Parallel Region");
 
     // Same as SeriesRegion
     auto any = false;
@@ -746,7 +762,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramPublishRegion region) override {
-    os << Comment(os, "Program Publish Region");
+    os << Comment(os, region, "Program Publish Region");
     auto message = region.Message();
     os << os.Indent() << "self._log." << message.Name() << '_'
        << message.Arity();
@@ -767,7 +783,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramSeriesRegion region) override {
-    os << Comment(os, "Program Series Region");
+    os << Comment(os, region, "Program Series Region");
 
     auto any = false;
     for (auto sub_region : region.Regions()) {
@@ -781,7 +797,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorAppendRegion region) override {
-    os << Comment(os, "Program VectorAppend Region");
+    os << Comment(os, region, "Program VectorAppend Region");
 
     const auto tuple_vars = region.TupleVariables();
 
@@ -812,14 +828,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorClearRegion region) override {
-    os << Comment(os, "Program VectorClear Region");
+    os << Comment(os, region, "Program VectorClear Region");
 
     os << os.Indent() << "del " << Vector(os, region.Vector()) << "[:]\n";
     os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0\n";
   }
 
   void Visit(ProgramVectorSwapRegion region) override {
-    os << Comment(os, "Program VectorSwap Region");
+    os << Comment(os, region, "Program VectorSwap Region");
 
     os << os.Indent() << Vector(os, region.LHS()) << ", "
        << Vector(os, region.RHS()) << " = " << Vector(os, region.RHS())
@@ -827,7 +843,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
-    os << Comment(os, "Program VectorLoop Region");
+    os << Comment(os, region, "Program VectorLoop Region");
     auto vec = region.Vector();
     if (region.Usage() != VectorUsage::kInductionVector) {
       os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
@@ -859,7 +875,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramVectorUniqueRegion region) override {
-    os << Comment(os, "Program VectorUnique Region");
+    os << Comment(os, region, "Program VectorUnique Region");
 
     os << os.Indent() << Vector(os, region.Vector()) << " = list(set("
        << Vector(os, region.Vector()) << "))\n";
@@ -872,6 +888,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         os << os.Indent() << Var(os, var)
            << " = self._resolve_" << foreign_type->Name()
            << '(' << Var(os, var) << ")\n";
+      } else {
+        switch (var.DefiningRole()) {
+          case VariableRole::kConditionRefCount:
+          case VariableRole::kConstant:
+            break;
+          default:
+            assert(false);
+        }
       }
     }
   }
@@ -883,7 +907,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTransitionStateRegion region) override {
-    os << Comment(os, "Program TransitionState Region");
+    os << Comment(os, region, "Program TransitionState Region");
 
     const auto tuple_vars = region.TupleVariables();
 
@@ -1039,7 +1063,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramCheckStateRegion region) override {
-    os << Comment(os, "Program CheckState Region");
+    os << Comment(os, region, "Program CheckState Region");
     const auto table = region.Table();
     const auto vars = region.TupleVariables();
     os << os.Indent() << "state = " << Table(os, table) << "[";
@@ -1082,7 +1106,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableJoinRegion region) override {
-    os << Comment(os, "Program TableJoin Region");
+    os << Comment(os, region, "Program TableJoin Region");
 
     // Nested loop join
     auto vec = region.PivotVector();
@@ -1255,7 +1279,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableProductRegion region) override {
-    os << Comment(os, "Program TableProduct Region");
+    os << Comment(os, region, "Program TableProduct Region");
 
     os << os.Indent() << "vec_" << region.Id();
 
@@ -1357,7 +1381,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableScanRegion region) override {
-    os << Comment(os, "Program TableScan Region");
+    os << Comment(os, region, "Program TableScan Region");
 
     const auto input_vars = region.InputVariables();
     const auto output_cols = region.SelectedColumns();
@@ -1433,7 +1457,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTupleCompareRegion region) override {
-    os << Comment(os, "Program TupleCompare Region");
+    os << Comment(os, region, "Program TupleCompare Region");
 
     const auto lhs_vars = region.LHS();
     const auto rhs_vars = region.RHS();
@@ -1524,7 +1548,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
   os << ":\n";
 
   os.PushIndent();
-  os << os.Indent() << "return sys.modules[__name__]." << func.Name() << '_'
+  os << os.Indent() << "return " << func.Name() << '_'
      << ParsedDeclaration(func).BindingPattern() << "(";
   sep_ret = "";
   for (auto param : func.Parameters()) {
@@ -1730,6 +1754,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   PythonCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
 
+  os << os.Indent() << "return False\n";  // Just in case.
   os.PopIndent();
   os << '\n';
 }

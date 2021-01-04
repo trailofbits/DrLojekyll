@@ -449,6 +449,15 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               assert(false);
             }
 
+            // Infer the type of the assignment based off the constant.
+            if (Lexeme::kIdentifierConstant == tok.Lexeme()) {
+              auto const_ptr = context->foreign_constants[tok.IdentifierId()];
+              assert(const_ptr != nullptr);
+              assert(const_ptr->parent != nullptr);
+              assign->rhs.type = const_ptr->type;
+              assign->rhs.foreign_type = const_ptr->parent;
+            }
+
             // Add to the clause's assignment list.
             if (!clause->assignments.empty()) {
               clause->assignments.back()->next = assign;

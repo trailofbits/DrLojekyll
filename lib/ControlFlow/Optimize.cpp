@@ -2,6 +2,8 @@
 
 #include "Program.h"
 
+#include <iostream>
+
 namespace hyde {
 namespace {
 
@@ -9,20 +11,20 @@ namespace {
 //            `ProgramCheckStateRegion` operate on the same tuple in
 //            parallel, and if so, merge their bodies.
 
-static bool OptimizeImpl(PARALLEL *par) {
+// TODO(pag): Find all ending returns in the children of the par, and if there
+//            are any, check that they all match, and if so, create a sequence
+//            that moves the `return <X>` to after the parallel, and also
+//            assert(false).
+static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   if (!par->IsUsed() || !par->parent) {
     return false;
 
   // This is a parallel region with only one child, so we can elevate the
   // child to replace the parent.
   } else if (par->regions.Size() == 1u) {
-    auto only_region = par->regions[0u];
+    const auto only_region = par->regions[0u];
     par->regions.Clear();
-
-    if (!only_region->IsNoOp()) {
-      par->ReplaceAllUsesWith(only_region);
-    }
-
+    par->ReplaceAllUsesWith(only_region);
     return true;
 
   // This parallel node's parent is also a parallel node.
@@ -30,17 +32,24 @@ static bool OptimizeImpl(PARALLEL *par) {
              parent_par && !par->regions.Empty()) {
 
     for (auto child_region : par->regions) {
+      assert(child_region->parent == par);
       child_region->parent = parent_par;
-      parent_par->regions.AddUse(child_region);
+      parent_par->AddRegion(child_region);
     }
 
     par->regions.Clear();
     return true;
-
-    // Erase any empty child regions.
   }
+
+  // Erase any empty or no-op child regions.
   auto changed = false;
-  par->regions.RemoveIf([&changed](REGION *child_region) {
+  auto has_ends_with_return = false;
+  par->regions.RemoveIf([&changed, &has_ends_with_return](REGION *child_region) {
+
+    if (child_region->EndsWithReturn()) {
+      has_ends_with_return = true;
+    }
+
     if (child_region->IsNoOp()) {
       child_region->parent = nullptr;
       changed = true;
@@ -51,19 +60,34 @@ static bool OptimizeImpl(PARALLEL *par) {
   });
 
   if (changed) {
+    OptimizeImpl(prog, par);
     return true;
   }
+
+  assert(!has_ends_with_return);
+
+//  // One or more of the children of the parallel regions ends with a return.
+//  // That's a bit problematic.
+//  if (has_ends_with_return) {
+//    auto seq = prog->series_regions.Create(par->parent);
+//    par->ReplaceAllUsesWith(seq);
+//    par->parent = seq;
+//    seq->AddRegion(par);
+//  }
 
   // The PARALLEL node is "canonical" as far as we can tell, so check to see
   // if any of its child regions might be mergeable.
 
-  std::unordered_map<unsigned, std::vector<REGION *>> grouped_regions;
+  std::unordered_map<uint64_t, std::vector<REGION *>> grouped_regions;
   for (auto region : par->regions) {
+    assert(region->parent == par);
     unsigned index = 0u;
     if (region->AsSeries()) {
       index = ~0u;
+
     } else if (region->AsInduction()) {
       index = ~0u - 1u;
+
     } else if (auto op = region->AsOperation(); op) {
       index = static_cast<unsigned>(op->op);
 
@@ -105,12 +129,19 @@ static bool OptimizeImpl(PARALLEL *par) {
     }
   }
 
+  if (changed) {
+    OptimizeImpl(prog, par);
+  }
+
   return changed;
 }
 
 // Optimize induction regions.
 // * Clear out empty output regions of inductions.
 // * Optimize nested loop inductions.
+//
+// TODO(pag): Check if the fixpoint loop region ends in a return. If so, bail
+//            out.
 static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
   auto changed = false;
 
@@ -148,7 +179,7 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
 
     // Fixup output region
     if (auto output_region = induction->output_region.get(); output_region) {
-      assert(!induction->output_region->IsNoOp());  // Handled above.
+      assert(!output_region->IsNoOp());  // Handled above.
       induction->output_region.Clear();
       output_region->parent = parent_induction;
       if (auto parent_output_region = parent_induction->output_region.get();
@@ -209,36 +240,31 @@ static bool OptimizeImpl(SERIES *series) {
   } else if (series->regions.Size() == 1u) {
     const auto only_region = series->regions[0u];
     series->regions.Clear();
-
-    if (!only_region->IsNoOp()) {
-      series->ReplaceAllUsesWith(only_region);
-    }
-
+    series->ReplaceAllUsesWith(only_region);
     return true;
 
   // This series node's parent is also a series node.
   } else if (auto parent_series = series->parent->AsSeries();
              parent_series && !series->regions.Empty()) {
-
     UseList<REGION> new_siblings(parent_series);
+    auto found = false;
+
     for (auto sibling_region : parent_series->regions) {
-      if (!sibling_region->IsNoOp()) {
-        if (sibling_region == series) {
-          for (auto child_region : series->regions) {
-            if (!child_region->IsNoOp()) {
-              new_siblings.AddUse(child_region);
-              child_region->parent = parent_series;
-            } else {
-              child_region->parent = nullptr;
-            }
-          }
-        } else {
-          new_siblings.AddUse(sibling_region);
+      assert(sibling_region->parent == parent_series);
+      if (sibling_region == series) {
+        for (auto child_region : series->regions) {
+          assert(child_region->parent == series);
+          new_siblings.AddUse(child_region);
+          child_region->parent = parent_series;
+          found = true;
         }
       } else {
-        sibling_region->parent = nullptr;
+        new_siblings.AddUse(sibling_region);
       }
     }
+
+    assert(found);
+    (void) found;
 
     series->regions.Clear();
     series->parent = nullptr;
@@ -247,17 +273,61 @@ static bool OptimizeImpl(SERIES *series) {
 
   // Erase any empty child regions.
   } else {
-    auto changed = false;
-    series->regions.RemoveIf([&changed](REGION *child_region) {
-      if (child_region->IsNoOp()) {
-        child_region->parent = nullptr;
-        changed = true;
-        return true;
-      } else {
-        return false;
+
+    auto has_unneeded = false;
+    auto seen_return = false;
+    auto seen_indirect_return = false;
+
+    for (auto region : series->regions) {
+      assert(region->parent == series);
+
+      // There's a region following a `RETURN` in a series. This is unreachable.
+      if (seen_return) {
+        assert(region->AsOperation() && region->AsOperation()->AsReturn() &&
+               "Unreachable code in SERIES region");
+        has_unneeded = true;
+        break;
+
+      } else if (seen_indirect_return) {
+        assert(false);
+        has_unneeded = true;
+        break;
+
+      // This region is a No-op, it's not needed.
+      } else if (region->IsNoOp()) {
+        has_unneeded = true;
+        break;
+
+      } else if (region->EndsWithReturn()) {
+        seen_indirect_return = true;
+        if (auto op = region->AsOperation(); op && op->AsReturn()) {
+          seen_return = true;
+        }
       }
-    });
-    return changed;
+    }
+
+    // Remove no-op regions, and unreachable regions.
+    if (!has_unneeded) {
+      return false;
+    }
+
+    UseList<REGION> new_regions(series);
+    for (auto region : series->regions) {
+      assert(region->parent == series);
+      if (region->IsNoOp()) {
+        region->parent = nullptr;
+
+      } else if (region->EndsWithReturn()) {
+        new_regions.AddUse(region);
+        break;
+
+      } else {
+        new_regions.AddUse(region);
+      }
+    }
+
+    series->regions.Swap(new_regions);
+    return true;
   }
 }
 
@@ -272,22 +342,18 @@ static bool OptimizeImpl(LET *let) {
     var_def->ReplaceAllUsesWith(var_use);
   }
 
+  let->defined_vars.Clear();
+  let->used_vars.Clear();
+
   const auto body = let->body.get();
   let->body.Clear();
 
-  if (body && !body->IsNoOp()) {
+  if (body) {
     changed = true;
     let->ReplaceAllUsesWith(body);
   }
 
-  if (changed) {
-    let->defined_vars.Clear();
-    let->used_vars.Clear();
-    return true;
-
-  } else {
-    return false;
-  }
+  return changed;
 }
 
 static bool OptimizeImpl(EXISTS *exists) {
@@ -328,6 +394,7 @@ static bool OptimizeImpl(EXISTS *exists) {
 // Propagate comparisons upwards, trying to join towers of comparisons into
 // single tuple group comparisons.
 static bool OptimizeImpl(TUPLECMP *cmp) {
+
   bool changed = false;
 
   auto max_i = cmp->lhs_vars.Size();
@@ -339,6 +406,7 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       for (auto i = 0u; i < max_i; ++i) {
         parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
         parent_cmp->rhs_vars.AddUse(cmp->rhs_vars[i]);
+        changed = true;
       }
 
       cmp->lhs_vars.Clear();
@@ -356,9 +424,58 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       cmp->ReplaceAllUsesWith(body);
       changed = true;
     }
+
+    return changed;
+
+  }
+  auto has_matching = false;
+  for (auto i = 0u; i < max_i; ++i) {
+    if (cmp->lhs_vars[i] == cmp->rhs_vars[i]) {
+      has_matching = true;
+      break;
+    }
   }
 
-  return changed;
+  if (!has_matching) {
+    return changed;
+  }
+
+  if (cmp->cmp_op == ComparisonOperator::kEqual) {
+    UseList<VAR> new_lhs_vars(cmp);
+    UseList<VAR> new_rhs_vars(cmp);
+    for (auto i = 0u; i < max_i; ++i) {
+      if (cmp->lhs_vars[i] != cmp->rhs_vars[i]) {
+        new_lhs_vars.AddUse(cmp->lhs_vars[i]);
+        new_rhs_vars.AddUse(cmp->rhs_vars[i]);
+      }
+    }
+
+    // This comparison is trivially true, replace it with its body.
+    if (new_lhs_vars.Empty()) {
+      cmp->lhs_vars.Clear();
+      cmp->rhs_vars.Clear();
+      OptimizeImpl(cmp);
+      return true;
+
+    // This comparison had some redundant comparisons, swap in the less
+    // redundant ones.
+    } else {
+      cmp->lhs_vars.Swap(new_lhs_vars);
+      cmp->rhs_vars.Swap(new_rhs_vars);
+    }
+
+  // This tuple compare with never be satisfiable, and so everything inside
+  // it is dead.
+  } else {
+    if (const auto body = cmp->body.get(); body) {
+      body->parent = nullptr;
+    }
+    cmp->body.Clear();
+    cmp->lhs_vars.Clear();
+    cmp->rhs_vars.Clear();
+  }
+
+  return true;
 }
 
 // Process a function as if it contains just simple function calls and a return.
@@ -390,14 +507,18 @@ FindReturnAfterSimpleCalls(const UseList<Node<ProgramRegion>> &regions) {
       if (auto target_call = target_op->AsCall(); target_call) {
         if (!target_call->arg_vecs.Empty()) {
           return {false, nullptr};
+
         } else if (target_call->op != ProgramOperation::kCallProcedure) {
           return {false, nullptr};
+
         } else {
           assert(!target_call->body);
         }
 
       } else if (auto found_return = target_op->AsReturn(); found_return) {
-        assert(!target_return);
+        if (target_return) {
+          return {false, nullptr};
+        }
         target_return = found_return;
 
       // Found something that isn't a call or return.
@@ -419,7 +540,6 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
                         ProgramImpl *impl, REGION *into_parent,
                         UseList<Node<ProgramRegion>> &into_parent_regions,
                         std::unordered_map<VAR *, VAR *> &target_to_local) {
-
   for (auto target_region : from_regions) {
     if (auto target_par = target_region->AsParallel(); target_par) {
       const auto copied_par = impl->parallel_regions.Create(into_parent);
@@ -439,6 +559,10 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
         auto copied_call = impl->operation_regions.CreateDerived<CALL>(
             impl->next_id++, into_parent, target_call->called_proc.get(),
             target_call->op);
+        if (!target_call->comment.empty()) {
+          COMMENT( copied_call->comment = __FILE__ ": InlineCalls: " +
+                                          target_call->comment; )
+        }
         into_parent_regions.AddUse(copied_call);
 
         for (auto target_var : target_call->arg_vars) {
@@ -623,21 +747,59 @@ static bool OptimizeImpl(PROC *proc) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
+#ifndef NDEBUG
+  for (auto par : parallel_regions) {
+    assert(par->parent != nullptr);
+    for (auto region : par->regions) {
+      if (region->parent != par) {
+        assert(false);
+        region->parent = par;
+      }
+    }
+  }
+
+  for (auto series : series_regions) {
+    assert(series->parent != nullptr);
+    for (auto region : series->regions) {
+      if (region->parent != series) {
+        assert(false);
+        region->parent = series;
+      }
+    }
+  }
+
+  for (auto op : operation_regions) {
+    assert(op->parent != nullptr);
+  }
+#endif
+
+  // A bunch of the optimizations check `region->IsNoOp()`, which looks down
+  // to their children, or move children nodes into parent nodes. Thus, we want
+  // to start deep and "bubble up" removal of no-ops and other things.
+  auto depth_cmp = +[] (REGION *a, REGION *b) {
+    return a->CachedDepth() > b->CachedDepth();
+  };
+
   for (auto changed = true; changed;) {
     changed = false;
 
+    parallel_regions.Sort(depth_cmp);
+
     for (auto par : parallel_regions) {
-      changed = OptimizeImpl(par) | changed;
+      changed = OptimizeImpl(this, par) | changed;
     }
 
+    induction_regions.Sort(depth_cmp);
     for (auto induction : induction_regions) {
       changed = OptimizeImpl(this, induction) | changed;
     }
 
+    series_regions.Sort(depth_cmp);
     for (auto series : series_regions) {
       changed = OptimizeImpl(series) | changed;
     }
 
+    operation_regions.Sort(depth_cmp);
     for (auto i = 0u; i < operation_regions.Size(); ++i) {
       const auto op = operation_regions[i];
       if (!op->IsUsed() || !op->parent) {
@@ -662,10 +824,15 @@ void ProgramImpl::Optimize(void) {
 
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.
-      } else if (op->body && op->body->IsNoOp()) {
-        op->body->parent = nullptr;
-        op->body.Clear();
-        changed = true;
+      } else if (op->body) {
+        assert(op->body->parent == op);
+        if (op->body->IsNoOp()) {
+//          op->body->comment = "NOP? " + op->body->comment;
+
+          op->body->parent = nullptr;
+          op->body.Clear();
+          changed = true;
+        }
       }
     }
 
@@ -717,6 +884,8 @@ void ProgramImpl::Optimize(void) {
             auto call_i = operation_regions.CreateDerived<CALL>(
                 next_id++, seq, i_proc,
                 ProgramOperation::kCallProcedureCheckTrue);
+
+            COMMENT( call_i->comment = __FILE__ ": ProgramImpl::Optimize"; )
 
             for (auto arg_var : j_proc->input_vars) {
               call_i->arg_vars.AddUse(arg_var);

@@ -104,8 +104,6 @@ QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
 
-QueryView::QueryView(const QueryView &view) : QueryView(view.impl) {}
-
 QueryView::QueryView(const QueryDelete &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QuerySelect &view) : QueryView(view.impl) {}

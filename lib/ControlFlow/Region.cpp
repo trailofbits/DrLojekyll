@@ -48,10 +48,22 @@ Node<ProgramInductionRegion> *Node<ProgramRegion>::AsInduction(void) noexcept {
 
 // Returns the lexical level of this node.
 unsigned Node<ProgramRegion>::Depth(void) const noexcept {
-  if (parent == containing_procedure || parent == this) {
+  if (parent == containing_procedure || parent == this || !parent) {
     return 0u;
   } else {
     return parent->Depth() + 1u;
+  }
+}
+
+// Returns the lexical level of this node.
+unsigned Node<ProgramRegion>::CachedDepth(void) noexcept {
+  if (depth) {
+    return depth;
+  } else if (parent == containing_procedure || parent == this || !parent) {
+    return 0u;
+  } else {
+    depth = parent->CachedDepth() + 1u;
+    return depth;
   }
 }
 
@@ -115,6 +127,7 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
     UseList<REGION> new_regions(series);
     new_regions.AddUse(this);
     for (auto later_region : series->regions) {
+      assert(later_region->parent == series);
       new_regions.AddUse(later_region);
     }
     series->regions.Swap(new_regions);
@@ -133,11 +146,11 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
     auto series = program->series_regions.Create(that->parent);
     that->ReplaceAllUsesWith(series);
 
-    series->regions.AddUse(this);
-    series->regions.AddUse(that);
-
     that->parent = series;
     this->parent = series;
+
+    series->AddRegion(this);
+    series->AddRegion(that);
   }
 }
 
@@ -145,8 +158,8 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
 void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
                                        Node<ProgramRegion> *that) noexcept {
   if (auto series = that->AsSeries(); series) {
-    series->regions.AddUse(this);
     this->parent = series;
+    series->AddRegion(this);
 
   } else if (auto proc = that->AsProcedure(); proc) {
     if (auto proc_body = proc->body.get(); proc_body) {
@@ -160,10 +173,10 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
   } else {
     auto series = program->series_regions.Create(that->parent);
     that->ReplaceAllUsesWith(series);
-    series->regions.AddUse(that);
-    series->regions.AddUse(this);
     that->parent = series;
     this->parent = series;
+    series->AddRegion(that);
+    series->AddRegion(this);
   }
 }
 
@@ -171,8 +184,8 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
 void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
                                            Node<ProgramRegion> *that) noexcept {
   if (auto par = that->AsParallel(); par) {
-    par->regions.AddUse(this);
     this->parent = par;
+    par->AddRegion(this);
 
   } else if (auto proc = that->AsProcedure()) {
     if (auto proc_body = proc->body.get(); proc_body) {
@@ -185,10 +198,10 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
   } else {
     auto par = program->parallel_regions.Create(that->parent);
     that->ReplaceAllUsesWith(par);
-    par->regions.AddUse(that);
-    par->regions.AddUse(this);
     that->parent = par;
     this->parent = par;
+    par->AddRegion(that);
+    par->AddRegion(this);
   }
 }
 
@@ -196,7 +209,9 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
 VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
   if (col.IsConstantOrConstantRef()) {
     auto &var = col_id_to_var[col.Id()];
-    var = impl->const_to_var[QueryConstant::From(col)];
+    if (!var) {
+      var = impl->const_to_var[QueryConstant::From(col)];
+    }
     return var;
   } else {
     return VariableForRec(col);
