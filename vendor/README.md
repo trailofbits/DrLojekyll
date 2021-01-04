@@ -20,9 +20,9 @@ To add a new vendored dependency:
 
 ## Third-party Dependency Inventory
 
-| Name          | Website                               | Version                                                                                                              | Release Date     | License      | Purpose                   |
-| ----          | -------                               | -------                                                                                                              | ------------     | -------      | -------                   |
-| Google Test   | https://github.com/google/googletest  | 1.10.0 from commit [703bd9ca](https://github.com/google/googletest/commit/703bd9caab50b139428cea1aaff9974ebee5742e)  | October 3, 2019  | BSD 3-Clause | Unit Testing              |
-| RapidCheck    | https://github.com/emil-e/rapidcheck  | Commit [7bc7d302](https://github.com/emil-e/rapidcheck/commit/7bc7d302191a4f3d0bf005692677126136e02f60)              | May 4, 2020      | BSD 2-Clause | Property-based Testing    |
-| nlohmann_json | https://github.com/nlohmann/json      | 3.9.1 from commit [db78ac1d](https://github.com/nlohmann/json/commit/db78ac1d7716f56fc9f1b030b715f872f93964e4)       | August 6, 2020   | MIT License  | JSON Avro Schema          |
-| reproc        | https://github.com/DaanDeMeyer/reproc | 14.2.1 from commit [8f70f97a](https://github.com/DaanDeMeyer/reproc/commit/8f70f97af263dd3f41bdc07f6f04e92436b1b55a) | November 8, 2020 | MIT License  | Working with subprocesses |
+| Name          | Website                               | Version                                                                                                                                   | Release Date     | License      | Purpose                   |
+| ----          | -------                               | -------                                                                                                                                   | ------------     | -------      | -------                   |
+| Google Test   | https://github.com/google/googletest  | 1.10.0 from commit [703bd9ca](https://github.com/google/googletest/commit/703bd9caab50b139428cea1aaff9974ebee5742e)                       | October 3, 2019  | BSD 3-Clause | Unit Testing              |
+| RapidCheck    | https://github.com/emil-e/rapidcheck  | Commit [7bc7d302](https://github.com/emil-e/rapidcheck/commit/7bc7d302191a4f3d0bf005692677126136e02f60)                                   | May 4, 2020      | BSD 2-Clause | Property-based Testing    |
+| nlohmann_json | https://github.com/nlohmann/json      | 3.9.1 from commit [db78ac1d](https://github.com/nlohmann/json/commit/db78ac1d7716f56fc9f1b030b715f872f93964e4)                            | August 6, 2020   | MIT License  | JSON Avro Schema          |
+| reproc        | https://github.com/DaanDeMeyer/reproc | 14.2.1 from commit [8f70f97a](https://github.com/DaanDeMeyer/reproc/commit/8f70f97af263dd3f41bdc07f6f04e92436b1b55a), with bugfix patches | November 8, 2020 | MIT License  | Working with subprocesses |
