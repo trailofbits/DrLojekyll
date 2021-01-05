@@ -1028,20 +1028,25 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
     FAILED_EQ(that_);
     return false;
   }
-  const auto num_vars = lhs_vars.Size();
+  const auto num_lhs_vars = lhs_vars.Size();
+  const auto num_rhs_vars = rhs_vars.Size();
   const auto that = op->AsTupleCompare();
-  if (!that || cmp_op != that->cmp_op || num_vars != that->lhs_vars.Size()) {
+  if (!that || cmp_op != that->cmp_op ||
+      num_lhs_vars != that->lhs_vars.Size() ||
+      num_rhs_vars != that->rhs_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
-  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
-    return false;
+  for (auto i = 0u; i < num_lhs_vars; ++i) {
+    if (!eq.Contains(lhs_vars[i], that->lhs_vars[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
   }
 
-  for (auto i = 0u; i < num_vars; ++i) {
-    if (!eq.Contains(lhs_vars[i], that->lhs_vars[i]) ||
-        !eq.Contains(rhs_vars[i], that->rhs_vars[i])) {
+  for (auto i = 0u; i < num_rhs_vars; ++i) {
+    if (!eq.Contains(rhs_vars[i], that->rhs_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
@@ -1049,6 +1054,10 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
 
   if (depth == 0) {
     return true;
+  }
+
+  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
+    return false;
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
@@ -1061,9 +1070,28 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramTupleCompareRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTupleCompareRegion");
-  assert(false);
-  return false;
+
+  // New parallel region for merged bodies into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  auto this_body = body.get();
+  if (this_body) {
+    new_par->regions.AddUse(this_body);
+    this_body->parent = new_par;
+  }
+  body.Clear();
+  body.Emplace(this, new_par);
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsTupleCompare();
+    assert(merge);  // These should all be the same type
+    const auto merge_body = merge->body.get();
+    if (merge_body) {
+      new_par->regions.AddUse(merge_body);
+      merge_body->parent = new_par;
+    }
+    merge->body.Clear();
+    merge->parent = nullptr;
+  }
+  return true;
 }
 
 Node<ProgramGenerateRegion> *
