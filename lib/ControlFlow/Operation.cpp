@@ -257,28 +257,40 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsLetBinding();
-  const auto num_vars = defined_vars.Size();
-  if (!that || num_vars != that->defined_vars.Size() ||
-      (!body.get()) != (!that->body.get())) {
+  const auto num_defined_vars = defined_vars.Size();
+  const auto num_used_vars = used_vars.Size();
+  if (!that || num_defined_vars != that->defined_vars.Size() ||
+      num_used_vars != that->used_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
-  for (auto i = 0u; i < num_vars && depth != 0; ++i) {
+  for (auto i = 0u; i < num_used_vars; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
   }
 
+  for (auto i = 0u; i < num_defined_vars; ++i) {
+    if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!body.get()) != (!that->body.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
 
   if (auto that_body = that->OP::body.get(); that_body) {
-    for (auto i = 0u; i < num_vars; ++i) {
+    for (auto i = 0u; i < num_defined_vars; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
-    }
-
-    if (depth == 0) {
-      return true;
     }
 
     return this->OP::body->Equals(eq, that_body, depth - 1u);
@@ -290,6 +302,8 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramLetBindingRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  // NOTE(ekilmer): Need these checks to ensure that a merge would actually be applicable
   if (defined_vars.Size() > 0 || used_vars.Size() > 0) {
     NOTE("TODO(ekilmer): Unimplemented merging of ProgramLetBinding");
     assert(false);
