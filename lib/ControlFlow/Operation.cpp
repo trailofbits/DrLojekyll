@@ -395,7 +395,8 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsTransitionState();
-  if (!that || table.get() != that->table.get()) {
+  if (!that || table.get() != that->table.get() ||
+      from_state != that->from_state || to_state != that->to_state) {
     FAILED_EQ(that_);
     return false;
   }
