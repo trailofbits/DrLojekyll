@@ -156,17 +156,11 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsVectorLoop();
+  const auto def_vars_size = defined_vars.Size();
   if (!that || !eq.Contains(vector.get(), that->vector.get()) ||
-      defined_vars.Size() != that->defined_vars.Size()) {
+      def_vars_size != that->defined_vars.Size()) {
     FAILED_EQ(that_);
     return false;
-  }
-
-  for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
-    if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
-      FAILED_EQ(that_);
-      return false;
-    }
   }
 
   if (depth == 0) {
@@ -179,7 +173,7 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
-    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+    for (auto i = 0u, max_i = def_vars_size; i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
@@ -272,13 +266,6 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  for (auto i = 0u; i < num_defined_vars; ++i) {
-    if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
-      FAILED_EQ(that_);
-      return false;
-    }
-  }
-
   if (depth == 0) {
     return true;
   }
@@ -352,17 +339,14 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (depth == 0) {
-    return true;
-  }
-
   return true;
 }
 
 const bool Node<ProgramVectorAppendRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorAppendRegion");
-  assert(false);
+
+  // NOTE(pag): This should probably always return false because this should be
+  // covered by the CSE over REGIONs.
   return false;
 }
 
@@ -422,12 +406,12 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (!body != !(that->body)) {
-    return false;
-  }
-
   if (depth == 0) {
     return true;
+  }
+
+  if (!body != !(that->body)) {
+    return false;
   }
 
   if (body) {
@@ -610,18 +594,19 @@ Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
 }
 
 uint64_t Node<ProgramVectorClearRegion>::Hash(uint32_t depth) const {
+  (void) depth;
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
-  (void) depth;
   return hash;
 }
 
 bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
                                             Node<ProgramRegion> *that_,
                                             uint32_t depth) const noexcept {
+  (void) depth;
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -695,8 +680,10 @@ bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramVectorSwapRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorSwapRegion");
-  assert(false);
+
+  // NOTE(pag): if this condition is ever satisfied, then a bug has probably
+  // been discovered.
+  assert(false && "FIX: Bug has likely been discovered.");
   return false;
 }
 
@@ -1141,22 +1128,17 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = op->AsGenerate();
+  auto used_vars_size = used_vars.Size();
+  auto defined_vars_size = defined_vars.Size();
   if (!that || this->OP::op != that->OP::op || functor != that->functor ||
-      used_vars.Size() != that->used_vars.Size() ||
-      defined_vars.Size() != that->defined_vars.Size()) {
+      used_vars_size != that->used_vars.Size() ||
+      defined_vars_size != that->defined_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
-  for (auto i = 0u, max_i = used_vars.Size(); i < max_i; ++i) {
+  for (auto i = 0u, max_i = used_vars_size; i < max_i; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
-      FAILED_EQ(that_);
-      return false;
-    }
-  }
-
-  for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
-    if (!eq.Contains(defined_vars[i], that->defined_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
@@ -1172,7 +1154,7 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
-    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+    for (auto i = 0u, max_i = defined_vars_size; i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
@@ -1185,9 +1167,33 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramGenerateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramGenerateRegion");
-  assert(false);
-  return false;
+
+  // New parallel region for merged bodies into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  auto transition_body = body.get();
+  if (transition_body) {
+    new_par->regions.AddUse(transition_body);
+    transition_body->parent = new_par;
+  }
+  body.Clear();
+  body.Emplace(this, new_par);
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsGenerate();
+    assert(merge);  // These should all be the same type
+    const auto merge_body = merge->body.get();
+    if (merge_body) {
+      new_par->regions.AddUse(merge_body);
+      merge_body->parent = new_par;
+    }
+    merge->body.Clear();
+    merge->parent = nullptr;
+
+    // Replace all defined variables in the merge with this's defined variables
+    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+      merge->defined_vars[i]->ReplaceAllUsesWith(defined_vars[i]);
+    }
+  }
+  return true;
 }
 
 Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
@@ -1253,7 +1259,7 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
   }
 
   const auto that = op->AsCall();
-  if (!that) {
+  if (!that || this->OP::op != that->OP::op) {
     FAILED_EQ(that_);
     return false;
   }
@@ -1514,12 +1520,6 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
-      !this->unknown_body != !that->unknown_body) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
   const auto num_cols = this->col_values.Size();
   for (auto i = 0u; i < num_cols; ++i) {
     if (!eq.Contains(this->col_values[i], that->col_values[i])) {
@@ -1532,6 +1532,12 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
     return true;
   }
   auto next_depth = depth - 1;
+
+  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
+      !this->unknown_body != !that->unknown_body) {
+    FAILED_EQ(that_);
+    return false;
+  }
 
   if ((body && !body->Equals(eq, that->body.get(), next_depth)) ||
       (absent_body &&

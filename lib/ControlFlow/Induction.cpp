@@ -59,16 +59,16 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
   // One (but not both) of the inductions has a null output region.
   if ((!output_region && that->output_region) ||
       (output_region && !that->output_region)) {
     return false;
   }
-
-  if (depth == 0) {
-    return true;
-  }
-  auto next_depth = depth - 1;
 
   // Their vectors (after possible renaming) are not the same.
   for (auto i = 0u; i < num_vectors; ++i) {

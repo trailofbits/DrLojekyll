@@ -12,7 +12,7 @@ Node<ProgramParallelRegion>::AsParallel(void) noexcept {
 }
 
 uint64_t Node<ProgramParallelRegion>::Hash(uint32_t depth) const {
-  uint64_t hash = 0u;
+  uint64_t hash = 193u;
   if (depth == 0) {
     return hash;
   }
