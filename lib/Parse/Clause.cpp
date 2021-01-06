@@ -273,7 +273,15 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
       case 2:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          (void) CreateVariable(clause.get(), tok, true, false);
+          auto param_var = CreateVariable(clause.get(), tok, true, false);
+          auto param_use = new Node<ParsedUse<ParsedClause>>(
+              UseKind::kParameter, param_var, clause.get());
+
+          if (!clause->parameter_uses.empty()) {
+            clause->parameter_uses.back()->next = param_use;
+          }
+          clause->parameter_uses.emplace_back(param_use);
+          param_var->context->parameter_uses.push_back(param_use);
 
           state = 3;
           continue;

@@ -329,6 +329,8 @@ class Node<ParsedClause> {
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;
 
+  std::vector<std::unique_ptr<Node<ParsedUse<ParsedClause>>>> parameter_uses;
+
   std::vector<std::unique_ptr<Node<ParsedComparison>>> comparisons;
   std::vector<std::unique_ptr<Node<ParsedAssignment>>> assignments;
   std::vector<std::unique_ptr<Node<ParsedAggregate>>> aggregates;

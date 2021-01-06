@@ -24,6 +24,10 @@ UseKind UseAccessor::GetUseKind(void *impl_) {
 
 const void *UseAccessor::GetUser(void *impl_) {
   switch (reinterpret_cast<UseBase *>(impl_)->use_kind) {
+    case UseKind::kParameter: {
+      auto impl = reinterpret_cast<Node<ParsedUse<ParsedClause>> *>(impl_);
+      return &(impl->user);
+    }
     case UseKind::kArgument: {
       auto impl = reinterpret_cast<Node<ParsedUse<ParsedPredicate>> *>(impl_);
       return &(impl->user);
