@@ -110,6 +110,7 @@ class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
 
 // Type of a use.
 enum class UseKind {
+  kParameter,
   kArgument,
   kAssignmentLHS,
   kComparisonLHS,

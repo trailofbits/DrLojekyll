@@ -491,6 +491,7 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
   // Go find each clause head variable in the columns of `view`.
   for (auto var : clause.Parameters()) {
+
     const auto id = VarId(context, var);
     (void) tuple->columns.Create(var, tuple, id, col_index++);
 
@@ -1242,12 +1243,22 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
                     static_cast<uint32_t>(hash >> 32u);
   }
 
+  auto do_var = [&] (ParsedVariable var) {
+    if (1u == var.NumUses() && !var.IsUnnamed()) {
+      log.Append(clause.SpellingRange(), var.SpellingRange())
+          << "Named variable '" << var << "' is only used once; you should use "
+          << "either '_' or prefix the name with an '_' to explicitly mark it "
+          << "as anonymous";
+    }
+    CreateVarId(context, var);
+  };
+
   // NOTE(pag): This applies to body variables, not parameters.
   for (auto var : clause.Parameters()) {
-    CreateVarId(context, var);
+    do_var(var);
   }
   for (auto var : clause.Variables()) {
-    CreateVarId(context, var);
+    do_var(var);
   }
 
   context.sealed = true;
