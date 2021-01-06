@@ -316,6 +316,7 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
 bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
                                              Node<ProgramRegion> *that_,
                                              uint32_t depth) const noexcept {
+  (void) depth;
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
