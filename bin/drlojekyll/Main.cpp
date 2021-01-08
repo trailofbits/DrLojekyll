@@ -3,7 +3,9 @@
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/ControlFlow/Format.h>
+#include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Format.h>
+#include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/Format.h>
@@ -102,7 +104,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
     }
   }
 
-  // Round-trip test of the parser.
+  // Round-trip test of the parser in debug builds.
 #ifndef NDEBUG
   std::stringstream ss;
   do {

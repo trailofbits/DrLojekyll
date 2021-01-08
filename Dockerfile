@@ -46,6 +46,7 @@ RUN cmake -G Ninja \
       -DCMAKE_C_COMPILER=gcc-8 \
       -DCMAKE_CXX_COMPILER=g++-8 \
       -DWARNINGS_AS_ERRORS=1 \
+      -DENABLE_TEST_MYPY_CHECKS=OFF \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       . && \
     cmake --build build && \

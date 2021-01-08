@@ -15,7 +15,6 @@
 
 namespace hyde {
 
-class DisplayManager;
 class Parser;
 class ParserImpl;
 

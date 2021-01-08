@@ -203,6 +203,10 @@ std::string_view DisplayManager::DisplayName(DisplayPosition position) const {
       return impl->displays[display_id]->Name();
     }
   }
+  // FIXME(blarsen): throw an exception here instead?
+  //
+  // Otherwise, you get silent success, probably because you have mixed up
+  // `DisplayManager` objects in your program.
   return std::string_view();
 }
 

@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.17)
 
-project(DrLojekyll LANGUAGES CXX)
+project(DrLojekyll LANGUAGES C CXX)
 
 enable_testing()
 
@@ -43,9 +43,34 @@ else()
 endif()
 
 # --------------------------------------------
-# Dependencies -------------------------------
+# dependencies -------------------------------
 # --------------------------------------------
+
+# Make sure cmake can find our custom Find* modules.
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+if(ENABLE_TESTS)
+  # Google Test --------------------------------
+  #
+  # Cribbed from https://github.com/google/googletest/tree/master/googletest
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  add_subdirectory(vendor/googletest-release-1.10.0
+      EXCLUDE_FROM_ALL)
+
+  # rapidcheck ---------------------------------
+  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
+  add_subdirectory(vendor/rapidcheck
+      EXCLUDE_FROM_ALL)
+endif()
+
+# reproc -------------------------------------
+set(REPROC++ ON CACHE BOOL "" FORCE)
+set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(REPROC_TEST OFF CACHE BOOL "" FORCE)
+# set(REPROC_OBJECT_LIBRARIES ON)
+add_subdirectory(vendor/reproc-14.2.1)
+
+# nlohmann_json --------------------------------
 if(DRLOG_USE_EXTERNAL_JSON)
   find_package(nlohmann_json 3.9.0 CONFIG REQUIRED)
 else()
@@ -137,28 +162,14 @@ install(
 )
 
 # --------------------------------------------
-# vendored dependencies ----------------------
-# --------------------------------------------
-if(ENABLE_TESTS)
-  # Google Test --------------------------------
-  #
-  # Cribbed from https://github.com/google/googletest/tree/master/googletest
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/googletest-release-1.10.0
-      EXCLUDE_FROM_ALL)
-
-  # rapidcheck ---------------------------------
-  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/rapidcheck
-      EXCLUDE_FROM_ALL)
-endif()
-
-# --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
 add_subdirectory(lib)
 add_subdirectory(bin)
-add_subdirectory(fuzz)
+
+if(ENABLE_LIBFUZZER)
+  add_subdirectory(fuzz)
+endif()
 
 if(ENABLE_TESTS)
   add_subdirectory(tests)

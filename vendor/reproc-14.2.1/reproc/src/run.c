@@ -1,0 +1,48 @@
+#include <reproc/run.h>
+
+#include <reproc/drain.h>
+
+int reproc_run(const char *const *argv, reproc_options options)
+{
+  if (!options.redirect.discard && !options.redirect.file &&
+      !options.redirect.path) {
+    options.redirect.parent = true;
+  }
+
+  return reproc_run_ex(argv, options, REPROC_SINK_NULL, REPROC_SINK_NULL);
+}
+
+int reproc_run_ex(const char *const *argv,
+                  reproc_options options, // lgtm [cpp/large-parameter]
+                  reproc_sink out,
+                  reproc_sink err)
+{
+  reproc_t *process = NULL;
+  int r = REPROC_ENOMEM;
+
+  process = reproc_new();
+  if (process == NULL) {
+    goto finish;
+  }
+
+  r = reproc_start(process, argv, options);
+  // If we're in a forked child process, return immediately as well.
+  if (r <= 0) {
+    goto finish;
+  }
+
+  r = reproc_drain(process, out, err);
+  if (r < 0) {
+    goto finish;
+  }
+
+  r = reproc_stop(process, options.stop);
+  if (r < 0) {
+    goto finish;
+  }
+
+finish:
+  reproc_destroy(process);
+
+  return r;
+}

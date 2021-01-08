@@ -14,7 +14,7 @@ add_executable(unittests
     Parsing.cpp
     )
 
-option(ENABLE_TEST_MYPY_CHECKS "Test and verify generated Python code using Mypy" OFF)
+option(ENABLE_TEST_MYPY_CHECKS "Test and verify generated Python code using Mypy" ON)
 if (ENABLE_TEST_MYPY_CHECKS)
     message(STATUS "Enabled testing and verification of generated Python code using Mypy")
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)

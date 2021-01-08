@@ -13,6 +13,10 @@
 # comments
 "; "
 
+# pragmas
+"@highlight "
+"@product "
+
 # scoping / exports / imports
 "#local "
 "#export "
@@ -46,11 +50,22 @@
 "#epilogue "
 "<! "
 "!> "
+"```c++"
+"```python"
+"```"
+
+# functors
+"#functor "
+" range(.) "
+" range(+) "
+" range(*) "
+" range(?) "
 
 # other directives
 "#query "
 "#message "
-"#functor "
+"#foreign "
+"#constant "
 
 # keywords
 "aggregate "
