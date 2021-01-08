@@ -5,4 +5,4 @@
 #local name(Name)
 
 name(Name) : add_name(Name).
-name_pairs(Name1, Name2) : name(Name1), name(Name2), Name1 != Name2.
+name_pairs(Name1, Name2) @product : name(Name1), name(Name2), Name1 != Name2.

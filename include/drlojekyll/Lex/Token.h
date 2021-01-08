@@ -297,7 +297,14 @@ enum class Lexeme : uint8_t {
   // `@highlight` is a debugging pragma, used to mark data flow nodes associated
   // with a particular clause body as "highlighted" so they are easier to
   // spot in the data flow IR visualizations.
-  kPragmaDebugHighlight
+  kPragmaDebugHighlight,
+
+  // `@product` is a pragma that tells Dr. Lojekyll that the user is aware that
+  // a particular clause is expected to introduce a cross-product, and that this
+  // is in fact their intention. It's can be easy to accidentally introduce
+  // cross-products, and their performance implications are severe, and so we
+  // require cross-products to be opt-in.
+  kPragmaPerfProduct,
 };
 
 enum class TypeKind : uint32_t;

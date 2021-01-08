@@ -459,6 +459,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaDebugHighlight);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
+      } else if (impl->data == "@product") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaPerfProduct);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);

@@ -325,6 +325,11 @@ class Node<ParsedClause> {
   // representation to highlight the nodes associated with this clause body.
   Token highlight;
 
+  // Signals whether or not the programmer has explicitly allowed the compiler
+  // to generate a cross-product (if needed) when building the data flow for
+  // this particular clause.
+  Token product;
+
   // Variables used in this clause.
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;

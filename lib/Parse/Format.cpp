@@ -195,6 +195,9 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
   if (clause.IsHighlighted()) {
     os << " @highlight";
   }
+  if (clause.CrossProductsArePermitted()) {
+    os << " @product";
+  }
   os << ParsedClauseBody(clause) << ".";
   return os;
 }
