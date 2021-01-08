@@ -348,6 +348,7 @@ cannot be defined for functors.
 
 ```antlr
 clause_head_pragma: "@highlight" ;
+clause_head_pragma: "@product" ;
 clause_head_pragma: ;
 
 clause: atom "(" named_var_list ")" clause_head_pragma "." ;

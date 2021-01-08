@@ -539,8 +539,31 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Create a PRODUCT from multiple VIEWs.
-static void CreateProduct(QueryImpl *query, ParsedClause clause,
+static bool CreateProduct(QueryImpl *query, ParsedClause clause,
                           ClauseContext &context, const ErrorLog &log) {
+
+  if (!clause.CrossProductsArePermitted()) {
+    auto err = log.Append(clause.SpellingRange(), clause.SpellingRange());
+    err << "This clause requires a cross-product, but has not been annotated "
+        << "with a '@product' pragma (placed between the clause head and "
+        << "colon)";
+
+    auto num_views = context.views.size();
+    auto i = 0u;
+    for (auto view : context.views) {
+      for (auto col : view->columns) {
+        if (!col->var.IsUnnamed()) {
+          err.Note(clause.SpellingRange(), col->var.SpellingRange())
+              << "This variable contributes to view " << (num_views - i)
+              << " of the " << num_views
+              << " views that need to be combined into a cross product";
+        }
+      }
+      ++i;
+    }
+    return false;
+  }
+
   auto join = query->joins.Create();
   join->color = context.color;
   auto col_index = 0u;
@@ -573,6 +596,7 @@ static void CreateProduct(QueryImpl *query, ParsedClause clause,
 
   context.views.clear();
   context.views.push_back(GuardViewWithFilter(query, clause, context, join));
+  return true;
 }
 
 // Try to apply `pred`, which is a functor, given `view` as the source of the
@@ -1498,9 +1522,14 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     // We failed to apply functors/negations, and were unable to find a join,
     // so create a cross-product if there are at least two views.
     if (1u < pred_views.size()) {
-      CreateProduct(query, clause, context, log);
-      changed = true;
-      continue;
+      if (CreateProduct(query, clause, context, log)) {
+        changed = true;
+        continue;
+
+      // Cross-products aren't permitted in that clause, report an error.
+      } else {
+        return false;
+      }
     }
   }
 

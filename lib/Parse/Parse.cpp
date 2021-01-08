@@ -896,6 +896,12 @@ bool ParsedClause::IsHighlighted(void) const noexcept {
   return impl->highlight.IsValid();
 }
 
+// Are cross-products permitted when building the data flow representation
+// for this clause?
+bool ParsedClause::CrossProductsArePermitted(void) const noexcept {
+  return impl->product.IsValid();
+}
+
 // Returns the arity of this clause.
 unsigned ParsedClause::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->head_variables.size());

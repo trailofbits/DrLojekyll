@@ -362,13 +362,15 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 9;
           continue;
 
+        // Pragma to add a highlighting color to nodes in the GraphViz DOT
+        // digraph format output of the dataflow representation.
         } else if (Lexeme::kPragmaDebugHighlight == lexeme) {
           if (clause->highlight.IsValid()) {
             auto err = context->error_log.Append(scope_range, tok_range);
             err << "Cannot repeat pragma '" << tok << "'";
 
             err.Note(scope_range, clause->highlight.SpellingRange())
-                << "Previous use of the pragma was here";
+                << "Previous use of the '" << tok << "' pragma was here";
             return;
 
           } else {
@@ -377,6 +379,24 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             continue;
           }
 
+        // Programmer annotation that gives the compiler permission to generate
+        // cross-product nodes in the data flow of a particular clause. Cross-
+        // products have bad runtime performance, so this acts as an explicit
+        // opt-in to prevent their accidental introduction.
+        } else if (Lexeme::kPragmaPerfProduct == lexeme) {
+          if (clause->product.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Cannot repeat pragma '" << tok << "'";
+
+            err.Note(scope_range, clause->product.SpellingRange())
+                << "Previous use of the '" << tok << "' pragma was here";
+            return;
+
+          } else {
+            clause->product = tok;
+            state = 4;
+            continue;
+          }
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected colon to denote the beginning of the body "
