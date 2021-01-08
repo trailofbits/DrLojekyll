@@ -109,6 +109,7 @@ class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
 
 // Type of a use.
 enum class UseKind {
+  kParameter,
   kArgument,
   kAssignmentLHS,
   kComparisonLHS,
@@ -410,6 +411,10 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
   // Should this clause be highlighted in the data flow representation?
   bool IsHighlighted(void) const noexcept;
+
+  // Are cross-products permitted when building the data flow representation
+  // for this clause?
+  bool CrossProductsArePermitted(void) const noexcept;
 
   // Returns the arity of this clause.
   unsigned Arity(void) const noexcept;

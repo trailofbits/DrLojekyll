@@ -491,6 +491,7 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 
   // Go find each clause head variable in the columns of `view`.
   for (auto var : clause.Parameters()) {
+
     const auto id = VarId(context, var);
     (void) tuple->columns.Create(var, tuple, id, col_index++);
 
@@ -538,8 +539,31 @@ static VIEW *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Create a PRODUCT from multiple VIEWs.
-static void CreateProduct(QueryImpl *query, ParsedClause clause,
+static bool CreateProduct(QueryImpl *query, ParsedClause clause,
                           ClauseContext &context, const ErrorLog &log) {
+
+  if (!clause.CrossProductsArePermitted()) {
+    auto err = log.Append(clause.SpellingRange(), clause.SpellingRange());
+    err << "This clause requires a cross-product, but has not been annotated "
+        << "with a '@product' pragma (placed between the clause head and "
+        << "colon)";
+
+    auto num_views = context.views.size();
+    auto i = 0u;
+    for (auto view : context.views) {
+      for (auto col : view->columns) {
+        if (!col->var.IsUnnamed()) {
+          err.Note(clause.SpellingRange(), col->var.SpellingRange())
+              << "This variable contributes to view " << (num_views - i)
+              << " of the " << num_views
+              << " views that need to be combined into a cross product";
+        }
+      }
+      ++i;
+    }
+    return false;
+  }
+
   auto join = query->joins.Create();
   join->color = context.color;
   auto col_index = 0u;
@@ -572,6 +596,7 @@ static void CreateProduct(QueryImpl *query, ParsedClause clause,
 
   context.views.clear();
   context.views.push_back(GuardViewWithFilter(query, clause, context, join));
+  return true;
 }
 
 // Try to apply `pred`, which is a functor, given `view` as the source of the
@@ -1242,12 +1267,22 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
                     static_cast<uint32_t>(hash >> 32u);
   }
 
+  auto do_var = [&] (ParsedVariable var) {
+    if (1u == var.NumUses() && !var.IsUnnamed()) {
+      log.Append(clause.SpellingRange(), var.SpellingRange())
+          << "Named variable '" << var << "' is only used once; you should use "
+          << "either '_' or prefix the name with an '_' to explicitly mark it "
+          << "as anonymous";
+    }
+    CreateVarId(context, var);
+  };
+
   // NOTE(pag): This applies to body variables, not parameters.
   for (auto var : clause.Parameters()) {
-    CreateVarId(context, var);
+    do_var(var);
   }
   for (auto var : clause.Variables()) {
-    CreateVarId(context, var);
+    do_var(var);
   }
 
   context.sealed = true;
@@ -1487,9 +1522,14 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     // We failed to apply functors/negations, and were unable to find a join,
     // so create a cross-product if there are at least two views.
     if (1u < pred_views.size()) {
-      CreateProduct(query, clause, context, log);
-      changed = true;
-      continue;
+      if (CreateProduct(query, clause, context, log)) {
+        changed = true;
+        continue;
+
+      // Cross-products aren't permitted in that clause, report an error.
+      } else {
+        return false;
+      }
     }
   }
 

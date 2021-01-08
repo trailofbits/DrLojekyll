@@ -8,4 +8,4 @@
 
 one(1).
 impossible(1, B) : input(B), one(B), B=2.
-output(A) : impossible(A, B).
+output(A) : impossible(A, _B).

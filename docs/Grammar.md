@@ -276,9 +276,10 @@ param_list_3: binding_specifier type named_var ;
 
 atom: r"[a-z][A-Za-z0-9_]*" ;
 named_var: r"[A-Z][A-Za-z0-9_]*" ;
+anon_var: r"_[A-Za-z0-9_]*" ;
 
 var: named_var ;
-var: "_" ;
+var: anon_var ;
 
 binding_specifier: "bound" ;
 binding_specifier: "free" ;
@@ -347,6 +348,7 @@ cannot be defined for functors.
 
 ```antlr
 clause_head_pragma: "@highlight" ;
+clause_head_pragma: "@product" ;
 clause_head_pragma: ;
 
 clause: atom "(" named_var_list ")" clause_head_pragma "." ;

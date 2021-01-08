@@ -24,6 +24,10 @@ UseKind UseAccessor::GetUseKind(void *impl_) {
 
 const void *UseAccessor::GetUser(void *impl_) {
   switch (reinterpret_cast<UseBase *>(impl_)->use_kind) {
+    case UseKind::kParameter: {
+      auto impl = reinterpret_cast<Node<ParsedUse<ParsedClause>> *>(impl_);
+      return &(impl->user);
+    }
     case UseKind::kArgument: {
       auto impl = reinterpret_cast<Node<ParsedUse<ParsedPredicate>> *>(impl_);
       return &(impl->user);
@@ -890,6 +894,12 @@ DisplayRange ParsedClause::SpellingRange(void) const noexcept {
 // Should this clause be highlighted in the data flow representation?
 bool ParsedClause::IsHighlighted(void) const noexcept {
   return impl->highlight.IsValid();
+}
+
+// Are cross-products permitted when building the data flow representation
+// for this clause?
+bool ParsedClause::CrossProductsArePermitted(void) const noexcept {
+  return impl->product.IsValid();
 }
 
 // Returns the arity of this clause.

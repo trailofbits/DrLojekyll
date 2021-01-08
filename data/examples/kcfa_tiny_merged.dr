@@ -31,34 +31,34 @@ reaches_cfg(X, X, X) : prog(X).
 time(X, X) : prog(X).
 
 common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1)
-  : app(Id,Idf,Ida0,Ida1),
-    aeval(Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
-    aeval(Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
-    aeval(Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
+  : app(Id,_Idf,_Ida0,_Ida1),
+    aeval(_Id_f,T0,T1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(_Id_a0,T0,T1,A0_lam,A0_t0,A0_t1),
+    aeval(_Id_a1,T0,T1,A1_lam,A0_t0,A0_t1),                ; a1_t0,a1_t1
     lam(Clo_lam,X,Y,Id_body),
     reaches_cfg(Id,T0,T1).
 
 ; with an app step,
 store(X,Id,T0,A0_lam,A0_t0,A0_t1)
-  : common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1).
+  : common_body(X,_Y,Id,_Id_body,T0,_T1,_Clo_lam,_Clo_t0,_Clo_t1,A0_lam,_A1_lam,A0_t0,A0_t1).
 
 store(Y,Id,T0,A1_lam,A0_t0,A0_t1)
-  : common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1).
+  : common_body(_X,Y,Id,_Id_body,T0,_T1,_Clo_lam,_Clo_t0,_Clo_t1,_A0_lam,A1_lam,A0_t0,A0_t1).
 
 step(Id,T0,T1,Id_body,Id,T0,Clo_lam,Clo_t0,Clo_t1)
-  : common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1).
+  : common_body(_X,_Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,_A0_lam,_A1_lam,_A0_t0,_A0_t1).
 
 reaches_cfg(Id_body,Id,T0)
-  : common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1).
+  : common_body(_X,_Y,Id,Id_body,T0,_T1,_Clo_lam,_Clo_t0,_Clo_t1,_A0_lam,_A1_lam,_A0_t0,_A0_t1).
 
 reaches_clo(Clo_lam,Clo_t0,Clo_t1)
-  : common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1).
+  : common_body(_X,_Y,_Id,_Id_body,_T0,_T1,Clo_lam,Clo_t0,Clo_t1,_A0_lam,_A1_lam,_A0_t0,_A0_t1).
 
 time(Id,T0)
-  : common_body(X,Y,Id,Id_body,T0,T1,Clo_lam,Clo_t0,Clo_t1,A0_lam,A1_lam,A0_t0,A0_t1).
+  : common_body(_X,_Y,Id,_Id_body,T0,_T1,_Clo_lam,_Clo_t0,_Clo_t1,_A0_lam,_A1_lam,_A0_t0,_A0_t1).
 
 ; and eval of lambdas,
-aeval(Id,T0,T1,Id,T0,T1) : time(T0,T1), lam(Id,_,_,_).
+aeval(Id,T0,T1,Id,T0,T1) @product : time(T0,T1), lam(Id,_,_,_).
 
 ; and eval of local parameter x at t,
 aeval(Ref_id,T0,T1,Clo_lam,Clo_t0,Clo_t1)
@@ -67,10 +67,10 @@ aeval(Ref_id,T0,T1,Clo_lam,Clo_t0,Clo_t1)
     store(X,T0,T1,Clo_lam,Clo_t0,Clo_t1).
 
 ; otherise, propagate free variables
-aeval(Id_ref,T0,T1,Clo_lam,Clo_t0,Clo_t1)
-  : step(Id_call,_,_,Id_body,T0,T1,Tclo_lam,To_clo_t0,To_clo_t1),
-    lam(Tclo_lam,P0,P1,Tclo_lam_body),
+aeval(Id_ref,T0,T1,Clo_lam,Clo_t0,Clo_t1) @product
+  : step(_Id_call,_,_,_Id_body,T0,T1,Tclo_lam,_To_clo_t0,_To_clo_t1),
+    lam(Tclo_lam,P0,P1,_Tclo_lam_body),
     var(Id_ref,X),
-    aeval(Id_ref,Lam_t0,Lam_t1,Clo_lam,Clo_t0,Clo_t1),
+    aeval(Id_ref,_Lam_t0,_Lam_t1,Clo_lam,Clo_t0,Clo_t1),
     P0 != X,
     P1 != X.

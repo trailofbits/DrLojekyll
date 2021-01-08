@@ -18,5 +18,5 @@ fibonnaci_loop(I, PN, CN, N)
     , I < N.
 
 fibonnaci(N, CN)
-    : fibonnaci_loop(_, _, CN, N)
+    : fibonnaci_loop(I, _, CN, N)
     , I = N.

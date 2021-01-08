@@ -459,6 +459,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaDebugHighlight);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
+      } else if (impl->data == "@product") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaPerfProduct);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);
@@ -512,6 +517,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Variables.
     case '_':
+      tentative_lexeme = Lexeme::kIdentifierUnnamedVariable;
+      goto accumulate_directive_atom_keyword_variable;
     case 'A':
     case 'B':
     case 'C':
@@ -545,11 +552,12 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       accumulate_if(
           [](char next_ch) { return next_ch == '_' || std::isalnum(next_ch); });
 
+      if (impl->data[0] == '_') {
+        assert(tentative_lexeme == Lexeme::kIdentifierUnnamedVariable);
+      }
+
       switch (impl->data.size()) {
         case 1:
-          if (impl->data[0] == '_') {
-            tentative_lexeme = Lexeme::kIdentifierUnnamedVariable;
-          }
           break;
 
         case 2:
@@ -733,8 +741,18 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       } else if (tentative_lexeme == Lexeme::kIdentifierUnnamedVariable) {
         auto &ident = ret.As<lex::IdentifierToken>();
         ident.Store<Lexeme>(tentative_lexeme);
-        ident.Store<lex::SpellingWidth>(1u);  // Length of `_`.
-        ident.Store<lex::Id>(1u);  // See `DisplayManager::Impl::Impl`.
+
+        // A normal unnamed variable.
+        if (1u == impl->data.size()) {
+          ident.Store<lex::SpellingWidth>(1u);  // Length of `_`.
+          ident.Store<lex::Id>(1u);  // See `DisplayManager::Impl::Impl`.
+
+        // A "named" unnamed variable, e.g. `_foo`. Re-uses of the same unnamed
+        // variable, even within the same clause, are treated as distinct.
+        } else {
+          ident.Store<lex::SpellingWidth>(impl->data.size());
+          ident.Store<lex::Id>(string_pool.InternString(impl->data));
+        }
 
       } else {
         auto &basic = ret.As<lex::BasicToken>();
