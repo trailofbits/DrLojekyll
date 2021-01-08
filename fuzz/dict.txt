@@ -15,6 +15,7 @@
 
 # pragmas
 "@highlight "
+"@product "
 
 # scoping / exports / imports
 "#local "
