@@ -189,16 +189,16 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
         }
 
       case 6:
-        if (Lexeme::kKeywordRange == lexeme) {
+        if (Lexeme::kPragmaPerfRange == lexeme) {
           if (functor->range_begin_opt.IsValid()) {
             auto err = context->error_log.Append(scope_range, tok_range);
-            err << "Unexpected 'range' attribute here; functor " << name
+            err << "Unexpected '@range' pragma here; functor " << name
                 << " was already specified with a range";
 
             DisplayRange prev_range(functor->range_begin_opt.Position(),
                                     functor->range_end_opt.NextPosition());
             err.Note(scope_range, prev_range)
-                << "Previous 'range' attribute was here";
+                << "Previous '@range' pragma was here";
 
             RemoveDecl<ParsedFunctor>(std::move(functor));
             return;
@@ -209,7 +209,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
             continue;
           }
 
-        } else if (Lexeme::kKeywordImpure == lexeme) {
+        } else if (Lexeme::kPragmaHintImpure == lexeme) {
           if (functor->is_pure) {
             impure = tok;
             functor->is_pure = false;
@@ -218,11 +218,11 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
           } else {
             auto err = context->error_log.Append(scope_range, tok_range);
-            err << "Unexpected 'impure' attribute here; functor " << name
+            err << "Unexpected '@impure' pragma here; functor " << name
                 << " was already marked as impure";
 
             err.Note(scope_range, impure.SpellingRange())
-                << "Previous 'impure' attribute was here";
+                << "Previous '@impure' pragma was here";
 
             RemoveDecl<ParsedFunctor>(std::move(functor));
             return;
@@ -230,7 +230,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected 'range' specifier or 'impure' attribute here, "
+              << "Expected '@range' pragma or '@impure' pragma here, "
               << "but got '" << tok << "' instead";
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;

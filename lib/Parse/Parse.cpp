@@ -791,7 +791,7 @@ unsigned ParsedDeclaration::NumDeletionClauses(void) const noexcept {
 }
 
 bool ParsedDeclaration::IsInline(void) const noexcept {
-  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
+  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
 std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
@@ -1101,7 +1101,7 @@ unsigned ParsedLocal::NumNegatedUses(void) const noexcept {
 }
 
 bool ParsedLocal::IsInline(void) const noexcept {
-  return impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
+  return impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
 NodeRange<ParsedClause> ParsedLocal::Clauses(void) const {

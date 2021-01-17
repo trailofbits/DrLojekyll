@@ -639,7 +639,9 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   //            persisted then it has been. If `view` tests any conditions, then
   //            we evaluate those *after* persisting its data, so that if the
   //            state of the conditions changes, then we can send through the
-  //
+  //            data that wasn't sent through (if the condition wasn't
+  //            previously satisfied), or delete the data that no longer
+  //            satisfies the condition.
 
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();

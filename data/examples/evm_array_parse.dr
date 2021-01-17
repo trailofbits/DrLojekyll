@@ -6,12 +6,12 @@
 
 #query type_name(free ASTNode BaseType)
 
-#functor right_corner(bound ASTNode Node, free Token RightCorner) range(.)
+#functor right_corner(bound ASTNode Node, free Token RightCorner) @range(.)
 #message next_token(Token Tok, Token NextTok)
-#functor lexeme_of_token(bound Token Tok, free Lexeme L) range(.)
+#functor lexeme_of_token(bound Token Tok, free Lexeme L) @range(.)
 #message expression_starting_at(Token Tok, ASTNode Node)
-#functor build_sized_array_type(bound ASTNode BaseType, bound Token LSquare, bound ASTNode SizeExr, bound Token RSquare, free ASTNode ArrayNode) range(.)
-#functor build_empty_array_type(bound ASTNode BaseType, bound Token LSquare, bound Token RSquare, free ASTNode ArrayNode) range(.)
+#functor build_sized_array_type(bound ASTNode BaseType, bound Token LSquare, bound ASTNode SizeExr, bound Token RSquare, free ASTNode ArrayNode) @range(.)
+#functor build_empty_array_type(bound ASTNode BaseType, bound Token LSquare, bound Token RSquare, free ASTNode ArrayNode) @range(.)
 #message other_type(ASTNode Node)
 
 #constant Lexeme PUNC_R_SQUARE ```"]"```

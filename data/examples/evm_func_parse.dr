@@ -6,13 +6,13 @@
 
 #query type_name(free ASTNode BaseType)
 
-#functor left_corner(bound ASTNode Node, free Token LeftCorner) range(.)
-#functor right_corner(bound ASTNode Node, free Token RightCorner) range(.)
+#functor left_corner(bound ASTNode Node, free Token LeftCorner) @range(.)
+#functor right_corner(bound ASTNode Node, free Token RightCorner) @range(.)
 #message next_token(Token Tok, Token NextTok)
-#functor lexeme_of_token(bound Token Tok, free Lexeme L) range(.)
-#functor start_function_type(bound Token FuncTok, bound Token LParen, free ASTNode Header) range(.)
-#functor add_function_type_param(bound ASTNode Header, bound ASTNode ParamType, free ASTNode ExtendedHeader) range(.)
-#functor finish_function_type_params(bound ASTNode Header, bound Token RParen, free ASTNode FinishedHeader) range(.)
+#functor lexeme_of_token(bound Token Tok, free Lexeme L) @range(.)
+#functor start_function_type(bound Token FuncTok, bound Token LParen, free ASTNode Header) @range(.)
+#functor add_function_type_param(bound ASTNode Header, bound ASTNode ParamType, free ASTNode ExtendedHeader) @range(.)
+#functor finish_function_type_params(bound ASTNode Header, bound Token RParen, free ASTNode FinishedHeader) @range(.)
 
 
 #message other_type(ASTNode Node)

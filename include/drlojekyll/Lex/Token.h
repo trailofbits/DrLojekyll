@@ -211,47 +211,6 @@ enum class Lexeme : uint8_t {
   // Keyword for aggregation over some relation.
   kKeywordOver,
 
-  // Used to specify the range or amplification of a functor. For example,
-  //
-  //      #functor add_i32(
-  //          bound i32 LHS,
-  //          bound i32 RHS,
-  //          free i32 Sum) range(.)
-  //
-  // Here we say that the range of `add_i32` is one-to-one. That is we will
-  // produce one and only one output for each input.
-  //
-  // Possible variations and their meanings are:
-  //
-  //      range(?)      Zero-or-one
-  //      range(*)      Zero-or-more
-  //      range(.)      One-to-one
-  //      range(+)      One-or-more
-  //
-  // The default range for a functor is conservatively assumed to be
-  // zero-or-more. If a functor has no `free` parameters then it implicitly
-  // has a zero-or-one range. Finally, an aggregating functor is not allowed
-  // to have a range specifier, though you can think of it as many-to-one.
-  kKeywordRange,
-
-  // Used with functors to tell the compiler that the outputs (free variables)
-  // of the functor, which in this case is like a map, are not pure with respect
-  // to the bound parameters. For example, a directory listng functor should be
-  // marked as impure, as the file system might have changed since the last
-  // invocation of the listing.
-  //
-  //    #functor foo(...) impure
-  //
-  // The implication is that impure functors will be "wrapped" with additional
-  // state tracking in order to ensure that output values that were previously
-  // produced but not produced by the current invocation are subsequently
-  // removed from any relations.
-  kKeywordImpure,
-
-  // Whether or not a local/export can be inlined. The inline keyword is a hint
-  // and the compiler is free the aggressively inline or ignore the hint.
-  kKeywordInline,
-
   kPuncOpenParen,
   kPuncCloseParen,
 
@@ -299,12 +258,53 @@ enum class Lexeme : uint8_t {
   // spot in the data flow IR visualizations.
   kPragmaDebugHighlight,
 
+  // Used with functors to tell the compiler that the outputs (free variables)
+  // of the functor, which in this case is like a map, are not pure with respect
+  // to the bound parameters. For example, a directory listng functor should be
+  // marked as impure, as the file system might have changed since the last
+  // invocation of the listing.
+  //
+  //    #functor foo(...) @impure
+  //
+  // The implication is that impure functors will be "wrapped" with additional
+  // state tracking in order to ensure that output values that were previously
+  // produced but not produced by the current invocation are subsequently
+  // removed from any relations.
+  kPragmaHintImpure,
+
   // `@product` is a pragma that tells Dr. Lojekyll that the user is aware that
   // a particular clause is expected to introduce a cross-product, and that this
   // is in fact their intention. It's can be easy to accidentally introduce
   // cross-products, and their performance implications are severe, and so we
   // require cross-products to be opt-in.
   kPragmaPerfProduct,
+
+  // Used to specify the range or amplification of a functor. For example,
+  //
+  //      #functor add_i32(
+  //          bound i32 LHS,
+  //          bound i32 RHS,
+  //          free i32 Sum) range(.)
+  //
+  // Here we say that the range of `add_i32` is one-to-one. That is we will
+  // produce one and only one output for each input.
+  //
+  // Possible variations and their meanings are:
+  //
+  //      range(?)      Zero-or-one
+  //      range(*)      Zero-or-more
+  //      range(.)      One-to-one
+  //      range(+)      One-or-more
+  //
+  // The default range for a functor is conservatively assumed to be
+  // zero-or-more. If a functor has no `free` parameters then it implicitly
+  // has a zero-or-one range. Finally, an aggregating functor is not allowed
+  // to have a range specifier, though you can think of it as many-to-one.
+  kPragmaPerfRange,
+
+  // Whether or not a local/export can be inlined. The inline keyword is a hint
+  // and the compiler is free the aggressively inline or ignore the hint.
+  kPragmaPerfInline,
 };
 
 enum class TypeKind : uint32_t;
