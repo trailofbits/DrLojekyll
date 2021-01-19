@@ -56,10 +56,10 @@
 
 # functors
 "#functor "
-" range(.) "
-" range(+) "
-" range(*) "
-" range(?) "
+" @range(.) "
+" @range(+) "
+" @range(*) "
+" @range(?) "
 
 # other directives
 "#query "
@@ -71,13 +71,15 @@
 "aggregate "
 "bound "
 "free "
-"impure "
-"inline "
 "mutable "
 "over "
 "summary "
 "type "
 "unordered "
+
+# Other pragmas.
+"@impure "
+"@inline "
 
 
 "( "

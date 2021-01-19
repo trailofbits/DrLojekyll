@@ -1054,8 +1054,8 @@ static bool CanImplementTopDownChecker(
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond) {
   auto &cond_var = impl->cond_ref_counts[cond];
   if (!cond_var) {
-    cond_var = impl->global_vars.Create(impl->next_id++,
-                                        VariableRole::kConditionRefCount);
+    cond_var = impl->global_vars.Create(
+        impl->next_id++, VariableRole::kConditionRefCount);
     cond_var->query_cond = cond;
   }
   return cond_var;

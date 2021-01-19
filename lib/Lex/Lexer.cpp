@@ -464,6 +464,21 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaPerfProduct);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
+      } else if (impl->data == "@impure") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaHintImpure);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else if (impl->data == "@range") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaPerfRange);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else if (impl->data == "@inline") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaPerfInline);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);
@@ -637,8 +652,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             tentative_lexeme = Lexeme::kTypeBytes;
             tentative_type_kind = TypeKind::kBytes;
 
-          } else if (impl->data == "range") {
-            tentative_lexeme = Lexeme::kKeywordRange;
           }
           break;
         case 6:
@@ -647,12 +660,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
           } else if (impl->data == "#local") {
             tentative_lexeme = Lexeme::kHashLocalDecl;
-
-          } else if (impl->data == "inline") {
-            tentative_lexeme = Lexeme::kKeywordInline;
-
-          } else if (impl->data == "impure") {
-            tentative_lexeme = Lexeme::kKeywordImpure;
           }
           break;
         case 7:
@@ -664,6 +671,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
               tentative_lexeme = Lexeme::kHashImportModuleStmt;
 
             }
+
           } else if (impl->data == "summary") {
             tentative_lexeme = Lexeme::kKeywordSummary;
 

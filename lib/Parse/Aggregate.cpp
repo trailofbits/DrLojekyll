@@ -111,7 +111,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_decl->name =
               Token::Synthetic(Lexeme::kIdentifierUnnamedAtom, tok_range);
           anon_decl->inline_attribute =
-              Token::Synthetic(Lexeme::kKeywordInline, DisplayRange());
+              Token::Synthetic(Lexeme::kPragmaPerfInline, DisplayRange());
           assert(anon_decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom);
           anon_clause_toks.push_back(anon_decl->name);
 

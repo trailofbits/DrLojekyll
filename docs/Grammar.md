@@ -257,7 +257,7 @@ query_decl: "#query" atom "(" param_list_3 ")" "\n" ;
 
 constant_decl: "#constant" foreign_type_name code_data ;
 
-maybe_inline: "inline" ;
+maybe_inline: "@inline" ;
 maybe_inline: ;
 
 
@@ -294,7 +294,7 @@ binding_specifier_2: "summary" ;
 Functor declarations support more variety than other declaration forms.
 Functors can be used for aggregates, and thus have `aggregate` and `summary`
 binding attributes along with `bound` and `free`. They can also specify
-a range, such as `range(.)` to say that the functor produces a single
+a range, such as `@range(.)` to say that the functor produces a single
 output (for the set of `free`-attributed variables) given its input
 `bound`-attributed parameters.
 
@@ -303,11 +303,11 @@ output (for the set of `free`-attributed variables) given its input
 functor_decl: "#functor" atom "(" param_list_2 ")" constraints "\n" ;
 
 constraints: ;
-constraints: "range" "(" "." ")" constraints ;
-constraints: "range" "(" "+" ")" constraints ;
-constraints: "range" "(" "*" ")" constraints ;
-constraints: "range" "(" "?" ")" constraints ;
-constraints: "impure" constraints ;
+constraints: "@range" "(" "." ")" constraints ;
+constraints: "@range" "(" "+" ")" constraints ;
+constraints: "@range" "(" "*" ")" constraints ;
+constraints: "@range" "(" "?" ")" constraints ;
+constraints: "@impure" constraints ;
 
 param_list_2: binding_specifier_2 type named_var "," param_list_2 ;
 param_list_2: binding_specifier_2 type named_var ;

@@ -1,10 +1,10 @@
 ; The purpose of this example is to see that joins "look right".
 
-#functor add_i32(bound i32 LHS, bound i32 RHS, free i32 Sum) range(.)
-#functor div_i32(bound i32 LHS, bound i32 RHS, free i32 Res) range(.)
+#functor add_i32(bound i32 LHS, bound i32 RHS, free i32 Sum) @range(.)
+#functor div_i32(bound i32 LHS, bound i32 RHS, free i32 Res) @range(.)
 #query pairwise_average_weight(bound i32 X, free i32 Avg)
 #message add_edge(i32 From, i32 To, i32 Weight)
-#functor new_weight_i32(bound i32 OldWeight, bound i32 NewWeight, free i32 NewWeightOut) range(.)
+#functor new_weight_i32(bound i32 OldWeight, bound i32 NewWeight, free i32 NewWeightOut) @range(.)
 #local edge(i32 From, i32 To)
 #local edge_weight(i32 From, i32 To, mutable(new_weight_i32) Weight)
 

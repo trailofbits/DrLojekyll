@@ -749,10 +749,10 @@ void ParserImpl::ParseLocalExport(
           return;
         }
       case 8:
-        if (Lexeme::kKeywordInline == lexeme) {
+        if (Lexeme::kPragmaPerfInline == lexeme) {
           if (local->inline_attribute.IsValid()) {
             context->error_log.Append(scope_range, tok_range)
-                << "Unexpected second 'inline' attribute on " << introducer_tok
+                << "Unexpected second '@inline' pragma on " << introducer_tok
                 << " '" << local->name << "'";
             state = 9;  // Ignore further errors, but add the local in.
             continue;
