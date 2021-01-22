@@ -60,7 +60,6 @@ class Program;
 class ProgramCallRegion;
 class ProgramReturnRegion;
 class ProgramExistenceAssertionRegion;
-class ProgramExistenceCheckRegion;
 class ProgramGenerateRegion;
 class ProgramInductionRegion;
 class ProgramLetBindingRegion;
@@ -91,7 +90,6 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramCallRegion &);
   ProgramRegion(const ProgramReturnRegion &);
   ProgramRegion(const ProgramExistenceAssertionRegion &);
-  ProgramRegion(const ProgramExistenceCheckRegion &);
   ProgramRegion(const ProgramGenerateRegion &);
   ProgramRegion(const ProgramInductionRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
@@ -114,7 +112,6 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
 
   bool IsCall(void) const noexcept;
   bool IsReturn(void) const noexcept;
-  bool IsExistenceCheck(void) const noexcept;
   bool IsExistenceAssertion(void) const noexcept;
   bool IsGenerate(void) const noexcept;
   bool IsInduction(void) const noexcept;
@@ -140,7 +137,6 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramCallRegion;
   friend class ProgramReturnRegion;
   friend class ProgramExistenceAssertionRegion;
-  friend class ProgramExistenceCheckRegion;
   friend class ProgramGenerateRegion;
   friend class ProgramInductionRegion;
   friend class ProgramLetBindingRegion;
@@ -195,6 +191,10 @@ class ProgramParallelRegion
 enum class VariableRole : int {
   kConditionRefCount,
   kConstant,
+  kConstantZero,
+  kConstantOne,
+  kConstantFalse,
+  kConstantTrue,
   kVectorVariable,
   kLetBinding,
   kJoinPivot,
@@ -229,6 +229,9 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 
   // Whether this variable is global.
   bool IsGlobal(void) const noexcept;
+
+  // Whether or not this variable is a constant.
+  bool IsConstant(void) const noexcept;
 
  private:
   using program::ProgramNode<DataVariable>::ProgramNode;
@@ -333,33 +336,6 @@ class DataVector : public program::ProgramNode<DataVector> {
   friend class ProgramVectorUniqueRegion;
 
   using program::ProgramNode<DataVector>::ProgramNode;
-};
-
-// A zero or not-zero check on some reference counters that track whether or
-// not some set of tuples exists.
-//
-// This is called an existence check because it models a `there-exists` clause,
-// e.g. `exists : foo(A).` says that if there is any `A` such that `foo(A)` is
-// `true`, then `exists` will have a non-zero value.
-class ProgramExistenceCheckRegion
-    : public program::ProgramNode<ProgramExistenceCheckRegion> {
- public:
-  static ProgramExistenceCheckRegion From(ProgramRegion) noexcept;
-
-  bool CheckForZero(void) const noexcept;
-  bool CheckForNotZero(void) const noexcept;
-
-  // List of reference count variables to check.
-  UsedNodeRange<DataVariable> ReferenceCounts(void) const;
-
-  // Return the body which is conditionally executed if all reference count
-  // variables are either all zero, or all non-zero.
-  std::optional<ProgramRegion> Body(void) const noexcept;
-
- private:
-  friend class ProgramRegion;
-
-  using program::ProgramNode<ProgramExistenceCheckRegion>::ProgramNode;
 };
 
 // Increment or decrement a reference counter, asserting that some set of tuples
@@ -1004,7 +980,6 @@ class ProgramVisitor {
   virtual void Visit(ProgramCallRegion val);
   virtual void Visit(ProgramReturnRegion val);
   virtual void Visit(ProgramExistenceAssertionRegion val);
-  virtual void Visit(ProgramExistenceCheckRegion val);
   virtual void Visit(ProgramGenerateRegion val);
   virtual void Visit(ProgramInductionRegion val);
   virtual void Visit(ProgramLetBindingRegion val);

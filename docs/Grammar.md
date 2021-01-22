@@ -143,6 +143,7 @@ type: "bytes" ;
 
 // Other.
 type: "uuid" ;
+type: "bool" ;
 type: <foreign type name> ;
 ```
 
@@ -159,10 +160,13 @@ can begin with upper or lower case alphabetic characters.
 foreign_type_name: atom ;
 foreign_type_name: variable ;
 
+foreign_decl_pragmas: ;
+foreign_decl_pragmas: "@transparent" ;
+
 foreign_decl: "#foreign" foreign_type_name ;
-foreign_decl: "#foreign" foreign_type_name code_data ;
-foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```" ;
-foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $> ;
+foreign_decl: "#foreign" foreign_type_name code_data foreign_decl_pragmas ;
+foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```" foreign_decl_pragmas ;
+foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $> foreign_decl_pragmas ;
 ```
 
 Foreign types can be forward declared, e.g. `#foreign Foo`. This lets modules

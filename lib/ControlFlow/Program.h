@@ -172,7 +172,11 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
   inline bool IsGlobal(void) const noexcept {
     switch (role) {
       case VariableRole::kConditionRefCount:
-      case VariableRole::kConstant: return true;
+      case VariableRole::kConstant:
+      case VariableRole::kConstantZero:
+      case VariableRole::kConstantOne:
+      case VariableRole::kConstantFalse:
+      case VariableRole::kConstantTrue: return true;
       default: return false;
     }
   }
@@ -382,7 +386,6 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
   virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
-  virtual Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept;
   virtual Node<ProgramExistenceAssertionRegion> *
   AsExistenceAssertion(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
@@ -762,35 +765,6 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 };
 
 using PUBLISH = Node<ProgramPublishRegion>;
-
-// Represents a positive or negative existence check.
-template <>
-class Node<ProgramExistenceCheckRegion> final
-    : public Node<ProgramOperationRegion> {
- public:
-  virtual ~Node(void);
-
-  inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
-      : Node<ProgramOperationRegion>(parent_, op_),
-        cond_vars(this) {}
-
-  void Accept(ProgramVisitor &visitor) override;
-
-  uint64_t Hash(void) const override;
-  bool IsNoOp(void) const noexcept override;
-
-  // Returns `true` if `this` and `that` are structurally equivalent (after
-  // variable renaming).
-  bool Equals(EqualitySet &eq,
-              Node<ProgramRegion> *that) const noexcept override;
-
-  Node<ProgramExistenceCheckRegion> *AsExistenceCheck(void) noexcept override;
-
-  // Variables associated with these existence checks.
-  UseList<VAR> cond_vars;
-};
-
-using EXISTS = Node<ProgramExistenceCheckRegion>;
 
 // Represents a positive or negative existence check.
 template <>
@@ -1215,12 +1189,19 @@ class ProgramImpl : public User {
         operation_regions(this),
         tables(this),
         global_vars(this),
-        const_vars(this) {}
+        const_vars(this),
+        zero(const_vars.Create(next_id++, VariableRole::kConstantZero)),
+        one(const_vars.Create(next_id++, VariableRole::kConstantOne)),
+        false_(const_vars.Create(next_id++, VariableRole::kConstantFalse)),
+        true_(const_vars.Create(next_id++, VariableRole::kConstantTrue)) {}
 
   void Optimize(void);
 
   // The data flow representation from which this was created.
   const Query query;
+
+  // Globally numbers things like procedures, variables, vectors, etc.
+  unsigned next_id{0u};
 
   // List of query entry points.
   std::vector<ProgramQuery> queries;
@@ -1232,10 +1213,17 @@ class ProgramImpl : public User {
   DefList<INDUCTION> induction_regions;
   DefList<OP> operation_regions;
   DefList<TABLE> tables;
-  DefList<VAR> global_vars;
-  unsigned next_id{0u};
 
+  // List of variables associated with globals (e.g. reference counts).
+  DefList<VAR> global_vars;
+
+  // List of variables associated with constants.
   DefList<VAR> const_vars;
+
+  VAR * const zero;
+  VAR * const one;
+  VAR * const false_;
+  VAR * const true_;
 
   // Maps constants to their global variables.
   std::unordered_map<QueryConstant, VAR *> const_to_var;

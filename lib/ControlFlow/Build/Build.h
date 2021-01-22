@@ -649,11 +649,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   // Innermost test for negative conditions.
   if (!neg_conds.empty()) {
     assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllZero);
+    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+        parent, ComparisonOperator::kEqual);
 
     for (auto cond : neg_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
     }
 
     parent->body.Emplace(parent, test);
@@ -664,11 +665,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   // Outermost test for positive conditions.
   if (!pos_conds.empty()) {
     assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllNonZero);
+    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+        parent, ComparisonOperator::kNotEqual);
 
     for (auto cond : pos_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
     }
 
     parent->body.Emplace(parent, test);

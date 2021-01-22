@@ -979,6 +979,11 @@ class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
   // `false` is none is present, or if the default `Language::kUnknown` is used.
   bool IsSpecialized(Language lang) const noexcept;
 
+  // Returns `true` if the representation of this foreign type in the target
+  // language `lang` is referentially transparent, i.e. if equality implies
+  // identity. This is the case for trivial types, e.g. integers.
+  bool IsReferentiallyTransparent(Language lang) const noexcept;
+
   // Return the prefix and suffix for construction for this language.
   std::optional<std::pair<std::string_view, std::string_view>>
   Constructor(Language lang) const noexcept;

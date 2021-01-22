@@ -15,6 +15,7 @@ class Token;
 
 enum class TypeKind : uint32_t {
   kInvalid,
+  kBoolean,
   kSigned8,
   kSigned16,
   kSigned32,

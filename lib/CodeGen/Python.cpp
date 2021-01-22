@@ -72,10 +72,18 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
 
 template <typename Stream>
 static Stream &Var(Stream &os, const DataVariable var) {
-  if (var.IsGlobal()) {
-    os << "self.";
+  switch (var.DefiningRole()) {
+    case VariableRole::kConstantZero: os << "0"; break;
+    case VariableRole::kConstantOne: os << "1"; break;
+    case VariableRole::kConstantFalse: os << "False"; break;
+    case VariableRole::kConstantTrue: os << "True"; break;
+    default:
+      if (var.IsGlobal()) {
+        os << "self.";
+      }
+      os << "var_" << var.Id();
+      break;
   }
-  os << "var_" << var.Id();
   return os;
 }
 
@@ -99,6 +107,7 @@ static const std::string_view TypeName(ParsedForeignType type) {
 // Python representation of TypeKind
 static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
   switch (kind.UnderlyingKind()) {
+    case TypeKind::kBoolean: return "bool";
     case TypeKind::kSigned8:
     case TypeKind::kSigned16:
     case TypeKind::kSigned32:
@@ -135,12 +144,25 @@ static const char *OperatorString(ComparisonOperator op) {
 }
 
 static std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
-                                      std::optional<ParsedLiteral> val) {
+                                      DataVariable var) {
+  auto val = var.Value();
   std::string_view prefix = "";
   std::string_view suffix = "";
 
+  switch (var.DefiningRole()) {
+    case VariableRole::kConstantZero: return "0";
+    case VariableRole::kConstantOne: return "1";
+    case VariableRole::kConstantFalse: return "False";
+    case VariableRole::kConstantTrue: return "True";
+    default: break;
+  }
+
   // Default value
   switch (loc.UnderlyingKind()) {
+    case TypeKind::kBoolean:
+      prefix = "bool(";
+      suffix = ")";
+      break;
     case TypeKind::kSigned8:
     case TypeKind::kSigned16:
     case TypeKind::kSigned32:
@@ -271,12 +293,12 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
   auto type = global.Type();
   os << os.Indent() << Var(os, global);
-  if (global.DefiningRole() == VariableRole::kConstant) {
+  if (global.IsConstant()) {
     os << ": Final[" << TypeName(module, type) << "] = ";
   } else {
     os << ": " << TypeName(module, type) << " = ";
   }
-  os << TypeValueOrDefault(module, type, global.Value()) << "\n\n";
+  os << TypeValueOrDefault(module, type, global) << "\n\n";
 }
 
 // Similar to DefineGlobal except has type-hint to enforce const-ness
@@ -284,7 +306,7 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
                            DataVariable global) {
   auto type = global.Type();
   os << os.Indent() << Var(os, global) << ": " << TypeName(module, type)
-     << " = " << TypeValueOrDefault(module, type, global.Value()) << "\n";
+     << " = " << TypeValueOrDefault(module, type, global) << "\n";
 }
 
 // We want to enable referential transparency in the code, so that if an Nth
@@ -506,39 +528,6 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       body->Accept(*this);
       os.PopIndent();
     }
-  }
-
-  void Visit(ProgramExistenceCheckRegion region) override {
-    os << Comment(os, region, "Program ExistenceCheck Region");
-    const auto vars = region.ReferenceCounts();
-    auto sep = "if ";
-    os << os.Indent();
-    auto seen = false;
-    for (auto var : vars) {
-      os << sep << Var(os, var);
-      if (region.CheckForZero()) {
-        os << " == 0";
-      } else if (region.CheckForNotZero()) {
-        os << " != 0";
-      } else {
-        assert(false);
-      }
-      sep = " and ";
-      seen = true;
-    }
-
-    if (seen) {
-      os << ":\n";
-    } else {
-      os << "if True:\n";
-    }
-    os.PushIndent();
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
-    } else {
-      os << os.Indent() << "pass\n";
-    }
-    os.PopIndent();
   }
 
   void Visit(ProgramGenerateRegion region) override {
@@ -884,7 +873,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void ResolveReference(DataVariable var) {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      if (var.DefiningRegion()) {
+      if (var.DefiningRegion() &&
+          !foreign_type->IsReferentiallyTransparent(Language::kPython)) {
         os << os.Indent() << Var(os, var)
            << " = self._resolve_" << foreign_type->Name()
            << '(' << Var(os, var) << ")\n";
@@ -892,6 +882,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
           case VariableRole::kConstant:
+          case VariableRole::kConstantZero:
+          case VariableRole::kConstantOne:
+          case VariableRole::kConstantFalse:
+          case VariableRole::kConstantTrue:
             break;
           default:
             assert(false);

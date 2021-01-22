@@ -30,7 +30,12 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 TypeLoc Node<DataVariable>::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kConditionRefCount:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
       return TypeKind::kUnsigned64;
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue:
+      return TypeKind::kBoolean;
     case VariableRole::kConstant:
       if (query_const) {
         return query_const->Literal().Type().Kind();

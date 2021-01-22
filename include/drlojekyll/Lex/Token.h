@@ -162,6 +162,9 @@ enum class Lexeme : uint8_t {
   kHashInlinePrologueStmt,
   kHashInlineEpilogueStmt,
 
+  // Boolean type.
+  kTypeBoolean,
+
   // Unsigned/signed integral types. `n` must be one of 8, 16, 32, or 64.
   // For example, `i32` is a signed 32-bit integer, whereas `u32` is
   // an unsigned 32-bit integer.
@@ -305,6 +308,16 @@ enum class Lexeme : uint8_t {
   // Whether or not a local/export can be inlined. The inline keyword is a hint
   // and the compiler is free the aggressively inline or ignore the hint.
   kPragmaPerfInline,
+
+  // Used to mark a foreign type as having a referentially transparent
+  // implementation, such that equality implies identity. For example:
+  //
+  //      #foreign Address ```python int``` @transparent
+  //
+  // This is a performance pragma because it reduces the code generation burden
+  // because function calls to resolve the earliest identity of an object and
+  // merge with that need not be generated.
+  kPragmaPerfTransparent
 };
 
 enum class TypeKind : uint32_t;

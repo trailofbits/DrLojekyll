@@ -57,6 +57,18 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
 
   auto report_trailing = true;
   Language last_lang = Language::kUnknown;
+  Token transparent;
+
+  auto set_transparent = [&] () {
+    type->info[static_cast<unsigned>(last_lang)].is_transparent = true;
+    if (last_lang == Language::kUnknown) {
+      for (auto &info : type->info) {
+        if (info.can_override) {
+          info.is_transparent = true;
+        }
+      }
+    }
+  };
 
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
@@ -221,9 +233,15 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             continue;
           }
 
+        } else if (Lexeme::kPragmaPerfTransparent == lexeme) {
+          transparent = tok;
+          set_transparent();
+          state = 3;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected string or non-language specific code literal here "
+              << "Expected string non-language specific code literal here "
               << "for the foreign type's constructor, got '" << tok
               << "' instead";
           state = 3;
@@ -265,7 +283,22 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
       }
 
       case 3:
-        if (report_trailing) {
+        if (Lexeme::kPragmaPerfTransparent == lexeme) {
+          if (transparent.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "The '@transparent' pragma can only be used once";
+
+            err.Note(scope_range, transparent.SpellingRange())
+                << "Previous usage of the '@transparent' pragma is here";
+
+            report_trailing = false;
+
+          } else {
+            transparent = tok;
+            set_transparent();
+          }
+
+        } else if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
               << "Unexpected trailing token '" << tok
               << "' after foreign type declaration";
@@ -342,6 +375,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           case Lexeme::kTypeUTF8:
           case Lexeme::kTypeBytes:
           case Lexeme::kTypeUUID:
+          case Lexeme::kTypeBoolean:
           case Lexeme::kTypeUn:
           case Lexeme::kTypeIn:
           case Lexeme::kTypeFn: {
