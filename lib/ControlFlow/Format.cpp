@@ -704,7 +704,18 @@ OutputStream &operator<<(OutputStream &os, Program program) {
   const auto module = program.ParsedModule();
   for (auto var : program.Constants()) {
     os << sep << os.Indent() << "const " << Type(os, module, var) << ' '
-       << var << " = " << *(var.Value());
+       << var;
+    switch (var.DefiningRole()) {
+      case VariableRole::kConstantZero: os << " = 0"; break;
+      case VariableRole::kConstantOne: os << " = 1"; break;
+      case VariableRole::kConstantFalse: os << " = false"; break;
+      case VariableRole::kConstantTrue: os << " = true"; break;
+      default:
+        if (auto val = var.Value(); val) {
+          os << " = " << *val;
+        }
+        break;
+    }
     sep = "\n\n";
   }
   for (auto var : program.GlobalVariables()) {
