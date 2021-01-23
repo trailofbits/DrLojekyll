@@ -304,6 +304,15 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
 // Similar to DefineGlobal except has type-hint to enforce const-ness
 static void DefineConstant(OutputStream &os, ParsedModule module,
                            DataVariable global) {
+  switch (global.DefiningRole()) {
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue:
+      return;
+    default:
+      break;
+  }
   auto type = global.Type();
   os << os.Indent() << Var(os, global) << ": " << TypeName(module, type)
      << " = " << TypeValueOrDefault(module, type, global) << "\n";
@@ -1748,7 +1757,6 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   PythonCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
 
-  os << os.Indent() << "return False\n";  // Just in case.
   os.PopIndent();
   os << '\n';
 }
