@@ -182,6 +182,7 @@ bool Token::IsType(void) const {
     case ::hyde::Lexeme::kTypeUTF8:
     case ::hyde::Lexeme::kTypeBytes:
     case ::hyde::Lexeme::kTypeUUID:
+    case ::hyde::Lexeme::kTypeBoolean:
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
     case ::hyde::Lexeme::kTypeFn:

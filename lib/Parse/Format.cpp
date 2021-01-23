@@ -266,6 +266,10 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
         os << " ```" << constructor->first << '$'
            << constructor->second << "```";
       }
+
+      if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
+        os << " @transparent";
+      }
     }
 
     for (auto foreign_const : type.Constants(lang)) {

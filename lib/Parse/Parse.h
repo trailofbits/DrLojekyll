@@ -515,6 +515,7 @@ class Node<ParsedForeignType> {
     std::string constructor_suffix;
     bool can_override{true};
     bool is_present{false};
+    bool is_transparent{false};
     std::vector<std::unique_ptr<Node<ParsedForeignConstant>>> constants;
   } info[kNumLanguages];
 };

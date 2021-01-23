@@ -45,6 +45,9 @@
 "f32 "
 "f64 "
 
+# other types
+"bool "
+
 # inline C++
 "#prologue "
 "#epilogue "
@@ -78,8 +81,9 @@
 "unordered "
 
 # Other pragmas.
-"@impure "
-"@inline "
+" @impure "
+" @inline "
+" @transparent "
 
 
 "( "

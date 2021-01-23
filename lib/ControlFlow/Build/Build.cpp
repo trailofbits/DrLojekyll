@@ -933,11 +933,12 @@ static bool BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
     // Innermost test for negative conditions.
     if (!neg_conds.empty()) {
-      auto test = impl->operation_regions.CreateDerived<EXISTS>(
-          proc, ProgramOperation::kTestAllZero);
+      auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+          proc, ComparisonOperator::kEqual);
 
       for (auto cond : neg_conds) {
-        test->cond_vars.AddUse(ConditionVariable(impl, cond));
+        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+        test->rhs_vars.AddUse(impl->zero);
       }
 
       proc->body.Emplace(proc, test);
@@ -946,11 +947,12 @@ static bool BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
 
     // Outermost test for positive conditions.
     if (!pos_conds.empty()) {
-      auto test = impl->operation_regions.CreateDerived<EXISTS>(
-          proc, ProgramOperation::kTestAllNonZero);
+      auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+          proc, ComparisonOperator::kNotEqual);
 
       for (auto cond : pos_conds) {
-        test->cond_vars.AddUse(ConditionVariable(impl, cond));
+        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+        test->rhs_vars.AddUse(impl->zero);
       }
 
       proc->body.Emplace(proc, test);

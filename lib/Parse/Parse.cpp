@@ -1419,6 +1419,14 @@ bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
   return impl->info[lang].is_present || impl->info[lang].can_override;
 }
 
+// Returns `true` if the representation of this foreign type in the target
+// language `lang` is referentially transparent, i.e. if equality implies
+// identity. This is the case for trivial types, e.g. integers.
+bool ParsedForeignType::IsReferentiallyTransparent(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+    return impl->is_built_in || impl->info[lang].is_transparent;
+}
+
 // Return the prefix and suffix for construction for this language.
 std::optional<std::pair<std::string_view, std::string_view>>
 ParsedForeignType::Constructor(Language lang_) const noexcept {

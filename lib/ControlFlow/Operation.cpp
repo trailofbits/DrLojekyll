@@ -18,7 +18,6 @@ Node<ProgramOperationRegion>::~Node(void) {}
 Node<ProgramCallRegion>::~Node(void) {}
 Node<ProgramReturnRegion>::~Node(void) {}
 Node<ProgramExistenceAssertionRegion>::~Node(void) {}
-Node<ProgramExistenceCheckRegion>::~Node(void) {}
 Node<ProgramGenerateRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
 Node<ProgramPublishRegion>::~Node(void) {}
@@ -123,11 +122,6 @@ Node<ProgramOperationRegion>::AsTableProduct(void) noexcept {
 
 Node<ProgramTableScanRegion> *
 Node<ProgramOperationRegion>::AsTableScan(void) noexcept {
-  return nullptr;
-}
-
-Node<ProgramExistenceCheckRegion> *
-Node<ProgramOperationRegion>::AsExistenceCheck(void) noexcept {
   return nullptr;
 }
 
@@ -346,60 +340,6 @@ bool Node<ProgramTransitionStateRegion>::Equals(
   }
 
   return true;
-}
-
-uint64_t Node<ProgramExistenceCheckRegion>::Hash(void) const {
-  uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  for (auto var : cond_vars) {
-    hash ^= RotateRight64(hash, 13) *
-            ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
-  }
-  if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
-  }
-  return hash;
-}
-
-bool Node<ProgramExistenceCheckRegion>::IsNoOp(void) const noexcept {
-  return !this->OP::body || this->OP::body->IsNoOp();
-}
-
-bool Node<ProgramExistenceCheckRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
-  const auto that_op = that_->AsOperation();
-  if (!that_op || this->OP::op != that_op->OP::op) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
-  const auto num_conds = cond_vars.Size();
-  const auto that = that_op->AsExistenceCheck();
-  if (!that || num_conds != that->cond_vars.Size() ||
-      (!this->OP::body.get()) != (!that->OP::body.get())) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
-  // NOTE(pag): Condition variables are global, so we do equality checks.
-  for (auto i = 0u; i < num_conds; ++i) {
-    if (cond_vars[i] != that->cond_vars[i]) {
-      FAILED_EQ(that_);
-      return false;
-    }
-  }
-
-  if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body);
-
-  } else {
-    return true;
-  }
-}
-
-Node<ProgramExistenceCheckRegion> *
-Node<ProgramExistenceCheckRegion>::AsExistenceCheck(void) noexcept {
-  return this;
 }
 
 uint64_t Node<ProgramExistenceAssertionRegion>::Hash(void) const {

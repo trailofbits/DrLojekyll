@@ -41,6 +41,7 @@ TypeLoc &TypeLoc::operator=(const Token &tok) noexcept {
 const char *Spelling(TypeKind kind) noexcept {
   switch (static_cast<TypeKind>(static_cast<uint8_t>(kind))) {
     case TypeKind::kInvalid: break;
+    case TypeKind::kBoolean: return "bool";
     case TypeKind::kSigned8: return "i8";
     case TypeKind::kSigned16: return "i16";
     case TypeKind::kSigned32: return "i32";

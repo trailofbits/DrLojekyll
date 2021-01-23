@@ -479,6 +479,11 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaPerfInline);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
+      } else if (impl->data == "@transparent") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaPerfTransparent);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);
@@ -638,6 +643,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           } else if (impl->data == "utf8") {
             tentative_lexeme = Lexeme::kTypeUTF8;
             tentative_type_kind = TypeKind::kUTF8;
+
+          } else if (impl->data == "bool") {
+            tentative_lexeme = Lexeme::kTypeBoolean;
+            tentative_type_kind = TypeKind::kBoolean;
           }
           break;
         case 5:
