@@ -125,7 +125,31 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
   });
 
-  BuildEagerSuccessorRegions(impl, view, context, product, view.Successors(),
+  OP *parent = product;
+
+  // If this product can receive deletions, then we need to possibly double
+  // check its sources, because indices don't actually maintain states.
+  if (view.CanReceiveDeletions()) {
+
+    // We (should) have all columns by this point, so we'll proceed like that.
+    std::vector<QueryColumn> view_cols(view.Columns().begin(),
+                                       view.Columns().end());
+
+    // Call the predecessors. If any of the predecessors return `false` then
+    // that means we have failed.
+    for (auto pred_view : view.Predecessors()) {
+      const auto index_is_good = CallTopDownChecker(
+          impl, context, parent, view, view_cols, pred_view,
+          ProgramOperation::kCallProcedureCheckTrue, nullptr);
+
+      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
+
+      parent->body.Emplace(parent, index_is_good);
+      parent = index_is_good;
+    }
+  }
+
+  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
                              nullptr);
 }
 

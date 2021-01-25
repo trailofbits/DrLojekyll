@@ -16,6 +16,7 @@ namespace {
 
 static const char *TypeName(TypeKind kind) {
   switch (kind) {
+    case TypeKind::kBoolean: return "bool";
     case TypeKind::kSigned8: return "int8_t";
     case TypeKind::kSigned16: return "int16_t";
     case TypeKind::kSigned32: return "int32_t";
@@ -417,10 +418,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramExistenceAssertionRegion val) override {
     os << "ProgramExistenceAssertionRegion\n";
-  }
-
-  void Visit(ProgramExistenceCheckRegion val) override {
-    os << "ProgramExistenceCheckRegion\n";
   }
 
   void Visit(ProgramGenerateRegion val) override {

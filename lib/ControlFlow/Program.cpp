@@ -88,9 +88,6 @@ ProgramImpl::~ProgramImpl(void) {
       view_scan->output_vector.ClearWithoutErasure();
       view_scan->table.ClearWithoutErasure();
 
-    } else if (auto exists_check = op->AsExistenceCheck(); exists_check) {
-      exists_check->cond_vars.ClearWithoutErasure();
-
     } else if (auto exists_assert = op->AsExistenceAssertion(); exists_assert) {
       exists_assert->cond_vars.ClearWithoutErasure();
 
@@ -193,7 +190,6 @@ bool ProgramRegion::IsParallel(void) const noexcept {
 IS_OP(Call)
 IS_OP(Return)
 IS_OP(ExistenceAssertion)
-IS_OP(ExistenceCheck)
 IS_OP(Generate)
 IS_OP(LetBinding)
 IS_OP(Publish)
@@ -224,14 +220,6 @@ ProgramParallelRegion::From(ProgramRegion region) noexcept {
   return ProgramParallelRegion(derived_impl);
 }
 
-bool ProgramExistenceCheckRegion::CheckForZero(void) const noexcept {
-  return impl->op == ProgramOperation::kTestAllZero;
-}
-
-bool ProgramExistenceCheckRegion::CheckForNotZero(void) const noexcept {
-  return impl->op == ProgramOperation::kTestAllNonZero;
-}
-
 bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
   return impl->op == ProgramOperation::kIncrementAll ||
          impl->op == ProgramOperation::kIncrementAllAndTest;
@@ -251,7 +239,6 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
     } \
   }
 
-OPTIONAL_BODY(ProgramExistenceCheckRegion)
 OPTIONAL_BODY(ProgramExistenceAssertionRegion)
 OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
@@ -276,7 +263,6 @@ OPTIONAL_BODY(ProgramCallRegion)
 FROM_OP(ProgramCallRegion, AsCall)
 FROM_OP(ProgramReturnRegion, AsReturn)
 FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
-FROM_OP(ProgramExistenceCheckRegion, AsExistenceCheck)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
 FROM_OP(ProgramPublishRegion, AsPublish)
@@ -323,8 +309,6 @@ USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
 USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramExistenceAssertionRegion, ReferenceCounts, DataVariable,
-           cond_vars)
-USED_RANGE(ProgramExistenceCheckRegion, ReferenceCounts, DataVariable,
            cond_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
@@ -541,6 +525,24 @@ bool DataVariable::IsGlobal(void) const noexcept {
   switch (DefiningRole()) {
     case VariableRole::kConditionRefCount:
     case VariableRole::kConstant:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Whether or not this variable is a constant.
+bool DataVariable::IsConstant(void) const noexcept {
+  switch (DefiningRole()) {
+    case VariableRole::kConstant:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue:
       return true;
     default:
       return false;

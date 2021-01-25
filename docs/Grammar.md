@@ -143,6 +143,7 @@ type: "bytes" ;
 
 // Other.
 type: "uuid" ;
+type: "bool" ;
 type: <foreign type name> ;
 ```
 
@@ -159,10 +160,13 @@ can begin with upper or lower case alphabetic characters.
 foreign_type_name: atom ;
 foreign_type_name: variable ;
 
+foreign_decl_pragmas: ;
+foreign_decl_pragmas: "@transparent" ;
+
 foreign_decl: "#foreign" foreign_type_name ;
-foreign_decl: "#foreign" foreign_type_name code_data ;
-foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```" ;
-foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $> ;
+foreign_decl: "#foreign" foreign_type_name code_data foreign_decl_pragmas ;
+foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```" foreign_decl_pragmas ;
+foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $> foreign_decl_pragmas ;
 ```
 
 Foreign types can be forward declared, e.g. `#foreign Foo`. This lets modules
@@ -257,7 +261,7 @@ query_decl: "#query" atom "(" param_list_3 ")" "\n" ;
 
 constant_decl: "#constant" foreign_type_name code_data ;
 
-maybe_inline: "inline" ;
+maybe_inline: "@inline" ;
 maybe_inline: ;
 
 
@@ -294,7 +298,7 @@ binding_specifier_2: "summary" ;
 Functor declarations support more variety than other declaration forms.
 Functors can be used for aggregates, and thus have `aggregate` and `summary`
 binding attributes along with `bound` and `free`. They can also specify
-a range, such as `range(.)` to say that the functor produces a single
+a range, such as `@range(.)` to say that the functor produces a single
 output (for the set of `free`-attributed variables) given its input
 `bound`-attributed parameters.
 
@@ -303,11 +307,11 @@ output (for the set of `free`-attributed variables) given its input
 functor_decl: "#functor" atom "(" param_list_2 ")" constraints "\n" ;
 
 constraints: ;
-constraints: "range" "(" "." ")" constraints ;
-constraints: "range" "(" "+" ")" constraints ;
-constraints: "range" "(" "*" ")" constraints ;
-constraints: "range" "(" "?" ")" constraints ;
-constraints: "impure" constraints ;
+constraints: "@range" "(" "." ")" constraints ;
+constraints: "@range" "(" "+" ")" constraints ;
+constraints: "@range" "(" "*" ")" constraints ;
+constraints: "@range" "(" "?" ")" constraints ;
+constraints: "@impure" constraints ;
 
 param_list_2: binding_specifier_2 type named_var "," param_list_2 ;
 param_list_2: binding_specifier_2 type named_var ;

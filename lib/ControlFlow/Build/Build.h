@@ -639,7 +639,9 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   //            persisted then it has been. If `view` tests any conditions, then
   //            we evaluate those *after* persisting its data, so that if the
   //            state of the conditions changes, then we can send through the
-  //
+  //            data that wasn't sent through (if the condition wasn't
+  //            previously satisfied), or delete the data that no longer
+  //            satisfies the condition.
 
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
@@ -647,11 +649,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   // Innermost test for negative conditions.
   if (!neg_conds.empty()) {
     assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllZero);
+    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+        parent, ComparisonOperator::kEqual);
 
     for (auto cond : neg_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
     }
 
     parent->body.Emplace(parent, test);
@@ -662,11 +665,12 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
   // Outermost test for positive conditions.
   if (!pos_conds.empty()) {
     assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<EXISTS>(
-        parent, ProgramOperation::kTestAllNonZero);
+    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+        parent, ComparisonOperator::kNotEqual);
 
     for (auto cond : pos_conds) {
-      test->cond_vars.AddUse(ConditionVariable(impl, cond));
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
     }
 
     parent->body.Emplace(parent, test);

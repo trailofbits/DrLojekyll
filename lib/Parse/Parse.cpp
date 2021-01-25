@@ -791,7 +791,7 @@ unsigned ParsedDeclaration::NumDeletionClauses(void) const noexcept {
 }
 
 bool ParsedDeclaration::IsInline(void) const noexcept {
-  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
+  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
 std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
@@ -1101,7 +1101,7 @@ unsigned ParsedLocal::NumNegatedUses(void) const noexcept {
 }
 
 bool ParsedLocal::IsInline(void) const noexcept {
-  return impl->inline_attribute.Lexeme() == Lexeme::kKeywordInline;
+  return impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
 NodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
@@ -1417,6 +1417,14 @@ ParsedForeignType::CodeToInline(Language lang_) const noexcept {
 bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);
   return impl->info[lang].is_present || impl->info[lang].can_override;
+}
+
+// Returns `true` if the representation of this foreign type in the target
+// language `lang` is referentially transparent, i.e. if equality implies
+// identity. This is the case for trivial types, e.g. integers.
+bool ParsedForeignType::IsReferentiallyTransparent(Language lang_) const noexcept {
+  const auto lang = static_cast<unsigned>(lang_);
+    return impl->is_built_in || impl->info[lang].is_transparent;
 }
 
 // Return the prefix and suffix for construction for this language.

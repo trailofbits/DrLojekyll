@@ -429,41 +429,6 @@ static bool OptimizeImpl(LET *let) {
   return changed;
 }
 
-static bool OptimizeImpl(EXISTS *exists) {
-  bool changed = false;
-
-  // If there is a conditional body then don't optimize.
-  if (exists->body) {
-    return changed;
-  }
-
-  // Find a parent existence check, and if it does the same type of check,
-  // then try to merge this existence check into the parent by moving its
-  // condition variables up, and replacing all uses of it with its conditional
-  // body.
-  if (auto parent_op = exists->parent->AsOperation(); parent_op) {
-    if (auto parent_exists = parent_op->AsExistenceCheck();
-        parent_exists && exists->op == parent_exists->op) {
-
-      for (auto cond : exists->cond_vars) {
-        changed = true;
-        parent_exists->cond_vars.AddUse(cond);
-      }
-      exists->cond_vars.Clear();
-
-      const auto body = exists->body.get();
-      exists->body.Clear();
-
-      if (body && !body->IsNoOp()) {
-        changed = true;
-        exists->ReplaceAllUsesWith(body);
-      }
-    }
-  }
-
-  return changed;
-}
-
 // Propagate comparisons upwards, trying to join towers of comparisons into
 // single tuple group comparisons.
 static bool OptimizeImpl(TUPLECMP *cmp) {
@@ -883,11 +848,6 @@ void ProgramImpl::Optimize(void) {
       // variable assignments.
       if (auto let = op->AsLetBinding(); let) {
         changed = OptimizeImpl(let) | changed;
-
-      // If we have an exists check nested inside another one, then try to merge
-      // upward.
-      } else if (auto exists = op->AsExistenceCheck(); exists) {
-        changed = OptimizeImpl(exists) | changed;
 
       } else if (auto tuple_cmp = op->AsTupleCompare(); tuple_cmp) {
         changed = OptimizeImpl(tuple_cmp) | changed;

@@ -264,31 +264,6 @@ OutputStream &operator<<(OutputStream &os,
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramExistenceCheckRegion region) {
-  if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent() << "test ";
-    if (region.CheckForNotZero()) {
-      os << "not-zero";
-    } else {
-      os << "zero";
-    }
-
-    auto sep = " ";
-    for (auto var : region.ReferenceCounts()) {
-      os << sep << var;
-      sep = ", ";
-    }
-
-    os << "\n";
-    os.PushIndent();
-    os << (*maybe_body);
-    os.PopIndent();
-  } else {
-    os << os.Indent() << "empty";
-  }
-  return os;
-}
-
 OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
   auto functor = region.Functor();
   os << os.Indent();
@@ -669,7 +644,6 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramCallRegion)
   MAKE_VISITOR(ProgramReturnRegion)
   MAKE_VISITOR(ProgramExistenceAssertionRegion)
-  MAKE_VISITOR(ProgramExistenceCheckRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
@@ -730,7 +704,18 @@ OutputStream &operator<<(OutputStream &os, Program program) {
   const auto module = program.ParsedModule();
   for (auto var : program.Constants()) {
     os << sep << os.Indent() << "const " << Type(os, module, var) << ' '
-       << var << " = " << *(var.Value());
+       << var;
+    switch (var.DefiningRole()) {
+      case VariableRole::kConstantZero: os << " = 0"; break;
+      case VariableRole::kConstantOne: os << " = 1"; break;
+      case VariableRole::kConstantFalse: os << " = false"; break;
+      case VariableRole::kConstantTrue: os << " = true"; break;
+      default:
+        if (auto val = var.Value(); val) {
+          os << " = " << *val;
+        }
+        break;
+    }
     sep = "\n\n";
   }
   for (auto var : program.GlobalVariables()) {

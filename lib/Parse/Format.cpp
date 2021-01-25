@@ -99,10 +99,10 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   if (decl.IsFunctor()) {
     auto functor = ParsedFunctor::From(decl);
     if (!functor.IsPure()) {
-      os << " impure";
+      os << " @impure";
     }
     if (!functor.IsAggregate() && !functor.IsMerge()) {
-      os << " range(";
+      os << " @range(";
       switch (functor.Range()) {
         case FunctorRange::kOneOrMore: os << "+"; break;
         case FunctorRange::kZeroOrMore: os << "*"; break;
@@ -113,7 +113,7 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
     }
 
   } else if (decl.IsLocal() && decl.IsInline()) {
-    os << " inline";
+    os << " @inline";
   }
   return os;
 }
@@ -265,6 +265,10 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       if (auto constructor = type.Constructor(lang); constructor) {
         os << " ```" << constructor->first << '$'
            << constructor->second << "```";
+      }
+
+      if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
+        os << " @transparent";
       }
     }
 
