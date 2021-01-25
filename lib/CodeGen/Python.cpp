@@ -1609,6 +1609,44 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
   os.PopIndent();
 }
 
+static void GeneratePythonDataClass(ParsedModule program, OutputStream &os,
+                                    ParsedDeclaration decl) {
+  os << "@dataclass\n"
+     << "class " << decl.Name() << "(Message):\n";
+  os.PushIndent();
+  for (auto param : decl.Parameters()) {
+    os << os.Indent() << param.Name() << ": "
+       << TypeName(program, param.Type()) << '\n';
+  }
+
+  auto message = ParsedMessage::From(decl);
+  if (!message.IsPublished()) {
+    os << '\n'
+       << os.Indent() << "def send_to_datalog(self, db: 'Database') -> bool:\n";
+    os.PushIndent();
+
+    os << os.Indent() << "db." << decl.Name() << '_' << decl.Arity();
+
+    auto sep = "([";
+    if (1u < decl.Arity()) {
+      sep = "([(";  // Wrap in a tuple.
+    }
+    for (auto param : decl.Parameters()) {
+      os << sep << "self." << param.Name();
+      sep = ", ";
+    }
+    if (1u < decl.Arity()) {
+      os << ')';
+    }
+    os << "])\n";
+    os << os.Indent() << "return True\n";
+    os.PopIndent();
+  }
+
+  os.PopIndent();
+  os << "\n\n";
+}
+
 static void DeclareMessageLog(OutputStream &os, Program program,
                               ParsedModule root_module) {
   os << os.Indent() << "class " << gClassName << "Log:\n";
@@ -1631,6 +1669,74 @@ static void DeclareMessageLog(OutputStream &os, Program program,
     os << os.Indent() << "pass\n\n";
   }
   os.PopIndent();
+}
+
+static void DeclareMessageBus(OutputStream &os, Program program,
+                              ParsedModule root_module) {
+
+  std::unordered_set<ParsedMessage> seen;
+
+  for (auto module : ParsedModuleIterator(root_module)) {
+    for (auto message : module.Messages()) {
+      seen.insert(message);
+    }
+  }
+
+  // Generate the top-level data class that knows how to unwrap a message
+  // from a message bus and send it to Datalog.
+  os << os.Indent() << "@dataclass\n"
+     << os.Indent() << "class Message:\n";
+  os.PushIndent();
+  os << os.Indent() << "def send_to_datalog(self, db: 'Database') -> bool:\n";
+  os.PushIndent();
+  os << os.Indent() << "return False\n\n";
+  os.PopIndent();
+  os.PopIndent();
+
+
+  // Generate each message data class.
+  for (auto decl : seen) {
+    GeneratePythonDataClass(root_module, os, decl);
+  }
+
+  // Generate a class to receive messages from Datalog, wrap them in a Python
+  // data class, and then send them on a message bus.
+  os << '\n';
+  os << os.Indent() << "class DatabaseBus(DatabaseLog):\n";
+  os.PushIndent();
+
+  os << os.Indent() << "def __init__(self, bus: 'Bus'):\n";
+  os.PushIndent();
+  os << os.Indent() << "self._bus = bus\n\n";
+  os.PopIndent();
+
+  for (auto decl : seen) {
+    auto message = ParsedMessage::From(decl);
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << os.Indent() << "def " << message.Name() << "_" << message.Arity()
+       << "(self";
+
+    for (auto param : message.Parameters()) {
+      os << ", " << param.Name() << ": "
+         << TypeName(program.ParsedModule(), param.Type());
+    }
+
+    os << ", added: bool):\n";
+    os.PushIndent();
+    os << os.Indent() << "self._bus.send_message(" << message.Name();
+    auto sep = "(";
+    for (auto param : decl.Parameters()) {
+      os << sep << param.Name();
+      sep = ", ";
+    }
+    os << "))\n\n";
+    os.PopIndent();
+  }
+  os.PopIndent();
+  os << '\n';
 }
 
 static void DefineProcedure(OutputStream &os, ParsedModule module,
@@ -1968,6 +2074,7 @@ void GeneratePythonCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "import sys\n"
+     << "from dataclasses import dataclass\n"
      << "from collections import defaultdict, namedtuple\n"
      << "from typing import Callable, cast, DefaultDict, Final, Iterator, "
      << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union\n"
@@ -1981,9 +2088,6 @@ void GeneratePythonCode(const Program &program, OutputStream &os) {
   os.PopIndent();
 
   const auto module = program.ParsedModule();
-
-  DeclareFunctors(os, program, module);
-  DeclareMessageLog(os, program, module);
 
   // Output prologue code.
   for (auto sub_module : ParsedModuleIterator(module)) {
@@ -2000,6 +2104,10 @@ void GeneratePythonCode(const Program &program, OutputStream &os) {
       }
     }
   }
+
+  DeclareFunctors(os, program, module);
+  DeclareMessageLog(os, program, module);
+  DeclareMessageBus(os, program, module);
 
   // A program gets its own class
   os << "class " << gClassName << ":\n\n";
