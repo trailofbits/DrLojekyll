@@ -515,11 +515,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
        << "\n";
   }
 
-  void Visit(ProgramExistenceAssertionRegion region) override {
+  void Visit(TestAndSetRegion region) override {
     os << Comment(os, region, "Program ExistenceAssertion Region");
-    const auto vars = region.ReferenceCounts();
+    const auto vars = region.Operands();
     for (auto var : vars) {
-      if (region.IsIncrement()) {
+      if (region.IsAdd()) {
         os << os.Indent() << Var(os, var) << " += 1\n";
       } else {
         os << os.Indent() << Var(os, var) << " -= 1\n";
@@ -528,7 +528,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     if (auto body = region.Body(); body) {
       assert(vars.size() == 1u);
-      if (region.IsIncrement()) {
+      if (region.IsAdd()) {
         os << os.Indent() << "if " << Var(os, vars[0]) << " == 1:\n";
       } else {
         os << os.Indent() << "if " << Var(os, vars[0]) << " == 0:\n";

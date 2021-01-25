@@ -88,8 +88,8 @@ ProgramImpl::~ProgramImpl(void) {
       view_scan->output_vector.ClearWithoutErasure();
       view_scan->table.ClearWithoutErasure();
 
-    } else if (auto exists_assert = op->AsExistenceAssertion(); exists_assert) {
-      exists_assert->cond_vars.ClearWithoutErasure();
+    } else if (auto exists_assert = op->AsTestAndSet(); exists_assert) {
+      exists_assert->used_vars.ClearWithoutErasure();
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
@@ -189,7 +189,7 @@ bool ProgramRegion::IsParallel(void) const noexcept {
 
 IS_OP(Call)
 IS_OP(Return)
-IS_OP(ExistenceAssertion)
+IS_OP(TestAndSet)
 IS_OP(Generate)
 IS_OP(LetBinding)
 IS_OP(Publish)
@@ -220,14 +220,12 @@ ProgramParallelRegion::From(ProgramRegion region) noexcept {
   return ProgramParallelRegion(derived_impl);
 }
 
-bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
-  return impl->op == ProgramOperation::kIncrementAll ||
-         impl->op == ProgramOperation::kIncrementAllAndTest;
+bool TestAndSetRegion::IsAdd(void) const noexcept {
+  return impl->op == ProgramOperation::kTestAndAdd;
 }
 
-bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
-  return impl->op == ProgramOperation::kDecrementAll ||
-         impl->op == ProgramOperation::kDecrementAllAndTest;
+bool TestAndSetRegion::IsSubtract(void) const noexcept {
+  return impl->op == ProgramOperation::kTestAndSub;
 }
 
 #define OPTIONAL_BODY(name) \
@@ -239,7 +237,7 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
     } \
   }
 
-OPTIONAL_BODY(ProgramExistenceAssertionRegion)
+OPTIONAL_BODY(TestAndSetRegion)
 OPTIONAL_BODY(ProgramGenerateRegion)
 OPTIONAL_BODY(ProgramLetBindingRegion)
 OPTIONAL_BODY(ProgramVectorLoopRegion)
@@ -262,7 +260,7 @@ OPTIONAL_BODY(ProgramCallRegion)
 
 FROM_OP(ProgramCallRegion, AsCall)
 FROM_OP(ProgramReturnRegion, AsReturn)
-FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
+FROM_OP(TestAndSetRegion, AsTestAndSet)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
 FROM_OP(ProgramPublishRegion, AsPublish)
@@ -308,8 +306,7 @@ DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_
 USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
 USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
-USED_RANGE(ProgramExistenceAssertionRegion, ReferenceCounts, DataVariable,
-           cond_vars)
+USED_RANGE(TestAndSetRegion, Operands, DataVariable, used_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)

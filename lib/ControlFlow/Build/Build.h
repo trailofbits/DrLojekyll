@@ -690,7 +690,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     // Now that we know that the data has been dealt with, we increment the
     // condition variable.
     const auto set = impl->operation_regions.CreateDerived<ASSERT>(
-        seq, ProgramOperation::kIncrementAllAndTest);
+        seq, ProgramOperation::kTestAndAdd);
     set->cond_vars.AddUse(ConditionVariable(impl, *set_cond));
     set->ExecuteAfter(impl, seq);
 

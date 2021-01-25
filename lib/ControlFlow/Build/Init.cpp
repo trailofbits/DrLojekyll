@@ -21,7 +21,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
 
   // Test that we haven't yet done an initialization.
   const auto test_and_set = impl->operation_regions.CreateDerived<ASSERT>(
-      seq, ProgramOperation::kIncrementAllAndTest);
+      seq, ProgramOperation::kTestAndAdd);
   seq->regions.AddUse(test_and_set);
 
   test_and_set->cond_vars.AddUse(uncond_inserts_var);
