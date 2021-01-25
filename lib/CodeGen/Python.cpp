@@ -1702,10 +1702,18 @@ static void DeclareMessageBus(OutputStream &os, Program program,
   // Generate a class to receive messages from Datalog, wrap them in a Python
   // data class, and then send them on a message bus.
   os << '\n';
-  os << os.Indent() << "class DatabaseBus(DatabaseLog):\n";
+  os << os.Indent() << "class MessageBus(Protocol):\n";
+  os.PushIndent();
+  os << os.Indent() << "def send_message(self, msg: Message):\n";
+  os.PushIndent();
+  os << os.Indent() << "...\n";
+  os.PopIndent();
+  os.PopIndent();
+
+  os << os.Indent() << "\nclass DatabaseBus(DatabaseLog):\n";
   os.PushIndent();
 
-  os << os.Indent() << "def __init__(self, bus: 'Bus'):\n";
+  os << os.Indent() << "def __init__(self, bus: MessageBus):\n";
   os.PushIndent();
   os << os.Indent() << "self._bus = bus\n\n";
   os.PopIndent();
