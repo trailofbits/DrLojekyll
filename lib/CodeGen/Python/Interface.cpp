@@ -326,17 +326,14 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "self.consume_" << message.Name() << '_'
        << message.Arity() << "(";
 
-    if (1u == message.Arity()) {
-      os << "data";
-    } else {
-      auto sep = "";
-      for (auto i = 0u; i < message.Arity(); ++i) {
-        os << sep << "data[" << i << ']';
-        sep = ", ";
-      }
+    auto sep = "";
+    auto i = 0u;
+    for (; i < message.Arity(); ++i) {
+      os << sep << "data[" << i << ']';
+      sep = ", ";
     }
 
-    os << ")\n";
+    os << sep << "data[" << i << "])\n";
     os.PopIndent();
 
     os.PopIndent();
@@ -356,7 +353,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
 
-    os << "):\n";
+    os << ", _added: bool):\n";
     os.PushIndent();
     os << os.Indent() << "pass\n\n";
     os.PopIndent();
