@@ -17,7 +17,15 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "from dataclasses import dataclass\n"
-     << "from typing import Final, List, Optional, Tuple\n\n\n";
+     << "from typing import Final, List, Optional, Tuple\n"
+     << "try:\n";
+  os.PushIndent();
+  os << os.Indent() << "from typing import Protocol\n";
+  os.PopIndent();
+  os << "except ImportError:\n";
+  os.PushIndent();
+  os << os.Indent() << "from typing_extensions import Protocol #type: ignore\n\n\n";
+  os.PopIndent();
 
   const auto module = program.ParsedModule();
 
@@ -197,14 +205,39 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
   os << "\n\n";
 
+  // Creates a protocol that describes a datalog database.
+  os << os.Indent() << "class " << gClassName << "Interface(Protocol):\n";
+  os.PushIndent();
+
+  // Emit one method per received message that adds the message data into
+  // the aggregate output message.
+  for (auto message : messages) {
+    if (message.IsPublished()) {
+      continue;
+    }
+    os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
+       << "(self";
+
+    for (auto param : message.Parameters()) {
+      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
+    }
+    os << "):\n";
+    os.PushIndent();
+    os << os.Indent() << "...\n\n";
+    os.PopIndent();
+  }
+  os.PopIndent();
+  os << '\n';
+
   // Implements the `DatabaseLog` protocol, and aggregates all messages into
   // a single `DatabaseOutputMessage`.
   os << os.Indent() << "class " << gClassName << "OutputMessageAggregator:\n";
   os.PushIndent();
 
-  os << os.Indent() << "def __init__(self, db: '" << gClassName << "'):\n";
+  os << os.Indent() << "def __init__(self, db: " << gClassName
+     << "Interface):\n";
   os.PushIndent();
-  os << os.Indent() << "self._db: Final['" << gClassName << "'] = db\n"
+  os << os.Indent() << "self._db: Final[" << gClassName << "Interface] = db\n"
      << os.Indent() << "self._num_msgs: int = 0\n"
      << os.Indent() << "self._msg: " << gClassName << "OutputMessage = "
      << gClassName << "OutputMessage()\n\n";
