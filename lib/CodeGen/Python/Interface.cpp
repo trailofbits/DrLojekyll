@@ -24,7 +24,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
   os << "except ImportError:\n";
   os.PushIndent();
-  os << os.Indent() << "from typing_extensions import Protocol #type: ignore\n\n\n";
+  os << os.Indent() << "from typing_extensions import Protocol  # type: ignore\n\n\n";
   os.PopIndent();
 
   const auto module = program.ParsedModule();
@@ -59,12 +59,23 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-       << "(self";
+       << "(self, vector: List[";
 
-    for (auto param : message.Parameters()) {
-      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
+    if (1u < message.Arity()) {
+      os << "Tuple[";
     }
-    os << "):\n";
+
+    auto sep = "";
+    for (auto param : message.Parameters()) {
+      os << sep << TypeName(module, param.Type());
+      sep = ", ";
+    }
+
+    if (1u < message.Arity()) {
+      os << "]";
+    }
+
+    os << "]):\n";
     os.PushIndent();
     os << os.Indent() << "...\n\n";
     os.PopIndent();
@@ -98,7 +109,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     if (1u < message.Arity()) {
       os << ']';
     }
-    os << "]]\n";
+    os << "]] = None\n";
   }
   os << '\n';
 
@@ -221,7 +232,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       sep = ", ";
     }
 
-    os << sep << "bool]]]\n";
+    os << sep << "bool]]] = None\n";
   }
 
   if (empty) {
