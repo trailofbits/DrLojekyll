@@ -137,7 +137,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   {
     std::ofstream os(py_out_path);
     hyde::OutputStream py_out_fs(display_mgr, os);
-    hyde::GeneratePythonCode(*program_opt, py_out_fs);
+    hyde::GeneratePythonDatabaseCode(*program_opt, py_out_fs);
   }
 
   // Type-check the generated Python code with mypy, if available
