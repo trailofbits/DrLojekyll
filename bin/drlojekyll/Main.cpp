@@ -47,6 +47,7 @@ OutputStream *gDOTStream = nullptr;
 OutputStream *gDRStream = nullptr;
 OutputStream *gCxxCodeStream = nullptr;
 OutputStream *gPyCodeStream = nullptr;
+OutputStream *gPyInterfaceCodeStream = nullptr;
 OutputStream *gIRStream = nullptr;
 std::optional<fs::path> gMSGDir = std::nullopt;
 
@@ -72,7 +73,13 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
       if (gPyCodeStream) {
         gPyCodeStream->SetIndentSize(4u);
-        hyde::GeneratePythonCode(*program_opt, *gPyCodeStream);
+        hyde::GeneratePythonDatabaseCode(*program_opt, *gPyCodeStream);
+      }
+
+      if (gPyInterfaceCodeStream) {
+        gPyInterfaceCodeStream->SetIndentSize(4u);
+        hyde::GeneratePythonInterfaceCode(
+            *program_opt, *gPyInterfaceCodeStream);
       }
     }
 
@@ -154,20 +161,21 @@ static int HelpMessage(const char *argv[]) {
       << "USAGE: " << argv[0] << " [options] <DATALOG_PATH>..." << std::endl
       << std::endl
       << "OUTPUT OPTIONS:" << std::endl
-      << "  -ir-out <PATH>        Emit IR output to PATH." << std::endl
-      << "  -cpp-out <PATH>       Emit transpiled C++ output to PATH." << std::endl
-      << "  -py-out <PATH>        Emit transpiled Python output to PATH." << std::endl
-      << "  -messages-dir <DIR>   Emit generated AVRO messages to the directory specified" << std::endl
-      << "  -dr-out <PATH>        Emit an amalgamation of all the input and transitively" << std::endl
-      << "                        imported modules to PATH." << std::endl
-      << "  -dot-out <PATH>       Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
+      << "  -ir-out <PATH>            Emit IR output to PATH." << std::endl
+      << "  -cpp-out <PATH>           Emit transpiled C++ output to PATH." << std::endl
+      << "  -py-out <PATH>            Emit transpiled Python output to PATH." << std::endl
+      << "  -py-interface-out <PATH>  Emit transpiled Python interface output to PATH." << std::endl
+      << "  -messages-dir <DIR>       Emit generated AVRO messages to the directory specified" << std::endl
+      << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively" << std::endl
+      << "                            imported modules to PATH." << std::endl
+      << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
-      << "  -M <PATH>             Directory where import statements can find needed Datalog modules." << std::endl
+      << "  -M <PATH>                 Directory where import statements can find needed Datalog modules." << std::endl
       << std::endl
       << "OTHER OPTIONS:" << std::endl
-      << "  -help, -h             Show help and exit." << std::endl
-      << "  -version              Show version number and exit." << std::endl
+      << "  -help, -h                 Show help and exit." << std::endl
+      << "  -version                  Show version number and exit." << std::endl
       << std::endl;
 
   return EXIT_SUCCESS;
@@ -224,6 +232,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
   std::unique_ptr<hyde::FileStream> py_out;
+  std::unique_ptr<hyde::FileStream> py_interface_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -242,7 +251,7 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gCxxCodeStream = &(cpp_out->os);
       }
 
-    // C++ output file of the transpiled from the Dr. Lojekyll source code.
+    // Python output file of the transpiled from the Dr. Lojekyll source code.
     } else if (!strcmp(argv[i], "-py-out") || !strcmp(argv[i], "--py-out")) {
       ++i;
       if (i >= argc) {
@@ -252,6 +261,20 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         py_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gPyCodeStream = &(py_out->os);
+      }
+
+    // Python interface output file of the transpiled from the Dr. Lojekyll source code.
+    } else if (!strcmp(argv[i], "-py-interface-out") ||
+               !strcmp(argv[i], "--py-interface-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument " << argv[i]
+            << " must be followed by a file path for Python interface "
+            << "code output";
+      } else {
+        py_interface_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gPyInterfaceCodeStream = &(py_interface_out->os);
       }
 
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
