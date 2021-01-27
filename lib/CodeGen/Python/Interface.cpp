@@ -47,6 +47,31 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
 
   const auto messages = Messages(module);
 
+  // Creates a protocol that describes a datalog database.
+  os << os.Indent() << "class " << gClassName << "Interface(Protocol):\n";
+  os.PushIndent();
+
+  // Emit one method per received message that adds the message data into
+  // the aggregate output message.
+  for (auto message : messages) {
+    if (message.IsPublished()) {
+      continue;
+    }
+
+    os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
+       << "(self";
+
+    for (auto param : message.Parameters()) {
+      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
+    }
+    os << "):\n";
+    os.PushIndent();
+    os << os.Indent() << "...\n\n";
+    os.PopIndent();
+  }
+  os.PopIndent();
+  os << '\n';
+
   // Input messages to datalog.
   os << os.Indent() << "@dataclass\n"
      << os.Indent() << "class " << gClassName << "InputMessage:\n";
@@ -79,11 +104,12 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
 
   // Emit a method that will apply everything in this data class to an
   // instance of the database. Returns the number of processed messages.
-  os << os.Indent() << "def apply(self, db: 'Database') -> int:\n";
+  os << os.Indent() << "def apply(self, db: " << gClassName
+     << "Interface) -> int:\n";
   os.PushIndent();
   os << os.Indent() << "num_messages: int = 0\n";
   for (auto message : messages) {
-    if (!message.IsPublished()) {
+    if (message.IsPublished()) {
       continue;
     }
     os << os.Indent() << "if self." << message.Name() << '_'
@@ -204,30 +230,6 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
 
   os.PopIndent();
   os << "\n\n";
-
-  // Creates a protocol that describes a datalog database.
-  os << os.Indent() << "class " << gClassName << "Interface(Protocol):\n";
-  os.PushIndent();
-
-  // Emit one method per received message that adds the message data into
-  // the aggregate output message.
-  for (auto message : messages) {
-    if (message.IsPublished()) {
-      continue;
-    }
-    os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-       << "(self";
-
-    for (auto param : message.Parameters()) {
-      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
-    }
-    os << "):\n";
-    os.PushIndent();
-    os << os.Indent() << "...\n\n";
-    os.PopIndent();
-  }
-  os.PopIndent();
-  os << '\n';
 
   // Implements the `DatabaseLog` protocol, and aggregates all messages into
   // a single `DatabaseOutputMessage`.
