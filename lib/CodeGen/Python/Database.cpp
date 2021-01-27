@@ -1433,6 +1433,44 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
   os.PopIndent();
 }
 
+static void GeneratePythonDataClass(ParsedModule program, OutputStream &os,
+                                    ParsedDeclaration decl) {
+  os << "@dataclass\n"
+     << "class " << decl.Name() << "(Message):\n";
+  os.PushIndent();
+  for (auto param : decl.Parameters()) {
+    os << os.Indent() << param.Name() << ": "
+       << TypeName(program, param.Type()) << '\n';
+  }
+
+  auto message = ParsedMessage::From(decl);
+  if (!message.IsPublished()) {
+    os << '\n'
+       << os.Indent() << "def send_to_datalog(self, db: 'Database') -> bool:\n";
+    os.PushIndent();
+
+    os << os.Indent() << "db." << decl.Name() << '_' << decl.Arity();
+
+    auto sep = "([";
+    if (1u < decl.Arity()) {
+      sep = "([(";  // Wrap in a tuple.
+    }
+    for (auto param : decl.Parameters()) {
+      os << sep << "self." << param.Name();
+      sep = ", ";
+    }
+    if (1u < decl.Arity()) {
+      os << ')';
+    }
+    os << "])\n";
+    os << os.Indent() << "return True\n";
+    os.PopIndent();
+  }
+
+  os.PopIndent();
+  os << "\n\n";
+}
+
 static void DeclareMessageLog(OutputStream &os, Program program,
                               ParsedModule root_module) {
   os << os.Indent() << "class " << gClassName << "LogInterface(Protocol):\n";
@@ -1461,6 +1499,82 @@ static void DeclareMessageLog(OutputStream &os, Program program,
     }
   }
   os.PopIndent();
+}
+
+static void DeclareMessageBus(OutputStream &os, Program program,
+                              ParsedModule root_module) {
+
+  std::unordered_set<ParsedMessage> seen;
+
+  for (auto module : ParsedModuleIterator(root_module)) {
+    for (auto message : module.Messages()) {
+      seen.insert(message);
+    }
+  }
+
+  // Generate the top-level data class that knows how to unwrap a message
+  // from a message bus and send it to Datalog.
+  os << os.Indent() << "@dataclass\n"
+     << os.Indent() << "class Message:\n";
+  os.PushIndent();
+  os << os.Indent() << "def send_to_datalog(self, db: 'Database') -> bool:\n";
+  os.PushIndent();
+  os << os.Indent() << "return False\n\n";
+  os.PopIndent();
+  os.PopIndent();
+
+
+  // Generate each message data class.
+  for (auto decl : seen) {
+    GeneratePythonDataClass(root_module, os, decl);
+  }
+
+  // Generate a class to receive messages from Datalog, wrap them in a Python
+  // data class, and then send them on a message bus.
+  os << '\n';
+  os << os.Indent() << "class MessageBus(Protocol):\n";
+  os.PushIndent();
+  os << os.Indent() << "def send_message(self, msg: Message):\n";
+  os.PushIndent();
+  os << os.Indent() << "...\n";
+  os.PopIndent();
+  os.PopIndent();
+
+  os << os.Indent() << "\nclass DatabaseBus(DatabaseLog):\n";
+  os.PushIndent();
+
+  os << os.Indent() << "def __init__(self, bus: MessageBus):\n";
+  os.PushIndent();
+  os << os.Indent() << "self._bus = bus\n\n";
+  os.PopIndent();
+
+  for (auto decl : seen) {
+    auto message = ParsedMessage::From(decl);
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << os.Indent() << "def " << message.Name() << "_" << message.Arity()
+       << "(self";
+
+    for (auto param : message.Parameters()) {
+      os << ", " << param.Name() << ": "
+         << TypeName(program.ParsedModule(), param.Type());
+    }
+
+    os << ", added: bool):\n";
+    os.PushIndent();
+    os << os.Indent() << "self._bus.send_message(" << message.Name();
+    auto sep = "(";
+    for (auto param : decl.Parameters()) {
+      os << sep << param.Name();
+      sep = ", ";
+    }
+    os << "))\n\n";
+    os.PopIndent();
+  }
+  os.PopIndent();
+  os << '\n';
 }
 
 static void DefineProcedure(OutputStream &os, ParsedModule module,
