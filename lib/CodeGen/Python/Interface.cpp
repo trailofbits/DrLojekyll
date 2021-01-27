@@ -244,7 +244,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
 
   // Implements the `DatabaseLog` protocol, and aggregates all messages into
   // a single `DatabaseOutputMessage`.
-  os << os.Indent() << "class " << gClassName << "OutputMessageAggregator:\n";
+  os << os.Indent() << "class " << gClassName << "OutputMessageProducer:\n";
   os.PushIndent();
 
   os << os.Indent() << "def __init__(self):\n";
@@ -290,7 +290,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   // Emit a method that returns `None` if no messages were published by Datalog,
   // or emits an aggregated message representing all published messages since
   // the last time we asked.
-  os << os.Indent() << "def aggregate(self) -> Optional[" << gClassName
+  os << os.Indent() << "def produce(self) -> Optional[" << gClassName
      << "OutputMessage]:\n";
   os.PushIndent();
   os << os.Indent() << "if not self._num_msgs:\n";
