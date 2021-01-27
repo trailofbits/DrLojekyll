@@ -138,7 +138,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << "\n\n";
 
   // Implements a class that can build input messages.
-  os << os.Indent() << "class " << gClassName << "InputMessageAggregator:\n";
+  os << os.Indent() << "class " << gClassName << "InputMessageProducer:\n";
   os.PushIndent();
   os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
@@ -151,8 +151,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
-    os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-       << "(self";
+    os << os.Indent() << "def produce_" << message.Name() << '_'
+       << message.Arity() << "(self";
 
     for (auto param : message.Parameters()) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
@@ -188,7 +188,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   // Emit a method that returns `None` if no messages were published by Datalog,
   // or emits an aggregated message representing all published messages since
   // the last time we asked.
-  os << os.Indent() << "def aggregate(self) -> Optional[" << gClassName
+  os << os.Indent() << "def produce(self) -> Optional[" << gClassName
      << "InputMessage]:\n";
   os.PushIndent();
   os << os.Indent() << "if not self._num_msgs:\n";
@@ -247,11 +247,9 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "class " << gClassName << "OutputMessageAggregator:\n";
   os.PushIndent();
 
-  os << os.Indent() << "def __init__(self, db: " << gClassName
-     << "Interface):\n";
+  os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
-  os << os.Indent() << "self._db: Final[" << gClassName << "Interface] = db\n"
-     << os.Indent() << "self._num_msgs: int = 0\n"
+  os << os.Indent() << "self._num_msgs: int = 0\n"
      << os.Indent() << "self._msg: " << gClassName << "OutputMessage = "
      << gClassName << "OutputMessage()\n\n";
   os.PopIndent();
@@ -306,8 +304,63 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
   os << os.Indent() << "def __len__(self) -> int:\n";
   os.PushIndent();
-  os << os.Indent() << "return self._num_msgs\n\n";
+  os << os.Indent() << "return self._num_msgs\n\n\n";
   os.PopIndent();
+  os.PopIndent();
+
+  os << os.Indent() << "class " << gClassName << "OutputMessageConsumer:\n";
+  os.PushIndent();
+  os << os.Indent() << "def consume(self, msg: " << gClassName
+     << "OutputMessage):\n";
+  os.PushIndent();
+  for (auto message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+    os << os.Indent() << "if msg." << message.Name() << '_' << message.Arity()
+       << " is not None:\n";
+    os.PushIndent();
+    os << os.Indent() << "for data in msg." << message.Name() << '_'
+       << message.Arity() << ":\n";
+    os.PushIndent();
+    os << os.Indent() << "self.consume_" << message.Name() << '_'
+       << message.Arity() << "(";
+
+    if (1u == message.Arity()) {
+      os << "data";
+    } else {
+      auto sep = "";
+      for (auto i = 0u; i < message.Arity(); ++i) {
+        os << sep << "data[" << i << ']';
+        sep = ", ";
+      }
+    }
+
+    os << ")\n";
+    os.PopIndent();
+
+    os.PopIndent();
+  }
+  os << os.Indent() << "return\n\n";
+  os.PopIndent();
+
+  for (auto message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << os.Indent() << "def consume_" << message.Name() << '_'
+       << message.Arity() << "(self";
+
+    for (auto param : message.Parameters()) {
+      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
+    }
+
+    os << "):\n";
+    os.PushIndent();
+    os << os.Indent() << "pass\n\n";
+    os.PopIndent();
+  }
   os.PopIndent();
 }
 
