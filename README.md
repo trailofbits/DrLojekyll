@@ -22,7 +22,14 @@ C++17-compliant toolchain.
 
 **Developer debug build on Linux:**
 ```bash
-$ cmake -B build -DCMAKE_CXX_COMPILER=clang-10 -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 -DCMAKE_INSTALL_PREFIX="$PWD"/install
+$ cmake -B build -DCMAKE_CXX_COMPILER=clang++-10 -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DWARNINGS_AS_ERRORS=1 -DENABLE_LIBFUZZER=1 -DCMAKE_INSTALL_PREFIX="$PWD"/install
+$ cmake --build build
+$ cmake --install build
+```
+
+**Developer debug build on macOS:**
+```bash
+$ cmake -B build -DENABLE_SANITIZERS=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX="$PWD"/install
 $ cmake --build build
 $ cmake --install build
 ```

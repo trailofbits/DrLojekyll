@@ -1,11 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
-#include <drlojekyll/ControlFlow/Format.h>
-#include <drlojekyll/ControlFlow/Program.h>
-#include <drlojekyll/Display/Format.h>
-#include <drlojekyll/Lex/Format.h>
-#include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
@@ -13,49 +8,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include "Util.h"
+
 namespace hyde {
 namespace {
-
-constexpr auto kStateAbsent = 0u;
-constexpr auto kStatePresent = 1u;
-constexpr auto kStateUnknown = 2u;
-
-// NOTE(pag): We store an extra bit besides present/absent/unknown
-//            to track whether or not the data had ever been in our
-//            index before, and thus doesn't need to be re-added.
-constexpr auto kStateMask = 0x3u;
-constexpr auto kPresentBit = 0x4u;
-
-// NOTE(ekilmer): Classes are named all the same for now.
-constexpr auto gClassName = "Database";
-
-// Make a comment in code for debugging purposes
-static OutputStream &Comment(OutputStream &os, ProgramRegion region,
-                             const char *message) {
-#ifndef NDEBUG
-  os << os.Indent() << "# " << message << "\n";
-#else
-  (void) message;
-#endif
-  if (!region.Comment().empty()) {
-    os << os.Indent() << "# " << region.Comment() << "\n";
-  }
-  return os;
-}
-
-static OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
-  switch (proc.Kind()) {
-    case ProcedureKind::kInitializer: return os << "init_" << proc.Id() << "_";
-    case ProcedureKind::kMessageHandler:
-      return os << proc.Message()->Name() << "_"
-                << proc.Message()->Arity();
-    case ProcedureKind::kTupleFinder:
-    case ProcedureKind::kTupleRemover:
-    case ProcedureKind::kInductionCycleHandler:
-    case ProcedureKind::kInductionOutputHandler:
-    default: return os << "proc_" << proc.Id() << "_";
-  }
-}
 
 static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
   return os << "self._functors." << func.Name() << '_'
@@ -70,144 +26,12 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
   return os << "self.index_" << index.Id();
 }
 
-template <typename Stream>
-static Stream &Var(Stream &os, const DataVariable var) {
-  switch (var.DefiningRole()) {
-    case VariableRole::kConstantZero: os << "0"; break;
-    case VariableRole::kConstantOne: os << "1"; break;
-    case VariableRole::kConstantFalse: os << "False"; break;
-    case VariableRole::kConstantTrue: os << "True"; break;
-    default:
-      if (var.IsGlobal()) {
-        os << "self.";
-      }
-      os << "var_" << var.Id();
-      break;
-  }
-  return os;
-}
-
 static OutputStream &Vector(OutputStream &os, const DataVector vec) {
   return os << "vec_" << vec.Id();
 }
 
 static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
   return os << "vec_index" << vec.Id();
-}
-
-// Python representation of TypeKind
-static const std::string_view TypeName(ParsedForeignType type) {
-  if (auto code = type.CodeToInline(Language::kPython)) {
-    return *code;
-  }
-  assert(false);
-  return "Any";
-}
-
-// Python representation of TypeKind
-static const std::string_view TypeName(ParsedModule module, TypeLoc kind) {
-  switch (kind.UnderlyingKind()) {
-    case TypeKind::kBoolean: return "bool";
-    case TypeKind::kSigned8:
-    case TypeKind::kSigned16:
-    case TypeKind::kSigned32:
-    case TypeKind::kSigned64:
-    case TypeKind::kUnsigned8:
-    case TypeKind::kUnsigned16:
-    case TypeKind::kUnsigned32:
-    case TypeKind::kUnsigned64: return "int";
-    case TypeKind::kFloat:
-    case TypeKind::kDouble: return "float";
-    case TypeKind::kBytes: return "bytes";
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: return "str";
-    case TypeKind::kForeignType:
-      if (auto type = module.ForeignType(kind); type) {
-        return TypeName(*type);
-      }
-      [[clang::fallthrough]];
-    default: assert(false); return "Any";
-  }
-}
-
-static const char *OperatorString(ComparisonOperator op) {
-  switch (op) {
-    case ComparisonOperator::kEqual: return "==";
-    case ComparisonOperator::kNotEqual: return "!=";
-    case ComparisonOperator::kLessThan: return "<";
-    case ComparisonOperator::kGreaterThan: return ">";
-
-    // TODO(ekilmer): What's a good default operator?
-    default: assert(false); return "None";
-  }
-}
-
-static std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
-                                      DataVariable var) {
-  auto val = var.Value();
-  std::string_view prefix = "";
-  std::string_view suffix = "";
-
-  switch (var.DefiningRole()) {
-    case VariableRole::kConstantZero: return "0";
-    case VariableRole::kConstantOne: return "1";
-    case VariableRole::kConstantFalse: return "False";
-    case VariableRole::kConstantTrue: return "True";
-    default: break;
-  }
-
-  // Default value
-  switch (loc.UnderlyingKind()) {
-    case TypeKind::kBoolean:
-      prefix = "bool(";
-      suffix = ")";
-      break;
-    case TypeKind::kSigned8:
-    case TypeKind::kSigned16:
-    case TypeKind::kSigned32:
-    case TypeKind::kSigned64:
-    case TypeKind::kUnsigned8:
-    case TypeKind::kUnsigned16:
-    case TypeKind::kUnsigned32:
-    case TypeKind::kUnsigned64:
-      prefix = "int(";
-      suffix = ")";
-      break;
-    case TypeKind::kFloat:
-    case TypeKind::kDouble:
-      prefix = "float(";
-      suffix = ")";
-      break;
-    case TypeKind::kBytes:
-      prefix = "b";
-      break;
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID:
-      break;
-    case TypeKind::kForeignType:
-      if (auto type = module.ForeignType(loc); type) {
-        if (auto constructor = type->Constructor(Language::kPython);
-            constructor) {
-          prefix = constructor->first;
-          suffix = constructor->second;
-        }
-        break;
-      }
-      [[clang::fallthrough]];
-    default: assert(false); prefix = "None  #";
-  }
-
-  std::stringstream value;
-  value << prefix;
-  if (val) {
-    if (auto spelling = val->Spelling(Language::kPython); spelling) {
-      value << *spelling;
-    }
-  }
-  value << suffix;
-  return value.str();
 }
 
 // Declare a set to hold the table.
@@ -1595,7 +1419,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
 }
 
 static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
-                                 ParsedMessage message) {
+                                 ParsedMessage message, const char *impl) {
   os << os.Indent() << "def " << message.Name() << "_" << message.Arity()
      << "(self";
 
@@ -1605,30 +1429,36 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
 
   os << ", added: bool):\n";
   os.PushIndent();
-  os << os.Indent() << "pass\n\n";
+  os << os.Indent() << impl << "\n\n";
   os.PopIndent();
 }
 
 static void DeclareMessageLog(OutputStream &os, Program program,
                               ParsedModule root_module) {
+  os << os.Indent() << "class " << gClassName << "LogInterface(Protocol):\n";
+  os.PushIndent();
+
+  const auto messages = Messages(root_module);
+
+  if (messages.empty()) {
+    os << os.Indent() << "pass\n\n";
+  } else {
+    for (auto message : messages) {
+      DeclareMessageLogger(os, root_module, message, "...");
+    }
+  }
+  os.PopIndent();
+
+  os << '\n';
   os << os.Indent() << "class " << gClassName << "Log:\n";
   os.PushIndent();
 
-  std::unordered_set<ParsedMessage> seen;
-
-  bool has_messages = false;
-  for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto message : module.Messages()) {
-      if (auto [it, inserted] = seen.emplace(message);
-          inserted && message.IsPublished()) {
-        DeclareMessageLogger(os, module, message);
-        has_messages = true;
-        (void) it;
-      }
-    }
-  }
-  if (!has_messages) {
+  if (messages.empty()) {
     os << os.Indent() << "pass\n\n";
+  } else {
+    for (auto message : messages) {
+      DeclareMessageLogger(os, root_module, message, "pass");
+    }
   }
   os.PopIndent();
 }
@@ -1964,10 +1794,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 }  // namespace
 
 // Emits Python code for the given program to `os`.
-void GeneratePythonCode(const Program &program, OutputStream &os) {
+void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "import sys\n"
+     << "from dataclasses import dataclass\n"
      << "from collections import defaultdict, namedtuple\n"
      << "from typing import Callable, cast, DefaultDict, Final, Iterator, "
      << "List, NamedTuple, Optional, Sequence, Set, Tuple, Union\n"
@@ -1981,9 +1812,6 @@ void GeneratePythonCode(const Program &program, OutputStream &os) {
   os.PopIndent();
 
   const auto module = program.ParsedModule();
-
-  DeclareFunctors(os, program, module);
-  DeclareMessageLog(os, program, module);
 
   // Output prologue code.
   for (auto sub_module : ParsedModuleIterator(module)) {
@@ -2001,14 +1829,17 @@ void GeneratePythonCode(const Program &program, OutputStream &os) {
     }
   }
 
+  DeclareFunctors(os, program, module);
+  DeclareMessageLog(os, program, module);
+
   // A program gets its own class
   os << "class " << gClassName << ":\n\n";
   os.PushIndent();
 
   os << os.Indent() << "def __init__(self, log: " << gClassName
-     << "Log, functors: " << gClassName << "Functors):\n";
+     << "LogInterface, functors: " << gClassName << "Functors):\n";
   os.PushIndent();
-  os << os.Indent() << "self._log: " << gClassName << "Log = log\n"
+  os << os.Indent() << "self._log: " << gClassName << "LogInterface = log\n"
      << os.Indent() << "self._functors: " << gClassName
      << "Functors = functors\n"
      << os.Indent() << "self._refs: DefaultDict[int, List[object]] "

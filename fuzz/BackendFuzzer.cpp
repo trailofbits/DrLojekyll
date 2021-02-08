@@ -138,7 +138,7 @@ static std::string ProgramToPython(DrContext &cxt,
   assert(cxt.error_log.IsEmpty());
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
-  hyde::GeneratePythonCode(program, os);
+  hyde::GeneratePythonDatabaseCode(program, os);
   return stream.str();
 }
 

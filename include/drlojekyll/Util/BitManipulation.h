@@ -28,6 +28,7 @@ inline static uint64_t RotateRight64(uint64_t val, unsigned rot) {
 #else
   return __builtin_rotateright64(val, rot);
 #endif
+#undef HYDE_NEEDS_ROR64
 }
 
 /// Rotate `val` to the right `rot` positions.
@@ -45,13 +46,14 @@ inline static uint32_t RotateRight32(uint32_t val, unsigned rot) {
 #  define HYDE_NEEDS_ROR32 1
 #endif
 
-#if HYDE_NEEDS_ROR64
+#if HYDE_NEEDS_ROR32
   if (!rot)
     return val;
   return (val >> rot) | (val << (32u - (rot % 32u)));
 #else
   return __builtin_rotateright32(val, rot);
 #endif
+#undef HYDE_NEEDS_ROR32
 }
 
 }  // namespace hyde

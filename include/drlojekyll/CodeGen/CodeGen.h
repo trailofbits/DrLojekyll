@@ -11,6 +11,11 @@ class OutputStream;
 void GenerateCxxCode(const Program &module, OutputStream &os);
 
 // Emits Python code for the given program to `os`.
-void GeneratePythonCode(const Program &module, OutputStream &os);
+void GeneratePythonDatabaseCode(const Program &module, OutputStream &os);
+
+// Emits Python code to build up and collect messages to send to a database,
+// or to collect messages published by the database and aggregate them into
+// a single object.
+void GeneratePythonInterfaceCode(const Program &program, OutputStream &os);
 
 }  // namespace hyde
