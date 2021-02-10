@@ -1096,9 +1096,6 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramGenerateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-
-  assert(false && "Likely a bug has ocurred somewhere");
-
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
   auto transition_body = body.get();
