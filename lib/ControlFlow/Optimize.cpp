@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Program.h"
-
 #include <iostream>
+
+#include "Program.h"
 
 namespace hyde {
 namespace {
@@ -44,20 +44,20 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   // Erase any empty or no-op child regions.
   auto changed = false;
   auto has_ends_with_return = false;
-  par->regions.RemoveIf([&changed, &has_ends_with_return](REGION *child_region) {
+  par->regions.RemoveIf(
+      [&changed, &has_ends_with_return](REGION *child_region) {
+        if (child_region->EndsWithReturn()) {
+          has_ends_with_return = true;
+        }
 
-    if (child_region->EndsWithReturn()) {
-      has_ends_with_return = true;
-    }
-
-    if (child_region->IsNoOp()) {
-      child_region->parent = nullptr;
-      changed = true;
-      return true;
-    } else {
-      return false;
-    }
-  });
+        if (child_region->IsNoOp()) {
+          child_region->parent = nullptr;
+          changed = true;
+          return true;
+        } else {
+          return false;
+        }
+      });
 
   if (changed) {
     OptimizeImpl(prog, par);
@@ -66,14 +66,14 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
   assert(!has_ends_with_return);
 
-//  // One or more of the children of the parallel regions ends with a return.
-//  // That's a bit problematic.
-//  if (has_ends_with_return) {
-//    auto seq = prog->series_regions.Create(par->parent);
-//    par->ReplaceAllUsesWith(seq);
-//    par->parent = seq;
-//    seq->AddRegion(par);
-//  }
+  //  // One or more of the children of the parallel regions ends with a return.
+  //  // That's a bit problematic.
+  //  if (has_ends_with_return) {
+  //    auto seq = prog->series_regions.Create(par->parent);
+  //    par->ReplaceAllUsesWith(seq);
+  //    par->parent = seq;
+  //    seq->AddRegion(par);
+  //  }
 
   // The PARALLEL node is "canonical" as far as we can tell, so check to see
   // if any of its child regions might be mergeable.
@@ -131,6 +131,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
   if (changed) {
     OptimizeImpl(prog, par);
+    return true;
   }
 
   // Strip-mining for similarity and merge
@@ -464,7 +465,6 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
     }
 
     return changed;
-
   }
   auto has_matching = false;
   for (auto i = 0u; i < max_i; ++i) {
@@ -598,8 +598,8 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
             impl->next_id++, into_parent, target_call->called_proc.get(),
             target_call->op);
         if (!target_call->comment.empty()) {
-          COMMENT( copied_call->comment = __FILE__ ": InlineCalls: " +
-                                          target_call->comment; )
+          COMMENT(copied_call->comment =
+                      __FILE__ ": InlineCalls: " + target_call->comment;)
         }
         into_parent_regions.AddUse(copied_call);
 
@@ -814,9 +814,8 @@ void ProgramImpl::Optimize(void) {
   // A bunch of the optimizations check `region->IsNoOp()`, which looks down
   // to their children, or move children nodes into parent nodes. Thus, we want
   // to start deep and "bubble up" removal of no-ops and other things.
-  auto depth_cmp = +[] (REGION *a, REGION *b) {
-    return a->CachedDepth() > b->CachedDepth();
-  };
+  auto depth_cmp =
+      +[](REGION *a, REGION *b) { return a->CachedDepth() > b->CachedDepth(); };
 
   for (auto changed = true; changed;) {
     changed = false;
@@ -860,7 +859,8 @@ void ProgramImpl::Optimize(void) {
       } else if (op->body) {
         assert(op->body->parent == op);
         if (op->body->IsNoOp()) {
-//          op->body->comment = "NOP? " + op->body->comment;
+
+          //          op->body->comment = "NOP? " + op->body->comment;
 
           op->body->parent = nullptr;
           op->body.Clear();
@@ -918,7 +918,7 @@ void ProgramImpl::Optimize(void) {
                 next_id++, seq, i_proc,
                 ProgramOperation::kCallProcedureCheckTrue);
 
-            COMMENT( call_i->comment = __FILE__ ": ProgramImpl::Optimize"; )
+            COMMENT(call_i->comment = __FILE__ ": ProgramImpl::Optimize";)
 
             for (auto arg_var : j_proc->input_vars) {
               call_i->arg_vars.AddUse(arg_var);

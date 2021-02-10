@@ -340,6 +340,8 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
 const bool Node<ProgramVectorAppendRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
 
+  assert(false && "Likely a bug has ocurred somewhere");
+
   // NOTE(pag): This should probably always return false because this should be
   // covered by the CSE over REGIONs.
   return false;
@@ -419,6 +421,8 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramTransitionStateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  assert(false && "Likely a bug has ocurred somewhere");
+
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
   auto transition_body = body.get();
@@ -983,6 +987,8 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
 const bool Node<ProgramTupleCompareRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
 
+  assert(false && "Likely a bug has ocurred somewhere");
+
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
   auto this_body = body.get();
@@ -1092,6 +1098,8 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramGenerateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  assert(false && "Likely a bug has ocurred somewhere");
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
