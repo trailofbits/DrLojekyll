@@ -29,7 +29,7 @@ uint64_t Node<ProgramParallelRegion>::Hash(uint32_t depth) const {
 bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
                                          Node<ProgramRegion> *that_,
                                          uint32_t depth) const noexcept {
-  const auto that = that_->AsSeries();
+  const auto that = that_->AsParallel();
   const auto num_regions = regions.Size();
   if (!that || num_regions != that->regions.Size()) {
     return false;
