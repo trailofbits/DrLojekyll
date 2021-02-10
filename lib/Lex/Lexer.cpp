@@ -278,7 +278,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             literal.Store<lex::IndexDisp>(after_pos.Index() -
                                           ret.position.Index());
             literal.Store<lex::LineDisp>(after_pos.Line() -
-                                         ret.position.Index());
+                                         ret.position.Line());
             literal.Store<lex::Column>(after_pos.Column());
             return true;
 
@@ -293,7 +293,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             literal.Store<lex::IndexDisp>(after_pos.Index() -
                                           ret.position.Index());
             literal.Store<lex::LineDisp>(after_pos.Line() -
-                                         ret.position.Index());
+                                         ret.position.Line());
             literal.Store<lex::Column>(after_pos.Column());
             return true;
 
@@ -306,7 +306,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             literal.Store<lex::IndexDisp>(after_pos.Index() -
                                           ret.position.Index());
             literal.Store<lex::LineDisp>(after_pos.Line() -
-                                         ret.position.Index());
+                                         ret.position.Line());
             literal.Store<lex::Column>(after_pos.Column());
             return true;
           }
