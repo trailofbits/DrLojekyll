@@ -732,36 +732,53 @@ void ParserImpl::ParseLocalExport(
       case 8:
         if (Lexeme::kPragmaPerfInline == lexeme) {
           if (local->inline_attribute.IsValid()) {
+            // Found more than one @inline attributes
             context->error_log.Append(scope_range, tok_range)
                 << "Unexpected second '@inline' pragma on " << introducer_tok
                 << " '" << local->name << "'";
-            state = 9;  // Ignore further errors, but add the local in.
+            state = 10;  // Ignore further errors, but add the local in.
             continue;
 
           } else {
+            // Found an @inline attribute
             local->inline_attribute = tok;
             state = 8;
             continue;
           }
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          local->last_tok = tok;
+          state = 9;
+          continue;
         } else {
           DisplayRange err_range(tok.Position(),
                                  sub_tokens.back().NextPosition());
           context->error_log.Append(scope_range, err_range)
-              << "Unexpected tokens following declaration of the '"
-              << local->name << "' local";
-          state = 9;  // Ignore further errors, but add the local in.
+              << "Unexpected tokens before the terminating period in the"
+              << " declaration of the '" << local->name << "' local";
+          state = 10;
           continue;
         }
 
-      case 9: continue;
+      case 9: {
+        DisplayRange err_range(tok.Position(),
+                               sub_tokens.back().NextPosition());
+        context->error_log.Append(scope_range, err_range)
+            << "Unexpected tokens following declaration of the '"
+            << local->name << "' local";
+        state = 10;  // Ignore further errors, but add the local in.
+        continue;
+      }
+
+      case 10: continue;
+
     }
   }
 
-  if (state < 8) {
+  if (state != 9) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete " << introducer_tok
-        << " declaration; the declaration must be "
-        << "placed entirely on one line";
+        << " declaration; the declaration must end "
+        << "with a period";
     RemoveDecl<NodeType>(std::move(local));
 
   // Add the local to the module.

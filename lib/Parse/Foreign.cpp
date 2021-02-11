@@ -296,16 +296,40 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           } else {
             transparent = tok;
             set_transparent();
+            continue;
           }
 
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          // (sonya): Is there a last_tok to be set here?????
+          // Am I not supposed to be trying to access it through type?
+          //type->last_tok = tok;
+          state = 4;
+          continue;
+
         } else if (report_trailing) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Unexpected trailing token '" << tok
+              << "' before the terminating period in foreign type declaration";
+          report_trailing = false;
+        }
+        break;
+      case 4:
+        if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
               << "Unexpected trailing token '" << tok
               << "' after foreign type declaration";
           report_trailing = false;
         }
-        break;
+        continue;
+        // (sonya): It doesn't look like you were absorbing the previous excess tokens,
+        //so is it fine that my new semantics should be absorbing the excess after the period now?
     }
+  }
+
+  if (state != 4) {
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete foreign type declaration; the foreign type "
+        << "declaration must end with a period";
   }
 
   if (alloc_type) {
@@ -525,13 +549,28 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
       // We'll just consume these.
       case 3:
+        if (Lexeme::kPuncPeriod == lexeme) {
+          // (sonya): Again, should I be setting a last_tok here?
+          //type->last_tok = tok;
+          state = 4;
+          continue;
+        } else if (report_trailing) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Unexpected trailing token '" << tok
+              << "' before the terminating period in constant type declaration";
+          report_trailing = false;
+        }
+        break;
+
+      case 4:
         if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
               << "Unexpected trailing token '" << tok
               << "' after foreign constant declaration";
           report_trailing = false;
         }
-        break;
+        continue;
+        // (sonya) Again, that continue statement is absorbing excess tokens
     }
   }
 
@@ -543,6 +582,12 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
     context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
         << "Expected a variable or atom name here as the name of the "
         << "constant, but got nothing";
+    return;
+  } else if (state != 4) {
+    context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+        << "Incomplete foreign constant declaration; the foreign constant "
+        << "declaration must end with a period";
+
     return;
   }
 
