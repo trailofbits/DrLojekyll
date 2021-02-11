@@ -11,18 +11,24 @@ Node<ProgramParallelRegion>::AsParallel(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramParallelRegion>::Hash(void) const {
-  uint64_t hash = 0u;
+uint64_t Node<ProgramParallelRegion>::Hash(uint32_t depth) const {
+  uint64_t hash = 193u;
+  if (depth == 0) {
+    return hash;
+  }
+
   for (auto region : regions) {
-    hash ^= region->Hash();
+    hash ^= region->Hash(depth - 1u);
   }
   return hash;
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramParallelRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
+                                         Node<ProgramRegion> *that_,
+                                         uint32_t depth) const noexcept {
   const auto that = that_->AsParallel();
   const auto num_regions = regions.Size();
   if (!that || num_regions != that->regions.Size()) {
@@ -49,6 +55,10 @@ bool Node<ProgramParallelRegion>::Equals(
     grouped_regions[index].push_back(region);
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
   EqualitySet super_eq(eq, SuperSet());
   std::vector<REGION *> next_candidates;
 
@@ -71,7 +81,7 @@ bool Node<ProgramParallelRegion>::Equals(
       if (found) {
         next_candidates.push_back(this_region);
 
-      } else if (!this_region->Equals(super_eq, that_region)) {
+      } else if (!this_region->Equals(super_eq, that_region, depth - 1)) {
         next_candidates.push_back(this_region);
         super_eq.Clear();
 
@@ -91,6 +101,13 @@ bool Node<ProgramParallelRegion>::Equals(
   }
 
   return true;
+}
+
+const bool Node<ProgramParallelRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramParallelRegion");
+  assert(false);
+  return false;
 }
 
 // Returns true if this region is a no-op.

@@ -1,8 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Program.h"
-
 #include <iostream>
+
+#include "Program.h"
 
 namespace hyde {
 namespace {
@@ -44,20 +44,20 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   // Erase any empty or no-op child regions.
   auto changed = false;
   auto has_ends_with_return = false;
-  par->regions.RemoveIf([&changed, &has_ends_with_return](REGION *child_region) {
+  par->regions.RemoveIf(
+      [&changed, &has_ends_with_return](REGION *child_region) {
+        if (child_region->EndsWithReturn()) {
+          has_ends_with_return = true;
+        }
 
-    if (child_region->EndsWithReturn()) {
-      has_ends_with_return = true;
-    }
-
-    if (child_region->IsNoOp()) {
-      child_region->parent = nullptr;
-      changed = true;
-      return true;
-    } else {
-      return false;
-    }
-  });
+        if (child_region->IsNoOp()) {
+          child_region->parent = nullptr;
+          changed = true;
+          return true;
+        } else {
+          return false;
+        }
+      });
 
   if (changed) {
     OptimizeImpl(prog, par);
@@ -66,14 +66,14 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
   assert(!has_ends_with_return);
 
-//  // One or more of the children of the parallel regions ends with a return.
-//  // That's a bit problematic.
-//  if (has_ends_with_return) {
-//    auto seq = prog->series_regions.Create(par->parent);
-//    par->ReplaceAllUsesWith(seq);
-//    par->parent = seq;
-//    seq->AddRegion(par);
-//  }
+  //  // One or more of the children of the parallel regions ends with a return.
+  //  // That's a bit problematic.
+  //  if (has_ends_with_return) {
+  //    auto seq = prog->series_regions.Create(par->parent);
+  //    par->ReplaceAllUsesWith(seq);
+  //    par->parent = seq;
+  //    seq->AddRegion(par);
+  //  }
 
   // The PARALLEL node is "canonical" as far as we can tell, so check to see
   // if any of its child regions might be mergeable.
@@ -118,7 +118,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
           continue;  // Already removed.
         }
 
-        if (region1->Equals(eq, region2)) {
+        if (region1->Equals(eq, region2, UINT32_MAX)) {
           assert(region1 != region2);
           par->regions.RemoveIf([=](REGION *r) { return r == region2; });
           region2->parent = nullptr;
@@ -127,6 +127,80 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
         eq.Clear();
       }
     }
+  }
+
+  if (changed) {
+    OptimizeImpl(prog, par);
+    return true;
+  }
+
+  // Strip-mining for similarity and merge
+  // Candidate regions for merging in this parallel's regions
+  std::unordered_map<uint64_t, std::vector<REGION *>> candidates;
+  uint32_t depth = 0;
+
+  for (auto mining = true; mining && !changed;) {
+    mining = false;
+    candidates.clear();
+
+    // Populate candidates based on Hash.
+    // This doesn't necessarily mean they're 'Equals' though.
+    for (auto region : par->regions) {
+      candidates[region->Hash(depth)].push_back(region);
+    }
+
+    // Refine candidates with zero-depth 'Equals' to ensure merging isn't
+    // destructive, since equal Hash doesn't mean 'Equals' is true.
+    std::vector<std::vector<REGION *>> equal_candidates = {};
+    EqualitySet eq;
+    for (auto [_, combine_regions] : candidates) {
+      if (combine_regions.size() < 2) {
+        continue;
+      }
+
+      auto size = combine_regions.size();
+      while (size != 0) {
+        const auto checker = combine_regions.back();
+        combine_regions.pop_back();
+
+        // The following statements will have the following effect:
+        // 'combine_regions' contains non-'Equals' regions, and 'equals' contains
+        // 'Equals' regions as compared to 'checker'
+        auto it = std::stable_partition(combine_regions.begin(),
+                                        combine_regions.end(), [&](REGION *r) {
+                                          eq.Clear();
+                                          return !checker->Equals(eq, r, 0);
+                                        });
+        std::vector<REGION *> equals(
+            std::make_move_iterator(it),
+            std::make_move_iterator(combine_regions.end()));
+        combine_regions.erase(it, combine_regions.end());
+
+        // Only add vectors where we've found a match
+        if (equals.size() > 0) {
+          equals.push_back(checker);
+          equal_candidates.emplace_back(equals);
+        }
+        size = combine_regions.size();
+      }
+    }
+
+    // Combine candidates in 'equal_candidates'.
+    for (auto combine_regions : equal_candidates) {
+      assert(combine_regions.size() > 1);  // Should be enforced above
+      auto replacement = combine_regions.back();
+      combine_regions.pop_back();
+
+      if (auto merged = replacement->MergeEqual(prog, combine_regions);
+          merged) {
+        mining = true;
+        for (auto region : combine_regions) {
+          par->regions.RemoveIf([=](REGION *r) { return r == region; });
+        }
+      }
+    }
+
+    changed |= mining;
   }
 
   if (changed) {
@@ -391,7 +465,6 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
     }
 
     return changed;
-
   }
   auto has_matching = false;
   for (auto i = 0u; i < max_i; ++i) {
@@ -525,8 +598,8 @@ static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
             impl->next_id++, into_parent, target_call->called_proc.get(),
             target_call->op);
         if (!target_call->comment.empty()) {
-          COMMENT( copied_call->comment = __FILE__ ": InlineCalls: " +
-                                          target_call->comment; )
+          COMMENT(copied_call->comment =
+                      __FILE__ ": InlineCalls: " + target_call->comment;)
         }
         into_parent_regions.AddUse(copied_call);
 
@@ -741,9 +814,8 @@ void ProgramImpl::Optimize(void) {
   // A bunch of the optimizations check `region->IsNoOp()`, which looks down
   // to their children, or move children nodes into parent nodes. Thus, we want
   // to start deep and "bubble up" removal of no-ops and other things.
-  auto depth_cmp = +[] (REGION *a, REGION *b) {
-    return a->CachedDepth() > b->CachedDepth();
-  };
+  auto depth_cmp =
+      +[](REGION *a, REGION *b) { return a->CachedDepth() > b->CachedDepth(); };
 
   for (auto changed = true; changed;) {
     changed = false;
@@ -787,7 +859,8 @@ void ProgramImpl::Optimize(void) {
       } else if (op->body) {
         assert(op->body->parent == op);
         if (op->body->IsNoOp()) {
-//          op->body->comment = "NOP? " + op->body->comment;
+
+          //          op->body->comment = "NOP? " + op->body->comment;
 
           op->body->parent = nullptr;
           op->body.Clear();
@@ -809,7 +882,7 @@ void ProgramImpl::Optimize(void) {
       continue;
 
     } else if (proc->IsUsed() || proc->has_raw_use) {
-      const auto hash = proc->Hash();
+      const auto hash = proc->Hash(UINT32_MAX);
       similar_procs[hash].emplace_back(proc);
     }
   }
@@ -832,7 +905,7 @@ void ProgramImpl::Optimize(void) {
         PROC *&j_proc = procs[j];
 
         EqualitySet eq;
-        if (i_proc->Equals(eq, j_proc)) {
+        if (i_proc->Equals(eq, j_proc, UINT32_MAX)) {
 
           // If both need to be used, then make one call the other.
           if (i_proc->has_raw_use && j_proc->has_raw_use) {
@@ -845,7 +918,7 @@ void ProgramImpl::Optimize(void) {
                 next_id++, seq, i_proc,
                 ProgramOperation::kCallProcedureCheckTrue);
 
-            COMMENT( call_i->comment = __FILE__ ": ProgramImpl::Optimize"; )
+            COMMENT(call_i->comment = __FILE__ ": ProgramImpl::Optimize";)
 
             for (auto arg_var : j_proc->input_vars) {
               call_i->arg_vars.AddUse(arg_var);

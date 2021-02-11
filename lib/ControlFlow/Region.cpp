@@ -73,9 +73,16 @@ bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramRegion>::Equals(EqualitySet &,
-                                 Node<ProgramRegion> *) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramRegion>::Equals(EqualitySet &, Node<ProgramRegion> *,
+                                 uint32_t) const noexcept {
+  return false;
+}
+
+const bool
+Node<ProgramRegion>::MergeEqual(ProgramImpl *prog,
+                                std::vector<Node<ProgramRegion> *> &merges) {
   return false;
 }
 

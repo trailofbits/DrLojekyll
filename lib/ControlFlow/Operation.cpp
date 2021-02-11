@@ -2,15 +2,15 @@
 
 #include <drlojekyll/Util/BitManipulation.h>
 
-#include "Program.h"
+// #include <iostream>
 
-//#include <iostream>
+#include "Program.h"
 
 #define FAILED_EQ(...)
 
-//#define FAILED_EQ(that)
-//  std::cerr << __LINE__ << ": " << this->containing_procedure->id
-//            << " != " << that->containing_procedure->id << std::endl
+// #define FAILED_EQ(that)
+//   std::cerr << __LINE__ << ": " << this->containing_procedure->id
+//             << " != " << that->containing_procedure->id << std::endl
 
 namespace hyde {
 
@@ -140,8 +140,9 @@ Node<ProgramOperationRegion>::AsTupleCompare(void) noexcept {
   return nullptr;
 }
 
-bool Node<ProgramVectorLoopRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -149,23 +150,38 @@ bool Node<ProgramVectorLoopRegion>::Equals(
   }
 
   const auto that = that_op->AsVectorLoop();
+  const auto def_vars_size = defined_vars.Size();
   if (!that || !eq.Contains(vector.get(), that->vector.get()) ||
-      (!body.get()) != (!that->body.get())) {
+      def_vars_size != that->defined_vars.Size()) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!body.get()) != (!that->body.get())) {
     FAILED_EQ(that_);
     return false;
   }
 
   if (auto that_body = that->OP::body.get(); that_body) {
-
-    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+    for (auto i = 0u, max_i = def_vars_size; i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body);
-
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramVectorLoopRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorLoopRegion");
+  assert(false);
+  return false;
 }
 
 Node<ProgramVectorLoopRegion> *
@@ -173,14 +189,18 @@ Node<ProgramVectorLoopRegion>::AsVectorLoop(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramVectorLoopRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorLoopRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -194,15 +214,19 @@ Node<ProgramLetBindingRegion>::AsLetBinding(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramLetBindingRegion>::Hash(void) const {
+uint64_t Node<ProgramLetBindingRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : used_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -211,8 +235,9 @@ bool Node<ProgramLetBindingRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramLetBindingRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -220,33 +245,54 @@ bool Node<ProgramLetBindingRegion>::Equals(
   }
 
   const auto that = that_op->AsLetBinding();
-  const auto num_vars = defined_vars.Size();
-  if (!that || num_vars != that->defined_vars.Size() ||
-      (!body.get()) != (!that->body.get())) {
+  const auto num_defined_vars = defined_vars.Size();
+  const auto num_used_vars = used_vars.Size();
+  if (!that || num_defined_vars != that->defined_vars.Size() ||
+      num_used_vars != that->used_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
-  for (auto i = 0u; i < num_vars; ++i) {
+  for (auto i = 0u; i < num_used_vars; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!body.get()) != (!that->body.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
   if (auto that_body = that->OP::body.get(); that_body) {
-    for (auto i = 0u; i < num_vars; ++i) {
+    for (auto i = 0u; i < num_defined_vars; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
   }
 }
 
-uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
+const bool Node<ProgramLetBindingRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  // NOTE(ekilmer): Need these checks to ensure that a merge would actually be applicable
+  if (defined_vars.Size() > 0 || used_vars.Size() > 0) {
+    NOTE("TODO(ekilmer): Unimplemented merging of ProgramLetBinding");
+    assert(false);
+  }
+  return false;
+}
+
+uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
@@ -257,11 +303,14 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  (void) depth;
   return hash;
 }
 
-bool Node<ProgramVectorAppendRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
+  (void) depth;
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -269,8 +318,12 @@ bool Node<ProgramVectorAppendRegion>::Equals(
   }
 
   const auto that = that_op->AsVectorAppend();
-  if (!that || !eq.Contains(vector.get(), that->vector.get())) {
+  if (!that) {
     FAILED_EQ(that_);
+    return false;
+  }
+
+  if (!eq.Contains(vector.get(), that->vector.get())) {
     return false;
   }
 
@@ -284,6 +337,16 @@ bool Node<ProgramVectorAppendRegion>::Equals(
   return true;
 }
 
+const bool Node<ProgramVectorAppendRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  assert(false && "Likely a bug has ocurred somewhere");
+
+  // NOTE(pag): This should probably always return false because this should be
+  // covered by the CSE over REGIONs.
+  return false;
+}
+
 Node<ProgramVectorAppendRegion> *
 Node<ProgramVectorAppendRegion>::AsVectorAppend(void) noexcept {
   return this;
@@ -294,7 +357,7 @@ Node<ProgramTransitionStateRegion>::AsTransitionState(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
+uint64_t Node<ProgramTransitionStateRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(from_state) * 13;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(to_state) * 17;
@@ -304,8 +367,12 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -314,8 +381,9 @@ bool Node<ProgramTransitionStateRegion>::IsNoOp(void) const noexcept {
   return false;
 }
 
-bool Node<ProgramTransitionStateRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
+                                                Node<ProgramRegion> *that_,
+                                                uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -323,7 +391,8 @@ bool Node<ProgramTransitionStateRegion>::Equals(
   }
 
   const auto that = that_op->AsTransitionState();
-  if (!that || table.get() != that->table.get() || !body != !(that->body)) {
+  if (!that || table.get() != that->table.get() ||
+      from_state != that->from_state || to_state != that->to_state) {
     FAILED_EQ(that_);
     return false;
   }
@@ -335,22 +404,59 @@ bool Node<ProgramTransitionStateRegion>::Equals(
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
+  if (!body != !(that->body)) {
+    return false;
+  }
+
   if (body) {
-    return body->Equals(eq, that->body.get());
+    return body->Equals(eq, that->body.get(), depth - 1u);
   }
 
   return true;
 }
 
-uint64_t Node<ProgramExistenceAssertionRegion>::Hash(void) const {
+const bool Node<ProgramTransitionStateRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  // New parallel region for merged bodies into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  auto transition_body = body.get();
+  if (transition_body) {
+    new_par->regions.AddUse(transition_body);
+    transition_body->parent = new_par;
+  }
+  body.Clear();
+  body.Emplace(this, new_par);
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsTransitionState();
+    assert(merge);  // These should all be the same type
+    const auto merge_body = merge->body.get();
+    if (merge_body) {
+      new_par->regions.AddUse(merge_body);
+      merge_body->parent = new_par;
+    }
+    merge->body.Clear();
+    merge->parent = nullptr;
+  }
+  return true;
+}
+
+uint64_t Node<ProgramExistenceAssertionRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : cond_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -360,7 +466,8 @@ bool Node<ProgramExistenceAssertionRegion>::IsNoOp(void) const noexcept {
 }
 
 bool Node<ProgramExistenceAssertionRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+    EqualitySet &eq, Node<ProgramRegion> *that_,
+    uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op || this->OP::op != that_op->OP::op) {
     FAILED_EQ(that_);
@@ -385,6 +492,14 @@ bool Node<ProgramExistenceAssertionRegion>::Equals(
   return true;
 }
 
+const bool Node<ProgramExistenceAssertionRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE(
+      "TODO(ekilmer): Unimplemented merging of ProgramExistenceAssertionRegion");
+  assert(false);
+  return false;
+}
+
 Node<ProgramExistenceAssertionRegion> *
 Node<ProgramExistenceAssertionRegion>::AsExistenceAssertion(void) noexcept {
   return this;
@@ -405,7 +520,8 @@ Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramVectorClearRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorClearRegion>::Hash(uint32_t depth) const {
+  (void) depth;
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
@@ -414,8 +530,10 @@ uint64_t Node<ProgramVectorClearRegion>::Hash(void) const {
   return hash;
 }
 
-bool Node<ProgramVectorClearRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
+                                            Node<ProgramRegion> *that_,
+                                            uint32_t depth) const noexcept {
+  (void) depth;
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -431,6 +549,13 @@ bool Node<ProgramVectorClearRegion>::Equals(
   }
 }
 
+const bool Node<ProgramVectorClearRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorClearRegion");
+  assert(false);
+  return false;
+}
+
 Node<ProgramVectorClearRegion> *
 Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
   return this;
@@ -442,19 +567,20 @@ Node<ProgramVectorSwapRegion>::AsVectorSwap(void) noexcept {
 }
 
 
-uint64_t Node<ProgramVectorSwapRegion>::Hash(void) const {
+uint64_t Node<ProgramVectorSwapRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(lhs->kind) + 1u) * 17;
   hash ^= (static_cast<unsigned>(rhs->kind) + 1u) * 17;
   for (auto type : lhs->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  (void) depth;
   return hash;
 }
 
-
-bool Node<ProgramVectorSwapRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -479,17 +605,28 @@ bool Node<ProgramVectorSwapRegion>::Equals(
   }
 }
 
-uint64_t Node<ProgramVectorUniqueRegion>::Hash(void) const {
+const bool Node<ProgramVectorSwapRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  // NOTE(pag): if this condition is ever satisfied, then a bug has probably
+  // been discovered.
+  assert(false && "FIX: Bug has likely been discovered.");
+  return false;
+}
+
+uint64_t Node<ProgramVectorUniqueRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
   }
+  (void) depth;
   return hash;
 }
 
-bool Node<ProgramVectorUniqueRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramVectorUniqueRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
@@ -505,12 +642,19 @@ bool Node<ProgramVectorUniqueRegion>::Equals(
   }
 }
 
+const bool Node<ProgramVectorUniqueRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorUniqueRegion");
+  assert(false);
+  return false;
+}
+
 Node<ProgramVectorUniqueRegion> *
 Node<ProgramVectorUniqueRegion>::AsVectorUnique(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramTableJoinRegion>::Hash(void) const {
+uint64_t Node<ProgramTableJoinRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto table : this->tables) {
     hash ^= RotateRight64(hash, 17) * (table->id + 17u);
@@ -518,8 +662,12 @@ uint64_t Node<ProgramTableJoinRegion>::Hash(void) const {
   for (auto index : this->indices) {
     hash ^= RotateRight64(hash, 13) * (index->id + 13u);
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -528,8 +676,9 @@ bool Node<ProgramTableJoinRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramTableJoinRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
+                                          Node<ProgramRegion> *that_,
+                                          uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -579,6 +728,7 @@ bool Node<ProgramTableJoinRegion>::Equals(
     }
   }
 
+
   if (auto that_body = that->OP::body.get(); that_body) {
     const auto &pivot_vars_1 = pivot_vars;
     const auto &pivot_vars_2 = that->pivot_vars;
@@ -594,30 +744,46 @@ bool Node<ProgramTableJoinRegion>::Equals(
       }
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    if (depth == 0) {
+      return true;
+    }
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
   }
 }
 
+const bool Node<ProgramTableJoinRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableJoinRegion");
+  assert(false);
+  return false;
+}
+
 bool Node<ProgramTableProductRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-uint64_t Node<ProgramTableProductRegion>::Hash(void) const {
+uint64_t Node<ProgramTableProductRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto table : this->tables) {
     hash ^= RotateRight64(hash, 17) * (table->id + 17u);
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
 
-bool Node<ProgramTableProductRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -655,19 +821,34 @@ bool Node<ProgramTableProductRegion>::Equals(
       }
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    if (depth == 0) {
+      return true;
+    }
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
   }
 }
 
-uint64_t Node<ProgramTableScanRegion>::Hash(void) const {
+const bool Node<ProgramTableProductRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableProductRegion");
+  assert(false);
+  return false;
+}
+
+uint64_t Node<ProgramTableScanRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (table->id + 17u);
   hash ^= RotateRight64(hash, 15) * (index->id + 13u);
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -680,8 +861,9 @@ bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
   }
 }
 
-bool Node<ProgramTableScanRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
+                                          Node<ProgramRegion> *that_,
+                                          uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -713,7 +895,14 @@ bool Node<ProgramTableScanRegion>::Equals(
   return eq.Contains(this->output_vector.get(), that->output_vector.get());
 }
 
-uint64_t Node<ProgramTupleCompareRegion>::Hash(void) const {
+const bool Node<ProgramTableScanRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableScanRegion");
+  assert(false);
+  return false;
+}
+
+uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (static_cast<unsigned>(this->cmp_op) + 17u);
   for (auto var : this->lhs_vars) {
@@ -726,8 +915,12 @@ uint64_t Node<ProgramTupleCompareRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 11u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 13u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -741,35 +934,80 @@ bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramTupleCompareRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
+                                             Node<ProgramRegion> *that_,
+                                             uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
     return false;
   }
-  const auto num_vars = lhs_vars.Size();
+  const auto num_lhs_vars = lhs_vars.Size();
+  const auto num_rhs_vars = rhs_vars.Size();
   const auto that = op->AsTupleCompare();
-  if (!that || cmp_op != that->cmp_op || num_vars != that->lhs_vars.Size() ||
-      (!this->OP::body.get()) != (!that->OP::body.get())) {
+  if (!that || cmp_op != that->cmp_op ||
+      num_lhs_vars != that->lhs_vars.Size() ||
+      num_rhs_vars != that->rhs_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
-  for (auto i = 0u; i < num_vars; ++i) {
-    if (!eq.Contains(lhs_vars[i], that->lhs_vars[i]) ||
-        !eq.Contains(rhs_vars[i], that->rhs_vars[i])) {
+  for (auto i = 0u; i < num_lhs_vars; ++i) {
+    if (!eq.Contains(lhs_vars[i], that->lhs_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
   }
 
+  for (auto i = 0u; i < num_rhs_vars; ++i) {
+    if (!eq.Contains(rhs_vars[i], that->rhs_vars[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
+    return false;
+  }
+
   if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
   }
+}
+
+const bool Node<ProgramTupleCompareRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  assert(false && "Likely a bug has ocurred somewhere");
+
+  // New parallel region for merged bodies into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  auto this_body = body.get();
+  if (this_body) {
+    new_par->regions.AddUse(this_body);
+    this_body->parent = new_par;
+  }
+  body.Clear();
+  body.Emplace(this, new_par);
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsTupleCompare();
+    assert(merge);  // These should all be the same type
+    const auto merge_body = merge->body.get();
+    if (merge_body) {
+      new_par->regions.AddUse(merge_body);
+      merge_body->parent = new_par;
+    }
+    merge->body.Clear();
+    merge->parent = nullptr;
+  }
+  return true;
 }
 
 Node<ProgramGenerateRegion> *
@@ -777,7 +1015,7 @@ Node<ProgramGenerateRegion>::AsGenerate(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramGenerateRegion>::Hash(void) const {
+uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) *
           (static_cast<unsigned>(this->functor.Id()) + 17u);
@@ -787,8 +1025,12 @@ uint64_t Node<ProgramGenerateRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -803,9 +1045,11 @@ bool Node<ProgramGenerateRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramGenerateRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
+                                         Node<ProgramRegion> *that_,
+                                         uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -813,36 +1057,78 @@ bool Node<ProgramGenerateRegion>::Equals(
   }
 
   const auto that = op->AsGenerate();
+  auto used_vars_size = used_vars.Size();
+  auto defined_vars_size = defined_vars.Size();
   if (!that || this->OP::op != that->OP::op || functor != that->functor ||
-      (!this->OP::body.get()) != (!that->OP::body.get())) {
+      used_vars_size != that->used_vars.Size() ||
+      defined_vars_size != that->defined_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
-  for (auto i = 0u, max_i = used_vars.Size(); i < max_i; ++i) {
+  for (auto i = 0u, max_i = used_vars_size; i < max_i; ++i) {
     if (!eq.Contains(used_vars[i], that->used_vars[i])) {
       FAILED_EQ(that_);
       return false;
     }
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
   if (auto that_body = that->OP::body.get(); that_body) {
-    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+    for (auto i = 0u, max_i = defined_vars_size; i < max_i; ++i) {
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body);
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
 
   } else {
     return true;
   }
 }
 
+const bool Node<ProgramGenerateRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  // New parallel region for merged bodies into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  auto transition_body = body.get();
+  if (transition_body) {
+    new_par->regions.AddUse(transition_body);
+    transition_body->parent = new_par;
+  }
+  body.Clear();
+  body.Emplace(this, new_par);
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsGenerate();
+    assert(merge);  // These should all be the same type
+    const auto merge_body = merge->body.get();
+    if (merge_body) {
+      new_par->regions.AddUse(merge_body);
+      merge_body->parent = new_par;
+    }
+    merge->body.Clear();
+    merge->parent = nullptr;
+
+    // Replace all defined variables in the merge with this's defined variables
+    for (auto i = 0u, max_i = defined_vars.Size(); i < max_i; ++i) {
+      merge->defined_vars[i]->ReplaceAllUsesWith(defined_vars[i]);
+    }
+  }
+  return true;
+}
+
 Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramCallRegion>::Hash(void) const {
+uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
 
   for (auto var : this->arg_vars) {
@@ -857,9 +1143,12 @@ uint64_t Node<ProgramCallRegion>::Hash(void) const {
       hash ^= RotateRight64(hash, 7) * (static_cast<unsigned>(type) + 3u);
     }
   }
+  if (depth == 0) {
+    return hash;
+  }
 
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -870,25 +1159,27 @@ bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
   // NOTE(pag): Not really worth checking as even trivial procedures are
   //            treated as non-no-ops.
 
-//  if (!called_proc) {
-//    return true;
-//
-//  } else if (this->OP::body) {
-//    if (this->OP::body->IsNoOp()) {
-//      return called_proc->IsNoOp();
-//    } else {
-//      return false;
-//    }
-//
-//  } else {
-//    return called_proc->IsNoOp();
-//  }
+  //  if (!called_proc) {
+  //    return true;
+  //
+  //  } else if (this->OP::body) {
+  //    if (this->OP::body->IsNoOp()) {
+  //      return called_proc->IsNoOp();
+  //    } else {
+  //      return false;
+  //    }
+  //
+  //  } else {
+  //    return called_proc->IsNoOp();
+  //  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramCallRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
+                                     Node<ProgramRegion> *that_,
+                                     uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -896,12 +1187,7 @@ bool Node<ProgramCallRegion>::Equals(
   }
 
   const auto that = op->AsCall();
-  if (!that) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
-  if (!body != !that->body) {
+  if (!that || this->OP::op != that->OP::op) {
     FAILED_EQ(that_);
     return false;
   }
@@ -913,6 +1199,9 @@ bool Node<ProgramCallRegion>::Equals(
     FAILED_EQ(that_);
     return false;
   }
+
+  const auto this_called_proc = called_proc.get();
+  const auto that_called_proc = that->called_proc.get();
 
   for (auto i = 0u, max_i = num_arg_vars; i < max_i; ++i) {
     if (!eq.Contains(arg_vars[i], that->arg_vars[i])) {
@@ -928,26 +1217,35 @@ bool Node<ProgramCallRegion>::Equals(
     }
   }
 
-  // This function tests the true/false return value of the called procedure.
-  if (body && !body->Equals(eq, that->body.get())) {
+  if (!body != !that->body) {
     FAILED_EQ(that_);
     return false;
   }
 
-  const auto this_called_proc = called_proc.get();
-  const auto that_called_proc = that->called_proc.get();
-
-  if (this_called_proc == that_called_proc) {
-    return true;
-
-  } else if (eq.Contains(this_called_proc, that_called_proc)) {
-    return true;
-
-  // Different functions are being called, check to see if their function bodies
-  // are the same.
-  } else {
-    return this_called_proc->Equals(eq, that_called_proc);
+  // This function tests the true/false return value of the called procedure.
+  if (depth != 0 && body && !body->Equals(eq, that->body.get(), depth - 1)) {
+    FAILED_EQ(that_);
+    return false;
   }
+
+  if (this_called_proc == that_called_proc ||
+      eq.Contains(this_called_proc, that_called_proc)) {
+    return true;
+  } else {
+    if (depth == 0) {
+      return false;
+    }
+    // Different functions are being called, check to see if their function bodies
+    // are the same.
+    return this_called_proc->Equals(eq, that_called_proc, depth - 1);
+  }
+}
+
+const bool Node<ProgramCallRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramCallRegion");
+  assert(false);
+  return false;
 }
 
 Node<ProgramPublishRegion> *
@@ -955,7 +1253,7 @@ Node<ProgramPublishRegion>::AsPublish(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramPublishRegion>::Hash(void) const {
+uint64_t Node<ProgramPublishRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * this->message.Id();
 
@@ -964,13 +1262,16 @@ uint64_t Node<ProgramPublishRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  (void) depth;
   return hash;
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramPublishRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramPublishRegion>::Equals(EqualitySet &eq,
+                                        Node<ProgramRegion> *that_,
+                                        uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -993,6 +1294,12 @@ bool Node<ProgramPublishRegion>::Equals(
   return true;
 }
 
+const bool Node<ProgramPublishRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramPublishRegion");
+  assert(false);
+  return false;
+}
 
 Node<ProgramReturnRegion> *Node<ProgramReturnRegion>::AsReturn(void) noexcept {
   return this;
@@ -1003,7 +1310,8 @@ bool Node<ProgramReturnRegion>::EndsWithReturn(void) const noexcept {
   return true;
 }
 
-uint64_t Node<ProgramReturnRegion>::Hash(void) const {
+uint64_t Node<ProgramReturnRegion>::Hash(uint32_t depth) const {
+  (void) depth;
   return static_cast<unsigned>(this->OP::op) * 53;
 }
 
@@ -1016,9 +1324,11 @@ bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramReturnRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramReturnRegion>::Equals(EqualitySet &eq,
+                                       Node<ProgramRegion> *that_,
+                                       uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -1032,6 +1342,13 @@ bool Node<ProgramReturnRegion>::Equals(
   }
 
   return this->OP::op == that->OP::op;
+}
+
+const bool Node<ProgramReturnRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramReturnRegion");
+  assert(false);
+  return false;
 }
 
 Node<ProgramCheckStateRegion> *
@@ -1067,7 +1384,7 @@ bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
   return 3 == has_any;
 }
 
-uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {
+uint64_t Node<ProgramCheckStateRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (this->table->id * 13u);
 
@@ -1076,14 +1393,18 @@ uint64_t Node<ProgramCheckStateRegion>::Hash(void) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (depth == 0) {
+    return hash;
+  }
+
   if (this->OP::body) {
-    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash();
+    hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
   if (this->absent_body) {
-    hash ^= RotateRight64(hash, 13) * this->absent_body->Hash();
+    hash ^= RotateRight64(hash, 13) * this->absent_body->Hash(depth - 1u);
   }
   if (this->unknown_body) {
-    hash ^= RotateRight64(hash, 15) * this->unknown_body->Hash();
+    hash ^= RotateRight64(hash, 15) * this->unknown_body->Hash(depth - 1u);
   }
   return hash;
 }
@@ -1105,9 +1426,11 @@ bool Node<ProgramCheckStateRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramCheckStateRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
@@ -1125,12 +1448,6 @@ bool Node<ProgramCheckStateRegion>::Equals(
     return false;
   }
 
-  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
-      !this->unknown_body != !that->unknown_body) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
   const auto num_cols = this->col_values.Size();
   for (auto i = 0u; i < num_cols; ++i) {
     if (!eq.Contains(this->col_values[i], that->col_values[i])) {
@@ -1139,14 +1456,34 @@ bool Node<ProgramCheckStateRegion>::Equals(
     }
   }
 
-  if ((body && !body->Equals(eq, that->body.get())) ||
-      (absent_body && !absent_body->Equals(eq, that->absent_body.get())) ||
-      (unknown_body && !unknown_body->Equals(eq, that->unknown_body.get()))) {
+  if (depth == 0) {
+    return true;
+  }
+  auto next_depth = depth - 1;
+
+  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
+      !this->unknown_body != !that->unknown_body) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  if ((body && !body->Equals(eq, that->body.get(), next_depth)) ||
+      (absent_body &&
+       !absent_body->Equals(eq, that->absent_body.get(), next_depth)) ||
+      (unknown_body &&
+       !unknown_body->Equals(eq, that->unknown_body.get(), next_depth))) {
     FAILED_EQ(that_);
     return false;
   }
 
   return true;
+}
+
+const bool Node<ProgramCheckStateRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramCheckStateRegion");
+  assert(false);
+  return false;
 }
 
 }  // namespace hyde

@@ -12,10 +12,13 @@ Node<ProgramSeriesRegion> *Node<ProgramSeriesRegion>::AsSeries(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramSeriesRegion>::Hash(void) const {
+uint64_t Node<ProgramSeriesRegion>::Hash(uint32_t depth) const {
   uint64_t hash = 956u;
+  if (depth == 0) {
+    return hash;
+  }
   for (auto region : regions) {
-    hash ^= RotateRight64(hash, 13u) * region->Hash();
+    hash ^= RotateRight64(hash, 13u) * region->Hash(depth - 1u);
   }
   return hash;
 }
@@ -42,22 +45,35 @@ bool Node<ProgramSeriesRegion>::EndsWithReturn(void) const noexcept {
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
-// variable renaming).
-bool Node<ProgramSeriesRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_) const noexcept {
+// variable renaming) after searching down `depth` levels or until leaf,
+// whichever is first, and where `depth` is 0, compare `this` to `that.
+bool Node<ProgramSeriesRegion>::Equals(EqualitySet &eq,
+                                       Node<ProgramRegion> *that_,
+                                       uint32_t depth) const noexcept {
   const auto that = that_->AsSeries();
   const auto num_regions = regions.Size();
   if (!that || num_regions != that->regions.Size()) {
     return false;
   }
 
+  if (depth == 0) {
+    return true;
+  }
+
   for (auto i = 0u; i < num_regions; ++i) {
-    if (!regions[i]->Equals(eq, that->regions[i])) {
+    if (!regions[i]->Equals(eq, that->regions[i], depth - 1u)) {
       return false;
     }
   }
 
   return true;
+}
+
+const bool Node<ProgramSeriesRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  // NOTE(ekilmer): Special region that has its own merging code in Optimize.cpp
+  return false;
 }
 
 }  // namespace hyde
