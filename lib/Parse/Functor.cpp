@@ -228,6 +228,11 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
             return;
           }
 
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          functor->last_tok = tok;
+          state = 10;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected '@range' pragma or '@impure' pragma here, "
@@ -288,13 +293,16 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
+      case 10:
+        state = 11;
+        break;
     }
   }
 
-  if (state != 6) {
+  if (state != 10) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete functor declaration; the declaration must be "
-        << "placed entirely on one line";
+        << "Incomplete functor declaration; the declaration must end "
+        << "with a period";
     RemoveDecl<ParsedFunctor>(std::move(functor));
     return;
   }
