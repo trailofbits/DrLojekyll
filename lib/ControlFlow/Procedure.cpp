@@ -6,12 +6,16 @@ namespace hyde {
 
 Node<ProgramProcedure>::~Node(void) {}
 
-uint64_t Node<ProgramProcedure>::Hash(void) const {
-  if (body) {
-    return body->Hash();
-  } else {
-    return 1u;
+uint64_t Node<ProgramProcedure>::Hash(uint32_t depth) const {
+  uint64_t hash = 1u;
+  if (depth == 0) {
+    return hash;
   }
+
+  if (body) {
+    return body->Hash(depth - 1u);
+  }
+  return hash;
 }
 
 // Returns `true` if this region is a no-op.
@@ -26,8 +30,8 @@ bool Node<ProgramProcedure>::IsNoOp(void) const noexcept {
   return ret;
 }
 
-bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
-                                    Node<ProgramRegion> *that_) const noexcept {
+bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
+                                    uint32_t depth) const noexcept {
   const auto that = that_->AsProcedure();
   if (!that) {
     return false;
@@ -105,13 +109,25 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq,
 
   eq.Insert(this, that_);
 
+  if (depth == 0) {
+    return true;
+  }
+
   // This function tests the true/false return value of the called procedure.
-  if (body && !body->Equals(eq, that->body.get())) {
+  if (body && !body->Equals(eq, that->body.get(), depth - 1u)) {
     return false;
 
   } else {
     return true;
   }
+}
+
+const bool
+Node<ProgramProcedure>::MergeEqual(ProgramImpl *prog,
+                                   std::vector<Node<ProgramRegion> *> &merges) {
+  NOTE("TODO(ekilmer): Unimplemented merging of ProgramProcedure");
+  assert(false);
+  return false;
 }
 
 Node<ProgramProcedure> *Node<ProgramProcedure>::AsProcedure(void) noexcept {
