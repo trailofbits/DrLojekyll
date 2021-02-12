@@ -235,7 +235,8 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected '@range' pragma or '@impure' pragma here, "
+              << "Expected either a terminating period or an "
+              << "'@range' pragma or '@impure' pragma here, "
               << "but got '" << tok << "' instead";
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
