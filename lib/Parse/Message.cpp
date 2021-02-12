@@ -163,8 +163,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
   if (state != 6) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete message declaration; the declaration must end "
-        << "with a period";
+        << "Incomplete message declaration; the declaration '"
+        << message->name << "' must end with a period";
 
     RemoveDecl<ParsedMessage>(std::move(message));
 

@@ -117,4 +117,4 @@ transitive_closure(From, To) : transitive_closure(From, X)
  
  * [Coding Style](docs/CodingStyle.md) 
  * [Grammar](docs/Grammar.md)
- * [Tutorial 1: Keeping track of the family](docs/Tutorials/1_KeepingTrackOfTheFamily.md)
+ * [Tutorial 1: Keeping track of the family](docs/Tutorial/1_KeepingTrackOfTheFamily.md)
