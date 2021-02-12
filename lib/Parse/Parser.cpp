@@ -319,6 +319,7 @@ bool ParserImpl::ReadStatement(void) {
       case Lexeme::kPuncPeriod:
         sub_tokens.push_back(tok);
         if (opening_parens.empty()) {
+          scope_range = SubTokenRange();
           return true;
         }
         continue;

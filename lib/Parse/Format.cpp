@@ -115,6 +115,7 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " @inline";
   }
+  os << ".";
   return os;
 }
 
@@ -276,7 +277,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       os << '\n' << foreign_const;
     }
   }
-
+  os << ".";
   return os;
 }
 
@@ -294,6 +295,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
   }
 
   os << constant.Constructor() << "```";
+  os << ".";
   return os;
 }
 
