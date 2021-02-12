@@ -1393,9 +1393,8 @@ bool ParsedForeignType::IsBuiltIn(void) const noexcept {
 
 std::optional<DisplayRange>
 ParsedForeignType::SpellingRange(Language lang_) const noexcept {
-  const auto lang = static_cast<unsigned>(lang_);
-  if (impl->info[lang].is_present) {
-    return impl->info[lang].range;
+  if (impl->last_tok.IsValid()) {
+    return DisplayRange(impl->name.Position(), impl->last_tok.NextPosition());
   } else {
     return std::nullopt;
   }

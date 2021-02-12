@@ -502,6 +502,9 @@ class Node<ParsedForeignType> {
   // The name of this type.
   Token name;
 
+  // Last token
+  Token last_tok;
+
   // Display ranges for all declarations.
   std::vector<DisplayRange> decls;
 
