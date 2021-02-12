@@ -300,7 +300,6 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           }
 
         } else if (Lexeme::kPuncPeriod == lexeme) {
-          type->last_tok = tok;
           state = 4;
           continue;
 
@@ -549,7 +548,6 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
       // We'll just consume these.
       case 3:
         if (Lexeme::kPuncPeriod == lexeme) {
-          type->last_tok = tok;
           state = 4;
           continue;
         }
