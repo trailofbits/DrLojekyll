@@ -1,8 +1,8 @@
-#query output(free i32 A)
+#query output(free i32 A).
 
-#local one(i32 A)
-#local direct_const(i32 A)
-#message cond_func(i32 A)
+#local one(i32 A).
+#local direct_const(i32 A).
+#message cond_func(i32 A).
 
 cond_res : cond_func(_A).
 
