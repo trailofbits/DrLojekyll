@@ -311,8 +311,8 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
       case 4:
         if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
-              << "Unexpected trailing token '" << tok
-              << "' at the end foreign constant declaration";
+              << "Unexpected token before/after expected period '" << tok
+              << "' at the end foreign type declaration";
           report_trailing = false;
         }
 
@@ -558,7 +558,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
       case 4:
         if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
-              << "Unexpected token '" << tok
+              << "Unexpected token before/after expected period '" << tok
               << "' at the end foreign constant declaration";
           report_trailing = false;
         }
