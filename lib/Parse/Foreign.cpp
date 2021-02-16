@@ -191,6 +191,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             continue;
           }
 
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          state = 4;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected string or code literal here for the foreign type's "
@@ -237,6 +241,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           transparent = tok;
           set_transparent();
           state = 3;
+          continue;
+
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          state = 4;
           continue;
 
         } else {

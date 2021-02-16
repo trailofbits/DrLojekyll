@@ -235,7 +235,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 
   // Forward declaration.
   if (!type.IsBuiltIn()) {
-    os << "#foreign " << type.Name();
+    os << "#foreign " << type.Name() << '.';
   }
 
   // Actual definitions, if any.
@@ -271,13 +271,13 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
         os << " @transparent";
       }
+      os << '.';
     }
 
     for (auto foreign_const : type.Constants(lang)) {
       os << '\n' << foreign_const;
     }
   }
-  os << ".";
   return os;
 }
 
