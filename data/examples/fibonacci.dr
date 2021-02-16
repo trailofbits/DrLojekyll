@@ -1,6 +1,6 @@
-#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.)
-#query fib(bound i32 N, free i32 Res)
-#local fib_impl(i32 N, i32 Res)
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.).
+#query fib(bound i32 N, free i32 Res).
+#local fib_impl(i32 N, i32 Res).
 fib(N, Res) : fib_impl(N, Res).
 fib_impl(0, 0).
 fib_impl(1, 1).

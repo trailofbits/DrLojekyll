@@ -1,9 +1,9 @@
 ; This test exists to see how constant propagation through join pivots affects things when the constants
 ; are definitely conflicting.
 
-#local bar(i32 A, i32 B, i32 C)
-#local baz(i32 A, i32 B, i32 C)
-#query foo(free i32 A, free i32 B, free i32 C)
+#local bar(i32 A, i32 B, i32 C).
+#local baz(i32 A, i32 B, i32 C).
+#query foo(free i32 A, free i32 B, free i32 C).
 
 foo(A, B, C) : bar(A, B, C), baz(A, B, C).
 bar(1, 2, 3).

@@ -1,34 +1,34 @@
 ; This example can parse EVM array declarations
 
-#foreign Token ```Tuple[str, int]```
-#foreign Lexeme ```str```
-#foreign ASTNode ```Tuple```
+#foreign Token ```Tuple[str, int]```.
+#foreign Lexeme ```str```.
+#foreign ASTNode ```Tuple```.
 
-#query type_name(free ASTNode BaseType)
+#query type_name(free ASTNode BaseType).
 
-#functor left_corner(bound ASTNode Node, free Token LeftCorner) @range(.)
-#functor right_corner(bound ASTNode Node, free Token RightCorner) @range(.)
-#message next_token(Token Tok, Token NextTok)
-#functor lexeme_of_token(bound Token Tok, free Lexeme L) @range(.)
-#functor start_function_type(bound Token FuncTok, bound Token LParen, free ASTNode Header) @range(.)
-#functor add_function_type_param(bound ASTNode Header, bound ASTNode ParamType, free ASTNode ExtendedHeader) @range(.)
-#functor finish_function_type_params(bound ASTNode Header, bound Token RParen, free ASTNode FinishedHeader) @range(.)
+#functor left_corner(bound ASTNode Node, free Token LeftCorner) @range(.).
+#functor right_corner(bound ASTNode Node, free Token RightCorner) @range(.).
+#message next_token(Token Tok, Token NextTok).
+#functor lexeme_of_token(bound Token Tok, free Lexeme L) @range(.).
+#functor start_function_type(bound Token FuncTok, bound Token LParen, free ASTNode Header) @range(.).
+#functor add_function_type_param(bound ASTNode Header, bound ASTNode ParamType, free ASTNode ExtendedHeader) @range(.).
+#functor finish_function_type_params(bound ASTNode Header, bound Token RParen, free ASTNode FinishedHeader) @range(.).
 
 
-#message other_type(ASTNode Node)
+#message other_type(ASTNode Node).
 
-#constant Lexeme PUNC_L_PAREN ```"("```
-#constant Lexeme PUNC_R_PAREN ```")"```
-#constant Lexeme PUNC_COMMA ```","```
-#constant Lexeme KEYWORD_FUNCTION ```"function"```
-#constant Lexeme KEYWORD_TYPE_BYTE ```"byte"```
-#constant Lexeme KEYWORD_TYPE_BYTES ```"bytes"```
-#constant Lexeme KEYWORD_RETURNS ```"returns"```
-#constant Token FAKE_R_PAREN ```(")", -1)```
+#constant Lexeme PUNC_L_PAREN ```"("```.
+#constant Lexeme PUNC_R_PAREN ```")"```.
+#constant Lexeme PUNC_COMMA ```","```.
+#constant Lexeme KEYWORD_FUNCTION ```"function"```.
+#constant Lexeme KEYWORD_TYPE_BYTE ```"byte"```.
+#constant Lexeme KEYWORD_TYPE_BYTES ```"bytes"```.
+#constant Lexeme KEYWORD_RETURNS ```"returns"```.
+#constant Token FAKE_R_PAREN ```(")", -1)```.
 
 type_name(OtherType) : other_type(OtherType).
 
-#local type_name_use(StartToken, Type)
+#local type_name_use(StartToken, Type).
 type_name_use(StartToken, Type)
     : type_name(Type)
     , left_corner(Type, StartToken).
@@ -45,7 +45,7 @@ type_name_use(StartToken, Type)
 ;    , build_elementary_type(T, Node).
 
 
-#local function_head(HeaderNode, NextTok)
+#local function_head(HeaderNode, NextTok).
 function_head(HeaderNode, NextTok)
     : next_token(Function, LParen)
     , lexeme_of_token(Function, KEYWORD_FUNCTION)
@@ -55,7 +55,7 @@ function_head(HeaderNode, NextTok)
     
 ; If we see something half unexpected, then inject in a closing parenthesis
 ; to model being done with the parameter list.
-#local fixed_function_head(HeaderNode, LParen, RParen, NotRParen)
+#local fixed_function_head(HeaderNode, LParen, RParen, NotRParen).
 fixed_function_head(FinishedHeaderNode, LParen, FAKE_R_PAREN, NotRParen)
     : function_head(HeaderNode, NotRParen)
     , lexeme_of_token(NotRParen, NotRParenLexeme)
@@ -65,12 +65,12 @@ fixed_function_head(FinishedHeaderNode, LParen, FAKE_R_PAREN, NotRParen)
     , finish_function_type_params(HeaderNode, FAKE_R_PAREN, FinishedHeaderNode)
     , right_corner(HeaderNode, LParen).
 
-#local function_type_param_delimiter(L)
+#local function_type_param_delimiter(L).
 function_type_param_delimiter(PUNC_COMMA).
 function_type_param_delimiter(PUNC_R_PAREN).
 
 ; Base case for a parameter list, i.e. it is a function head, followed by a type.
-#local function_head_with_param_type(Node, NextTok)
+#local function_head_with_param_type(Node, NextTok).
 function_head_with_param_type(HeaderNodeWithParam, NextTok)
     : function_head(HeaderNode, FirstTokOfParamType)
     , type_name_use(FirstTokOfParamType, ParamType)
@@ -80,7 +80,7 @@ function_head_with_param_type(HeaderNodeWithParam, NextTok)
     , function_type_param_delimiter(NextLexeme)
     , add_function_type_param(HeaderNode, ParamType, HeaderNodeWithParam).
 
-#local modified_function_type(HeaderNode, NextTok)
+#local modified_function_type(HeaderNode, NextTok).
 
 ; The next base case for a modified function type is one that is based on a function type head that has
 ; been fixed up, i.e. by injecting in a closing right parenthesis.
@@ -162,4 +162,4 @@ if __name__ == "__main__":
 
     assert 0 == len(good)
     assert passed
-```
+```.

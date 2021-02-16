@@ -191,6 +191,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             continue;
           }
 
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          state = 4;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected string or code literal here for the foreign type's "
@@ -237,6 +241,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           transparent = tok;
           set_transparent();
           state = 3;
+          continue;
+
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          state = 4;
           continue;
 
         } else {
@@ -296,16 +304,38 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           } else {
             transparent = tok;
             set_transparent();
+            continue;
           }
 
-        } else if (report_trailing) {
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          state = 4;
+          continue;
+
+        }
+
+        [[clang::fallthrough]];
+
+      case 4:
+        if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
-              << "Unexpected trailing token '" << tok
-              << "' after foreign type declaration";
+              << "Unexpected token before/after expected period '" << tok
+              << "' at the end foreign type declaration";
           report_trailing = false;
         }
-        break;
+
+        state = 5;
+        continue;
+
+      case 5:
+        // absorb any excess tokens
+        continue;
     }
+  }
+
+  if (state != 4) {
+    context->error_log.Append(scope_range, next_pos)
+        << "Incomplete foreign type declaration; the foreign type "
+        << "declaration must end with a period";
   }
 
   if (alloc_type) {
@@ -525,13 +555,25 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
       // We'll just consume these.
       case 3:
+        if (Lexeme::kPuncPeriod == lexeme) {
+          state = 4;
+          continue;
+        }
+        [[clang::fallthrough]];
+
+      case 4:
         if (report_trailing) {
           context->error_log.Append(scope_range, tok_range)
-              << "Unexpected trailing token '" << tok
-              << "' after foreign constant declaration";
+              << "Unexpected token before/after expected period '" << tok
+              << "' at the end foreign constant declaration";
           report_trailing = false;
         }
-        break;
+        state = 5;
+        continue;
+
+      case 5:
+        // absorb any excess tokens
+        continue;
     }
   }
 
@@ -543,6 +585,12 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
     context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
         << "Expected a variable or atom name here as the name of the "
         << "constant, but got nothing";
+    return;
+  } else if (state != 4) {
+    context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+        << "Incomplete foreign constant declaration; the foreign constant "
+        << "declaration must end with a period";
+
     return;
   }
 

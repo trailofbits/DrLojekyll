@@ -1,9 +1,9 @@
 ; This is to show that we want prove `indirect(1)` iff we get a `something` message. The interesting
 ; thing is that none of the variables related to `something` are used to prove `indirect(1)`.
 
-#message something(i32 X)
-#query proof(free i32 X)
-#local indirect(i32 X)
+#message something(i32 X).
+#query proof(free i32 X).
+#local indirect(i32 X).
 
 has_something : something(_).
 indirect(1) : has_something.

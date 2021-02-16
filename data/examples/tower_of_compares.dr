@@ -1,9 +1,9 @@
-#message add_entry(i32 A, i32 B, i32 C)
-#message add_entry2(i32 A)
-#message remove(i32 X)
-#local entry_3(A, B, C)
-#local entry_2(A, B)
-#query entry_1(bound i32 A, bound i32 B)
+#message add_entry(i32 A, i32 B, i32 C).
+#message add_entry2(i32 A).
+#message remove(i32 X).
+#local entry_3(A, B, C).
+#local entry_2(A, B).
+#query entry_1(bound i32 A, bound i32 B).
 
 entry_3(A, B, C) : add_entry(A, B, C).
 !entry_3(A, 1, 2) : remove(A).

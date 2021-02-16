@@ -158,24 +158,33 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           return;
         }
 
-      case 6: {
+      case 6:
+        if (Lexeme::kPuncPeriod == lexeme) {
+          query->last_tok = tok;
+          state = 7;
+          continue;
+        }
+        [[clang::fallthrough]];
+
+      case 7: {
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
             << "Unexpected tokens following declaration of the '" << name
-            << "' #query";
-        state = 7;  // Ignore further errors, but add the query in.
+            << "' #query ";
+        state = 8;  // Ignore further errors, but add the query in.
         continue;
       }
 
-      case 7: continue;
+      case 8:
+        continue; // absorb excess tokens
     }
   }
 
-  if (state < 6) {
+  if (state != 7) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete query declaration; the declaration must be "
-        << "placed entirely on one line";
+        << "Incomplete query declaration; the declaration must end with a "
+        << "period; last token was " << tok;
 
     RemoveDecl<ParsedQuery>(std::move(query));
   } else {

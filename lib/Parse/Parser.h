@@ -109,10 +109,6 @@ class ParserImpl {
   // Return the display range of all the sub tokens.
   DisplayRange SubTokenRange(void) const;
 
-  // Read until the next new line token. This fill sup `sub_tokens` with all
-  // read tokens.
-  void ReadLine(void);
-
   // Read until the next period. This fill sup `sub_tokens` with all
   // read tokens. Returns `false` if a period is not found.
   bool ReadStatement(void);

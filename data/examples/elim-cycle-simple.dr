@@ -1,7 +1,7 @@
-#query output(free i32 A)
+#query output(free i32 A).
 
-#local one(i32 A)
-#local direct_const(A)
+#local one(i32 A).
+#local direct_const(A).
 
 one(1).
 direct_const(A) : direct_const(A).
