@@ -85,15 +85,15 @@ code_data: "```python" <anything...> "```" ;
 code_data: <double quoted string literal> ;
 
 // Inline code statements to be emitted to the generated code.
-code_decl: "#prologue" code_data ;
-code_decl: "#epilogue" code_data ;
+code_decl: "#prologue" code_data "." ;
+code_decl: "#epilogue" code_data "." ;
 ```
 
 Inlined code can be target-language-specific, or generic. For example, the code
 `hello world` will be emitted into Python and C++ code, when generated.
 
 ```
-#prologue ```hello world```
+#prologue ```hello world```.
 ```
 
 However, a code block can be tagged with a target language. For example, the code
@@ -101,8 +101,8 @@ However, a code block can be tagged with a target language. For example, the cod
 emitted into C++ code.
 
 ```
-#prologue ```python fizz buzz```
-#prologue ```c++ foo bar```
+#prologue ```python fizz buzz```.
+#prologue ```c++ foo bar```.
 ```
 
 Inline code blocks can span multiple lines. Leading and trailing empty lines will be
@@ -163,10 +163,10 @@ foreign_type_name: variable ;
 foreign_decl_pragmas: ;
 foreign_decl_pragmas: "@transparent" ;
 
-foreign_decl: "#foreign" foreign_type_name ;
-foreign_decl: "#foreign" foreign_type_name code_data foreign_decl_pragmas ;
-foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```" foreign_decl_pragmas ;
-foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $> foreign_decl_pragmas ;
+foreign_decl: "#foreign" foreign_type_name "." ;
+foreign_decl: "#foreign" foreign_type_name code_data foreign_decl_pragmas "." ;
+foreign_decl: "#foreign" foreign_type_name code_data "```" <anything containing one $> "```" foreign_decl_pragmas "." ;
+foreign_decl: "#foreign" foreign_type_name code_data <double quoted string containing one $> foreign_decl_pragmas "." ;
 ```
 
 Foreign types can be forward declared, e.g. `#foreign Foo`. This lets modules
@@ -178,14 +178,14 @@ For example, the following declares the `IntPair` type as being represented in C
 as `std::pair<int, int>`.
 
 ```
-#foreign IntPair ```c++ std::pair<int, int>``` 
+#foreign IntPair ```c++ std::pair<int, int>```.
 ```
 
 In some cases, we may want to designate a target-specific constuctor for a foreign
 type. For example, one could define a custom 8-bit integer type in Python as follows.
 
 ```
-#foreign Int8 ```python int``` ```int(($) & 0xff)```
+#foreign Int8 ```python int``` ```int(($) & 0xff)```.
 ```
 
 In the above example, the second code block (which is never given a language prefix)
@@ -196,7 +196,7 @@ type.
 
 ## Declarations
 
-There are several categories of declarations.
+There are several categories of declarations. All declarations must end with a period.
 
  * **Exports.** An export is a relational predicate that is visible to other modules.
  Two exports that share the same name, but are declared in different modules, are
@@ -243,9 +243,8 @@ There are several categories of declarations.
  
 
 ```antlr
-// Declarations generally must fit inside a single line. They are allowed
-// to span multiple lines, but only if the new line characters exist
-// within the matched parantheses of their parameter lists.
+// All declarations are terminated with a period.
+// All newline characters within the declaration are ignored.
 decl: export_decl ;
 decl: local_decl ;
 decl: functor_decl ;
@@ -254,12 +253,12 @@ decl: query_decl ;
 decl: foreign_decl ;
 decl: constant_decl ;
 
-message_decl: "#message" atom "(" param_list_0 ")" "\n" ;
-export_decl: "#export" atom "(" param_list_1 ")" "\n" ;
-local_decl: "#local" atom "(" param_list_1 ")" maybe_inline "\n" ;
-query_decl: "#query" atom "(" param_list_3 ")" "\n" ;
+message_decl: "#message" atom "(" param_list_0 ")" "." ;
+export_decl: "#export" atom "(" param_list_1 ")" "." ;
+local_decl: "#local" atom "(" param_list_1 ")" maybe_inline "." ;
+query_decl: "#query" atom "(" param_list_3 ")" "." ;
 
-constant_decl: "#constant" foreign_type_name code_data ;
+constant_decl: "#constant" foreign_type_name code_data ".";
 
 maybe_inline: "@inline" ;
 maybe_inline: ;
@@ -304,7 +303,7 @@ output (for the set of `free`-attributed variables) given its input
 
 ```antlr
 
-functor_decl: "#functor" atom "(" param_list_2 ")" constraints "\n" ;
+functor_decl: "#functor" atom "(" param_list_2 ")" constraints "." ;
 
 constraints: ;
 constraints: "@range" "(" "." ")" constraints ;
@@ -435,9 +434,9 @@ yet present. When a `remove_edge` message is received, data is removed
 from the `edge` relation if it is present.
 
 ```
-#message add_edge(u32 F, u32 T)
-#message remove_edge(u32 F, u32 T)
-#export edge(F, T)
+#message add_edge(u32 F, u32 T).
+#message remove_edge(u32 F, u32 T).
+#export edge(F, T).
 
 edge(F, T) : add_edge(F, T).
 !edge(F, T) : remove_edge(F, T).
