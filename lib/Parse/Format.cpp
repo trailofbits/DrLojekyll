@@ -227,7 +227,7 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
       break;
   }
 
-  os << code << "\n```";
+  os << code << "\n```.";
   return os;
 }
 
