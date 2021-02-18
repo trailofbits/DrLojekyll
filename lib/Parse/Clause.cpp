@@ -175,6 +175,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
   Token tok;
   std::vector<Token> clause_toks;
+  bool multi_clause = false;
   int state = 0;
 
   // Approximate state transition diagram for parsing clauses. It gets a bit
@@ -574,6 +575,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           clause->dot = tok;
           // there's another clause let's go accumulate the remaining tokens
           state = 16;
+          multi_clause = true;
           continue;
 
         } else {
@@ -959,13 +961,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
   // Call Parse Clause Recursively if there was more than one clause
   // back() should be a colon token unless there was more than one clause
-  if (clause_toks.back().Lexeme() != Lexeme::kPuncColon) {
+  if (multi_clause) {
     auto total_sub_toks = sub_tokens;
     auto end_index = next_sub_tok_index;
 
     sub_tokens = clause_toks;
     next_sub_tok_index = 0;
-    ParseClause(module, negation_tok, decl);
+    ParseClause(module, negation_tok);
 
     // NOTE(sonya): restore previous token list and index for debugging in
     // ParseAllTokens()
