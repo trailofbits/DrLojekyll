@@ -20,9 +20,9 @@ tc2(From, To)
 #query is_node(free i64 Node).
 
 is_node(Node)
-  : tc1(Node, _).
-  : tc1(_, Node).
-  : tc2(Node, _).
+  : tc1(Node, _)
+  : tc1(_, Node)
+  : tc2(Node, _)
   : tc2(_, Node).
 
 #epilogue ```python

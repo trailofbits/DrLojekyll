@@ -563,6 +563,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 9;
           continue;
 
+        } else if (Lexeme::kPuncColon == lexeme) {
+          state = 5;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected comma or period, but got '" << tok << "' instead";
