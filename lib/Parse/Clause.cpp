@@ -174,6 +174,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   prev_named_var.clear();
 
   Token tok;
+  std::vector<Token> clause_toks;
+  bool multi_clause = false;
   int state = 0;
 
   // Approximate state transition diagram for parsing clauses. It gets a bit
@@ -232,6 +234,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         if (Lexeme::kIdentifierAtom == lexeme ||
             Lexeme::kIdentifierUnnamedAtom == lexeme) {
           clause->name = tok;
+          clause_toks.push_back(tok);
           state = 1;
           continue;
 
@@ -243,6 +246,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 1:
+        clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
           continue;
@@ -272,6 +276,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 2:
+        clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kIdentifierVariable == lexeme) {
           auto param_var = CreateVariable(clause.get(), tok, true, false);
           auto param_use = new Node<ParsedUse<ParsedClause>>(
@@ -323,6 +328,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 3:
+        clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kPuncComma == lexeme) {
           state = 2;
           continue;
@@ -353,6 +359,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 4:
+        clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kPuncColon == lexeme) {
           state = 5;
           continue;
@@ -561,6 +568,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         } else if (Lexeme::kPuncPeriod == lexeme) {
           clause->dot = tok;
           state = 9;
+          continue;
+
+        } else if (Lexeme::kPuncColon == lexeme) {
+          // let the "dot" be the colon token
+          clause->dot = tok;
+          // there's another clause let's go accumulate the remaining tokens
+          state = 16;
+          multi_clause = true;
           continue;
 
         } else {
@@ -779,6 +794,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
               << pred->name << "', but got '" << tok << "' instead";
           return;
         }
+      case 16:
+        // Accumulate multi-clause tokens
+        assert(multi_clause);
+        clause_toks.push_back(tok);
+        if (Lexeme::kPuncPeriod == lexeme) {
+          state = 9;
+          continue;
+        }
     }
   }
 
@@ -937,6 +960,21 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
   // Add this clause to its decl context.
   decl_clause_list->emplace_back(std::move(clause));
+
+  // Call Parse Clause Recursively if there was more than one clause
+  if (multi_clause) {
+    auto end_index = next_sub_tok_index;
+
+    sub_tokens.swap(clause_toks);
+    next_sub_tok_index = 0;
+    ParseClause(module, negation_tok);
+
+    // NOTE(sonya): restore previous token list and index for debugging in
+    // ParseAllTokens()
+    sub_tokens.swap(clause_toks);
+    next_sub_tok_index = end_index;
+  }
+
 }
 
 }  // namespace hyde

@@ -41,14 +41,14 @@ clause_or_decl_list: ;
 One module can import another module.
 
 ```
-import: "#import" <double quoted string literal>
+import: "#import" <double quoted string literal> "."
 ```
 
 For example, suppose that the file `/path/to/hello.dr` is contains the following import
 statement:
 
 ```
-#import "test.dr"
+#import "test.dr".
 ```
 
 If the compiler is invoked with the current working directory set to `/tmp`, and if
