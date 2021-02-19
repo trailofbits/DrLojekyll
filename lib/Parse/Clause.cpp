@@ -795,6 +795,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
       case 16:
+        // Accumulate multi-clause tokens
+        assert(multi_clause);
         clause_toks.push_back(tok);
         if (Lexeme::kPuncPeriod == lexeme) {
           state = 9;
@@ -960,18 +962,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   decl_clause_list->emplace_back(std::move(clause));
 
   // Call Parse Clause Recursively if there was more than one clause
-  // back() should be a colon token unless there was more than one clause
   if (multi_clause) {
-    auto total_sub_toks = sub_tokens;
     auto end_index = next_sub_tok_index;
 
-    sub_tokens = clause_toks;
+    sub_tokens.swap(clause_toks);
     next_sub_tok_index = 0;
     ParseClause(module, negation_tok);
 
     // NOTE(sonya): restore previous token list and index for debugging in
     // ParseAllTokens()
-    sub_tokens = total_sub_toks;
+    sub_tokens.swap(clause_toks);
     next_sub_tok_index = end_index;
   }
 
