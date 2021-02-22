@@ -521,7 +521,7 @@ void DefineMainFunction(OutputStream &os, Program program,
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
-void GenerateCxxCode(const Program &program, OutputStream &os) {
+void GenerateCxxDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#include <drlojekyll/Runtime.h>\n\n"
      << "namespace {\n";

@@ -6,7 +6,7 @@ set(CodeGen_PUBLIC_H
 )
 
 set(CodeGen_SRCS
-    "CPlusPlus.cpp"
+    "CPlusPlus/Database.cpp"
     "MessageSerialization.cpp"
     "Python/Database.cpp"
     "Python/Interface.cpp"

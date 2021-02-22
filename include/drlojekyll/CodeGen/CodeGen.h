@@ -8,7 +8,7 @@ class Program;
 class OutputStream;
 
 // Emits C++ code for the given program to `os`.
-void GenerateCxxCode(const Program &module, OutputStream &os);
+void GenerateCxxDatabaseCode(const Program &module, OutputStream &os);
 
 // Emits Python code for the given program to `os`.
 void GeneratePythonDatabaseCode(const Program &module, OutputStream &os);
