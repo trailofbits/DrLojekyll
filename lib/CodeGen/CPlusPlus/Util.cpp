@@ -1,6 +1,6 @@
 // Copyright 2021, Trail of Bits. All rights reserved.
 
-#include "Python/Util.h"
+#include "CPlusPlus/Util.h"
 
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
@@ -21,12 +21,12 @@ namespace hyde {
 OutputStream &Comment(OutputStream &os, ProgramRegion region,
                       const char *message) {
 #ifndef NDEBUG
-  os << os.Indent() << "# " << message << "\n";
+  os << os.Indent() << "// " << message << "\n";
 #else
   (void) message;
 #endif
   if (!region.Comment().empty()) {
-    os << os.Indent() << "# " << region.Comment() << "\n";
+    os << os.Indent() << "// " << region.Comment() << "\n";
   }
   return os;
 }
@@ -44,39 +44,41 @@ OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
   }
 }
 
-// Python representation of TypeKind
+// CPlusPlus representation of TypeKind
 const std::string_view TypeName(ParsedForeignType type) {
-  if (auto code = type.CodeToInline(Language::kPython)) {
+  if (auto code = type.CodeToInline(Language::kCxx)) {
     return *code;
   }
   assert(false);
-  return "Any";
+
+  // TODO Is there a good equivalent to Any in Python? void* ?
+  return "void";
 }
 
-// Python representation of TypeKind
+// CPlusPlus representation of TypeKind
 std::string_view TypeName(ParsedModule module, TypeLoc kind) {
   switch (kind.UnderlyingKind()) {
     case TypeKind::kBoolean: return "bool";
-    case TypeKind::kSigned8:
-    case TypeKind::kSigned16:
-    case TypeKind::kSigned32:
-    case TypeKind::kSigned64:
-    case TypeKind::kUnsigned8:
-    case TypeKind::kUnsigned16:
-    case TypeKind::kUnsigned32:
-    case TypeKind::kUnsigned64: return "int";
-    case TypeKind::kFloat:
-    case TypeKind::kDouble: return "float";
-    case TypeKind::kBytes: return "bytes";
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: return "str";
+    case TypeKind::kSigned8: return "int8_t";
+    case TypeKind::kSigned16: return "int16_t";
+    case TypeKind::kSigned32: return "int32_t";
+    case TypeKind::kSigned64: return "int64_t";
+    case TypeKind::kUnsigned8: return "uint8_t";
+    case TypeKind::kUnsigned16: return "uint16_t";
+    case TypeKind::kUnsigned32: return "uint32_t";
+    case TypeKind::kUnsigned64: return "uint64_t";
+    case TypeKind::kFloat: return "float";
+    case TypeKind::kDouble: return "double";
+    case TypeKind::kBytes: return "::hyde::rt::Bytes";
+    case TypeKind::kASCII: return "::hyde::rt::ASCII";
+    case TypeKind::kUTF8: return "::hyde::rt::UTF8";
+    case TypeKind::kUUID: return "::hyde::rt::UUID";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
         return TypeName(*type);
       }
       [[clang::fallthrough]];
-    default: assert(false); return "Any";
+    default: assert(false); return "void";
   }
 }
 
@@ -88,7 +90,7 @@ const char *OperatorString(ComparisonOperator op) {
     case ComparisonOperator::kGreaterThan: return ">";
 
     // TODO(ekilmer): What's a good default operator?
-    default: assert(false); return "None";
+    default: assert(false); return "void";
   }
 }
 
@@ -97,21 +99,19 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   auto val = var.Value();
   std::string_view prefix = "";
   std::string_view suffix = "";
+  std::string_view default_val = "";
 
   switch (var.DefiningRole()) {
     case VariableRole::kConstantZero: return "0";
     case VariableRole::kConstantOne: return "1";
-    case VariableRole::kConstantFalse: return "False";
-    case VariableRole::kConstantTrue: return "True";
+    case VariableRole::kConstantFalse: return "false";
+    case VariableRole::kConstantTrue: return "true";
     default: break;
   }
 
   // Default value
   switch (loc.UnderlyingKind()) {
-    case TypeKind::kBoolean:
-      prefix = "bool(";
-      suffix = ")";
-      break;
+    case TypeKind::kBoolean: default_val = "false"; break;
     case TypeKind::kSigned8:
     case TypeKind::kSigned16:
     case TypeKind::kSigned32:
@@ -120,37 +120,48 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     case TypeKind::kUnsigned16:
     case TypeKind::kUnsigned32:
     case TypeKind::kUnsigned64:
-      prefix = "int(";
-      suffix = ")";
-      break;
     case TypeKind::kFloat:
-    case TypeKind::kDouble:
-      prefix = "float(";
-      suffix = ")";
+    case TypeKind::kDouble: default_val = "0"; break;
+    case TypeKind::kBytes:
+      prefix = "::hyde::rt::Bytes{";
+      suffix = "}";
       break;
-    case TypeKind::kBytes: prefix = "b"; break;
     case TypeKind::kASCII:
+      prefix = "::hyde::rt::ASCII{";
+      suffix = "}";
+      break;
     case TypeKind::kUTF8:
-    case TypeKind::kUUID: break;
+      prefix = "::hyde::rt::UTF8{";
+      suffix = "}";
+      break;
+    case TypeKind::kUUID:
+      prefix = "::hyde::rt::UUID{";
+      suffix = "}";
+      break;
     case TypeKind::kForeignType:
+
+      // TODO(ekilmer): Check what this is actually doing
       if (auto type = module.ForeignType(loc); type) {
-        if (auto constructor = type->Constructor(Language::kPython);
-            constructor) {
+        if (auto constructor = type->Constructor(Language::kCxx); constructor) {
           prefix = constructor->first;
           suffix = constructor->second;
         }
         break;
       }
       [[clang::fallthrough]];
-    default: assert(false); prefix = "None  #";
+    default: assert(false); prefix = "void  //";
   }
 
   std::stringstream value;
   value << prefix;
   if (val) {
-    if (auto spelling = val->Spelling(Language::kPython); spelling) {
+    if (auto spelling = val->Spelling(Language::kCxx); spelling) {
       value << *spelling;
+    } else {
+      value << default_val;
     }
+  } else {
+    value << default_val;
   }
   value << suffix;
   return value.str();

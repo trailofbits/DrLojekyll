@@ -1,4 +1,4 @@
-// Copyright 2020, Trail of Bits. All rights reserved.
+// Copyright 2021, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
@@ -6,34 +6,17 @@
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
+#include <sstream>
 #include <unordered_set>
 #include <vector>
 
+#include "CPlusPlus/Util.h"
+
 namespace hyde {
 namespace {
-
-static const char *TypeName(TypeKind kind) {
-  switch (kind) {
-    case TypeKind::kBoolean: return "bool";
-    case TypeKind::kSigned8: return "int8_t";
-    case TypeKind::kSigned16: return "int16_t";
-    case TypeKind::kSigned32: return "int32_t";
-    case TypeKind::kSigned64: return "int64_t";
-    case TypeKind::kUnsigned8: return "uint8_t";
-    case TypeKind::kUnsigned16: return "uint16_t";
-    case TypeKind::kUnsigned32: return "uint32_t";
-    case TypeKind::kUnsigned64: return "uint64_t";
-    case TypeKind::kFloat: return "float";
-    case TypeKind::kDouble: return "double";
-    case TypeKind::kBytes: return "::hyde::rt::Bytes";
-    case TypeKind::kASCII: return "::hyde::rt::ASCII";
-    case TypeKind::kUTF8: return "::hyde::rt::UTF8";
-    case TypeKind::kUUID: return "::hyde::rt::UUID";
-    default: assert(false); return "void";
-  }
-}
 
 // Print out the full location of a token.
 static void OutputToken(OutputStream &os, Token tok) {
@@ -48,7 +31,8 @@ static void OutputToken(OutputStream &os, Token tok) {
 }
 
 // Declare a structure containing the information about a column.
-static void DeclareColumn(OutputStream &os, DataTable table, DataColumn col) {
+static void DeclareColumn(OutputStream &os, ParsedModule module,
+                          DataTable table, DataColumn col) {
   os << "struct col_" << table.Id() << '_' << col.Index() << " {\n";
   os.PushIndent();
 
@@ -65,7 +49,7 @@ static void DeclareColumn(OutputStream &os, DataTable table, DataColumn col) {
   const auto names = col.PossibleNames();
   const auto i = col.Index();
 
-  os << os.Indent() << "using Type = " << TypeName(col.Type()) << ";\n"
+  os << os.Indent() << "using Type = " << TypeName(module, col.Type()) << ";\n"
      << os.Indent() << "static constexpr bool kIsPersistent = true;\n"
      << os.Indent()
      << "static constexpr unsigned kNumIndexUses = " << num_indices << "u;\n"
@@ -150,7 +134,8 @@ class VectorUseVisitor final : public ProgramVisitor {
 };
 
 // Declare structures for each of the columns used in a vector.
-static void DeclareVectorColumns(OutputStream &os, DataVector vec) {
+static void DeclareVectorColumns(OutputStream &os, ParsedModule module,
+                                 DataVector vec) {
   VectorUseVisitor use_visitor(vec);
   vec.VisitUsers(use_visitor);
 
@@ -161,7 +146,7 @@ static void DeclareVectorColumns(OutputStream &os, DataVector vec) {
     os << "struct col_" << vec.Id() << '_' << i << " {\n";
     os.PushIndent();
 
-    os << os.Indent() << "using Type = " << TypeName(type) << ";\n"
+    os << os.Indent() << "using Type = " << TypeName(module, type) << ";\n"
        << os.Indent() << "static constexpr bool kIsPersistent = false;\n"
        << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
     if (i) {
@@ -241,8 +226,8 @@ static void FindCover(std::vector<DataIndex> &work_list,
 }
 
 // Declare the indices.
-static unsigned DeclareIndices(OutputStream &os, DataTable table,
-                               unsigned &next_index_id) {
+static unsigned DeclareIndices(OutputStream &os, ParsedModule module,
+                               DataTable table, unsigned &next_index_id) {
   const auto indices = table.Indices();
 
   std::vector<DataIndex> work_list(indices.begin(), indices.end());
@@ -345,8 +330,8 @@ static unsigned DeclareIndices(OutputStream &os, DataTable table,
 }
 
 // Declare a structure containing the information about a table.
-static void DeclareTable(OutputStream &os, DataTable table,
-                         unsigned &next_index_id) {
+static void DefineTable(OutputStream &os, ParsedModule module, DataTable table,
+                        unsigned int &next_index_id) {
 
   // Figure out if this table supports deletions.
   auto is_differential = "false";
@@ -364,7 +349,7 @@ static void DeclareTable(OutputStream &os, DataTable table,
 
   assert(has_insert);
 
-  const auto num_indices = DeclareIndices(os, table, next_index_id);
+  const auto num_indices = DeclareIndices(os, module, table, next_index_id);
 
   const auto cols = table.Columns();
   os << "struct table_" << table.Id() << " {\n";
@@ -404,118 +389,282 @@ static void DeclareTable(OutputStream &os, DataTable table,
   os << "};\n\n";
 }
 
-class CPPCodeGenVisitor final : public ProgramVisitor {
- public:
-  explicit CPPCodeGenVisitor(OutputStream &os_) : os(os_) {}
+// class CPPCodeGenVisitor final : public ProgramVisitor {
+//  public:
+//   explicit CPPCodeGenVisitor(OutputStream &os_) : os(os_) {}
 
-  void Visit(ProgramCallRegion val) override {
-    os << "ProgramCallRegion\n";
-  }
+//   void Visit(ProgramCallRegion val) override {
+//     os << "ProgramCallRegion\n";
+//   }
 
-  void Visit(ProgramReturnRegion val) override {
-    os << "ProgramReturnRegion\n";
-  }
+//   void Visit(ProgramReturnRegion val) override {
+//     os << "ProgramReturnRegion\n";
+//   }
 
-  void Visit(ProgramExistenceAssertionRegion val) override {
-    os << "ProgramExistenceAssertionRegion\n";
-  }
+//   void Visit(ProgramExistenceAssertionRegion val) override {
+//     os << "ProgramExistenceAssertionRegion\n";
+//   }
 
-  void Visit(ProgramGenerateRegion val) override {
-    os << "ProgramGenerateRegion\n";
-  }
+//   void Visit(ProgramGenerateRegion val) override {
+//     os << "ProgramGenerateRegion\n";
+//   }
 
-  void Visit(ProgramInductionRegion val) override {
-    os << "ProgramInductionRegion\n";
-  }
+//   void Visit(ProgramInductionRegion val) override {
+//     os << "ProgramInductionRegion\n";
+//   }
 
-  void Visit(ProgramLetBindingRegion val) override {
-    os << "ProgramLetBindingRegion\n";
-  }
+//   void Visit(ProgramLetBindingRegion val) override {
+//     os << "ProgramLetBindingRegion\n";
+//   }
 
-  void Visit(ProgramParallelRegion val) override {
-    os << "ProgramParallelRegion\n";
-  }
+//   void Visit(ProgramParallelRegion val) override {
+//     os << "ProgramParallelRegion\n";
+//   }
 
-  void Visit(ProgramProcedure val) override {
-    os << "ProgramProcedure\n";
-  }
+//   void Visit(ProgramProcedure val) override {
+//     os << "ProgramProcedure\n";
+//   }
 
-  void Visit(ProgramPublishRegion val) override {
-    os << "ProgramPublishRegion\n";
-  }
+//   void Visit(ProgramPublishRegion val) override {
+//     os << "ProgramPublishRegion\n";
+//   }
 
-  void Visit(ProgramSeriesRegion val) override {
-    os << "ProgramSeriesRegion\n";
-  }
+//   void Visit(ProgramSeriesRegion val) override {
+//     os << "ProgramSeriesRegion\n";
+//   }
 
-  void Visit(ProgramVectorAppendRegion val) override {
-    os << "ProgramVectorAppendRegion\n";
-  }
+//   void Visit(ProgramVectorAppendRegion val) override {
+//     os << "ProgramVectorAppendRegion\n";
+//   }
 
-  void Visit(ProgramVectorClearRegion val) override {
-    os << "ProgramVectorClearRegion\n";
-  }
+//   void Visit(ProgramVectorClearRegion val) override {
+//     os << "ProgramVectorClearRegion\n";
+//   }
 
-  void Visit(ProgramVectorLoopRegion val) override {
-    os << "ProgramVectorLoopRegion\n";
-  }
+//   void Visit(ProgramVectorLoopRegion val) override {
+//     os << "ProgramVectorLoopRegion\n";
+//   }
 
-  void Visit(ProgramVectorUniqueRegion val) override {
-    os << "ProgramVectorUniqueRegion\n";
-  }
+//   void Visit(ProgramVectorUniqueRegion val) override {
+//     os << "ProgramVectorUniqueRegion\n";
+//   }
 
-  void Visit(ProgramTransitionStateRegion val) override {
-    os << "ProgramTransitionStateRegion\n";
-  }
+//   void Visit(ProgramTransitionStateRegion val) override {
+//     os << "ProgramTransitionStateRegion\n";
+//   }
 
-  void Visit(ProgramCheckStateRegion val) override {
-    os << "ProgramCheckStateRegion\n";
-  }
+//   void Visit(ProgramCheckStateRegion val) override {
+//     os << "ProgramCheckStateRegion\n";
+//   }
 
-  void Visit(ProgramTableJoinRegion val) override {
-    os << "ProgramTableJoinRegion\n";
-  }
+//   void Visit(ProgramTableJoinRegion val) override {
+//     os << "ProgramTableJoinRegion\n";
+//   }
 
-  void Visit(ProgramTableProductRegion val) override {
-    os << "ProgramTableProductRegion\n";
-  }
+//   void Visit(ProgramTableProductRegion val) override {
+//     os << "ProgramTableProductRegion\n";
+//   }
 
-  void Visit(ProgramTableScanRegion val) override {
-    os << "ProgramTableScanRegion\n";
-  }
+//   void Visit(ProgramTableScanRegion val) override {
+//     os << "ProgramTableScanRegion\n";
+//   }
 
-  void Visit(ProgramTupleCompareRegion val) override {
-    os << "ProgramTupleCompareRegion\n";
-  }
+//   void Visit(ProgramTupleCompareRegion val) override {
+//     os << "ProgramTupleCompareRegion\n";
+//   }
 
- private:
-  OutputStream &os;
-};
+//  private:
+//   OutputStream &os;
+// };
 
-void DefineMainFunction(OutputStream &os, Program program,
-                        unsigned num_indices) {
+// void DefineMainFunction(OutputStream &os, Program program,
+//                         unsigned num_indices) {
 
-  os << "extern \"C\" int main(int argc, char *argv[]) {\n";
-  os.PushIndent();
-  os << os.Indent() << "drlojekyll::Init(argc, argv, "
-     << program.Tables().size() << ", " << num_indices << ", proc_0);\n";
+//   os << "extern \"C\" int main(int argc, char *argv[]) {\n";
+//   os.PushIndent();
+//   os << os.Indent() << "drlojekyll::Init(argc, argv, "
+//      << program.Tables().size() << ", " << num_indices << ", proc_0);\n";
 
-  for (auto table : program.Tables()) {
-    os << os.Indent() << "drlojekyll::CreateTable<table_" << table.Id()
-       << ">();\n";
-  }
+//   for (auto table : program.Tables()) {
+//     os << os.Indent() << "drlojekyll::CreateTable<table_" << table.Id()
+//        << ">();\n";
+//   }
 
-  for (auto proc : program.Procedures()) {
-    if (auto maybe_messsage = proc.Message(); maybe_messsage) {
-      auto message = *maybe_messsage;
-      os << os.Indent() << "drlojekyll::RegisterHandler(\"" << message.Name()
-         << "\", proc_" << proc.Id() << ");\n";
+//   for (auto proc : program.Procedures()) {
+//     if (auto maybe_messsage = proc.Message(); maybe_messsage) {
+//       auto message = *maybe_messsage;
+//       os << os.Indent() << "drlojekyll::RegisterHandler(\"" << message.Name()
+//          << "\", proc_" << proc.Id() << ");\n";
+//     }
+//   }
+
+//   os << "  return drlojekyll::Run();\n";
+//   os.PopIndent();
+//   os << "}\n\n";
+// }
+
+static void DeclareFunctor(OutputStream &os, ParsedModule module,
+                           ParsedFunctor func) {
+  std::stringstream return_tuple;
+  std::vector<ParsedParameter> args;
+  auto sep_ret = "";
+  auto num_ret_types = 0u;
+  for (auto param : func.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      args.push_back(param);
+    } else {
+      ++num_ret_types;
+      return_tuple << sep_ret << TypeName(module, param.Type().Kind());
+      sep_ret = ", ";
     }
   }
 
-  os << "  return drlojekyll::Run();\n";
+  os << os.Indent();
+
+  if (func.IsFilter()) {
+    assert(func.Range() == FunctorRange::kZeroOrOne);
+    os << "bool";
+
+  } else {
+    auto tuple_prefix = "";
+    auto tuple_suffix = "";
+    if (1u < num_ret_types) {
+      tuple_prefix = "std::tuple<";
+      tuple_suffix = ">";
+    } else {
+      assert(0u < num_ret_types);
+    }
+
+    switch (func.Range()) {
+      case FunctorRange::kOneOrMore:
+      case FunctorRange::kZeroOrMore:
+        os << "std::vector<" << tuple_prefix << return_tuple.str()
+           << tuple_suffix << ">";
+        break;
+      case FunctorRange::kOneToOne:
+        os << tuple_prefix << return_tuple.str() << tuple_suffix;
+        break;
+      case FunctorRange::kZeroOrOne:
+        os << "std::optional<" << tuple_prefix << return_tuple.str()
+           << tuple_suffix << ">";
+    }
+  }
+
+  os << " " << func.Name() << '_' << ParsedDeclaration(func).BindingPattern()
+     << "(";
+
+  auto arg_sep = "";
+  for (ParsedParameter arg : args) {
+    os << arg_sep << TypeName(module, arg.Type().Kind()) << " " << arg.Name();
+    arg_sep = ", ";
+  }
+
+  os << ") {\n";
+
+  os.PushIndent();
+  os << os.Indent() << "return " << func.Name() << '_'
+     << ParsedDeclaration(func).BindingPattern() << "(";
+  sep_ret = "";
+  for (auto param : func.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep_ret << param.Name();
+      sep_ret = ", ";
+    }
+  }
+  os << ");\n";
   os.PopIndent();
-  os << "}\n\n";
+  os << os.Indent() << "}\n\n";
+}
+
+static void DeclareFunctors(OutputStream &os, Program program,
+                            ParsedModule root_module) {
+  os << os.Indent() << "class " << gClassName << "Functors {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+
+  std::unordered_set<std::string> seen;
+
+  auto has_functors = false;
+  for (auto module : ParsedModuleIterator(root_module)) {
+    for (auto first_func : module.Functors()) {
+      for (auto func : first_func.Redeclarations()) {
+        std::stringstream ss;
+        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
+        if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
+          DeclareFunctor(os, module, func);
+          has_functors = true;
+          (void) it;
+        }
+      }
+    }
+  }
+  os.PopIndent();
+
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";
+}
+
+static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
+                                 ParsedMessage message, const char *impl,
+                                 bool interface = false) {
+  os << os.Indent();
+  if (interface) {
+    os << "virtual ";
+  }
+  os << "void " << message.Name() << "_" << message.Arity() << "(";
+
+  auto sep = "";
+  for (auto param : message.Parameters()) {
+    os << sep << TypeName(module, param.Type()) << " " << param.Name();
+    sep = ", ";
+  }
+
+  os << ", bool added) ";
+  if (interface) {
+    os << "= 0;\n\n";
+  } else {
+    os << "{\n";
+    os.PushIndent();
+    os << os.Indent() << impl << "\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n\n";
+  }
+}
+
+static void DeclareMessageLog(OutputStream &os, Program program,
+                              ParsedModule root_module) {
+  os << os.Indent() << "class " << gClassName << "LogInterface {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+
+  const auto messages = Messages(root_module);
+
+  if (!messages.empty()) {
+    for (auto message : messages) {
+      DeclareMessageLogger(os, root_module, message, "", true);
+    }
+  }
+  os.PopIndent();
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";
+
+  os << '\n';
+  os << os.Indent() << "class " << gClassName << "Log : public " << gClassName
+     << "LogInterface {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+
+  if (!messages.empty()) {
+    for (auto message : messages) {
+      DeclareMessageLogger(os, root_module, message, "{}");
+    }
+  }
+  os.PopIndent();
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";
 }
 
 }  // namespace
@@ -524,31 +673,103 @@ void DefineMainFunction(OutputStream &os, Program program,
 void GenerateCxxDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#include <drlojekyll/Runtime.h>\n\n"
-     << "namespace {\n";
+     << "#include <string>\n"
+     << "#include <tuple>\n"
+     << "\n"
+     << "namespace {\n\n";
 
-  unsigned next_index_id = 0u;
+  const auto module = program.ParsedModule();
 
-  for (auto table : program.Tables()) {
-    for (auto col : table.Columns()) {
-      DeclareColumn(os, table, col);
+  // Output prologue code.
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kCxx:
+          if (code.IsPrologue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default: break;
+      }
     }
-    DeclareTable(os, table, next_index_id);
   }
 
-  if (false) {
-    for (auto proc : program.Procedures()) {
-      for (auto vec : proc.VectorParameters()) {
-        DeclareVectorColumns(os, vec);
-      }
-      for (auto vec : proc.DefinedVectors()) {
-        DeclareVectorColumns(os, vec);
+  DeclareFunctors(os, program, module);
+  DeclareMessageLog(os, program, module);
+
+  // A program gets its own class
+  os << '\n';
+  os << "class " << gClassName << " {\n";
+  os.PushIndent();
+  os.PushIndent();
+
+  os << os.Indent() << gClassName << "LogInterface &log;\n";
+  os << os.Indent() << gClassName << "Functors &functors;\n";
+
+  // NOTE(ekilmer): This seems dangerous...
+  os << os.Indent()
+     << "std::unordered_map<std::size_t, std::vector<void*>> refs;\n";
+
+  os << "\n";
+  os.PopIndent();
+
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+
+  os << os.Indent() << gClassName << "(" << gClassName << "LogInterface &l, "
+     << gClassName << "Functors &f)\n"
+     << os.Indent() << "  : log(l),\n"
+     << os.Indent() << "    functors(f) {}\n\n";
+
+  unsigned next_index_id = 0u;
+  for (auto table : program.Tables()) {
+    DefineTable(os, module, table, next_index_id);
+  }
+
+
+  // unsigned next_index_id = 0u;
+
+  // for (auto table : program.Tables()) {
+  //   for (auto col : table.Columns()) {
+  //     DeclareColumn(os, table, col);
+  //   }
+  //   DeclareTable(os, table, next_index_id);
+  // }
+
+  // if (false) {
+  //   for (auto proc : program.Procedures()) {
+  //     for (auto vec : proc.VectorParameters()) {
+  //       DeclareVectorColumns(os, vec);
+  //     }
+  //     for (auto vec : proc.DefinedVectors()) {
+  //       DeclareVectorColumns(os, vec);
+  //     }
+  //   }
+  // }
+
+  os.PopIndent();
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";
+
+  // Output epilogue code.
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kCxx:
+          if (code.IsEpilogue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default: break;
       }
     }
   }
 
   os << "}  // namespace\n\n";
 
-  DefineMainFunction(os, program, next_index_id);
+  // DefineMainFunction(os, program, next_index_id);
 
   //  CPPCodeGenVisitor visitor(os);
   //  visitor.Visit(program);

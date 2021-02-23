@@ -1,8 +1,11 @@
 ; This example can parse EVM array declarations
 
-#foreign Token ```Tuple[str, int]```.
-#foreign Lexeme ```str```.
-#foreign ASTNode ```Tuple```.
+#foreign Token ```python Tuple[str, int]```.
+#foreign Token ```c++ std::tuple<std::string, int>```.
+#foreign Lexeme ```python str```.
+#foreign Lexeme ```c++ std::string```.
+#foreign ASTNode ```python Tuple```.
+#foreign ASTNode ```c++ std::tuple<...>```.
 
 #query type_name(free ASTNode BaseType).
 
