@@ -16,6 +16,7 @@
 #include "CPlusPlus/Util.h"
 
 namespace hyde {
+namespace cxx {
 namespace {
 
 // // Print out the full location of a token.
@@ -776,4 +777,5 @@ void GenerateCxxDatabaseCode(const Program &program, OutputStream &os) {
   //  os.Flush();
 }
 
+}  // namespace cxx
 }  // namespace hyde

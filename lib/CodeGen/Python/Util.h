@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 namespace hyde {
+namespace python {
 
 static constexpr auto kStateAbsent = 0u;
 static constexpr auto kStatePresent = 1u;
@@ -60,4 +61,5 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
 // Return all messages.
 std::unordered_set<ParsedMessage> Messages(ParsedModule module);
 
+}  // namespace python
 }  // namespace hyde

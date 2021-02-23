@@ -11,6 +11,7 @@
 #include "Util.h"
 
 namespace hyde {
+namespace python {
 
 // Emits Python code for the given program to `os`.
 void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
@@ -24,7 +25,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
   os << "except ImportError:\n";
   os.PushIndent();
-  os << os.Indent() << "from typing_extensions import Protocol  # type: ignore\n\n\n";
+  os << os.Indent()
+     << "from typing_extensions import Protocol  # type: ignore\n\n\n";
   os.PopIndent();
 
   const auto module = program.ParsedModule();
@@ -39,8 +41,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
             os << code.CodeToInline() << "\n\n\n";
           }
           break;
-        default:
-          break;
+        default: break;
       }
     }
   }
@@ -123,8 +124,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     if (message.IsPublished()) {
       continue;
     }
-    os << os.Indent() << "if self." << message.Name() << '_'
-       << message.Arity() << " is not None:\n";
+    os << os.Indent() << "if self." << message.Name() << '_' << message.Arity()
+       << " is not None:\n";
     os.PushIndent();
     os << os.Indent() << "num_messages += len(self." << message.Name() << '_'
        << message.Arity() << ")\n"
@@ -142,8 +143,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PushIndent();
   os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
-  os << os.Indent() << "self._msg: " << gClassName << "InputMessage = "
-     << gClassName << "InputMessage()\n"
+  os << os.Indent() << "self._msg: " << gClassName
+     << "InputMessage = " << gClassName << "InputMessage()\n"
      << os.Indent() << "self._num_msgs: int = 0\n\n";
   os.PopIndent();
   for (auto message : messages) {
@@ -250,8 +251,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
   os << os.Indent() << "self._num_msgs: int = 0\n"
-     << os.Indent() << "self._msg: " << gClassName << "OutputMessage = "
-     << gClassName << "OutputMessage()\n\n";
+     << os.Indent() << "self._msg: " << gClassName
+     << "OutputMessage = " << gClassName << "OutputMessage()\n\n";
   os.PopIndent();
 
   // Emit one method per published message that adds the message data into
@@ -282,8 +283,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << sep << param.Name();
       sep = ", ";
     }
-    os << sep << "_added))\n"
-       << os.Indent() << "self._num_msgs += 1\n\n";
+    os << sep << "_added))\n" << os.Indent() << "self._num_msgs += 1\n\n";
     os.PopIndent();
   }
 
@@ -361,4 +361,5 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
 }
 
+}  // namespace python
 }  // namespace hyde

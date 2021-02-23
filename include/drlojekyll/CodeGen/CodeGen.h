@@ -7,8 +7,13 @@ namespace hyde {
 class Program;
 class OutputStream;
 
+namespace cxx {
+
 // Emits C++ code for the given program to `os`.
 void GenerateCxxDatabaseCode(const Program &module, OutputStream &os);
+}  // namespace cxx
+
+namespace python {
 
 // Emits Python code for the given program to `os`.
 void GeneratePythonDatabaseCode(const Program &module, OutputStream &os);
@@ -17,5 +22,6 @@ void GeneratePythonDatabaseCode(const Program &module, OutputStream &os);
 // or to collect messages published by the database and aggregate them into
 // a single object.
 void GeneratePythonInterfaceCode(const Program &program, OutputStream &os);
+}  // namespace python
 
 }  // namespace hyde

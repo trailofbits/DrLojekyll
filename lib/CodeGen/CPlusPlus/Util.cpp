@@ -16,6 +16,7 @@
 #include <vector>
 
 namespace hyde {
+namespace cxx {
 
 // Make a comment in code for debugging purposes
 OutputStream &Comment(OutputStream &os, ProgramRegion region,
@@ -180,4 +181,5 @@ std::unordered_set<ParsedMessage> Messages(ParsedModule module) {
   return seen;
 }
 
+}  // namespace cxx
 }  // namespace hyde

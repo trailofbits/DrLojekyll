@@ -11,6 +11,7 @@
 #include "Python/Util.h"
 
 namespace hyde {
+namespace python {
 namespace {
 
 static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
@@ -1882,4 +1883,5 @@ void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
   }
 }
 
+}  // namespace python
 }  // namespace hyde
