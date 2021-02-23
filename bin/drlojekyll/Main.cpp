@@ -388,7 +388,7 @@ extern "C" int main(int argc, const char *argv[]) {
         }
       }
 
-      linked_module << "#import \"" << file_path << "\"\n";
+      linked_module << "#import \"" << file_path << "\".\n";
       input_path = argv[i];
       ++num_input_paths;
     }

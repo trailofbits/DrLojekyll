@@ -471,6 +471,7 @@ class Node<ParsedImport> {
 
   DisplayPosition directive_pos;
   Token path;
+  Token dot;
   std::filesystem::path resolved_path;
   Node<ParsedModule> *imported_module{nullptr};
 };

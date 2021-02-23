@@ -27,10 +27,10 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     return;
   }
 
-  const auto tok_range = tok.SpellingRange();
+  const auto path_range = tok.SpellingRange();
 
   if (Lexeme::kLiteralString != tok.Lexeme()) {
-    context->error_log.Append(scope_range, tok_range)
+    context->error_log.Append(scope_range, path_range)
         << "Expected string literal of file path here for import "
         << "statement, got '" << tok << "' instead";
     return;
@@ -38,14 +38,28 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
   imp->path = tok;
 
+  if (!ReadNextSubToken(tok)) {
+    context->error_log.Append(scope_range, imp->path.NextPosition())
+        << "Expected period to end the import statement";
+    return;
+
+  } else if (tok.Lexeme() != Lexeme::kPuncPeriod) {
+    context->error_log.Append(scope_range, tok.SpellingRange())
+        << "Expected period here to end the import statement, got '"
+        << tok << "' instead";
+    return;
+  }
+
+  imp->dot = tok;
+
   // This should work...
   std::string_view path_str;
-  if (!context->string_pool.TryReadString(tok.StringId(), tok.StringLength(),
-                                          &path_str) ||
+  if (!context->string_pool.TryReadString(
+      imp->path.StringId(), imp->path.StringLength(), &path_str) ||
       path_str.empty()) {
-    context->error_log.Append(scope_range, tok_range)
+    context->error_log.Append(scope_range, path_range)
         << "Unknown error when trying to read data associated with import "
-        << "path '" << tok << "'";
+        << "path '" << imp->path << "'";
     return;
   }
 
@@ -57,8 +71,8 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
 
     // TODO(blarsen): Fix up the error reporting here to include the source
     //                information, like in `ParseInclude`
-    context->error_log.Append(scope_range, tok_range)
-        << "Unable to locate module '" << tok
+    context->error_log.Append(scope_range, path_range)
+        << "Unable to locate module '" << imp->path
         << "' requested by import statement";
     return;
   }
@@ -92,7 +106,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     module->imports.push_back(std::move(imp));
 
   } else {
-    context->error_log.Append(scope_range, tok_range)
+    context->error_log.Append(scope_range, path_range)
         << "Failed to parse '" << resolved_path
         << "' requested by import statement";
   }
