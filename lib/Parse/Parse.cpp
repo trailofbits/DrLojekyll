@@ -1370,7 +1370,7 @@ ParsedModule ParsedModule::RootModule(void) const {
 }
 
 DisplayRange ParsedImport::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->directive_pos, impl->path.NextPosition());
+  return DisplayRange(impl->directive_pos, impl->dot.NextPosition());
 }
 
 ParsedModule ParsedImport::ImportedModule(void) const noexcept {

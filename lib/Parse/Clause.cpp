@@ -251,6 +251,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 2;
           continue;
 
+        // Zero-argument predicate, e.g. `foo : ...`.
         } else if (Lexeme::kPuncColon == lexeme) {
           if (!TryMatchClauseWithDecl(module, clause.get())) {
             return;
@@ -261,12 +262,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             continue;
           }
 
-          state = 5;
-          continue;
-
-          // TODO(pag): Support `foo.` syntax? Could be an intersting way to
-          //            turn on/off options.
-
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected opening parenthesis here to begin parameter list of "
@@ -275,6 +270,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
+      // We have see either an opening parenthesis, or we have just parsed
+      // a parameter and have seen a comma, it's now time to try to parse
+      // another clause head parameter.
       case 2:
         clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kIdentifierVariable == lexeme) {
@@ -327,27 +325,36 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
+      // We've read a variable/literal/constant, now we expect a comma and more
+      // clause head parameters, or a closing paren to end the clause head.
       case 3:
         clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kPuncComma == lexeme) {
           state = 2;
           continue;
 
+        // Done parsing this clause head.
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           clause->rparen = tok;
 
+          // If we're parsing an attached body, e.g. `head(...) : body1 : body2`
+          // then we will have split out the tokens `head(...) : body2` and
+          // passed `decl` in from the parse of `head(...) : body1`.
           if (decl) {
             clause->declaration = decl;
             state = 4;
             continue;
 
-          } else if (!TryMatchClauseWithDecl(module, clause.get())) {
-            return;
-
-          } else {
+          // We matched it against a clasue head.
+          } else if (TryMatchClauseWithDecl(module, clause.get())) {
             decl = clause->declaration;
             state = 4;
             continue;
+
+          // `TryMatchClauseWithDecl` failed and will have reported an error.
+          } else {
+            assert(0 < context->error_log.Size());
+            return;
           }
 
         } else {
@@ -358,12 +365,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
+      // Time to see if we have a clause body to parse or not.
       case 4:
         clause_toks.push_back(tok); // add token even if we error
         if (Lexeme::kPuncColon == lexeme) {
           state = 5;
           continue;
 
+        // We're done with the body.
         } else if (Lexeme::kPuncPeriod == lexeme) {
           clause->dot = tok;
           state = 9;
@@ -412,16 +421,20 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
+      // We've just seen a `:`, time to parse a clause body.
       case 5:
         if (clause->first_body_token.IsInvalid()) {
           clause->first_body_token = tok;
         }
 
+        // The `V` in `V = ...` or `V != ...`.
         if (Lexeme::kIdentifierVariable == lexeme) {
           lhs = CreateVariable(clause.get(), tok, false, false);
           state = 6;
           continue;
 
+
+        // The `1` in `1 = ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
                    Lexeme::kLiteralNumber == lexeme ||
                    Lexeme::kIdentifierConstant == lexeme) {
@@ -429,11 +442,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 6;
           continue;
 
+        // The `!` in `!pred(...)`.
         } else if (Lexeme::kPuncExclaim == lexeme) {
           negation_pos = tok.Position();
           state = 11;
           continue;
 
+        // The `pred` in `pred(...)`.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
           pred.reset(new Node<ParsedPredicate>(module, clause.get()));
           pred->name = tok;
@@ -447,12 +462,18 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
+      // We've just seen a variable, literal, or constant; try to combine it
+      // with a binary operator.
       case 6:
         if (Lexeme::kPuncEqual == lexeme || Lexeme::kPuncNotEqual == lexeme ||
             Lexeme::kPuncLess == lexeme || Lexeme::kPuncGreater == lexeme) {
           compare_op = tok;
           state = 7;
           continue;
+
+        // TODO(pag): Add support for a variable on its own, in the case of
+        //            Boolean-typed variables, so that we can then use the
+        //            boolean to continue the clause or not.
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -945,6 +966,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     decl_clause_list = &(clause_decl_context->clauses);
   }
 
+  FindUnrelatedConditions(clause.get(), context->error_log);
+
   // Link the clause in to the module.
   if (!module_clause_list->empty()) {
     module_clause_list->back()->next_in_module = clause.get();
@@ -955,8 +978,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   if (!decl_clause_list->empty()) {
     decl_clause_list->back()->next = clause.get();
   }
-
-  FindUnrelatedConditions(clause.get(), context->error_log);
 
   // Add this clause to its decl context.
   decl_clause_list->emplace_back(std::move(clause));

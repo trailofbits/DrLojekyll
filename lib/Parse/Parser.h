@@ -233,12 +233,9 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
 
-  std::shared_ptr<parse::DeclarationContext> decl_context;
-
   // This is the first time we've seen this declaration.
   if (first_decl_it == context->declarations.end()) {
     auto decl = new Node<T>(module, kind);
-    decl_context = decl->context;
     context->declarations.emplace(id, decl);
     return decl;
   }
@@ -246,7 +243,7 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
   // We've seen this declaration before.
   const auto first_decl = first_decl_it->second;
 
-  decl_context = first_decl->context;
+  const auto &decl_context = first_decl->context;
   if (decl_context->kind != kind) {
     auto err = context->error_log.Append(scope_range, name.SpellingRange());
     err << "Cannot re-declare '" << first_decl->name << "' as a "
