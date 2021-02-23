@@ -586,7 +586,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
 
   std::unordered_set<std::string> seen;
 
-  auto has_functors = false;
+  // auto has_functors = false;
   for (auto module : ParsedModuleIterator(root_module)) {
     for (auto first_func : module.Functors()) {
       for (auto func : first_func.Redeclarations()) {
@@ -594,7 +594,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
         ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
           DeclareFunctor(os, module, func);
-          has_functors = true;
+          // has_functors = true;
           (void) it;
         }
       }
