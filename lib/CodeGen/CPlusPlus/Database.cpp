@@ -18,74 +18,74 @@
 namespace hyde {
 namespace {
 
-// Print out the full location of a token.
-static void OutputToken(OutputStream &os, Token tok) {
-  const auto pos = tok.Position();
-  os << "{\"";
-  os.DisplayNameOr(pos, "");
-  os << "\", ";
-  os.LineNumberOr(pos, "0");
-  os << ", ";
-  os.ColumnNumberOr(pos, "0");
-  os << ", \"" << tok << "\"}";
-}
+// // Print out the full location of a token.
+// static void OutputToken(OutputStream &os, Token tok) {
+//   const auto pos = tok.Position();
+//   os << "{\"";
+//   os.DisplayNameOr(pos, "");
+//   os << "\", ";
+//   os.LineNumberOr(pos, "0");
+//   os << ", ";
+//   os.ColumnNumberOr(pos, "0");
+//   os << ", \"" << tok << "\"}";
+// }
 
-// Declare a structure containing the information about a column.
-static void DeclareColumn(OutputStream &os, ParsedModule module,
-                          DataTable table, DataColumn col) {
-  os << "struct col_" << table.Id() << '_' << col.Index() << " {\n";
-  os.PushIndent();
+// // Declare a structure containing the information about a column.
+// static void DeclareColumn(OutputStream &os, ParsedModule module,
+//                           DataTable table, DataColumn col) {
+//   os << "struct col_" << table.Id() << '_' << col.Index() << " {\n";
+//   os.PushIndent();
 
-  // Calculate the number of indices in which this column participates.
-  auto num_indices = 0;
-  for (auto index : table.Indices()) {
-    for (auto index_col : index.KeyColumns()) {
-      if (index_col == col) {
-        ++num_indices;
-      }
-    }
-  }
+//   // Calculate the number of indices in which this column participates.
+//   auto num_indices = 0;
+//   for (auto index : table.Indices()) {
+//     for (auto index_col : index.KeyColumns()) {
+//       if (index_col == col) {
+//         ++num_indices;
+//       }
+//     }
+//   }
 
-  const auto names = col.PossibleNames();
-  const auto i = col.Index();
+//   const auto names = col.PossibleNames();
+//   const auto i = col.Index();
 
-  os << os.Indent() << "using Type = " << TypeName(module, col.Type()) << ";\n"
-     << os.Indent() << "static constexpr bool kIsPersistent = true;\n"
-     << os.Indent()
-     << "static constexpr unsigned kNumIndexUses = " << num_indices << "u;\n"
-     << os.Indent() << "static constexpr unsigned kId = " << col.Id() << "u;\n"
-     << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
-     << "u;\n"
-     << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
-  if (i) {
-    os << os.Indent() << "static constexpr unsigned kOffset = col_"
-       << table.Id() << '_' << (i - 1u) << "::kOffset + col_" << table.Id()
-       << '_' << (i - 1u) << "::kSize;\n";
-  } else {
-    os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
-  }
-  os << os.Indent() << "static constexpr unsigned kSize = "
-     << "static_cast<unsigned>(sizeof(Type));\n";
+//   os << os.Indent() << "using Type = " << TypeName(module, col.Type()) << ";\n"
+//      << os.Indent() << "static constexpr bool kIsPersistent = true;\n"
+//      << os.Indent()
+//      << "static constexpr unsigned kNumIndexUses = " << num_indices << "u;\n"
+//      << os.Indent() << "static constexpr unsigned kId = " << col.Id() << "u;\n"
+//      << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
+//      << "u;\n"
+//      << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
+//   if (i) {
+//     os << os.Indent() << "static constexpr unsigned kOffset = col_"
+//        << table.Id() << '_' << (i - 1u) << "::kOffset + col_" << table.Id()
+//        << '_' << (i - 1u) << "::kSize;\n";
+//   } else {
+//     os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
+//   }
+//   os << os.Indent() << "static constexpr unsigned kSize = "
+//      << "static_cast<unsigned>(sizeof(Type));\n";
 
-  os << os.Indent() << "static const Token kNames[] = {\n";
-  os.PushIndent();
+//   os << os.Indent() << "static const Token kNames[] = {\n";
+//   os.PushIndent();
 
-  unsigned num_names = 0u;
-  for (auto name : names) {
-    if (name.IsValid() && name.Position().IsValid()) {
-      os << os.Indent();
-      OutputToken(os, name);
-      os << ",\n";
-      ++num_names;
-    }
-  }
-  os.PopIndent();
-  os << os.Indent() << "};\n"
-     << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
-     << "u;\n";
-  os.PopIndent();
-  os << "};\n";
-}
+//   unsigned num_names = 0u;
+//   for (auto name : names) {
+//     if (name.IsValid() && name.Position().IsValid()) {
+//       os << os.Indent();
+//       OutputToken(os, name);
+//       os << ",\n";
+//       ++num_names;
+//     }
+//   }
+//   os.PopIndent();
+//   os << os.Indent() << "};\n"
+//      << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
+//      << "u;\n";
+//   os.PopIndent();
+//   os << "};\n";
+// }
 
 // Visit all uses of a vector. We care about uses that extract out tuples
 // from the vector and bind their elements to variables.
@@ -133,54 +133,54 @@ class VectorUseVisitor final : public ProgramVisitor {
   std::vector<std::unordered_set<Token>> names;
 };
 
-// Declare structures for each of the columns used in a vector.
-static void DeclareVectorColumns(OutputStream &os, ParsedModule module,
-                                 DataVector vec) {
-  VectorUseVisitor use_visitor(vec);
-  vec.VisitUsers(use_visitor);
+// // Declare structures for each of the columns used in a vector.
+// static void DeclareVectorColumns(OutputStream &os, ParsedModule module,
+//                                  DataVector vec) {
+//   VectorUseVisitor use_visitor(vec);
+//   vec.VisitUsers(use_visitor);
 
-  unsigned i = 0u;
-  for (auto type : vec.ColumnTypes()) {
-    const auto &names = use_visitor.names[i];
+//   unsigned i = 0u;
+//   for (auto type : vec.ColumnTypes()) {
+//     const auto &names = use_visitor.names[i];
 
-    os << "struct col_" << vec.Id() << '_' << i << " {\n";
-    os.PushIndent();
+//     os << "struct col_" << vec.Id() << '_' << i << " {\n";
+//     os.PushIndent();
 
-    os << os.Indent() << "using Type = " << TypeName(module, type) << ";\n"
-       << os.Indent() << "static constexpr bool kIsPersistent = false;\n"
-       << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
-    if (i) {
-      os << os.Indent() << "static constexpr unsigned kOffset = col_"
-         << vec.Id() << '_' << (i - 1u) << "::kOffset + col_" << vec.Id() << '_'
-         << (i - 1u) << "::kSize;\n";
-    } else {
-      os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
-    }
-    os << os.Indent() << "static constexpr unsigned kSize = "
-       << "static_cast<unsigned>(sizeof(Type));\n";
+//     os << os.Indent() << "using Type = " << TypeName(module, type) << ";\n"
+//        << os.Indent() << "static constexpr bool kIsPersistent = false;\n"
+//        << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
+//     if (i) {
+//       os << os.Indent() << "static constexpr unsigned kOffset = col_"
+//          << vec.Id() << '_' << (i - 1u) << "::kOffset + col_" << vec.Id() << '_'
+//          << (i - 1u) << "::kSize;\n";
+//     } else {
+//       os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
+//     }
+//     os << os.Indent() << "static constexpr unsigned kSize = "
+//        << "static_cast<unsigned>(sizeof(Type));\n";
 
-    os << os.Indent() << "static const Token kNames[] = {\n";
-    os.PushIndent();
+//     os << os.Indent() << "static const Token kNames[] = {\n";
+//     os.PushIndent();
 
-    unsigned num_names = 0u;
-    for (auto name : names) {
-      if (name.IsValid() && name.Position().IsValid()) {
-        os << os.Indent();
-        OutputToken(os, name);
-        os << ",\n";
-        ++num_names;
-      }
-    }
-    os.PopIndent();
-    os << os.Indent() << "};\n"
-       << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
-       << "u;\n";
-    os.PopIndent();
-    os << "};\n";
+//     unsigned num_names = 0u;
+//     for (auto name : names) {
+//       if (name.IsValid() && name.Position().IsValid()) {
+//         os << os.Indent();
+//         OutputToken(os, name);
+//         os << ",\n";
+//         ++num_names;
+//       }
+//     }
+//     os.PopIndent();
+//     os << os.Indent() << "};\n"
+//        << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
+//        << "u;\n";
+//     os.PopIndent();
+//     os << "};\n";
 
-    ++i;
-  }
-}
+//     ++i;
+//   }
+// }
 
 // Find the largest set in `work_list` that is a subset of `*cols`. `work_list`
 // is sorted in smallest to largest sets.
