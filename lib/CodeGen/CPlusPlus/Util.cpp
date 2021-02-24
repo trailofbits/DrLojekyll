@@ -51,9 +51,7 @@ const std::string_view TypeName(ParsedForeignType type) {
     return *code;
   }
   assert(false);
-
-  // TODO Is there a good equivalent to Any in Python? void* ?
-  return "void";
+  return "::hyde::r::Any";
 }
 
 // CPlusPlus representation of TypeKind
@@ -79,7 +77,7 @@ std::string_view TypeName(ParsedModule module, TypeLoc kind) {
         return TypeName(*type);
       }
       [[clang::fallthrough]];
-    default: assert(false); return "void";
+    default: assert(false); return "::hyde::rt::Any";
   }
 }
 
@@ -91,7 +89,7 @@ const char *OperatorString(ComparisonOperator op) {
     case ComparisonOperator::kGreaterThan: return ">";
 
     // TODO(ekilmer): What's a good default operator?
-    default: assert(false); return "void";
+    default: assert(false); return "/* bad operator */";
   }
 }
 
