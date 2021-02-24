@@ -58,8 +58,7 @@ struct FuzzerStats {
     assert(num_attempts >= num_parsed);
     assert(num_parsed >= num_compiled);
     assert(num_custom_calls == (num_custom_generated_asts +
-                                num_custom_parsed_asts +
-                                num_custom_fallbacks));
+                                num_custom_parsed_asts + num_custom_fallbacks));
 
     // Figure out how wide to make the numeric column in the first section
     int col_width = 1;
@@ -138,7 +137,7 @@ static std::string ProgramToPython(DrContext &cxt,
   assert(cxt.error_log.IsEmpty());
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
-  hyde::python::GeneratePythonDatabaseCode(program, os);
+  hyde::GeneratePythonDatabaseCode(program, os);
   return stream.str();
 }
 

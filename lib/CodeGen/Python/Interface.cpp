@@ -14,7 +14,7 @@ namespace hyde {
 namespace python {
 
 // Emits Python code for the given program to `os`.
-void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
+void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "from dataclasses import dataclass\n"

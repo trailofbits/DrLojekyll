@@ -1783,7 +1783,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 }  // namespace
 
 // Emits Python code for the given program to `os`.
-void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
+void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "from __future__ import annotations\n"
      << "import sys\n"

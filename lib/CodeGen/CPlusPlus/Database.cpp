@@ -334,6 +334,7 @@ static unsigned DeclareIndices(OutputStream &os, ParsedModule module,
 static void DefineTable(OutputStream &os, ParsedModule module, DataTable table,
                         unsigned int &next_index_id) {
 
+
   // Figure out if this table supports deletions.
   auto is_differential = "false";
   auto has_insert = false;
@@ -594,6 +595,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
         ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
           DeclareFunctor(os, module, func);
+
           // has_functors = true;
           (void) it;
         }
@@ -671,7 +673,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
-void GenerateCxxDatabaseCode(const Program &program, OutputStream &os) {
+void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#include <drlojekyll/Runtime.h>\n\n"
      << "#include <string>\n"
