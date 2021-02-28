@@ -96,8 +96,8 @@ const char *OperatorString(ComparisonOperator op) {
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var) {
   auto val = var.Value();
-  std::string_view prefix = "";
-  std::string_view suffix = "";
+  std::string_view prefix = "(";
+  std::string_view suffix = ")";
   std::string_view default_val = "";
 
   switch (var.DefiningRole()) {

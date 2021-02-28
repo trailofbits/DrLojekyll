@@ -140,6 +140,32 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     hyde::GeneratePythonDatabaseCode(*program_opt, py_out_fs);
   }
 
+  // Generate C++ code
+  auto cxx_out_path = generated_file_base.string() + ".cpp";
+  {
+    std::ofstream os(cxx_out_path);
+    hyde::OutputStream cxx_out_fs(display_mgr, os);
+    hyde::GenerateCxxDatabaseCode(*program_opt, cxx_out_fs);
+  }
+
+  // Try to compile generated C++ code (no main so do library)
+  // FIXME: possible command injection here!
+  std::string compile_cmd = "\"" + std::string(kCxxCompilerPath) + "\"" +
+#ifdef _WIN32
+                            " /std:c++17 /c /I\"" + kDrlogPublicHeaders +
+#else
+                            " -std=c++17 -c -I\"" + kDrlogPublicHeaders +
+#endif
+                            "\" " + kCxxFlags + " \"" + cxx_out_path + "\"";
+#ifdef _WIN32
+  int compile_ret_code = std::system(("\"" + compile_cmd + "\"").c_str());
+#else
+  int compile_ret_code = std::system(compile_cmd.c_str());
+#endif
+  EXPECT_TRUE(compile_ret_code == 0)
+      << "C++ compilation failed! Saved generated code at " << cxx_out_path
+      << std::endl;
+
   // Type-check the generated Python code with mypy, if available
 #ifdef MYPY_PATH
 
@@ -148,9 +174,9 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   // instead.
   //
   // FIXME: possible command injection here!
-  std::string cmd = std::string(MYPY_PATH) + " " + py_out_path;
-  int ret_code = std::system(cmd.c_str());
-  EXPECT_TRUE(ret_code == 0)
+  std::string mypy_cmd = std::string(MYPY_PATH) + " " + py_out_path;
+  int mypy_ret_code = std::system(mypy_cmd.c_str());
+  EXPECT_TRUE(mypy_ret_code == 0)
       << "Python mypy type-checking failed! Saved generated code at "
       << py_out_path << std::endl;
 #endif  // MYPY_PATH

@@ -37,12 +37,7 @@ static Stream &Var(Stream &os, const DataVariable var) {
     case VariableRole::kConstantOne: os << "1"; break;
     case VariableRole::kConstantFalse: os << "true"; break;
     case VariableRole::kConstantTrue: os << "false"; break;
-    default:
-      if (var.IsGlobal()) {
-        os << "this.";
-      }
-      os << "var_" << var.Id();
-      break;
+    default: os << "var_" << var.Id(); break;
   }
   return os;
 }

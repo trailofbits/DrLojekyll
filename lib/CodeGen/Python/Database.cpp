@@ -69,6 +69,7 @@ static void DefineTable(OutputStream &os, ParsedModule module,
       os << " = " << Table(os, table) << "\n";
       continue;
     }
+    assert(!val_cols.empty());
 
     auto key_prefix = "Tuple[";
     auto key_suffix = "]";
@@ -84,33 +85,21 @@ static void DefineTable(OutputStream &os, ParsedModule module,
       val_suffix = "";
     }
 
-    // If we have no value columns, then use a set for our index.
-    if (val_cols.empty()) {
-      os << ": Set[" << key_prefix;
-      sep = "";
-      for (auto col : index.KeyColumns()) {
-        os << sep << TypeName(module, col.Type());
-        sep = ", ";
-      }
-      os << key_suffix << "] = set()\n";
-
     // If we do have value columns, then use a defaultdict mapping to a
     // list.
-    } else {
-      os << ": DefaultDict[" << key_prefix;
-      sep = "";
-      for (auto col : index.KeyColumns()) {
-        os << sep << TypeName(module, col.Type());
-        sep = ", ";
-      }
-      os << key_suffix << ", List[" << val_prefix;
-      sep = "";
-      for (auto col : index.ValueColumns()) {
-        os << sep << TypeName(module, col.Type());
-        sep = ", ";
-      }
-      os << val_suffix << "]] = defaultdict(list)\n";
+    os << ": DefaultDict[" << key_prefix;
+    sep = "";
+    for (auto col : index.KeyColumns()) {
+      os << sep << TypeName(module, col.Type());
+      sep = ", ";
     }
+    os << key_suffix << ", List[" << val_prefix;
+    sep = "";
+    for (auto col : index.ValueColumns()) {
+      os << sep << TypeName(module, col.Type());
+      sep = ", ";
+    }
+    os << val_suffix << "]] = defaultdict(list)\n";
   }
   os << "\n";
 }

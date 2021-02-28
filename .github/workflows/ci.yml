@@ -277,7 +277,11 @@ jobs:
         run: cmake --build build --config Debug -j
 
       - name: Test
-        run: cd build && ctest --output-on-failure -j 2 --schedule-random
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd build
+          ctest --output-on-failure -j 2 --schedule-random
 
       - name: Install
         run: cmake --install build --config Debug

@@ -1,8 +1,20 @@
 ; This example can parse EVM array declarations
 
-#foreign Token ```Tuple[str, int]```.
-#foreign Lexeme ```str```.
-#foreign ASTNode ```Tuple```.
+#prologue ```c++
+using Token = std::tuple<::hyde::rt::UTF8, int>;
+using ASTNode = std::tuple<>;
+using Lexeme = std::tuple<::hyde::rt::UTF8>;
+```.
+
+#foreign Token ```python Tuple[str, int]```.
+;#foreign Token ```c++ std::tuple<::hyde::rt::UTF8, int>```.
+#foreign Token ```c++ Token```.
+#foreign Lexeme ```python str```.
+;#foreign Lexeme ```c++ ::hyde::rt::UTF8```.
+#foreign Lexeme ```c++ Lexeme```.
+#foreign ASTNode ```python Tuple```.
+;#foreign ASTNode ```c++ std::tuple<...>```.
+#foreign ASTNode ```c++ ASTNode```.
 
 #query type_name(free ASTNode BaseType).
 
@@ -24,7 +36,8 @@
 #constant Lexeme KEYWORD_TYPE_BYTE ```"byte"```.
 #constant Lexeme KEYWORD_TYPE_BYTES ```"bytes"```.
 #constant Lexeme KEYWORD_RETURNS ```"returns"```.
-#constant Token FAKE_R_PAREN ```(")", -1)```.
+#constant Token FAKE_R_PAREN ```python (")", -1)```.
+#constant Token FAKE_R_PAREN ```c++ {")", -1}```.
 
 type_name(OtherType) : other_type(OtherType).
 

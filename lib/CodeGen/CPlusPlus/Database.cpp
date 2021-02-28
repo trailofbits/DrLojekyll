@@ -19,491 +19,288 @@ namespace hyde {
 namespace cxx {
 namespace {
 
-// // Print out the full location of a token.
-// static void OutputToken(OutputStream &os, Token tok) {
-//   const auto pos = tok.Position();
-//   os << "{\"";
-//   os.DisplayNameOr(pos, "");
-//   os << "\", ";
-//   os.LineNumberOr(pos, "0");
-//   os << ", ";
-//   os.ColumnNumberOr(pos, "0");
-//   os << ", \"" << tok << "\"}";
-// }
-
-// // Declare a structure containing the information about a column.
-// static void DeclareColumn(OutputStream &os, ParsedModule module,
-//                           DataTable table, DataColumn col) {
-//   os << "struct col_" << table.Id() << '_' << col.Index() << " {\n";
-//   os.PushIndent();
-
-//   // Calculate the number of indices in which this column participates.
-//   auto num_indices = 0;
-//   for (auto index : table.Indices()) {
-//     for (auto index_col : index.KeyColumns()) {
-//       if (index_col == col) {
-//         ++num_indices;
-//       }
-//     }
-//   }
-
-//   const auto names = col.PossibleNames();
-//   const auto i = col.Index();
-
-//   os << os.Indent() << "using Type = " << TypeName(module, col.Type()) << ";\n"
-//      << os.Indent() << "static constexpr bool kIsPersistent = true;\n"
-//      << os.Indent()
-//      << "static constexpr unsigned kNumIndexUses = " << num_indices << "u;\n"
-//      << os.Indent() << "static constexpr unsigned kId = " << col.Id() << "u;\n"
-//      << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
-//      << "u;\n"
-//      << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
-//   if (i) {
-//     os << os.Indent() << "static constexpr unsigned kOffset = col_"
-//        << table.Id() << '_' << (i - 1u) << "::kOffset + col_" << table.Id()
-//        << '_' << (i - 1u) << "::kSize;\n";
-//   } else {
-//     os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
-//   }
-//   os << os.Indent() << "static constexpr unsigned kSize = "
-//      << "static_cast<unsigned>(sizeof(Type));\n";
-
-//   os << os.Indent() << "static const Token kNames[] = {\n";
-//   os.PushIndent();
-
-//   unsigned num_names = 0u;
-//   for (auto name : names) {
-//     if (name.IsValid() && name.Position().IsValid()) {
-//       os << os.Indent();
-//       OutputToken(os, name);
-//       os << ",\n";
-//       ++num_names;
-//     }
-//   }
-//   os.PopIndent();
-//   os << os.Indent() << "};\n"
-//      << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
-//      << "u;\n";
-//   os.PopIndent();
-//   os << "};\n";
-// }
-
-// Visit all uses of a vector. We care about uses that extract out tuples
-// from the vector and bind their elements to variables.
-class VectorUseVisitor final : public ProgramVisitor {
- public:
-  explicit VectorUseVisitor(DataVector vec_)
-      : vec(vec_),
-        names(vec.ColumnTypes().size()) {}
-
-  void Visit(ProgramVectorAppendRegion append) {
-    unsigned i = 0u;
-    for (auto var : append.TupleVariables()) {
-      names[i++].insert(var.Name());
-    }
-  }
-
-  void Visit(ProgramVectorLoopRegion loop) {
-    unsigned i = 0u;
-    for (auto var : loop.TupleVariables()) {
-      names[i++].insert(var.Name());
-    }
-  }
-
-  void Visit(ProgramTableJoinRegion join) {
-    unsigned i = 0u;
-    for (auto var : join.OutputPivotVariables()) {
-      names[i++].insert(var.Name());
-    }
-  }
-
-  void Visit(ProgramTableScanRegion scan) {
-    unsigned i = 0u;
-    for (auto col : scan.SelectedColumns()) {
-      for (auto name : col.PossibleNames()) {
-        names[i].insert(name);
-      }
-      ++i;
-    }
-  }
-
-
-  const DataVector vec;
-
-  // List of all variables associated with the `N`th vector element.
-  std::vector<std::unordered_set<Token>> names;
-};
-
-// // Declare structures for each of the columns used in a vector.
-// static void DeclareVectorColumns(OutputStream &os, ParsedModule module,
-//                                  DataVector vec) {
-//   VectorUseVisitor use_visitor(vec);
-//   vec.VisitUsers(use_visitor);
-
-//   unsigned i = 0u;
-//   for (auto type : vec.ColumnTypes()) {
-//     const auto &names = use_visitor.names[i];
-
-//     os << "struct col_" << vec.Id() << '_' << i << " {\n";
-//     os.PushIndent();
-
-//     os << os.Indent() << "using Type = " << TypeName(module, type) << ";\n"
-//        << os.Indent() << "static constexpr bool kIsPersistent = false;\n"
-//        << os.Indent() << "static constexpr unsigned kIndex = " << i << "u;\n";
-//     if (i) {
-//       os << os.Indent() << "static constexpr unsigned kOffset = col_"
-//          << vec.Id() << '_' << (i - 1u) << "::kOffset + col_" << vec.Id() << '_'
-//          << (i - 1u) << "::kSize;\n";
-//     } else {
-//       os << os.Indent() << "static constexpr unsigned kOffset = 0u;\n";
-//     }
-//     os << os.Indent() << "static constexpr unsigned kSize = "
-//        << "static_cast<unsigned>(sizeof(Type));\n";
-
-//     os << os.Indent() << "static const Token kNames[] = {\n";
-//     os.PushIndent();
-
-//     unsigned num_names = 0u;
-//     for (auto name : names) {
-//       if (name.IsValid() && name.Position().IsValid()) {
-//         os << os.Indent();
-//         OutputToken(os, name);
-//         os << ",\n";
-//         ++num_names;
-//       }
-//     }
-//     os.PopIndent();
-//     os << os.Indent() << "};\n"
-//        << os.Indent() << "static constexpr unsigned kNumNames = " << num_names
-//        << "u;\n";
-//     os.PopIndent();
-//     os << "};\n";
-
-//     ++i;
-//   }
-// }
-
-// Find the largest set in `work_list` that is a subset of `*cols`. `work_list`
-// is sorted in smallest to largest sets.
-static void FindCover(std::vector<DataIndex> &work_list,
-                      std::vector<DataIndex> &next_work_list,
-                      std::vector<DataIndex> &covered) {
-
-  next_work_list.clear();
-
-  for (auto it = work_list.rbegin(), end = work_list.rend(); it != end; ++it) {
-
-    DataIndex curr_index = covered.back();
-    DataIndex maybe_subset_index = *it;
-
-    // Figure out if `maybe_subset` is a subset of `cols`.
-    auto i = 0u;
-    for (auto col : maybe_subset_index.KeyColumns()) {
-
-      const auto col_index = col.Index();
-      const auto match_col_index = curr_index.KeyColumns()[i].Index();
-
-      if (col_index == match_col_index) {
-        ++i;
-
-      } else if (col_index < match_col_index) {
-        continue;
-
-      } else {
-        next_work_list.push_back(maybe_subset_index);
-        goto skipped;
-      }
-    }
-
-    // Found a subset, continue with it.
-    covered.push_back(maybe_subset_index);
-
-  skipped:
-    continue;
-  }
-
-  std::reverse(next_work_list.begin(), next_work_list.end());
-  next_work_list.swap(work_list);
+static OutputStream &Table(OutputStream &os, const DataTable table) {
+  return os << "table_" << table.Id();
 }
 
-// Declare the indices.
-static unsigned DeclareIndices(OutputStream &os, ParsedModule module,
-                               DataTable table, unsigned &next_index_id) {
-  const auto indices = table.Indices();
-
-  std::vector<DataIndex> work_list(indices.begin(), indices.end());
-  std::vector<DataIndex> next_work_list;
-  std::vector<std::vector<DataIndex>> grouped_indices;
-
-  // We don't want to represent indices that map all columns separately from
-  // the table itself so we'll strip those out.
-  for (auto index : indices) {
-    if (index.KeyColumns().size() < table.Columns().size()) {
-      work_list.push_back(index);
-
-    // TODO(pag): Decide on how to declare these.
-    } else {
-      assert(false);
-    }
-  }
-
-  // Put biggest indices last.
-  std::sort(work_list.begin(), work_list.end(), [](DataIndex a, DataIndex b) {
-    return a.KeyColumns().size() < b.KeyColumns().size();
-  });
-
-  // Pop off the biggest index, then merge into it the next smallest index
-  // that covers a subset of the columns, then use that next one for grouping.
-  while (!work_list.empty()) {
-    auto &covered = grouped_indices.emplace_back();
-    covered.emplace_back(std::move(work_list.back()));
-    work_list.pop_back();
-    FindCover(work_list, next_work_list, covered);
-  }
-
-  unsigned num_indices = 0u;
-
-  // Output the grouped indices.
-  std::unordered_set<DataColumn> seen_cols;
-  for (const auto &indices : grouped_indices) {
-    seen_cols.clear();
-    os << "struct index_" << table.Id() << '_' << num_indices << " {\n";
-    os.PushIndent();
-    os << os.Indent() << "static constexpr unsigned kId = " << (next_index_id++)
-       << "u;\n"
-       << os.Indent() << "static constexpr unsigned kSlot = " << num_indices
-       << "u;\n"
-       << os.Indent() << "using Spec = KeyValues<Columns<";
-    auto sep = "";
-    for (auto index : indices) {
-      for (auto col : index.KeyColumns()) {
-        if (seen_cols.count(col)) {
-          continue;
-        }
-        seen_cols.insert(col);
-        os << sep << "col_" << table.Id() << '_' << col.Id();
-        sep = ", ";
-      }
-    }
-
-    os << ">, Columns<";
-    sep = "";
-
-    // Add in the rest of the columns.
-    for (auto col : table.Columns()) {
-      if (!seen_cols.count(col)) {
-        os << sep << "col_" << table.Id() << '_' << col.Id();
-        sep = ", ";
-      }
-    }
-
-    os << ">>;\n" << os.Indent() << "static Index *gStorage = nullptr;\n";
-
-    os.PopIndent();
-    os << "};\n";
-    for (auto index : indices) {
-      os << "using index_" << index.Id() << " = index_" << table.Id() << '_'
-         << num_indices << ";\n";
-    }
-
-    ++num_indices;
-  }
-
-  //  // Make sure there's always at least one index so that we can cover the table.
-  //  if (!num_indices) {
-  //    num_indices = 1u;
-  //    os << "struct index_" << table.Id() << "_0 {\n";
-  //    os.PushIndent();
-  //    os << os.Indent() << "using Spec = Columns<";
-  //    auto sep = "";
-  //    for (auto col : table.Columns()) {
-  //      os << sep << "col_" << table.Id() << '_' << col.Id();
-  //      sep = ", ";
-  //    }
-  //    os << ">;\n"
-  //       << os.Indent() << "static Index *gStorage = nullptr;\n";
-  //
-  //    os.PopIndent();
-  //    os << "};\n";
-  //  }
-
-  return num_indices;
+static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
+  return os << "index_" << index.Id();
 }
 
 // Declare a structure containing the information about a table.
-static void DefineTable(OutputStream &os, ParsedModule module, DataTable table,
-                        unsigned int &next_index_id) {
-
-
-  // Figure out if this table supports deletions.
-  auto is_differential = "false";
-  auto has_insert = false;
-  table.ForEachUser([&is_differential, &has_insert](ProgramRegion region) {
-    if (region.IsTransitionState()) {
-      auto trans = ProgramTransitionStateRegion::From(region);
-      if (TupleState::kPresent != trans.ToState()) {
-        is_differential = "true";
-      } else {
-        has_insert = true;
-      }
-    }
-  });
-
-  assert(has_insert);
-
-  const auto num_indices = DeclareIndices(os, module, table, next_index_id);
-
-  const auto cols = table.Columns();
-  os << "struct table_" << table.Id() << " {\n";
-  os.PushIndent();
-  os << os.Indent() << "static constexpr unsigned kId = " << table.Id()
-     << "u;\n"
-     << os.Indent()
-     << "static constexpr bool kIsDifferential = " << is_differential << ";\n"
-     << os.Indent() << "static constexpr unsigned kNumColumns = " << cols.size()
-     << "u;\n"
-     << os.Indent() << "static constexpr unsigned kTupleSize = ";
+static void DefineTable(OutputStream &os, ParsedModule module,
+                        DataTable table) {
+  os << os.Indent() << "::hyde::rt::Table<StorageEngine, " << table.Id()
+     << ", ";
   auto sep = "";
-  for (auto col : cols) {
-    os << sep << "col_" << table.Id() << '_' << col.Index() << "::kSize";
-    sep = " + ";
-  }
-  os << ";\n" << os.Indent() << "using ColumnSpec = Columns<";
+  const auto cols = table.Columns();
+  if (cols.size() == 1u) {
+    os << TypeName(module, cols[0].Type());
 
-  sep = "";
-  for (auto col : cols) {
-    os << sep << "col_" << table.Id() << '_' << col.Index();
-    sep = ", ";
+  } else {
+    for (auto col : cols) {
+      os << sep << TypeName(module, col.Type());
+      sep = ", ";
+    }
   }
-  os << ">;\n" << os.Indent() << "using IndexSpec = Indices<";
+  os << "> " << Table(os, table) << ";\n";
 
-  sep = "";
-  for (auto i = 0u; i < num_indices; ++i) {
-    os << sep << "index_" << table.Id() << '_' << i;
-    sep = ", ";
+  // We represent indices as mappings to vectors so that we can concurrently
+  // write to them while iterating over them (via an index and length check).
+  for (auto index : table.Indices()) {
+    const auto key_cols = index.KeyColumns();
+    const auto val_cols = index.ValueColumns();
+    (void) val_cols;
+
+    os << os.Indent() << "::hyde::rt::Index<StorageEngine, " << table.Id()
+       << ", " << index.Id() << ", ::hyde::rt::Key<";
+    sep = "";
+    for (auto col : index.KeyColumns()) {
+      os << sep << "::hyde::rt::Column<" << col.Index() << ", "
+         << TypeName(module, col.Type()) << ">";
+      sep = ", ";
+    }
+    os << ">, ::hyde::rt::Value<";
+    sep = "";
+    for (auto col : index.ValueColumns()) {
+      os << sep << "::hyde::rt::Column<" << col.Index() << ", "
+         << TypeName(module, col.Type()) << ">";
+      sep = ", ";
+    }
+    os << ">>";
+
+    // The index can be implemented with the keys in the Table.
+    // In this case, the index lookup will be an `if ... in ...`.
+    if (key_cols.size() == cols.size()) {
+      assert(val_cols.empty());
+
+      // Implement this index as an accessor that just uses the Table
+      os << "& " << TableIndex(os, index) << "() { return &" << Table(os, table)
+         << "; }\n";
+    } else {
+      os << " " << TableIndex(os, index) << ";\n";
+    }
   }
-  os << ">;\n"
-     << os.Indent() << "static constexpr unsigned kNumIndices = " << num_indices
-     << "u;\n"
-     << os.Indent() << "static Table *gStorage = nullptr;\n";
-
-  os.PopIndent();
-  os << "};\n\n";
+  os << "\n";
 }
 
-// class CPPCodeGenVisitor final : public ProgramVisitor {
-//  public:
-//   explicit CPPCodeGenVisitor(OutputStream &os_) : os(os_) {}
+static void DefineGlobal(OutputStream &os, ParsedModule module,
+                         DataVariable global) {
+  auto type = global.Type();
+  os << os.Indent();
+  if (global.IsConstant()) {
+    os << "static constexpr ";
+  }
+  os << TypeName(module, type) << " ";
+  os << Var(os, global) << ";\n";
+}
 
-//   void Visit(ProgramCallRegion val) override {
-//     os << "ProgramCallRegion\n";
-//   }
+// Similar to DefineGlobal except has constexpr to enforce const-ness
+static void DefineConstant(OutputStream &os, ParsedModule module,
+                           DataVariable global) {
+  switch (global.DefiningRole()) {
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return;
+    default: break;
+  }
+  auto type = global.Type();
+  os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
+     << Var(os, global) << " = " << TypeName(module, type)
+     << TypeValueOrDefault(module, type, global) << ";\n";
+}
 
-//   void Visit(ProgramReturnRegion val) override {
-//     os << "ProgramReturnRegion\n";
-//   }
+// We want to enable referential transparency in the code, so that if an Nth
+// value is produced by some mechanism that is equal to some prior value, then
+// we replace its usage with the prior value.
+static void DefineTypeRefResolver(OutputStream &os) {  // , ParsedModule module,
 
-//   void Visit(ProgramExistenceAssertionRegion val) override {
-//     os << "ProgramExistenceAssertionRegion\n";
-//   }
+  // ParsedForeignType type) {
+  // if (type.IsBuiltIn()) {
+  //   return;
+  // }
 
-//   void Visit(ProgramGenerateRegion val) override {
-//     os << "ProgramGenerateRegion\n";
-//   }
+  // Has merge_into method
+  os << os.Indent() << "template<typename T>\n"
+     << os.Indent()
+     << "typename ::hyde::rt::enable_if<::hyde::rt::has_merge_into<T,\n"
+     << os.Indent() << "         std::string(T::*)()>::value, T>::type\n"
+     << os.Indent() << "_resolve(T obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << "auto ref_list = _refs[std::hash<T>(obj)];\n"
+     << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (&obj == &maybe_obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return obj;\n";
+  os.PopIndent();
+  os << os.Indent() << "} else if (obj == maybe_obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << "T prior_obj  = static_cast<T>(maybe_obj);\n"
+     << os.Indent() << "obj.merge_into(prior_obj);\n"
+     << os.Indent() << "return prior_obj;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"
+     << os.Indent() << "ref_list.push_back(obj);\n"
+     << os.Indent() << "return obj;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";
 
-//   void Visit(ProgramInductionRegion val) override {
-//     os << "ProgramInductionRegion\n";
-//   }
+  // Does not have merge_into
+  os << os.Indent() << "template<typename T>\n"
+     << os.Indent()
+     << "typename ::hyde::rt::enable_if<!::hyde::rt::has_merge_into<T,\n"
+     << os.Indent() << "         std::string(T::*)()>::value, T>::type\n"
+     << os.Indent() << "_resolve(T obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return obj;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";
 
-//   void Visit(ProgramLetBindingRegion val) override {
-//     os << "ProgramLetBindingRegion\n";
-//   }
+  /* Old way following what Python has
+  os << os.Indent() << "static constexpr bool _HAS_MERGE_METHOD_" << type.Name()
+     << " = ::hyde::rt::hasattr<" << TypeName(type) << ">(\"merge_into\");\n"
+     << os.Indent() << "static constexpr void (* _MERGE_METHOD_" << type.Name()
+     << ")(" << TypeName(type) << ", " << TypeName(type) << ") = ::hyde::rt::getattr<"
+     << TypeName(type) << ">(\"merge_into\", [] ("
+     << TypeName(type) << " a, " << TypeName(type)
+     << " b){return nullptr;});\n\n"
+     << os.Indent() << TypeName(type) << " _resolve_" << type.Name() << "("
+     << TypeName(type) << " obj) {\n";
 
-//   void Visit(ProgramParallelRegion val) override {
-//     os << "ProgramParallelRegion\n";
-//   }
+  os.PushIndent();
+  os << os.Indent() << "if constexpr (" << gClassName << "::_HAS_MERGE_METHOD_"
+     << type.Name() << ") {\n";
+  os.PushIndent();
 
-//   void Visit(ProgramProcedure val) override {
-//     os << "ProgramProcedure\n";
-//   }
+  os << os.Indent() << "auto ref_list = _refs[std::hash<" << TypeName(type) << ">(obj)];\n"
+     << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
+  os.PushIndent();
 
-//   void Visit(ProgramPublishRegion val) override {
-//     os << "ProgramPublishRegion\n";
-//   }
+  // The proposed object is identical (referentially) to the old one.
+  os << os.Indent() << "if (&obj == &maybe_obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return obj;\n";
+  os.PopIndent();
 
-//   void Visit(ProgramSeriesRegion val) override {
-//     os << "ProgramSeriesRegion\n";
-//   }
+  // The proposed object is structurally equivalent to the old one.
+  os << os.Indent() << "} else if (obj == maybe_obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << TypeName(type) << " prior_obj "
+     << " = static_cast<" << TypeName(type) << ">(maybe_obj);\n";
 
-//   void Visit(ProgramVectorAppendRegion val) override {
-//     os << "ProgramVectorAppendRegion\n";
-//   }
+  // Merge the new value `obj` into the prior value, `prior_obj`.
+  os << os.Indent() << gClassName << "::_MERGE_METHOD_" << type.Name()
+     << "(obj, prior_obj);\n";
+  os << os.Indent() << "return prior_obj;\n";
 
-//   void Visit(ProgramVectorClearRegion val) override {
-//     os << "ProgramVectorClearRegion\n";
-//   }
+  os.PopIndent();
+  os << os.Indent() << "}\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";
 
-//   void Visit(ProgramVectorLoopRegion val) override {
-//     os << "ProgramVectorLoopRegion\n";
-//   }
+  // We didn't find a prior version of the object; add our object in.
+  os << os.Indent() << "ref_list.push_back(obj);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";
 
-//   void Visit(ProgramVectorUniqueRegion val) override {
-//     os << "ProgramVectorUniqueRegion\n";
-//   }
+  os << os.Indent() << "return obj;\n";
 
-//   void Visit(ProgramTransitionStateRegion val) override {
-//     os << "ProgramTransitionStateRegion\n";
-//   }
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";
+  */
+}
 
-//   void Visit(ProgramCheckStateRegion val) override {
-//     os << "ProgramCheckStateRegion\n";
-//   }
+class CPPCodeGenVisitor final : public ProgramVisitor {
+ public:
+  explicit CPPCodeGenVisitor(OutputStream &os_) : os(os_) {}
 
-//   void Visit(ProgramTableJoinRegion val) override {
-//     os << "ProgramTableJoinRegion\n";
-//   }
+  void Visit(ProgramCallRegion val) override {
+    os << "ProgramCallRegion\n";
+  }
 
-//   void Visit(ProgramTableProductRegion val) override {
-//     os << "ProgramTableProductRegion\n";
-//   }
+  void Visit(ProgramReturnRegion val) override {
+    os << "ProgramReturnRegion\n";
+  }
 
-//   void Visit(ProgramTableScanRegion val) override {
-//     os << "ProgramTableScanRegion\n";
-//   }
+  void Visit(ProgramExistenceAssertionRegion val) override {
+    os << "ProgramExistenceAssertionRegion\n";
+  }
 
-//   void Visit(ProgramTupleCompareRegion val) override {
-//     os << "ProgramTupleCompareRegion\n";
-//   }
+  void Visit(ProgramGenerateRegion val) override {
+    os << "ProgramGenerateRegion\n";
+  }
 
-//  private:
-//   OutputStream &os;
-// };
+  void Visit(ProgramInductionRegion val) override {
+    os << "ProgramInductionRegion\n";
+  }
 
-// void DefineMainFunction(OutputStream &os, Program program,
-//                         unsigned num_indices) {
+  void Visit(ProgramLetBindingRegion val) override {
+    os << "ProgramLetBindingRegion\n";
+  }
 
-//   os << "extern \"C\" int main(int argc, char *argv[]) {\n";
-//   os.PushIndent();
-//   os << os.Indent() << "drlojekyll::Init(argc, argv, "
-//      << program.Tables().size() << ", " << num_indices << ", proc_0);\n";
+  void Visit(ProgramParallelRegion val) override {
+    os << "ProgramParallelRegion\n";
+  }
 
-//   for (auto table : program.Tables()) {
-//     os << os.Indent() << "drlojekyll::CreateTable<table_" << table.Id()
-//        << ">();\n";
-//   }
+  void Visit(ProgramProcedure val) override {
+    os << "ProgramProcedure\n";
+  }
 
-//   for (auto proc : program.Procedures()) {
-//     if (auto maybe_messsage = proc.Message(); maybe_messsage) {
-//       auto message = *maybe_messsage;
-//       os << os.Indent() << "drlojekyll::RegisterHandler(\"" << message.Name()
-//          << "\", proc_" << proc.Id() << ");\n";
-//     }
-//   }
+  void Visit(ProgramPublishRegion val) override {
+    os << "ProgramPublishRegion\n";
+  }
 
-//   os << "  return drlojekyll::Run();\n";
-//   os.PopIndent();
-//   os << "}\n\n";
-// }
+  void Visit(ProgramSeriesRegion val) override {
+    os << "ProgramSeriesRegion\n";
+  }
+
+  void Visit(ProgramVectorAppendRegion val) override {
+    os << "ProgramVectorAppendRegion\n";
+  }
+
+  void Visit(ProgramVectorClearRegion val) override {
+    os << "ProgramVectorClearRegion\n";
+  }
+
+  void Visit(ProgramVectorLoopRegion val) override {
+    os << "ProgramVectorLoopRegion\n";
+  }
+
+  void Visit(ProgramVectorUniqueRegion val) override {
+    os << "ProgramVectorUniqueRegion\n";
+  }
+
+  void Visit(ProgramTransitionStateRegion val) override {
+    os << "ProgramTransitionStateRegion\n";
+  }
+
+  void Visit(ProgramCheckStateRegion val) override {
+    os << "ProgramCheckStateRegion\n";
+  }
+
+  void Visit(ProgramTableJoinRegion val) override {
+    os << "ProgramTableJoinRegion\n";
+  }
+
+  void Visit(ProgramTableProductRegion val) override {
+    os << "ProgramTableProductRegion\n";
+  }
+
+  void Visit(ProgramTableScanRegion val) override {
+    os << "ProgramTableScanRegion\n";
+  }
+
+  void Visit(ProgramTupleCompareRegion val) override {
+    os << "ProgramTupleCompareRegion\n";
+  }
+
+ private:
+  OutputStream &os;
+};
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
                            ParsedFunctor func) {
@@ -627,7 +424,7 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
   if (interface) {
     os << "= 0;\n\n";
   } else {
-    os << "{\n";
+    os << "override {\n";
     os.PushIndent();
     os << os.Indent() << impl << "\n";
     os.PopIndent();
@@ -670,14 +467,28 @@ static void DeclareMessageLog(OutputStream &os, Program program,
   os << os.Indent() << "};\n\n";
 }
 
+static void DefineProcedure(OutputStream &os, ParsedModule module,
+                            ProgramProcedure proc) {
+  os << os.Indent() << "bool " << Procedure(os, proc)
+     << "(){/*TODO(ekilmer)*/}\n\n";
+}
+
+static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
+                                  const ProgramQuery &spec) {
+  const ParsedDeclaration decl(spec.query);
+  os << os.Indent() << "auto " << decl.Name() << '_' << decl.BindingPattern()
+     << "(){/*TODO(ekilmer)*/}\n\n";
+}
+
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#include <drlojekyll/Runtime.h>\n\n"
-     << "#include <string>\n"
      << "#include <tuple>\n"
+     << "#include <unordered_map>\n"
+     << "#include <vector>\n"
      << "\n"
      << "namespace {\n\n";
 
@@ -702,57 +513,91 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   DeclareMessageLog(os, program, module);
 
   // A program gets its own class
-  os << '\n';
+  os << "template <typename StorageEngine>\n";
   os << "class " << gClassName << " {\n";
-  os.PushIndent();
-  os.PushIndent();
+  os.PushIndent();  // class
+
+  os << os.Indent() << "public:\n";
+  os.PushIndent();  // public:
 
   os << os.Indent() << gClassName << "LogInterface &log;\n";
   os << os.Indent() << gClassName << "Functors &functors;\n";
 
-  // NOTE(ekilmer): This seems dangerous...
   os << os.Indent()
-     << "std::unordered_map<std::size_t, std::vector<void*>> refs;\n";
+     << "std::unordered_map<std::size_t, std::vector<::hyde::rt::Any*>> _refs;\n";
 
   os << "\n";
-  os.PopIndent();
 
-  os << os.Indent() << "public:\n";
-  os.PushIndent();
+  os << os.Indent() << gClassName << "(StorageEngine &storage, " << gClassName
+     << "LogInterface &l, " << gClassName << "Functors &f)\n";
+  os.PushIndent();  // constructor
+  os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
 
-  os << os.Indent() << gClassName << "(" << gClassName << "LogInterface &l, "
-     << gClassName << "Functors &f)\n"
-     << os.Indent() << "  : log(l),\n"
-     << os.Indent() << "    functors(f) {}\n\n";
-
-  unsigned next_index_id = 0u;
   for (auto table : program.Tables()) {
-    DefineTable(os, module, table, next_index_id);
+    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage)";
+    for (auto index : table.Indices()) {
+
+      // If value columns are empty, then we've already mapped it to the table
+      // itself as an accessor function
+      if (!index.ValueColumns().empty()) {
+        os << ",\n"
+           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
+      }
+    }
   }
 
+  for (auto global : program.GlobalVariables()) {
+    if (!global.IsConstant()) {
+      os << ",\n"
+         << os.Indent() << "  " << Var(os, global) << "("
+         << TypeValueOrDefault(module, global.Type(), global) << ")";
+    }
+  }
+  os << " {\n";
 
-  // unsigned next_index_id = 0u;
+  // Invoke the init procedure. Always first
+  auto init_procedure = program.Procedures()[0];
+  assert(init_procedure.Kind() == ProcedureKind::kInitializer);
+  os << os.Indent() << Procedure(os, init_procedure) << "();\n";
 
-  // for (auto table : program.Tables()) {
-  //   for (auto col : table.Columns()) {
-  //     DeclareColumn(os, table, col);
-  //   }
-  //   DeclareTable(os, table, next_index_id);
+  os.PopIndent();  // constructor
+  os << os.Indent() << "}\n\n";
+  os.PopIndent();  // public:
+
+  os << os.Indent() << "private:\n";
+  os.PushIndent();  // private:
+
+  for (auto table : program.Tables()) {
+    DefineTable(os, module, table);
+  }
+
+  for (auto global : program.GlobalVariables()) {
+    DefineGlobal(os, module, global);
+  }
+  os << "\n";
+
+  for (auto constant : program.Constants()) {
+    DefineConstant(os, module, constant);
+  }
+  os << "\n";
+
+  // Old pythonic way
+  // for (auto type : module.ForeignTypes()) {
+  DefineTypeRefResolver(os);  // , module, type);
+
   // }
 
-  // if (false) {
-  //   for (auto proc : program.Procedures()) {
-  //     for (auto vec : proc.VectorParameters()) {
-  //       DeclareVectorColumns(os, vec);
-  //     }
-  //     for (auto vec : proc.DefinedVectors()) {
-  //       DeclareVectorColumns(os, vec);
-  //     }
-  //   }
-  // }
+  for (auto proc : program.Procedures()) {
+    DefineProcedure(os, module, proc);
+  }
 
-  os.PopIndent();
-  os.PopIndent();
+  for (const auto &query_spec : program.Queries()) {
+    DefineQueryEntryPoint(os, module, query_spec);
+  }
+
+  os.PopIndent();  // private:
+
+  os.PopIndent();  // class:
   os << os.Indent() << "};\n\n";
 
   // Output epilogue code.
@@ -770,13 +615,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os << "}  // namespace\n\n";
-
-  // DefineMainFunction(os, program, next_index_id);
-
-  //  CPPCodeGenVisitor visitor(os);
-  //  visitor.Visit(program);
-  //  os.Flush();
+  os << "}  // namespace\n";
 }
 
 }  // namespace cxx

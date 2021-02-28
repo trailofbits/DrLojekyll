@@ -8,3 +8,17 @@ static constexpr auto kInvalidSyntaxExamplesDir = "@DrLojekyll_SOURCE_DIR@/data/
 
 // An absolute path to a directory where generated files can be placed
 static constexpr auto kGeneratedFilesDir = "@CMAKE_CURRENT_BINARY_DIR@/generated-test-files";
+
+// An absolute path to public headers in source directory
+static constexpr auto kDrlogPublicHeaders = "@DrLojekyll_SOURCE_DIR@/include";
+
+// An absolute path to the C++ compiler
+static constexpr auto kCxxCompilerPath = "@CMAKE_CXX_COMPILER@";
+
+// An absolute path to the C++ compiler
+static constexpr auto kCxxFlags =
+#ifdef __APPLE__
+    "-isysroot @CMAKE_OSX_SYSROOT@";
+#else
+    "";
+#endif
