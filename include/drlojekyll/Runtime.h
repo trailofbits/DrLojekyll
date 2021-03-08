@@ -29,6 +29,9 @@ using Any = void;
 
 /* **************************************** */
 /* START https://stackoverflow.com/a/264088 */
+// Templated function <T, Sign> named 'name' that checks whether the type `T`
+// has a member function named 'func' with signature `Sign`.
+// See stackoverflow link for usage.
 #define HAS_MEM_FUNC(func, name) \
   template <typename T, typename Sign> \
   struct name { \
