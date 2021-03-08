@@ -27,6 +27,14 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
   return os << "index_" << index.Id();
 }
 
+static OutputStream &Vector(OutputStream &os, const DataVector vec) {
+  return os << "vec_" << vec.Id();
+}
+
+static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
+  return os << "vec_index" << vec.Id();
+}
+
 // Declare a structure containing the information about a table.
 static void DefineTable(OutputStream &os, ParsedModule module,
                         DataTable table) {
@@ -414,8 +422,127 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
 static void DefineProcedure(OutputStream &os, ParsedModule module,
                             ProgramProcedure proc) {
-  os << os.Indent() << "bool " << Procedure(os, proc)
-     << "(){/*TODO(ekilmer)*/}\n\n";
+
+  // Every procedure has a boolean return type. A lot of the time the return
+  // type is not used, but for top-down checkers (which try to prove whether or
+  // not a tuple in an unknown state is either present or absent) it is used.
+  os << os.Indent() << "bool " << Procedure(os, proc) << "(";
+
+  const auto vec_params = proc.VectorParameters();
+  const auto var_params = proc.VariableParameters();
+  auto param_index = 0u;
+
+  // First, declare all vector parameters.
+  auto sep = "";
+  for (auto vec : vec_params) {
+    const auto is_byref = vec.Kind() == VectorKind::kInputOutputParameter;
+    os << sep;
+    if (is_byref) {
+      os << "std::vector<";
+    }
+    os << "std::vector<";
+    const auto &col_types = vec.ColumnTypes();
+    if (1u < col_types.size()) {
+      os << "std::tuple<";
+    }
+    auto type_sep = "";
+    for (auto type : col_types) {
+      os << type_sep << TypeName(module, type);
+      type_sep = ", ";
+    }
+    if (1u < col_types.size()) {
+      os << '>';
+    }
+    if (is_byref) {
+      os << '>';
+    }
+    os << "> ";
+    if (is_byref) {
+      os << "param_" << param_index;
+    } else {
+      os << Vector(os, vec);
+    }
+    ++param_index;
+    sep = ", ";
+  }
+
+  // Then, declare all variable parameters.
+  for (auto param : var_params) {
+    if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
+      os << sep << "std::vector<" << TypeName(module, param.Type()) << ">"
+         << "param_" << param_index;
+    } else {
+      os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
+    }
+    ++param_index;
+    sep = ", ";
+  }
+
+  os << ") {\n";
+  os.PushIndent();
+  os << os.Indent() << "int state = " << kStateUnknown << ";\n"
+     << os.Indent() << "int prev_state = " << kStateUnknown << ";\n"
+     << os.Indent() << "int present_bit = 0;\n"
+     << os.Indent() << "bool ret = false;\n"
+     << os.Indent() << "bool found = false;\n";
+
+  param_index = 0u;
+
+  // Pull out the referenced vectors.
+  for (auto vec : vec_params) {
+    if (vec.Kind() == VectorKind::kInputOutputParameter) {
+      os << os.Indent() << "auto " << Vector(os, vec) << " = param_"
+         << param_index << "[0];\n";
+    }
+    ++param_index;
+  }
+
+  // Every vector, including parameter vectors, has a variable tracking the
+  // current index into that vector.
+  //
+  // TODO(pag, ekilmer): Consider passing these as arguments... hrmm. This may
+  //                     be relevant if we factor out common sub-regions into
+  //                     procedures. Then there would need to be implied return
+  //                     values of all of the updated index positions that would
+  //                     turn the return value of the procedures from a `bool`
+  //                     to a `tuple`. :-/
+  for (auto vec : proc.VectorParameters()) {
+    os << os.Indent() << "int " << VectorIndex(os, vec) << " = 0;\n";
+  }
+
+  // Define the vectors that will be created and used within this procedure.
+  // These vectors exist to support inductions, joins (pivot vectors), etc.
+  for (auto vec : proc.DefinedVectors()) {
+    os << os.Indent() << "std::vector<";
+
+    const auto &col_types = vec.ColumnTypes();
+    if (1u < col_types.size()) {
+      os << "std::tuple<";
+    }
+
+    auto type_sep = "";
+    for (auto type : col_types) {
+      os << type_sep << TypeName(module, type);
+      type_sep = ", ";
+    }
+
+    if (1u < col_types.size()) {
+      os << ">";
+    }
+
+    os << "> " << Vector(os, vec) << " = {};\n";
+
+    // Tracking variable for the vector.
+    os << os.Indent() << "int " << VectorIndex(os, vec) << " = 0;\n";
+  }
+
+  // Visit the body of the procedure. Procedure bodies are never empty; the
+  // most trivial procedure body contains a `return False`.
+  CPPCodeGenVisitor visitor(os, module);
+  proc.Body().Accept(visitor);
+
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";
 }
 
 static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
