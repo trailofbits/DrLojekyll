@@ -160,84 +160,84 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
  public:
   explicit CPPCodeGenVisitor(OutputStream &os_) : os(os_) {}
 
-  void Visit(ProgramCallRegion val) override {
-    os << "ProgramCallRegion\n";
+  void Visit(ProgramCallRegion region) override {
+    os << Comment(os, region, "ProgramCallRegion");
   }
 
-  void Visit(ProgramReturnRegion val) override {
-    os << "ProgramReturnRegion\n";
+  void Visit(ProgramReturnRegion region) override {
+    os << Comment(os, region, "ProgramReturnRegion");
   }
 
-  void Visit(ProgramExistenceAssertionRegion val) override {
-    os << "ProgramExistenceAssertionRegion\n";
+  void Visit(ProgramExistenceAssertionRegion region) override {
+    os << Comment(os, region, "ProgramExistenceAssertionRegion");
   }
 
-  void Visit(ProgramGenerateRegion val) override {
-    os << "ProgramGenerateRegion\n";
+  void Visit(ProgramGenerateRegion region) override {
+    os << Comment(os, region, "ProgramGenerateRegion");
   }
 
-  void Visit(ProgramInductionRegion val) override {
-    os << "ProgramInductionRegion\n";
+  void Visit(ProgramInductionRegion region) override {
+    os << Comment(os, region, "ProgramInductionRegion");
   }
 
-  void Visit(ProgramLetBindingRegion val) override {
-    os << "ProgramLetBindingRegion\n";
+  void Visit(ProgramLetBindingRegion region) override {
+    os << Comment(os, region, "ProgramLetBindingRegion");
   }
 
-  void Visit(ProgramParallelRegion val) override {
-    os << "ProgramParallelRegion\n";
+  void Visit(ProgramParallelRegion region) override {
+    os << Comment(os, region, "ProgramParallelRegion");
   }
 
-  void Visit(ProgramProcedure val) override {
-    os << "ProgramProcedure\n";
+  void Visit(ProgramProcedure region) override {
+    assert(false);
   }
 
-  void Visit(ProgramPublishRegion val) override {
-    os << "ProgramPublishRegion\n";
+  void Visit(ProgramPublishRegion region) override {
+    os << Comment(os, region, "ProgramPublishRegion");
   }
 
-  void Visit(ProgramSeriesRegion val) override {
-    os << "ProgramSeriesRegion\n";
+  void Visit(ProgramSeriesRegion region) override {
+    os << Comment(os, region, "ProgramSeriesRegion");
   }
 
-  void Visit(ProgramVectorAppendRegion val) override {
-    os << "ProgramVectorAppendRegion\n";
+  void Visit(ProgramVectorAppendRegion region) override {
+    os << Comment(os, region, "ProgramVectorAppendRegion");
   }
 
-  void Visit(ProgramVectorClearRegion val) override {
-    os << "ProgramVectorClearRegion\n";
+  void Visit(ProgramVectorClearRegion region) override {
+    os << Comment(os, region, "ProgramVectorClearRegion");
   }
 
-  void Visit(ProgramVectorLoopRegion val) override {
-    os << "ProgramVectorLoopRegion\n";
+  void Visit(ProgramVectorLoopRegion region) override {
+    os << Comment(os, region, "ProgramVectorLoopRegion");
   }
 
-  void Visit(ProgramVectorUniqueRegion val) override {
-    os << "ProgramVectorUniqueRegion\n";
+  void Visit(ProgramVectorUniqueRegion region) override {
+    os << Comment(os, region, "ProgramVectorUniqueRegion");
   }
 
-  void Visit(ProgramTransitionStateRegion val) override {
-    os << "ProgramTransitionStateRegion\n";
+  void Visit(ProgramTransitionStateRegion region) override {
+    os << Comment(os, region, "ProgramTransitionStateRegion");
   }
 
-  void Visit(ProgramCheckStateRegion val) override {
-    os << "ProgramCheckStateRegion\n";
+  void Visit(ProgramCheckStateRegion region) override {
+    os << Comment(os, region, "ProgramCheckStateRegion");
   }
 
-  void Visit(ProgramTableJoinRegion val) override {
-    os << "ProgramTableJoinRegion\n";
+  void Visit(ProgramTableJoinRegion region) override {
+    os << Comment(os, region, "ProgramTableJoinRegion");
   }
 
-  void Visit(ProgramTableProductRegion val) override {
-    os << "ProgramTableProductRegion\n";
+  void Visit(ProgramTableProductRegion region) override {
+    os << Comment(os, region, "ProgramTableProductRegion");
   }
 
-  void Visit(ProgramTableScanRegion val) override {
-    os << "ProgramTableScanRegion\n";
+  void Visit(ProgramTableScanRegion region) override {
+    os << Comment(os, region, "ProgramTableScanRegion");
   }
 
-  void Visit(ProgramTupleCompareRegion val) override {
-    os << "ProgramTupleCompareRegion\n";
+  void Visit(ProgramTupleCompareRegion region) override {
+    os << Comment(os, region, "ProgramTupleCompareRegion");
   }
 
  private:
