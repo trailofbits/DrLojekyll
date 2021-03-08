@@ -114,12 +114,7 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
 // We want to enable referential transparency in the code, so that if an Nth
 // value is produced by some mechanism that is equal to some prior value, then
 // we replace its usage with the prior value.
-static void DefineTypeRefResolver(OutputStream &os) {  // , ParsedModule module,
-
-  // ParsedForeignType type) {
-  // if (type.IsBuiltIn()) {
-  //   return;
-  // }
+static void DefineTypeRefResolver(OutputStream &os) {
 
   // Has merge_into method
   os << os.Indent() << "template<typename T>\n"
@@ -159,59 +154,6 @@ static void DefineTypeRefResolver(OutputStream &os) {  // , ParsedModule module,
   os << os.Indent() << "return obj;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n";
-
-  /* Old way following what Python has
-  os << os.Indent() << "static constexpr bool _HAS_MERGE_METHOD_" << type.Name()
-     << " = ::hyde::rt::hasattr<" << TypeName(type) << ">(\"merge_into\");\n"
-     << os.Indent() << "static constexpr void (* _MERGE_METHOD_" << type.Name()
-     << ")(" << TypeName(type) << ", " << TypeName(type) << ") = ::hyde::rt::getattr<"
-     << TypeName(type) << ">(\"merge_into\", [] ("
-     << TypeName(type) << " a, " << TypeName(type)
-     << " b){return nullptr;});\n\n"
-     << os.Indent() << TypeName(type) << " _resolve_" << type.Name() << "("
-     << TypeName(type) << " obj) {\n";
-
-  os.PushIndent();
-  os << os.Indent() << "if constexpr (" << gClassName << "::_HAS_MERGE_METHOD_"
-     << type.Name() << ") {\n";
-  os.PushIndent();
-
-  os << os.Indent() << "auto ref_list = _refs[std::hash<" << TypeName(type) << ">(obj)];\n"
-     << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
-  os.PushIndent();
-
-  // The proposed object is identical (referentially) to the old one.
-  os << os.Indent() << "if (&obj == &maybe_obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << "return obj;\n";
-  os.PopIndent();
-
-  // The proposed object is structurally equivalent to the old one.
-  os << os.Indent() << "} else if (obj == maybe_obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << TypeName(type) << " prior_obj "
-     << " = static_cast<" << TypeName(type) << ">(maybe_obj);\n";
-
-  // Merge the new value `obj` into the prior value, `prior_obj`.
-  os << os.Indent() << gClassName << "::_MERGE_METHOD_" << type.Name()
-     << "(obj, prior_obj);\n";
-  os << os.Indent() << "return prior_obj;\n";
-
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-
-  // We didn't find a prior version of the object; add our object in.
-  os << os.Indent() << "ref_list.push_back(obj);\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-
-  os << os.Indent() << "return obj;\n";
-
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
-  */
 }
 
 class CPPCodeGenVisitor final : public ProgramVisitor {
@@ -581,11 +523,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
   os << "\n";
 
-  // Old pythonic way
-  // for (auto type : module.ForeignTypes()) {
-  DefineTypeRefResolver(os);  // , module, type);
-
-  // }
+  DefineTypeRefResolver(os);
 
   for (auto proc : program.Procedures()) {
     DefineProcedure(os, module, proc);
