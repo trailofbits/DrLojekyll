@@ -158,7 +158,9 @@ static void DefineTypeRefResolver(OutputStream &os) {
 
 class CPPCodeGenVisitor final : public ProgramVisitor {
  public:
-  explicit CPPCodeGenVisitor(OutputStream &os_) : os(os_) {}
+  explicit CPPCodeGenVisitor(OutputStream &os_, ParsedModule module_)
+      : os(os_),
+        module(module_) {}
 
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "ProgramCallRegion");
@@ -242,6 +244,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
  private:
   OutputStream &os;
+  const ParsedModule module;
 };
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
