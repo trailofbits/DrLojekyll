@@ -208,6 +208,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramSeriesRegion region) override {
     os << Comment(os, region, "ProgramSeriesRegion");
+
+    auto any = false;
+    for (auto sub_region : region.Regions()) {
+      sub_region.Accept(*this);
+      any = true;
+    }
+
+    if (!any) {
+      os << os.Indent() << "{}\n";
+    }
   }
 
   void Visit(ProgramVectorAppendRegion region) override {
