@@ -250,6 +250,121 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableProductRegion region) override {
     os << Comment(os, region, "ProgramTableProductRegion");
+
+    os << os.Indent();
+
+    auto i = 0u;
+    auto sep = "std::vector<std::tuple<";
+    for (auto table : region.Tables()) {
+      (void) table;
+      for (auto var : region.OutputVariables(i++)) {
+        os << sep << TypeName(module, var.Type());
+        sep = ", ";
+      }
+    }
+
+    os << ">> "
+       << "vec_" << region.Id() << " = {};\n";
+
+    i = 0u;
+
+    // Products work by having tables and vectors for each proposer. We want
+    // to take the product of each proposer's vector against all other tables.
+    // The outer loop deals with the vectors.
+    for (auto outer_table : region.Tables()) {
+      const auto outer_vars = region.OutputVariables(i);
+      const auto outer_vec = region.Vector(i++);
+      (void) outer_table;
+
+      os << os.Indent() << "for (auto ";
+      auto outer_vars_size = outer_vars.size();
+      if (outer_vars_size > 1) {
+        os << "[";
+      }
+      sep = "";
+      for (auto var : outer_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      if (outer_vars_size > 1) {
+        os << "]";
+      }
+
+      os << " : " << Vector(os, outer_vec) << ") {\n";
+      auto indents = 1u;
+      os.PushIndent();
+
+      // The inner loop deals with the tables.
+      auto j = 0u;
+      for (auto inner_table : region.Tables()) {
+        const auto inner_vars = region.OutputVariables(j++);
+
+        // NOTE(pag): Both `i` and `j` are already `+1`d.
+        if (i == j) {
+          continue;
+        }
+
+        os << os.Indent() << "for (auto ";
+        auto inner_vars_size = inner_vars.size();
+        if (inner_vars_size > 1) {
+          os << "[";
+        }
+        sep = "";
+        for (auto var : inner_vars) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+        if (inner_vars_size > 1) {
+          os << "]";
+        }
+        os << " : " << Table(os, inner_table) << ") {\n";
+        os.PushIndent();
+        ++indents;
+      }
+
+      // Collect all product things into a vector.
+      os << os.Indent() << "vec_" << region.Id();
+      sep = ".push_back(std::tuple(";
+      auto k = 0u;
+      for (auto table : region.Tables()) {
+        (void) table;
+        for (auto var : region.OutputVariables(k++)) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+      }
+      os << "));\n";
+
+      // De-dent everything.
+      for (auto outer_vec : region.Tables()) {
+        os.PopIndent();
+        os << os.Indent() << "}\n";
+        assert(0u < indents);
+        indents--;
+        (void) outer_vec;
+      }
+    }
+
+    os << os.Indent();
+    sep = "for (auto [";
+    auto k = 0u;
+    for (auto table : region.Tables()) {
+      (void) table;
+      for (auto var : region.OutputVariables(k++)) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+    }
+
+    os << "] : vec_" << region.Id() << ") {\n";
+    os.PushIndent();
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}\n";
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramTableScanRegion region) override {
