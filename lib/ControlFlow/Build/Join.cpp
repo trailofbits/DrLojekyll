@@ -224,8 +224,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
       const auto index_is_good = CallTopDownChecker(
-          impl, context, parent, view, view_cols, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue, nullptr);
+          impl, context, parent, view, view_cols, pred_view, nullptr);
 
       COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
 
@@ -474,13 +473,12 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
     }
 
     const auto one_is_bad = CallTopDownChecker(
-        impl, context, par, view, view_cols, pred_view,
-        ProgramOperation::kCallProcedureCheckFalse, already_checked);
+        impl, context, par, view, view_cols, pred_view, already_checked);
 
     COMMENT( one_is_bad->comment = __FILE__ ": BuildTopDownJoinChecker"; )
 
     const auto ret_false = BuildStateCheckCaseReturnFalse(impl, one_is_bad);
-    one_is_bad->body.Emplace(one_is_bad, ret_false);
+    one_is_bad->false_body.Emplace(one_is_bad, ret_false);
     par->AddRegion(one_is_bad);
   }
 

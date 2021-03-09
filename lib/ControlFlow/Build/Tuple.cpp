@@ -92,8 +92,7 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
   // columns are not in the negated view, and thus we have proved the presence
   // of this tuple and can stop.
   const auto check = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent, checker_proc,
-      ProgramOperation::kCallProcedureCheckTrue);
+      impl->next_id++, parent, checker_proc);
 
   COMMENT( check->comment = __FILE__ ": ReAddToNegatedView"; )
 
@@ -398,8 +397,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
         impl, context, view, cols, already_checked);
 
     const auto check = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent, checker_proc,
-        ProgramOperation::kCallProcedureCheckFalse);
+        impl->next_id++, parent, checker_proc);
 
     COMMENT( check->comment = __FILE__ ": CreateBottomUpTupleRemover"; )
 
@@ -420,7 +418,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
     // absent.
     if (caller_did_check) {
       parent = impl->parallel_regions.Create(check);
-      check->body.Emplace(check, parent);
+      check->false_body.Emplace(check, parent);
 
     // Change the tuple's state to mark it as deleted now that we've proven it
     // as such. The above `GetOrCreateTopDownChecker`.
@@ -428,7 +426,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
       const auto table_remove = BuildChangeState(
           impl, model->table, check, cols, TupleState::kUnknown,
           TupleState::kAbsent);
-      check->body.Emplace(check, table_remove);
+      check->false_body.Emplace(check, table_remove);
 
       parent = impl->parallel_regions.Create(table_remove);
       table_remove->body.Emplace(table_remove, parent);

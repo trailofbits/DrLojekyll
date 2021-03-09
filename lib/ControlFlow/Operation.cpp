@@ -284,12 +284,38 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
 const bool Node<ProgramLetBindingRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
 
-  // NOTE(ekilmer): Need these checks to ensure that a merge would actually be applicable
-  if (defined_vars.Size() > 0 || used_vars.Size() > 0) {
-    NOTE("TODO(ekilmer): Unimplemented merging of ProgramLetBinding");
-    assert(false);
+  const auto num_defined_vars = defined_vars.Size();
+  const auto num_used_vars = used_vars.Size();
+
+  auto par = prog->parallel_regions.Create(this);
+  if (auto curr_body = body.get(); curr_body) {
+    curr_body->parent = par;
+    par->AddRegion(curr_body);
+    body.Clear();
   }
-  return false;
+
+  body.Emplace(this, par);
+
+  for (auto merge : merges) {
+    auto merged_let = merge->AsOperation()->AsLetBinding();
+    assert(merged_let != nullptr);
+    assert(merged_let->defined_vars.Size() == num_defined_vars);
+
+    for (auto i = 0u; i < num_used_vars; ++i) {
+      assert(used_vars[i] == merged_let->used_vars[i]);
+      merged_let->defined_vars[i]->ReplaceAllUsesWith(defined_vars[i]);
+    }
+
+    if (auto merged_body = merged_let->body.get(); merged_body) {
+      merged_body->parent = par;
+      par->AddRegion(merged_body);
+      merged_let->body.Clear();
+    }
+
+    merged_let->parent = nullptr;
+  }
+
+  return true;
 }
 
 uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
@@ -425,20 +451,20 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
   auto new_par = prog->parallel_regions.Create(this);
   auto transition_body = body.get();
   if (transition_body) {
-    new_par->regions.AddUse(transition_body);
     transition_body->parent = new_par;
+    new_par->AddRegion(transition_body);
+    body.Clear();
   }
-  body.Clear();
   body.Emplace(this, new_par);
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsTransitionState();
     assert(merge);  // These should all be the same type
     const auto merge_body = merge->body.get();
     if (merge_body) {
-      new_par->regions.AddUse(merge_body);
       merge_body->parent = new_par;
+      new_par->AddRegion(merge_body);
+      merge->body.Clear();
     }
-    merge->body.Clear();
     merge->parent = nullptr;
   }
   return true;
@@ -985,7 +1011,7 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
 const bool Node<ProgramTupleCompareRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
 
-  assert(false && "Likely a bug has ocurred somewhere");
+  const auto num_vars = lhs_vars.Size();
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
@@ -999,6 +1025,8 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsTupleCompare();
     assert(merge);  // These should all be the same type
+    assert(merge->lhs_vars.Size() == num_vars);
+
     const auto merge_body = merge->body.get();
     if (merge_body) {
       new_par->regions.AddUse(merge_body);
@@ -1007,6 +1035,9 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
     merge->body.Clear();
     merge->parent = nullptr;
   }
+
+  (void) num_vars;
+
   return true;
 }
 
@@ -1025,6 +1056,7 @@ uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+
   if (depth == 0) {
     return hash;
   }
@@ -1032,13 +1064,25 @@ uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
+
+  if (this->empty_body) {
+    hash ^= RotateRight64(hash, 53) * ~this->empty_body->Hash(depth - 1u);
+  }
+
   return hash;
 }
 
 bool Node<ProgramGenerateRegion>::IsNoOp(void) const noexcept {
   if (functor.IsPure()) {
-    return !this->OP::body || this->OP::body->IsNoOp();
-
+    if (body && empty_body) {
+      return body->IsNoOp() && empty_body->IsNoOp();
+    } else if (body) {
+      return body->IsNoOp();
+    } else if (empty_body) {
+      return empty_body->IsNoOp();
+    } else {
+      return false;
+    }
   } else {
     return false;
   }
@@ -1077,7 +1121,12 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
     return true;
   }
 
-  if ((!this->OP::body.get()) != (!that->OP::body.get())) {
+  if ((!this->body.get()) != (!that->body.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  if ((!this->empty_body) != (!that->empty_body.get())) {
     FAILED_EQ(that_);
     return false;
   }
@@ -1087,33 +1136,59 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
       eq.Insert(defined_vars[i], that->defined_vars[i]);
     }
 
-    return this->OP::body->Equals(eq, that_body, depth - 1u);
-
-  } else {
-    return true;
+    if (!this->OP::body->Equals(eq, that_body, depth - 1u)) {
+      return false;
+    }
   }
+
+  if (auto that_empty_body = that->empty_body.get(); that_empty_body) {
+    if (!this->empty_body->Equals(eq, that_empty_body, depth - 1u)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 const bool Node<ProgramGenerateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  // New parallel region for merged bodies into 'this'
-  auto new_par = prog->parallel_regions.Create(this);
-  auto transition_body = body.get();
-  if (transition_body) {
-    new_par->regions.AddUse(transition_body);
-    transition_body->parent = new_par;
+
+  // New parallel region for merged `body` into 'this'
+  const auto new_par = prog->parallel_regions.Create(this);
+  if (auto body_ptr = body.get(); body_ptr) {
+    body.Clear();
+    body_ptr->parent = new_par;
+    new_par->AddRegion(body_ptr);
   }
-  body.Clear();
+
+  // New parallel region for merged `empty_body` into 'this'
+  const auto new_empty_par = prog->parallel_regions.Create(this);
+  if (auto empty_body_ptr = empty_body.get(); empty_body_ptr) {
+    empty_body.Clear();
+    empty_body_ptr->parent = new_empty_par;
+    new_empty_par->AddRegion(empty_body_ptr);
+  }
+
   body.Emplace(this, new_par);
+  empty_body.Emplace(this, new_empty_par);
+
   for (auto region : merges) {
-    auto merge = region->AsOperation()->AsGenerate();
+    const auto merge = region->AsOperation()->AsGenerate();
     assert(merge);  // These should all be the same type
-    const auto merge_body = merge->body.get();
-    if (merge_body) {
-      new_par->regions.AddUse(merge_body);
-      merge_body->parent = new_par;
+
+    if (auto merge_body_ptr = merge->body.get(); merge_body_ptr) {
+      merge->body.Clear();
+      merge_body_ptr->parent = new_par;
+      new_par->AddRegion(merge_body_ptr);
     }
-    merge->body.Clear();
+
+    if (auto merge_empty_body_ptr = merge->empty_body.get();
+        merge_empty_body_ptr) {
+      merge->empty_body.Clear();
+      merge_empty_body_ptr->parent = new_empty_par;
+      new_empty_par->AddRegion(merge_empty_body_ptr);
+    }
+
     merge->parent = nullptr;
 
     // Replace all defined variables in the merge with this's defined variables
@@ -1143,6 +1218,7 @@ uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
       hash ^= RotateRight64(hash, 7) * (static_cast<unsigned>(type) + 3u);
     }
   }
+
   if (depth == 0) {
     return hash;
   }
@@ -1150,6 +1226,11 @@ uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
+
+  if (this->false_body) {
+    hash ^= RotateRight64(hash, 53) * ~this->false_body->Hash(depth - 1u);
+  }
+
   return hash;
 }
 
@@ -1158,20 +1239,6 @@ bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
 
   // NOTE(pag): Not really worth checking as even trivial procedures are
   //            treated as non-no-ops.
-
-  //  if (!called_proc) {
-  //    return true;
-  //
-  //  } else if (this->OP::body) {
-  //    if (this->OP::body->IsNoOp()) {
-  //      return called_proc->IsNoOp();
-  //    } else {
-  //      return false;
-  //    }
-  //
-  //  } else {
-  //    return called_proc->IsNoOp();
-  //  }
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1217,35 +1284,89 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  if (!body != !that->body) {
-    FAILED_EQ(that_);
-    return false;
-  }
+  if (depth) {
 
-  // This function tests the true/false return value of the called procedure.
-  if (depth != 0 && body && !body->Equals(eq, that->body.get(), depth - 1)) {
-    FAILED_EQ(that_);
-    return false;
+    if (!body != !that->body) {
+      FAILED_EQ(that_);
+      return false;
+    }
+
+    if (!false_body != !that->false_body) {
+      FAILED_EQ(that_);
+      return false;
+    }
+
+    // This function tests the true return value of the called procedure.
+    if (body && !body->Equals(eq, that->body.get(), depth - 1)) {
+      FAILED_EQ(that_);
+      return false;
+    }
+
+    // This function tests the false return value of the called procedure.
+    if (false_body && !false_body->Equals(eq, that->false_body.get(), depth - 1)) {
+      FAILED_EQ(that_);
+      return false;
+    }
   }
 
   if (this_called_proc == that_called_proc ||
       eq.Contains(this_called_proc, that_called_proc)) {
     return true;
+
+  // The procedures don't appear to be the same, and we're not going deep,
+  // so don't compare them.
+  } else if (!depth) {
+    return false;
+
+  // Different functions are being called, check to see if their function bodies
+  // are the same.
   } else {
-    if (depth == 0) {
-      return false;
-    }
-    // Different functions are being called, check to see if their function bodies
-    // are the same.
     return this_called_proc->Equals(eq, that_called_proc, depth - 1);
   }
 }
 
 const bool Node<ProgramCallRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramCallRegion");
-  assert(false);
-  return false;
+
+  // New parallel region for merged `body` into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  if (auto body_ptr = body.get(); body_ptr) {
+    body_ptr->parent = new_par;
+    new_par->AddRegion(body_ptr);
+    body.Clear();
+  }
+
+  // New parallel region for merged `false_body` into 'this'
+  auto new_false_par = prog->parallel_regions.Create(this);
+  if (auto false_body_ptr = false_body.get(); false_body_ptr) {
+    false_body_ptr->parent = new_false_par;
+    new_false_par->AddRegion(false_body_ptr);
+    false_body.Clear();
+  }
+
+  body.Emplace(this, new_par);
+  false_body.Emplace(this, new_false_par);
+
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsCall();
+    assert(merge);  // These should all be the same type
+
+    if (auto merge_body_ptr = merge->body.get(); merge_body_ptr) {
+      merge_body_ptr->parent = new_par;
+      new_par->AddRegion(merge_body_ptr);
+      merge->body.Clear();
+    }
+
+    if (auto merge_false_body_ptr = merge->false_body.get();
+        merge_false_body_ptr) {
+      merge_false_body_ptr->parent = new_false_par;
+      new_false_par->AddRegion(merge_false_body_ptr);
+      merge->false_body.Clear();
+    }
+
+    merge->parent = nullptr;
+  }
+  return true;
 }
 
 Node<ProgramPublishRegion> *

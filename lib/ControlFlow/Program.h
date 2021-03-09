@@ -368,8 +368,6 @@ enum class ProgramOperation {
 
   // Call another procedure.
   kCallProcedure,
-  kCallProcedureCheckTrue,
-  kCallProcedureCheckFalse,
 
   // Return from a procedure.
   kReturnTrueFromProcedure,
@@ -744,6 +742,10 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   // Vectors passed as arguments.
   UseList<VECTOR> arg_vecs;
 
+  // If the `call` returns `true`, then `body` is executed, otherwise if it
+  // returns `false` then `false_body` is executed.
+  UseRef<REGION> false_body;
+
   const unsigned id;
 };
 
@@ -1004,15 +1006,14 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
   inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_,
-              unsigned id_, bool is_positive_)
+              unsigned id_)
       : Node<ProgramOperationRegion>(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
         defined_vars(this),
         used_vars(this),
-        id(id_),
-        is_positive(is_positive_) {}
+        id(id_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1036,9 +1037,14 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
   // Bound variables passed in as arguments to the functor.
   UseList<VAR> used_vars;
 
-  const unsigned id;
+  // If the `functor` produces results, then `body` is executed, otherwise if it
+  // doesn't produce results then `empty_body` is executed.
+  UseRef<REGION> empty_body;
 
-  const bool is_positive;
+  // Unique ID of this node. Useful during codegen to ensure we can count the
+  // results of one generate without it interfering with the count of a nested
+  // generate.
+  const unsigned id;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;
@@ -1104,11 +1110,6 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // a raw, non-`UseRef`/`UseList` pointer to this procedure, such as inside
   // of `ProgramQuery` specifications.
   bool has_raw_use{false};
-
-  // Should we not bother trying to merge this function with another one? This
-  // comes up when this function has been converted into a call to another one
-  // (due to equivalence, but where both are marked with `has_raw_use`).
-  bool is_alias{false};
 };
 
 using PROC = Node<ProgramProcedure>;

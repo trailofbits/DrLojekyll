@@ -828,7 +828,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
   if (state != 9 && state != 10) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete clause definition";
+        << "Incomplete clause definition; state " << state;
     return;
   }
 

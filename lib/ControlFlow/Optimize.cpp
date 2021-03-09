@@ -7,10 +7,6 @@
 namespace hyde {
 namespace {
 
-// TODO(pag): Implement an optimization that checks to see if two
-//            `ProgramCheckStateRegion` operate on the same tuple in
-//            parallel, and if so, merge their bodies.
-
 // TODO(pag): Find all ending returns in the children of the par, and if there
 //            are any, check that they all match, and if so, create a sequence
 //            that moves the `return <X>` to after the parallel, and also
@@ -78,33 +74,19 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   // The PARALLEL node is "canonical" as far as we can tell, so check to see
   // if any of its child regions might be mergeable.
 
+  // Group together all children of this parallel region; we'll use this
+  // grouping to identify merge candidates, as well as strip-mining candidates.
   std::unordered_map<uint64_t, std::vector<REGION *>> grouped_regions;
   for (auto region : par->regions) {
     assert(region->parent == par);
-    unsigned index = 0u;
-    if (region->AsSeries()) {
-      index = ~0u;
-
-    } else if (region->AsInduction()) {
-      index = ~0u - 1u;
-
-    } else if (auto op = region->AsOperation(); op) {
-      index = static_cast<unsigned>(op->op);
-
-    // Don't bother trying to merge parallel regions until they've been
-    // flattened completely. It is also impossible to put a procedure inside
-    // of a parallel region.
-    } else {
-      return false;
-    }
-
-    grouped_regions[index].push_back(region);
+    grouped_regions[region->Hash(0)].push_back(region);
   }
 
-  // Go remove duplicate child regions.
+  // Go remove duplicate child regions. Note: we remove the regions from the
+  // `par` node below by looking for regions whose parents are `nullptr`.
   EqualitySet eq;
-  for (const auto &[index, similar_regions] : grouped_regions) {
-    (void) index;
+  for (const auto &hash_to_regions : grouped_regions) {
+    const auto &similar_regions = hash_to_regions.second;
     const auto num_similar_regions = similar_regions.size();
     for (auto i = 1u; i < num_similar_regions; ++i) {
       REGION *region1 = similar_regions[i - 1u];
@@ -118,96 +100,63 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
           continue;  // Already removed.
         }
 
+        eq.Clear();
         if (region1->Equals(eq, region2, UINT32_MAX)) {
           assert(region1 != region2);
-          par->regions.RemoveIf([=](REGION *r) { return r == region2; });
           region2->parent = nullptr;
           changed = true;
         }
-        eq.Clear();
       }
     }
   }
 
+  // Go try to merge similar child regions. Note: we remove the regions from the
+  // `par` node below by looking for regions whose parents are `nullptr`.
+  std::vector<REGION *> merge_candidates;
+  for (const auto &hash_to_regions : grouped_regions) {
+    const auto &similar_regions = hash_to_regions.second;
+    const auto num_similar_regions = similar_regions.size();
+    for (auto i = 1u; i < num_similar_regions; ++i) {
+      REGION *region1 = similar_regions[i - 1u];
+      if (!region1->parent) {
+        continue;  // Already removed;
+      }
+
+      merge_candidates.clear();
+
+      for (auto j = i; j < num_similar_regions; ++j) {
+        REGION *region2 = similar_regions[j];
+        if (!region2->parent) {
+          continue;  // Already removed.
+        }
+
+        eq.Clear();
+        if (region1->Equals(eq, region2, 0)) {
+          assert(region1 != region2);
+          merge_candidates.push_back(region2);
+        }
+      }
+
+      // NOTE(pag): This clear the `parent` pointer of each region in
+      //            `merge_candidates`.
+      if (!merge_candidates.empty() &&
+          region1->MergeEqual(prog, merge_candidates)) {
+        changed = true;
+      }
+    }
+  }
+
+
   if (changed) {
+    // Remove any redundant or strip-minded regions in bulk.
+    const auto old_num_children = par->regions.Size();
+    par->regions.RemoveIf([=](REGION *r) { return !r->parent; });
+    assert(old_num_children > par->regions.Size());
     OptimizeImpl(prog, par);
     return true;
   }
 
-  // Strip-mining for similarity and merge
-  // Candidate regions for merging in this parallel's regions
-  std::unordered_map<uint64_t, std::vector<REGION *>> candidates;
-  uint32_t depth = 0;
-
-  for (auto mining = true; mining && !changed;) {
-    mining = false;
-    candidates.clear();
-
-    // Populate candidates based on Hash.
-    // This doesn't necessarily mean they're 'Equals' though.
-    for (auto region : par->regions) {
-      candidates[region->Hash(depth)].push_back(region);
-    }
-
-    // Refine candidates with zero-depth 'Equals' to ensure merging isn't
-    // destructive, since equal Hash doesn't mean 'Equals' is true.
-    std::vector<std::vector<REGION *>> equal_candidates = {};
-    EqualitySet eq;
-    for (auto [_, combine_regions] : candidates) {
-      if (combine_regions.size() < 2) {
-        continue;
-      }
-
-      auto size = combine_regions.size();
-      while (size != 0) {
-        const auto checker = combine_regions.back();
-        combine_regions.pop_back();
-
-        // The following statements will have the following effect:
-        // 'combine_regions' contains non-'Equals' regions, and 'equals' contains
-        // 'Equals' regions as compared to 'checker'
-        auto it = std::stable_partition(combine_regions.begin(),
-                                        combine_regions.end(), [&](REGION *r) {
-                                          eq.Clear();
-                                          return !checker->Equals(eq, r, 0);
-                                        });
-        std::vector<REGION *> equals(
-            std::make_move_iterator(it),
-            std::make_move_iterator(combine_regions.end()));
-        combine_regions.erase(it, combine_regions.end());
-
-        // Only add vectors where we've found a match
-        if (equals.size() > 0) {
-          equals.push_back(checker);
-          equal_candidates.emplace_back(equals);
-        }
-        size = combine_regions.size();
-      }
-    }
-
-    // Combine candidates in 'equal_candidates'.
-    for (auto combine_regions : equal_candidates) {
-      assert(combine_regions.size() > 1);  // Should be enforced above
-      auto replacement = combine_regions.back();
-      combine_regions.pop_back();
-
-      if (auto merged = replacement->MergeEqual(prog, combine_regions);
-          merged) {
-        mining = true;
-        for (auto region : combine_regions) {
-          par->regions.RemoveIf([=](REGION *r) { return r == region; });
-        }
-      }
-    }
-
-    changed |= mining;
-  }
-
-  if (changed) {
-    OptimizeImpl(prog, par);
-  }
-
-  return changed;
+  return false;
 }
 
 // Optimize induction regions.
@@ -516,265 +465,59 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
   return true;
 }
 
-// Process a function as if it contains just simple function calls and a return.
-// We permit series and parallel regions inside. This roughly corresponds to
-// the trivial case of bottom-up procedures that "prove to remove."
-static std::pair<bool, RETURN *>
-FindReturnAfterSimpleCalls(const UseList<Node<ProgramRegion>> &regions) {
+// Try to eliminate unnecessary function calls. This is pretty common when
+// generating bottom-up deleters.
+static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
+  auto changed = false;
 
-  RETURN *target_return = nullptr;
+  if (call->body) {
+    assert(call->body->parent == call);
 
-  for (auto target_region : regions) {
-    if (auto target_par = target_region->AsParallel(); target_par) {
-      const auto [good, ret] = FindReturnAfterSimpleCalls(target_par->regions);
-      if (!good) {
-        return {false, nullptr};
-      }
-      target_return = ret;
-
-    } else if (auto target_series = target_region->AsSeries(); target_series) {
-      const auto [good, ret] =
-          FindReturnAfterSimpleCalls(target_series->regions);
-      if (!good) {
-        return {false, nullptr};
-      }
-      target_return = ret;
-
-    } else if (auto target_op = target_region->AsOperation(); target_op) {
-
-      if (auto target_call = target_op->AsCall(); target_call) {
-        if (!target_call->arg_vecs.Empty()) {
-          return {false, nullptr};
-
-        } else if (target_call->op != ProgramOperation::kCallProcedure) {
-          return {false, nullptr};
-
-        } else {
-          assert(!target_call->body);
-        }
-
-      } else if (auto found_return = target_op->AsReturn(); found_return) {
-        if (target_return) {
-          return {false, nullptr};
-        }
-        target_return = found_return;
-
-      // Found something that isn't a call or return.
-      } else {
-        return {false, nullptr};
-      }
-
-    // Found something that isn't an operation, and thus cannot be a
-    // call or return.
-    } else {
-      return {false, nullptr};
+    if (call->body->IsNoOp()) {
+      call->body->parent = nullptr;
+      call->body.Clear();
+      changed = true;
     }
   }
 
-  return {true, target_return};
-}
+  if (call->false_body) {
+    assert(call->false_body->parent == call);
 
-static void InlineCalls(const UseList<Node<ProgramRegion>> &from_regions,
-                        ProgramImpl *impl, REGION *into_parent,
-                        UseList<Node<ProgramRegion>> &into_parent_regions,
-                        std::unordered_map<VAR *, VAR *> &target_to_local) {
-  for (auto target_region : from_regions) {
-    if (auto target_par = target_region->AsParallel(); target_par) {
-      const auto copied_par = impl->parallel_regions.Create(into_parent);
-      into_parent_regions.AddUse(copied_par);
-      InlineCalls(target_par->regions, impl, copied_par, copied_par->regions,
-                  target_to_local);
-
-    } else if (auto target_series = target_region->AsSeries(); target_series) {
-      const auto copied_series = impl->series_regions.Create(into_parent);
-      into_parent_regions.AddUse(copied_series);
-      InlineCalls(target_series->regions, impl, copied_series,
-                  copied_series->regions, target_to_local);
-
-    } else if (auto target_op = target_region->AsOperation(); target_op) {
-
-      if (auto target_call = target_op->AsCall(); target_call) {
-        auto copied_call = impl->operation_regions.CreateDerived<CALL>(
-            impl->next_id++, into_parent, target_call->called_proc.get(),
-            target_call->op);
-        if (!target_call->comment.empty()) {
-          COMMENT(copied_call->comment =
-                      __FILE__ ": InlineCalls: " + target_call->comment;)
-        }
-        into_parent_regions.AddUse(copied_call);
-
-        for (auto target_var : target_call->arg_vars) {
-
-          // Local variable.
-          if (auto local_var = target_to_local[target_var]; local_var) {
-            copied_call->arg_vars.AddUse(local_var);
-
-          // Global variable.
-          } else {
-            copied_call->arg_vars.AddUse(target_var);
-          }
-        }
-
-      } else if (target_op->AsReturn()) {
-        return;
-
-      // Found something that isn't a call or return.
-      } else {
-        assert(false);
-      }
-
-    // Found something that isn't an operation, and thus cannot be a
-    // call or return.
-    } else {
-      assert(false);
+    if (call->false_body->IsNoOp()) {
+      call->false_body->parent = nullptr;
+      call->false_body.Clear();
+      changed = true;
     }
   }
+
+  return changed;
 }
 
 // Try to eliminate unnecessary function calls. This is pretty common when
 // generating bottom-up deleters.
-static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
-  const auto target_func = call->called_proc.get();
-  if (!target_func) {
-    return false;  // Dead.
-  }
+static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 
-  const auto target_body = target_func->body.get();
-  assert(target_body);
-  assert(call->arg_vars.Size() == target_func->input_vars.Size());
-  assert(call->arg_vecs.Size() == target_func->input_vecs.Size());
+  auto changed = false;
 
-  const auto call_body = call->body.get();
-  if (call->op != ProgramOperation::kCallProcedure) {
-    if (!call_body) {
-      assert(false);
-      call->op = ProgramOperation::kCallProcedure;
+  if (gen->body) {
+    assert(gen->body->parent == gen);
 
-    // E.g. an empty `LET`, `SERIES`, or `PARALLEL`.
-    } else if (call_body->IsNoOp()) {
-      call_body->parent = nullptr;
-      call->body.Clear();
-      call->op = ProgramOperation::kCallProcedure;
+    if (gen->body->IsNoOp()) {
+      gen->body->parent = nullptr;
+      gen->body.Clear();
+      changed = true;
     }
   }
+  if (gen->empty_body) {
+    assert(gen->empty_body->parent == gen);
 
-  if (auto target_op = target_body->AsOperation(); target_op) {
-
-    // If the target function is trivial, i.e. just returns `true` or `false`
-    // then we can probably eliminate it.
-    if (auto target_ret = target_op->AsReturn(); target_ret) {
-      auto can_remove = false;
-      auto is_conditional = false;
-
-      switch (call->op) {
-        case ProgramOperation::kCallProcedure: can_remove = true; break;
-        case ProgramOperation::kCallProcedureCheckFalse:
-          can_remove =
-              target_ret->op != ProgramOperation::kReturnFalseFromProcedure;
-          is_conditional = true;
-          break;
-        case ProgramOperation::kCallProcedureCheckTrue:
-          can_remove =
-              target_ret->op != ProgramOperation::kReturnTrueFromProcedure;
-          is_conditional = true;
-          break;
-        default: break;
-      }
-
-      // The call is useless, or the condition tested by the call is never true,
-      // so remove it.
-      if (can_remove) {
-        if (call_body) {
-          call_body->parent = nullptr;
-        }
-
-        auto empty = impl->parallel_regions.Create(call->parent);
-        call->ReplaceAllUsesWith(empty);
-        call->called_proc.Clear();
-        call->body.Clear();
-        call->arg_vars.Clear();
-        call->arg_vecs.Clear();
-        return true;
-
-      // The condition tested by the call is trivially true, replace the call with
-      // the body that previously executed conditionally.
-      } else if (is_conditional) {
-        call->called_proc.Clear();
-        call->body.Clear();
-        call->ReplaceAllUsesWith(call_body);
-        call->arg_vars.Clear();
-        call->arg_vecs.Clear();
-        return true;
-      }
+    if (gen->empty_body->IsNoOp()) {
+      gen->empty_body->parent = nullptr;
+      gen->empty_body.Clear();
+      changed = true;
     }
-    return false;
-
-  // Look to see if the target function is a call to one or more other functions
-  // and if so, inline them.
-  } else if (auto target_series = target_body->AsSeries(); target_series) {
-
-    // Don't inline functions with vector arguments.
-    if (!call->arg_vecs.Empty()) {
-      return false;
-    }
-
-    assert(target_func->input_vecs.Empty());
-
-    const auto [good, target_return] =
-        FindReturnAfterSimpleCalls(target_series->regions);
-
-    if (!good || !target_return) {
-      return false;
-    }
-
-    // Create a variable renaming of variables in the target function to
-    // variables in the current function.
-    std::unordered_map<VAR *, VAR *> target_to_local;
-    for (auto i = 0u, max_i = call->arg_vars.Size(); i < max_i; ++i) {
-      target_to_local.emplace(target_func->input_vars[i], call->arg_vars[i]);
-    }
-
-    // Inline the function calls into `series`.
-    const auto series = impl->series_regions.Create(call->parent);
-    InlineCalls(target_series->regions, impl, series, series->regions,
-                target_to_local);
-
-    // Replace the call with the inlined body.
-    call->ReplaceAllUsesWith(series);
-    call->arg_vars.Clear();
-    call->arg_vecs.Clear();
-    call->called_proc.Clear();
-    call->body.Clear();
-
-    // Inspect the return statement from the function that we just inlined,
-    // and try to see if we should keep or omit the conditional body of the
-    // call.
-    switch (call->op) {
-      case ProgramOperation::kCallProcedure: break;
-      case ProgramOperation::kCallProcedureCheckTrue:
-        assert(call_body != nullptr);
-        if (target_return->op == ProgramOperation::kReturnTrueFromProcedure) {
-          call_body->parent = series;
-          series->regions.AddUse(call_body);
-        } else {
-          call_body->parent = nullptr;
-        }
-        break;
-      case ProgramOperation::kCallProcedureCheckFalse:
-        if (target_return->op == ProgramOperation::kReturnTrueFromProcedure) {
-          call_body->parent = nullptr;
-        } else {
-          call_body->parent = series;
-          series->regions.AddUse(call_body);
-        }
-        break;
-      default: assert(false); break;
-    }
-
-    return true;
   }
-
-  return false;
+  return changed;
 }
 
 // Perform dead argument elimination.
@@ -854,6 +597,9 @@ void ProgramImpl::Optimize(void) {
       } else if (auto call = op->AsCall(); call) {
         changed = OptimizeImpl(this, call) | changed;
 
+      } else if (auto gen = op->AsGenerate(); gen) {
+        changed = OptimizeImpl(this, gen) | changed;
+
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.
       } else if (op->body) {
@@ -878,7 +624,7 @@ void ProgramImpl::Optimize(void) {
   std::unordered_map<uint64_t, std::vector<PROC *>> similar_procs;
   for (auto proc : procedure_regions) {
     if (proc->kind == ProcedureKind::kInitializer ||
-        proc->kind == ProcedureKind::kMessageHandler || proc->is_alias) {
+        proc->kind == ProcedureKind::kMessageHandler) {
       continue;
 
     } else if (proc->IsUsed() || proc->has_raw_use) {
@@ -887,9 +633,13 @@ void ProgramImpl::Optimize(void) {
     }
   }
 
+  std::unordered_map<PROC *, PROC *> raw_use_change;
+
   // Go through an compare procedures for equality and replace any unused ones.
-  for (auto &[hash, procs] : similar_procs) {
-    (void) hash;
+  EqualitySet eq;
+  for (auto &hash_to_procs : similar_procs) {
+    auto &procs = hash_to_procs.second;
+
     std::vector<bool> dead(procs.size());
     for (size_t i = 0u, max_i = procs.size(); i < max_i; ++i) {
       if (dead[i]) {
@@ -897,6 +647,8 @@ void ProgramImpl::Optimize(void) {
       }
       PROC *&i_proc = procs[i];
 
+      eq.Clear();
+      raw_use_change.clear();
       for (auto j = i + 1u; j < max_i; ++j) {
         if (dead[j]) {
           continue;
@@ -904,53 +656,43 @@ void ProgramImpl::Optimize(void) {
 
         PROC *&j_proc = procs[j];
 
-        EqualitySet eq;
         if (i_proc->Equals(eq, j_proc, UINT32_MAX)) {
 
-          // If both need to be used, then make one call the other.
-          if (i_proc->has_raw_use && j_proc->has_raw_use) {
-            j_proc->is_alias = true;
-            j_proc->ReplaceAllUsesWith(i_proc);
-            j_proc->body->parent = nullptr;
-            j_proc->body.Clear();
-            auto seq = series_regions.Create(j_proc);
-            auto call_i = operation_regions.CreateDerived<CALL>(
-                next_id++, seq, i_proc,
-                ProgramOperation::kCallProcedureCheckTrue);
-
-            COMMENT(call_i->comment = __FILE__ ": ProgramImpl::Optimize";)
-
-            for (auto arg_var : j_proc->input_vars) {
-              call_i->arg_vars.AddUse(arg_var);
-            }
-            for (auto arg_vec : j_proc->input_vecs) {
-              call_i->arg_vecs.AddUse(arg_vec);
-            }
-
-            auto ret_true = operation_regions.CreateDerived<RETURN>(
-                call_i, ProgramOperation::kReturnTrueFromProcedure);
-            auto ret_false = operation_regions.CreateDerived<RETURN>(
-                seq, ProgramOperation::kReturnFalseFromProcedure);
-
-            j_proc->body.Emplace(j_proc, seq);
-            seq->regions.AddUse(call_i);
-            seq->regions.AddUse(ret_false);
-            call_i->body.Emplace(call_i, ret_true);
-
-          // The first one needs to be preserved.
-          } else if (i_proc->has_raw_use) {
-            j_proc->ReplaceAllUsesWith(i_proc);
-
-          // The second needs to be preserved.
-          } else if (j_proc->has_raw_use) {
-            i_proc->ReplaceAllUsesWith(j_proc);
-            i_proc = j_proc;
-
-          // Neither needs to be preserved.
-          } else {
-            j_proc->ReplaceAllUsesWith(i_proc);
+          if (j_proc->has_raw_use) {
+            raw_use_change.emplace(j_proc, i_proc);
+            i_proc->has_raw_use = true;
+            j_proc->has_raw_use = false;
           }
+
+          j_proc->ReplaceAllUsesWith(i_proc);
           dead[j] = true;
+
+        } else {
+          eq.Clear();
+        }
+      }
+
+      if (raw_use_change.empty()) {
+        continue;
+      }
+
+      // Rewrite the raw uses, which should be isolated to being checkers
+      // and forcing functions in queries.
+      for (auto &query : queries) {
+        if (query.tuple_checker) {
+          auto &ref_to_proc = query.tuple_checker->impl;
+          if (auto new_proc_it = raw_use_change.find(ref_to_proc);
+              new_proc_it != raw_use_change.end()) {
+            ref_to_proc = new_proc_it->second;
+          }
+        }
+
+        if (query.forcing_function) {
+          auto &ref_to_proc = query.forcing_function->impl;
+          if (auto new_proc_it = raw_use_change.find(ref_to_proc);
+              new_proc_it != raw_use_change.end()) {
+            ref_to_proc = new_proc_it->second;
+          }
         }
       }
     }

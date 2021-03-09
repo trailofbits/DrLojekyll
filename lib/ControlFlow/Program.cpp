@@ -230,24 +230,26 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
          impl->op == ProgramOperation::kDecrementAllAndTest;
 }
 
-#define OPTIONAL_BODY(name) \
-  std::optional<ProgramRegion> name::Body(void) const noexcept { \
-    if (impl->body) { \
-      return ProgramRegion(impl->body.get()); \
+#define OPTIONAL_BODY(method_name, name, field) \
+  std::optional<ProgramRegion> name::method_name(void) const noexcept { \
+    if (impl->field) { \
+      return ProgramRegion(impl->field.get()); \
     } else { \
       return std::nullopt; \
     } \
   }
 
-OPTIONAL_BODY(ProgramExistenceAssertionRegion)
-OPTIONAL_BODY(ProgramGenerateRegion)
-OPTIONAL_BODY(ProgramLetBindingRegion)
-OPTIONAL_BODY(ProgramVectorLoopRegion)
-OPTIONAL_BODY(ProgramTransitionStateRegion)
-OPTIONAL_BODY(ProgramTableJoinRegion)
-OPTIONAL_BODY(ProgramTableProductRegion)
-OPTIONAL_BODY(ProgramTupleCompareRegion)
-OPTIONAL_BODY(ProgramCallRegion)
+OPTIONAL_BODY(Body, ProgramExistenceAssertionRegion, body)
+OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
+OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
+OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
+OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
+OPTIONAL_BODY(Body, ProgramTransitionStateRegion, body)
+OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
+OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
+OPTIONAL_BODY(Body, ProgramTupleCompareRegion, body)
+OPTIONAL_BODY(BodyIfTrue, ProgramCallRegion, body)
+OPTIONAL_BODY(BodyIfFalse, ProgramCallRegion, false_body)
 
 #undef OPTIONAL_BODY
 
@@ -413,12 +415,6 @@ bool ProgramGenerateRegion::IsImpure(void) const noexcept {
 // Returns the functor to be applied.
 ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
-}
-
-// Returns `true` if it's an application of the functor meant to get results,
-// and `false` if we're testing for the absence of results.
-bool ProgramGenerateRegion::IsPositive(void) const noexcept {
-  return impl->is_positive;
 }
 
 unsigned ProgramTransitionStateRegion::Arity(void) const noexcept {
@@ -793,16 +789,6 @@ unsigned ProgramCallRegion::Id(void) const noexcept {
 
 ProgramProcedure ProgramCallRegion::CalledProcedure(void) const noexcept {
   return ProgramProcedure(impl->called_proc.get());
-}
-
-// Should we execute the body if the called procedure returns `true`?
-bool ProgramCallRegion::ExecuteBodyIfReturnIsTrue(void) const noexcept {
-  return impl->op == ProgramOperation::kCallProcedureCheckTrue;
-}
-
-// Should we execute the body if the called procedure returns `false`?
-bool ProgramCallRegion::ExecuteBodyIfReturnIsFalse(void) const noexcept {
-  return impl->op == ProgramOperation::kCallProcedureCheckFalse;
 }
 
 bool ProgramReturnRegion::ReturnsTrue(void) const noexcept {

@@ -207,6 +207,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "Program Call Region");
 
     auto param_index = 0u;
+    const auto id = region.Id();
+
     const auto called_proc = region.CalledProcedure();
     const auto vec_params = called_proc.VectorParameters();
     const auto var_params = called_proc.VariableParameters();
@@ -233,7 +235,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    os << os.Indent() << "ret = self."
+    os << os.Indent() << "ret_" << id << ": bool = self."
        << Procedure(os, called_proc) << "(";
 
     auto sep = "";
@@ -288,26 +290,18 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    // Check the return value.
-    bool is_cond = true;
-    if (region.ExecuteBodyIfReturnIsTrue()) {
-      os << os.Indent() << "if ret:\n";
-    } else if (region.ExecuteBodyIfReturnIsFalse()) {
-      os << os.Indent() << "if not ret:\n";
-    } else {
-      is_cond = false;
+    if (auto true_body = region.BodyIfTrue(); true_body) {
+      os << os.Indent() << "if ret_" << id << ":\n";
+      os.PushIndent();
+      true_body->Accept(*this);
+      os.PopIndent();
     }
 
-    if (is_cond) {
+    if (auto false_body = region.BodyIfFalse(); false_body) {
+      os << os.Indent() << "if not ret_" << id << ":\n";
       os.PushIndent();
-      if (auto body = region.Body(); body) {
-        body->Accept(*this);
-      } else {
-        os << os.Indent() << "pass\n";
-      }
+      false_body->Accept(*this);
       os.PopIndent();
-    } else {
-      os << '\n';
     }
   }
 
@@ -365,13 +359,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramGenerateRegion region) override {
     const auto functor = region.Functor();
+    const auto id = region.Id();
     os << Comment(os, region, "Program Generate Region");
 
-    if (!region.IsPositive()) {
-      assert(functor.Range() != FunctorRange::kOneToOne);
-      assert(functor.Range() != FunctorRange::kOneOrMore);
-      os << os.Indent() << "found = False\n";
-    }
+    os << os.Indent() << "num_results_" << id << ": int = 0\n";
 
     switch (functor.Range()) {
       case FunctorRange::kZeroOrOne:
@@ -398,17 +389,18 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     };
 
     auto do_body = [&] (void) {
-      if (!region.IsPositive()) {
-        os << os.Indent() << "found = True\n";
-        os.PopIndent();
-        os << os.Indent() << "if not found:\n";
-        os.PushIndent();
-      }
-
-      if (auto body = region.Body(); body) {
+      os << os.Indent() << "num_results_" << id << " += 1\n";
+      if (auto body = region.BodyIfResults(); body) {
         body->Accept(*this);
-      } else {
-        os << os.Indent() << "pass";
+
+      // Break out of the body early if there is nothing to do, and if we've
+      // already counted at least one instance of results (in the case of the
+      // functor possibly producing more than one result tuples), then that
+      // is sufficient information to be able to enter into the "empty" body.
+      } else if (const auto range = functor.Range();
+                 FunctorRange::kOneOrMore == range ||
+                 FunctorRange::kZeroOrMore == range) {
+        os << os.Indent() << "break\n";
       }
     };
 
@@ -427,20 +419,20 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         } else {
           assert(!output_vars.empty());
 
-          os << os.Indent() << "tmp_" << region.Id();
+          os << os.Indent() << "tmp_" << id;
           auto sep = ": Tuple[";
           for (auto out_var : output_vars) {
             os << sep << TypeName(module, out_var.Type());
             sep = ", ";
           }
           os << "]\n"
-             << os.Indent() << "for tmp_" << region.Id() << " in ";
+             << os.Indent() << "for tmp_" << id << " in ";
           call_functor();
           os << ":\n";
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
                << '[' << (out_var_index++) << "]\n";
           }
           do_body();
@@ -469,7 +461,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           assert(!functor.IsFilter());
 
           const auto out_var = output_vars[0];
-          os << os.Indent() << "tmp_" << region.Id() << ": ";
+          os << os.Indent() << "tmp_" << id << ": ";
           if (range == FunctorRange::kZeroOrOne) {
             os << "Optional[";
           }
@@ -481,7 +473,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           call_functor();
           os << "\n";
           if (range == FunctorRange::kZeroOrOne) {
-            os << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+            os << os.Indent() << "if tmp_" << id << " is not None:\n";
             os.PushIndent();
           }
           os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
@@ -504,17 +496,24 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           os << "]] = ";
           call_functor();
           os << "\n"
-             << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+             << os.Indent() << "if tmp_" << id << " is not None:\n";
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
                << '[' << (out_var_index++) << "]\n";
           }
           do_body();
           os.PopIndent();
         }
         break;
+    }
+
+    if (auto empty_body = region.BodyIfEmpty(); empty_body) {
+      os << os.Indent() << "if not num_results" << id << ":\n";
+      os.PushIndent();
+      empty_body->Accept(*this);
+      os.PopIndent();
     }
   }
 
@@ -706,11 +705,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void ResolveReference(DataVariable var) {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      if (var.DefiningRegion() &&
-          !foreign_type->IsReferentiallyTransparent(Language::kPython)) {
-        os << os.Indent() << Var(os, var)
-           << " = self._resolve_" << foreign_type->Name()
-           << '(' << Var(os, var) << ")\n";
+      if (var.DefiningRegion()) {
+        if (!foreign_type->IsReferentiallyTransparent(Language::kPython)) {
+          os << os.Indent() << Var(os, var)
+             << " = self._resolve_" << foreign_type->Name()
+             << '(' << Var(os, var) << ")\n";
+        }
       } else {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
