@@ -236,8 +236,189 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramVectorUniqueRegion");
   }
 
+  void ResolveReference(DataVariable var) {
+    if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
+      if (var.DefiningRegion() &&
+          !foreign_type->IsReferentiallyTransparent(Language::kPython)) {
+        os << os.Indent() << Var(os, var) << " = _resolve<"
+           << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
+      } else {
+        switch (var.DefiningRole()) {
+          case VariableRole::kConditionRefCount:
+          case VariableRole::kConstant:
+          case VariableRole::kConstantZero:
+          case VariableRole::kConstantOne:
+          case VariableRole::kConstantFalse:
+          case VariableRole::kConstantTrue: break;
+          default: assert(false);
+        }
+      }
+    }
+  }
+
+  void ResolveReferences(UsedNodeRange<DataVariable> vars) {
+    for (auto var : vars) {
+      ResolveReference(var);
+    }
+  }
+
   void Visit(ProgramTransitionStateRegion region) override {
     os << Comment(os, region, "ProgramTransitionStateRegion");
+    const auto tuple_vars = region.TupleVariables();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    ResolveReferences(tuple_vars);
+
+    std::stringstream tuple;
+    tuple << "tuple";
+    for (auto tuple_var : tuple_vars) {
+      tuple << "_" << tuple_var.Id();
+    }
+
+    auto tuple_prefix = "std::make_tuple(";
+    auto tuple_suffix = ")";
+    if (tuple_vars.size() == 1u) {
+      tuple_prefix = "";
+      tuple_suffix = "";
+    }
+
+    auto sep = "";
+    auto tuple_var = tuple.str();
+    os << os.Indent() << "auto " << tuple_var << " = " << tuple_prefix;
+    for (auto var : tuple_vars) {
+      os << sep << Var(os, var);
+      sep = ", ";
+    }
+    os << tuple_suffix << ";\n"
+       << os.Indent() << "prev_state = " << Table(os, region.Table()) << "["
+       << tuple_var << "];\n"
+       << os.Indent() << "state = prev_state & " << kStateMask << ";\n"
+       << os.Indent() << "present_bit = prev_state & " << kPresentBit << ";\n";
+
+    os << os.Indent() << "if (";
+    switch (region.FromState()) {
+      case TupleState::kAbsent:
+        os << "state == " << kStateAbsent << ") {\n";
+        break;
+      case TupleState::kPresent:
+        os << "state == " << kStatePresent << ") {\n";
+        break;
+      case TupleState::kUnknown:
+        os << "state == " << kStateUnknown << ") {\n";
+        break;
+      case TupleState::kAbsentOrUnknown:
+        os << "state == " << kStateAbsent << " || state == " << kStateUnknown
+           << ") {\n";
+        break;
+    }
+    os.PushIndent();
+    os << os.Indent() << Table(os, region.Table()) << "[" << tuple_var
+       << "] = ";
+
+    switch (region.ToState()) {
+      case TupleState::kAbsent:
+        os << kStateAbsent << " | " << kPresentBit << ";\n";
+        break;
+      case TupleState::kPresent:
+        os << kStatePresent << " | " << kPresentBit << ";\n";
+        break;
+      case TupleState::kUnknown:
+        os << kStateUnknown << " | " << kPresentBit << ";\n";
+        break;
+      case TupleState::kAbsentOrUnknown:
+        os << kStateUnknown << " | " << kPresentBit << ";\n";
+        assert(false);  // Shouldn't be created.
+        break;
+    }
+
+    // If we're transitioning to present, then add it to our indices.
+    //
+    // NOTE(pag): The codegen for negations depends upon transitioning from
+    //            absent to unknown as a way of preventing race conditions.
+    const auto indices = region.Table().Indices();
+    if (region.ToState() == TupleState::kPresent ||
+        region.FromState() == TupleState::kAbsent) {
+      os << os.Indent() << "if (!present_bit) {\n";
+      os.PushIndent();
+
+      auto has_indices = false;
+      for (auto index : indices) {
+        const auto key_cols = index.KeyColumns();
+        const auto val_cols = index.ValueColumns();
+
+        auto key_prefix = "(";
+        auto key_suffix = ")";
+        auto val_prefix = "(";
+        auto val_suffix = ")";
+
+        if (key_cols.size() == 1u) {
+          key_prefix = "";
+          key_suffix = "";
+        }
+
+        if (val_cols.size() == 1u) {
+          val_prefix = "";
+          val_suffix = "";
+        }
+
+        // The index is the set of keys in the table's `defaultdict`. Thus, we
+        // don't need to add anything because adding to the table will have done
+        // it.
+        if (tuple_vars.size() == key_cols.size()) {
+          continue;
+        }
+
+        has_indices = true;
+        os << os.Indent() << TableIndex(os, index);
+
+        // The index is implemented with a `set`.
+        if (val_cols.empty()) {
+          os << ".add(";
+          sep = "";
+          if (key_cols.size() == 1u) {
+            os << tuple_var;
+          } else {
+            os << '(';
+            for (auto indexed_col : index.KeyColumns()) {
+              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
+              sep = ", ";
+            }
+            os << ')';
+          }
+
+          os << ");\n";
+
+        // The index is implemented with a `defaultdict`.
+        } else {
+          os << "[" << key_prefix;
+          sep = "";
+          for (auto indexed_col : index.KeyColumns()) {
+            os << sep << tuple_var << "[" << indexed_col.Index() << "]";
+            sep = ", ";
+          }
+          os << key_suffix << "].append(" << val_prefix;
+          sep = "";
+          for (auto mapped_col : index.ValueColumns()) {
+            os << sep << tuple_var << "[" << mapped_col.Index() << "]";
+            sep = ", ";
+          }
+          os << val_suffix << ");\n";
+        }
+      }
+
+      if (!has_indices) {
+        os << os.Indent() << "{}\n";
+      }
+
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    }
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramCheckStateRegion region) override {
