@@ -315,6 +315,8 @@ const bool Node<ProgramLetBindingRegion>::MergeEqual(
     merged_let->parent = nullptr;
   }
 
+  (void) num_defined_vars;
+
   return true;
 }
 
