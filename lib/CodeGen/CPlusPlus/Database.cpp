@@ -373,6 +373,36 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTupleCompareRegion region) override {
     os << Comment(os, region, "ProgramTupleCompareRegion");
+
+    const auto lhs_vars = region.LHS();
+    const auto rhs_vars = region.RHS();
+
+    if (lhs_vars.size() == 1u) {
+      os << os.Indent() << "if (" << Var(os, lhs_vars[0]) << ' '
+         << OperatorString(region.Operator()) << ' ' << Var(os, rhs_vars[0])
+         << ") {\n";
+
+    } else {
+      os << os.Indent() << "if (";
+
+      auto cond = "";
+      for (size_t i = 0; i < region.LHS().size(); i++) {
+        os << cond << '(' << Var(os, lhs_vars[i]) << ' '
+           << OperatorString(region.Operator()) << ' ' << Var(os, rhs_vars[i])
+           << ')';
+        cond = " && ";
+      }
+      os << ") {\n";
+    }
+
+    os.PushIndent();
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}";
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
  private:
