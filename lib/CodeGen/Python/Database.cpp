@@ -933,6 +933,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableJoinRegion region) override {
+    const auto id = region.Id();
     os << Comment(os, region, "Program TableJoin Region");
 
     // Nested loop join
@@ -957,6 +958,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
+      const auto table = tables[i];
       const auto index = region.Index(i);
       const auto index_keys = index.KeyColumns();
       const auto index_vals = index.ValueColumns();
@@ -970,7 +972,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       // The index is a set of key column values/tuples.
       if (index_vals.empty()) {
 
-        os << os.Indent() << "if " << key_prefix;
+
+        os << os.Indent() << "key_" << id << '_' << i << ": Final = "
+           << key_prefix;
 
         sep = "";
         for (auto index_col : index_keys) {
@@ -984,7 +988,16 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           }
         }
 
-        os << key_suffix << " in " << TableIndex(os, index) << ":\n";
+        os << key_suffix << "\n";
+
+        os << os.Indent() << "if key_" << id << '_' << i
+           << " in " << TableIndex(os, index);
+
+        // The index aliases the underlying table; lets double check that the
+        // state isn't `absent`.
+        assert(index.KeyColumns().size() == table.Columns().size());
+        os << " and (" << TableIndex(os, index) << "[key_" << id << '_' << i
+           << "] & " << kStateMask << ") != " << kStateAbsent << ":\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.

@@ -97,11 +97,13 @@ ProgramImpl::~ProgramImpl(void) {
 
     } else if (auto gen = op->AsGenerate(); gen) {
       gen->used_vars.ClearWithoutErasure();
+      gen->empty_body.ClearWithoutErasure();
 
     } else if (auto call = op->AsCall(); call) {
       call->arg_vars.ClearWithoutErasure();
       call->arg_vecs.ClearWithoutErasure();
       call->called_proc.ClearWithoutErasure();
+      call->false_body.ClearWithoutErasure();
 
     } else if (auto check = op->AsCheckState(); check) {
       check->col_values.ClearWithoutErasure();
