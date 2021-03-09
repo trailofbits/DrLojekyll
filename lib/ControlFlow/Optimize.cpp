@@ -153,6 +153,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
     par->regions.RemoveIf([=](REGION *r) { return !r->parent; });
     assert(old_num_children > par->regions.Size());
     OptimizeImpl(prog, par);
+    (void) old_num_children;
     return true;
   }
 
