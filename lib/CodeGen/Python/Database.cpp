@@ -1245,9 +1245,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << "]\n";
     }
 
+    // TODO(pag): Do we need to watch out for the index aliasing the key space
+    //            of the table, and having some columns in the absent state?
+
     // Index scan :-D
-    if (region.Index()) {
-      const auto index = *(region.Index());
+    if (auto maybe_index = region.Index(); maybe_index) {
+      const auto index = *maybe_index;
 
       os << os.Indent() << "scan_index_" << filled_vec.Id()
          << ": int = 0\n"
