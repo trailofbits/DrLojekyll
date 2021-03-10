@@ -962,6 +962,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       const auto index = region.Index(i);
       const auto index_keys = index.KeyColumns();
       const auto index_vals = index.ValueColumns();
+
+      (void) table;
+
       auto key_prefix = "(";
       auto key_suffix = ")";
       if (index_keys.size() == 1u) {
