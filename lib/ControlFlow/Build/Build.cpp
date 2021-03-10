@@ -238,6 +238,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     auto let = impl->operation_regions.CreateDerived<LET>(par);
     let->ExecuteAlongside(impl, par);
 
+    // Create the variable bindings for each received variable.
     auto i = 0u;
     for (auto col : receive.Columns()) {
       auto first_col = receives[0].Columns()[i++];

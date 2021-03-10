@@ -16,6 +16,7 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
 
   const auto negated_view = negate.NegatedView();
   unsigned col_index = 0u;
+
   for (auto col : negated_view.Columns()) {
     const QueryColumn in_col = negate.InputColumns()[col_index++];
     auto out_var = let->defined_vars.Create(
@@ -28,8 +29,12 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
     const auto in_var = let->VariableFor(impl, in_col);
     let->used_vars.AddUse(in_var);
 
-    let->col_id_to_var.emplace(col.Id(), out_var);
-    let->col_id_to_var.emplace(in_col.Id(), out_var);
+    // NOTE(pag): We *don't* want to use `emplace` here because multiple
+    //            nodes in a "tower" might all check back on the same negated
+    //            view, and we want each check to be associated with logically
+    //            different variables.
+    let->col_id_to_var[col.Id()] = out_var;
+    let->col_id_to_var[in_col.Id()] = out_var;
 
     view_cols.push_back(col);
   }

@@ -16,6 +16,7 @@ void QueryImpl::FinalizeColumnIDs(void) const {
     assert(!v->is_dead);
     unsigned i = 0u;
     for (auto col : v->columns) {
+      assert(col->view == v);
       col->id = next_col_id++;
       col->index = i++;
     }

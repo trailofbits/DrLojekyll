@@ -559,6 +559,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
     }
   }
 
