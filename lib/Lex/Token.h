@@ -48,14 +48,14 @@ struct TypeToken final
 
 struct WhitespaceToken final
     : public TypedOpaqueData<
-          Lexeme, SpellingWidth /* Number of leading spaces */,
-          IndexDisp /* Next index */, LineDisp /* Next line */,
-          Column /* Next column */> {};
+          Lexeme, SpellingWidth  /* Number of leading spaces */,
+          IndexDisp  /* Next index */, LineDisp  /* Next line */,
+          Column  /* Next column */> {};
 
 struct NumberLiteralToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth, NumberSpellingKind,
-                             bool /* Has decimal point */,
-                             PrefixWidth /* Prefix width, e.g. 2 for `0x`. */> {
+                             bool  /* Has decimal point */,
+                             PrefixWidth  /* Prefix width, e.g. 2 for `0x`. */> {
 };
 
 struct StringLiteralToken final
@@ -71,16 +71,14 @@ struct StringLiteralToken final
 
 struct CodeLiteralToken final
     : public TypedOpaqueData<
-          Lexeme, Id /* Unique ID of the represented code. The first
-                                  * code block has ID `0`, the second has ID
-                                  * `1`, etc. */
-          ,
-          ReprWidth /* Number of bytes in the represented
-                                         * string (after processing things
-                                         * like escape characters). */
-          ,
-          IndexDisp /* The next index. */, LineDisp /* The next line ``` */,
-          Column /* The next column */> {};
+          Lexeme, Id  /* Unique ID of the represented code. The first
+                       * code block has ID `0`, the second has ID
+                       * `1`, etc. */,
+          ReprWidth  /* Number of bytes in the represented
+                      * string (after processing things
+                      * like escape characters). */,
+          IndexDisp  /* The next index. */, LineDisp  /* The next line ``` */,
+          Column  /* The next column */> {};
 
 struct IdentifierToken final
     : public TypedOpaqueData<Lexeme, SpellingWidth,
