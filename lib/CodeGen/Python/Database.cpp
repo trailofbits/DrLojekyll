@@ -976,7 +976,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       if (index_vals.empty()) {
 
 
-        os << os.Indent() << "key_" << id << '_' << i << ": Final = "
+        os << os.Indent() << "key_" << id << '_' << i << " = "
            << key_prefix;
 
         sep = "";

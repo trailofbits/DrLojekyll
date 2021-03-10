@@ -84,6 +84,9 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
   // Go remove duplicate child regions. Note: we remove the regions from the
   // `par` node below by looking for regions whose parents are `nullptr`.
+  //
+  // NOTE(pag): This is is basically an application of common subexpression
+  //            elimination.
   EqualitySet eq;
   for (const auto &hash_to_regions : grouped_regions) {
     const auto &similar_regions = hash_to_regions.second;
@@ -112,6 +115,10 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 
   // Go try to merge similar child regions. Note: we remove the regions from the
   // `par` node below by looking for regions whose parents are `nullptr`.
+  //
+  // This looks for child regions that are superficially the same, so that the
+  // grand-children of two similar child regions can be merged under a single
+  // child region.
   std::vector<REGION *> merge_candidates;
   for (const auto &hash_to_regions : grouped_regions) {
     const auto &similar_regions = hash_to_regions.second;
@@ -146,7 +153,6 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
     }
   }
 
-
   if (changed) {
     // Remove any redundant or strip-minded regions in bulk.
     const auto old_num_children = par->regions.Size();
@@ -167,6 +173,10 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
 // TODO(pag): Check if the fixpoint loop region ends in a return. If so, bail
 //            out.
 static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
+  if (!induction->IsUsed() || !induction->parent) {
+    return false;
+  }
+
   auto changed = false;
 
   // Clear out empty output regions of inductions.
@@ -561,12 +571,33 @@ void ProgramImpl::Optimize(void) {
   auto depth_cmp =
       +[](REGION *a, REGION *b) { return a->CachedDepth() > b->CachedDepth(); };
 
+  // Iteratively remove unused regions.
+  auto remove_unused = [this] (void) {
+    for (size_t changed = 1; changed;) {
+      changed = 0;
+      changed |= parallel_regions.RemoveUnused();
+      changed |= series_regions.RemoveUnused();
+      changed |= operation_regions.RemoveUnused();
+      changed |= procedure_regions.RemoveIf([](PROC *proc) {
+        if (proc->kind == ProcedureKind::kInitializer ||
+            proc->kind == ProcedureKind::kMessageHandler) {
+          return false;
+        } else {
+          return !proc->has_raw_use && !proc->IsUsed();
+        }
+      });
+    }
+  };
+
   for (auto changed = true; changed;) {
     changed = false;
 
     parallel_regions.Sort(depth_cmp);
 
-    for (auto par : parallel_regions) {
+    // NOTE(pag): Optimizing parallel regions may create more parallel regions
+    //            via `MergeEquals`.
+    for (auto i = 0ull; i < parallel_regions.Size(); ++i) {
+      const auto par = parallel_regions[i];
       changed = OptimizeImpl(this, par) | changed;
     }
 
@@ -619,6 +650,8 @@ void ProgramImpl::Optimize(void) {
     for (auto proc : procedure_regions) {
       changed = OptimizeImpl(proc) | changed;
     }
+
+    remove_unused();
   }
 
   // Go find possibly similar procedures.
@@ -699,20 +732,7 @@ void ProgramImpl::Optimize(void) {
     }
   }
 
-  for (size_t changed = 1; changed;) {
-    changed = 0;
-    changed |= parallel_regions.RemoveUnused();
-    changed |= series_regions.RemoveUnused();
-    changed |= operation_regions.RemoveUnused();
-    changed |= procedure_regions.RemoveIf([](PROC *proc) {
-      if (proc->kind == ProcedureKind::kInitializer ||
-          proc->kind == ProcedureKind::kMessageHandler) {
-        return false;
-      } else {
-        return !proc->has_raw_use && !proc->IsUsed();
-      }
-    });
-  }
+  remove_unused();
 }
 
 }  // namespace hyde
