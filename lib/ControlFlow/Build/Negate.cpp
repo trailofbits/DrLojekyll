@@ -40,15 +40,22 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   const auto check = CallTopDownChecker(
       impl, context, let, negated_view, view_cols, negated_view, nullptr);
 
-  COMMENT( check->comment = __FILE__ ": CheckInNegatedView"; )
-
   let->body.Emplace(let, check);
 
+  // NOTE(pag): We need the extra `OP *` region here (the `LET`) because
+  //            `with_check_absent` might fiddle with `sub_let->body`, and we
+  //            can't pass in `check` because we might need to operate in
+  //            `false_body`.
+  const auto sub_let = impl->operation_regions.CreateDerived<LET>(check);
   if (call_return_value) {
-    check->body.Emplace(check, with_check_absent(check));
+    check->body.Emplace(check, sub_let);
   } else {
-    check->false_body.Emplace(check, with_check_absent(check));
+    check->false_body.Emplace(check, sub_let);
   }
+
+  with_check_absent(sub_let);
+  assert(!check->body != !check->false_body);
+
   return let;
 }
 

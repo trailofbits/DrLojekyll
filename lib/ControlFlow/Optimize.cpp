@@ -379,11 +379,9 @@ static bool OptimizeImpl(LET *let) {
   let->defined_vars.Clear();
   let->used_vars.Clear();
 
-  const auto body = let->body.get();
-  let->body.Clear();
-
-  if (body) {
+  if (const auto body = let->body.get(); body) {
     changed = true;
+    let->body.Clear();
     let->ReplaceAllUsesWith(body);
   }
 
@@ -501,6 +499,10 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
     }
   }
 
+  if (call->body && call->false_body) {
+    assert(call->body.get() != call->false_body.get());
+  }
+
   return changed;
 }
 
@@ -528,6 +530,11 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
       changed = true;
     }
   }
+
+  if (gen->body && gen->empty_body) {
+    assert(gen->body.get() != gen->empty_body.get());
+  }
+
   return changed;
 }
 
