@@ -12,7 +12,7 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
   std::vector<QueryColumn> output_cols;
 
   auto gen = impl->operation_regions.CreateDerived<GENERATOR>(
-      parent, functor, impl->next_id++, view.IsPositive());
+      parent, functor, impl->next_id++);
   auto i = 0u;
 
   // Deal with the functor inputs and outputs.
@@ -93,7 +93,17 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   const auto gen = CreateGeneratorCall(
       impl, map, functor, context, parent, true);
   parent->body.Emplace(parent, gen);
-  parent = gen;
+
+  // If we're dealing with a negated generator, then make sure that children
+  // end up in the `empty_body`.
+  if (!map.IsPositive()) {
+    parent = impl->operation_regions.CreateDerived<LET>(gen);
+    gen->empty_body.Emplace(gen, parent);
+
+  // In the positive case, child nodes will put themselves into `parent->body`.
+  } else {
+    parent = gen;
+  }
 
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
@@ -119,7 +129,14 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
   proc->body.Emplace(proc, gen);
 
   auto parent = impl->parallel_regions.Create(gen);
-  gen->body.Emplace(gen, parent);
+
+  // If this is a positive use then children go on the positive side; otherwise
+  // they go in the 'empty' side.
+  if (map.IsPositive()) {
+    gen->body.Emplace(gen, parent);
+  } else {
+    gen->empty_body.Emplace(gen, parent);
+  }
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   if (model->table) {
@@ -253,10 +270,17 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
         [&](REGION *parent, bool) -> REGION * {
           const auto call = CreateGeneratorCall(
               impl, gen, gen.Functor(), context, parent, false);
-          call->body.Emplace(
-              call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                        impl, context, call, view, view_cols, nullptr,
-                        pred_view, nullptr));
+          const auto child = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+              impl, context, call, view, view_cols, nullptr,
+              pred_view, nullptr);
+
+          // Figure out where to place the child nodes inside the generator.
+          if (gen.IsPositive()) {
+            call->body.Emplace(call, child);
+          } else {
+            call->empty_body.Emplace(call, child);
+          }
+
           return call;
         }));
 
@@ -306,8 +330,14 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
           impl, gen, gen.Functor(), context, series, false);
       series->AddRegion(call);
 
-      call->body.Emplace(call, ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, call, view, view_cols, nullptr, pred_view, nullptr));
+      const auto child = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+          impl, context, call, view, view_cols, nullptr, pred_view, nullptr);
+
+      if (gen.IsPositive()) {
+        call->body.Emplace(call, child);
+      } else {
+        call->empty_body.Emplace(call, child);
+      }
 
     // The issue here is that our codegen model of top-down checking treats
     // predecessors as black boxes. We really need to recover the columns from

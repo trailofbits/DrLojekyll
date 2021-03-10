@@ -137,8 +137,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
   // Now call the checker procedure. Unlike in normal checkers, we're doing
   // a check on `false`.
   const auto check = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent, checker_proc,
-      ProgramOperation::kCallProcedureCheckFalse);
+      impl->next_id++, parent, checker_proc);
   for (auto col : available_cols) {
     check->arg_vars.AddUse(parent->VariableFor(impl, col));
   }
@@ -149,7 +148,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
   // been removed because the checker function returned `false`.
   parent_body->Emplace(parent, check);
   parent = check;
-  parent_body = &(check->body);
+  parent_body = &(check->false_body);
 
   // If were doing a removal to a stream, then we want to publish the removal.
   if (insert.IsStream()) {
@@ -226,8 +225,7 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   if (already_checked == model->table ||
       model->table == pred_model->table) {
     const auto check = CallTopDownChecker(
-        impl, context, proc, pred_view, view_cols, pred_view,
-        ProgramOperation::kCallProcedureCheckTrue, already_checked);
+        impl, context, proc, pred_view, view_cols, pred_view, already_checked);
     proc->body.Emplace(proc, check);
 
     COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker"; )

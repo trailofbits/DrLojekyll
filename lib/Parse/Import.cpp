@@ -44,9 +44,12 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     return;
 
   } else if (tok.Lexeme() != Lexeme::kPuncPeriod) {
-    context->error_log.Append(scope_range, tok.SpellingRange())
-        << "Expected period here to end the import statement, got '"
-        << tok << "' instead";
+    auto err = context->error_log.Append(scope_range,
+                                         imp->path.NextPosition());
+    err << "Expected period here to end the import statement";
+
+    err.Note(scope_range, tok.SpellingRange())
+        << "Got '" << tok << "' instead";
     return;
   }
 

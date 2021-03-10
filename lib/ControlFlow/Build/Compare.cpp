@@ -80,7 +80,7 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     if (out_col) {
       if (const auto out_var_it = proc->col_id_to_var.find(out_col->Id());
           out_var_it != proc->col_id_to_var.end() && out_var_it->second) {
-        proc->col_id_to_var.emplace(in_col.Id(), out_var_it->second);
+        proc->col_id_to_var[in_col.Id()] = out_var_it->second;
       }
     }
   });

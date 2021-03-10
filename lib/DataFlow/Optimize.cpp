@@ -466,7 +466,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   opt.can_sink_unions = true;
   Canonicalize(opt, log);
 
-//  do_cse();  // Apply CSE to all canonical views.
+  do_cse();  // Apply CSE to all canonical views.
 
   auto max_depth = 1u;
   for (auto view : this->inserts) {

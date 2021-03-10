@@ -417,6 +417,10 @@ void ParserImpl::ParseLocalExport(
   std::unique_ptr<Node<ParsedParameter>> param;
   std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
+  // Interpretation of this local/export as a clause.
+  std::vector<Token> clause_toks;
+  bool has_embedded_clauses = false;
+
   DisplayPosition next_pos;
   Token name;
 
@@ -437,6 +441,7 @@ void ParserImpl::ParseLocalExport(
         if (Lexeme::kIdentifierAtom == lexeme) {
           name = tok;
           state = 1;
+          clause_toks.push_back(tok);
           continue;
 
         } else {
@@ -449,6 +454,7 @@ void ParserImpl::ParseLocalExport(
       case 1:
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
+          clause_toks.push_back(tok);
           continue;
 
         } else {
@@ -504,6 +510,7 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 4:
+        clause_toks.push_back(param->name);
 
         // Add the parameter in.
         if (!params.empty()) {
@@ -522,10 +529,12 @@ void ParserImpl::ParseLocalExport(
         params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          clause_toks.push_back(tok);
           local.reset(
               AddDecl<NodeType>(module, kDeclKind, name, params.size()));
           if (!local) {
@@ -750,12 +759,36 @@ void ParserImpl::ParseLocalExport(
           local->last_tok = tok;
           state = 9;
           continue;
+
+        } else if (Lexeme::kPuncColon == lexeme) {
+          has_embedded_clauses = true;
+          clause_toks.push_back(tok);
+          for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
+            clause_toks.push_back(tok);
+          }
+
+          // Look at the last token.
+          if (Lexeme::kPuncPeriod == clause_toks.back().Lexeme()) {
+            local->last_tok = clause_toks.back();
+            state = 9;
+            continue;
+
+          } else {
+            context->error_log.Append(scope_range,
+                                      clause_toks.back().NextPosition())
+                << "Declaration of '" << local->name
+                << "' containing an embedded clause does not end with a period";
+            state = 10;
+            continue;
+          }
+
         } else {
           DisplayRange err_range(tok.Position(),
                                  sub_tokens.back().NextPosition());
           context->error_log.Append(scope_range, err_range)
               << "Unexpected tokens before the terminating period in the"
-              << " declaration of the '" << local->name << "' local";
+              << " declaration of the '" << local->name << "' "
+              << introducer_tok;
           state = 10;
           continue;
         }
@@ -765,7 +798,7 @@ void ParserImpl::ParseLocalExport(
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
             << "Unexpected tokens following declaration of the '"
-            << local->name << "' local";
+            << local->name << "' " << introducer_tok;
         state = 10;  // Ignore further errors, but add the local in.
         continue;
       }
@@ -784,8 +817,20 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local to the module.
   } else {
+    const auto decl_for_clause = local.get();
     local->has_mutable_parameter = has_mutable_parameter;
     FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
+
+    // If we parsed a `:` after the head of the `#local` or `#export` then
+    // go parse the attached bodies recursively.
+    if (has_embedded_clauses) {
+      sub_tokens.swap(clause_toks);
+      const auto prev_next_sub_tok_index = next_sub_tok_index;
+      next_sub_tok_index = 0;
+      ParseClause(module, Token(), decl_for_clause);
+      next_sub_tok_index = prev_next_sub_tok_index;
+      sub_tokens.swap(clause_toks);
+    }
   }
 }
 
