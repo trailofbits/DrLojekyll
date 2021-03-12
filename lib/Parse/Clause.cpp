@@ -934,7 +934,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         << "because of the presence of a deletion clause";
 
     auto del_clause = decl->context->deletion_clauses.front().get();
-    auto note = err.Note(ParsedClause(del_clause).SpellingRange());
+    auto note = err.Note(scope_range, ParsedClause(del_clause).SpellingRange());
     note << "First deletion clause is here";
   }
 

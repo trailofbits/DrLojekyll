@@ -885,7 +885,7 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
   auto last_tok =
-      impl->last_tok.IsValid() && false ? impl->last_tok : impl->dot;
+      impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
                       last_tok.NextPosition());
