@@ -453,7 +453,13 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
   // we are doing code gen, the that likely means one region is serialized
   // before the other, and so there is a kind of race condition, where only
   // one of them is likely to execute and the other will never execute.
-  assert(false && "Likely error condition: strip-mining two state transitions");
+  comment = "!!! STRIP MINING " + std::to_string(reinterpret_cast<uintptr_t>(this));
+  for (auto region : merges) {
+    region->comment = "??? STRIP MINING WITH " + std::to_string(reinterpret_cast<uintptr_t>(this));
+  }
+
+  assert(false && "Probable error when trying to strip mine program state transitions");
+  return false;
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
@@ -932,7 +938,9 @@ bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
   assert(!this->body);
   assert(!that->body);
 
-  return eq.Contains(this->output_vector.get(), that->output_vector.get());
+  eq.Insert(this->output_vector.get(), that->output_vector.get());
+
+  return true;
 }
 
 const bool Node<ProgramTableScanRegion>::MergeEqual(
