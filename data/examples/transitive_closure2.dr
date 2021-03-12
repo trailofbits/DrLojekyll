@@ -1,8 +1,8 @@
-#message add_edge(i64 From, i64 To)
-#query reachable_from(bound i64 From, free i64 To)
-#query reaching_to(free i64 From, bound i64 To)
-#local tc1(From, To)
-#local tc2(From, To)
+#message add_edge(i64 From, i64 To).
+#query reachable_from(bound i64 From, free i64 To).
+#query reaching_to(free i64 From, bound i64 To).
+#local tc1(From, To).
+#local tc2(From, To).
 
 reachable_from(From, To) : tc1(From, To).
 reaching_to(From, To) : tc2(From, To).
@@ -14,7 +14,7 @@ tc2(From, To) : tc2(From, X), tc1(X, To).
 tc2(From, To) : add_edge(From, To).
 
 
-#query is_node(free i64 Node)
+#query is_node(free i64 Node).
 
 is_node(Node) : tc1(Node, _).
 is_node(Node) : tc1(_, Node).
@@ -61,3 +61,4 @@ if __name__ == "__main__":
 
   assert sorted(db.is_node_f()) == [0, 1, 2, 3, 4]
 ```
+.

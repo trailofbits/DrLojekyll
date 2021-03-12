@@ -9,7 +9,7 @@ We will base everything around the `child_of` relation, which will contain two
 pieces of information: the name of a child, and the name of that child's parent.
 
 ```eclipse
-#local child_of(ChildName, ParentName)
+#local child_of(ChildName, ParentName).
 ```
 
 One way to think about the above declaration is that it is a terse form of
@@ -39,7 +39,7 @@ in any way, but it's a good first example. We can leverage the `child_of`
 relation to find all the people in our database.
 
 ```eclipse
-#local person(Name)
+#local person(Name).
 person(Name) : child_of(Name, _).
 person(Name) : child_of(_, Name).
 ```
@@ -78,7 +78,7 @@ query for data from the system. In this case, we are saying that given a
 and `CousinName` are cousins.
 
 ```eclipse
-#query cousin_of(bound str SearchName, free str CousinName)
+#query cousin_of(bound str SearchName, free str CousinName).
 
 cousin_of(A, CousinOfA)
     : child_of(A, Parent)
@@ -166,7 +166,7 @@ Thus far we've declared relations and rules, but not how data enters into our
 system. For that, we need a message.
 
 ```eclipse
-#message born(utf8 ChildName, utf8 ParentName)
+#message born(utf8 ChildName, utf8 ParentName).
 
 child_of(ChildName, ParentName) : born(ChildName, ParentName).
 ```
@@ -197,12 +197,12 @@ Let's compile our Datalog code. Create a file, `/tmp/tutorial_1.dr`, and into th
 file, copy and paste the following code.
 
 ```eclipse
-#message born(utf8 ChildName, utf8 ParentName)
+#message born(utf8 ChildName, utf8 ParentName).
 
-#local child_of(ChildName, ParentName)
+#local child_of(ChildName, ParentName).
 child_of(ChildName, ParentName) : born(ChildName, ParentName).
 
-#query cousin_of(bound utf8 SearchName, free utf8 CousinName)
+#query cousin_of(bound utf8 SearchName, free utf8 CousinName).
 cousin_of(A, CousinOfA)
     : child_of(A, Parent)
     , child_of(Parent, GrandParent)

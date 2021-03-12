@@ -557,7 +557,9 @@ bool Node<QueryMerge>::SinkThroughMaps(
     const auto next_map = inout_view->AsMap();
     if (first_map->functor != next_map->functor ||
         first_map->is_positive != next_map->is_positive ||
-        first_map->num_free_params != next_map->num_free_params) {
+        first_map->num_free_params != next_map->num_free_params ||
+        num_input_cols != next_map->input_columns.Size() ||
+        num_attached_cols != next_map->attached_columns.Size()) {
       ++num_failed;
       continue;
     }

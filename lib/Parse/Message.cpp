@@ -139,24 +139,32 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           return;
         }
 
-      case 5: {
+      case 5:
+        if (Lexeme::kPuncPeriod == lexeme) {
+          message->last_tok = tok;
+          state = 6;
+          continue;
+        }
+        [[clang::fallthrough]];
+
+      case 6:
+      {
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
             << "Unexpected tokens following declaration of the '"
             << message->name << "' message";
-        state = 6;  // Ignore further errors, but add the message in.
+        state = 7;  // Ignore further errors, but add the message in.
         continue;
       }
-
-      case 6: continue;
+      case 7: continue;
     }
   }
 
-  if (state < 5) {
+  if (state != 6) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete message declaration; the declaration must be "
-        << "placed entirely on one line";
+        << "Incomplete message declaration; the declaration '"
+        << name << "' must end with a period";
 
     RemoveDecl<ParsedMessage>(std::move(message));
 

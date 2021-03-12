@@ -8,7 +8,7 @@ namespace {
 template <typename T>
 static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
                               Context &context, REGION *parent,
-                              ProgramOperation call_op,
+                              bool call_return_value,
                               T with_check_absent) {
   const auto let = impl->operation_regions.CreateDerived<LET>(parent);
 
@@ -16,6 +16,7 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
 
   const auto negated_view = negate.NegatedView();
   unsigned col_index = 0u;
+
   for (auto col : negated_view.Columns()) {
     const QueryColumn in_col = negate.InputColumns()[col_index++];
     auto out_var = let->defined_vars.Create(
@@ -28,8 +29,12 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
     const auto in_var = let->VariableFor(impl, in_col);
     let->used_vars.AddUse(in_var);
 
-    let->col_id_to_var.emplace(col.Id(), out_var);
-    let->col_id_to_var.emplace(in_col.Id(), out_var);
+    // NOTE(pag): We *don't* want to use `emplace` here because multiple
+    //            nodes in a "tower" might all check back on the same negated
+    //            view, and we want each check to be associated with logically
+    //            different variables.
+    let->col_id_to_var[col.Id()] = out_var;
+    let->col_id_to_var[in_col.Id()] = out_var;
 
     view_cols.push_back(col);
   }
@@ -38,14 +43,23 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   // means that we've not found the tuple in the negated view, and so we can
   // proceed.
   const auto check = CallTopDownChecker(
-      impl, context, let, negated_view, view_cols, negated_view,
-      call_op, nullptr);
-
-  COMMENT( check->comment = __FILE__ ": CheckInNegatedView"; )
+      impl, context, let, negated_view, view_cols, negated_view, nullptr);
 
   let->body.Emplace(let, check);
 
-  check->body.Emplace(check, with_check_absent(check));
+  // NOTE(pag): We need the extra `OP *` region here (the `LET`) because
+  //            `with_check_absent` might fiddle with `sub_let->body`, and we
+  //            can't pass in `check` because we might need to operate in
+  //            `false_body`.
+  const auto sub_let = impl->operation_regions.CreateDerived<LET>(check);
+  if (call_return_value) {
+    check->body.Emplace(check, sub_let);
+  } else {
+    check->false_body.Emplace(check, sub_let);
+  }
+
+  with_check_absent(sub_let);
+  assert(!check->body != !check->false_body);
 
   return let;
 }
@@ -81,7 +95,7 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   // data and so now we need to make sure that the negated view doesn't have
   // the data.
   seq->AddRegion(CheckInNegatedView(
-      impl, negate, context, seq, ProgramOperation::kCallProcedureCheckFalse,
+      impl, negate, context, seq, false  /* return value of procedure */,
       [&] (OP *if_absent) {
 
         // If the negated view doesn't have the data then we can add to our
@@ -120,7 +134,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
     // If the tuple isn't present in the negated view then we can return true.
     seq->AddRegion(CheckInNegatedView(
-        impl, negate, context, seq, ProgramOperation::kCallProcedureCheckFalse,
+        impl, negate, context, seq, false  /* return value of check */,
         [=] (REGION *if_absent) {
           return BuildStateCheckCaseReturnTrue(impl, if_absent);
         }));
@@ -149,7 +163,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
     return BuildTopDownTryMarkAbsent(impl, model->table, if_unknown, view.Columns(),
                                      [&](PARALLEL *par) {
       par->AddRegion(CheckInNegatedView(
-          impl, negate, context, par, ProgramOperation::kCallProcedureCheckFalse,
+          impl, negate, context, par, /* expected return value */ false,
           [&] (REGION *if_absent) {
             return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
                 impl, context, if_absent, view, view_cols, nullptr,
@@ -160,8 +174,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
   auto do_check_on_unknown_checked = [&] (REGION *if_unknown) {
     return CheckInNegatedView(
-        impl, negate, context, if_unknown,
-        ProgramOperation::kCallProcedureCheckFalse,
+        impl, negate, context, if_unknown, false  /* return value of check */,
         [&] (REGION *if_absent) {
           return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
               impl, context, if_absent, view, view_cols, model->table,
@@ -245,8 +258,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
 
   const auto negate = QueryNegate::From(view);
   parent->AddRegion(CheckInNegatedView(
-      impl, negate, context, parent,
-      ProgramOperation::kCallProcedureCheckTrue,
+      impl, negate, context, parent, true  /* checker return value */,
       [&] (REGION *if_present) {
         auto seq = impl->series_regions.Create(if_present);
         auto change = BuildChangeState(
@@ -290,8 +302,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   // columns are not in the negated view, and thus we have proved the presence
   // of this tuple and can stop.
   const auto check = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent, checker_proc,
-      ProgramOperation::kCallProcedureCheckTrue);
+      impl->next_id++, parent, checker_proc);
 
   COMMENT( check->comment = __FILE__ ": CreateBottomUpNegationRemover"; )
 

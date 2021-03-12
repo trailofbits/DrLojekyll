@@ -139,8 +139,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
       const auto index_is_good = CallTopDownChecker(
-          impl, context, parent, view, view_cols, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue, nullptr);
+          impl, context, parent, view, view_cols, pred_view, nullptr);
 
       COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
 

@@ -8,7 +8,10 @@ set(CodeGen_PUBLIC_H
 set(CodeGen_SRCS
     "CPlusPlus.cpp"
     "MessageSerialization.cpp"
-    "Python.cpp"
+    "Python/Database.cpp"
+    "Python/Interface.cpp"
+    "Python/Util.cpp"
+    "Python/Util.h"
 )
 
 set(CodeGen_PRIV_DEPS

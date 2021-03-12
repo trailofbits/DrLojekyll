@@ -270,6 +270,7 @@ jobs:
           -B build
           -G "Visual Studio 16 2019"
           -DWARNINGS_AS_ERRORS=0
+          -DENABLE_TEST_MYPY_CHECKS=OFF
           -DCMAKE_INSTALL_PREFIX="$env:DR_INSTALL_DIR"
           .
       - name: Build

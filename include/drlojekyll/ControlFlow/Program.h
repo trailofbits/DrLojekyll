@@ -389,10 +389,6 @@ class ProgramGenerateRegion
   // Returns the functor to be applied.
   ParsedFunctor Functor(void) const noexcept;
 
-  // Returns `true` if it's an application of the functor meant to get results,
-  // and `false` if we're testing for the absence of results.
-  bool IsPositive(void) const noexcept;
-
   // List of variables to pass at inputs. The Nth input variable corresponds
   // with the Nth `bound`-attributed variable in the parameter list of
   // `Functor()`.
@@ -407,7 +403,12 @@ class ProgramGenerateRegion
   // Return the body which is conditionally executed if the filter functor
   // returns true (`IsFilter() == true`) or if at least one tuple is generated
   // (as represented by `OutputVariables()`).
-  std::optional<ProgramRegion> Body(void) const noexcept;
+  std::optional<ProgramRegion> BodyIfResults(void) const noexcept;
+
+  // Return the body which is conditionally executed if the filter functor
+  // returns `false` (`IsFilter() == true`) or if zero tuples are generated.
+  // Functor negations use this body.
+  std::optional<ProgramRegion> BodyIfEmpty(void) const noexcept;
 
  private:
   friend class ProgramRegion;
@@ -855,15 +856,13 @@ class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
   // List of vectors passed as arguments to the procedure.
   UsedNodeRange<DataVector> VectorArguments(void) const;
 
-  // Conditionally executed body, based on how the return value of the
-  // procedure is tested.
-  std::optional<ProgramRegion> Body(void) const noexcept;
+  // Conditionally executed body, based on how the return value of the procedure
+  // being `true`.
+  std::optional<ProgramRegion> BodyIfTrue(void) const noexcept;
 
-  // Should we execute the body if the called procedure returns `true`?
-  bool ExecuteBodyIfReturnIsTrue(void) const noexcept;
-
-  // Should we execute the body if the called procedure returns `false`?
-  bool ExecuteBodyIfReturnIsFalse(void) const noexcept;
+  // Conditionally executed body, based on how the return value of the procedure
+  // being `false`.
+  std::optional<ProgramRegion> BodyIfFalse(void) const noexcept;
 
  private:
   friend class ProgramRegion;
@@ -892,23 +891,23 @@ class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
 class ProgramQuery {
  public:
   // The specific `#query` declaration associated with this entry point.
-  const ParsedQuery query;
+  ParsedQuery query;
 
   // The backing table storing the data that is being queried.
-  const DataTable table;
+  DataTable table;
 
   // The index that must be scanned using any `bound`-attributed parameters
   // of the query declaration.
-  const std::optional<DataIndex> index;
+  std::optional<DataIndex> index;
 
   // If present, a procedure which must be invoked on each scanned tuple from
   // the table / index.
-  const std::optional<ProgramProcedure> tuple_checker;
+  std::optional<ProgramProcedure> tuple_checker;
 
   // If present, a procedure which must be invoked in order to ensure the
   // presence of any backing data. The parameters to this procedure are any
   // `bound`-attributed parameters of the query declaration.
-  const std::optional<ProgramProcedure> forcing_function;
+  std::optional<ProgramProcedure> forcing_function;
 
   inline explicit ProgramQuery(
       ParsedQuery query_, DataTable table_,

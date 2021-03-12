@@ -1,15 +1,15 @@
 ; This example uses recursion in stupid ways.
 
-#query output(free i32 A)
+#query output(free i32 A).
 
-#message input(i32 A)
-#local one(i32 A)
-#local direct_const(A)
-#local direct_input(A)
+#message input(i32 A).
+#local one(i32 A).
+#local direct_const(A).
+#local direct_input(A).
 
-#local direct_only(A)
-#local direct_only_join(A)
-#local direct_and_join(A)
+#local direct_only(A).
+#local direct_only_join(A).
+#local direct_and_join(A).
 
 one(1).
 direct_const(A) : direct_const(A).

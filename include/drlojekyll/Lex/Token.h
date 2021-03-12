@@ -287,17 +287,17 @@ enum class Lexeme : uint8_t {
   //      #functor add_i32(
   //          bound i32 LHS,
   //          bound i32 RHS,
-  //          free i32 Sum) range(.)
+  //          free i32 Sum) @range(.)
   //
   // Here we say that the range of `add_i32` is one-to-one. That is we will
   // produce one and only one output for each input.
   //
   // Possible variations and their meanings are:
   //
-  //      range(?)      Zero-or-one
-  //      range(*)      Zero-or-more
-  //      range(.)      One-to-one
-  //      range(+)      One-or-more
+  //      @range(?)      Zero-or-one
+  //      @range(*)      Zero-or-more
+  //      @range(.)      One-to-one
+  //      @range(+)      One-or-more
   //
   // The default range for a functor is conservatively assumed to be
   // zero-or-more. If a functor has no `free` parameters then it implicitly

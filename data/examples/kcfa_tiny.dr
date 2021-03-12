@@ -1,23 +1,23 @@
 ; k-CFA for lambda calculus, adapted from: https://gist.github.com/kmicinski/d5d6815de5a0fb5bdad9c2ca331edfd7
 
 
-#message add_prog(i32 X)
-#message add_lam(i32 Id, i32 X, i32 Y, i32 Idbody)
-#message add_app(i32 Id, i32 F, i32 A0, i32 A1)
-#message add_var(i32 Id, i32 Var)
+#message add_prog(i32 X).
+#message add_lam(i32 Id, i32 X, i32 Y, i32 Idbody).
+#message add_app(i32 Id, i32 F, i32 A0, i32 A1).
+#message add_var(i32 Id, i32 Var).
 
-#local prog(i32 X)
-#local lam(i32 Id, i32 X, i32 Y, i32 Idbody)
-#local app(i32 Id, i32 F, i32 A0, i32 A1)
-#local var(i32 Id, i32 Var)
+#local prog(i32 X).
+#local lam(i32 Id, i32 X, i32 Y, i32 Idbody).
+#local app(i32 Id, i32 F, i32 A0, i32 A1).
+#local var(i32 Id, i32 Var).
 
-#local time(i32 Dt0, i32 Dt1)
-#local step(i32 From, i32 Dt0, i32 Dt1, i32 Toid, i32 Dto_t0, i32 Dto_t1, i32 Clo_lam, i32 Dclo_t0, i32 Dclo_t1)
-#local aeval(i32 Id, i32 Dt0, i32 Dt1, i32 Id1, i32 Dot0, i32 Dot1)
-#local store(i32 Var, i32 Dt0, i32 Dt1, i32 Stored_lam, i32 Dot0, i32 Dot1)
+#local time(i32 Dt0, i32 Dt1).
+#local step(i32 From, i32 Dt0, i32 Dt1, i32 Toid, i32 Dto_t0, i32 Dto_t1, i32 Clo_lam, i32 Dclo_t0, i32 Dclo_t1).
+#local aeval(i32 Id, i32 Dt0, i32 Dt1, i32 Id1, i32 Dot0, i32 Dot1).
+#local store(i32 Var, i32 Dt0, i32 Dt1, i32 Stored_lam, i32 Dot0, i32 Dot1).
 
-#query reaches_cfg(bound i32 Id, bound i32 Dt0, bound i32 Dt1)
-#query reaches_clo(bound i32 Id, bound i32 Dt0, bound i32 Dt1)
+#query reaches_cfg(bound i32 Id, bound i32 Dt0, bound i32 Dt1).
+#query reaches_clo(bound i32 Id, bound i32 Dt0, bound i32 Dt1).
 
 prog(X) : add_prog(X).
 lam(Id, X, Y, Idbody) : add_lam(Id, X, Y, Idbody).

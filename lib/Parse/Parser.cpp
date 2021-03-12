@@ -301,64 +301,13 @@ bool ParserImpl::ReadNextSubToken(Token &tok_out) {
   }
 }
 
-// Read until the next new line token. If a new line token appears inside of
-// a parenthesis, then it is permitted.This fill sup `sub_tokens` with all
-// read tokens, excluding any whitespace found along the way.
-void ParserImpl::ReadLine(void) {
-  Token tok;
-
-  int paren_count = 0;
-  DisplayPosition unmatched_paren;
-  scope_range = DisplayRange();
-
-  while (ReadNextToken(tok)) {
-    switch (tok.Lexeme()) {
-      case Lexeme::kEndOfFile:
-        scope_range = SubTokenRange();
-        UnreadToken();
-        return;
-      case Lexeme::kPuncOpenParen:
-        sub_tokens.push_back(tok);
-        ++paren_count;
-        continue;
-      case Lexeme::kPuncCloseParen:
-        sub_tokens.push_back(tok);
-        if (!paren_count) {
-          unmatched_paren = tok.Position();
-        } else {
-          --paren_count;
-        }
-        continue;
-      case Lexeme::kWhitespace:
-        if (tok.Line() < tok.NextPosition().Line()) {
-          if (paren_count) {
-            continue;
-          } else {
-            scope_range = SubTokenRange();
-            return;
-          }
-        } else {
-          continue;
-        }
-      case Lexeme::kComment: continue;
-      default: sub_tokens.push_back(tok); continue;
-    }
-  }
-
-  scope_range = SubTokenRange();
-
-  if (unmatched_paren.IsValid()) {
-    context->error_log.Append(scope_range, unmatched_paren)
-        << "Unmatched parenthesis";
-  }
-}
-
-// Read until the next period. This fill sup `sub_tokens` with all
+// Read until the next period. This fills up `sub_tokens` with all
 // read tokens (excluding any whitespace found along the way).
 // Returns `false` if a period is not found.
 bool ParserImpl::ReadStatement(void) {
   Token tok;
 
+  std::vector<Token> opening_parens;
   scope_range = DisplayRange();
 
   while (ReadNextToken(tok)) {
@@ -367,21 +316,54 @@ bool ParserImpl::ReadStatement(void) {
         scope_range = SubTokenRange();
         UnreadToken();
         return false;
-
       case Lexeme::kPuncPeriod:
         sub_tokens.push_back(tok);
-        scope_range = SubTokenRange();
-        return true;
-
+        if (opening_parens.empty()) {
+          scope_range = SubTokenRange();
+          return true;
+        }
+        continue;
+      case Lexeme::kPuncOpenParen:
+        sub_tokens.push_back(tok);
+        opening_parens.push_back(tok);
+        continue;
+      case Lexeme::kPuncCloseParen:
+        sub_tokens.push_back(tok);
+        if (opening_parens.empty() ||
+            opening_parens.back().Lexeme() != Lexeme::kPuncOpenParen) {
+          context->error_log.Append(scope_range, tok.SpellingRange())
+              << "Unmatched closing parenthesis";
+        } else {
+          opening_parens.pop_back();
+        }
+        continue;
+      case Lexeme::kPuncOpenBrace:
+        sub_tokens.push_back(tok);
+        opening_parens.push_back(tok);
+        continue;
+      case Lexeme::kPuncCloseBrace:
+        sub_tokens.push_back(tok);
+        if (opening_parens.empty() ||
+            opening_parens.back().Lexeme() != Lexeme::kPuncOpenBrace) {
+          context->error_log.Append(scope_range, tok.SpellingRange())
+              << "Unmatched closing brace";
+        } else {
+          opening_parens.pop_back();
+        }
+        continue;
       case Lexeme::kWhitespace:
+        continue;
       case Lexeme::kComment: continue;
-
       default: sub_tokens.push_back(tok); continue;
     }
   }
 
-  // We should have reached an EOF.
-  assert(false);
+  scope_range = SubTokenRange();
+
+  for (auto opening_paren : opening_parens) {
+    context->error_log.Append(scope_range, opening_paren.SpellingRange())
+        << "Unmatched opening parenthesis/brace";
+  }
   return false;
 }
 
@@ -435,6 +417,10 @@ void ParserImpl::ParseLocalExport(
   std::unique_ptr<Node<ParsedParameter>> param;
   std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
+  // Interpretation of this local/export as a clause.
+  std::vector<Token> clause_toks;
+  bool has_embedded_clauses = false;
+
   DisplayPosition next_pos;
   Token name;
 
@@ -455,6 +441,7 @@ void ParserImpl::ParseLocalExport(
         if (Lexeme::kIdentifierAtom == lexeme) {
           name = tok;
           state = 1;
+          clause_toks.push_back(tok);
           continue;
 
         } else {
@@ -467,6 +454,7 @@ void ParserImpl::ParseLocalExport(
       case 1:
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
+          clause_toks.push_back(tok);
           continue;
 
         } else {
@@ -522,6 +510,7 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 4:
+        clause_toks.push_back(param->name);
 
         // Add the parameter in.
         if (!params.empty()) {
@@ -540,10 +529,12 @@ void ParserImpl::ParseLocalExport(
         params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          clause_toks.push_back(tok);
           local.reset(
               AddDecl<NodeType>(module, kDeclKind, name, params.size()));
           if (!local) {
@@ -751,42 +742,95 @@ void ParserImpl::ParseLocalExport(
       case 8:
         if (Lexeme::kPragmaPerfInline == lexeme) {
           if (local->inline_attribute.IsValid()) {
+            // Found more than one @inline attributes
             context->error_log.Append(scope_range, tok_range)
                 << "Unexpected second '@inline' pragma on " << introducer_tok
                 << " '" << local->name << "'";
-            state = 9;  // Ignore further errors, but add the local in.
+            state = 10;  // Ignore further errors, but add the local in.
             continue;
 
           } else {
+            // Found an @inline attribute
             local->inline_attribute = tok;
             state = 8;
             continue;
           }
+        } else if (Lexeme::kPuncPeriod == lexeme) {
+          local->last_tok = tok;
+          state = 9;
+          continue;
+
+        } else if (Lexeme::kPuncColon == lexeme) {
+          has_embedded_clauses = true;
+          clause_toks.push_back(tok);
+          for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
+            clause_toks.push_back(tok);
+          }
+
+          // Look at the last token.
+          if (Lexeme::kPuncPeriod == clause_toks.back().Lexeme()) {
+            local->last_tok = clause_toks.back();
+            state = 9;
+            continue;
+
+          } else {
+            context->error_log.Append(scope_range,
+                                      clause_toks.back().NextPosition())
+                << "Declaration of '" << local->name
+                << "' containing an embedded clause does not end with a period";
+            state = 10;
+            continue;
+          }
+
         } else {
           DisplayRange err_range(tok.Position(),
                                  sub_tokens.back().NextPosition());
           context->error_log.Append(scope_range, err_range)
-              << "Unexpected tokens following declaration of the '"
-              << local->name << "' local";
-          state = 9;  // Ignore further errors, but add the local in.
+              << "Unexpected tokens before the terminating period in the"
+              << " declaration of the '" << local->name << "' "
+              << introducer_tok;
+          state = 10;
           continue;
         }
 
-      case 9: continue;
+      case 9: {
+        DisplayRange err_range(tok.Position(),
+                               sub_tokens.back().NextPosition());
+        context->error_log.Append(scope_range, err_range)
+            << "Unexpected tokens following declaration of the '"
+            << local->name << "' " << introducer_tok;
+        state = 10;  // Ignore further errors, but add the local in.
+        continue;
+      }
+
+      case 10: continue;
+
     }
   }
 
-  if (state < 8) {
+  if (state != 9) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete " << introducer_tok
-        << " declaration; the declaration must be "
-        << "placed entirely on one line";
+        << " declaration; the declaration must end "
+        << "with a period";
     RemoveDecl<NodeType>(std::move(local));
 
   // Add the local to the module.
   } else {
+    const auto decl_for_clause = local.get();
     local->has_mutable_parameter = has_mutable_parameter;
     FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
+
+    // If we parsed a `:` after the head of the `#local` or `#export` then
+    // go parse the attached bodies recursively.
+    if (has_embedded_clauses) {
+      sub_tokens.swap(clause_toks);
+      const auto prev_next_sub_tok_index = next_sub_tok_index;
+      next_sub_tok_index = 0;
+      ParseClause(module, Token(), decl_for_clause);
+      next_sub_tok_index = prev_next_sub_tok_index;
+      sub_tokens.swap(clause_toks);
+    }
   }
 }
 
@@ -1013,7 +1057,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
     switch (tok.Lexeme()) {
       case Lexeme::kHashFunctorDecl:
-        ReadLine();
+        ReadStatement();
         ParseFunctor(module);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1021,7 +1065,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         break;
 
       case Lexeme::kHashMessageDecl:
-        ReadLine();
+        ReadStatement();
         ParseMessage(module);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1029,7 +1073,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         break;
 
       case Lexeme::kHashQueryDecl:
-        ReadLine();
+        ReadStatement();
         ParseQuery(module);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1037,7 +1081,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         break;
 
       case Lexeme::kHashExportDecl:
-        ReadLine();
+        ReadStatement();
         ParseLocalExport<ParsedExport, DeclarationKind::kExport,
                          Lexeme::kHashExportDecl>(module, module->exports);
         if (first_non_import.IsInvalid()) {
@@ -1046,7 +1090,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         break;
 
       case Lexeme::kHashLocalDecl:
-        ReadLine();
+        ReadStatement();
         ParseLocalExport<ParsedLocal, DeclarationKind::kLocal,
                          Lexeme::kHashLocalDecl>(module, module->locals);
         if (first_non_import.IsInvalid()) {
@@ -1055,7 +1099,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         break;
 
       case Lexeme::kHashForeignTypeDecl:
-        ReadLine();
+        ReadStatement();
         ParseForeignTypeDecl(module);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1063,7 +1107,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         break;
 
       case Lexeme::kHashForeignConstantDecl:
-        ReadLine();
+        ReadStatement();
         ParseForeignConstantDecl(module);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1072,7 +1116,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       // Import another module, e.g. `#import "foo/bar"`.
       case Lexeme::kHashImportModuleStmt:
-        ReadLine();
+        ReadStatement();
         if (first_non_import.IsValid()) {
           auto err = context->error_log.Append(SubTokenRange());
           err << "Cannot have import following a non-import "
@@ -1097,7 +1141,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       //    ```
       case Lexeme::kHashInlinePrologueStmt:
       case Lexeme::kHashInlineEpilogueStmt:
-        ReadLine();
+        ReadStatement();
         ParseInlineCode(module);
         continue;
 
@@ -1153,7 +1197,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       // Error, an unexpected top-level token.
       default: {
-        ReadLine();
+        ReadStatement();
         context->error_log.Append(scope_range, tok.SpellingRange())
             << "Unexpected top-level token; expected either a "
             << "clause definition or a declaration";

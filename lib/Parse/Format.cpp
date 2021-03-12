@@ -115,6 +115,7 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " @inline";
   }
+  os << ".";
   return os;
 }
 
@@ -226,7 +227,7 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
       break;
   }
 
-  os << code << "\n```";
+  os << code << "\n```.";
   return os;
 }
 
@@ -234,7 +235,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 
   // Forward declaration.
   if (!type.IsBuiltIn()) {
-    os << "#foreign " << type.Name();
+    os << "#foreign " << type.Name() << '.';
   }
 
   // Actual definitions, if any.
@@ -270,13 +271,13 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
         os << " @transparent";
       }
+      os << '.';
     }
 
     for (auto foreign_const : type.Constants(lang)) {
       os << '\n' << foreign_const;
     }
   }
-
   return os;
 }
 
@@ -294,6 +295,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
   }
 
   os << constant.Constructor() << "```";
+  os << ".";
   return os;
 }
 
