@@ -17,7 +17,7 @@ namespace hyde {
 Node<ProgramOperationRegion>::~Node(void) {}
 Node<ProgramCallRegion>::~Node(void) {}
 Node<ProgramReturnRegion>::~Node(void) {}
-Node<ProgramExistenceAssertionRegion>::~Node(void) {}
+Node<ProgramTestAndSetRegion>::~Node(void) {}
 Node<ProgramGenerateRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
 Node<ProgramPublishRegion>::~Node(void) {}
@@ -125,8 +125,8 @@ Node<ProgramOperationRegion>::AsTableScan(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramExistenceAssertionRegion> *
-Node<ProgramOperationRegion>::AsExistenceAssertion(void) noexcept {
+Node<ProgramTestAndSetRegion> *
+Node<ProgramOperationRegion>::AsTestAndSet(void) noexcept {
   return nullptr;
 }
 
@@ -485,9 +485,9 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
   return true;
 }
 
-uint64_t Node<ProgramExistenceAssertionRegion>::Hash(uint32_t depth) const {
+uint64_t Node<ProgramTestAndSetRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  for (auto var : cond_vars) {
+  for (auto var : used_vars) {
     hash ^= RotateRight64(hash, 13) *
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
@@ -502,11 +502,11 @@ uint64_t Node<ProgramExistenceAssertionRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramExistenceAssertionRegion>::IsNoOp(void) const noexcept {
-  return cond_vars.Empty();
+bool Node<ProgramTestAndSetRegion>::IsNoOp(void) const noexcept {
+  return used_vars.Empty();
 }
 
-bool Node<ProgramExistenceAssertionRegion>::Equals(
+bool Node<ProgramTestAndSetRegion>::Equals(
     EqualitySet &eq, Node<ProgramRegion> *that_,
     uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -515,16 +515,16 @@ bool Node<ProgramExistenceAssertionRegion>::Equals(
     return false;
   }
 
-  const auto num_conds = cond_vars.Size();
-  const auto that = that_op->AsExistenceAssertion();
-  if (!that || num_conds != that->cond_vars.Size()) {
+  const auto num_conds = used_vars.Size();
+  const auto that = that_op->AsTestAndSet();
+  if (!that || num_conds != that->used_vars.Size()) {
     FAILED_EQ(that_);
     return false;
   }
 
   // NOTE(pag): Condition variables are global, so we do equality checks.
   for (auto i = 0u; i < num_conds; ++i) {
-    if (cond_vars[i] != that->cond_vars[i]) {
+    if (used_vars[i] != that->used_vars[i]) {
       FAILED_EQ(that_);
       return false;
     }
@@ -533,16 +533,16 @@ bool Node<ProgramExistenceAssertionRegion>::Equals(
   return true;
 }
 
-const bool Node<ProgramExistenceAssertionRegion>::MergeEqual(
+const bool Node<ProgramTestAndSetRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
   NOTE(
-      "TODO(ekilmer): Unimplemented merging of ProgramExistenceAssertionRegion");
+      "TODO(ekilmer): Unimplemented merging of TestAndSetRegion");
   assert(false);
   return false;
 }
 
-Node<ProgramExistenceAssertionRegion> *
-Node<ProgramExistenceAssertionRegion>::AsExistenceAssertion(void) noexcept {
+Node<ProgramTestAndSetRegion> *
+Node<ProgramTestAndSetRegion>::AsTestAndSet(void) noexcept {
   return this;
 }
 

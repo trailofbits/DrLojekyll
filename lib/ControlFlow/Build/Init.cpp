@@ -21,10 +21,10 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
 
   // Test that we haven't yet done an initialization.
   const auto test_and_set = impl->operation_regions.CreateDerived<ASSERT>(
-      seq, ProgramOperation::kIncrementAllAndTest);
+      seq, ProgramOperation::kTestAndAdd);
   seq->regions.AddUse(test_and_set);
 
-  test_and_set->cond_vars.AddUse(uncond_inserts_var);
+  test_and_set->used_vars.AddUse(uncond_inserts_var);
 
   const auto cond_par = impl->parallel_regions.Create(test_and_set);
   test_and_set->body.Emplace(test_and_set, cond_par);

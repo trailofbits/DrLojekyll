@@ -359,12 +359,8 @@ enum class ProgramOperation {
 
   // Used to test reference count variables associated with `QueryCondition`
   // nodes in the data flow.
-  kTestAllNonZero,
-  kTestAllZero,
-  kIncrementAll,
-  kIncrementAllAndTest,
-  kDecrementAll,
-  kDecrementAllAndTest,
+  kTestAndAdd,
+  kTestAndSub,
 
   // Call another procedure.
   kCallProcedure,
@@ -395,8 +391,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
   virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
-  virtual Node<ProgramExistenceAssertionRegion> *
-  AsExistenceAssertion(void) noexcept;
+  virtual Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
@@ -813,14 +808,14 @@ using PUBLISH = Node<ProgramPublishRegion>;
 
 // Represents a positive or negative existence check.
 template <>
-class Node<ProgramExistenceAssertionRegion> final
+class Node<ProgramTestAndSetRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
   inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
-        cond_vars(this) {}
+        used_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -835,14 +830,14 @@ class Node<ProgramExistenceAssertionRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
-  Node<ProgramExistenceAssertionRegion> *
-  AsExistenceAssertion(void) noexcept override;
+  Node<ProgramTestAndSetRegion> *
+  AsTestAndSet(void) noexcept override;
 
   // Variables associated with these existence checks.
-  UseList<VAR> cond_vars;
+  UseList<VAR> used_vars;
 };
 
-using ASSERT = Node<ProgramExistenceAssertionRegion>;
+using ASSERT = Node<ProgramTestAndSetRegion>;
 
 // An equi-join between two or more tables.
 template <>

@@ -59,7 +59,7 @@ class DataVector;
 class Program;
 class ProgramCallRegion;
 class ProgramReturnRegion;
-class ProgramExistenceAssertionRegion;
+class ProgramTestAndSetRegion;
 class ProgramGenerateRegion;
 class ProgramInductionRegion;
 class ProgramLetBindingRegion;
@@ -89,7 +89,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
 
   ProgramRegion(const ProgramCallRegion &);
   ProgramRegion(const ProgramReturnRegion &);
-  ProgramRegion(const ProgramExistenceAssertionRegion &);
+  ProgramRegion(const ProgramTestAndSetRegion &);
   ProgramRegion(const ProgramGenerateRegion &);
   ProgramRegion(const ProgramInductionRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
@@ -112,7 +112,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
 
   bool IsCall(void) const noexcept;
   bool IsReturn(void) const noexcept;
-  bool IsExistenceAssertion(void) const noexcept;
+  bool IsTestAndSet(void) const noexcept;
   bool IsGenerate(void) const noexcept;
   bool IsInduction(void) const noexcept;
   bool IsVectorLoop(void) const noexcept;
@@ -136,7 +136,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  private:
   friend class ProgramCallRegion;
   friend class ProgramReturnRegion;
-  friend class ProgramExistenceAssertionRegion;
+  friend class ProgramTestAndSetRegion;
   friend class ProgramGenerateRegion;
   friend class ProgramInductionRegion;
   friend class ProgramLetBindingRegion;
@@ -338,32 +338,27 @@ class DataVector : public program::ProgramNode<DataVector> {
   using program::ProgramNode<DataVector>::ProgramNode;
 };
 
-// Increment or decrement a reference counter, asserting that some set of tuples
-// exists or does not exist.
-//
-// This is related to a there-exists clause, and the assertion here is to say
-// "something definitely exits" (i.e. increment), or "something may no longer
-// exist" (i.e. decrement).
-class ProgramExistenceAssertionRegion
-    : public program::ProgramNode<ProgramExistenceAssertionRegion> {
+// Perform a test-and-set like operation. In practice, this is used to operate
+// one reference counts, or counters that summarize a group of reference counts.
+class ProgramTestAndSetRegion
+    : public program::ProgramNode<ProgramTestAndSetRegion> {
  public:
-  static ProgramExistenceAssertionRegion From(ProgramRegion) noexcept;
+  static ProgramTestAndSetRegion From(ProgramRegion) noexcept;
 
-  bool IsIncrement(void) const noexcept;
-  bool IsDecrement(void) const noexcept;
+  bool IsAdd(void) const noexcept;
+  bool IsSubtract(void) const noexcept;
 
   // List of reference count variables that are mutated.
-  UsedNodeRange<DataVariable> ReferenceCounts(void) const;
+  UsedNodeRange<DataVariable> Operands(void) const;
 
-  // Return the body which is conditionally executed if all reference counts
-  // just went from `0` to `1` (in the increment case) or `1` to `0` in the
-  // decrement case.
+  // Return the body which is conditionally executed if the condition of this
+  // operation is satisfied.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramExistenceAssertionRegion>::ProgramNode;
+  using program::ProgramNode<ProgramTestAndSetRegion>::ProgramNode;
 };
 
 // Apply a functor to one or more inputs, yield zero or more outputs. In the
@@ -978,7 +973,7 @@ class ProgramVisitor {
   virtual void Visit(DataVector val);
   virtual void Visit(ProgramCallRegion val);
   virtual void Visit(ProgramReturnRegion val);
-  virtual void Visit(ProgramExistenceAssertionRegion val);
+  virtual void Visit(ProgramTestAndSetRegion val);
   virtual void Visit(ProgramGenerateRegion val);
   virtual void Visit(ProgramInductionRegion val);
   virtual void Visit(ProgramLetBindingRegion val);

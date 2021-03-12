@@ -222,18 +222,27 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os,
-                         ProgramExistenceAssertionRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
   os << os.Indent();
+
+  const auto ops = region.Operands();
+  if (region.IsAdd()) {
+    os << "(" << ops[0] << " += " << ops[1] << ") == " << ops[2];
+
+  } else if (region.IsSubtract()) {
+    os << "(" << ops[0] << " -= " << ops[1] << ") == " << ops[2];
+
+  }
+
   if (auto maybe_body = region.Body(); maybe_body) {
     auto end = " result is 1\n";
     auto sep = "if increment ";
-    if (region.IsDecrement()) {
+    if (region.IsSubtract()) {
       sep = "if decrement ";
       end = " result is 0\n";
     }
 
-    for (auto var : region.ReferenceCounts()) {
+    for (auto var : region.Operands()) {
       os << sep << var;
       sep = ", ";
     }
@@ -245,11 +254,11 @@ OutputStream &operator<<(OutputStream &os,
 
   } else {
     auto sep = "increment ";
-    if (region.IsDecrement()) {
+    if (region.IsSubtract()) {
       sep = "decrement ";
     }
 
-    for (auto var : region.ReferenceCounts()) {
+    for (auto var : region.Operands()) {
       os << sep << var;
       sep = ", ";
     }
@@ -647,7 +656,7 @@ class FormatDispatcher final : public ProgramVisitor {
 
   MAKE_VISITOR(ProgramCallRegion)
   MAKE_VISITOR(ProgramReturnRegion)
-  MAKE_VISITOR(ProgramExistenceAssertionRegion)
+  MAKE_VISITOR(ProgramTestAndSetRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
