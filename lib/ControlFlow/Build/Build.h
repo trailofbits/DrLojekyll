@@ -688,7 +688,9 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
     // condition variable.
     const auto set = impl->operation_regions.CreateDerived<ASSERT>(
         seq, ProgramOperation::kTestAndAdd);
-    set->used_vars.AddUse(ConditionVariable(impl, *set_cond));
+    set->accumulator.Emplace(set, ConditionVariable(impl, *set_cond));
+    set->displacement.Emplace(set, impl->one);
+    set->comparator.Emplace(set, impl->one);
     set->ExecuteAfter(impl, seq);
 
     // Call the initialization procedure. The initialization procedure is

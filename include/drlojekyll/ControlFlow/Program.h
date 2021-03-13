@@ -348,8 +348,16 @@ class ProgramTestAndSetRegion
   bool IsAdd(void) const noexcept;
   bool IsSubtract(void) const noexcept;
 
-  // List of reference count variables that are mutated.
-  UsedNodeRange<DataVariable> Operands(void) const;
+  // The source/destination variable. This is `A` in `(A += D) == C`.
+  DataVariable Accumulator(void) const;
+
+  // The amount by which the accumulator is displacement. This is `D` in
+  // `(A += D) == C`.
+  DataVariable Displacement(void) const;
+
+  // The value which must match the accumulated result for `Body` to execute.
+  // This is `C` in `(A += D) == C`.
+  DataVariable Comparator(void) const;
 
   // Return the body which is conditionally executed if the condition of this
   // operation is satisfied.
@@ -683,6 +691,10 @@ class ProgramTableScanRegion
 
   // These are the output columns associated with the table scan. These
   // do NOT include any indexed columns.
+  //
+  // NOTE(pag): These will be ordered, such that the first selected column
+  //            is also the earlier appearing column of all selected columns
+  //            within the table.
   UsedNodeRange<DataColumn> SelectedColumns(void) const;
 
   // The variables being provided for each of the `IndexedColumns()`, which are

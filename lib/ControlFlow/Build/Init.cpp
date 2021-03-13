@@ -24,7 +24,10 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
       seq, ProgramOperation::kTestAndAdd);
   seq->regions.AddUse(test_and_set);
 
-  test_and_set->used_vars.AddUse(uncond_inserts_var);
+  // `(cond += 1) == 1`.
+  test_and_set->accumulator.Emplace(test_and_set, uncond_inserts_var);
+  test_and_set->displacement.Emplace(test_and_set, impl->one);
+  test_and_set->comparator.Emplace(test_and_set, impl->one);
 
   const auto cond_par = impl->parallel_regions.Create(test_and_set);
   test_and_set->body.Emplace(test_and_set, cond_par);

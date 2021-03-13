@@ -89,7 +89,9 @@ ProgramImpl::~ProgramImpl(void) {
       view_scan->table.ClearWithoutErasure();
 
     } else if (auto exists_assert = op->AsTestAndSet(); exists_assert) {
-      exists_assert->used_vars.ClearWithoutErasure();
+      exists_assert->accumulator.ClearWithoutErasure();
+      exists_assert->displacement.ClearWithoutErasure();
+      exists_assert->comparator.ClearWithoutErasure();
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
@@ -230,6 +232,23 @@ bool ProgramTestAndSetRegion::IsSubtract(void) const noexcept {
   return impl->op == ProgramOperation::kTestAndSub;
 }
 
+// The source/destination variable. This is `A` in `(A += D) == C`.
+DataVariable ProgramTestAndSetRegion::Accumulator(void) const {
+  return DataVariable(impl->accumulator.get());
+}
+
+// The amount by which the accumulator is displacement. This is `D` in
+// `(A += D) == C`.
+DataVariable ProgramTestAndSetRegion::Displacement(void) const {
+  return DataVariable(impl->displacement.get());
+}
+
+// The value which must match the accumulated result for `Body` to execute.
+// This is `C` in `(A += D) == C`.
+DataVariable ProgramTestAndSetRegion::Comparator(void) const {
+  return DataVariable(impl->comparator.get());
+}
+
 #define OPTIONAL_BODY(method_name, name, field) \
   std::optional<ProgramRegion> name::method_name(void) const noexcept { \
     if (impl->field) { \
@@ -310,7 +329,6 @@ DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_
 USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
 USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
-USED_RANGE(ProgramTestAndSetRegion, Operands, DataVariable, used_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)

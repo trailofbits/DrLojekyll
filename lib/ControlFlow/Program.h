@@ -814,8 +814,7 @@ class Node<ProgramTestAndSetRegion> final
   virtual ~Node(void);
 
   inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
-      : Node<ProgramOperationRegion>(parent_, op_),
-        used_vars(this) {}
+      : Node<ProgramOperationRegion>(parent_, op_) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -833,8 +832,10 @@ class Node<ProgramTestAndSetRegion> final
   Node<ProgramTestAndSetRegion> *
   AsTestAndSet(void) noexcept override;
 
-  // Variables associated with these existence checks.
-  UseList<VAR> used_vars;
+  // The variables are used as `(src_dest OP= update_val) == comapre_val`.
+  UseRef<VAR> accumulator;
+  UseRef<VAR> displacement;
+  UseRef<VAR> comparator;
 };
 
 using ASSERT = Node<ProgramTestAndSetRegion>;

@@ -546,7 +546,6 @@ static bool OptimizeImpl(PROC *proc) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
-
 #ifndef NDEBUG
   for (auto par : parallel_regions) {
     assert(par->parent != nullptr);

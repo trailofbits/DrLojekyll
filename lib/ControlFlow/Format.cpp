@@ -225,42 +225,27 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
   os << os.Indent();
 
-  const auto ops = region.Operands();
-  if (region.IsAdd()) {
-    os << "(" << ops[0] << " += " << ops[1] << ") == " << ops[2];
-
-  } else if (region.IsSubtract()) {
-    os << "(" << ops[0] << " -= " << ops[1] << ") == " << ops[2];
-
-  }
+  const auto acc = region.Accumulator();
+  const auto disp = region.Displacement();
+  const auto cmp = region.Comparator();
 
   if (auto maybe_body = region.Body(); maybe_body) {
-    auto end = " result is 1\n";
-    auto sep = "if increment ";
-    if (region.IsSubtract()) {
-      sep = "if decrement ";
-      end = " result is 0\n";
-    }
+    if (region.IsAdd()) {
+      os << "if (" << acc << " += " << disp << ") == " << cmp << '\n';
 
-    for (auto var : region.Operands()) {
-      os << sep << var;
-      sep = ", ";
+    } else if (region.IsSubtract()) {
+      os << "if (" << acc << " -= " << disp << ") == " << cmp << '\n';
     }
-
-    os << end;
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
 
   } else {
-    auto sep = "increment ";
-    if (region.IsSubtract()) {
-      sep = "decrement ";
-    }
+    if (region.IsAdd()) {
+      os << acc << " += " << disp << '\n';
 
-    for (auto var : region.Operands()) {
-      os << sep << var;
-      sep = ", ";
+    } else if (region.IsSubtract()) {
+      os << acc << " -= " << disp << '\n';
     }
   }
 

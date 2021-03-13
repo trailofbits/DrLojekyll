@@ -487,11 +487,18 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
 
 uint64_t Node<ProgramTestAndSetRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  for (auto var : used_vars) {
-    hash ^= RotateRight64(hash, 13) *
-            ((static_cast<unsigned>(var->role) + 7u) *
-             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
-  }
+  hash ^= RotateRight64(hash, 13) *
+      ((static_cast<unsigned>(accumulator->role) + 7u) *
+       (static_cast<unsigned>(DataVariable(accumulator.get()).Type().Kind()) + 11u));
+
+  hash ^= RotateRight64(hash, 12) *
+      ((static_cast<unsigned>(displacement->role) + 7u) *
+       (static_cast<unsigned>(DataVariable(displacement.get()).Type().Kind()) + 12u));
+
+  hash ^= RotateRight64(hash, 11) *
+      ((static_cast<unsigned>(comparator->role) + 7u) *
+       (static_cast<unsigned>(DataVariable(comparator.get()).Type().Kind()) + 13u));
+
   if (depth == 0) {
     return hash;
   }
@@ -503,7 +510,7 @@ uint64_t Node<ProgramTestAndSetRegion>::Hash(uint32_t depth) const {
 }
 
 bool Node<ProgramTestAndSetRegion>::IsNoOp(void) const noexcept {
-  return used_vars.Empty();
+  return false;
 }
 
 bool Node<ProgramTestAndSetRegion>::Equals(
@@ -515,19 +522,29 @@ bool Node<ProgramTestAndSetRegion>::Equals(
     return false;
   }
 
-  const auto num_conds = used_vars.Size();
   const auto that = that_op->AsTestAndSet();
-  if (!that || num_conds != that->used_vars.Size()) {
+  if (!that) {
     FAILED_EQ(that_);
     return false;
   }
 
-  // NOTE(pag): Condition variables are global, so we do equality checks.
-  for (auto i = 0u; i < num_conds; ++i) {
-    if (used_vars[i] != that->used_vars[i]) {
-      FAILED_EQ(that_);
-      return false;
-    }
+  if (!eq.Contains(accumulator.get(), that->accumulator.get()) ||
+      !eq.Contains(displacement.get(), that->displacement.get()) ||
+      !eq.Contains(comparator.get(), that->comparator.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  if (!depth) {
+    return true;
+  }
+
+  if (!body != !that->body) {
+    return false;
+  }
+
+  if (body) {
+    return body->Equals(eq, that->body.get(), depth - 1u);
   }
 
   return true;
