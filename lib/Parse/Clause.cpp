@@ -298,7 +298,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         // Support something like `foo(1, ...) : ...`, converting it into
         // `foo(V, ...) : V=1, ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme) {
+                   Lexeme::kLiteralNumber == lexeme ||
+                   Lexeme::kLiteralTrue == lexeme ||
+                   Lexeme::kLiteralFalse == lexeme) {
           (void) CreateLiteralVariable(clause.get(), tok, true, false);
           state = 3;
           continue;
@@ -433,6 +435,52 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 6;
           continue;
 
+        // We're seeing a `false` token. It could be something like `false = V`
+        // or `..., false, ...` on its own that "disables" the clause.
+        } else if (Lexeme::kLiteralFalse == lexeme) {
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            UnreadSubToken();
+            switch (peek_tok.Lexeme()) {
+              case Lexeme::kPuncComma:
+              case Lexeme::kPuncColon:
+              case Lexeme::kPuncPeriod: {
+                break;
+              }
+              default: {
+                lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+                state = 6;
+                continue;
+              }
+            }
+          }
+
+          // No next token, or at the end of this clause body or predicate.
+          clause->disabled_by = tok.SpellingRange();
+          state = 8;
+          continue;
+
+        // We're seeing a `true` token. It could be something like `true = V`
+        // or `..., true, ...` on its own that gets ignored.
+        } else if (Lexeme::kLiteralFalse == lexeme) {
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            UnreadSubToken();
+            switch (peek_tok.Lexeme()) {
+              case Lexeme::kPuncComma:
+              case Lexeme::kPuncColon:
+              case Lexeme::kPuncPeriod: {
+                break;  // Ignore it.
+              }
+              default: {
+                lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+                state = 6;
+                continue;
+              }
+            }
+          }
+
+          // No next token, or at the end of this clause body or predicate.
+          state = 8;
+          continue;
 
         // The `1` in `1 = ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
@@ -442,7 +490,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 6;
           continue;
 
-        // The `!` in `!pred(...)`.
+        // The `!` in `!pred(...)` or in `!V` where `V` has Boolean type.
         } else if (Lexeme::kPuncExclaim == lexeme) {
           negation_pos = tok.Position();
           state = 11;
@@ -462,18 +510,70 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
-      // We've just seen a variable, literal, or constant; try to combine it
-      // with a binary operator.
       case 6:
+        // We've just seen a variable, literal, or constant; try to combine it
+        // with a binary operator.
         if (Lexeme::kPuncEqual == lexeme || Lexeme::kPuncNotEqual == lexeme ||
             Lexeme::kPuncLess == lexeme || Lexeme::kPuncGreater == lexeme) {
           compare_op = tok;
           state = 7;
           continue;
 
-        // TODO(pag): Add support for a variable on its own, in the case of
-        //            Boolean-typed variables, so that we can then use the
-        //            boolean to continue the clause or not.
+        // We've just seen a variable, and now we see a comma, so we interpret
+        // it as "variable is true."
+        } else if (Lexeme::kPuncComma == lexeme ||
+                   Lexeme::kPuncPeriod == lexeme ||
+                   Lexeme::kPuncColon == lexeme) {
+          assert(lhs);
+
+          // Likely a constant/literal; we'll keep parsing anyway.
+          if (lhs->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected variable here but got '"
+                << lhs->name.SpellingRange() << "' instead";
+          }
+
+          const auto assign = new Node<ParsedAssignment>(lhs);
+          assign->rhs.literal = Token::Synthetic(Lexeme::kLiteralTrue,
+                                                 DisplayRange());
+          assign->rhs.assigned_to = lhs;
+          assign->rhs.data = "true";
+          assign->rhs.type = TypeLoc(TypeKind::kBoolean,
+                                     lhs->name.SpellingRange());
+
+          // Add to the clause's assignment list.
+          if (!clause->assignments.empty()) {
+            clause->assignments.back()->next = assign;
+          }
+          clause->assignments.emplace_back(assign);
+
+          // Add to the variable's assignment list. We support the list, but for
+          // these auto-created variables, there can be only one use.
+          lhs->context->assignment_uses.push_back(&(assign->lhs));
+
+          pred.reset();
+          if (Lexeme::kPuncComma == lexeme) {
+            state = 5;
+            continue;
+
+          } else if (Lexeme::kPuncPeriod == lexeme) {
+            clause->dot = tok;
+            state = 9;
+            continue;
+
+          } else if (Lexeme::kPuncColon == lexeme) {
+            // let the "dot" be the colon token
+            clause->dot = tok;
+            // there's another clause let's go accumulate the remaining tokens
+            state = 16;
+            multi_clause = true;
+            continue;
+
+          } else {
+            assert(false);
+            state = 9;
+            continue;
+          }
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -624,13 +724,50 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       // We're just chugging tokens at the end, ignore them.
       case 10: continue;
 
-      // We think we're parsing a negated predicate.
       case 11:
+        // We think we're parsing a negated predicate, i.e. `!pred(...)`.
         if (Lexeme::kIdentifierAtom == lexeme) {
           pred.reset(new Node<ParsedPredicate>(module, clause.get()));
           pred->name = tok;
           pred->negation_pos = negation_pos;
           state = 12;
+          continue;
+
+        // We think we're parsing a negated Boolean variable, e.g. `!V`;
+        // this gets treated as `V = false`.
+        } else if (Lexeme::kIdentifierVariable == lexeme) {
+          lhs = CreateVariable(clause.get(), tok, false, false);
+          const auto assign = new Node<ParsedAssignment>(lhs);
+          assign->rhs.literal = Token::Synthetic(Lexeme::kLiteralFalse,
+                                                 DisplayRange());
+          assign->rhs.assigned_to = lhs;
+          assign->rhs.data = "false";
+          assign->rhs.type = TypeLoc(
+              TypeKind::kBoolean,
+              DisplayRange(negation_pos, tok.NextPosition()));
+
+          // Add to the clause's assignment list.
+          if (!clause->assignments.empty()) {
+            clause->assignments.back()->next = assign;
+          }
+          clause->assignments.emplace_back(assign);
+
+          // Add to the variable's assignment list. We support the list, but for
+          // these auto-created variables, there can be only one use.
+          lhs->context->assignment_uses.push_back(&(assign->lhs));
+          state = 8;
+          continue;
+
+        // `!true`, i.e. `false`, this gets treated as `false`.
+        } else if (Lexeme::kLiteralTrue == lexeme) {
+          clause->disabled_by = DisplayRange(negation_pos, tok.NextPosition());
+          state = 8;
+          continue;
+
+        // `!false`, i.e. `true`, we ignore this, and we anticipate either a
+        // comma or a
+        } else if (Lexeme::kLiteralFalse == lexeme) {
+          state = 8;
           continue;
 
         } else {

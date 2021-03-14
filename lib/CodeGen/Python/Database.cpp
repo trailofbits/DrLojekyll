@@ -1800,6 +1800,10 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   os.PopIndent();
 
+  if (!num_free_params) {
+    os << os.Indent() << "return False\n";
+  }
+
   os.PopIndent();
   os << '\n';
 }

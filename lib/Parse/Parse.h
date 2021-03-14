@@ -330,6 +330,10 @@ class Node<ParsedClause> {
   // this particular clause.
   Token product;
 
+  // If there's a `false` or a `!true` in the body of the clause, then we mark
+  // this clause as being disabled by this token.
+  DisplayRange disabled_by;
+
   // Variables used in this clause.
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;

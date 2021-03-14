@@ -94,6 +94,9 @@ class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
   // Is this a string literal? This does not include code literals.
   bool IsString(void) const noexcept;
 
+  // Is this a Boolean literal, i.e. `true` or `false`.
+  bool IsBoolean(void) const noexcept;
+
   // What is the type of this literal? The returned `TypeLoc` refers to the
   // source of the type that we used to infer the type, based off of usage.
   TypeLoc Type(void) const noexcept;
@@ -411,6 +414,10 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
   // Should this clause be highlighted in the data flow representation?
   bool IsHighlighted(void) const noexcept;
+
+  // Returns `true` if this clause body is disabled. A disabled clause body
+  // is one that contains a free `false` or `!true` predicate.
+  bool IsDisabled(DisplayRange *disabled_by=nullptr) const noexcept;
 
   // Are cross-products permitted when building the data flow representation
   // for this clause?

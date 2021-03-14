@@ -254,9 +254,12 @@ decl: foreign_decl ;
 decl: constant_decl ;
 
 message_decl: "#message" atom "(" param_list_0 ")" "." ;
-export_decl: "#export" atom "(" param_list_1 ")" "." ;
-local_decl: "#local" atom "(" param_list_1 ")" maybe_inline "." ;
-query_decl: "#query" atom "(" param_list_3 ")" "." ;
+export_decl: "#export" atom "(" param_list_1 ")" finish_decl_or_start_clause ;
+local_decl: "#local" atom "(" param_list_1 ")" maybe_inline finish_decl_or_start_clause ;
+query_decl: "#query" atom "(" param_list_3 ")" finish_decl_or_start_clause;
+
+finish_decl_or_start_clause : "." ;
+finish_decl_or_start_clause : ":" conjunct_list "." ;
 
 constant_decl: "#constant" foreign_type_name code_data ".";
 
@@ -379,9 +382,14 @@ comparison: var_or_literal "!=" var_or_literal ;
 comparison: var_or_literal "<" var_or_literal ;
 comparison: var_or_literal ">" var_or_literal ;
 
-predicate: atom ;
-predicate: atom "(" arg_list ")" ;
-negation: "!" predicate ;
+predicate_tail: var ;
+predicate_tail: "true" ;
+predicate_tail: "false" ;
+predicate_tail: atom ;
+predicate_tail: atom "(" arg_list ")" ;
+
+predicate: predicate_tail ;
+predicate: "!" predicate_tail ;
 
 conjunct_list_tail: "," conjunct_list ;
 conjunct_list_tail: ;
@@ -395,6 +403,8 @@ literal: r"0[1-7][0-7]*"
 literal: r"0x[1-9a-fA-F][0-9a-fA-F]*"
 literal: r"[1-9][0-9]*[.][0-9]+"
 literal: <double quoted string literal>
+literal: "true" ;
+literal: "false" ;
 ```
 
 ### Positive Clauses

@@ -12,16 +12,54 @@ class StringPool::Impl {
   Impl(void) {
     pool.reserve(8192);
     pool.push_back('\0');
+
+    // Index `1` for `_` as an unnamed variable.
+    underscore_id = static_cast<unsigned>(pool.size());
+    assert(underscore_id == 1u);
     pool.push_back('_');
+    pool.push_back('\0');
+
+    true_id = static_cast<unsigned>(pool.size());
+    assert(true_id == 3u);
+    pool.push_back('t');
+    pool.push_back('r');
+    pool.push_back('u');
+    pool.push_back('e');
+    pool.push_back('\0');
+
+    false_id = static_cast<unsigned>(pool.size());
+    assert(false_id == 8u);
+    pool.push_back('f');
+    pool.push_back('a');
+    pool.push_back('l');
+    pool.push_back('s');
+    pool.push_back('e');
+    pool.push_back('\0');
   }
 
   std::string pool;
   std::vector<std::string> code_blocks;
+  unsigned underscore_id;
+  unsigned true_id;
+  unsigned false_id;
 };
 
 StringPool::~StringPool(void) {}
 
 StringPool::StringPool(void) : impl(std::make_shared<Impl>()) {}
+
+// Default IDs.
+unsigned StringPool::UnderscoreId(void) const {
+  return impl->underscore_id;
+}
+
+unsigned StringPool::LiteralTrueId(void) const {
+  return impl->true_id;
+}
+
+unsigned StringPool::LiteralFalseId(void) const {
+  return impl->false_id;
+}
 
 // Intern a code block into the pool, returning its ID.
 unsigned StringPool::InternCode(std::string_view code) const {

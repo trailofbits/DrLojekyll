@@ -54,22 +54,28 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(Node<ParsedClause> *clause,
 Node<ParsedVariable> *
 ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
                                   bool is_param, bool is_arg) {
-
-  auto lhs = CreateVariable(
+  const auto lhs = CreateVariable(
       clause,
       Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
       false, false);
 
-  auto assign = new Node<ParsedAssignment>(lhs);
+  const auto assign = new Node<ParsedAssignment>(lhs);
   assign->rhs.literal = tok;
 
+  const auto tok_lexeme = tok.Lexeme();
+
   // Infer the type of the assignment based off the constant.
-  if (Lexeme::kIdentifierConstant == tok.Lexeme()) {
+  if (Lexeme::kIdentifierConstant == tok_lexeme) {
     auto const_ptr = context->foreign_constants[tok.IdentifierId()];
     assert(const_ptr != nullptr);
     assert(const_ptr->parent != nullptr);
     assign->rhs.type = const_ptr->type;
     assign->rhs.foreign_type = const_ptr->parent;
+
+  // Boolean constants bring along their types as well.
+  } else if (Lexeme::kLiteralTrue == tok_lexeme ||
+             Lexeme::kLiteralFalse == tok_lexeme) {
+    assign->rhs.type = TypeLoc(TypeKind::kBoolean, tok.SpellingRange());
   }
 
   std::string_view data;
@@ -77,8 +83,10 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
     assert(!data.empty());
     assign->rhs.data = data;
   } else {
-    switch (tok.Lexeme()) {
+    switch (tok_lexeme) {
       case Lexeme::kLiteralNumber: assign->rhs.data = "0"; break;
+      case Lexeme::kLiteralTrue: assign->rhs.data = "true"; break;
+      case Lexeme::kLiteralFalse: assign->rhs.data = "false"; break;
       default: break;
     }
   }
@@ -95,7 +103,7 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
   lhs->context->assignment_uses.push_back(&(assign->lhs));
 
   // Now create the version of the variable that gets used.
-  auto var = new Node<ParsedVariable>;
+  const auto var = new Node<ParsedVariable>;
   if (is_param) {
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;

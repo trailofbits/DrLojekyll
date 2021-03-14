@@ -185,6 +185,12 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
     comma = ", ";
   }
 
+  // If there is something like `!true` or `false` in the clause body, then
+  // it gets marked as being disabled.
+  if (clause.clause.IsDisabled()) {
+    os << comma << "false";
+  }
+
   return os;
 }
 

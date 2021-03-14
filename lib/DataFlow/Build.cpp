@@ -1727,16 +1727,20 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   for (auto sub_module : ParsedModuleIterator(module)) {
     for (auto clause : sub_module.Clauses()) {
-      context.Reset();
-      if (!BuildClause(impl.get(), clause, context, log)) {
-        return std::nullopt;
+      if (!clause.IsDisabled()) {
+        context.Reset();
+        if (!BuildClause(impl.get(), clause, context, log)) {
+          return std::nullopt;
+        }
       }
     }
 
     for (auto clause : sub_module.DeletionClauses()) {
-      context.Reset();
-      if (!BuildClause(impl.get(), clause, context, log)) {
-        return std::nullopt;
+      if (!clause.IsDisabled()) {
+        context.Reset();
+        if (!BuildClause(impl.get(), clause, context, log)) {
+          return std::nullopt;
+        }
       }
     }
 

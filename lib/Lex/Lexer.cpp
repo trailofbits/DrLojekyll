@@ -647,6 +647,14 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           } else if (impl->data == "bool") {
             tentative_lexeme = Lexeme::kTypeBoolean;
             tentative_type_kind = TypeKind::kBoolean;
+
+          } else if (impl->data == "true") {
+            auto &ident = ret.As<lex::IdentifierToken>();
+            ident.Store<Lexeme>(Lexeme::kLiteralTrue);
+            ident.Store<lex::SpellingWidth>(4u);
+            ident.Store<lex::Id>(string_pool.LiteralTrueId());
+            ident.Store<TypeKind>(TypeKind::kBoolean);
+            return true;
           }
           break;
         case 5:
@@ -661,6 +669,13 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             tentative_lexeme = Lexeme::kTypeBytes;
             tentative_type_kind = TypeKind::kBytes;
 
+          } else if (impl->data == "false") {
+            auto &ident = ret.As<lex::IdentifierToken>();
+            ident.Store<Lexeme>(Lexeme::kLiteralFalse);
+            ident.Store<lex::SpellingWidth>(5u);
+            ident.Store<lex::Id>(string_pool.LiteralFalseId());
+            ident.Store<TypeKind>(TypeKind::kBoolean);
+            return true;
           }
           break;
         case 6:
@@ -678,9 +693,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
             } else if (impl->data == "#import") {
               tentative_lexeme = Lexeme::kHashImportModuleStmt;
-
             }
-
           } else if (impl->data == "summary") {
             tentative_lexeme = Lexeme::kKeywordSummary;
 
@@ -762,7 +775,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         // A normal unnamed variable.
         if (1u == impl->data.size()) {
           ident.Store<lex::SpellingWidth>(1u);  // Length of `_`.
-          ident.Store<lex::Id>(1u);  // See `DisplayManager::Impl::Impl`.
+          ident.Store<lex::Id>(string_pool.UnderscoreId());
 
         // A "named" unnamed variable, e.g. `_foo`. Re-uses of the same unnamed
         // variable, even within the same clause, are treated as distinct.

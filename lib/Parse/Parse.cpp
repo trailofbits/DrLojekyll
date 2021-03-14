@@ -340,6 +340,11 @@ bool ParsedLiteral::IsString(void) const noexcept {
   return impl->literal.Lexeme() == Lexeme::kLiteralString;
 }
 
+bool ParsedLiteral::IsBoolean(void) const noexcept {
+  return impl->literal.Lexeme() == Lexeme::kLiteralTrue ||
+         impl->literal.Lexeme() == Lexeme::kLiteralFalse;
+}
+
 TypeLoc ParsedLiteral::Type(void) const noexcept {
   return impl->type;
 }
@@ -894,6 +899,19 @@ DisplayRange ParsedClause::SpellingRange(void) const noexcept {
 // Should this clause be highlighted in the data flow representation?
 bool ParsedClause::IsHighlighted(void) const noexcept {
   return impl->highlight.IsValid();
+}
+
+// Returns `true` if this clause body is disabled. A disabled clause body
+// is one that contains a free `false` or `!true` predicate.
+bool ParsedClause::IsDisabled(DisplayRange *disabled_by) const noexcept {
+  if (impl->disabled_by.From().IsValid()) {
+    if (disabled_by) {
+      *disabled_by = impl->disabled_by;
+    }
+    return true;
+  } else {
+    return false;
+  }
 }
 
 // Are cross-products permitted when building the data flow representation
