@@ -230,6 +230,36 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, region, "ProgramVectorLoopRegion");
+    auto vec = region.Vector();
+    if (region.Usage() != VectorUsage::kInductionVector) {
+      os << os.Indent() << VectorIndex(os, vec) << " = 0;\n";
+    }
+    os << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
+       << Vector(os, vec) << ".size()) {\n";
+    os.PushIndent();
+
+    os << os.Indent() << "auto ";
+    const auto tuple_vars = region.TupleVariables();
+    if (tuple_vars.size() == 1u) {
+      os << Var(os, tuple_vars[0]);
+
+    } else {
+      auto sep = "[";
+      for (auto var : tuple_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      os << "]";
+    }
+    os << " = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
+
+    os << os.Indent() << VectorIndex(os, vec) << " += 1;\n";
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramVectorUniqueRegion region) override {
