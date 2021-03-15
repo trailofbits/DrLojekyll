@@ -19,6 +19,11 @@ namespace hyde {
 namespace cxx {
 namespace {
 
+static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
+  return os << "functors." << func.Name() << '_'
+            << ParsedDeclaration(func).BindingPattern();
+}
+
 static OutputStream &Table(OutputStream &os, const DataTable table) {
   return os << "table_" << table.Id();
 }
@@ -333,6 +338,130 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramGenerateRegion region) override {
     os << Comment(os, region, "ProgramGenerateRegion");
+
+    const auto functor = region.Functor();
+    if (!region.IsPositive()) {
+      assert(functor.Range() != FunctorRange::kOneToOne);
+      assert(functor.Range() != FunctorRange::kOneOrMore);
+      os << os.Indent() << "found = false;\n";
+    }
+
+    auto output_vars = region.OutputVariables();
+
+    auto call_functor = [&](void) {
+      Functor(os, functor) << "(";
+      auto sep = "";
+      for (auto in_var : region.InputVariables()) {
+        os << sep << Var(os, in_var);
+        sep = ", ";
+      }
+      os << ")";
+    };
+
+    auto do_body = [&](void) {
+      if (!region.IsPositive()) {
+        os << os.Indent() << "found = true\n";
+        os.PopIndent();
+        os << os.Indent() << "if (!found) {\n";
+        os.PushIndent();
+      }
+
+      if (auto body = region.Body(); body) {
+        body->Accept(*this);
+      } else {
+        os << os.Indent() << "{}";
+      }
+    };
+
+    switch (const auto range = functor.Range()) {
+
+      // These behave like iterators.
+      case FunctorRange::kOneOrMore:
+      case FunctorRange::kZeroOrMore: {
+        if (output_vars.size() == 1u) {
+          os << os.Indent() << "for (auto " << Var(os, output_vars[0]) << " : ";
+          call_functor();
+          os << ") {\n";
+          os.PushIndent();
+          do_body();
+          os.PopIndent();
+          os << os.Indent() << "}\n";
+
+        } else {
+          assert(!output_vars.empty());
+
+          os << os.Indent() << "for (auto tmp_" << region.Id() << " : ";
+          call_functor();
+          os << ") {\n";
+          os.PushIndent();
+          auto out_var_index = 0u;
+          for (auto out_var : output_vars) {
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+               << '[' << (out_var_index++) << "];\n";
+          }
+          do_body();
+          os.PopIndent();
+          os << os.Indent() << "}\n";
+        }
+
+        break;
+      }
+
+      // These behave like returns of tuples/values/optionals.
+      case FunctorRange::kOneToOne:
+      case FunctorRange::kZeroOrOne:
+
+        // Only takes bound inputs, acts as a filter functor.
+        if (output_vars.empty()) {
+          assert(functor.IsFilter());
+
+          os << os.Indent() << "if (";
+          call_functor();
+          os << ") {\n";
+          os.PushIndent();
+          do_body();
+          os.PopIndent();
+          os << os.Indent() << "}\n";
+
+        // Produces a single value. This returns an `Optional` value.
+        } else if (output_vars.size() == 1u) {
+          assert(!functor.IsFilter());
+
+          const auto out_var = output_vars[0];
+          os << os.Indent() << "auto tmp_" << region.Id() << " = ";
+          call_functor();
+          os << ";\n";
+          if (range == FunctorRange::kZeroOrOne) {
+            os << os.Indent() << "if (tmp_" << region.Id() << ") {:\n";
+            os.PushIndent();
+          }
+          os << os.Indent() << "auto " << Var(os, out_var) << " = *tmp_"
+             << region.Id() << ";\n";
+          do_body();
+          if (range == FunctorRange::kZeroOrOne) {
+            os.PopIndent();
+            os << os.Indent() << "}\n";
+          }
+
+        // Produces a tuple of values.
+        } else {
+          assert(!functor.IsFilter());
+
+          os << os.Indent() << "auto tmp_" << region.Id() << " = ";
+          call_functor();
+          os << ";\n" << os.Indent() << "if (tmp_" << region.Id() << ") {\n";
+          os.PushIndent();
+          auto out_var_index = 0u;
+          for (auto out_var : output_vars) {
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+               << ".value()[" << (out_var_index++) << "];\n";
+          }
+          do_body();
+          os.PopIndent();
+          os << os.Indent() << "}\n";
+        }
+        break;
+    }
   }
 
   void Visit(ProgramInductionRegion region) override {
