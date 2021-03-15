@@ -423,6 +423,47 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramCheckStateRegion region) override {
     os << Comment(os, region, "ProgramCheckStateRegion");
+    const auto table = region.Table();
+    const auto vars = region.TupleVariables();
+    os << os.Indent() << "state = " << Table(os, table) << "(";
+    if (vars.size() == 1u) {
+      os << Var(os, vars[0]);
+    } else {
+      auto sep = "";
+      for (auto var : vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+    }
+    os << ") & " << kStateMask << ";\n";
+
+    auto sep = "if (";
+
+    if (auto absent_body = region.IfAbsent(); absent_body) {
+      os << os.Indent() << sep << "state == " << kStateAbsent << ") {\n";
+      os.PushIndent();
+      absent_body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+      sep = "else if (";
+    }
+
+    if (auto present_body = region.IfPresent(); present_body) {
+      os << os.Indent() << sep << "state == " << kStatePresent << ") {\n";
+      os.PushIndent();
+      present_body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+      sep = "else if (";
+    }
+
+    if (auto unknown_body = region.IfUnknown(); unknown_body) {
+      os << os.Indent() << sep << "state == " << kStateUnknown << ") {\n";
+      os.PushIndent();
+      unknown_body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    }
   }
 
   void Visit(ProgramTableJoinRegion region) override {
