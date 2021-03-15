@@ -172,6 +172,110 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "ProgramCallRegion");
+
+    auto param_index = 0u;
+    const auto called_proc = region.CalledProcedure();
+    const auto vec_params = called_proc.VectorParameters();
+    const auto var_params = called_proc.VariableParameters();
+
+    // Create the by-reference vector parameters, if any.
+    for (auto vec : region.VectorArguments()) {
+      const auto param = vec_params[param_index];
+      if (param.Kind() == VectorKind::kInputOutputParameter) {
+        os << os.Indent() << "auto &param_" << region.Id() << '_' << param_index
+           << " = " << Vector(os, vec) << ";\n";
+      }
+      ++param_index;
+    }
+
+    const auto num_vec_params = param_index;
+
+    // Create the by-reference variable parameters, if any.
+    for (auto var : region.VariableArguments()) {
+      const auto param = var_params[param_index - num_vec_params];
+      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
+        os << os.Indent() << "auto &param_" << region.Id() << '_' << param_index
+           << " = " << Var(os, var) << ";\n";
+      }
+      ++param_index;
+    }
+
+    os << os.Indent() << "ret = " << Procedure(os, called_proc) << "(";
+
+    auto sep = "";
+    param_index = 0u;
+
+    // Pass in the vector parameters, or the references to the vectors.
+    for (auto vec : region.VectorArguments()) {
+      const auto param = vec_params[param_index];
+      if (param.Kind() == VectorKind::kInputOutputParameter) {
+        os << sep << "param_" << region.Id() << '_' << param_index;
+      } else {
+        os << sep << Vector(os, vec);
+      }
+
+      sep = ", ";
+      ++param_index;
+    }
+
+    // Pass in the variable parameters, or the references to the variables.
+    for (auto var : region.VariableArguments()) {
+      const auto param = var_params[param_index - num_vec_params];
+      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
+        os << sep << "param_" << region.Id() << '_' << param_index;
+      } else {
+        os << sep << Var(os, var);
+      }
+      sep = ", ";
+      ++param_index;
+    }
+
+    os << ");\n";
+
+    param_index = 0u;
+
+    // Pull out the updated version of the referenced vectors.
+    for (auto vec : region.VectorArguments()) {
+      const auto param = vec_params[param_index];
+      if (param.Kind() == VectorKind::kInputOutputParameter) {
+        os << os.Indent() << Vector(os, vec) << " = param_" << region.Id()
+           << '_' << param_index << "[0];\n";
+      }
+      ++param_index;
+    }
+
+    // Pull out the updated version of the referenced variables.
+    for (auto var : region.VariableArguments()) {
+      const auto param = var_params[param_index - num_vec_params];
+      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
+        os << os.Indent() << Var(os, var) << " = param_" << region.Id() << '_'
+           << param_index << "[0];\n";
+      }
+      ++param_index;
+    }
+
+    // Check the return value.
+    bool is_cond = true;
+    if (region.ExecuteBodyIfReturnIsTrue()) {
+      os << os.Indent() << "if (ret) {\n";
+    } else if (region.ExecuteBodyIfReturnIsFalse()) {
+      os << os.Indent() << "if (!ret) {\n";
+    } else {
+      is_cond = false;
+    }
+
+    if (is_cond) {
+      os.PushIndent();
+      if (auto body = region.Body(); body) {
+        body->Accept(*this);
+      } else {
+        os << os.Indent() << "{}\n";
+      }
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    } else {
+      os << '\n';
+    }
   }
 
   void Visit(ProgramReturnRegion region) override {
