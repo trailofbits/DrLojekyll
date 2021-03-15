@@ -198,6 +198,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramParallelRegion");
   }
 
+  // Should never be reached; defined below.
   void Visit(ProgramProcedure region) override {
     assert(false);
   }
