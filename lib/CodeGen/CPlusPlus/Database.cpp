@@ -226,6 +226,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorClearRegion region) override {
     os << Comment(os, region, "ProgramVectorClearRegion");
+
+    os << os.Indent() << Vector(os, region.Vector()) << ".clear();\n";
+    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
