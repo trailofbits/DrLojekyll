@@ -231,6 +231,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
   }
 
+  void Visit(ProgramVectorSwapRegion region) override {
+    os << Comment(os, region, "Program VectorSwap Region");
+
+    os << os.Indent() << Vector(os, region.LHS()) << ".swap("
+       << Vector(os, region.RHS()) << ");\n";
+  }
+
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, region, "ProgramVectorLoopRegion");
     auto vec = region.Vector();
