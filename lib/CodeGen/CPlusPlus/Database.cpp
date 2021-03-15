@@ -345,6 +345,22 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramParallelRegion region) override {
     os << Comment(os, region, "ProgramParallelRegion");
+
+    auto any = false;
+    for (auto sub_region : region.Regions()) {
+
+      // Create new scope since there could be multiply defined variable names in the regions
+      os << os.Indent() << "{\n";
+      os.PushIndent();
+      sub_region.Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+      any = true;
+    }
+
+    if (!any) {
+      os << os.Indent() << "{}\n";
+    }
   }
 
   // Should never be reached; defined below.
