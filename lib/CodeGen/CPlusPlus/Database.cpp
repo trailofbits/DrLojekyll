@@ -290,8 +290,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
     os << tuple_suffix << ";\n"
-       << os.Indent() << "prev_state = " << Table(os, region.Table()) << "["
-       << tuple_var << "];\n"
+       << os.Indent() << "prev_state = " << Table(os, region.Table())
+       << ".GetState(" << tuple_var << ");\n"
        << os.Indent() << "state = prev_state & " << kStateMask << ";\n"
        << os.Indent() << "present_bit = prev_state & " << kPresentBit << ";\n";
 
@@ -312,21 +312,21 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         break;
     }
     os.PushIndent();
-    os << os.Indent() << Table(os, region.Table()) << "[" << tuple_var
-       << "] = ";
+    os << os.Indent() << Table(os, region.Table()) << ".SetState(" << tuple_var
+       << ", ";
 
     switch (region.ToState()) {
       case TupleState::kAbsent:
-        os << kStateAbsent << " | " << kPresentBit << ";\n";
+        os << kStateAbsent << " | " << kPresentBit << ");\n";
         break;
       case TupleState::kPresent:
-        os << kStatePresent << " | " << kPresentBit << ";\n";
+        os << kStatePresent << " | " << kPresentBit << ");\n";
         break;
       case TupleState::kUnknown:
-        os << kStateUnknown << " | " << kPresentBit << ";\n";
+        os << kStateUnknown << " | " << kPresentBit << ");\n";
         break;
       case TupleState::kAbsentOrUnknown:
-        os << kStateUnknown << " | " << kPresentBit << ";\n";
+        os << kStateUnknown << " | " << kPresentBit << ");\n";
         assert(false);  // Shouldn't be created.
         break;
     }
