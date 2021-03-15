@@ -497,6 +497,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramLetBindingRegion region) override {
     os << Comment(os, region, "ProgramLetBindingRegion");
+    auto i = 0u;
+    const auto used_vars = region.UsedVariables();
+    for (auto var : region.DefinedVariables()) {
+      os << os.Indent() << "auto " << Var(os, var) << " = "
+         << Var(os, used_vars[i++]) << ";\n";
+    }
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    }
   }
 
   void Visit(ProgramParallelRegion region) override {
