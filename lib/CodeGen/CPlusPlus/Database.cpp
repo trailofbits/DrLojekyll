@@ -88,8 +88,7 @@ static void DefineTable(OutputStream &os, ParsedModule module,
       assert(val_cols.empty());
 
       // Implement this index as an accessor that just uses the Table
-      os << "& " << TableIndex(os, index) << "() { return &" << Table(os, table)
-         << "; }\n";
+      os << "& " << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
     } else {
       os << " " << TableIndex(os, index) << ";\n";
     }
