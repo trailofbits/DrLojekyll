@@ -837,6 +837,172 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableJoinRegion region) override {
     os << Comment(os, region, "ProgramTableJoinRegion");
+
+    // Nested loop join
+    auto vec = region.PivotVector();
+    os << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
+       << Vector(os, vec) << ".size()) {\n";
+    os.PushIndent();
+
+    std::vector<std::string> var_names;
+    os << os.Indent() << "auto ";
+    auto out_pivot_size = region.OutputPivotVariables().size();
+    if (out_pivot_size > 1) {
+      os << "[";
+    }
+    auto sep = "";
+    for (auto var : region.OutputPivotVariables()) {
+      std::stringstream var_name;
+      (void) Var(var_name, var);
+      var_names.emplace_back(var_name.str());
+      os << sep << var_names.back();
+      sep = ", ";
+    }
+    if (out_pivot_size > 1) {
+      os << "]";
+    }
+    os << " = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
+
+    os << os.Indent() << VectorIndex(os, vec) << " += 1;\n";
+
+    auto tables = region.Tables();
+    for (auto i = 0u; i < tables.size(); ++i) {
+      const auto index = region.Index(i);
+      const auto index_keys = index.KeyColumns();
+      const auto index_vals = index.ValueColumns();
+      auto key_prefix = "std::make_tuple(";
+      auto key_suffix = ")";
+      if (index_keys.size() == 1u) {
+        key_prefix = "";
+        key_suffix = "";
+      }
+
+      // The index is a set of key column values/tuples.
+      if (index_vals.empty()) {
+
+        os << os.Indent() << "if (" << TableIndex(os, index) << ".KeyExists("
+           << key_prefix;
+
+        sep = "";
+        for (auto index_col : index_keys) {
+          auto j = 0u;
+          for (auto used_col : region.IndexedColumns(i)) {
+            if (used_col == index_col) {
+              os << sep << var_names[j];
+              sep = ", ";
+            }
+            ++j;
+          }
+        }
+
+        os << key_suffix << ")) {\n";
+
+        // We increase indentation here, and the corresponding `PopIndent()`
+        // only comes *after* visiting the `region.Body()`.
+        os.PushIndent();
+
+      // The index is a default dict mapping key columns to a list of value
+      // columns/tuples.
+      } else {
+
+        // We don't want to have to make a temporary copy of the current state
+        // of the index, so instead what we do is we capture a reference to the
+        // list of tuples in the index, and we also create an index variable
+        // that tracks which tuple we can next look at. This allows us to
+        // observe writes into the index as they happen.
+        os << os.Indent() << "int tuple_" << region.Id() << "_" << i
+           << "_index = 0;\n"
+           << os.Indent() << "auto tuple_" << region.Id() << "_" << i
+           << "_vec = " << TableIndex(os, index) << ".Get(" << key_prefix;
+
+        // This is a bit ugly, but basically: we want to index into the
+        // Python representation of this index, e.g. via `index_10[(a, b)]`,
+        // where `a` and `b` are pivot variables. However, the pivot vector
+        // might have the tuple entries in the order `(b, a)`. To easy matching
+        // between pivot variables and indexed columns, `region.IndexedColumns`
+        // exposes columns in the same order as the pivot variables, which as we
+        // see, might not match the order of the columns in the index. Thus we
+        // need to re-order our usage of variables so that they match the
+        // order expected by `index_10[...]`.
+        sep = "";
+        for (auto index_col : index_keys) {
+          auto j = 0u;
+          for (auto used_col : region.IndexedColumns(i)) {
+            if (used_col == index_col) {
+              os << sep << var_names[j];
+              sep = ", ";
+            }
+            ++j;
+          }
+        }
+
+        os << key_suffix << ");\n";
+
+        os << os.Indent() << "while (tuple_" << region.Id() << "_" << i
+           << "_index < tuple_" << region.Id() << "_" << i
+           << "_vec.size()) {\n";
+
+        // We increase indentation here, and the corresponding `PopIndent()`
+        // only comes *after* visiting the `region.Body()`.
+        os.PushIndent();
+
+        os << os.Indent() << "auto tuple_" << region.Id() << "_" << i << " = "
+           << "tuple_" << region.Id() << "_" << i << "_vec[tuple_"
+           << region.Id() << "_" << i << "_index];\n";
+
+        os << os.Indent() << "tuple_" << region.Id() << "_" << i
+           << "_index += 1;\n";
+      }
+
+      auto out_vars = region.OutputVariables(i);
+      if (!out_vars.empty()) {
+        auto select_cols = region.SelectedColumns(i);
+        assert(out_vars.size() == select_cols.size());
+
+        auto indexed_cols = region.IndexedColumns(i);
+        auto indexed_col_idx = 0u;
+        auto out_var_idx = 0u;
+        auto tuple_col_idx_offset = 0u;
+        for (auto var : out_vars) {
+          auto select_col_idx = select_cols[out_var_idx].Index();
+
+          // Need to loop and count indexed columns before this selected
+          // column and use as offset
+          while (indexed_col_idx < indexed_cols.size() &&
+                 select_col_idx > indexed_cols[indexed_col_idx].Index()) {
+            ++tuple_col_idx_offset;
+            ++indexed_col_idx;
+          }
+
+          os << os.Indent() << "auto " << Var(os, var) << " = tuple_"
+             << region.Id() << "_" << i;
+
+          if (1u < out_vars.size()) {
+            os << "[" << select_col_idx - tuple_col_idx_offset << "]";
+          }
+          os << ";\n";
+
+          ++out_var_idx;
+        }
+      }
+    }
+
+    if (auto body = region.Body(); body) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}\n";
+    }
+
+    // Outdent for each nested for loop over an index.
+    for (auto table : tables) {
+      (void) table;
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    }
+
+    // Output of the loop over the pivot vector.
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramTableProductRegion region) override {
