@@ -308,6 +308,27 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramExistenceAssertionRegion region) override {
     os << Comment(os, region, "ProgramExistenceAssertionRegion");
+    const auto vars = region.ReferenceCounts();
+    for (auto var : vars) {
+      if (region.IsIncrement()) {
+        os << os.Indent() << Var(os, var) << " += 1;\n";
+      } else {
+        os << os.Indent() << Var(os, var) << " -= 1;\n";
+      }
+    }
+
+    if (auto body = region.Body(); body) {
+      assert(vars.size() == 1u);
+      if (region.IsIncrement()) {
+        os << os.Indent() << "if (" << Var(os, vars[0]) << " == 1) {\n";
+      } else {
+        os << os.Indent() << "if (" << Var(os, vars[0]) << " == 0) {\n";
+      }
+      os.PushIndent();
+      body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    }
   }
 
   void Visit(ProgramGenerateRegion region) override {
