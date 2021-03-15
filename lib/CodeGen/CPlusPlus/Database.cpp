@@ -239,7 +239,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       const auto param = vec_params[param_index];
       if (param.Kind() == VectorKind::kInputOutputParameter) {
         os << os.Indent() << Vector(os, vec) << " = param_" << region.Id()
-           << '_' << param_index << "[0];\n";
+           << '_' << param_index << ";\n";
       }
       ++param_index;
     }
@@ -249,7 +249,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       const auto param = var_params[param_index - num_vec_params];
       if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
         os << os.Indent() << Var(os, var) << " = param_" << region.Id() << '_'
-           << param_index << "[0];\n";
+           << param_index << ";\n";
       }
       ++param_index;
     }
