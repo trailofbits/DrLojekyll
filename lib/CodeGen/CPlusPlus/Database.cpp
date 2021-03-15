@@ -222,6 +222,30 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorAppendRegion region) override {
     os << Comment(os, region, "ProgramVectorAppendRegion");
+
+    const auto tuple_vars = region.TupleVariables();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    switch (region.Usage()) {
+      case VectorUsage::kInductionVector:
+      case VectorUsage::kJoinPivots: ResolveReferences(tuple_vars); break;
+      default: break;
+    }
+
+    os << os.Indent() << Vector(os, region.Vector()) << ".push_back(";
+    if (tuple_vars.size() == 1u) {
+      os << Var(os, tuple_vars[0]);
+
+    } else {
+      os << "std::make_tuple(";
+      auto sep = "";
+      for (auto var : tuple_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      os << ')';
+    }
+    os << ");\n";
   }
 
   void Visit(ProgramVectorClearRegion region) override {
