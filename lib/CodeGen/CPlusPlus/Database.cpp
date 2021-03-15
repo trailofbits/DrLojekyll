@@ -935,11 +935,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#include <drlojekyll/Runtime.h>\n\n"
-     << "#include <tuple>\n"
-     << "#include <unordered_map>\n"
-     << "#include <vector>\n"
-     << "\n"
-     << "namespace {\n\n";
+     << "\n";
 
   const auto module = program.ParsedModule();
 
@@ -957,6 +953,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       }
     }
   }
+  os << "#include <tuple>\n"
+     << "#include <unordered_map>\n"
+     << "#include <vector>\n\n"
+     << "namespace {\n\n";
 
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);
@@ -1045,6 +1045,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PopIndent();  // class:
   os << os.Indent() << "};\n\n";
 
+  os << "}  // namespace\n";
+
   // Output epilogue code.
   for (auto sub_module : ParsedModuleIterator(module)) {
     for (auto code : sub_module.Inlines()) {
@@ -1059,8 +1061,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       }
     }
   }
-
-  os << "}  // namespace\n";
 }
 
 }  // namespace cxx
