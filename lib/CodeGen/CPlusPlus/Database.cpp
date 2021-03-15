@@ -536,6 +536,22 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramPublishRegion region) override {
     os << Comment(os, region, "ProgramPublishRegion");
+    auto message = region.Message();
+    os << os.Indent() << "log." << message.Name() << '_' << message.Arity();
+
+    auto sep = "(";
+    for (auto var : region.VariableArguments()) {
+      os << sep << Var(os, var);
+      sep = ", ";
+    }
+
+    if (region.IsRemoval()) {
+      os << sep << "false";
+    } else {
+      os << sep << "true";
+    }
+
+    os << ");\n";
   }
 
   void Visit(ProgramSeriesRegion region) override {
