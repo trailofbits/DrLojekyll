@@ -38,8 +38,8 @@ static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
 // Declare a structure containing the information about a table.
 static void DefineTable(OutputStream &os, ParsedModule module,
                         DataTable table) {
-  os << os.Indent() << "::hyde::rt::Table<StorageEngine, " << table.Id()
-     << ", ";
+  os << os.Indent() << "::hyde::rt::Table<StorageEngine, table_desc_"
+     << table.Id() << ", ";
   auto sep = "";
   const auto cols = table.Columns();
   if (cols.size() == 1u) {
@@ -60,8 +60,8 @@ static void DefineTable(OutputStream &os, ParsedModule module,
     const auto val_cols = index.ValueColumns();
     (void) val_cols;
 
-    os << os.Indent() << "::hyde::rt::Index<StorageEngine, " << table.Id()
-       << ", " << index.Id() << ", ::hyde::rt::Key<";
+    os << os.Indent() << "::hyde::rt::Index<StorageEngine, table_desc_"
+       << table.Id() << ", " << index.Id() << ", ::hyde::rt::Key<";
     sep = "";
     for (auto col : index.KeyColumns()) {
       os << sep << "::hyde::rt::Column<" << col.Index() << ", "
@@ -949,8 +949,15 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
   os << "#include <tuple>\n"
      << "#include <unordered_map>\n"
-     << "#include <vector>\n\n"
-     << "namespace {\n\n";
+     << "#include <vector>\n\n";
+
+  // Table descriptors
+  for (auto table : program.Tables()) {
+    os << "struct table_desc_" << table.Id() << ";\n";
+  }
+  os << "\n";
+
+  os << "namespace {\n\n";
 
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);

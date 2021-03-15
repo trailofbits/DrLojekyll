@@ -17,10 +17,10 @@ template <const int ColumnId, typename T>
 class Column;
 
 // StorageEngine should be some type of mapping from Cols to int
-template <typename StorageEngine, const int Id, typename... Cols>
+template <typename StorageEngine, typename TableId, typename... Cols>
 class Table;
 
-template <typename StorageEngine, const int TableId, const int IndexId,
+template <typename StorageEngine, typename TableId, const int IndexId,
           typename KeyT, typename ValueT>
 class Index;
 
