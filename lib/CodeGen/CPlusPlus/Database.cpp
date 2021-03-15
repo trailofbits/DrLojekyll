@@ -337,6 +337,33 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramInductionRegion region) override {
     os << Comment(os, region, "ProgramInductionRegion");
+
+    // Base case
+    region.Initializer().Accept(*this);
+
+    // Fixpoint
+    os << Comment(os, region, "Induction Fixpoint Loop Region");
+    os << os.Indent() << "while (";
+    auto sep = "";
+    for (auto vec : region.Vectors()) {
+      os << sep << Vector(os, vec) << ".size()";
+      sep = " || ";
+    }
+    os << ") {\n";
+
+    os.PushIndent();
+    region.FixpointLoop().Accept(*this);
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+
+    // Output
+    if (auto output = region.Output(); output) {
+      for (auto vec : region.Vectors()) {
+        os << os.Indent() << VectorIndex(os, vec) << " = 0;\n";
+      }
+      os << Comment(os, region, "Induction Output Region");
+      output->Accept(*this);
+    }
   }
 
   void Visit(ProgramLetBindingRegion region) override {
