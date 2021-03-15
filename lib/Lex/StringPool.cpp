@@ -2,6 +2,7 @@
 
 #include <drlojekyll/Lex/StringPool.h>
 
+#include <cassert>
 #include <string>
 #include <vector>
 
