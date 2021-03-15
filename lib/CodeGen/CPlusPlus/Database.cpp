@@ -1126,6 +1126,48 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableScanRegion region) override {
     os << Comment(os, region, "ProgramTableScanRegion");
+
+    const auto input_vars = region.InputVariables();
+    const auto filled_vec = region.FilledVector();
+
+    // Make sure to resolve to the correct reference of the foreign object.
+    ResolveReferences(input_vars);
+
+    // Index scan :-D
+    if (region.Index()) {
+      const auto index = *(region.Index());
+
+      os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
+         << "_vec = " << TableIndex(os, index) << ".Get(";
+      auto sep = "{";
+      for (auto var : input_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+      os << "});\n";
+
+      os << os.Indent() << "int scan_index_" << filled_vec.Id() << " = 0;\n";
+      os << os.Indent() << "while (scan_index_" << filled_vec.Id()
+         << " < scan_tuple_" << filled_vec.Id() << "_vec.size()) {\n";
+      os.PushIndent();
+
+      os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
+         << " = scan_tuple_" << filled_vec.Id() << "_vec["
+         << "scan_index_" << filled_vec.Id() << "];\n"
+         << os.Indent() << "scan_index_" << filled_vec.Id() << " += 1;\n";
+
+    // Full table scan.
+    } else {
+      assert(input_vars.empty());
+      os << os.Indent() << "for (scan_tuple_" << filled_vec.Id() << " : "
+         << Table(os, region.Table()) << ") {\n";
+      os.PushIndent();
+    }
+
+    os << os.Indent() << Vector(os, filled_vec) << ".push_back(scan_tuple_"
+       << filled_vec.Id() << ");\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramTupleCompareRegion region) override {
