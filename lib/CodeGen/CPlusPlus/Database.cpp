@@ -280,6 +280,30 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramReturnRegion region) override {
     os << Comment(os, region, "ProgramReturnRegion");
+
+    auto proc = ProgramProcedure::Containing(region);
+    auto param_index = 0u;
+
+    // Update any vectors in the caller by reference.
+    for (auto vec : proc.VectorParameters()) {
+      if (vec.Kind() == VectorKind::kInputOutputParameter) {
+        os << os.Indent() << "param_" << param_index
+           << "[0] = " << Vector(os, vec) << ";\n";
+      }
+      ++param_index;
+    }
+
+    // Update any vectors in the caller by reference.
+    for (auto var : proc.VariableParameters()) {
+      if (var.DefiningRole() == VariableRole::kInputOutputParameter) {
+        os << os.Indent() << "param_" << param_index << "[0] = " << Var(os, var)
+           << ";\n";
+      }
+      ++param_index;
+    }
+
+    os << os.Indent() << "return " << (region.ReturnsFalse() ? "false" : "true")
+       << ";\n";
   }
 
   void Visit(ProgramExistenceAssertionRegion region) override {
