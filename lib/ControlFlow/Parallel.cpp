@@ -105,9 +105,20 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramParallelRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramParallelRegion");
-  assert(false);
-  return false;
+
+  for (auto region : merges) {
+    auto merge = region->AsParallel();
+    assert(merge != nullptr);
+    assert(merge != this);
+    for (auto child : merge->regions) {
+      child->parent = this;
+      AddRegion(child);
+    }
+    merge->regions.Clear();
+    merge->parent = nullptr;
+  }
+
+  return true;
 }
 
 // Returns true if this region is a no-op.

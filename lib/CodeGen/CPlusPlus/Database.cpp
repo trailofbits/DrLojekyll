@@ -178,6 +178,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramCallRegion");
 
     auto param_index = 0u;
+    const auto id = region.Id();
+
     const auto called_proc = region.CalledProcedure();
     const auto vec_params = called_proc.VectorParameters();
     const auto var_params = called_proc.VariableParameters();
@@ -204,7 +206,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    os << os.Indent() << "ret = " << Procedure(os, called_proc) << "(";
+    os << os.Indent() << "auto ret_" << id << " = " << Procedure(os, called_proc) << "(";
 
     auto sep = "";
     param_index = 0u;
@@ -258,27 +260,20 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    // Check the return value.
-    bool is_cond = true;
-    if (region.ExecuteBodyIfReturnIsTrue()) {
-      os << os.Indent() << "if (ret) {\n";
-    } else if (region.ExecuteBodyIfReturnIsFalse()) {
-      os << os.Indent() << "if (!ret) {\n";
-    } else {
-      is_cond = false;
-    }
-
-    if (is_cond) {
+    if (auto true_body = region.BodyIfTrue(); true_body) {
+      os << os.Indent() << "if (ret_" << id << ") {\n";
       os.PushIndent();
-      if (auto body = region.Body(); body) {
-        body->Accept(*this);
-      } else {
-        os << os.Indent() << "{}\n";
-      }
+      true_body->Accept(*this);
       os.PopIndent();
       os << os.Indent() << "}\n";
-    } else {
-      os << '\n';
+    }
+
+    if (auto false_body = region.BodyIfFalse(); false_body) {
+      os << os.Indent() << "if (!ret_" << id << ") {\n";
+      os.PushIndent();
+      false_body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
     }
   }
 
@@ -339,11 +334,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramGenerateRegion");
 
     const auto functor = region.Functor();
-    if (!region.IsPositive()) {
-      assert(functor.Range() != FunctorRange::kOneToOne);
-      assert(functor.Range() != FunctorRange::kOneOrMore);
-      os << os.Indent() << "found = false;\n";
-    }
+    const auto id = region.Id();
+
+    os << os.Indent() << "int num_results_" << id << " = 0;\n";
 
     auto output_vars = region.OutputVariables();
 
@@ -358,17 +351,18 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     };
 
     auto do_body = [&](void) {
-      if (!region.IsPositive()) {
-        os << os.Indent() << "found = true\n";
-        os.PopIndent();
-        os << os.Indent() << "if (!found) {\n";
-        os.PushIndent();
-      }
-
-      if (auto body = region.Body(); body) {
+      os << os.Indent() << "num_results_" << id << " += 1;\n";
+      if (auto body = region.BodyIfResults(); body) {
         body->Accept(*this);
-      } else {
-        os << os.Indent() << "{}";
+
+      // Break out of the body early if there is nothing to do, and if we've
+      // already counted at least one instance of results (in the case of the
+      // functor possibly producing more than one result tuples), then that
+      // is sufficient information to be able to enter into the "empty" body.
+      } else if (const auto range = functor.Range();
+                 FunctorRange::kOneOrMore == range ||
+                 FunctorRange::kZeroOrMore == range) {
+        os << os.Indent() << "break;\n";
       }
     };
 
@@ -389,13 +383,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         } else {
           assert(!output_vars.empty());
 
-          os << os.Indent() << "for (auto tmp_" << region.Id() << " : ";
+          os << os.Indent() << "for (auto tmp_" << id << " : ";
           call_functor();
           os << ") {\n";
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
                << '[' << (out_var_index++) << "];\n";
           }
           do_body();
@@ -427,15 +421,15 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           assert(!functor.IsFilter());
 
           const auto out_var = output_vars[0];
-          os << os.Indent() << "auto tmp_" << region.Id() << " = ";
+          os << os.Indent() << "auto tmp_" << id << " = ";
           call_functor();
           os << ";\n";
           if (range == FunctorRange::kZeroOrOne) {
-            os << os.Indent() << "if (tmp_" << region.Id() << ") {:\n";
+            os << os.Indent() << "if (tmp_" << id << ") {:\n";
             os.PushIndent();
           }
           os << os.Indent() << "auto " << Var(os, out_var) << " = *tmp_"
-             << region.Id() << ";\n";
+             << id << ";\n";
           do_body();
           if (range == FunctorRange::kZeroOrOne) {
             os.PopIndent();
@@ -446,13 +440,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         } else {
           assert(!functor.IsFilter());
 
-          os << os.Indent() << "auto tmp_" << region.Id() << " = ";
+          os << os.Indent() << "auto tmp_" << id << " = ";
           call_functor();
-          os << ";\n" << os.Indent() << "if (tmp_" << region.Id() << ") {\n";
+          os << ";\n" << os.Indent() << "if (tmp_" << id << ") {\n";
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
                << ".value()[" << (out_var_index++) << "];\n";
           }
           do_body();
@@ -460,6 +454,14 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os << os.Indent() << "}\n";
         }
         break;
+    }
+
+    if (auto empty_body = region.BodyIfEmpty(); empty_body) {
+      os << os.Indent() << "if (!num_results" << id << ") {\n";
+      os.PushIndent();
+      empty_body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() << "}\n";
     }
   }
 
@@ -505,6 +507,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}\n";
     }
   }
 
@@ -653,10 +657,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void ResolveReference(DataVariable var) {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      if (var.DefiningRegion() &&
-          !foreign_type->IsReferentiallyTransparent(Language::kPython)) {
-        os << os.Indent() << Var(os, var) << " = _resolve<"
-           << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
+      if (var.DefiningRegion()) {
+        if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
+          os << os.Indent() << Var(os, var) << " = _resolve<"
+            << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
+        }
       } else {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
@@ -838,6 +843,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramTableJoinRegion region) override {
     os << Comment(os, region, "ProgramTableJoinRegion");
 
+    const auto id = region.Id();
+
     // Nested loop join
     auto vec = region.PivotVector();
     os << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
@@ -867,9 +874,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
+      const auto table = tables[i];
       const auto index = region.Index(i);
       const auto index_keys = index.KeyColumns();
       const auto index_vals = index.ValueColumns();
+
+      (void) table;
+
       auto key_prefix = "std::make_tuple(";
       auto key_suffix = ")";
       if (index_keys.size() == 1u) {
@@ -880,7 +891,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       // The index is a set of key column values/tuples.
       if (index_vals.empty()) {
 
-        os << os.Indent() << "if (" << TableIndex(os, index) << ".KeyExists("
+        os << os.Indent() << "auto key_" << id << '_' << i << " = "
            << key_prefix;
 
         sep = "";
@@ -895,7 +906,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           }
         }
 
-        os << key_suffix << ")) {\n";
+        os << key_suffix << ";\n";
+
+        os << os.Indent() << "if (" << TableIndex(os, index) << ".KeyExists(" << "key_" << id << '_' << i
+           << ")";
+
+        // The index aliases the underlying table; lets double check that the
+        // state isn't `absent`.
+        assert(index.KeyColumns().size() == table.Columns().size());
+        os << " && (" << TableIndex(os, index) << ".Get(key_" << id << '_' << i
+           << ") & " << kStateMask << ") != " << kStateAbsent << ") {\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
@@ -1133,9 +1153,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     // Make sure to resolve to the correct reference of the foreign object.
     ResolveReferences(input_vars);
 
+    // TODO(pag): Do we need to watch out for the index aliasing the key space
+    //            of the table, and having some columns in the absent state?
+
     // Index scan :-D
-    if (region.Index()) {
-      const auto index = *(region.Index());
+    if (auto maybe_index = region.Index(); maybe_index) {
+      const auto index = *maybe_index;
 
       os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
          << "_vec = " << TableIndex(os, index) << ".Get(";

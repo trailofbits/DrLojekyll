@@ -501,8 +501,15 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             if (context->display_manager.TryReadData(tok_range, &data)) {
               assert(!data.empty());
               assign->rhs.data = data;
+
+
+            // NOTE(pag): This will have been previously reported. It is likely
+            //            a result of an invalid string literal (e.g. crossing
+            //            a line boundary) that has been "converted" into a
+            //            valid one for the sake of parsing being able to
+            //            proceed.
             } else {
-              assert(false);
+              assert(!context->error_log.IsEmpty());
             }
 
             // Infer the type of the assignment based off the constant.
@@ -828,7 +835,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
   if (state != 9 && state != 10) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete clause definition";
+        << "Incomplete clause definition; state " << state;
     return;
   }
 

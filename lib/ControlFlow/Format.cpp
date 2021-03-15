@@ -150,12 +150,6 @@ OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
   os << os.Indent();
 
-  const auto conditional =
-      region.ExecuteBodyIfReturnIsTrue() || region.ExecuteBodyIfReturnIsFalse();
-  if (conditional) {
-    os << "if ";
-  }
-
   os << "call " << region.CalledProcedure();
   auto sep = "(";
   auto end = "";
@@ -171,23 +165,23 @@ OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
   }
   os << end;
 
-  if (region.ExecuteBodyIfReturnIsTrue()) {
-    os << " returns true";
-  } else if (region.ExecuteBodyIfReturnIsFalse()) {
-    os << " returns false";
-  }
+  os.PushIndent();
 
-  if (auto body = region.Body(); body) {
-    assert(conditional);
-
-    os << '\n';
+  if (auto true_body = region.BodyIfTrue(); true_body) {
+    os << '\n' << os.Indent() << "if-true\n";
     os.PushIndent();
-    os << *body;
+    os << *true_body;
     os.PopIndent();
-
-  } else {
-    assert(!conditional);
   }
+
+  if (auto false_body = region.BodyIfFalse(); false_body) {
+    os << '\n' << os.Indent() << "if-false\n";
+    os.PushIndent();
+    os << *false_body;
+    os.PopIndent();
+  }
+
+  os.PopIndent();
 
   return os;
 }
@@ -267,15 +261,8 @@ OutputStream &operator<<(OutputStream &os,
 OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
   auto functor = region.Functor();
   os << os.Indent();
-  if (region.IsFilter()) {
-    os << "if ";
-  } else {
-    const char *sep = nullptr;
-    switch (functor.Range()) {
-      case FunctorRange::kZeroOrOne: sep = "assign-if {"; break;
-      case FunctorRange::kOneToOne: sep = "assign {"; break;
-      default: sep = "assign-each {"; break;
-    }
+  if (!region.IsFilter()) {
+    const char *sep = "assign {";
     for (auto var : region.OutputVariables()) {
       os << sep << var;
       sep = ", ";
@@ -298,16 +285,33 @@ OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
     sep = ", ";
   }
 
-  os << ")\n";
+  os << ')';
 
+  auto has_body = false;
+  os.PushIndent();
 
-  if (auto maybe_body = region.Body(); maybe_body) {
+  if (auto true_body = region.BodyIfResults(); true_body) {
+    os << '\n' << os.Indent() << "if-results\n";
     os.PushIndent();
-    os << (*maybe_body);
+    os << *true_body;
     os.PopIndent();
-  } else {
-    os << os.Indent() << "empty";
+    has_body = true;
   }
+
+  if (auto false_body = region.BodyIfEmpty(); false_body) {
+    os << '\n' << os.Indent() << "if-empty\n";
+    os.PushIndent();
+    os << *false_body;
+    os.PopIndent();
+    has_body = true;
+  }
+
+  if (!has_body) {
+    os << os.Indent() << "\n" << os.Indent() << "empty?!\n";
+  }
+
+  os.PopIndent();
+
   return os;
 }
 

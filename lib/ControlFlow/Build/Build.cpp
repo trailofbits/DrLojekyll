@@ -167,6 +167,11 @@ static void MapVariables(REGION *region) {
       for (auto var : gen->defined_vars) {
         var->defining_region = region;
       }
+
+      MapVariables(gen->empty_body.get());
+
+    } else if (auto call = op->AsCall(); call) {
+      MapVariables(call->false_body.get());
     }
 
     MapVariables(op->body.get());
@@ -233,6 +238,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     auto let = impl->operation_regions.CreateDerived<LET>(par);
     let->ExecuteAlongside(impl, par);
 
+    // Create the variable bindings for each received variable.
     auto i = 0u;
     for (auto col : receive.Columns()) {
       auto first_col = receives[0].Columns()[i++];
@@ -1083,8 +1089,7 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
 // The idea is that we have the output columns of `succ_view`, and we want to
 // check if a tuple on `view` exists.
 CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
-                         QueryView succ_view, QueryView view,
-                         ProgramOperation call_op) {
+                         QueryView succ_view, QueryView view) {
   assert(!view.IsDelete());
   assert(!succ_view.IsInsert());
 
@@ -1093,8 +1098,7 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     succ_cols.push_back(succ_view_col);
   }
 
-  return CallTopDownChecker(impl, context, parent, succ_view, succ_cols, view,
-                            call_op);
+  return CallTopDownChecker(impl, context, parent, succ_view, succ_cols, view);
 }
 
 // Gets or creates a top down checker function.
@@ -1194,8 +1198,7 @@ PROC *GetOrCreateTopDownChecker(
 CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                          QueryView succ_view,
                          const std::vector<QueryColumn> &succ_cols,
-                         QueryView view, ProgramOperation call_op,
-                         TABLE *already_checked) {
+                         QueryView view, TABLE *already_checked) {
 
   // List of output columns of `view` that can be derived from the output
   // columns of `succ_view`, as available in `succ_cols`.
@@ -1288,9 +1291,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
       impl, context, view, available_cols, already_checked);
 
   // Now call the checker procedure.
-  const auto check =
-      impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, parent, proc, call_op);
+  const auto check = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, parent, proc);
 
   auto i = 0u;
   for (auto col : available_cols) {
@@ -1315,8 +1317,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     QueryView pred_view, TABLE *already_checked) {
 
   const auto check = CallTopDownChecker(
-      impl, context, parent, view, view_cols, pred_view,
-      ProgramOperation::kCallProcedureCheckTrue, already_checked);
+      impl, context, parent, view, view_cols, pred_view, already_checked);
 
   // Change the tuple's state to mark it as present now that we've proven
   // it true via one of the paths into this node.
