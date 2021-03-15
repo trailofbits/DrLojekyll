@@ -299,6 +299,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorUniqueRegion region) override {
     os << Comment(os, region, "ProgramVectorUniqueRegion");
+
+    os << os.Indent() << "std::unique(" << Vector(os, region.Vector())
+       << ".begin(), " << Vector(os, region.Vector()) << ".end());\n";
+    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
   }
 
   void ResolveReference(DataVariable var) {
