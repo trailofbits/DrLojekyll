@@ -7,17 +7,18 @@
 namespace hyde {
 namespace rt {
 
-template <typename StorageEngine, const int Id, typename... Cols>
-class Table;
-
-template <const int ColumnId, typename T>
-class Column;
-
 template <typename... T>
 class Key;
 
 template <typename... T>
 class Value;
+
+template <const int ColumnId, typename T>
+class Column;
+
+// StorageEngine should be some type of mapping from Cols to int
+template <typename StorageEngine, const int Id, typename... Cols>
+class Table;
 
 template <typename StorageEngine, const int TableId, const int IndexId,
           typename KeyT, typename ValueT>
@@ -29,6 +30,7 @@ using Any = void;
 
 /* **************************************** */
 /* START https://stackoverflow.com/a/264088 */
+
 // Templated function <T, Sign> named 'name' that checks whether the type `T`
 // has a member function named 'func' with signature `Sign`.
 // See stackoverflow link for usage.
