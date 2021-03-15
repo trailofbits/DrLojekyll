@@ -344,22 +344,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       auto has_indices = false;
       for (auto index : indices) {
         const auto key_cols = index.KeyColumns();
-        const auto val_cols = index.ValueColumns();
-
-        auto key_prefix = "(";
-        auto key_suffix = ")";
-        auto val_prefix = "(";
-        auto val_suffix = ")";
-
-        if (key_cols.size() == 1u) {
-          key_prefix = "";
-          key_suffix = "";
-        }
-
-        if (val_cols.size() == 1u) {
-          val_prefix = "";
-          val_suffix = "";
-        }
 
         // The index is the set of keys in the table's `defaultdict`. Thus, we
         // don't need to add anything because adding to the table will have done
@@ -369,41 +353,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         }
 
         has_indices = true;
-        os << os.Indent() << TableIndex(os, index);
 
-        // The index is implemented with a `set`.
-        if (val_cols.empty()) {
-          os << ".add(";
-          sep = "";
-          if (key_cols.size() == 1u) {
-            os << tuple_var;
-          } else {
-            os << '(';
-            for (auto indexed_col : index.KeyColumns()) {
-              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-              sep = ", ";
-            }
-            os << ')';
-          }
-
-          os << ");\n";
-
-        // The index is implemented with a `defaultdict`.
-        } else {
-          os << "[" << key_prefix;
-          sep = "";
-          for (auto indexed_col : index.KeyColumns()) {
-            os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-            sep = ", ";
-          }
-          os << key_suffix << "].append(" << val_prefix;
-          sep = "";
-          for (auto mapped_col : index.ValueColumns()) {
-            os << sep << tuple_var << "[" << mapped_col.Index() << "]";
-            sep = ", ";
-          }
-          os << val_suffix << ");\n";
-        }
+        // Index will update based on runtime implementation using the column
+        // index numbers as defined in its instantiation
+        os << os.Indent() << TableIndex(os, index) << ".Update(" << tuple_var
+           << ");\n";
       }
 
       if (!has_indices) {
