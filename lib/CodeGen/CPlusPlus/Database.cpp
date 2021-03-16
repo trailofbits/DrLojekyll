@@ -1553,7 +1553,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       }
     }
   }
-  os << "#include <tuple>\n"
+  os << "#include <algorithm>\n"
+     << "#include <tuple>\n"
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
 
@@ -1584,8 +1585,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os << "\n";
 
-  os << os.Indent() << gClassName << "(StorageEngine &storage, " << gClassName
-     << "LogInterface &l, " << gClassName << "Functors &f)\n";
+  os << os.Indent() << "explicit " << gClassName << "(StorageEngine &storage, "
+     << gClassName << "LogInterface &l, " << gClassName << "Functors &f)\n";
   os.PushIndent();  // constructor
   os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
 
