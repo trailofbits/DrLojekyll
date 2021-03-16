@@ -1267,8 +1267,8 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     switch (func.Range()) {
       case FunctorRange::kOneOrMore:
       case FunctorRange::kZeroOrMore:
-        os << "std::vector<" << tuple_prefix << return_tuple.str()
-           << tuple_suffix << ">";
+        os << "std::optional<std::vector<" << tuple_prefix << return_tuple.str()
+           << tuple_suffix << ">>";
         break;
       case FunctorRange::kOneToOne:
         os << tuple_prefix << return_tuple.str() << tuple_suffix;
