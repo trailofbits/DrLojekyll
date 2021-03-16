@@ -7,16 +7,15 @@
 namespace hyde {
 namespace rt {
 
-template <typename... T>
-class Key;
-
-template <typename... T>
-class Value;
-
 template <const int ColumnId, typename T>
 class Column;
 
-// StorageEngine should be some type of mapping from Cols to int
+template <class... T>
+class Key;
+
+template <class... T>
+class Value;
+
 template <typename StorageEngine, typename TableId, typename... Cols>
 class Table;
 
