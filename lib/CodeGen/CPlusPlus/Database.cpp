@@ -1704,6 +1704,17 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os.PopIndent();  // constructor
   os << os.Indent() << "}\n\n";
+
+  for (const auto &query_spec : program.Queries()) {
+    DefineQueryEntryPoint(os, module, query_spec);
+  }
+
+  for (auto proc : program.Procedures()) {
+    if (proc.Kind() == ProcedureKind::kMessageHandler) {
+      DefineProcedure(os, module, proc);
+    }
+  }
+
   os.PopIndent();  // public:
 
   os << os.Indent() << "private:\n";
@@ -1726,11 +1737,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   DefineTypeRefResolver(os);
 
   for (auto proc : program.Procedures()) {
-    DefineProcedure(os, module, proc);
-  }
-
-  for (const auto &query_spec : program.Queries()) {
-    DefineQueryEntryPoint(os, module, query_spec);
+    if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      DefineProcedure(os, module, proc);
+    }
   }
 
   os.PopIndent();  // private:
