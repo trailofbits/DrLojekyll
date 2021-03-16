@@ -1638,6 +1638,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
   os << "#include <algorithm>\n"
+     << "#include <optional>\n"
      << "#include <tuple>\n"
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
