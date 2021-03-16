@@ -206,7 +206,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    os << os.Indent() << "auto ret_" << id << " = " << Procedure(os, called_proc) << "(";
+    os << os.Indent() << "auto ret_" << id << " = "
+       << Procedure(os, called_proc) << "(";
 
     auto sep = "";
     param_index = 0u;
@@ -389,8 +390,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
-               << '[' << (out_var_index++) << "];\n";
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id << '['
+               << (out_var_index++) << "];\n";
           }
           do_body();
           os.PopIndent();
@@ -666,7 +667,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       if (var.DefiningRegion()) {
         if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
           os << os.Indent() << Var(os, var) << " = _resolve<"
-            << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
+             << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
         }
       } else {
         switch (var.DefiningRole()) {
