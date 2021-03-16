@@ -382,13 +382,29 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       case FunctorRange::kOneOrMore:
       case FunctorRange::kZeroOrMore: {
         if (output_vars.size() == 1u) {
-          os << os.Indent() << "for (auto " << Var(os, output_vars[0]) << " : ";
+          os << os.Indent() << "auto tmp_" << id << " = ";
           call_functor();
-          os << ") {\n";
+          os << ";\n";
+          auto optional = range == FunctorRange::kZeroOrMore;
+          if (optional) {
+            os << os.Indent() << "if (tmp_" << id << ") {\n";
+            os.PushIndent();
+          }
+          os << os.Indent() << "for (auto " << Var(os, output_vars[0]) << " : ";
+          if (optional) {
+
+            // Dereference optional
+            os << "*";
+          }
+          os << "tmp_" << id << ") {\n";
           os.PushIndent();
           do_body();
           os.PopIndent();
           os << os.Indent() << "}\n";
+          if (optional) {
+            os.PopIndent();
+            os << os.Indent() << "}\n";
+          }
 
         } else {
           assert(!output_vars.empty());
@@ -436,7 +452,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os << ";\n";
           auto optional = range == FunctorRange::kZeroOrOne;
           if (optional) {
-            os << os.Indent() << "if (tmp_" << id << ") {:\n";
+            os << os.Indent() << "if (tmp_" << id << ") {\n";
             os.PushIndent();
           }
           os << os.Indent() << "auto " << Var(os, out_var) << " = ";
