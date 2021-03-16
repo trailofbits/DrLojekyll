@@ -32,6 +32,14 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
   return os << "index_" << index.Id();
 }
 
+static OutputStream &TableIndexAccess(OutputStream &os, const DataIndex index) {
+  os << "index_" << index.Id();
+  if (index.ValueColumns().empty()) {
+    return os << "()";
+  }
+  return os;
+}
+
 static OutputStream &Vector(OutputStream &os, const DataVector vec) {
   return os << "vec_" << vec.Id();
 }
@@ -88,7 +96,8 @@ static void DefineTable(OutputStream &os, ParsedModule module,
       assert(val_cols.empty());
 
       // Implement this index as an accessor that just uses the Table
-      os << "& " << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
+      os << "& " << TableIndex(os, index) << "() { return &" << Table(os, table)
+         << "; }\n";
     } else {
       os << " " << TableIndex(os, index) << ";\n";
     }
@@ -779,12 +788,63 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           continue;
         }
 
+        const auto val_cols = index.ValueColumns();
+
+        auto key_prefix = "std::make_tuple(";
+        auto key_suffix = ")";
+        auto val_prefix = "std::make_tuple(";
+        auto val_suffix = ")";
+
+        if (key_cols.size() == 1u) {
+          key_prefix = "";
+          key_suffix = "";
+        }
+
+        if (val_cols.size() == 1u) {
+          val_prefix = "";
+          val_suffix = "";
+        }
+
         has_indices = true;
 
         // Index will update based on runtime implementation using the column
         // index numbers as defined in its instantiation
-        os << os.Indent() << TableIndex(os, index) << ".Update(" << tuple_var
-           << ");\n";
+        os << os.Indent() << TableIndexAccess(os, index);
+
+        // The index is implemented with a `set`.
+        if (val_cols.empty()) {
+          os << ".Add(";
+          sep = "";
+          if (key_cols.size() == 1u) {
+            os << tuple_var;
+          } else {
+            os << '(';
+            for (auto indexed_col : index.KeyColumns()) {
+              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
+              sep = ", ";
+            }
+            os << ')';
+          }
+          os << ");\n";
+
+        // The index is implemented with a `defaultdict`.
+        } else {
+          os << ".Update(" << key_prefix;
+          sep = "";
+          for (auto indexed_col : index.KeyColumns()) {
+            os << sep << "std::get<" << indexed_col.Index() << ">(" << tuple_var
+               << ")";
+            sep = ", ";
+          }
+          os << key_suffix << ", " << val_prefix;
+          sep = "";
+          for (auto mapped_col : index.ValueColumns()) {
+            os << sep << "std::get<" << mapped_col.Index() << ">(" << tuple_var
+               << ")";
+            sep = ", ";
+          }
+          os << val_suffix << ");\n";
+        }
       }
 
       if (!has_indices) {
@@ -915,14 +975,15 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
         os << key_suffix << ";\n";
 
-        os << os.Indent() << "if (" << TableIndex(os, index) << ".KeyExists(" << "key_" << id << '_' << i
-           << ")";
+        os << os.Indent() << "if (" << TableIndexAccess(os, index)
+           << ".KeyExists("
+           << "key_" << id << '_' << i << ")";
 
         // The index aliases the underlying table; lets double check that the
         // state isn't `absent`.
         assert(index.KeyColumns().size() == table.Columns().size());
-        os << " && (" << TableIndex(os, index) << ".Get(key_" << id << '_' << i
-           << ") & " << kStateMask << ") != " << kStateAbsent << ") {\n";
+        os << " && (" << TableIndexAccess(os, index) << ".Get(key_" << id << '_'
+           << i << ") & " << kStateMask << ") != " << kStateAbsent << ") {\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
@@ -940,7 +1001,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         os << os.Indent() << "int tuple_" << region.Id() << "_" << i
            << "_index = 0;\n"
            << os.Indent() << "auto tuple_" << region.Id() << "_" << i
-           << "_vec = " << TableIndex(os, index) << ".Get(" << key_prefix;
+           << "_vec = " << TableIndexAccess(os, index) << ".Get(" << key_prefix;
 
         // This is a bit ugly, but basically: we want to index into the
         // Python representation of this index, e.g. via `index_10[(a, b)]`,
@@ -1168,7 +1229,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       const auto index = *maybe_index;
 
       os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
-         << "_vec = " << TableIndex(os, index) << ".Get(";
+         << "_vec = " << TableIndexAccess(os, index) << ".Get(";
       auto sep = "{";
       for (auto var : input_vars) {
         os << sep << Var(os, var);
