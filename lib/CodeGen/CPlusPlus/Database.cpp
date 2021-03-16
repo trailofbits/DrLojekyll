@@ -1609,8 +1609,226 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
                                   const ProgramQuery &spec) {
   const ParsedDeclaration decl(spec.query);
-  os << os.Indent() << "auto " << decl.Name() << '_' << decl.BindingPattern()
-     << "(){/*TODO(ekilmer)*/}\n\n";
+
+  auto num_bound_params = 0u;
+  auto num_free_params = 0u;
+  const auto params = decl.Parameters();
+  const auto num_params = decl.Arity();
+
+  for (auto param : params) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      ++num_bound_params;
+    } else {
+      ++num_free_params;
+    }
+  }
+
+  os << os.Indent();
+  if (num_free_params) {
+    os << "std::vector<";
+    if (1u < num_free_params) {
+      os << "std::tuple<";
+    }
+    auto sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << TypeName(module, param.Type());
+        sep = ", ";
+      }
+    }
+    if (1u < num_free_params) {
+      os << '>';
+    }
+    os << "> ";
+  } else {
+    os << "bool ";
+  }
+  os << decl.Name() << '_' << decl.BindingPattern() << "(";
+
+  auto sep = "";
+  for (auto param : params) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep << TypeName(module, param.Type()) << " param_" << param.Index();
+      sep = ", ";
+    }
+  }
+  os << ") {\n";
+
+  assert(num_params == (num_bound_params + num_free_params));
+
+  os.PushIndent();
+  os << os.Indent() << "int state = 0;\n";
+
+  // Return vector
+  if (num_free_params) {
+    os << "std::vector<";
+    if (1u < num_free_params) {
+      os << "std::tuple<";
+    }
+    auto sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << TypeName(module, param.Type());
+        sep = ", ";
+      }
+    }
+    if (1u < num_free_params) {
+      os << '>';
+    }
+    os << "> ret;\n";
+  }
+
+  if (spec.forcing_function) {
+    os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
+    auto sep = "";
+    for (auto param : params) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    os << ");\n";
+  }
+
+  os << os.Indent() << "int tuple_index = 0;\n";
+
+  // This is an index scan.
+  if (num_bound_params && num_bound_params < num_params) {
+    assert(spec.index.has_value());
+    const auto index = *(spec.index);
+    auto key_prefix = "std::make_tuple(";
+    auto key_suffix = ")";
+
+    if (num_free_params == 1u) {
+      key_prefix = "";
+      key_suffix = "";
+    }
+
+    os << os.Indent() << "auto tuple_vec = " << TableIndexAccess(os, index)
+       << ".Get(" << key_prefix;
+
+    sep = "";
+    for (auto param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+
+    os << key_suffix << ");\n";
+
+    os << os.Indent() << "while (tuple_index < tuple_vec.size()) {\n";
+    os.PushIndent();
+    os << os.Indent() << "auto tuple = tuple_vec[tuple_index];\n"
+       << os.Indent() << "tuple_index += 1;\n";
+
+  // This is a full table scan.
+  } else if (num_free_params) {
+    assert(0u < num_free_params);
+
+    os << os.Indent() << "for (auto tuple : " << Table(os, spec.table)
+       << ") {\n";
+    os.PushIndent();
+    os << os.Indent() << "tuple_index += 1;\n";
+
+  // Either the tuple checker will figure out of the tuple is present, or our
+  // state check on the full tuple will figure it out.
+  } else {
+    os << os.Indent() << "if (true) {\n";
+    os.PushIndent();
+  }
+
+  auto col_index = 0u;
+  for (auto param : params) {
+    if (param.Binding() != ParameterBinding::kBound) {
+      os << os.Indent() << TypeName(module, param.Type()) << " param_"
+         << param.Index() << " = tuple";
+      if (num_free_params != 1u) {
+        os << '[' << col_index << ']';
+      }
+      ++col_index;
+      os << ";\n";
+    }
+  }
+
+  if (spec.tuple_checker) {
+    os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
+    auto sep = "";
+    for (auto param : params) {
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+    os << ")) {\n";
+    os.PushIndent();
+    if (num_free_params) {
+      os << os.Indent() << "continue;\n";
+    } else {
+      os << os.Indent() << "return false;\n";
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+
+  // Double check the tuple's state.
+  } else {
+    os << os.Indent() << "auto full_tuple = ";
+    if (1 < num_params) {
+      os << "std::make_tuple(";
+    }
+
+    auto sep = "";
+    for (auto param : params) {
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+
+    if (1 < num_params) {
+      os << ')';
+    }
+
+    os << ";\n"
+       << os.Indent() << "state = " << Table(os, spec.table)
+       << ".GetState(full_tuple) & " << kStateMask << ";\n"
+       << os.Indent() << "if (state != " << kStatePresent << ") {\n";
+    os.PushIndent();
+    if (num_free_params) {
+      os << os.Indent() << "continue;\n";
+    } else {
+      os << os.Indent() << "return false;\n";
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+  }
+
+  if (num_free_params) {
+    os << os.Indent() << "ret.push_back(";
+    auto sep = "";
+    if (1 < num_free_params) {
+      sep = "std::make_tuple(";
+    }
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    if (1 < num_free_params) {
+      os << ")";
+    }
+    os << ");\n";
+
+  } else {
+    os << os.Indent() << "return true;\n";
+  }
+
+  os.PopIndent();
+  os << os.Indent() << "}\n";
+
+  if (num_free_params) {
+    os << os.Indent() << "return ret;\n";
+  }
+
+  os.PopIndent();
+  os << os.Indent() << "}\n";
 }
 
 }  // namespace
