@@ -424,14 +424,20 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os << os.Indent() << "auto tmp_" << id << " = ";
           call_functor();
           os << ";\n";
-          if (range == FunctorRange::kZeroOrOne) {
+          auto optional = range == FunctorRange::kZeroOrOne;
+          if (optional) {
             os << os.Indent() << "if (tmp_" << id << ") {:\n";
             os.PushIndent();
           }
-          os << os.Indent() << "auto " << Var(os, out_var) << " = *tmp_"
-             << id << ";\n";
+          os << os.Indent() << "auto " << Var(os, out_var) << " = ";
+          if (optional) {
+
+            // Dereference optional
+            os << "*";
+          }
+          os << "tmp_" << id << ";\n";
           do_body();
-          if (range == FunctorRange::kZeroOrOne) {
+          if (optional) {
             os.PopIndent();
             os << os.Indent() << "}\n";
           }
