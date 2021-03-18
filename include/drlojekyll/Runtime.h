@@ -7,21 +7,34 @@
 namespace hyde {
 namespace rt {
 
-template <const int ColumnId, typename T>
-class Column;
-
-template <class... T>
+template <typename T>
 class Key;
 
-template <class... T>
+template <typename T>
 class Value;
 
-template <typename StorageEngine, typename TableId, typename... Cols>
+template <typename KVColDesc>
+struct ValueType;
+
+template <typename ColDesc>
+struct ValueType<Key<ColDesc>> {
+  using Type = typename ColDesc::Type;
+};
+
+template <typename ColDesc>
+struct ValueType<Value<ColDesc>> {
+  using Type = typename ColDesc::Type;
+};
+
+template <typename StorageT, typename TableId, typename... Columns>
 class Table;
 
-template <typename StorageEngine, typename TableId, const int IndexId,
-          typename KeyT, typename ValueT>
+template <typename StorageT, typename TableId, const unsigned kIndexId,
+          typename... Columns>
 class Index;
+
+// Method on an index for AddToIndex that takes in all columns and does the
+// right thing for updating based on Key, Value of column Ids
 
 
 using UTF8 = std::string_view;

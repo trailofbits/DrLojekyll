@@ -48,11 +48,34 @@ static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
   return os << "vec_index" << vec.Id();
 }
 
+// Declare Table Descriptors that contain additional metadata about
+static void DeclareDescriptors(OutputStream &os, Program program,
+                               ParsedModule module) {
+
+  // Table and column descriptors
+  for (auto table : program.Tables()) {
+    os << "struct table_desc_" << table.Id() << " {};\n";
+    for (auto col : table.Columns()) {
+      os << "struct column_desc_" << table.Id() << "_" << col.Index() << " {\n";
+      os.PushIndent();
+
+      // NOTE(ekilmer): Will want to fill this programmatically someday
+      os << os.Indent() << "static constexpr bool kIsNamed = false;\n";
+      os << os.Indent() << "using Type = " << TypeName(module, col.Type())
+         << ";\n";
+      os.PopIndent();
+      os << "};\n";
+    }
+    os << "\n";
+  }
+  os << "\n";
+}
+
 // Declare a structure containing the information about a table.
 static void DefineTable(OutputStream &os, ParsedModule module,
                         DataTable table) {
-  os << os.Indent() << "::hyde::rt::Table<StorageEngine, table_desc_"
-     << table.Id() << ", ";
+  os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
+     << ", ";
   auto sep = "";
   const auto cols = table.Columns();
   if (cols.size() == 1u) {
@@ -71,27 +94,34 @@ static void DefineTable(OutputStream &os, ParsedModule module,
   for (auto index : table.Indices()) {
     const auto key_cols = index.KeyColumns();
     const auto val_cols = index.ValueColumns();
-    (void) val_cols;
 
-    os << os.Indent() << "::hyde::rt::Index<StorageEngine, table_desc_"
-       << table.Id() << ", " << index.Id() << ", ::hyde::rt::Key<";
-    sep = "";
-    for (auto col : index.KeyColumns()) {
-      os << sep << "::hyde::rt::Column<" << col.Index() << ", "
-         << TypeName(module, col.Type()) << ">";
-      sep = ", ";
+    os << os.Indent() << "::hyde::rt::Index<StorageT, table_desc_" << table.Id()
+       << ", " << index.Id();
+
+    // In C++ codegen, the Index knows which columns are keys/values, but they
+    // need to be ordered as they were in the table
+    auto key_col_iter = key_cols.begin();
+    auto val_col_iter = val_cols.begin();
+
+    // Assumes keys and values are sorted by index within their respective lists
+    while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
+      os << ", ";
+      if (val_col_iter == val_cols.end() ||
+          (key_col_iter != key_cols.end() &&
+           (*key_col_iter).Index() < (*val_col_iter).Index())) {
+        os << "::hyde::rt::Key<column_desc_" << table.Id() << "_"
+           << (*key_col_iter).Index() << ">";
+        key_col_iter++;
+      } else {
+        os << "::hyde::rt::Value<column_desc_" << table.Id() << "_"
+           << (*val_col_iter).Index() << ">";
+        val_col_iter++;
+      }
     }
-    os << ">, ::hyde::rt::Value<";
-    sep = "";
-    for (auto col : index.ValueColumns()) {
-      os << sep << "::hyde::rt::Column<" << col.Index() << ", "
-         << TypeName(module, col.Type()) << ">";
-      sep = ", ";
-    }
-    os << ">>";
+    os << ">";
 
     // The index can be implemented with the keys in the Table.
-    // In this case, the index lookup will be an `if ... in ...`.
+    // In this case, the index lookup will be like an `if ... in ...`.
     if (key_cols.size() == cols.size()) {
       assert(val_cols.empty());
 
@@ -721,159 +751,22 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     // Make sure to resolve to the correct reference of the foreign object.
     ResolveReferences(tuple_vars);
 
-    std::stringstream tuple;
-    tuple << "tuple";
-    for (auto tuple_var : tuple_vars) {
-      tuple << "_" << tuple_var.Id();
-    }
-
-    auto tuple_prefix = "std::make_tuple(";
-    auto tuple_suffix = ")";
-    if (tuple_vars.size() == 1u) {
-      tuple_prefix = "";
-      tuple_suffix = "";
-    }
-
+    os << os.Indent() << "bool did_transition_" << region.UniqueId() << " = "
+       << Table(os, region.Table()) << ".TransitionState(";
     auto sep = "";
-    auto tuple_var = tuple.str();
-    os << os.Indent() << "auto " << tuple_var << " = " << tuple_prefix;
     for (auto var : tuple_vars) {
       os << sep << Var(os, var);
       sep = ", ";
     }
-    os << tuple_suffix << ";\n"
-       << os.Indent() << "prev_state = " << Table(os, region.Table())
-       << ".GetState(" << tuple_var << ");\n"
-       << os.Indent() << "state = prev_state & " << kStateMask << ";\n"
-       << os.Indent() << "present_bit = prev_state & " << kPresentBit << ";\n";
+    os << ");\n";
 
-    os << os.Indent() << "if (";
-    switch (region.FromState()) {
-      case TupleState::kAbsent:
-        os << "state == " << kStateAbsent << ") {\n";
-        break;
-      case TupleState::kPresent:
-        os << "state == " << kStatePresent << ") {\n";
-        break;
-      case TupleState::kUnknown:
-        os << "state == " << kStateUnknown << ") {\n";
-        break;
-      case TupleState::kAbsentOrUnknown:
-        os << "state == " << kStateAbsent << " || state == " << kStateUnknown
-           << ") {\n";
-        break;
-    }
+    os << os.Indent() << "if (did_transition_" << region.UniqueId() << ") {\n";
     os.PushIndent();
-    os << os.Indent() << Table(os, region.Table()) << ".SetState(" << tuple_var
-       << ", ";
-
-    switch (region.ToState()) {
-      case TupleState::kAbsent:
-        os << kStateAbsent << " | " << kPresentBit << ");\n";
-        break;
-      case TupleState::kPresent:
-        os << kStatePresent << " | " << kPresentBit << ");\n";
-        break;
-      case TupleState::kUnknown:
-        os << kStateUnknown << " | " << kPresentBit << ");\n";
-        break;
-      case TupleState::kAbsentOrUnknown:
-        os << kStateUnknown << " | " << kPresentBit << ");\n";
-        assert(false);  // Shouldn't be created.
-        break;
-    }
-
-    // If we're transitioning to present, then add it to our indices.
-    //
-    // NOTE(pag): The codegen for negations depends upon transitioning from
-    //            absent to unknown as a way of preventing race conditions.
-    const auto indices = region.Table().Indices();
-    if (region.ToState() == TupleState::kPresent ||
-        region.FromState() == TupleState::kAbsent) {
-      os << os.Indent() << "if (!present_bit) {\n";
-      os.PushIndent();
-
-      auto has_indices = false;
-      for (auto index : indices) {
-        const auto key_cols = index.KeyColumns();
-
-        // The index is the set of keys in the table's `defaultdict`. Thus, we
-        // don't need to add anything because adding to the table will have done
-        // it.
-        if (tuple_vars.size() == key_cols.size()) {
-          continue;
-        }
-
-        const auto val_cols = index.ValueColumns();
-
-        auto key_prefix = "std::make_tuple(";
-        auto key_suffix = ")";
-        auto val_prefix = "std::make_tuple(";
-        auto val_suffix = ")";
-
-        if (key_cols.size() == 1u) {
-          key_prefix = "";
-          key_suffix = "";
-        }
-
-        if (val_cols.size() == 1u) {
-          val_prefix = "";
-          val_suffix = "";
-        }
-
-        has_indices = true;
-
-        // Index will update based on runtime implementation using the column
-        // index numbers as defined in its instantiation
-        os << os.Indent() << TableIndexAccess(os, index);
-
-        // The index is implemented with a `set`.
-        if (val_cols.empty()) {
-          os << ".Add(";
-          sep = "";
-          if (key_cols.size() == 1u) {
-            os << tuple_var;
-          } else {
-            os << '(';
-            for (auto indexed_col : index.KeyColumns()) {
-              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-              sep = ", ";
-            }
-            os << ')';
-          }
-          os << ");\n";
-
-        // The index is implemented with a `defaultdict`.
-        } else {
-          os << ".Update(" << key_prefix;
-          sep = "";
-          for (auto indexed_col : index.KeyColumns()) {
-            os << sep << "std::get<" << indexed_col.Index() << ">(" << tuple_var
-               << ")";
-            sep = ", ";
-          }
-          os << key_suffix << ", " << val_prefix;
-          sep = "";
-          for (auto mapped_col : index.ValueColumns()) {
-            os << sep << "std::get<" << mapped_col.Index() << ">(" << tuple_var
-               << ")";
-            sep = ", ";
-          }
-          os << val_suffix << ");\n";
-        }
-      }
-
-      if (!has_indices) {
-        os << os.Indent() << "{}\n";
-      }
-
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    }
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
     }
+
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
@@ -1861,11 +1754,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
 
-  // Table descriptors
-  for (auto table : program.Tables()) {
-    os << "struct table_desc_" << table.Id() << ";\n";
-  }
-  os << "\n";
+  DeclareDescriptors(os, program, module);
 
   os << "namespace {\n\n";
 
@@ -1873,7 +1762,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   DeclareMessageLog(os, program, module);
 
   // A program gets its own class
-  os << "template <typename StorageEngine>\n";
+  os << "template <typename StorageT>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
@@ -1888,7 +1777,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os << "\n";
 
-  os << os.Indent() << "explicit " << gClassName << "(StorageEngine &storage, "
+  os << os.Indent() << "explicit " << gClassName << "(StorageT &storage, "
      << gClassName << "LogInterface &l, " << gClassName << "Functors &f)\n";
   os.PushIndent();  // constructor
   os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
