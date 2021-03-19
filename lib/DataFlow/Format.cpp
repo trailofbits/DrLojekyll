@@ -80,6 +80,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     } else {
       os << col.Variable();
     }
+#ifndef NDEBUG
+    os << "<BR />" << col.Id() << ": " << col.TaintIds();
+#endif
     return os;
   };
 

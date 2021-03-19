@@ -5,6 +5,7 @@
 #include <cassert>
 #include <functional>
 #include <optional>
+#include <sstream>
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
@@ -518,6 +519,13 @@ const ParsedVariable &QueryColumn::Variable(void) const noexcept {
 unsigned QueryColumn::Id(void) const noexcept {
   return impl->id;
 }
+
+#ifndef NDEBUG
+// Comma separated list of all column ids in this columns taint set
+std::string QueryColumn::TaintIds(void) const {
+  return impl->taint_ids;
+}
+#endif
 
 // Index of this column in its defining view. Returns nothing if this column
 // is a constant.

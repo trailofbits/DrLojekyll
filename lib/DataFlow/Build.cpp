@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "Query.h"
+#include "Taint.h"
 
 #define DEBUG(...)
 
@@ -1779,6 +1780,11 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->TrackDifferentialUpdates(true);
   impl->LinkViews();
   impl->FinalizeColumnIDs();
+
+  // TODO(sonya): This needs to be stored someplace better. Probably in Query?
+  TaintTracker<COL *> t (impl);
+  //t.RunBackwardAnalysis();
+  t.RunForwardAnalysis();
 
   return Query(std::move(impl));
 }

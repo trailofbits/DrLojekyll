@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
 
 namespace hyde {
 
@@ -105,6 +106,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   //
   // After optimizing a dataflow, we replace all ID values
   unsigned id;
+
+#ifndef NDEBUG
+  std::string taint_ids;
+#endif
 
   // The index of this column within its view. This will have a value of
   // `kInvalidIndex` if we don't have the information.
@@ -764,7 +769,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   //            canonicalization.
   WeakUseList<VIEW> joined_views;
 
-  // Number of pivot columns. If this value is zero then this is actuall a
+  // Number of pivot columns. If this value is zero then this is actually a
   // cross-product.
   unsigned num_pivots{0};
 };

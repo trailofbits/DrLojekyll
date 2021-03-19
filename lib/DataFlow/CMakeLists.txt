@@ -8,6 +8,7 @@ set(DataFlow_PUBLIC_H
 set(DataFlow_SRCS
     "Optimize.h"
     "Query.h"
+    "Taint.h"
 
     "Aggregate.cpp"
     "Build.cpp"

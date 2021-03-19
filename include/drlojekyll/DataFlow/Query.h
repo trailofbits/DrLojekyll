@@ -14,6 +14,8 @@ namespace hyde {
 
 class ErrorLog;
 class QueryImpl;
+template <typename>
+class TaintTracker;
 class OutputStream;
 
 namespace query {
@@ -41,6 +43,9 @@ class QueryNode {
 
  protected:
   friend class ::hyde::QueryImpl;
+
+  template <typename>
+  friend class ::hyde::TaintTracker;
 
   Node<T> *impl;
 };
@@ -109,6 +114,11 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   // Unique identifier for columns.
   unsigned Id(void) const noexcept;
+
+#ifndef NDEBUG
+  // Comma separated list of all column ids in this columns taint set
+  std::string TaintIds(void) const;
+#endif
 
   // Index of this column in its defining view. Returns nothing if this column
   // is a constant.
