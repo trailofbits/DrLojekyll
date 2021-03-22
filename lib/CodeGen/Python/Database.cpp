@@ -709,14 +709,15 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       } else {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
-          case VariableRole::kConstant:
           case VariableRole::kConstantZero:
           case VariableRole::kConstantOne:
           case VariableRole::kConstantFalse:
           case VariableRole::kConstantTrue:
-            break;
-          default:
             assert(false);
+            break;
+          case VariableRole::kConstant:
+          default:
+            break;
         }
       }
     }

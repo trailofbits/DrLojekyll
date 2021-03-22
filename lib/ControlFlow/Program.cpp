@@ -518,12 +518,11 @@ Token DataVariable::Name(void) const noexcept {
 
 // The literal, constant value of this variable.
 std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
-  if (impl->query_column) {
-    if (impl->query_column->IsConstantOrConstantRef()) {
-      return QueryConstant::From(*impl->query_column).Literal();
-    }
-  } else if (impl->query_const) {
+  if (impl->query_const) {
     return impl->query_const->Literal();
+  }
+  if (impl->query_column && impl->query_column->IsConstantOrConstantRef()) {
+    return QueryConstant::From(*impl->query_column).Literal();
   }
   return std::nullopt;
 }
