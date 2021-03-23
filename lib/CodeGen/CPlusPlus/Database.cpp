@@ -32,14 +32,6 @@ static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
   return os << "index_" << index.Id();
 }
 
-static OutputStream &TableIndexAccess(OutputStream &os, const DataIndex index) {
-  os << "index_" << index.Id();
-  if (index.ValueColumns().empty()) {
-    return os << "()";
-  }
-  return os;
-}
-
 static OutputStream &Vector(OutputStream &os, const DataVector vec) {
   return os << "vec_" << vec.Id();
 }
@@ -61,7 +53,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
       // NOTE(ekilmer): Will want to fill this programmatically someday
       os << os.Indent() << "static constexpr bool kIsNamed = false;\n";
-      os << os.Indent() << "using Type = " << TypeName(module, col.Type())
+      os << os.Indent() << "using type = " << TypeName(module, col.Type())
          << ";\n";
       os.PopIndent();
       os << "};\n";
@@ -72,8 +64,8 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 }
 
 // Declare a structure containing the information about a table.
-static void DefineTable(OutputStream &os, ParsedModule module,
-                        DataTable table) {
+static void DeclareTable(OutputStream &os, ParsedModule module,
+                         DataTable table) {
   os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
      << ", ";
   auto sep = "";
@@ -94,6 +86,17 @@ static void DefineTable(OutputStream &os, ParsedModule module,
   for (auto index : table.Indices()) {
     const auto key_cols = index.KeyColumns();
     const auto val_cols = index.ValueColumns();
+
+    // The index can be implemented with the keys in the Table.
+    // In this case, the index lookup will be like an `if ... in ...`.
+    if (key_cols.size() == cols.size()) {
+      assert(val_cols.empty());
+
+      // Implement this index as a reference to the Table
+      os << os.Indent() << "decltype(" << Table(os, table) << ") & "
+         << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
+      continue;
+    }
 
     os << os.Indent() << "::hyde::rt::Index<StorageT, table_desc_" << table.Id()
        << ", " << index.Id();
@@ -120,17 +123,8 @@ static void DefineTable(OutputStream &os, ParsedModule module,
     }
     os << ">";
 
-    // The index can be implemented with the keys in the Table.
-    // In this case, the index lookup will be like an `if ... in ...`.
-    if (key_cols.size() == cols.size()) {
-      assert(val_cols.empty());
 
-      // Implement this index as an accessor that just uses the Table
-      os << "& " << TableIndex(os, index) << "() { return &" << Table(os, table)
-         << "; }\n";
-    } else {
-      os << " " << TableIndex(os, index) << ";\n";
-    }
+    os << " " << TableIndex(os, index) << ";\n";
   }
   os << "\n";
 }
@@ -319,27 +313,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramReturnRegion region) override {
     os << Comment(os, region, "ProgramReturnRegion");
-
-    auto proc = ProgramProcedure::Containing(region);
-    auto param_index = 0u;
-
-    // Update any vectors in the caller by reference.
-    for (auto vec : proc.VectorParameters()) {
-      if (vec.Kind() == VectorKind::kInputOutputParameter) {
-        os << os.Indent() << "param_" << param_index
-           << "[0] = " << Vector(os, vec) << ";\n";
-      }
-      ++param_index;
-    }
-
-    // Update any vectors in the caller by reference.
-    for (auto var : proc.VariableParameters()) {
-      if (var.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << os.Indent() << "param_" << param_index << "[0] = " << Var(os, var)
-           << ";\n";
-      }
-      ++param_index;
-    }
 
     os << os.Indent() << "return " << (region.ReturnsFalse() ? "false" : "true")
        << ";\n";
@@ -775,7 +748,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramCheckStateRegion");
     const auto table = region.Table();
     const auto vars = region.TupleVariables();
-    os << os.Indent() << "state = " << Table(os, table) << "(";
+    os << os.Indent() << "state = " << Table(os, table) << ".GetState(";
     if (vars.size() == 1u) {
       os << Var(os, vars[0]);
     } else {
@@ -819,8 +792,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramTableJoinRegion region) override {
     os << Comment(os, region, "ProgramTableJoinRegion");
 
-    const auto id = region.Id();
-
     // Nested loop join
     auto vec = region.PivotVector();
     os << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
@@ -857,46 +828,41 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       (void) table;
 
-      auto key_prefix = "std::make_tuple(";
-      auto key_suffix = ")";
-      if (index_keys.size() == 1u) {
-        key_prefix = "";
-        key_suffix = "";
-      }
-
       // The index is a set of key column values/tuples.
       if (index_vals.empty()) {
+        os << os.Indent() << "if (" << TableIndex(os, index) << ".KeyExists(";
 
-        os << os.Indent() << "auto key_" << id << '_' << i << " = "
-           << key_prefix;
-
-        sep = "";
-        for (auto index_col : index_keys) {
-          auto j = 0u;
-          for (auto used_col : region.IndexedColumns(i)) {
-            if (used_col == index_col) {
-              os << sep << var_names[j];
-              sep = ", ";
+        // Print out key columns
+        auto key_columns = [&]() {
+          sep = "";
+          for (auto index_col : index_keys) {
+            auto j = 0u;
+            for (auto used_col : region.IndexedColumns(i)) {
+              if (used_col == index_col) {
+                os << sep << var_names[j];
+                sep = ", ";
+              }
+              ++j;
             }
-            ++j;
           }
-        }
+        };
 
-        os << key_suffix << ";\n";
-
-        os << os.Indent() << "if (" << TableIndexAccess(os, index)
-           << ".KeyExists("
-           << "key_" << id << '_' << i << ")";
+        key_columns();
+        os << ")";
 
         // The index aliases the underlying table; lets double check that the
         // state isn't `absent`.
         assert(index.KeyColumns().size() == table.Columns().size());
-        os << " && (" << TableIndexAccess(os, index) << ".Get(key_" << id << '_'
-           << i << ") & " << kStateMask << ") != " << kStateAbsent << ") {\n";
+        os << " && (" << TableIndex(os, index) << ".Get(";
+        key_columns();
+        os << ") & " << kStateMask << ") != " << kStateAbsent << ") {\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
         os.PushIndent();
+
+        // Should have no output variables
+        assert(region.OutputVariables(i).empty());
 
       // The index is a default dict mapping key columns to a list of value
       // columns/tuples.
@@ -910,7 +876,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         os << os.Indent() << "int tuple_" << region.Id() << "_" << i
            << "_index = 0;\n"
            << os.Indent() << "auto tuple_" << region.Id() << "_" << i
-           << "_vec = " << TableIndexAccess(os, index) << ".Get(" << key_prefix;
+           << "_vec = " << TableIndex(os, index) << ".Get(";
 
         // This is a bit ugly, but basically: we want to index into the
         // Python representation of this index, e.g. via `index_10[(a, b)]`,
@@ -933,7 +899,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           }
         }
 
-        os << key_suffix << ");\n";
+        os << ");\n";
 
         os << os.Indent() << "while (tuple_" << region.Id() << "_" << i
            << "_index < tuple_" << region.Id() << "_" << i
@@ -943,44 +909,21 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         // only comes *after* visiting the `region.Body()`.
         os.PushIndent();
 
-        os << os.Indent() << "auto tuple_" << region.Id() << "_" << i << " = "
-           << "tuple_" << region.Id() << "_" << i << "_vec[tuple_"
+        auto out_vars = region.OutputVariables(i);
+        assert(out_vars.size() == region.SelectedColumns(i).size());
+
+        os << os.Indent() << "auto [";
+        sep = "";
+        for (auto var : out_vars) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
+
+        os << "] = tuple_" << region.Id() << "_" << i << "_vec[tuple_"
            << region.Id() << "_" << i << "_index];\n";
 
         os << os.Indent() << "tuple_" << region.Id() << "_" << i
            << "_index += 1;\n";
-      }
-
-      auto out_vars = region.OutputVariables(i);
-      if (!out_vars.empty()) {
-        auto select_cols = region.SelectedColumns(i);
-        assert(out_vars.size() == select_cols.size());
-
-        auto indexed_cols = region.IndexedColumns(i);
-        auto indexed_col_idx = 0u;
-        auto out_var_idx = 0u;
-        auto tuple_col_idx_offset = 0u;
-        for (auto var : out_vars) {
-          auto select_col_idx = select_cols[out_var_idx].Index();
-
-          // Need to loop and count indexed columns before this selected
-          // column and use as offset
-          while (indexed_col_idx < indexed_cols.size() &&
-                 select_col_idx > indexed_cols[indexed_col_idx].Index()) {
-            ++tuple_col_idx_offset;
-            ++indexed_col_idx;
-          }
-
-          os << os.Indent() << "auto " << Var(os, var) << " = tuple_"
-             << region.Id() << "_" << i;
-
-          if (1u < out_vars.size()) {
-            os << "[" << select_col_idx - tuple_col_idx_offset << "]";
-          }
-          os << ";\n";
-
-          ++out_var_idx;
-        }
       }
     }
 
@@ -1138,21 +1081,31 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       const auto index = *maybe_index;
 
       os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
-         << "_vec = " << TableIndexAccess(os, index) << ".Get(";
-      auto sep = "{";
+         << "_vec = " << TableIndex(os, index) << ".Get(";
+      auto sep = "";
       for (auto var : input_vars) {
         os << sep << Var(os, var);
         sep = ", ";
       }
-      os << "});\n";
+      os << ");\n";
 
       os << os.Indent() << "int scan_index_" << filled_vec.Id() << " = 0;\n";
       os << os.Indent() << "while (scan_index_" << filled_vec.Id()
          << " < scan_tuple_" << filled_vec.Id() << "_vec.size()) {\n";
       os.PushIndent();
 
-      os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
-         << " = scan_tuple_" << filled_vec.Id() << "_vec["
+      os << os.Indent() << "auto ";
+
+      // Unpack the always packed tuple if one value
+      if (index.ValueColumns().size() == 1) {
+        os << "[";
+      }
+      os << "scan_tuple_" << filled_vec.Id();
+
+      if (index.ValueColumns().size() == 1) {
+        os << "]";
+      }
+      os << " = scan_tuple_" << filled_vec.Id() << "_vec["
          << "scan_index_" << filled_vec.Id() << "];\n"
          << os.Indent() << "scan_index_" << filled_vec.Id() << " += 1;\n";
 
@@ -1261,7 +1214,8 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 
   auto arg_sep = "";
   for (ParsedParameter arg : args) {
-    os << arg_sep << TypeName(module, arg.Type().Kind()) << " " << arg.Name();
+    os << arg_sep << "const " << TypeName(module, arg.Type().Kind()) << "& "
+       << arg.Name();
     arg_sep = ", ";
   }
 
@@ -1389,12 +1343,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // First, declare all vector parameters.
   auto sep = "";
   for (auto vec : vec_params) {
-    const auto is_byref = vec.Kind() == VectorKind::kInputOutputParameter;
-    os << sep;
-    if (is_byref) {
-      os << "std::vector<";
-    }
-    os << "std::vector<";
+    os << sep << "std::vector<";
     const auto &col_types = vec.ColumnTypes();
     if (1u < col_types.size()) {
       os << "std::tuple<";
@@ -1407,12 +1356,11 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     if (1u < col_types.size()) {
       os << '>';
     }
-    if (is_byref) {
-      os << '>';
-    }
     os << "> ";
-    if (is_byref) {
-      os << "param_" << param_index;
+
+    // Check if by reference
+    if (vec.Kind() == VectorKind::kInputOutputParameter) {
+      os << "& param_" << param_index;
     } else {
       os << Vector(os, vec);
     }
@@ -1442,11 +1390,11 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   param_index = 0u;
 
-  // Pull out the referenced vectors.
+  // Set up the referenced vectors.
   for (auto vec : vec_params) {
     if (vec.Kind() == VectorKind::kInputOutputParameter) {
-      os << os.Indent() << "auto " << Vector(os, vec) << " = param_"
-         << param_index << "[0];\n";
+      os << os.Indent() << "auto &" << Vector(os, vec) << " = param_"
+         << param_index << ";\n";
     }
     ++param_index;
   }
@@ -1554,7 +1502,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   // Return vector
   if (num_free_params) {
-    os << "std::vector<";
+    os << os.Indent() << "std::vector<";
     if (1u < num_free_params) {
       os << "std::tuple<";
     }
@@ -1597,8 +1545,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       key_suffix = "";
     }
 
-    os << os.Indent() << "auto tuple_vec = " << TableIndexAccess(os, index)
-       << ".Get(" << key_prefix;
+    os << os.Indent() << "auto tuple_vec = " << TableIndex(os, index) << ".Get("
+       << key_prefix;
 
     sep = "";
     for (auto param : decl.Parameters()) {
@@ -1721,7 +1669,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   }
 
   os.PopIndent();
-  os << os.Indent() << "}\n";
+  os << os.Indent() << "}\n\n";
 }
 
 }  // namespace
@@ -1783,7 +1731,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
 
   for (auto table : program.Tables()) {
-    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage)";
     for (auto index : table.Indices()) {
 
       // If value columns are empty, then we've already mapped it to the table
@@ -1793,13 +1740,23 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
            << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
       }
     }
+
+    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
+    for (auto index : table.Indices()) {
+
+      // NOTE(ekilmer): If value columns are empty, then we don't need to let the table know about it (...probably) because it's already a reference to the table itself
+      if (!index.ValueColumns().empty()) {
+        os << ", " << TableIndex(os, index);
+      }
+    }
+    os << ")";
   }
 
   for (auto global : program.GlobalVariables()) {
     if (!global.IsConstant()) {
       os << ",\n"
-         << os.Indent() << "  " << Var(os, global) << "("
-         << TypeValueOrDefault(module, global.Type(), global) << ")";
+         << os.Indent() << "  " << Var(os, global)
+         << TypeValueOrDefault(module, global.Type(), global);
     }
   }
   os << " {\n";
@@ -1828,7 +1785,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PushIndent();  // private:
 
   for (auto table : program.Tables()) {
-    DefineTable(os, module, table);
+    DeclareTable(os, module, table);
   }
 
   for (auto global : program.GlobalVariables()) {

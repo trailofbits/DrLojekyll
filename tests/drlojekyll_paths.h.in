@@ -12,6 +12,9 @@ static constexpr auto kGeneratedFilesDir = "@CMAKE_CURRENT_BINARY_DIR@/generated
 // An absolute path to public headers in source directory
 static constexpr auto kDrlogPublicHeaders = "@DrLojekyll_SOURCE_DIR@/include";
 
+// An absolute path to Runtime implementation headers in source directory
+static constexpr auto kDrlogRuntimeImplHeaders = "@DrLojekyll_SOURCE_DIR@/Runtime";
+
 // An absolute path to the C++ compiler
 static constexpr auto kCxxCompilerPath = "@CMAKE_CXX_COMPILER@";
 

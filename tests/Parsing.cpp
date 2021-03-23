@@ -153,10 +153,12 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   std::string compile_cmd = "\"" + std::string(kCxxCompilerPath) + "\"" +
 #ifdef _WIN32
                             " /std:c++17 /c /I\"" + kDrlogPublicHeaders +
+                            "\" /I\"" + kDrlogRuntimeImplHeaders
 #else
                             " -std=c++17 -c -I\"" + kDrlogPublicHeaders +
+                            "\" -I\"" + kDrlogRuntimeImplHeaders
 #endif
-                            "\" " + kCxxFlags + " \"" + cxx_out_path + "\"";
+                            + "\" " + kCxxFlags + " \"" + cxx_out_path + "\"";
 #ifdef _WIN32
   int compile_ret_code = std::system(("\"" + compile_cmd + "\"").c_str());
 #else
