@@ -895,25 +895,25 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
             const auto kind = pred->declaration->context->kind;
 
-            // We don't allow negations of messages because we think of them
-            // as ephemeral, i.e. not even part of the database. They come in
-            // to trigger some action, and leave.
-            //
-            // We *do* allow negation of queries because we proxy them
-            // externally via later source-to-source transforms.
-            if (kind == DeclarationKind::kMessage) {
-              context->error_log.Append(scope_range, pred_range)
-                  << "Cannot negate message '" << pred->name
-                  << "'; if you want to test that a message has never been "
-                  << "received then proxy it with a `#local` or `#export`";
-              return;
+//            // We don't allow negations of messages because we think of them
+//            // as ephemeral, i.e. not even part of the database. They come in
+//            // to trigger some action, and leave.
+//            //
+//            // We *do* allow negation of queries because we proxy them
+//            // externally via later source-to-source transforms.
+//            if (kind == DeclarationKind::kMessage) {
+//              context->error_log.Append(scope_range, pred_range)
+//                  << "Cannot negate message '" << pred->name
+//                  << "'; if you want to test that a message has never been "
+//                  << "received then proxy it with a `#local` or `#export`";
+//              return;
 
             // A functor with a range of one-to-one or one-or-more is guaranteed
             // to produce at least one output, and so negating it would yield
             // and always-false situation.
-            } else if (kind == DeclarationKind::kFunctor &&
-                       (pred->declaration->range == FunctorRange::kOneToOne ||
-                        pred->declaration->range == FunctorRange::kOneOrMore)) {
+            if (kind == DeclarationKind::kFunctor &&
+                (pred->declaration->range == FunctorRange::kOneToOne ||
+                 pred->declaration->range == FunctorRange::kOneOrMore)) {
               auto err = context->error_log.Append(scope_range, pred_range);
               err << "Cannot negate functor '" << pred->name
                   << "' declared with a one-to-one or one-or-more range";
