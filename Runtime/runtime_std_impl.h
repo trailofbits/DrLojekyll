@@ -68,9 +68,8 @@ struct WriteData<Writer, std::string> {
 
 struct std_containers {};
 
-template <typename StorageT, typename TableId, unsigned kIndexId,
-          typename... Columns>
-class Index {
+template <typename TableId, unsigned kIndexId, typename... Columns>
+class Index<std_containers, TableId, kIndexId, Columns...> {
  public:
   using values_tuple = typename filtered<IsValue, Columns...>::type;
   using keys_tuple = typename filtered<IsKey, Columns...>::type;

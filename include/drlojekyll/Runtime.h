@@ -149,10 +149,6 @@ template <typename StorageT, typename TableId, const unsigned kIndexId,
           typename... Columns>
 class Index;
 
-// Method on an index for AddToIndex that takes in all columns and does the
-// right thing for updating based on Key, Value of column Ids
-
-
 using UTF8 = std::string_view;
 using Any = void;
 
