@@ -10,6 +10,41 @@
 using Token = std::tuple<::hyde::rt::UTF8, int>;
 using ASTNode = std::vector<Token>;
 using Lexeme = ::hyde::rt::UTF8;
+
+Token _left_corner_bf(const ASTNode &node) {
+  // print("left_corner({})".format(node))
+  return node.front();
+}
+
+Token _right_corner_bf(const ASTNode &node) {
+  // print("right_corner({})".format(node))
+  return node.back();
+}
+
+Lexeme _lexeme_of_token_bf(const Token &tok) {
+  // print("lexeme_of_token_bf({})".format(tok))
+  return Lexeme(std::get<0>(tok));
+}
+
+ASTNode _start_function_type_bbf(const Token &func_tok, const Token &l_paren) {
+  // print("start_function_type_bbf({}, {})".format(func_tok, l_paren))
+  return ASTNode({func_tok, l_paren});
+}
+
+ASTNode _add_function_type_param_bbf(const ASTNode &base_type, const ASTNode &param) {
+  // print("add_function_type_param_bbf({}, {})".format(base_type, param))
+  std::vector<Token> vec(base_type.begin(), base_type.end());
+  vec.insert(vec.end(), param.begin(), param.end());
+  return static_cast<ASTNode>(vec);
+}
+
+ASTNode _finish_function_type_params_bbf(const ASTNode &base_type, const Token &r_paren) {
+  // print("finish_function_type_bbf({}, {})".format(base_type, r_paren))
+  std::vector<Token> vec(base_type.begin(), base_type.end());
+  vec.push_back(r_paren);
+  return static_cast<ASTNode>(vec);
+}
+
 ```.
 
 #foreign Token ```python Tuple[str, int]```.
@@ -181,40 +216,6 @@ if __name__ == "__main__":
 ```.
 #epilogue ```c++
 // #include "impl.cpp"
-Token left_corner_bf(const ASTNode &node) {
-  // print("left_corner({})".format(node))
-  return node.front();
-}
-
-Token right_corner_bf(const ASTNode &node) {
-  // print("right_corner({})".format(node))
-  return node.back();
-}
-
-Lexeme lexeme_of_token_bf(const Token &tok) {
-  // print("lexeme_of_token_bf({})".format(tok))
-  return Lexeme(std::get<0>(tok));
-}
-
-ASTNode start_function_type_bbf(const Token &func_tok, const Token &l_paren) {
-  // print("start_function_type_bbf({}, {})".format(func_tok, l_paren))
-  return ASTNode({func_tok, l_paren});
-}
-
-ASTNode add_function_type_param_bbf(const ASTNode &base_type, const ASTNode &param) {
-  // print("add_function_type_param_bbf({}, {})".format(base_type, param))
-  std::vector<Token> vec(base_type.begin(), base_type.end());
-  vec.insert(vec.end(), param.begin(), param.end());
-  return static_cast<ASTNode>(vec);
-}
-
-ASTNode finish_function_type_params_bbf(const ASTNode &base_type, const Token &r_paren) {
-  // print("finish_function_type_bbf({}, {})".format(base_type, r_paren))
-  std::vector<Token> vec(base_type.begin(), base_type.end());
-  vec.push_back(r_paren);
-  return static_cast<ASTNode>(vec);
-}
-
 #include "runtime_std_impl.h"
 
 int main() {
@@ -222,14 +223,13 @@ int main() {
   auto log = DatabaseLog();
   auto backend = hyde::rt::std_containers();
   Database db = Database(backend, log, functors);
-  (void) db;
 
-  //std::vector<Token> tokens = {{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}, {"foo", 4}};
+  std::vector<Token> tokens = {{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}, {"foo", 4}};
 
-  //for (size_t i = 1; i < tokens.size(); i++) {
-  //  db.next_token_2({{tokens[i-1], tokens[i]}});
-  //}
-  //db.other_type_1({{tokens[2]}});
+  for (size_t i = 1; i < tokens.size(); i++) {
+    db.next_token_2({{tokens[i-1], tokens[i]}});
+  }
+  db.other_type_1({{tokens[2]}});
 
   //std::map<ASTNode, ASTNode> good ({{"bytes", 2}},
   //            ASTNode({{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}}));

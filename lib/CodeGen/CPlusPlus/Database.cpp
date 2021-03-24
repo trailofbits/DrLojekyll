@@ -1163,7 +1163,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 };
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
-                           ParsedFunctor func) {
+                           ParsedFunctor func, bool user_fwd_declare = false) {
   std::stringstream return_tuple;
   std::vector<ParsedParameter> args;
   auto sep_ret = "";
@@ -1209,8 +1209,8 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     }
   }
 
-  os << " " << func.Name() << '_' << ParsedDeclaration(func).BindingPattern()
-     << "(";
+  os << " " << (user_fwd_declare ? "_" : "") << func.Name() << '_'
+     << ParsedDeclaration(func).BindingPattern() << "(";
 
   auto arg_sep = "";
   for (ParsedParameter arg : args) {
@@ -1219,12 +1219,17 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     arg_sep = ", ";
   }
 
-  os << ") {\n";
+  os << ")";
+}
 
+static void DefineFunctor(OutputStream &os, ParsedModule module,
+                          ParsedFunctor func) {
+  DeclareFunctor(os, module, func);
+  os << " {\n";
   os.PushIndent();
-  os << os.Indent() << "return " << func.Name() << '_'
+  os << os.Indent() << "return _" << func.Name() << '_'
      << ParsedDeclaration(func).BindingPattern() << "(";
-  sep_ret = "";
+  auto sep_ret = "";
   for (auto param : func.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << sep_ret << param.Name();
@@ -1245,16 +1250,14 @@ static void DeclareFunctors(OutputStream &os, Program program,
 
   std::unordered_set<std::string> seen;
 
-  // auto has_functors = false;
   for (auto module : ParsedModuleIterator(root_module)) {
     for (auto first_func : module.Functors()) {
       for (auto func : first_func.Redeclarations()) {
         std::stringstream ss;
         ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DeclareFunctor(os, module, func);
+          DefineFunctor(os, module, func);
 
-          // has_functors = true;
           (void) it;
         }
       }
@@ -1696,11 +1699,29 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       }
     }
   }
+
   os << "#include <algorithm>\n"
      << "#include <optional>\n"
      << "#include <tuple>\n"
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
+
+  // Forward-declare user-provided functors
+  std::unordered_set<std::string> seen;
+  for (auto module : ParsedModuleIterator(module)) {
+    for (auto first_func : module.Functors()) {
+      for (auto func : first_func.Redeclarations()) {
+        std::stringstream ss;
+        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
+        if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
+          DeclareFunctor(os, module, func, true);
+          os << ";\n";
+          (void) it;
+        }
+      }
+    }
+  }
+  os << "\n";
 
   DeclareDescriptors(os, program, module);
 
