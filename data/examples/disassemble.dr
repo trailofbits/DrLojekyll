@@ -1,6 +1,6 @@
 ; This example shows how to implement a recursive disassembler with Dr. Lojekyll
 
-#constant u8 FALL_THRUGH 0.
+#constant u8 FALL_THROUGH 0.
 #constant u8 CALL 1.
 
 #message instruction(u64 EA).
@@ -26,7 +26,7 @@
     ; The fall-through of one function instruction is also a function
     ; instruction, assuming it's not a function head.
     : function_instructions(FuncEA, PredEA)
-    , raw_transfer(PredEA, InstEA, FALL_THRUGH)
+    , raw_transfer(PredEA, InstEA, FALL_THROUGH)
     , !function(InstEA).
 
 #epilogue ```python

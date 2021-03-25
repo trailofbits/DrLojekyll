@@ -108,6 +108,7 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kTableScan: os << "$scan"; break;
+    case VectorKind::kEmpty: os << "$empty"; break;
   }
 
   os << ':' << vec.Id();
@@ -679,6 +680,7 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
     case ProcedureKind::kInitializer: os << "^init:"; break;
+    case ProcedureKind::kPrimaryDataFlowFunc: os << "^flow:"; break;
     case ProcedureKind::kMessageHandler:
       os << "^receive:";
       if (auto message = proc.Message(); message) {

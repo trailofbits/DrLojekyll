@@ -198,21 +198,20 @@ static void MapVariables(REGION *region) {
 }
 
 // Create a procedure for a view.
-static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
-                                Context &context) {
+static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
+                                 Context &context, PROC *proc,
+                                 PARALLEL *parent) {
   const auto receives = io.Receives();
   if (receives.empty()) {
     return;
   }
 
-  const auto proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kMessageHandler);
-  proc->io = io;
-
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      proc, ProgramOperation::kLoopOverInputVector);
+      parent, ProgramOperation::kLoopOverInputVector);
+  parent->AddRegion(loop);
+
   auto par = impl->parallel_regions.Create(loop);
 
   for (auto col : receives[0].Columns()) {
@@ -224,15 +223,6 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
 
   loop->body.Emplace(loop, par);
   loop->vector.Emplace(loop, vec);
-  proc->body.Emplace(proc, loop);
-
-  assert(context.work_list.empty());
-  assert(context.view_to_work_item.empty());
-
-  context.work_list.clear();
-//  context.view_to_work_item.clear();
-//  context.view_to_induction.clear();
-//  context.product_vector.clear();
 
   for (auto receive : io.Receives()) {
     auto let = impl->operation_regions.CreateDerived<LET>(par);
@@ -254,8 +244,77 @@ static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
     BuildEagerSuccessorRegions(impl, receive, context, let,
                                receive.Successors(), nullptr);
   }
+}
+
+// Builds an I/O procedure, which goes and invokes the primary data flow
+// procedure.
+static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
+                             Context &context, PROC *proc) {
+  const auto receives = io.Receives();
+  if (receives.empty()) {
+    return;
+  }
+
+  const auto io_proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kMessageHandler);
+  io_proc->io = io;
+
+  const auto io_vec =
+      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+
+  auto seq = impl->series_regions.Create(io_proc);
+  io_proc->body.Emplace(io_proc, seq);
+
+  auto call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, seq, proc);
+  seq->AddRegion(call);
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->AddRegion(ret);
+
+  for (auto other_io : query.IOs()) {
+    const auto other_receives = other_io.Receives();
+    if (other_receives.empty()) {
+      continue;
+    }
+
+    if (io == other_io) {
+      call->arg_vecs.AddUse(io_vec);
+    } else {
+      call->arg_vecs.AddUse(io_proc->VectorFor(
+          impl, VectorKind::kEmpty, other_receives[0].Columns()));
+    }
+  }
+}
+
+static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
+                                Query query) {
+
+  assert(context.work_list.empty());
+  assert(context.view_to_work_item.empty());
+
+  const auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
+
+  context.work_list.clear();
+
+  auto par = impl->parallel_regions.Create(proc);
+  proc->body.Emplace(proc, par);
+
+  //  context.view_to_work_item.clear();
+  //  context.view_to_induction.clear();
+  //  context.product_vector.clear();
+
+  for (auto io : query.IOs()) {
+    ExtendEagerProcedure(impl, io, context, proc, par);
+  }
 
   CompleteProcedure(impl, proc, context);
+
+  for (auto io : query.IOs()) {
+    BuildIOProcedure(impl, query, io, context, proc);
+  }
 }
 
 // Analyze the MERGE/UNION nodes and figure out which ones are inductive.
@@ -1730,9 +1789,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   BuildInitProcedure(program, context);
 
   // Build bottom-up procedures starting from message receives.
-  for (auto io : query.IOs()) {
-    BuildEagerProcedure(program, io, context);
-  }
+  BuildEagerProcedure(program, context, query);
 
   for (auto insert : query.Inserts()) {
     if (insert.IsRelation()) {

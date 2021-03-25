@@ -243,7 +243,11 @@ enum class VectorKind : unsigned {
   kInduction,
   kJoinPivots,
   kProductInput,
-  kTableScan
+  kTableScan,
+
+  // This is a vector created inside of a message procedure and passed down to
+  // the primary data flow function. It is guaranteed to be empty.
+  kEmpty
 };
 
 // A column in a table.
@@ -790,6 +794,9 @@ enum class ProcedureKind : unsigned {
   // Function to initialize all relations. If any relation takes a purely
   // constant tuple as input, then this function initializes those flows.
   kInitializer,
+
+  // The primary function that executes most data flows.
+  kPrimaryDataFlowFunc,
 
   // Process an input vector of zero-or-more tuples received from the
   // network. This is a kind of bottom-up execution of the dataflow.
