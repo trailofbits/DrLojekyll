@@ -840,17 +840,15 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
 }
 
 // Try to apply as many functors and negations as possible to `view`.
-static bool TryApplyFunctorsAndNegations(QueryImpl *query, ParsedClause clause,
-                                         ClauseContext &context,
-                                         const ErrorLog &log,
-                                         bool only_filters) {
+static bool TryApplyFunctors(QueryImpl *query, ParsedClause clause,
+                             ClauseContext &context,
+                             const ErrorLog &log,
+                             bool only_filters) {
 
   const auto num_views = context.views.size();
 
   std::vector<ParsedPredicate> unapplied_functors;
-  std::vector<ParsedPredicate> unapplied_negations;
   unapplied_functors.reserve(context.functors.size());
-  unapplied_negations.reserve(context.negated_predicates.size());
 
   bool updated = false;
 
@@ -860,28 +858,6 @@ static bool TryApplyFunctorsAndNegations(QueryImpl *query, ParsedClause clause,
     // Try to apply as many functors as possible to `view`.
     for (auto changed = true; changed; ) {
       changed = false;
-
-      // NOTE(pag): We don't `GuardViewWithFilter` because applying a negation
-      //            doesn't introduce any new variables.
-      unapplied_negations.clear();
-      bool applied_negations = false;
-      for (auto pred : context.negated_predicates) {
-        if (auto out_view = TryApplyNegation(query, clause, context, pred,
-                                             view, log);
-            out_view) {
-          view = out_view;
-          updated = true;
-          changed = true;
-          applied_negations = true;
-
-        } else {
-          unapplied_negations.push_back(pred);
-        }
-      }
-
-      if (applied_negations) {
-        context.negated_predicates.swap(unapplied_negations);
-      }
 
       auto applied_functors = false;
       unapplied_functors.clear();
@@ -917,6 +893,52 @@ static bool TryApplyFunctorsAndNegations(QueryImpl *query, ParsedClause clause,
 
       if (applied_functors) {
         context.functors.swap(unapplied_functors);
+      }
+    }
+  }
+  return updated;
+}
+
+
+// Try to apply as many functors and negations as possible to `view`.
+static bool TryApplyNegations(QueryImpl *query, ParsedClause clause,
+                              ClauseContext &context,
+                              const ErrorLog &log) {
+
+  const auto num_views = context.views.size();
+
+  std::vector<ParsedPredicate> unapplied_negations;
+  unapplied_negations.reserve(context.negated_predicates.size());
+
+  bool updated = false;
+
+  for (auto i = 0u; i < num_views; ++i) {
+    auto &view = context.views[i];
+
+    // Try to apply as many functors as possible to `view`.
+    for (auto changed = true; changed; ) {
+      changed = false;
+
+      // NOTE(pag): We don't `GuardViewWithFilter` because applying a negation
+      //            doesn't introduce any new variables.
+      unapplied_negations.clear();
+      bool applied_negations = false;
+      for (auto pred : context.negated_predicates) {
+        if (auto out_view = TryApplyNegation(query, clause, context, pred,
+                                             view, log);
+            out_view) {
+          view = out_view;
+          updated = true;
+          changed = true;
+          applied_negations = true;
+
+        } else {
+          unapplied_negations.push_back(pred);
+        }
+      }
+
+      if (applied_negations) {
+        context.negated_predicates.swap(unapplied_negations);
       }
     }
   }
@@ -1500,7 +1522,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     // We applied at least one functor or negation and updated `pred_views`
     // in place (view `context.views`). Here we limit the functors to ones that
     // have a range of zero-or-one, i.e. filter functors.
-    if (TryApplyFunctorsAndNegations(query, clause, context, log, true)) {
+    if (TryApplyFunctors(query, clause, context, log, true)) {
       changed = true;
       continue;
     }
@@ -1514,7 +1536,14 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
     // Try to apply functors that are not just filter functors, i.e. have
     // all other ranges.
-    if (TryApplyFunctorsAndNegations(query, clause, context, log, false)) {
+    if (TryApplyFunctors(query, clause, context, log, false)) {
+      changed = true;
+      continue;
+    }
+
+    // Try to apply negations; leave these as late as possible to defer adding
+    // in differential updates.
+    if (TryApplyNegations(query, clause, context, log)) {
       changed = true;
       continue;
     }
