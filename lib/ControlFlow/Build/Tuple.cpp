@@ -38,29 +38,7 @@ static OP *RemoveFromNegatedView(ProgramImpl *impl, Context &context,
       impl, table, parent, view_cols, TupleState::kPresent, TupleState::kAbsent);
   COMMENT( table_remove->comment = "Remove from negated view"; )
 
-  const auto par = impl->parallel_regions.Create(table_remove);
-  table_remove->body.Emplace(table_remove, par);
-
-  for (auto succ_view : QueryView(negate).Successors()) {
-
-    const auto remover_proc = GetOrCreateBottomUpRemover(
-        impl, context, negate, succ_view, table);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, par, remover_proc);
-
-    auto i = 0u;
-    for (auto col : negate.Columns()) {
-      const auto var = par->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-
-      const auto param = remover_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-
-    par->AddRegion(call);
-  }
+  BuildEagerRemovalRegions(impl, negate, context, table_remove, table);
 
   return table_remove;
 }
@@ -437,26 +415,10 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
     ReAddToNegatedViews(impl, context, parent, view);
   }
 
-  for (auto succ_view : view.Successors()) {
+  auto let = impl->operation_regions.CreateDerived<LET>(parent);
+  parent->AddRegion(let);
 
-    const auto checker_proc = GetOrCreateBottomUpRemover(
-        impl, context, view, succ_view, already_checked);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent, checker_proc);
-
-    auto i = 0u;
-    for (auto col : view.Columns()) {
-      const auto var = parent->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-
-      const auto param = checker_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-
-    parent->AddRegion(call);
-  }
+  BuildEagerRemovalRegions(impl, view, context, let, already_checked);
 
   // NOTE(pag): We don't end this with a `return-false` because removing from
   //            the tuple may trigger the insertion into a negation, which

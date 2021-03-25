@@ -287,27 +287,21 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we can do it.
     if (already_checked != model->table) {
+      already_checked = model->table;
+
       const auto orig_parent = parent;
       orig_parent->AddRegion(BuildBottomUpTryMarkUnknown(
           impl, model->table, parent, view.Columns(),
           [&](PARALLEL *par) { parent = par; }));
     }
+  } else {
+    already_checked = nullptr;
   }
 
-  for (auto succ_view : view.Successors()) {
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent,
-        GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                   nullptr));
+  auto let = impl->operation_regions.CreateDerived<LET>(parent);
+  parent->AddRegion(let);
 
-    for (auto col : view.Columns()) {
-      const auto var = call->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-    }
-
-    parent->AddRegion(call);
-  }
+  BuildEagerRemovalRegions(impl, view, context, let, already_checked);
 }
 
 }  // namespace hyde

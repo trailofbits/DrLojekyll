@@ -179,30 +179,10 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
   // Okay, by this point, we've either marked the tuple as unknown
   // (non-inductive) and we are proceeding to speculatively delete it in
   // the successors.
-  for (auto succ_view : view.Successors()) {
+  auto let = impl->operation_regions.CreateDerived<LET>(parent);
+  parent->AddRegion(let);
 
-    // TODO(pag): I don't recall why this is important, but I have enforced it
-    //            in the data flow side.
-    assert(!succ_view.IsMerge());
-
-    const auto checker_proc = GetOrCreateBottomUpRemover(
-        impl, context, view, succ_view, already_checked);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent, checker_proc);
-
-    auto i = 0u;
-    for (auto col : view.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-
-      const auto param = checker_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-
-    parent->AddRegion(call);
-  }
+  BuildEagerRemovalRegions(impl, view, context, let, already_checked);
 }
 
 }  // namespace hyde

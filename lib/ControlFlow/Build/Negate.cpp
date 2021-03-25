@@ -221,26 +221,10 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
 
   // Call the successors.
   auto handle_sucesssors = [&] (PARALLEL *par) {
-    for (auto succ_view : view.Successors()) {
+    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(let);
 
-      const auto called_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, model->table);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, called_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = proc->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = called_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
+    BuildEagerRemovalRegions(impl, view, context, let, model->table);
   };
 
   SERIES *parent = nullptr;  // NOTE(pag): Assigned in callback below.

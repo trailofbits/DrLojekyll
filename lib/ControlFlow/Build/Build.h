@@ -506,6 +506,13 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     const std::vector<QueryColumn> &view_cols, TABLE *table,
     QueryView pred_view, TABLE *already_checked = nullptr);
 
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
+void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
+                              Context &context, OP *parent,
+                              TABLE *already_checked=nullptr);
+
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,

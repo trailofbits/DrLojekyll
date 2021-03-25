@@ -183,22 +183,10 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       const auto sel_cols = succ_view.Columns();
       assert(sel_cols.size() == insert_cols.size());
 
-      for (auto sel_succ : succ_view.Successors()) {
+      auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
 
-        const auto call = impl->operation_regions.CreateDerived<CALL>(
-            impl->next_id++, par,
-            GetOrCreateBottomUpRemover(impl, context, succ_view, sel_succ,
-                                       already_checked));
-
-        for (auto sel_col : sel_cols) {
-          const auto var =
-              proc->VariableFor(impl, insert_cols[*(sel_col.Index())]);
-          assert(var != nullptr);
-          call->arg_vars.AddUse(var);
-        }
-
-        par->AddRegion(call);
-      }
+      BuildEagerRemovalRegions(impl, succ_view, context, let, already_checked);
     }
   }
 }

@@ -20,26 +20,7 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
   // We don't permit `!foo : message(...).`
   assert(!view.SetCondition());
 
-  auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (auto succ_view : view.Successors()) {
-    const auto called_proc = GetOrCreateBottomUpRemover(
-        impl, context, view, succ_view);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, par, called_proc);
-    par->AddRegion(call);
-
-    auto i = 0u;
-    for (auto col : view.Columns()) {
-      const auto var = parent->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-      const auto param = called_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-  }
+  BuildEagerRemovalRegions(impl, view, context, parent, nullptr);
 }
 
 // The interesting thing with DELETEs is that they don't have a data model;
@@ -49,27 +30,10 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
 void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc) {
 
-  auto del = QueryDelete::From(view);
-  for (auto succ_view : view.Successors()) {
-    assert(succ_view.IsMerge());
+  auto let = impl->operation_regions.CreateDerived<LET>(proc);
+  proc->body.Emplace(proc, let);
 
-    const auto called_proc = GetOrCreateBottomUpRemover(
-        impl, context, view, succ_view);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, proc, called_proc);
-
-    auto i = 0u;
-    for (auto col : del.Columns()) {
-      const auto var = proc->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-      const auto param = called_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-
-    call->ExecuteAlongside(impl, proc);
-  }
+  BuildEagerRemovalRegions(impl, view, context, let, nullptr);
 }
 
 }  // namespace hyde

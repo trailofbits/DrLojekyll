@@ -579,27 +579,9 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       }
     });
 
-    auto par = impl->parallel_regions.Create(join);
-    for (auto succ_view : view.Successors()) {
-
-      const auto called_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, nullptr);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, called_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = join->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-        const auto param = called_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
-    return par;
+    const auto let = impl->operation_regions.CreateDerived<LET>(join);
+    BuildEagerRemovalRegions(impl, view, context, let, nullptr);
+    return let;
   };
 
   // If this is more than a two-way join then we're going to make a join region

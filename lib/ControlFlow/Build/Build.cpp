@@ -1403,6 +1403,38 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   return check;
 }
 
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
+void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
+                              Context &context, OP *parent,
+                              TABLE *already_checked) {
+
+  const auto par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+
+  for (auto succ_view : view.Successors()) {
+
+    const auto remover_proc = GetOrCreateBottomUpRemover(
+        impl, context, view, succ_view, already_checked);
+    const auto call = impl->operation_regions.CreateDerived<CALL>(
+        impl->next_id++, par, remover_proc);
+
+    auto i = 0u;
+    for (auto col : view.Columns()) {
+      const auto var = par->VariableFor(impl, col);
+      assert(var != nullptr);
+      call->arg_vars.AddUse(var);
+
+      const auto param = remover_proc->input_vars[i++];
+      assert(var->Type() == param->Type());
+      (void) param;
+    }
+
+    par->AddRegion(call);
+  }
+}
+
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
