@@ -26,16 +26,10 @@ ProgramImpl::~ProgramImpl(void) {
   }
 
   for (auto induction : induction_regions) {
-    for (auto &entry : induction->view_to_init_appends) {
-      entry.second.ClearWithoutErasure();
-    }
-    for (auto &entry : induction->view_to_vec) {
-      entry.second.ClearWithoutErasure();
-    }
     induction->init_region.ClearWithoutErasure();
     induction->cyclic_region.ClearWithoutErasure();
     induction->output_region.ClearWithoutErasure();
-    induction->vectors.Clear();
+    induction->vectors.ClearWithoutErasure();
   }
 
   for (auto op : operation_regions) {

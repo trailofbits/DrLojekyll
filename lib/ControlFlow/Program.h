@@ -1224,15 +1224,14 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // It could be the case that a when going through the induction we end up
   // going into a co-mingled induction, as is the case in
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
-  std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_input_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_induction_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_vec;
 
   // List of append to vector regions inside this induction.
-  std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
+  std::vector<OP *> init_appends;
+  std::vector<OP *> cycle_appends;
 
-  PROC *cycle_proc{nullptr};
-  PROC *output_proc{nullptr};
+  std::vector<OP *> output_cycles;
+  std::vector<OP *> fixpoint_cycles;
 
   enum State {
     kAccumulatingInputRegions,

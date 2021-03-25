@@ -59,12 +59,6 @@ class Context {
   // other merge in their inductive set.
   std::unordered_set<QueryView> dominated_merges;
 
-  // Mapping of inductions to functions that process their inductive cycles.
-  std::unordered_map<InductionSet *, PROC *> induction_cycle_funcs;
-
-  // Mapping of inductions to functions that process their output vectors.
-  std::unordered_map<InductionSet *, PROC *> induction_output_funcs;
-
   // Set of successors of a `QueryMerge` that may lead back to the merge
   // (inductive) and never lead back to the merge (noninductive), respectively.
   std::unordered_map<QueryView, std::unordered_set<QueryView>>

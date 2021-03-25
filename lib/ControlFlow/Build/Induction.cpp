@@ -71,19 +71,15 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
   PROC *const proc = induction->containing_procedure;
   REGION *common_ancestor = nullptr;
 
-  auto num_init_appends = 0u;
-  for (const auto &[view, init_appends] : induction->view_to_init_appends) {
-    for (REGION *const init_append : init_appends) {
-      ++num_init_appends;
-      if (!common_ancestor) {
-        common_ancestor = init_append;
-      } else {
-        common_ancestor = common_ancestor->FindCommonAncestor(init_append);
-      }
+  for (const auto init_append : induction->init_appends) {
+    if (!common_ancestor) {
+      common_ancestor = init_append;
+    } else {
+      common_ancestor = common_ancestor->FindCommonAncestor(init_append);
     }
   }
 
-  if (1u >= num_init_appends) {
+  if (1u >= induction->init_appends.size()) {
     common_ancestor = proc;
   }
 
@@ -96,6 +92,9 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
 
 // Build the cyclic regions of this INDUCTION.
 void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
+  const auto proc = induction->containing_procedure;
+
+  assert(induction->state == INDUCTION::kAccumulatingInputRegions);
   induction->state = INDUCTION::kAccumulatingCycleRegions;
 
   // Replace the common ancestor with the INDUCTION, and move that common
@@ -106,74 +105,124 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   induction->init_region.Emplace(induction, ancestor_of_inits);
   ancestor_of_inits->parent = induction;
 
-  // We haven't yet built the cyclic function.
-  const auto handler_proc = induction->cycle_proc;
-  if (!handler_proc->body) {
+  // Make sure that we only enter into the cycle accumulation process once.
+  assert(!induction->cyclic_region);
+  const auto seq = impl->series_regions.Create(induction);
+  induction->cyclic_region.Emplace(induction, seq);
 
-    const auto seq = impl->series_regions.Create(handler_proc);
-    handler_proc->body.Emplace(handler_proc, seq);
+  assert(!induction->output_region);
+  const auto done_par = impl->parallel_regions.Create(induction);
+  induction->output_region.Emplace(induction, done_par);
 
-    std::vector<VECTOR *> swap_vecs;
-    auto merge_index = 0u;
-    for (auto merge : induction_set->merges) {
-      const auto vec = handler_proc->input_vecs[merge_index++];
-      const auto swap_vec = handler_proc->VectorFor(
-          impl, VectorKind::kInduction, merge.Columns());
+  // Build the primary structure of the inductive region, which goes through
+  // the following phases:
+  //    - send current accumulated results in `vec` to the regions that process
+  //      the non-inductive output views.
+  //    - swap `vec` with `swap_vec`, so that the fixpoint loop can re-fill
+  //      `vec`, based off of visiting everything in `swap_vec`.
+  //    - clear out `vec` so that we can re-fill it.
+  //    - loop over `swap_vec`, passing its data down to the regions associated
+  //      with the inductive successor views, thereby leading to us re-filling
+  //      `vec`.
+  //
+  // TODO(pag): Consider adding a sort stage `vec` here?
+  const auto output_par = impl->parallel_regions.Create(seq);
+  const auto swap_par = impl->parallel_regions.Create(seq);
+  const auto clear_par = impl->parallel_regions.Create(seq);
+  const auto cycle_par = impl->parallel_regions.Create(seq);
 
-      // TODO(pag): Consider sorting the vector here?
+  seq->AddRegion(output_par);
+  seq->AddRegion(swap_par);
+  seq->AddRegion(clear_par);
+  seq->AddRegion(cycle_par);
 
-      const auto swap = impl->operation_regions.CreateDerived<VECTORSWAP>(
-          seq, ProgramOperation::kSwapInductionVector);
-      seq->AddRegion(swap);
-      swap->lhs.Emplace(swap, vec);
-      swap->rhs.Emplace(swap, swap_vec);
+  // Now build the inductive cycle regions and add them in. We'll do this
+  // before we actually add the successor regions in.
+  auto merge_index = 0u;
+  for (auto merge : induction_set->merges) {
+    const auto vec = induction->view_to_vec[merge];
+    assert(!!vec);
 
-      swap_vecs.push_back(swap_vec);
+    // We'll start by looping over `vec`, which holds the inputs, or outputs from
+    // the last fixpoint iteration, and we'll send these to the output regions
+    // of the induction.
+    const auto output = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        output_par, ProgramOperation::kLoopOverInductionInputVector);
+    output->vector.Emplace(output, vec);
+    output_par->AddRegion(output);
+    induction->output_cycles.push_back(output);
+
+    // These are a bunch of swap vectors that we use for the sake of allowing
+    // ourselves to see the results of the prior iteration, while minimizing
+    // the amount of cross-iteration resident data.
+    const auto swap_vec =
+        proc->VectorFor(impl, VectorKind::kInduction, merge.Columns());
+
+    // We swap the induction vector `vec` with `swap_vec`, so that we can loop
+    // over `swap_vec` and in the body of the loop, fill up `vec`.
+    const auto swap = impl->operation_regions.CreateDerived<VECTORSWAP>(
+        swap_par, ProgramOperation::kSwapInductionVector);
+    swap->lhs.Emplace(swap, vec);
+    swap->rhs.Emplace(swap, swap_vec);
+    swap_par->AddRegion(swap);
+
+    // Clear the induction vector `vec`, now that we've swapped its contents
+    // into `swap_vec`. Inside the cycle loop, we'll re-fill up `vec`.
+    const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
+        clear_par, ProgramOperation::kClearInductionInputVector);
+    clear->vector.Emplace(clear, vec);
+    clear_par->AddRegion(clear);
+
+    // Now we'll loop over `swap_vec`, which holds the inputs, or outputs from
+    // the last fixpoint iteration.
+    const auto cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        cycle_par, ProgramOperation::kLoopOverInductionInputVector);
+    cycle->vector.Emplace(cycle, swap_vec);
+    cycle_par->AddRegion(cycle);
+    induction->fixpoint_cycles.push_back(cycle);
+
+    for (auto col : merge.Columns()) {
+
+      // Add the variables to the output loop.
+      const auto output_var = cycle->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      output_var->query_column = col;
+      output->col_id_to_var[col.Id()] = output_var;
+
+      // Add the variables to the fixpoint loop.
+      const auto cycle_var = cycle->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      cycle_var->query_column = col;
+      cycle->col_id_to_var[col.Id()] = cycle_var;
     }
 
-    // Cycle  through all of the input vectors (by way of the local swapped
-    // vectors).
-    const auto cycle_par = impl->parallel_regions.Create(seq);
-    seq->AddRegion(cycle_par);
+    // NOTE(pag): At this point, we're done filling up the basics of the
+    //            `induction->cyclic_region` and now move on to filling up
+    //            `induction->output_region`.
 
-    std::vector<OP *> cycles;
+    // In the output region we'll clear out the vectors that we've used.
+    const auto done_clear_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            done_par, ProgramOperation::kClearInductionInputVector);
+    done_clear_vec->vector.Emplace(done_clear_vec, vec);
+    done_par->AddRegion(done_clear_vec);
 
-    // Now build the inductive cycle regions and add them in. We'll do this
-    // before we actually add the successor regions in.
-    merge_index = 0u;
-    for (auto merge : induction_set->merges) {
-      const auto input_vec = handler_proc->input_vecs[merge_index];
-      const auto swap_vec = swap_vecs[merge_index];
-      ++merge_index;
+    const auto done_clear_swap_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            done_par, ProgramOperation::kClearInductionInputVector);
+    done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, swap_vec);
+    done_par->AddRegion(done_clear_swap_vec);
+  }
 
-      const auto cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
-          cycle_par, ProgramOperation::kLoopOverInductionInputVector);
-      cycle->ExecuteAlongside(impl, cycle_par);
-
-      for (auto col : merge.Columns()) {
-        const auto var = cycle->defined_vars.Create(
-            impl->next_id++, VariableRole::kVectorVariable);
-        var->query_column = col;
-        cycle->col_id_to_var[col.Id()] = var;
-      }
-
-      cycle->vector.Emplace(cycle, swap_vec);
-      induction->view_to_cycle_input_vec.emplace(merge, input_vec);
-      induction->view_to_cycle_induction_vec.emplace(merge, swap_vec);
-
-      cycles.push_back(cycle);
-    }
-
-    // Now that we have all of the regions arranged and the loops, add in the
-    // inductive successors.
-    merge_index = 0u;
-    for (auto merge : induction_set->merges) {
-      OP *const cycle = cycles[merge_index++];
-      DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
-      TABLE * const table = model->table;
-      BuildEagerSuccessorRegions(impl, merge, context, cycle,
-                                 context.inductive_successors[merge], table);
-    }
+  // Now that we have all of the regions arranged and the loops, add in the
+  // inductive successors.
+  merge_index = 0u;
+  for (auto merge : induction_set->merges) {
+    OP *const cycle = induction->fixpoint_cycles[merge_index++];
+    DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
+    TABLE * const table = model->table;
+    BuildEagerSuccessorRegions(impl, merge, context, cycle,
+                               context.inductive_successors[merge], table);
   }
 
   // Finally, add in an action to finish off this induction by processing
@@ -189,73 +238,21 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 //
 // NOTE(pag): This is basically the same as above with some minor differences.
 void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
+  const auto proc = induction->containing_procedure;
+
+  assert(induction->state == INDUCTION::kAccumulatingCycleRegions);
+  induction->state = INDUCTION::kBuildingOutputRegions;
 
   // Pass in the induction vectors to the handlers.
   for (auto merge : induction_set->all_merges) {
-    context.view_to_work_item.erase({induction->containing_procedure,
-                                     merge.UniqueId()});
-  }
-
-  induction->state = INDUCTION::kBuildingOutputRegions;
-
-  // Add a terminating return statement to the end of the cycle handler, and
-  // clear out all of its local induction vectors.
-  PROC * const cycle_handler = induction->cycle_proc;
-  if (!EndsWithReturn(cycle_handler)) {
-    const auto seq = impl->series_regions.Create(cycle_handler);
-    cycle_handler->body->parent = seq;
-    seq->AddRegion(cycle_handler->body.get());
-    cycle_handler->body.Emplace(cycle_handler, seq);
-
-    for (auto [merge, vec] : induction->view_to_cycle_induction_vec) {
-      const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          seq, ProgramOperation::kClearInductionInputVector);
-      clear->vector.Emplace(clear, vec);
-      seq->AddRegion(clear);
-      (void) merge;
-    }
-
-    seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
-  }
-
-  // Nothing to do if we've already generated code for the output region.
-  const auto handler_proc = induction->output_proc;
-  if (handler_proc->body.get()) {
-    return;
-  }
-
-  const auto cycle_par = impl->parallel_regions.Create(handler_proc);
-  handler_proc->body.Emplace(handler_proc, cycle_par);
-
-  std::vector<OP *> cycles;
-
-  auto vec_index = 0u;
-  for (auto merge : induction_set->merges) {
-
-    // TODO(pag): Consider sorting the vector here?
-
-    // Create a loop over the induction vector to process the accumulated
-    // results.
-    const auto cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        cycle_par, ProgramOperation::kLoopOverInductionInputVector);
-    cycle_par->AddRegion(cycle);
-
-    for (auto col : merge.Columns()) {
-      const auto var = cycle->defined_vars.Create(
-          impl->next_id++, VariableRole::kVectorVariable);
-      var->query_column = col;
-      cycle->col_id_to_var[col.Id()] = var;
-    }
-
-    cycle->vector.Emplace(cycle, handler_proc->input_vecs[vec_index++]);
-    cycles.push_back(cycle);
+    context.view_to_work_item.erase({proc, merge.UniqueId()});
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // non-inductive successors.
-  vec_index = 0u;
+  auto vec_index = 0u;
   for (auto merge : induction_set->merges) {
-    OP *const cycle = cycles[vec_index++];
+    OP *const cycle = induction->output_cycles[vec_index++];
     DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE * const table = model->table;
     BuildEagerSuccessorRegions(impl, merge, context, cycle,
@@ -300,112 +297,25 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
         context, induction, induction_set);
     context.work_list.emplace_back(action);
 
-    // Create the inductive cycle procedure if it's missing.
-    auto &cycle_proc = context.induction_cycle_funcs[induction_set];
-    if (!cycle_proc) {
-      cycle_proc = impl->procedure_regions.Create(
-          impl->next_id++, ProcedureKind::kInductionCycleHandler);
-
-      // Add in the vector parameters for this induction handler procedure.
-      for (auto merge : induction_set->merges) {
-        cycle_proc->VectorFor(impl, VectorKind::kInputOutputParameter,
-                              merge.Columns());
-      }
-    }
-
     for (auto other_view : induction_set->all_merges) {
       context.view_to_induction[{proc, other_view.UniqueId()}] = induction;
-      context.view_to_induction[{cycle_proc, other_view.UniqueId()}] = induction;
     }
-
-    // Tell the induction about the vector parameters for the handler. Done
-    // separately if the induction handler is created separately.
-    auto vec_index = 0u;
-    for (auto other_view : induction_set->merges) {
-      const auto input_vec = cycle_proc->input_vecs[vec_index++];
-      induction->view_to_init_appends.emplace(other_view, induction);
-      induction->view_to_cycle_input_vec.emplace(other_view, input_vec);
-    }
-
-    // Create the output procedure if it's missing.
-    auto &output_proc = context.induction_output_funcs[induction_set];
-    if (!output_proc) {
-      output_proc = impl->procedure_regions.Create(
-          impl->next_id++, ProcedureKind::kInductionOutputHandler);
-
-      // Add in the vector parameters for this induction handler procedure.
-      for (auto other_view : induction_set->merges) {
-        (void) output_proc->VectorFor(
-            impl, VectorKind::kParameter, other_view.Columns());
-      }
-    }
-
-    induction->cycle_proc = cycle_proc;
-    induction->output_proc = output_proc;
 
     // Add an induction vector for each `QueryMerge` node in this induction
     // set.
     for (auto other_view : induction_set->merges) {
       auto &vec = induction->view_to_vec[other_view];
-      const auto incoming_vec =
-          proc->VectorFor(impl, VectorKind::kInduction, other_view.Columns());
-      vec.Emplace(induction, incoming_vec);
-      induction->vectors.AddUse(incoming_vec);
+      assert(!vec);
+      vec = proc->VectorFor(impl, VectorKind::kInduction, other_view.Columns());
+      induction->vectors.AddUse(vec);
     }
-
-    const auto cycle_seq = impl->series_regions.Create(induction);
-    induction->cyclic_region.Emplace(induction, cycle_seq);
-
-    const auto output_seq = impl->series_regions.Create(induction);
-    induction->output_region.Emplace(induction, output_seq);
-
-    // Call the cycle function and the output function in the induction's
-    // cycle region.
-    const auto call_output = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, cycle_seq, output_proc);
-
-    const auto call_cycle = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, cycle_seq, cycle_proc);
-
-    // This is indicative of a bug in induction recognition or work list
-    // handling. The cycle function shouldn't call itself, because it should
-    // be the caller of the cycle function that calls it.
-    assert(call_output->containing_procedure != output_proc);
-    assert(call_output->containing_procedure != cycle_proc);
-    assert(call_cycle->containing_procedure != output_proc);
-    assert(call_cycle->containing_procedure != cycle_proc);
-
-    // NOTE(pag): We call the output function *first*, before calling the
-    //            cycle function! This is so that we can immediately process
-    //            the induction's base case through the rest of the dataflow,
-    //            then we use the base base to build up the next case in the
-    //            cycle function, which does vector referencing/swapping.
-    cycle_seq->AddRegion(call_output);
-    cycle_seq->AddRegion(call_cycle);
 
     for (auto other_view : induction_set->all_merges) {
       context.view_to_work_item[{proc, other_view.UniqueId()}] = action;
     }
-
-    // Now build the inductive output regions and add them in. We'll do this
-    // before we actually add the successor regions in.
-    for (auto merge : induction_set->merges) {
-      const auto vec = induction->view_to_vec[merge].get();
-      assert(!!vec);
-
-      call_cycle->arg_vecs.AddUse(vec);
-      call_output->arg_vecs.AddUse(vec);
-
-      // Clear out the induction vectors in the induction's output region.
-      const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          output_seq, ProgramOperation::kClearInductionInputVector);
-      clear->vector.Emplace(clear, vec);
-
-      output_seq->AddRegion(clear);
-    }
   }
 
-  auto &vec = induction->view_to_vec[view];
+  auto vec = induction->view_to_vec[view];
   assert(!!vec);
 
   // Add a tuple to the input vector.
@@ -423,20 +333,17 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:
       assert(proc == induction->containing_procedure);
-      append_to_vec->vector.Emplace(append_to_vec, vec.get());
-      induction->view_to_init_appends.find(view)->second.AddUse(append_to_vec);
+      append_to_vec->vector.Emplace(append_to_vec, vec);
+      induction->init_appends.push_back(append_to_vec);
       break;
 
     case INDUCTION::kAccumulatingCycleRegions:
-      assert(proc == induction->cycle_proc);
-      if (auto input_vec = induction->view_to_cycle_input_vec[view]; input_vec) {
-        append_to_vec->vector.Emplace(append_to_vec, input_vec);
-      } else {
-        assert(false);
-      }
+      assert(proc == induction->containing_procedure);
+      append_to_vec->vector.Emplace(append_to_vec, vec);
+      induction->cycle_appends.push_back(append_to_vec);
       break;
     default:
-      assert(proc == induction->output_proc);
+      assert(proc == induction->containing_procedure);
       assert(false); break;
   }
 }
