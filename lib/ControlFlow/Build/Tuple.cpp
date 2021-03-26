@@ -323,17 +323,17 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
 }
 
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, PROC *proc,
+                                QueryView view, OP *proc,
                                 TABLE *already_checked) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   const auto caller_did_check = already_checked == model->table;
   PARALLEL *parent = nullptr;
 
-  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                      std::optional<QueryColumn> out_col) {
-    proc->col_id_to_var[out_col->Id()] = proc->VariableFor(impl, in_col);
-  });
+//  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+//                      std::optional<QueryColumn> out_col) {
+//    proc->col_id_to_var[out_col->Id()] = proc->VariableFor(impl, in_col);
+//  });
 
   if (model->table) {
 

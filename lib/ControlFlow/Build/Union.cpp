@@ -143,7 +143,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
 }
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, PROC *proc,
+                                QueryView view, OP *proc,
                                 TABLE *already_checked) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();

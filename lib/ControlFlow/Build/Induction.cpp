@@ -184,7 +184,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     for (auto col : merge.Columns()) {
 
       // Add the variables to the output loop.
-      const auto output_var = cycle->defined_vars.Create(
+      const auto output_var = output->defined_vars.Create(
           impl->next_id++, VariableRole::kVectorVariable);
       output_var->query_column = col;
       output->col_id_to_var[col.Id()] = output_var;

@@ -58,8 +58,16 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
     check->false_body.Emplace(check, sub_let);
   }
 
-  with_check_absent(sub_let);
+  auto ret = with_check_absent(sub_let);
+  assert(ret->parent == sub_let);
   assert(!check->body != !check->false_body);
+
+  if (sub_let->body.get() != ret) {
+    assert(!sub_let->body);
+    sub_let->body.Emplace(sub_let, ret);
+  } else {
+    assert(sub_let->body.get() == ret);
+  }
 
   return let;
 }

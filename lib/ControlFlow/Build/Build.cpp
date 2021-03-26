@@ -8,6 +8,8 @@
 namespace hyde {
 namespace {
 
+static constexpr bool kUsePushMethod = true;
+
 // Return the set of all views that contribute data to `view`. This includes
 // things like conditions.
 static std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
@@ -67,77 +69,6 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
   }
 
   return dependents;
-}
-
-// Build an eager region where this eager region is being unconditionally
-// executed, i.e. ignoring whether or not `view.PositiveConditions()` or
-// `view.NegativeConditions()` have elements.
-static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
-                                          QueryView pred_view, QueryView view,
-                                          Context &context, OP *parent,
-                                          TABLE *last_table) {
-
-  if (view.IsJoin()) {
-    const auto join = QueryJoin::From(view);
-    if (join.NumPivotColumns()) {
-      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
-    } else {
-      BuildEagerProductRegion(impl, pred_view, join, context, parent,
-                              last_table);
-    }
-
-  } else if (view.IsMerge()) {
-    const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view) &&
-        !context.dominated_merges.count(view)) {
-      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
-                                last_table);
-    } else {
-      BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
-                            last_table);
-    }
-
-  } else if (view.IsAggregate()) {
-    assert(false && "TODO(pag): Aggregates");
-
-  } else if (view.IsKVIndex()) {
-    assert(false && "TODO(pag): KV Indices.");
-
-  } else if (view.IsMap()) {
-    auto map = QueryMap::From(view);
-    if (map.Functor().IsPure()) {
-      BuildEagerGenerateRegion(impl, map, context, parent);
-
-    } else {
-      assert(false && "TODO(pag): Impure functors");
-    }
-
-  } else if (view.IsCompare()) {
-    BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
-
-  } else if (view.IsSelect()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                               last_table);
-
-  } else if (view.IsTuple()) {
-    BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
-                          parent, last_table);
-
-  } else if (view.IsInsert()) {
-    const auto insert = QueryInsert::From(view);
-    BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
-                           last_table);
-
-  } else if (view.IsDelete()) {
-    BuildEagerDeleteRegion(impl, view, context, parent);
-
-  } else if (view.IsNegate()) {
-    const auto negate = QueryNegate::From(view);
-    BuildEagerNegateRegion(impl, pred_view, negate, context, parent);
-
-  } else {
-    assert(false);
-  }
 }
 
 // Map all variables to their defining regions.
@@ -844,7 +775,9 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     context.work_list.clear();
 
     if (to_view.IsTuple()) {
-      CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
+      auto let = impl->operation_regions.CreateDerived<LET>(proc);
+      proc->body.Emplace(proc, let);
+      CreateBottomUpTupleRemover(impl, context, to_view, let, already_checked);
 
     } else if (to_view.IsCompare()) {
       CreateBottomUpCompareRemover(impl, context, to_view, proc,
@@ -860,7 +793,10 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     // NOTE(pag): We don't need to distinguish between unions that are
     //            inductions and unions that are merges.
     } else if (to_view.IsMerge()) {
-      CreateBottomUpUnionRemover(impl, context, to_view, proc, already_checked);
+
+      auto let = impl->operation_regions.CreateDerived<LET>(proc);
+      proc->body.Emplace(proc, let);
+      CreateBottomUpUnionRemover(impl, context, to_view, let, already_checked);
 
     } else if (to_view.IsJoin()) {
       auto join = QueryJoin::From(to_view);
@@ -1408,30 +1344,66 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // successors of this.
 void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
                               Context &context, OP *parent,
-                              TABLE *already_checked) {
+                              TABLE *already_removed) {
 
   const auto par = impl->parallel_regions.Create(parent);
   parent->body.Emplace(parent, par);
 
+  std::vector<QueryColumn> available_cols;
+
   for (auto succ_view : view.Successors()) {
+    available_cols.clear();
 
-    const auto remover_proc = GetOrCreateBottomUpRemover(
-        impl, context, view, succ_view, already_checked);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, par, remover_proc);
+    // New style: use iterative method for removal.
+    if (!kUsePushMethod) {
 
-    auto i = 0u;
-    for (auto col : view.Columns()) {
-      const auto var = par->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
+      // Inserts are annoying because they don't have output columns.
+      if (succ_view.IsInsert()) {
+        for (auto col : succ_view.Predecessors()[0].Columns()) {
+          available_cols.push_back(col);
+        }
 
-      const auto param = remover_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
+      } else {
+        for (auto col : succ_view.Columns()) {
+          available_cols.push_back(col);
+        }
+      }
+
+      assert(!available_cols.empty());
+
+      bool is_equality_cmp = false;
+      if (view.IsCompare()) {
+        auto from_cmp = QueryCompare::From(view);
+        is_equality_cmp = from_cmp.Operator() == ComparisonOperator::kEqual;
+      }
+
+      auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
+
+      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
+                              already_removed);
+
+    // Old style: Use recursive push method for removal. This creates lots of
+    // tuple remover procedures.
+    } else {
+      const auto remover_proc = GetOrCreateBottomUpRemover(
+          impl, context, view, succ_view, already_removed);
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, par, remover_proc);
+
+      auto i = 0u;
+      for (auto col : view.Columns()) {
+        const auto var = par->VariableFor(impl, col);
+        assert(var != nullptr);
+        call->arg_vars.AddUse(var);
+
+        const auto param = remover_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
+      }
+
+      par->AddRegion(call);
     }
-
-    par->AddRegion(call);
   }
 }
 
@@ -1719,11 +1691,8 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
   }
 }
 
-// Build an eager region. This guards the execution of the region in
-// conditionals if the view itself is conditional.
-void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
-                      Context &usage, OP *parent, TABLE *last_model) {
-
+static void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
+                                      QueryView view, OP *parent) {
   view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                       std::optional<QueryColumn> out_col) {
 
@@ -1760,9 +1729,103 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       parent->col_id_to_var.emplace(out_col->Id(), src_var);
     }
   });
+}
 
-  BuildUnconditionalEagerRegion(impl, pred_view, view, usage, parent,
-                                last_model);
+// Build an eager region for removing data.
+void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView pred_view,
+                             QueryView view, Context &context, OP *parent,
+                             TABLE *already_removed) {
+  MapVariablesInEagerRegion(impl, pred_view, view, parent);
+  if (false) {
+
+
+  } else if (view.IsMerge()) {
+    const auto merge = QueryMerge::From(view);
+    if (context.inductive_successors.count(view) &&
+        !context.dominated_merges.count(view)) {
+//      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
+//                                last_table);
+    } else {
+      CreateBottomUpUnionRemover(impl, context, view, parent, already_removed);
+    }
+
+  } else if (view.IsTuple()) {
+    CreateBottomUpTupleRemover(impl, context, view, parent, already_removed);
+
+  // We don't want to support any kind of double-negation :-/
+  } else if (view.IsDelete()) {
+    assert(false);
+  }
+}
+
+// Build an eager region. This guards the execution of the region in
+// conditionals if the view itself is conditional.
+void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
+                      Context &context, OP *parent, TABLE *last_table) {
+
+  MapVariablesInEagerRegion(impl, pred_view, view, parent);
+
+  if (view.IsJoin()) {
+    const auto join = QueryJoin::From(view);
+    if (join.NumPivotColumns()) {
+      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
+    } else {
+      BuildEagerProductRegion(impl, pred_view, join, context, parent,
+                              last_table);
+    }
+
+  } else if (view.IsMerge()) {
+    const auto merge = QueryMerge::From(view);
+    if (context.inductive_successors.count(view) &&
+        !context.dominated_merges.count(view)) {
+      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
+                                last_table);
+    } else {
+      BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
+                            last_table);
+    }
+
+  } else if (view.IsAggregate()) {
+    assert(false && "TODO(pag): Aggregates");
+
+  } else if (view.IsKVIndex()) {
+    assert(false && "TODO(pag): KV Indices.");
+
+  } else if (view.IsMap()) {
+    auto map = QueryMap::From(view);
+    if (map.Functor().IsPure()) {
+      BuildEagerGenerateRegion(impl, map, context, parent);
+
+    } else {
+      assert(false && "TODO(pag): Impure functors");
+    }
+
+  } else if (view.IsCompare()) {
+    BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
+
+  } else if (view.IsSelect()) {
+    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+                               last_table);
+
+  } else if (view.IsTuple()) {
+    BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
+                          parent, last_table);
+
+  } else if (view.IsInsert()) {
+    const auto insert = QueryInsert::From(view);
+    BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
+                           last_table);
+
+  } else if (view.IsDelete()) {
+    BuildEagerDeleteRegion(impl, view, context, parent);
+
+  } else if (view.IsNegate()) {
+    const auto negate = QueryNegate::From(view);
+    BuildEagerNegateRegion(impl, pred_view, negate, context, parent);
+
+  } else {
+    assert(false);
+  }
 }
 
 WorkItem::WorkItem(Context &context, unsigned order_)

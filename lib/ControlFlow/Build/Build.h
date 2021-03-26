@@ -335,14 +335,20 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   }
 
   const auto in_loop = cb(loop, true);
+  assert(!loop->body);
   assert(in_loop->parent == loop);
   loop->body.Emplace(loop, in_loop);
 
   return seq;
 }
 
-// Build an eager region. This guards the execution of the region in
-// conditionals if the view itself is conditional.
+
+// Build an eager region for removing data.
+void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView pred_view,
+                             QueryView view, Context &context, OP *parent,
+                             TABLE *already_removed);
+
+// Build an eager region for adding data.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_model);
 
@@ -511,7 +517,7 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // successors of this.
 void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
                               Context &context, OP *parent,
-                              TABLE *already_checked=nullptr);
+                              TABLE *already_removed=nullptr);
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
@@ -531,11 +537,11 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    PROC *proc, TABLE *already_checked);
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, PROC *proc,
+                                QueryView view, OP *proc,
                                 TABLE *already_checked);
 
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, PROC *proc,
+                                QueryView view, OP *proc,
                                 TABLE *already_checked);
 
 void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
