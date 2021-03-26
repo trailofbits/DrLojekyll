@@ -512,6 +512,12 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     const std::vector<QueryColumn> &view_cols, TABLE *table,
     QueryView pred_view, TABLE *already_checked = nullptr);
 
+// Possibly add a check to into `parent` to transition the tuple with the table
+// associated with `view` to be in an unknown state. Returns the table of `view`
+// and the updated `already_removed`.
+std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
+    ProgramImpl *impl, QueryView view, OP *parent, TABLE *already_removed);
+
 // Build and dispatch to the bottom-up remover regions for `view`. The idea
 // is that we've just removed data from `view`, and now want to tell the
 // successors of this.
@@ -529,12 +535,16 @@ void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, PROC *proc);
 
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, PROC *proc,
+                                 QueryView view, OP *parent,
                                  TABLE *already_checked);
 
 void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
                                    PROC *proc, TABLE *already_checked);
+
+void CreateBottomUpInductionRemover(ProgramImpl *impl, Context &context,
+                                    QueryView view, OP *parent,
+                                    TABLE *already_removed);
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, OP *proc,

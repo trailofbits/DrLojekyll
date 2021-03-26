@@ -147,7 +147,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     // the last fixpoint iteration, and we'll send these to the output regions
     // of the induction.
     const auto output = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        output_par, ProgramOperation::kLoopOverInductionInputVector);
+        output_par, ProgramOperation::kLoopOverInductionVector);
     output->vector.Emplace(output, vec);
     output_par->AddRegion(output);
     induction->output_cycles.push_back(output);
@@ -169,14 +169,14 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     // Clear the induction vector `vec`, now that we've swapped its contents
     // into `swap_vec`. Inside the cycle loop, we'll re-fill up `vec`.
     const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-        clear_par, ProgramOperation::kClearInductionInputVector);
+        clear_par, ProgramOperation::kClearInductionVector);
     clear->vector.Emplace(clear, vec);
     clear_par->AddRegion(clear);
 
     // Now we'll loop over `swap_vec`, which holds the inputs, or outputs from
     // the last fixpoint iteration.
     const auto cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        cycle_par, ProgramOperation::kLoopOverInductionInputVector);
+        cycle_par, ProgramOperation::kLoopOverInductionVector);
     cycle->vector.Emplace(cycle, swap_vec);
     cycle_par->AddRegion(cycle);
     induction->fixpoint_cycles.push_back(cycle);
@@ -203,13 +203,13 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     // In the output region we'll clear out the vectors that we've used.
     const auto done_clear_vec =
         impl->operation_regions.CreateDerived<VECTORCLEAR>(
-            done_par, ProgramOperation::kClearInductionInputVector);
+            done_par, ProgramOperation::kClearInductionVector);
     done_clear_vec->vector.Emplace(done_clear_vec, vec);
     done_par->AddRegion(done_clear_vec);
 
     const auto done_clear_swap_vec =
         impl->operation_regions.CreateDerived<VECTORCLEAR>(
-            done_par, ProgramOperation::kClearInductionInputVector);
+            done_par, ProgramOperation::kClearInductionVector);
     done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, swap_vec);
     done_par->AddRegion(done_clear_swap_vec);
   }
@@ -263,27 +263,12 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   //            may come along and fill up this procedure with something else.
 }
 
-}  // namespace
-
-// Build an eager region for a `QueryMerge` that is part of an inductive
-// loop. This is interesting because we use a WorkItem as a kind of "barrier"
-// to accumulate everything leading into the inductions before proceeding.
-void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
-                               QueryMerge view, Context &context, OP *parent,
-                               TABLE *last_table) {
-
+static std::tuple<PROC *, INDUCTION *, bool>
+GetOrInitInduction(ProgramImpl *impl, QueryView view, Context &context,
+                   OP *parent) {
   PROC *const proc = parent->containing_procedure;
   INDUCTION *&induction = context.view_to_induction[{proc, view.UniqueId()}];
-  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
-
-  // First, check if we should add this tuple to the induction.
-  if (last_table != table) {
-    parent =
-        BuildInsertCheck(impl, view, context, parent, table,
-                         QueryView(view).CanReceiveDeletions(), view.Columns());
-    last_table = table;
-  }
+  auto added = false;
 
   // This is the first time seeing any MERGE associated with this induction.
   // We'll make an INDUCTION, and a work item that will let us explore the
@@ -313,7 +298,36 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     for (auto other_view : induction_set->all_merges) {
       context.view_to_work_item[{proc, other_view.UniqueId()}] = action;
     }
+
+    added = true;
   }
+
+  return {proc, induction, added};
+}
+
+}  // namespace
+
+// Build an eager region for a `QueryMerge` that is part of an inductive
+// loop. This is interesting because we use a WorkItem as a kind of "barrier"
+// to accumulate everything leading into the inductions before proceeding.
+void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
+                               QueryMerge view, Context &context, OP *parent,
+                               TABLE *last_table) {
+
+  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  assert(table != nullptr);
+
+  // First, check if we should add this tuple to the induction.
+  if (last_table != table) {
+    parent =
+        BuildInsertCheck(impl, view, context, parent, table,
+                         QueryView(view).CanReceiveDeletions(), view.Columns());
+    last_table = table;
+  }
+
+  auto [proc, induction, added] = GetOrInitInduction(
+      impl, view, context, parent);
 
   auto vec = induction->view_to_vec[view];
   assert(!!vec);
@@ -321,7 +335,55 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   // Add a tuple to the input vector.
   const auto append_to_vec =
       impl->operation_regions.CreateDerived<VECTORAPPEND>(
-          parent, ProgramOperation::kAppendInductionInputToVector);
+          parent, ProgramOperation::kAppendToInductionVector);
+
+  for (auto col : view.Columns()) {
+    const auto var = parent->VariableFor(impl, col);
+    append_to_vec->tuple_vars.AddUse(var);
+  }
+
+  parent->body.Emplace(parent, append_to_vec);
+
+  switch (induction->state) {
+    case INDUCTION::kAccumulatingInputRegions:
+      assert(proc == induction->containing_procedure);
+      append_to_vec->vector.Emplace(append_to_vec, vec);
+      induction->init_appends.push_back(append_to_vec);
+      break;
+
+    case INDUCTION::kAccumulatingCycleRegions:
+      assert(proc == induction->containing_procedure);
+      append_to_vec->vector.Emplace(append_to_vec, vec);
+      induction->cycle_appends.push_back(append_to_vec);
+      break;
+    default:
+      assert(proc == induction->containing_procedure);
+      assert(false); break;
+  }
+}
+
+void CreateBottomUpInductionRemover(ProgramImpl *impl, Context &context,
+                                    QueryView view, OP *parent_,
+                                    TABLE *already_removed_) {
+
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, view, parent_, already_removed_);
+
+  auto [proc, induction, added] = GetOrInitInduction(
+      impl, view, context, parent);
+
+  VECTOR *&vec = induction->view_to_removal_vec[view];
+
+  // Lazily create the induction vector to track removals.
+  if (!vec) {
+    vec = proc->VectorFor(impl, VectorKind::kInduction, view.Columns());
+    induction->vectors.AddUse(vec);
+  }
+
+  // Add a tuple to the removal vector.
+  const auto append_to_vec =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          parent, ProgramOperation::kAppendToInductionVector);
 
   for (auto col : view.Columns()) {
     const auto var = parent->VariableFor(impl, col);
@@ -388,19 +450,23 @@ void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
       proc,
       BuildMaybeScanPartial(
           impl, view, view_cols, table, proc,
-          [&](REGION *parent, bool) -> REGION * {
+          [&](REGION *parent, bool in_loop) -> REGION * {
             if (already_checked != table) {
               already_checked = table;
+
+              auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                        BuildStateCheckCaseReturnFalse;
+
               if (view.CanProduceDeletions()) {
                 return BuildTopDownCheckerStateCheck(
                     impl, parent, table, view.Columns(),
-                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                    BuildStateCheckCaseReturnTrue, continue_or_return,
                     build_unknown);
               } else {
                 return BuildTopDownCheckerStateCheck(
                     impl, parent, table, view.Columns(),
-                    BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                    BuildStateCheckCaseNothing);
+                    BuildStateCheckCaseReturnTrue, continue_or_return,
+                    continue_or_return);
               }
 
             } else if (view.CanProduceDeletions()) {

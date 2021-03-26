@@ -192,7 +192,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
   proc->body.Emplace(proc, BuildMaybeScanPartial(
       impl, view, view_cols, model->table, proc,
-      [&](REGION *in_scan, bool) -> REGION * {
+      [&](REGION *in_scan, bool in_loop) -> REGION * {
 
         negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                               std::optional<QueryColumn> out_col) {
@@ -207,10 +207,14 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
         if (already_checked != model->table) {
           already_checked = model->table;
+
+          auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                    BuildStateCheckCaseReturnFalse;
+
           return BuildTopDownCheckerStateCheck(
               impl, in_scan, model->table, view.Columns(),
               do_check_on_true_not_checked,
-              BuildStateCheckCaseNothing,
+              continue_or_return,
               do_check_on_unknown_not_checked);
 
         // If we're here then it means our caller has found a candidate tuple

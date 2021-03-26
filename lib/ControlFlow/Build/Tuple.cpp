@@ -277,33 +277,37 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     const auto region = BuildMaybeScanPartial(
         impl, view, view_cols, model->table, proc,
-        [&](REGION *parent, bool in_scan) -> REGION * {
+        [&](REGION *parent, bool in_loop) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
+
+            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                                BuildStateCheckCaseReturnFalse;
+
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
                   BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseNothing,
+                  continue_or_return,
                   [&](ProgramImpl *, REGION *parent) -> REGION * {
                     return BuildTopDownTryMarkAbsent(
                         impl, model->table, parent, view.Columns(),
                         [&](PARALLEL *par) {
-                          call_pred(par, in_scan)->ExecuteAlongside(impl, par);
+                          call_pred(par, in_loop)->ExecuteAlongside(impl, par);
                         });
                   });
             } else {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
                   BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseNothing,
-                  BuildStateCheckCaseNothing);
+                  continue_or_return,
+                  continue_or_return);
             }
 
           // This tuple is differential, so check its predecessor.
           } else if (view.CanProduceDeletions()) {
             table_to_update = nullptr;
-            return call_pred(parent, in_scan);
+            return call_pred(parent, in_loop);
 
           // Don't check the predecessor.
           } else {

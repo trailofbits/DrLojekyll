@@ -296,9 +296,9 @@ enum class ProgramOperation {
   kCheckStateInTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
-  kAppendInductionInputToVector,
-  kLoopOverInductionInputVector,
-  kClearInductionInputVector,
+  kAppendToInductionVector,
+  kLoopOverInductionVector,
+  kClearInductionVector,
   kSwapInductionVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
@@ -1225,6 +1225,10 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // going into a co-mingled induction, as is the case in
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
   std::unordered_map<QueryView, VECTOR *> view_to_vec;
+
+  // We lazily create removal vectors for inductions (whereas insert vectors
+  // are eagerly added).
+  std::unordered_map<QueryView, VECTOR *> view_to_removal_vec;
 
   // List of append to vector regions inside this induction.
   std::vector<OP *> init_appends;

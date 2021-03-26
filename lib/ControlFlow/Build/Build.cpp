@@ -8,7 +8,7 @@
 namespace hyde {
 namespace {
 
-static constexpr bool kUsePushMethod = true;
+static constexpr bool kUsePushMethod = false;
 
 // Return the set of all views that contribute data to `view`. This includes
 // things like conditions.
@@ -784,7 +784,9 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
                                    already_checked);
 
     } else if (to_view.IsInsert()) {
-      CreateBottomUpInsertRemover(impl, context, to_view, proc,
+      auto let = impl->operation_regions.CreateDerived<LET>(proc);
+      proc->body.Emplace(proc, let);
+      CreateBottomUpInsertRemover(impl, context, to_view, let,
                                   already_checked);
 
     } else if (to_view.IsDelete()) {
@@ -1339,48 +1341,80 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   return check;
 }
 
+// Possibly add a check to into `parent` to transition the tuple with the table
+// associated with `view` to be in an unknown state. Returns the table of `view`
+// and the updated `already_removed`.
+std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
+    ProgramImpl *impl, QueryView view, OP *parent, TABLE *already_removed) {
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  if (table) {
+    if (already_removed != table) {
+
+      // Figure out what columns to pass in for marking.
+      std::vector<QueryColumn> cols;
+      if (view.IsInsert()) {
+        auto insert = QueryInsert::From(view);
+        cols.insert(cols.end(), insert.InputColumns().begin(),
+                    insert.InputColumns().begin());
+      } else {
+        cols.insert(cols.end(), view.Columns().begin(), view.Columns().end());
+      }
+
+      // Do the marking.
+      PARALLEL *internal_par = nullptr;
+      auto remove =
+          BuildBottomUpTryMarkUnknown(impl, table, parent, cols,
+                                      [&](PARALLEL *par) {
+                                        internal_par = par;
+                                      });
+
+      parent->body.Emplace(parent, remove);
+      already_removed = table;
+
+      auto let = impl->operation_regions.CreateDerived<LET>(internal_par);
+      internal_par->AddRegion(let);
+      parent = let;
+    }
+  } else {
+    already_removed = nullptr;
+  }
+
+  return {parent, table, already_removed};
+}
+
 // Build and dispatch to the bottom-up remover regions for `view`. The idea
 // is that we've just removed data from `view`, and now want to tell the
 // successors of this.
 void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
-                              Context &context, OP *parent,
-                              TABLE *already_removed) {
+                              Context &context, OP *parent_,
+                              TABLE *already_removed_) {
 
-  const auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  std::vector<QueryColumn> available_cols;
+  // The caller didn't already do a state transition, so we can do it. We might
+  // have a situation like this:
+  //
+  //               JOIN
+  //              /    \
+  //        TUPLE1      TUPLE2
+  //              \    /
+  //              TUPLE3
+  //
+  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
+  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
+  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
+  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
+  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
+  // because otherwise whichever executed first would prevent the other from
+  // actually doing the marking.
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, view, parent_, already_removed_);
 
   for (auto succ_view : view.Successors()) {
-    available_cols.clear();
 
     // New style: use iterative method for removal.
     if (!kUsePushMethod) {
-
-      // Inserts are annoying because they don't have output columns.
-      if (succ_view.IsInsert()) {
-        for (auto col : succ_view.Predecessors()[0].Columns()) {
-          available_cols.push_back(col);
-        }
-
-      } else {
-        for (auto col : succ_view.Columns()) {
-          available_cols.push_back(col);
-        }
-      }
-
-      assert(!available_cols.empty());
-
-      bool is_equality_cmp = false;
-      if (view.IsCompare()) {
-        auto from_cmp = QueryCompare::From(view);
-        is_equality_cmp = from_cmp.Operator() == ComparisonOperator::kEqual;
-      }
-
-      auto let = impl->operation_regions.CreateDerived<LET>(par);
-      par->AddRegion(let);
-
-      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
+      BuildEagerRemovalRegion(impl, view, succ_view, context, parent,
                               already_removed);
 
     // Old style: Use recursive push method for removal. This creates lots of
@@ -1389,11 +1423,11 @@ void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
       const auto remover_proc = GetOrCreateBottomUpRemover(
           impl, context, view, succ_view, already_removed);
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, remover_proc);
+          impl->next_id++, parent, remover_proc);
 
       auto i = 0u;
       for (auto col : view.Columns()) {
-        const auto var = par->VariableFor(impl, col);
+        const auto var = parent->VariableFor(impl, col);
         assert(var != nullptr);
         call->arg_vars.AddUse(var);
 
@@ -1402,7 +1436,7 @@ void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
         (void) param;
       }
 
-      par->AddRegion(call);
+      parent->body.Emplace(parent, call);
     }
   }
 }
@@ -1743,8 +1777,8 @@ void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView pred_view,
     const auto merge = QueryMerge::From(view);
     if (context.inductive_successors.count(view) &&
         !context.dominated_merges.count(view)) {
-//      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
-//                                last_table);
+      CreateBottomUpInductionRemover(impl, context, view, parent,
+                                     already_removed);
     } else {
       CreateBottomUpUnionRemover(impl, context, view, parent, already_removed);
     }

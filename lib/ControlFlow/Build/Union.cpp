@@ -84,7 +84,7 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     const auto region = BuildMaybeScanPartial(
         impl, view, view_cols, model->table, proc,
-        [&](REGION *parent, bool) -> REGION * {
+        [&](REGION *parent, bool in_loop) -> REGION * {
           if (already_checked != model->table) {
             already_checked = model->table;
 
@@ -92,10 +92,13 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
             //            `BuildTopDownTryMarkAbsent` to not actually
             //            have to check during its state change, but oh well.
 
+            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                      BuildStateCheckCaseReturnFalse;
+
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                    impl, parent, model->table, view.Columns(),
-                   BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                   BuildStateCheckCaseReturnTrue, continue_or_return,
                    [&](ProgramImpl *, REGION *parent) -> REGION * {
                      return BuildTopDownTryMarkAbsent(
                          impl, model->table, parent, view.Columns(),
@@ -105,8 +108,8 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
                   BuildStateCheckCaseReturnTrue,
-                  BuildStateCheckCaseNothing,
-                  BuildStateCheckCaseNothing);
+                  continue_or_return,
+                  continue_or_return);
             }
 
           } else {
@@ -143,46 +146,11 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
 }
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, OP *proc,
-                                TABLE *already_checked) {
-
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  PARALLEL *parent = nullptr;
-
-  if (model->table) {
-
-    // We've already transitioned for this table, so our job is just to pass
-    // the buck along, and then eventually we'll temrinate recursion.
-    if (already_checked == model->table) {
-
-      parent = impl->parallel_regions.Create(proc);
-      proc->body.Emplace(proc, parent);
-
-    // The caller didn't already do a state transition, so we cn do it.
-    } else {
-      auto remove =
-          BuildBottomUpTryMarkUnknown(impl, model->table, proc, view.Columns(),
-                                      [&](PARALLEL *par) { parent = par; });
-
-      proc->body.Emplace(proc, remove);
-
-      already_checked = model->table;
-    }
-
-  // This merge isn't associated with any persistent storage.
-  } else {
-    already_checked = nullptr;
-    parent = impl->parallel_regions.Create(proc);
-    proc->body.Emplace(proc, parent);
-  }
-
-  // Okay, by this point, we've either marked the tuple as unknown
-  // (non-inductive) and we are proceeding to speculatively delete it in
-  // the successors.
-  auto let = impl->operation_regions.CreateDerived<LET>(parent);
-  parent->AddRegion(let);
-
-  BuildEagerRemovalRegions(impl, view, context, let, already_checked);
+                                QueryView view, OP *parent_,
+                                TABLE *already_removed_) {
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, view, parent_, already_removed_);
+  BuildEagerRemovalRegions(impl, view, context, parent, already_removed);
 }
 
 }  // namespace hyde

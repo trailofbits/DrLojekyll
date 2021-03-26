@@ -354,9 +354,9 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
   switch (op) {
     case ProgramOperation::kLoopOverInputVector:
       return VectorUsage::kProcedureInputVector;
-    case ProgramOperation::kAppendInductionInputToVector:
-    case ProgramOperation::kClearInductionInputVector:
-    case ProgramOperation::kLoopOverInductionInputVector:
+    case ProgramOperation::kAppendToInductionVector:
+    case ProgramOperation::kClearInductionVector:
+    case ProgramOperation::kLoopOverInductionVector:
     case ProgramOperation::kSwapInductionVector:
       return VectorUsage::kInductionVector;
     case ProgramOperation::kAppendUnionInputToVector:

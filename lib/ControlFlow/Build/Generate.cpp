@@ -198,19 +198,22 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&](REGION *parent, bool) -> REGION * {
+        [&](REGION *parent, bool in_loop) -> REGION * {
           if (already_checked != model->table) {
+            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                                BuildStateCheckCaseReturnFalse;
+
             already_checked = model->table;
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseReturnTrue, continue_or_return,
                   if_unknown);
             } else {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                  BuildStateCheckCaseNothing);
+                  BuildStateCheckCaseReturnTrue, continue_or_return,
+                  continue_or_return);
             }
 
           } else {

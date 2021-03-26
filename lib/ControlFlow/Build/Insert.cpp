@@ -75,46 +75,19 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 // that backs this INSERT is somehow subject to differential updates, e.g.
 // because it is downstream from an aggregate or kvindex.
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, PROC *proc,
-                                 TABLE *already_checked) {
-  const auto insert = QueryInsert::From(view);
-  const auto insert_cols = insert.InputColumns();
-
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  REGION *parent = proc;
-  UseRef<REGION> *parent_body = &(proc->body);
-
-  // This insert is associated with persistent storage. It could be an insert
-  // into a relation or a stream; in the stream case, it just means the insert
-  // shares its data model with its predecessor.
-  if (model->table) {
-
-    // The caller didn't already do a state transition, so we have to do it.
-    if (already_checked != model->table) {
-      auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, insert_cols,
-          [&](PARALLEL *par) {
-            const auto let = impl->operation_regions.CreateDerived<LET>(par);
-            par->AddRegion(let);
-            parent = let;
-            parent_body = &(let->body);
-          });
-
-      proc->body.Emplace(proc, remove);
-      already_checked = model->table;
-    }
-
-  // This insert isn't associated with any persistent storage.
-  // It must be a stream.
-  } else {
-    assert(insert.IsStream());
-    already_checked = nullptr;
-  }
+                                 QueryView view, OP *parent_,
+                                 TABLE *already_removed_) {
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, view, parent_, already_removed_);
+  auto parent_body = &(parent->body);
 
   // Figure out which columns of the predecessor we have.
   const auto predecessors = view.Predecessors();
   assert(predecessors.size() == 1u);
   const QueryView pred_view = predecessors[0];
+
+  const auto insert = QueryInsert::From(view);
+  const auto insert_cols = insert.InputColumns();
 
   std::vector<QueryColumn> available_cols;
   for (auto col : insert_cols) {
@@ -132,7 +105,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
   available_cols.erase(it, available_cols.end());
 
   const auto checker_proc = GetOrCreateTopDownChecker(
-      impl, context, pred_view, available_cols, model->table);
+      impl, context, pred_view, available_cols, table);
 
   // Now call the checker procedure. Unlike in normal checkers, we're doing
   // a check on `false`.
@@ -175,7 +148,11 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
     const auto par = impl->parallel_regions.Create(parent);
     parent_body->Emplace(parent, par);
     parent_body = nullptr;
-    parent = par;
+    parent = nullptr;
+
+    // Make sure that we've already done the checking for these nodes.
+    assert(table != nullptr);
+    assert(already_removed == table);
 
     for (auto succ_view : view.Successors()) {
       assert(succ_view.IsSelect());
@@ -186,7 +163,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       auto let = impl->operation_regions.CreateDerived<LET>(par);
       par->AddRegion(let);
 
-      BuildEagerRemovalRegions(impl, succ_view, context, let, already_checked);
+      BuildEagerRemovalRegions(impl, succ_view, context, let, already_removed);
     }
   }
 }
