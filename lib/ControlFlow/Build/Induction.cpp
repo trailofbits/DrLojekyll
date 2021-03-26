@@ -146,11 +146,11 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     // We'll start by looping over `vec`, which holds the inputs, or outputs from
     // the last fixpoint iteration, and we'll send these to the output regions
     // of the induction.
-    const auto output = impl->operation_regions.CreateDerived<VECTORLOOP>(
+    const auto output_cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
         output_par, ProgramOperation::kLoopOverInductionVector);
-    output->vector.Emplace(output, vec);
-    output_par->AddRegion(output);
-    induction->output_cycles.push_back(output);
+    output_cycle->vector.Emplace(output_cycle, vec);
+    output_par->AddRegion(output_cycle);
+    OP *output = output_cycle;
 
     // These are a bunch of swap vectors that we use for the sake of allowing
     // ourselves to see the results of the prior iteration, while minimizing
@@ -175,26 +175,73 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
     // Now we'll loop over `swap_vec`, which holds the inputs, or outputs from
     // the last fixpoint iteration.
-    const auto cycle = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        cycle_par, ProgramOperation::kLoopOverInductionVector);
-    cycle->vector.Emplace(cycle, swap_vec);
-    cycle_par->AddRegion(cycle);
-    induction->fixpoint_cycles.push_back(cycle);
+    const auto inductive_cycle =
+        impl->operation_regions.CreateDerived<VECTORLOOP>(
+            cycle_par, ProgramOperation::kLoopOverInductionVector);
+    inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
+    cycle_par->AddRegion(inductive_cycle);
+    OP *cycle = inductive_cycle;
 
+    // Fill in the variables of the output and inductive cycle loops.
     for (auto col : merge.Columns()) {
 
       // Add the variables to the output loop.
-      const auto output_var = output->defined_vars.Create(
+      const auto output_var = output_cycle->defined_vars.Create(
           impl->next_id++, VariableRole::kVectorVariable);
       output_var->query_column = col;
       output->col_id_to_var[col.Id()] = output_var;
 
       // Add the variables to the fixpoint loop.
-      const auto cycle_var = cycle->defined_vars.Create(
+      const auto cycle_var = inductive_cycle->defined_vars.Create(
           impl->next_id++, VariableRole::kVectorVariable);
       cycle_var->query_column = col;
       cycle->col_id_to_var[col.Id()] = cycle_var;
     }
+
+    // If this merge can produce deletions, then it's possible that something
+    // which was added to an induction vector has since been removed, and so we
+    // can't count on pushing it forward until it is double checked.
+    if (merge.CanProduceDeletions()) {
+      std::vector<QueryColumn> available_cols;
+      for (auto col : merge.Columns()) {
+        available_cols.push_back(col);
+      }
+
+      const auto checker_proc = GetOrCreateTopDownChecker(
+          impl, context, merge, available_cols, nullptr);
+
+      // Call the checker procedure in the output cycle.
+      const auto output_check = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, output, checker_proc);
+
+      // Call the checker procedure in the inductive cycle.
+      const auto cycle_check = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, cycle, checker_proc);
+
+      auto i = 0u;
+      for (auto col : available_cols) {
+        const auto output_var = output->VariableFor(impl, col);
+        assert(output_var != nullptr);
+        output_check->arg_vars.AddUse(output_var);
+        const auto param = checker_proc->input_vars[i++];
+        assert(output_var->Type() == param->Type());
+
+        const auto cycle_var = cycle->VariableFor(impl, col);
+        assert(cycle_var != nullptr);
+        cycle_check->arg_vars.AddUse(cycle_var);
+      }
+
+      // Make everything depending on the output/inductive loop go inside of
+      // the context of the checker.
+      output->body.Emplace(output, output_check);
+      cycle->body.Emplace(cycle, cycle_check);
+
+      output = output_check;
+      cycle = cycle_check;
+    }
+
+    induction->output_cycles.push_back(output);
+    induction->fixpoint_cycles.push_back(cycle);
 
     // NOTE(pag): At this point, we're done filling up the basics of the
     //            `induction->cyclic_region` and now move on to filling up

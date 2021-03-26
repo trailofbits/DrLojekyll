@@ -8,7 +8,7 @@
 namespace hyde {
 namespace {
 
-static constexpr bool kUsePushMethod = false;
+static constexpr bool kUsePushMethod = true;
 
 // Return the set of all views that contribute data to `view`. This includes
 // things like conditions.
@@ -1410,11 +1410,18 @@ void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
   auto [parent, table, already_removed] = InTryMarkUnknown(
       impl, view, parent_, already_removed_);
 
+  // All successors execute in parallel.
+  const auto par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+
   for (auto succ_view : view.Successors()) {
 
     // New style: use iterative method for removal.
     if (!kUsePushMethod) {
-      BuildEagerRemovalRegion(impl, view, succ_view, context, parent,
+      const auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
+
+      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
                               already_removed);
 
     // Old style: Use recursive push method for removal. This creates lots of
@@ -1423,7 +1430,7 @@ void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
       const auto remover_proc = GetOrCreateBottomUpRemover(
           impl, context, view, succ_view, already_removed);
       const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, parent, remover_proc);
+          impl->next_id++, par, remover_proc);
 
       auto i = 0u;
       for (auto col : view.Columns()) {
@@ -1436,7 +1443,7 @@ void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
         (void) param;
       }
 
-      parent->body.Emplace(parent, call);
+      par->AddRegion(call);
     }
   }
 }
