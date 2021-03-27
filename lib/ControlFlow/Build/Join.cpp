@@ -233,7 +233,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              nullptr);
 }
 
@@ -497,13 +497,13 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 // Build a bottom-up join remover.
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
                                QueryView from_view, QueryJoin join_view,
-                               PROC *proc, TABLE *already_checked) {
+                               OP *root, TABLE *already_checked) {
   assert(join_view.NumPivotColumns());
 
   const QueryView view(join_view);
 
-  auto parent = impl->series_regions.Create(proc);
-  proc->body.Emplace(proc, parent);
+  auto parent = impl->series_regions.Create(root);
+  root->body.Emplace(root, parent);
 
   // First, and somewhat unlike other bottom-up removers, we will make sure that
   // the data is gone in the data model associated with this particular
@@ -563,9 +563,9 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       assert(pred_pivots.size() == num_pivots);
 
       for (auto i = 0u; i < num_pivots; ++i) {
-        const auto param_var = proc->VariableFor(impl, from_view_pivots[i]);
+        const auto param_var = root->VariableFor(impl, from_view_pivots[i]);
         assert(param_var != nullptr);
-        proc->col_id_to_var[pred_pivots[i].Id()] = param_var;
+        root->col_id_to_var[pred_pivots[i].Id()] = param_var;
       }
     }
   }
@@ -580,7 +580,8 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     });
 
     const auto let = impl->operation_regions.CreateDerived<LET>(join);
-    BuildEagerRemovalRegions(impl, view, context, let, nullptr);
+    BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                             nullptr);
     return let;
   };
 
@@ -590,7 +591,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   if (2u < pred_views.size()) {
 
     // Create a pivot vector, which is needed by a join region.
-    const auto pivot_vec = proc->vectors.Create(
+    const auto pivot_vec = root->containing_procedure->vectors.Create(
         impl->next_id++, VectorKind::kJoinPivots, from_view_pivots);
 
     // Create the region that will add the tuple to-be-removed to the pivot
@@ -602,7 +603,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     add_to_vec->vector.Emplace(add_to_vec, pivot_vec);
 
     for (auto in_col : from_view_pivots) {
-      auto pivot_var = proc->VariableFor(impl, in_col);
+      auto pivot_var = root->VariableFor(impl, in_col);
       assert(pivot_var != nullptr);
       add_to_vec->tuple_vars.AddUse(pivot_var);
     }

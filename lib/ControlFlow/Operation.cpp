@@ -176,10 +176,43 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
 }
 
 const bool Node<ProgramVectorLoopRegion>::MergeEqual(
-    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorLoopRegion");
-  assert(false);
-  return false;
+    ProgramImpl *impl, std::vector<Node<ProgramRegion> *> &merges) {
+
+  auto par = impl->parallel_regions.Create(this);
+
+  if (auto body_ptr = body.get()) {
+    body.Clear();
+    body_ptr->parent = par;
+    par->AddRegion(body_ptr);
+  }
+
+  body.Emplace(this, par);
+
+  const auto num_defined_vars = defined_vars.Size();
+
+  for (auto merge : merges) {
+    auto merged_loop = merge->AsOperation()->AsVectorLoop();
+    assert(merged_loop != nullptr);
+    assert(merged_loop != this);
+    assert(merged_loop->defined_vars.Size() == num_defined_vars);
+    assert(merged_loop->vector.get() == vector.get());
+
+    for (auto i = 0u; i < num_defined_vars; ++i) {
+      merged_loop->defined_vars[i]->ReplaceAllUsesWith(defined_vars[i]);
+    }
+
+    if (auto merged_body = merged_loop->body.get(); merged_body) {
+      merged_body->parent = par;
+      par->AddRegion(merged_body);
+      merged_loop->body.Clear();
+    }
+
+    merged_loop->defined_vars.Clear();
+    merged_loop->vector.Clear();
+    merged_loop->parent = nullptr;
+  }
+
+  return true;
 }
 
 Node<ProgramVectorLoopRegion> *
@@ -312,6 +345,7 @@ const bool Node<ProgramLetBindingRegion>::MergeEqual(
       merged_let->body.Clear();
     }
 
+    merged_let->defined_vars.Clear();
     merged_let->parent = nullptr;
   }
 

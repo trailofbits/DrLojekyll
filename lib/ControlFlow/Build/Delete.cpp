@@ -20,7 +20,8 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
   // We don't permit `!foo : message(...).`
   assert(!view.SetCondition());
 
-  BuildEagerRemovalRegions(impl, view, context, parent, nullptr);
+  BuildEagerRemovalRegions(impl, view, context, parent, view.Successors(),
+                           nullptr);
 }
 
 // The interesting thing with DELETEs is that they don't have a data model;
@@ -28,12 +29,9 @@ void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
 // as well as with the node feeding it, a DELETE is more a signal saying "my
 // successor must delete this data from /its/ model."
 void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, PROC *proc) {
-
-  auto let = impl->operation_regions.CreateDerived<LET>(proc);
-  proc->body.Emplace(proc, let);
-
-  BuildEagerRemovalRegions(impl, view, context, let, nullptr);
+                                 QueryView view, OP *parent) {
+  BuildEagerRemovalRegions(impl, view, context, parent, view.Successors(),
+                           nullptr);
 }
 
 }  // namespace hyde

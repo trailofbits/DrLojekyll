@@ -63,7 +63,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                                last_table);
 
   } else {
@@ -163,7 +163,8 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       auto let = impl->operation_regions.CreateDerived<LET>(par);
       par->AddRegion(let);
 
-      BuildEagerRemovalRegions(impl, succ_view, context, let, already_removed);
+      BuildEagerRemovalRegions(impl, succ_view, context, let,
+                               succ_view.Successors(), already_removed);
     }
   }
 }

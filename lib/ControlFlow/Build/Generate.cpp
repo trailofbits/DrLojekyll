@@ -115,18 +115,18 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(
+  BuildEagerInsertionRegions(
       impl, view, context, parent, view.Successors(), table);
 }
 
 // Build a bottom-up remover for generator calls.
 void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
-                                   PROC *proc, TABLE *already_checked) {
+                                   OP *root, TABLE *already_checked) {
   QueryView view(map);
   const auto gen = CreateGeneratorCall(
-      impl, map, functor, context, proc, true);
-  proc->body.Emplace(proc, gen);
+      impl, map, functor, context, root, true);
+  root->body.Emplace(root, gen);
 
   auto parent = impl->parallel_regions.Create(gen);
 
@@ -152,7 +152,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
 
   const auto let = impl->operation_regions.CreateDerived<LET>(parent);
   parent->AddRegion(let);
-  BuildEagerRemovalRegions(impl, view, context, let, model->table);
+  BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                           model->table);
 }
 
 // Build a top-down checker on a map / generator.

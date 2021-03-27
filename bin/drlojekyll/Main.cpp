@@ -60,7 +60,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
       gDOTStream->Flush();
     }
 
-    if (auto program_opt = Program::Build(*query_opt, error_log)) {
+    if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
       if (gIRStream) {
         (*gIRStream) << *program_opt;
         gIRStream->Flush();

@@ -51,6 +51,10 @@ using WorkItemPtr = std::unique_ptr<WorkItem>;
 // control flow representation.
 class Context {
  public:
+  // Maps negations to the checker procedure that tries to figure out if the
+  // negated view has some data or not.
+//  std::unordered_map<QueryView, PROC *> negation_checker_procs;
+
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
 
@@ -310,7 +314,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
 
   // Loop over the results of the table scan.
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      seq, ProgramOperation::kLoopOverScanVector);
+      impl->next_id++, seq, ProgramOperation::kLoopOverScanVector);
   seq->AddRegion(loop);
   loop->vector.Emplace(loop, vec);
 
@@ -518,13 +522,6 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, QueryView view, OP *parent, TABLE *already_removed);
 
-// Build and dispatch to the bottom-up remover regions for `view`. The idea
-// is that we've just removed data from `view`, and now want to tell the
-// successors of this.
-void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
-                              Context &context, OP *parent,
-                              TABLE *already_removed=nullptr);
-
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
@@ -532,7 +529,7 @@ PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
                                  TABLE *already_checked = nullptr);
 
 void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, PROC *proc);
+                                 QueryView view, OP *parent);
 
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent,
@@ -540,29 +537,30 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
 void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
-                                   PROC *proc, TABLE *already_checked);
+                                   OP *parent, TABLE *already_checked);
 
 void CreateBottomUpInductionRemover(ProgramImpl *impl, Context &context,
                                     QueryView view, OP *parent,
                                     TABLE *already_removed);
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, OP *proc,
+                                QueryView view, OP *parent,
                                 TABLE *already_checked);
 
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, OP *proc,
+                                QueryView view, OP *parent,
                                 TABLE *already_checked);
 
 void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
-                                   QueryView view, PROC *proc);
+                                   QueryView view, OP *parent,
+                                   TABLE *already_checked);
 
 void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
-                                  QueryView view, PROC *proc,
+                                  QueryView view, OP *root,
                                   TABLE *already_checked);
 
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
-                               QueryView from_view, QueryJoin join, PROC *proc,
+                               QueryView from_view, QueryJoin join, OP *root,
                                TABLE *already_checked);
 
 // Returns `true` if `view` might need to have its data persisted.
@@ -608,10 +606,76 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
   return insert;
 }
 
+
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
+template <typename List>
+void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
+                              Context &context, OP *parent_, List &&successors,
+                              TABLE *already_removed_) {
+
+  // The caller didn't already do a state transition, so we can do it. We might
+  // have a situation like this:
+  //
+  //               JOIN
+  //              /    \
+  //        TUPLE1      TUPLE2
+  //              \    /
+  //              TUPLE3
+  //
+  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
+  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
+  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
+  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
+  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
+  // because otherwise whichever executed first would prevent the other from
+  // actually doing the marking.
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, view, parent_, already_removed_);
+
+  // All successors execute in parallel.
+  const auto par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+
+  for (auto succ_view : successors) {
+
+    // New style: use iterative method for removal.
+    if (IRFormat::kIterative == impl->format) {
+      const auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
+
+      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
+                              already_removed);
+
+    // Old style: Use recursive push method for removal. This creates lots of
+    // tuple remover procedures.
+    } else {
+      const auto remover_proc = GetOrCreateBottomUpRemover(
+          impl, context, view, succ_view, already_removed);
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, par, remover_proc);
+
+      auto i = 0u;
+      for (auto col : view.Columns()) {
+        const auto var = parent->VariableFor(impl, col);
+        assert(var != nullptr);
+        call->arg_vars.AddUse(var);
+
+        const auto param = remover_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
+      }
+
+      par->AddRegion(call);
+    }
+  }
+}
+
 // Add in all of the successors of a view inside of `parent`, which is
 // usually some kind of loop. The successors execute in parallel.
 template <typename List>
-void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
+void BuildEagerInsertionRegions(ProgramImpl *impl, QueryView view,
                                 Context &context, OP *parent, List &&successors,
                                 TABLE *last_table) {
   for (auto col : view.Columns()) {
@@ -633,7 +697,7 @@ void BuildEagerSuccessorRegions(ProgramImpl *impl, QueryView view,
       const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
           parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
 
-      COMMENT( insert->comment = __FILE__ ": BuildEagerSuccessorRegions"; )
+      COMMENT( insert->comment = __FILE__ ": BuildEagerInsertionRegions"; )
 
       for (auto col : view.Columns()) {
         const auto var = parent->VariableFor(impl, col);

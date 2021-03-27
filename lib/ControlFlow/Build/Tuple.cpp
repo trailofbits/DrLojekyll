@@ -38,7 +38,8 @@ static OP *RemoveFromNegatedView(ProgramImpl *impl, Context &context,
       impl, table, parent, view_cols, TupleState::kPresent, TupleState::kAbsent);
   COMMENT( table_remove->comment = "Remove from negated view"; )
 
-  BuildEagerRemovalRegions(impl, negate, context, table_remove, table);
+  BuildEagerRemovalRegions(impl, negate, context, table_remove,
+                           QueryView(negate).Successors(), table);
 
   return table_remove;
 }
@@ -98,7 +99,7 @@ static OP *ReAddToNegatedView(ProgramImpl *impl, Context &context,
   // Now that we have everything transitioned we can call an eager region on
   // this tuple to re-insert stuff.
 //  assert(view.Successors().empty() && "TODO(pag): Think about this.");
-  BuildEagerSuccessorRegions(impl, view, context, insert, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, insert, view.Successors(),
                              table);
 
   return check;
@@ -214,7 +215,7 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
     seq->AddRegion(parent);
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              last_table);
 }
 
@@ -327,44 +328,51 @@ void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
 }
 
 void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, OP *proc,
-                                TABLE *already_checked) {
+                                QueryView view, OP *root_,
+                                TABLE *already_removed_) {
 
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  const auto caller_did_check = already_checked == model->table;
-  PARALLEL *parent = nullptr;
+  auto [root, table, already_removed] = InTryMarkUnknown(
+      impl, view, root_, already_removed_);
+
+  PARALLEL *parent = impl->parallel_regions.Create(root);
+  root->body.Emplace(root, parent);
+
+
+//  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+//  const auto caller_did_check = already_checked == model->table;
+//  PARALLEL *parent = nullptr;
 
 //  view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
 //                      std::optional<QueryColumn> out_col) {
 //    proc->col_id_to_var[out_col->Id()] = proc->VariableFor(impl, in_col);
 //  });
 
-  if (model->table) {
-
-    // We've already transitioned for this table, so our job is just to pass
-    // the buck along, and then eventually we'll terminate recursion.
-    if (caller_did_check) {
-      parent = impl->parallel_regions.Create(proc);
-      proc->body.Emplace(proc, parent);
-
-    // The caller didn't already do a state transition, so we can do it.
-    } else {
-      auto remove =
-          BuildBottomUpTryMarkUnknown(impl, model->table, proc, view.Columns(),
-                                      [&](PARALLEL *par) { parent = par; });
-
-      proc->body.Emplace(proc, remove);
-      already_checked = model->table;
-    }
-
-  // This tuple isn't associated with any persistent storage.
-  } else {
-    assert(!view.IsUsedByNegation());
-
-    already_checked = nullptr;
-    parent = impl->parallel_regions.Create(proc);
-    proc->body.Emplace(proc, parent);
-  }
+//  if (model->table) {
+//
+//    // We've already transitioned for this table, so our job is just to pass
+//    // the buck along, and then eventually we'll terminate recursion.
+//    if (caller_did_check) {
+//      parent = impl->parallel_regions.Create(proc);
+//      proc->body.Emplace(proc, parent);
+//
+//    // The caller didn't already do a state transition, so we can do it.
+//    } else {
+//      auto remove =
+//          BuildBottomUpTryMarkUnknown(impl, model->table, proc, view.Columns(),
+//                                      [&](PARALLEL *par) { parent = par; });
+//
+//      proc->body.Emplace(proc, remove);
+//      already_checked = model->table;
+//    }
+//
+//  // This tuple isn't associated with any persistent storage.
+//  } else {
+//    assert(!view.IsUsedByNegation());
+//
+//    already_checked = nullptr;
+//    parent = impl->parallel_regions.Create(proc);
+//    proc->body.Emplace(proc, parent);
+//  }
 
   // If this view is used by a negation then we need to go and see if we should
   // do a delete in the negation. This means first double-checking that this is
@@ -376,7 +384,7 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
     }
 
     const auto checker_proc = GetOrCreateTopDownChecker(
-        impl, context, view, cols, already_checked);
+        impl, context, view, cols, already_removed);
 
     const auto check = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, parent, checker_proc);
@@ -396,33 +404,25 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
 
     parent->AddRegion(check);
 
-    // The call to the top-down checker will have changed the state to
-    // absent.
-    if (caller_did_check) {
-      parent = impl->parallel_regions.Create(check);
-      check->false_body.Emplace(check, parent);
-
-    // Change the tuple's state to mark it as deleted now that we've proven it
-    // as such. The above `GetOrCreateTopDownChecker`.
-    } else {
-      const auto table_remove = BuildChangeState(
-          impl, model->table, check, cols, TupleState::kUnknown,
-          TupleState::kAbsent);
-      check->false_body.Emplace(check, table_remove);
-
-      parent = impl->parallel_regions.Create(table_remove);
-      table_remove->body.Emplace(table_remove, parent);
-    }
+    // The checker function returned `false`, so we know the tuple is definitely
+    // gone, and we want to re-add to the negated view.
+    auto tuple_is_gone = impl->parallel_regions.Create(check);
+    check->false_body.Emplace(check, tuple_is_gone);
 
     // By this point, we know the tuple is gone, and so now we need to tell
     // the negation about the deleted tuple.
-    ReAddToNegatedViews(impl, context, parent, view);
+    ReAddToNegatedViews(impl, context, tuple_is_gone, view);
+
+    // Re-parent to here; if we did the top-down check then we should benefit
+    // from it.
+    parent = tuple_is_gone;
   }
 
   auto let = impl->operation_regions.CreateDerived<LET>(parent);
   parent->AddRegion(let);
 
-  BuildEagerRemovalRegions(impl, view, context, let, already_checked);
+  BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                           already_removed);
 
   // NOTE(pag): We don't end this with a `return-false` because removing from
   //            the tuple may trigger the insertion into a negation, which

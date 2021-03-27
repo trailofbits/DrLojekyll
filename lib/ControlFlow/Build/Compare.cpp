@@ -55,7 +55,7 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              table);
 }
 
@@ -277,10 +277,10 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
 }
 
 void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
-                                  QueryView view, PROC *proc,
+                                  QueryView view, OP *root,
                                   TABLE *already_checked) {
-  auto cmp = CreateCompareRegion(impl, QueryCompare::From(view), context, proc);
-  proc->body.Emplace(proc, cmp);
+  auto cmp = CreateCompareRegion(impl, QueryCompare::From(view), context, root);
+  root->body.Emplace(root, cmp);
 
   auto parent = impl->parallel_regions.Create(cmp);
   cmp->body.Emplace(cmp, parent);
@@ -304,7 +304,8 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
   auto let = impl->operation_regions.CreateDerived<LET>(parent);
   parent->AddRegion(let);
 
-  BuildEagerRemovalRegions(impl, view, context, let, already_checked);
+  BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                           already_checked);
 }
 
 }  // namespace hyde

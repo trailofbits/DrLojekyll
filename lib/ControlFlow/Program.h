@@ -465,8 +465,9 @@ class Node<ProgramVectorLoopRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
-  inline Node(REGION *parent_, ProgramOperation op_)
+  inline Node(unsigned id_, REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
+        id(id_),
         defined_vars(this) {}
 
   uint64_t Hash(uint32_t depth) const override;
@@ -481,6 +482,9 @@ class Node<ProgramVectorLoopRegion> final
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
+
+  // ID of this region.
+  const unsigned id;
 
   // Local variables bound to the vector being looped.
   DefList<VAR> defined_vars;
@@ -1225,9 +1229,6 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // going into a co-mingled induction, as is the case in
   // `transitive_closure2.dr` and `transitive_closure3.dr`.
   std::unordered_map<QueryView, VECTOR *> view_to_vec;
-
-  // We lazily create removal vectors for inductions (whereas insert vectors
-  // are eagerly added).
   std::unordered_map<QueryView, VECTOR *> view_to_removal_vec;
 
   // List of append to vector regions inside this induction.
@@ -1237,11 +1238,17 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   std::vector<OP *> output_cycles;
   std::vector<OP *> fixpoint_cycles;
 
+  std::vector<OP *> output_remove_cycles;
+  std::vector<OP *> fixpoint_remove_cycles;
+
   enum State {
     kAccumulatingInputRegions,
     kAccumulatingCycleRegions,
     kBuildingOutputRegions
   } state = kAccumulatingInputRegions;
+
+  // Can this induction produce deletions?
+  bool is_differential{false};
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;
@@ -1250,9 +1257,10 @@ class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
 
-  inline explicit ProgramImpl(Query query_)
+  inline explicit ProgramImpl(Query query_, IRFormat format_)
       : User(this),
         query(query_),
+        format(format_),
         query_checkers(this),
         procedure_regions(this),
         series_regions(this),
@@ -1271,6 +1279,9 @@ class ProgramImpl : public User {
 
   // The data flow representation from which this was created.
   const Query query;
+
+  // The format of the IR.
+  const IRFormat format;
 
   // Globally numbers things like procedures, variables, vectors, etc.
   unsigned next_id{0u};

@@ -41,7 +41,7 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
   }
 #endif
 
-  BuildEagerSuccessorRegions(impl, view, context, parent,
+  BuildEagerInsertionRegions(impl, view, context, parent,
                              view.Successors(), last_table);
 }
 
@@ -150,7 +150,8 @@ void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
                                 TABLE *already_removed_) {
   auto [parent, table, already_removed] = InTryMarkUnknown(
       impl, view, parent_, already_removed_);
-  BuildEagerRemovalRegions(impl, view, context, parent, already_removed);
+  BuildEagerRemovalRegions(impl, view, context, parent,
+                           view.Successors(), already_removed);
 }
 
 }  // namespace hyde

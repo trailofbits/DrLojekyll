@@ -148,7 +148,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     }
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              nullptr);
 }
 
@@ -186,7 +186,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
       }
     });
 
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                                last_table);
     return;
   }

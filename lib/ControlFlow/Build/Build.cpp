@@ -8,8 +8,6 @@
 namespace hyde {
 namespace {
 
-static constexpr bool kUsePushMethod = true;
-
 // Return the set of all views that contribute data to `view`. This includes
 // things like conditions.
 static std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
@@ -140,7 +138,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      parent, ProgramOperation::kLoopOverInputVector);
+      impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
   parent->AddRegion(loop);
 
   auto par = impl->parallel_regions.Create(loop);
@@ -172,7 +170,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
       }
     }
 
-    BuildEagerSuccessorRegions(impl, receive, context, let,
+    BuildEagerInsertionRegions(impl, receive, context, let,
                                receive.Successors(), nullptr);
   }
 }
@@ -774,36 +772,36 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     assert(context.work_list.empty());
     context.work_list.clear();
 
-    if (to_view.IsTuple()) {
-      auto let = impl->operation_regions.CreateDerived<LET>(proc);
+    auto let = impl->operation_regions.CreateDerived<LET>(proc);
       proc->body.Emplace(proc, let);
+
+    if (to_view.IsTuple()) {
       CreateBottomUpTupleRemover(impl, context, to_view, let, already_checked);
 
     } else if (to_view.IsCompare()) {
-      CreateBottomUpCompareRemover(impl, context, to_view, proc,
+      CreateBottomUpCompareRemover(impl, context, to_view, let,
                                    already_checked);
 
     } else if (to_view.IsInsert()) {
-      auto let = impl->operation_regions.CreateDerived<LET>(proc);
-      proc->body.Emplace(proc, let);
       CreateBottomUpInsertRemover(impl, context, to_view, let,
                                   already_checked);
 
     } else if (to_view.IsDelete()) {
-      CreateBottomUpDeleteRemover(impl, context, to_view, proc);
+      CreateBottomUpDeleteRemover(impl, context, to_view, let);
 
-    // NOTE(pag): We don't need to distinguish between unions that are
-    //            inductions and unions that are merges.
     } else if (to_view.IsMerge()) {
-
-      auto let = impl->operation_regions.CreateDerived<LET>(proc);
-      proc->body.Emplace(proc, let);
-      CreateBottomUpUnionRemover(impl, context, to_view, let, already_checked);
+      if (context.inductive_successors.count(to_view) &&
+          !context.dominated_merges.count(to_view)) {
+        CreateBottomUpInductionRemover(impl, context, to_view, let,
+                                       already_checked);
+      } else {
+        CreateBottomUpUnionRemover(impl, context, to_view, let, already_checked);
+      }
 
     } else if (to_view.IsJoin()) {
       auto join = QueryJoin::From(to_view);
       if (join.NumPivotColumns()) {
-        CreateBottomUpJoinRemover(impl, context, from_view, join, proc,
+        CreateBottomUpJoinRemover(impl, context, from_view, join, let,
                                   already_checked);
       } else {
         assert(false && "TODO: Cross-products!");
@@ -818,7 +816,7 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       auto map = QueryMap::From(to_view);
       auto functor = map.Functor();
       if (functor.IsPure()) {
-        CreateBottomUpGenerateRemover(impl, context, map, functor, proc,
+        CreateBottomUpGenerateRemover(impl, context, map, functor, let,
                                       already_checked);
 
       } else {
@@ -826,7 +824,8 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       }
 
     } else if (to_view.IsNegate()) {
-      CreateBottomUpNegationRemover(impl, context, to_view, proc);
+      CreateBottomUpNegationRemover(impl, context, to_view, let,
+                                    already_checked);
 
     // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
     //            removers jump past SELECTs.
@@ -1363,89 +1362,18 @@ std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
       }
 
       // Do the marking.
-      PARALLEL *internal_par = nullptr;
-      auto remove =
-          BuildBottomUpTryMarkUnknown(impl, table, parent, cols,
-                                      [&](PARALLEL *par) {
-                                        internal_par = par;
-                                      });
+      const auto table_remove = BuildChangeState(
+          impl, table, parent, cols, TupleState::kPresent, TupleState::kUnknown);
 
-      parent->body.Emplace(parent, remove);
+      parent->body.Emplace(parent, table_remove);
+      parent = table_remove;
       already_removed = table;
-
-      auto let = impl->operation_regions.CreateDerived<LET>(internal_par);
-      internal_par->AddRegion(let);
-      parent = let;
     }
   } else {
     already_removed = nullptr;
   }
 
   return {parent, table, already_removed};
-}
-
-// Build and dispatch to the bottom-up remover regions for `view`. The idea
-// is that we've just removed data from `view`, and now want to tell the
-// successors of this.
-void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
-                              Context &context, OP *parent_,
-                              TABLE *already_removed_) {
-
-  // The caller didn't already do a state transition, so we can do it. We might
-  // have a situation like this:
-  //
-  //               JOIN
-  //              /    \
-  //        TUPLE1      TUPLE2
-  //              \    /
-  //              TUPLE3
-  //
-  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
-  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
-  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
-  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
-  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
-  // because otherwise whichever executed first would prevent the other from
-  // actually doing the marking.
-  auto [parent, table, already_removed] = InTryMarkUnknown(
-      impl, view, parent_, already_removed_);
-
-  // All successors execute in parallel.
-  const auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (auto succ_view : view.Successors()) {
-
-    // New style: use iterative method for removal.
-    if (!kUsePushMethod) {
-      const auto let = impl->operation_regions.CreateDerived<LET>(par);
-      par->AddRegion(let);
-
-      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
-                              already_removed);
-
-    // Old style: Use recursive push method for removal. This creates lots of
-    // tuple remover procedures.
-    } else {
-      const auto remover_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, already_removed);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, remover_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = parent->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = remover_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
-  }
 }
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
@@ -1773,28 +1701,72 @@ static void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
 }
 
 // Build an eager region for removing data.
-void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryView view, Context &context, OP *parent,
-                             TABLE *already_removed) {
-  MapVariablesInEagerRegion(impl, pred_view, view, parent);
-  if (false) {
+void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView from_view,
+                             QueryView to_view, Context &context, OP *parent,
+                             TABLE *already_checked) {
+  MapVariablesInEagerRegion(impl, from_view, to_view, parent);
 
+  if (to_view.IsTuple()) {
+    CreateBottomUpTupleRemover(impl, context, to_view, parent, already_checked);
 
-  } else if (view.IsMerge()) {
-    const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view) &&
-        !context.dominated_merges.count(view)) {
-      CreateBottomUpInductionRemover(impl, context, view, parent,
-                                     already_removed);
-    } else {
-      CreateBottomUpUnionRemover(impl, context, view, parent, already_removed);
-    }
+  } else if (to_view.IsCompare()) {
+    CreateBottomUpCompareRemover(impl, context, to_view, parent,
+                                 already_checked);
 
-  } else if (view.IsTuple()) {
-    CreateBottomUpTupleRemover(impl, context, view, parent, already_removed);
+  } else if (to_view.IsInsert()) {
+    CreateBottomUpInsertRemover(impl, context, to_view, parent,
+                                already_checked);
 
   // We don't want to support any kind of double-negation :-/
-  } else if (view.IsDelete()) {
+  } else if (to_view.IsDelete()) {
+    assert(false);
+    CreateBottomUpDeleteRemover(impl, context, to_view, parent);
+
+  } else if (to_view.IsMerge()) {
+    if (context.inductive_successors.count(to_view) &&
+        !context.dominated_merges.count(to_view)) {
+      CreateBottomUpInductionRemover(impl, context, to_view, parent,
+                                     already_checked);
+    } else {
+      CreateBottomUpUnionRemover(impl, context, to_view, parent,
+                                 already_checked);
+    }
+
+  } else if (to_view.IsJoin()) {
+    auto join = QueryJoin::From(to_view);
+    if (join.NumPivotColumns()) {
+      CreateBottomUpJoinRemover(impl, context, from_view, join, parent,
+                                already_checked);
+    } else {
+      assert(false && "TODO: Cross-products!");
+    }
+  } else if (to_view.IsAggregate()) {
+    assert(false && "TODO Aggregates!");
+
+  } else if (to_view.IsKVIndex()) {
+    assert(false && "TODO Key Values!");
+
+  } else if (to_view.IsMap()) {
+    auto map = QueryMap::From(to_view);
+    auto functor = map.Functor();
+    if (functor.IsPure()) {
+      CreateBottomUpGenerateRemover(impl, context, map, functor, parent,
+                                    already_checked);
+
+    } else {
+      assert(false && "TODO Impure Functors!");
+    }
+
+  } else if (to_view.IsNegate()) {
+    CreateBottomUpNegationRemover(impl, context, to_view, parent,
+                                  already_checked);
+
+  // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
+  //            removers jump past SELECTs.
+  } else if (to_view.IsSelect()) {
+    assert(false);
+
+  } else {
     assert(false);
   }
 }
@@ -1845,7 +1817,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
 
   } else if (view.IsSelect()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                                last_table);
 
   } else if (view.IsTuple()) {
@@ -1876,8 +1848,8 @@ WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
-                                      const ErrorLog &) {
-  auto impl = std::make_shared<ProgramImpl>(query);
+                                      IRFormat format_) {
+  auto impl = std::make_shared<ProgramImpl>(query, format_);
   const auto program = impl.get();
 
   BuildDataModel(query, program);

@@ -620,6 +620,7 @@ class UseRef {
   }
 
   void Emplace(User *user, T *def) {
+    assert(def != nullptr);
     SelfT(user, def).Swap(*this);
   }
 

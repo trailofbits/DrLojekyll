@@ -240,7 +240,8 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 enum class VectorKind : unsigned {
   kParameter,
   kInputOutputParameter,
-  kInduction,
+  kInductionAdditions,
+  kInductionRemovals,
   kJoinPivots,
   kProductInput,
   kTableScan,
@@ -938,11 +939,26 @@ class ProgramQuery {
   ProgramQuery(ProgramQuery &&) noexcept = default;
 };
 
+enum IRFormat {
+
+  // An iterative code format uses induction regions with fixpoint loops over
+  // vectors in order advance the data flow.
+  kIterative,
+
+  // A recursive code format follows Stefan Brass' "push method" of pipelined
+  // bottom-up datalog execute.
+  kRecursive
+};
+
 // A program in its entirety.
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query, const ErrorLog &log);
+  static std::optional<Program> Build(const Query &query,
+                                      IRFormat format_=IRFormat::kIterative);
+
+  // The format of the code in this program.
+  IRFormat Format(void) const;
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;
