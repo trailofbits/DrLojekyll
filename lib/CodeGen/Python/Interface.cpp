@@ -156,7 +156,11 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "num_messages += len(self._add_" << message.Name() << '_'
        << message.Arity() << ")\n"
        << os.Indent() << "db." << message.Name() << '_' << message.Arity()
-       << "(self._add_" << message.Name() << '_' << message.Arity() << ", True)\n";
+       << "(self._add_" << message.Name() << '_' << message.Arity();
+    if (message.IsDifferential()) {
+      os << ", True";
+    }
+    os << ")\n";
     os.PopIndent();
 
     if (!message.IsDifferential()) {
@@ -253,7 +257,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << ')';
     }
 
-    os << ")\n\n";
+    os << ")  # type: ignore\n\n";
     os.PopIndent();
   }
 

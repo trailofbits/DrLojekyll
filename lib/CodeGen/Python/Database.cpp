@@ -1425,14 +1425,15 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
   const auto messages = Messages(root_module);
 
-  if (messages.empty()) {
-    os << os.Indent() << "pass\n\n";
-  } else {
-    for (auto message : messages) {
-      if (message.IsPublished()) {
-        DeclareMessageLogger(os, root_module, message, "...");
-      }
+  auto empty = true;
+  for (auto message : messages) {
+    if (message.IsPublished()) {
+      empty = false;
+      DeclareMessageLogger(os, root_module, message, "...");
     }
+  }
+  if (empty) {
+    os << os.Indent() << "pass\n";
   }
   os.PopIndent();
 
@@ -1440,14 +1441,13 @@ static void DeclareMessageLog(OutputStream &os, Program program,
   os << os.Indent() << "class " << gClassName << "Log:\n";
   os.PushIndent();
 
-  if (messages.empty()) {
-    os << os.Indent() << "pass\n\n";
-  } else {
-    for (auto message : messages) {
-      if (message.IsPublished()) {
-        DeclareMessageLogger(os, root_module, message, "pass");
-      }
+  for (auto message : messages) {
+    if (message.IsPublished()) {
+      DeclareMessageLogger(os, root_module, message, "pass");
     }
+  }
+  if (empty) {
+    os << os.Indent() << "pass\n\n";
   }
   os.PopIndent();
 }
@@ -1576,6 +1576,12 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   PythonCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
 
+  // From a codegen perspective, we guarantee that all paths through all
+  // functions return, but mypy isn't always smart enough, mostly because we
+  // have our returns inside of conditionals that mypy doesn't know are
+  // complete.
+  os << os.Indent() << "assert False\n"
+     << os.Indent() << "return False\n";
   os.PopIndent();
   os << '\n';
 }

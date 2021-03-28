@@ -114,6 +114,12 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
 
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " @inline";
+
+  } else if (decl.IsMessage()) {
+    auto message = ParsedMessage::From(decl);
+    if (message.IsDifferential()) {
+      os << " @differential";
+    }
   }
   os << ".";
   return os;
