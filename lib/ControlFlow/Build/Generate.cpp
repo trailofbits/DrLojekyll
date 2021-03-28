@@ -332,7 +332,9 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     } else {
       assert(false &&
              "TODO(pag): Handle worst case of top-down generator checker");
-      series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));
+      auto ret = BuildStateCheckCaseReturnFalse(impl, series);
+      ret->comment = "?!?! WORST CASE top-down generator checker";
+      series->AddRegion(ret);
     }
   }
 }

@@ -225,7 +225,6 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
   const auto decl = ParsedDeclaration::Of(pred);
 
   if (decl.IsMessage()) {
-
     auto &input = query->decl_to_input[decl];
     if (!input) {
       input = query->ios.Create(decl);
@@ -1687,23 +1686,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   };
 
-  // The data in `view` must be deleted in our successor.
-  if (clause.IsDeletion()) {
-    auto col_index = 0u;
-    DELETE *const del = query->deletes.Create();
-    del->color = context.color;
-
-    for (auto col : clause_head->columns) {
-      del->input_columns.AddUse(col);
-      (void) del->columns.Create(col->var, del, col->id, col_index++);
-    }
-
-    assert(0u < col_index);
-    clause_head = del;
-
-    add_set_conditon(clause_head);
-  }
-
   if (decl.IsMessage()) {
     auto &stream = query->decl_to_input[decl];
     if (!stream) {
@@ -1721,10 +1703,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert = query->inserts.Create(rel, decl);
     insert->color = context.color;
     rel->inserts.AddUse(insert);
-  }
-
-  if (clause.IsDeletion()) {
-    insert->can_receive_deletions = true;
   }
 
   for (auto col : clause_head->columns) {
@@ -1784,7 +1762,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   impl->RemoveUnusedViews();
   impl->RelabelGroupIDs();
-  impl->TrackDifferentialUpdates();
+  impl->TrackDifferentialUpdates(log);
 
   // TODO(pag): The join canonicalization done in the simplifier introduces
   //            a bug in Solypsis if the dataflow builder builds functors
@@ -1809,7 +1787,8 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->RemoveUnusedViews();
   impl->ExtractConditionsToTuples();
   impl->RemoveUnusedViews();
-  impl->TrackDifferentialUpdates(true);
+  impl->ProxyInsertsWithTuples();
+  impl->TrackDifferentialUpdates(log, true);
   impl->LinkViews();
   impl->FinalizeColumnIDs();
 

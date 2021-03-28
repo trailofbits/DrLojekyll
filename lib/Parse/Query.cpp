@@ -229,7 +229,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
       sub_tokens.swap(clause_toks);
       const auto prev_next_sub_tok_index = next_sub_tok_index;
       next_sub_tok_index = 0;
-      ParseClause(module, Token(), decl_for_clause);
+      ParseClause(module, decl_for_clause);
       next_sub_tok_index = prev_next_sub_tok_index;
       sub_tokens.swap(clause_toks);
     }

@@ -186,9 +186,6 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
     changed = true;
   }
 
-  // TODO(pag): Remove?!
-  return changed;
-
   auto parent_region = induction->parent;
   if (!parent_region) {
     return changed;

@@ -232,12 +232,18 @@ static void BuildInductiveLoops(ProgramImpl *impl, Context &context,
     }
   }
 
+  auto output_body_par = impl->parallel_regions.Create(output);
+  output->body.Emplace(output, output_body_par);
+
+  auto cycle_body_par = impl->parallel_regions.Create(cycle);
+  cycle->body.Emplace(cycle, cycle_body_par);
+
   if (for_add) {
-    induction->output_cycles.push_back(output);
-    induction->fixpoint_cycles.push_back(cycle);
+    induction->output_cycles.push_back(output_body_par);
+    induction->fixpoint_cycles.push_back(cycle_body_par);
   } else {
-    induction->output_remove_cycles.push_back(output);
-    induction->fixpoint_remove_cycles.push_back(cycle);
+    induction->output_remove_cycles.push_back(output_body_par);
+    induction->fixpoint_remove_cycles.push_back(cycle_body_par);
   }
 
   // NOTE(pag): At this point, we're done filling up the basics of the
@@ -326,18 +332,23 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // inductive successors.
   merge_index = 0u;
   for (auto merge : induction_set->merges) {
-    OP *const cycle = induction->fixpoint_cycles[merge_index++];
+    PARALLEL *const cycle_par = induction->fixpoint_cycles[merge_index++];
+    LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+    cycle_par->AddRegion(cycle);
+
     DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE * const table = model->table;
     BuildEagerInsertionRegions(impl, merge, context, cycle,
                                context.inductive_successors[merge], table);
   }
 
-
   if (induction->is_differential) {
     merge_index = 0u;
     for (auto merge : induction_set->merges) {
-      OP *const cycle = induction->fixpoint_remove_cycles[merge_index++];
+      PARALLEL *const cycle_par = induction->fixpoint_remove_cycles[merge_index++];
+      LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+      cycle_par->AddRegion(cycle);
+
       DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
       TABLE * const table = model->table;
 
@@ -371,13 +382,31 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Now that we have all of the regions arranged and the loops, add in the
   // non-inductive successors.
-  auto vec_index = 0u;
+  auto merge_index = 0u;
   for (auto merge : induction_set->merges) {
-    OP *const cycle = induction->output_cycles[vec_index++];
+    PARALLEL *const cycle_par = induction->output_cycles[merge_index++];
+    LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+    cycle_par->AddRegion(cycle);
+
     DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE * const table = model->table;
     BuildEagerInsertionRegions(impl, merge, context, cycle,
                                context.noninductive_successors[merge], table);
+  }
+
+  if (induction->is_differential) {
+    merge_index = 0u;
+    for (auto merge : induction_set->merges) {
+      PARALLEL *const cycle_par = induction->output_remove_cycles[merge_index++];
+      LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+      cycle_par->AddRegion(cycle);
+
+      DataModel * const model = impl->view_to_model[merge]->FindAs<DataModel>();
+      TABLE * const table = model->table;
+
+      BuildEagerRemovalRegions(impl, merge, context, cycle,
+                               context.noninductive_successors[merge], table);
+    }
   }
 
   // NOTE(pag): We can't add a `return-false` here because an induction

@@ -138,13 +138,14 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     // Call the predecessors. If any of the predecessors return `false` then
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
-      const auto index_is_good = CallTopDownChecker(
+      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
           impl, context, parent, view, view_cols, pred_view, nullptr);
 
-      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
+      COMMENT( index_is_good_call->comment =
+          __FILE__ ": ContinueJoinWorkItem::Run"; )
 
       parent->body.Emplace(parent, index_is_good);
-      parent = index_is_good;
+      parent = index_is_good_call;
     }
   }
 

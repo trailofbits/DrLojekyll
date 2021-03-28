@@ -827,7 +827,7 @@ void ParserImpl::ParseLocalExport(
       sub_tokens.swap(clause_toks);
       const auto prev_next_sub_tok_index = next_sub_tok_index;
       next_sub_tok_index = 0;
-      ParseClause(module, Token(), decl_for_clause);
+      ParseClause(module, decl_for_clause);
       next_sub_tok_index = prev_next_sub_tok_index;
       sub_tokens.swap(clause_toks);
     }
@@ -1114,7 +1114,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         }
         break;
 
-      // Import another module, e.g. `#import "foo/bar"`.
+      // Import another module, e.g. `#import "foo/bar".`.
       case Lexeme::kHashImportModuleStmt:
         ReadStatement();
         if (first_non_import.IsValid()) {
@@ -1135,10 +1135,11 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       //
       //    #prologue ```
       //    ...
-      //    ```
+      //    ```.
+      //
       //    #epilogue ```
       //    ...
-      //    ```
+      //    ```.
       case Lexeme::kHashInlinePrologueStmt:
       case Lexeme::kHashInlineEpilogueStmt:
         ReadStatement();
@@ -1156,30 +1157,6 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
               << "Expected period at end of declaration/clause";
         } else {
           (void) ParseClause(module);
-        }
-
-        if (first_non_import.IsInvalid()) {
-          first_non_import = SubTokenRange();
-        }
-        break;
-
-      // A deletion clause. For example:
-      //
-      //    !foo(...) : message_to_delete_foo(...).
-      case Lexeme::kPuncExclaim:
-        if (!ReadStatement()) {
-          context->error_log.Append(scope_range,
-                                    sub_tokens.back().NextPosition())
-              << "Expected period here at end of declaration/clause";
-
-        } else if (2 > sub_tokens.size()) {
-          context->error_log.Append(scope_range, tok.NextPosition())
-              << "Expected atom here (lower case identifier) after the '!' "
-              << "for the name of the negated clause head being declared";
-
-        } else {
-          ++next_sub_tok_index;
-          ParseClause(module, tok);
         }
 
         if (first_non_import.IsInvalid()) {
@@ -1460,12 +1437,6 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
           return false;
         }
       }
-
-      for (auto clause : module->deletion_clauses) {
-        if (!do_clause(clause)) {
-          return false;
-        }
-      }
     }
   }
 
@@ -1517,10 +1488,8 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
                                       const ErrorLog &log) {
 
   auto do_decl = [&](ParsedDeclaration decl) {
-    for (ParsedClause clause : decl.Clauses()) {
-      if (!clause.IsDeletion()) {
-        return;
-      }
+    if (!decl.Clauses().empty()) {
+      return;
     }
 
     auto err = log.Append(decl.SpellingRange());
@@ -1550,40 +1519,6 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
   }
 
   return prev_num_errors == log.Size();
-}
-
-// Check that if we have any deletion clause, i.e. `!foo(...) : bar(...).`, that
-// all positive clauses of `foo(...)` depend directly on a message.
-static bool CheckDeletions(Node<ParsedModule> *root_module,
-                           const ErrorLog &log) {
-
-  auto all_good = true;
-  for (auto module : root_module->all_modules) {
-    for (auto del_clause : module->deletion_clauses) {
-      const auto decl = del_clause->declaration;
-
-      // Check that all other insertions depend on messages? The key here is to
-      // not permit a situation where you ask to remove a tuple, but where that
-      // tuple is independently provable via multiple "paths" (that don't use
-      // messages). Because a message is ultimately ephemeral, there is no prior
-      // record of its receipt per se, and so there is no prior evidence to re-
-      // prove a clause head that we're asking to remove.
-      for (const auto &clause : decl->context->clauses) {
-        if (!clause->depends_on_messages) {
-          auto err = log.Append(ParsedClause(del_clause).SpellingRange(),
-                                del_clause->negation.Position());
-          err << "All positive clauses of " << decl->name << '/'
-              << decl->parameters.size() << " must directly depend on a message"
-              << " because of the presence of a deletion clause";
-
-          auto note = err.Note(ParsedClause(clause.get()).SpellingRange());
-          note << "Clause without a direct message dependency is here";
-          all_good = false;
-        }
-      }
-    }
-  }
-  return all_good;
 }
 
 // Parse a display, returning the parsed module.
@@ -1636,8 +1571,7 @@ ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   // Only do usage and type checking when we're done parsing the root module.
   if (module->root_module == module.get()) {
     if (!AllDeclarationsAreDefined(module.get(), context->error_log) ||
-        !AssignTypes(module.get()) ||
-        !CheckDeletions(module.get(), context->error_log)) {
+        !AssignTypes(module.get())) {
       return std::nullopt;
     }
   }

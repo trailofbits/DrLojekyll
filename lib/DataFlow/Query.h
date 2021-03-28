@@ -539,6 +539,10 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // for which we broke the invariant.
   mutable std::optional<ParsedVariable> invalid_var;
 
+  // This breaks abstraction layers, as table IDs come from the control-flow
+  // IR, but it's nifty for debugging.
+  mutable std::optional<unsigned> table_id;
+
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
@@ -603,11 +607,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
       : pred(pred_),
         position(pred_.SpellingRange().From()),
         relation(this, relation_),
-        inserts(this) {
-    this->can_receive_deletions =
-        0u < relation->declaration.NumDeletionClauses();
-    this->can_produce_deletions = this->can_receive_deletions;
-  }
+        inserts(this) {}
 
   inline Node(Node<QueryStream> *stream_, ParsedPredicate pred_)
       : pred(pred_),
@@ -615,8 +615,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions =
-          0u < input_stream->declaration.NumDeletionClauses();
+      this->can_receive_deletions = ParsedMessage::From(
+          input_stream->declaration).IsDifferential();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -627,8 +627,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions =
-          0u < input_stream->declaration.NumDeletionClauses();
+      this->can_receive_deletions = ParsedMessage::From(
+          input_stream->declaration).IsDifferential();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -1324,7 +1324,8 @@ class QueryImpl {
   void ConvertConstantInputsToTuples(void);
 
   // Identify which data flows can receive and produce deletions.
-  void TrackDifferentialUpdates(bool check_conds = false) const;
+  void TrackDifferentialUpdates(const ErrorLog &log,
+                                bool check_conds = false) const;
 
   // Extract conditions from regular nodes and force them to belong to only
   // tuple nodes. This simplifies things substantially for downstream users.
@@ -1334,6 +1335,12 @@ class QueryImpl {
   // some extent. Two columns with the same ID can be said to have the same
   // value at runtime.
   void FinalizeColumnIDs(void) const;
+
+  // Ensure that every INSERT view is preceded by a TUPLE. This makes a bunch
+  // of things easier downstream in the control-flow IR generation, because
+  // then the input column indices of an insert line up perfectly with the
+  // SELECTs and such.
+  void ProxyInsertsWithTuples(void);
 
   // Link together views in terms of predecessors and successors.
   void LinkViews(void);

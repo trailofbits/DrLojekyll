@@ -1409,7 +1409,10 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
     os << ", " << param.Name() << ": " << TypeName(module, param.Type());
   }
 
-  os << ", added: bool):\n";
+  if (message.IsDifferential()) {
+    os << ", added: bool";
+  }
+  os << "):\n";
   os.PushIndent();
   os << os.Indent() << impl << "\n\n";
   os.PopIndent();
@@ -1426,7 +1429,9 @@ static void DeclareMessageLog(OutputStream &os, Program program,
     os << os.Indent() << "pass\n\n";
   } else {
     for (auto message : messages) {
-      DeclareMessageLogger(os, root_module, message, "...");
+      if (message.IsPublished()) {
+        DeclareMessageLogger(os, root_module, message, "...");
+      }
     }
   }
   os.PopIndent();
@@ -1439,7 +1444,9 @@ static void DeclareMessageLog(OutputStream &os, Program program,
     os << os.Indent() << "pass\n\n";
   } else {
     for (auto message : messages) {
-      DeclareMessageLogger(os, root_module, message, "pass");
+      if (message.IsPublished()) {
+        DeclareMessageLogger(os, root_module, message, "pass");
+      }
     }
   }
   os.PopIndent();

@@ -55,10 +55,6 @@ static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
 
   if (auto query_opt = Query::Build(module, error_log)) {
-    if (gDOTStream) {
-      (*gDOTStream) << *query_opt;
-      gDOTStream->Flush();
-    }
 
     if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
       if (gIRStream) {
@@ -81,6 +77,14 @@ static int CompileModule(hyde::DisplayManager display_manager,
         hyde::GeneratePythonInterfaceCode(
             *program_opt, *gPyInterfaceCodeStream);
       }
+    }
+
+    // NOTE(pag): We do this later because if we produce the control-flow IR
+    //            then we break abstraction layers in order to annotate the
+    //            data flow IR with table IDs.
+    if (gDOTStream) {
+      (*gDOTStream) << *query_opt;
+      gDOTStream->Flush();
     }
 
     return EXIT_SUCCESS;

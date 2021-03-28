@@ -195,9 +195,6 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
-  if (clause.IsDeletion()) {
-    os << '!';
-  }
   os << ParsedClauseHead(clause);
   if (clause.IsHighlighted()) {
     os << " @highlight";

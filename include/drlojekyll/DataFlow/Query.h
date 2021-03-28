@@ -150,9 +150,6 @@ class QueryCondition : public query::QueryNode<QueryCondition> {
   // The list of views that set or unset this condition.
   UsedNodeRange<QueryView> Setters(void) const;
 
-  // Can this condition be deleted?
-  bool CanBeDeleted(void) const noexcept;
-
   // Depth of this node.
   unsigned Depth(void) const noexcept;
 
@@ -354,6 +351,11 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView From(const QueryInsert &view) noexcept;
 
   const char *KindName(void) const noexcept;
+
+  // These break abstraction layers, as table IDs come from the control-flow
+  // IR, but it's nifty for debugging.
+  void SetTableId(unsigned id) const noexcept;
+  std::optional<unsigned> TableId(void) const noexcept;
 
   bool IsDelete(void) const noexcept;
   bool IsSelect(void) const noexcept;

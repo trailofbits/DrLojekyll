@@ -253,7 +253,7 @@ decl: query_decl ;
 decl: foreign_decl ;
 decl: constant_decl ;
 
-message_decl: "#message" atom "(" param_list_0 ")" "." ;
+message_decl: "#message" atom "(" param_list_0 ")" maybe_differential "." ;
 export_decl: "#export" atom "(" param_list_1 ")" finish_decl_or_start_clause ;
 local_decl: "#local" atom "(" param_list_1 ")" maybe_inline finish_decl_or_start_clause ;
 query_decl: "#query" atom "(" param_list_3 ")" finish_decl_or_start_clause;
@@ -262,6 +262,9 @@ finish_decl_or_start_clause : "." ;
 finish_decl_or_start_clause : ":" conjunct_list "." ;
 
 constant_decl: "#constant" foreign_type_name code_data ".";
+
+maybe_differential: "@differential" ;
+maybe_differential: ;
 
 maybe_inline: "@inline" ;
 maybe_inline: ;
@@ -359,8 +362,6 @@ clause_head_pragma: ;
 
 clause: atom "(" named_var_list ")" clause_head_pragma "." ;
 clause: atom "(" named_var_list ")" clause_head_pragma ":" conjunct_list "." ;
-clause: "!" atom "(" named_var_list ")" "." ;
-clause: "!" atom "(" named_var_list ")" ":" conjunct_list "." ;
 clause: atom ":" conjunct_list "." ;
 
 named_var_list: named_var "," named_var_list ;

@@ -537,7 +537,6 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   NodeRange<ParsedDeclaration> Redeclarations(void) const;
   NodeRange<ParsedParameter> Parameters(void) const;
   NodeRange<ParsedClause> Clauses(void) const;
-  NodeRange<ParsedClause> DeletionClauses(void) const;
 
   NodeRange<ParsedPredicate> PositiveUses(void) const;
   NodeRange<ParsedPredicate> NegativeUses(void) const;
@@ -545,7 +544,6 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
   unsigned NumClauses(void) const noexcept;
-  unsigned NumDeletionClauses(void) const noexcept;
 
   bool IsInline(void) const noexcept;
 
@@ -819,6 +817,10 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   // Returns `true` if this message is the head of any clause, i.e. if there
   // are rules that publish this message.
   bool IsPublished(void) const noexcept;
+
+  // Can this message receive/publish removals?
+  bool IsDifferential(void) const noexcept;
+  Token Differential(void) const noexcept;
 
   unsigned NumPositiveUses(void) const noexcept;
 

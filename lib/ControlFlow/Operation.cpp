@@ -439,6 +439,7 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(uint32_t depth) const {
 }
 
 bool Node<ProgramTransitionStateRegion>::IsNoOp(void) const noexcept {
+  assert(!col_values.Empty());
   return false;
 }
 
@@ -493,7 +494,6 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
   }
 
   assert(false && "Probable error when trying to strip mine program state transitions");
-  return false;
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);

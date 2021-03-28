@@ -498,20 +498,21 @@ PROC *GetOrCreateTopDownChecker(
 //
 // The idea is that we have the output columns of `succ_view`, and we want to
 // check if a tuple on `view` exists.
-CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
-                         QueryView succ_view, QueryView view);
+std::pair<OP *, CALL *> CallTopDownChecker(
+    ProgramImpl *impl, Context &context, REGION *parent,
+    QueryView succ_view, QueryView view);
 
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
-CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
-                         QueryView succ_view,
-                         const std::vector<QueryColumn> &succ_cols,
-                         QueryView view, TABLE *already_checked = nullptr);
+std::pair<OP *, CALL *> CallTopDownChecker(
+    ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
+    const std::vector<QueryColumn> &succ_cols,
+    QueryView view, TABLE *already_checked = nullptr);
 
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
 // table.
-CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     ProgramImpl *impl, Context &context, REGION *parent, QueryView view,
     const std::vector<QueryColumn> &view_cols, TABLE *table,
     QueryView pred_view, TABLE *already_checked = nullptr);
@@ -586,11 +587,12 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
   // If we can receive deletions, then we need to call a functor that will
   // tell us if this tuple doesn't actually exist.
   if (differential) {
-    const auto check = CallTopDownChecker(impl, context, parent, view, view);
-    COMMENT( check->comment = __FILE__ ": BuildInsertCheck"; )
+    const auto [check, check_call] = CallTopDownChecker(
+        impl, context, parent, view, view);
+    COMMENT( check_call->comment = __FILE__ ": BuildInsertCheck"; )
     parent->body.Emplace(parent, check);
-    parent = check;
-    parent_body_ref = &(check->false_body);
+    parent = check_call;
+    parent_body_ref = &(check_call->false_body);
   }
 
   const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(

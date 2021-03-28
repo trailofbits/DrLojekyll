@@ -223,13 +223,14 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     // Call the predecessors. If any of the predecessors return `false` then
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
-      const auto index_is_good = CallTopDownChecker(
+      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
           impl, context, parent, view, view_cols, pred_view, nullptr);
 
-      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
+      COMMENT( index_is_good_call->comment =
+          __FILE__ ": ContinueJoinWorkItem::Run"; )
 
       parent->body.Emplace(parent, index_is_good);
-      parent = index_is_good;
+      parent = index_is_good_call;
     }
   }
 
@@ -472,14 +473,14 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
       continue;
     }
 
-    const auto one_is_bad = CallTopDownChecker(
+    const auto [one_is_bad, one_is_bad_call] = CallTopDownChecker(
         impl, context, par, view, view_cols, pred_view, already_checked);
 
-    COMMENT( one_is_bad->comment = __FILE__ ": BuildTopDownJoinChecker"; )
-
-    const auto ret_false = BuildStateCheckCaseReturnFalse(impl, one_is_bad);
-    one_is_bad->false_body.Emplace(one_is_bad, ret_false);
     par->AddRegion(one_is_bad);
+    COMMENT( one_is_bad_call->comment = __FILE__ ": BuildTopDownJoinChecker"; )
+
+    const auto ret_false = BuildStateCheckCaseReturnFalse(impl, one_is_bad_call);
+    one_is_bad_call->false_body.Emplace(one_is_bad_call, ret_false);
   }
 
   // If all predecessors return `true`, then we can change this tuple's state

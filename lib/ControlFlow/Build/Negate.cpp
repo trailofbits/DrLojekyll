@@ -42,7 +42,7 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   // Call the top-down checker on the tuple. If it returns `false` then it
   // means that we've not found the tuple in the negated view, and so we can
   // proceed.
-  const auto check = CallTopDownChecker(
+  const auto [check, check_call] = CallTopDownChecker(
       impl, context, let, negated_view, view_cols, negated_view, nullptr);
 
   let->body.Emplace(let, check);
@@ -51,16 +51,16 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   //            `with_check_absent` might fiddle with `sub_let->body`, and we
   //            can't pass in `check` because we might need to operate in
   //            `false_body`.
-  const auto sub_let = impl->operation_regions.CreateDerived<LET>(check);
+  const auto sub_let = impl->operation_regions.CreateDerived<LET>(check_call);
   if (call_return_value) {
-    check->body.Emplace(check, sub_let);
+    check_call->body.Emplace(check_call, sub_let);
   } else {
-    check->false_body.Emplace(check, sub_let);
+    check_call->false_body.Emplace(check_call, sub_let);
   }
 
   auto ret = with_check_absent(sub_let);
   assert(ret->parent == sub_let);
-  assert(!check->body != !check->false_body);
+  assert(!check_call->body != !check_call->false_body);
 
   if (sub_let->body.get() != ret) {
     assert(!sub_let->body);

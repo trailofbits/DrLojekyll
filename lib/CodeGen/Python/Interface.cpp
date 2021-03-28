@@ -71,8 +71,12 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       sep = ", ";
     }
 
-    if (1u < message.Arity()) {
+    if (1u < message.Arity() || message.IsDifferential()) {
       os << "]";
+    }
+
+    if (message.IsDifferential()) {
+      os << ", added: bool";
     }
 
     os << "]):\n";
@@ -157,16 +161,53 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     for (auto param : message.Parameters()) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
+
+    if (message.IsDifferential()) {
+      os << ", _added: bool";
+    }
+
     os << "):\n";
     os.PushIndent();
-    os << os.Indent() << "self._num_msgs += 1\n"
-       << os.Indent() << "if self._msg." << message.Name() << '_'
-       << message.Arity() << " is None:\n";
-    os.PushIndent();
-    os << os.Indent() << "self._msg." << message.Name() << '_'
-       << message.Arity() << " = []\n";
-    os.PopIndent();
-    os << os.Indent() << "self._msg." << message.Name() << '_'
+    os << os.Indent() << "self._num_msgs += 1\n";
+
+    // Differential, need to select among add/remove.
+    if (message.IsDifferential()) {
+      os << os.Indent() << "if _added:\n";
+      os.PushIndent();
+      os << os.Indent() << "_msgs = self._msg._add_" << message.Name() << '_'
+         << message.Arity() << '\n'
+         << os.Indent() << "if _msgs is None:\n";
+      os.PushIndent();
+      os << os.Indent() << "_msgs = []\n"
+         << os.Indent() << "self._msg._add_" << message.Name() << '_'
+         << message.Arity() << " = _msgs\n";
+      os.PopIndent();
+      os.PopIndent();
+      os << os.Indent() << "else:\n";
+      os.PushIndent();
+      os << os.Indent() << "_msgs = self._msg._rem_" << message.Name() << '_'
+         << message.Arity() << '\n'
+         << os.Indent() << "if _msgs is None:\n";
+      os.PushIndent();
+      os << os.Indent() << "_msgs = []\n"
+         << os.Indent() << "self._msg._rem_" << message.Name() << '_'
+         << message.Arity() << " = _msgs\n";
+      os.PopIndent();
+      os.PopIndent();
+
+    // Non-differential, don't need to deal with add/remove.
+    } else {
+      os << os.Indent() << "_msgs = self._msg." << message.Name() << '_'
+         << message.Arity() << '\n'
+         << os.Indent() << "if _msgs is None:\n";
+      os.PushIndent();
+      os << os.Indent() << "_msgs = []\n"
+         << os.Indent() << "self._msg." << message.Name() << '_'
+         << message.Arity() << " = _msgs\n";
+      os.PopIndent();
+    }
+
+    os << os.Indent() << "_msgs." << message.Name() << '_'
        << message.Arity() << ".append(";
     if (1u < message.Arity()) {
       os << '(';
@@ -224,7 +265,11 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
 
     // Messages published by Dr. Lojekyll have the extra `added` component.
     os << os.Indent() << message.Name() << '_' << message.Arity()
-       << ": Optional[List[Tuple[";
+       << ": Optional[List[";
+
+    if (1 < message.Arity() || message.IsDifferential()) {
+      os << "Tuple[";
+    }
 
     auto sep = "";
     for (auto param : message.Parameters()) {
@@ -232,7 +277,15 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       sep = ", ";
     }
 
-    os << sep << "bool]]] = None\n";
+    if (message.IsDifferential()) {
+      os << sep << "bool";
+    }
+
+    if (1 < message.Arity() || message.IsDifferential()) {
+      os << "]";
+    }
+
+    os << sep << "]] = None\n";
   }
 
   if (empty) {
@@ -267,7 +320,11 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
 
-    os << ", _added: bool):\n";
+    if (message.IsDifferential()) {
+      os << ", _added: bool";
+    }
+
+    os << "):\n";
     os.PushIndent();
     os << os.Indent() << "if self._msg." << message.Name() << '_'
        << message.Arity() << " is None:\n";
@@ -276,13 +333,23 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
        << message.Arity() << " = []\n";
     os.PopIndent();
     os << os.Indent() << "self._msg." << message.Name() << '_'
-       << message.Arity() << ".append((";
+       << message.Arity() << ".append(";
+    if (1 < message.Arity() || message.IsDifferential()) {
+      os << "(";
+    }
+
     auto sep = "";
     for (auto param : message.Parameters()) {
       os << sep << param.Name();
       sep = ", ";
     }
-    os << sep << "_added))\n"
+    if (message.IsDifferential()) {
+      os << sep << "_added";
+    }
+    if (1 < message.Arity() || message.IsDifferential()) {
+      os << ")";
+    }
+    os << ")\n"
        << os.Indent() << "self._num_msgs += 1\n\n";
     os.PopIndent();
   }
@@ -353,7 +420,11 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
 
-    os << ", _added: bool):\n";
+    if (message.IsDifferential()) {
+      os << ", _added: bool";
+    }
+
+    os << "):\n";
     os.PushIndent();
     os << os.Indent() << "pass\n\n";
     os.PopIndent();

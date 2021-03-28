@@ -382,9 +382,6 @@ class Node<ParsedDeclaration> {
   // Return a list of clauses associated with this declaration.
   NodeRange<ParsedClause> Clauses(void) const;
 
-  // Return a list of clauses associated with this declaration.
-  NodeRange<ParsedClause> DeletionClauses(void) const;
-
   // Return a list of positive uses of this definition.
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 
@@ -412,6 +409,7 @@ class Node<ParsedDeclaration> {
   Token range_end_opt;
   FunctorRange range{FunctorRange::kZeroOrMore};
   Token inline_attribute;
+  Token differential_attribute;
   Token last_tok;
 
   // Is this decl a functor, and if so, does it have `aggregate`- and

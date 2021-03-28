@@ -167,7 +167,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
 }  // namespace
 
 // Try to parse `sub_range` as a clause.
-void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
+void ParserImpl::ParseClause(Node<ParsedModule> *module,
                              Node<ParsedDeclaration> *decl) {
 
   auto clause = std::make_unique<Node<ParsedClause>>(module);
@@ -976,8 +976,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     return;
   }
 
-  const auto is_query_clause =
-      DeclarationKind::kQuery == clause->declaration->context->kind;
   const auto is_message_clause =
       DeclarationKind::kMessage == clause->declaration->context->kind;
 
@@ -992,63 +990,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     }
   }
 
-  if (negation_tok.IsValid()) {
-    const auto negation_tok_range = negation_tok.SpellingRange();
-
-    // We don't let deletion clauses be specified on queries because a query
-    // gives us point-in-time results according to some request.
-    if (is_query_clause) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "Deletion clauses cannot be specified on queries";
-      return;
-
-    // We also don't support negations of messages, as it's a message isn't
-    // something that "exists" in the database. That is, we can publish the
-    // fact that something was deleted/changed, but we can't publish the
-    // deletion of a message because they are ephemeral, and even if we had
-    // received a corresponding "equivalent" message, then we never really
-    // stored it to begin with.
-    } else if (is_message_clause) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "Deletion clauses cannot be specified on messages";
-      return;
-
-    // Negation (i.e. removal) clauses must have a direct dependency on a
-    // message. This keeps removal in the control of external users, and means
-    // that, absent external messages, the system won't get into trivial cycles
-    // that prevent fixpoints.
-    } else if (!prev_message) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "The explicit deletion clause for " << decl->name << '/'
-          << decl->parameters.size() << " must directly depend on a message";
-      return;
-
-    // We're not allowed to directly delete things from k/v stores, as we can't
-    // reasonably match up the values supplied for the values, and the keys of
-    // the current value associated with the same keys.
-    } else if (ParsedDeclaration(clause->declaration).HasMutableParameter()) {
-      auto err = context->error_log.Append(scope_range, negation_tok_range);
-      err << "Deletion clauses cannot be specified on declarations with "
-          << "mutable paramaters";
-
-      for (const auto &param_ : clause->declaration->parameters) {
-        ParsedParameter param(param_.get());
-        err.Note(param.SpellingRange(), param.Type().SpellingRange())
-            << "Mutable parameter is here";
-      }
-      return;
-
-    // We don't allow negation of zero-argument predicates, because if they
-    // are dataflow-dependent, then there's no real way to "merge" multiple
-    // positive and negative flows.
-    } else if (clause->head_variables.empty()) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "Deletion clauses cannot be specified on zero-argument predicates";
-      return;
-    }
-
   // Don't let us send out any messages if we have any uses of this message.
-  } else if (is_message_clause && !decl->context->positive_uses.empty()) {
+  if (is_message_clause && !decl->context->positive_uses.empty()) {
     auto err = context->error_log.Append(scope_range);
     err << "Cannot send output in message " << decl->name << '/'
         << decl->parameters.size()
@@ -1060,19 +1003,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       err.Note(clause.SpellingRange(), pred.SpellingRange())
           << "Message receipt is here";
     }
-
-  // We've found a positive clause definition, and there are negative clause
-  // definitions, and this positive clause definition does not actually use
-  // any messages.
-  } else if (!prev_message && !decl->context->deletion_clauses.empty()) {
-    auto err = context->error_log.Append(scope_range, negation_tok.Position());
-    err << "All positive clauses of " << decl->name << '/'
-        << decl->parameters.size() << " must directly depend on a message "
-        << "because of the presence of a deletion clause";
-
-    auto del_clause = decl->context->deletion_clauses.front().get();
-    auto note = err.Note(scope_range, ParsedClause(del_clause).SpellingRange());
-    note << "First deletion clause is here";
   }
 
   // Link all positive predicate uses into their respective declarations.
@@ -1096,19 +1026,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   }
 
   auto &clause_decl_context = clause->declaration->context;
-
-  std::vector<Node<ParsedClause> *> *module_clause_list = nullptr;
-  std::vector<std::unique_ptr<Node<ParsedClause>>> *decl_clause_list = nullptr;
-
-  if (negation_tok.IsValid()) {
-    clause->negation = negation_tok;
-    module_clause_list = &(module->deletion_clauses);
-    decl_clause_list = &(clause_decl_context->deletion_clauses);
-
-  } else {
-    module_clause_list = &(module->clauses);
-    decl_clause_list = &(clause_decl_context->clauses);
-  }
+  auto module_clause_list = &(module->clauses);
+  auto decl_clause_list = &(clause_decl_context->clauses);
 
   FindUnrelatedConditions(clause.get(), context->error_log);
 
@@ -1132,7 +1051,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
     sub_tokens.swap(clause_toks);
     next_sub_tok_index = 0;
-    ParseClause(module, negation_tok);
+    ParseClause(module);
 
     // NOTE(sonya): restore previous token list and index for debugging in
     // ParseAllTokens()

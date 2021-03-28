@@ -197,6 +197,14 @@ const char *QueryView::KindName(void) const noexcept {
   return impl->KindName();
 }
 
+void QueryView::SetTableId(unsigned id) const noexcept {
+  impl->table_id.emplace(id);
+}
+
+std::optional<unsigned> QueryView::TableId(void) const noexcept {
+  return impl->table_id;
+}
+
 bool QueryView::IsDelete(void) const noexcept {
   return impl->AsDelete() != nullptr;
 }
@@ -565,15 +573,6 @@ UsedNodeRange<QueryView> QueryCondition::NegativeUsers(void) const {
 // The list of views that set or unset this condition.
 UsedNodeRange<QueryView> QueryCondition::Setters(void) const {
   return {impl->setters.begin(), impl->setters.end()};
-}
-
-// Can this condition be deleted?
-bool QueryCondition::CanBeDeleted(void) const noexcept {
-  if (impl->declaration) {
-    return 0 < impl->declaration->NumDeletionClauses();
-  } else {
-    return false;
-  }
 }
 
 // Depth of this node.

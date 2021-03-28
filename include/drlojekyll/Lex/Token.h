@@ -264,6 +264,10 @@ enum class Lexeme : uint8_t {
   kIdentifierType,  // Foreign type names.
   kIdentifierConstant,  // Foreign constant name.
 
+  // `@differential` is a pragma used to mark messages that can receive or
+  // publish removals.
+  kPragmaDifferential,
+
   // `@highlight` is a debugging pragma, used to mark data flow nodes associated
   // with a particular clause body as "highlighted" so they are easier to
   // spot in the data flow IR visualizations.

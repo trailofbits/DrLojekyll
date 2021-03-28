@@ -144,6 +144,19 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           message->last_tok = tok;
           state = 6;
           continue;
+        } else if (Lexeme::kPragmaDifferential == lexeme) {
+          if (message->differential_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected repeat of the '@differential' pragma here";
+
+            err.Note(scope_range, message->differential_attribute.SpellingRange())
+                << "Previous use was here";
+
+          } else {
+            message->differential_attribute = tok;
+          }
+          state = 5;
+          continue;
         }
         [[clang::fallthrough]];
 

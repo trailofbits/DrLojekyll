@@ -79,6 +79,8 @@ class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
 
 using TABLEINDEX = Node<DataIndex>;
 
+class Context;
+
 // Represents a table of data.
 //
 // NOTE(pag): By default all tables already have a UNIQUE index on them.
@@ -97,7 +99,8 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   void Accept(ProgramVisitor &visitor);
 
   // Get or create a table in the program.
-  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, QueryView view);
+  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, Context &context,
+                                      QueryView view);
 
   // Get or create an index on the table.
   TABLEINDEX *GetOrCreateIndex(ProgramImpl *impl, std::vector<unsigned> cols);
@@ -110,6 +113,9 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   // Indexes that should be created on this table. By default, all tables have
   // a UNIQUE index.
   DefList<TABLEINDEX> indices;
+
+  // All views sharing this table.
+  std::vector<QueryView> views;
 };
 
 using TABLE = Node<DataTable>;
@@ -1235,11 +1241,11 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   std::vector<OP *> init_appends;
   std::vector<OP *> cycle_appends;
 
-  std::vector<OP *> output_cycles;
-  std::vector<OP *> fixpoint_cycles;
+  std::vector<PARALLEL *> output_cycles;
+  std::vector<PARALLEL *> fixpoint_cycles;
 
-  std::vector<OP *> output_remove_cycles;
-  std::vector<OP *> fixpoint_remove_cycles;
+  std::vector<PARALLEL *> output_remove_cycles;
+  std::vector<PARALLEL *> fixpoint_remove_cycles;
 
   enum State {
     kAccumulatingInputRegions,

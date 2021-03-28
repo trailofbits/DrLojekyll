@@ -384,9 +384,6 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
 // This is cribbed from lib/Parse/Format.cpp.
 static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os,
                           hyde::ParsedClause clause, std::mt19937_64 &gen) {
-  if (clause.IsDeletion()) {
-    os << '!';
-  }
   os << hyde::ParsedClauseHead(clause);
   if (clause.IsHighlighted()) {
     os << " @highlight";

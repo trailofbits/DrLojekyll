@@ -190,14 +190,14 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // NOTE(pag): `view_cols` is already expressed in terms of `pred_view`.
   if (already_checked == model->table ||
       model->table == pred_model->table) {
-    const auto check = CallTopDownChecker(
+    const auto [check, check_call] = CallTopDownChecker(
         impl, context, proc, pred_view, view_cols, pred_view, already_checked);
     proc->body.Emplace(proc, check);
 
-    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker"; )
+    COMMENT( check_call->comment = __FILE__ ": BuildTopDownInsertChecker"; )
 
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    check->body.Emplace(check, ret_true);
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
+    check_call->body.Emplace(check_call, ret_true);
     return;
   }
 
