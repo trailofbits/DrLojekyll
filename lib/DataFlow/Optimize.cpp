@@ -223,8 +223,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
            kv_indices.RemoveUnused() | joins.RemoveUnused() |
            maps.RemoveUnused() | aggregates.RemoveUnused() |
            merges.RemoveUnused() | compares.RemoveUnused() |
-           inserts.RemoveUnused() | deletes.RemoveUnused() |
-           negations.RemoveUnused();
+           inserts.RemoveUnused() | negations.RemoveUnused();
     all_ret |= ret;
   } while (ret);
 

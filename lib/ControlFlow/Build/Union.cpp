@@ -67,13 +67,6 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
       // TODO(pag): Find a way to not bother re-appearing non-inductive
       //            successors?
       for (QueryView pred_view : view.Predecessors()) {
-
-        // Deletes have no backing data; they signal to their successors that
-        // data should be deleted from their successor models.
-        if (pred_view.IsDelete()) {
-          continue;
-        }
-
         const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
             impl, context, par, view, view_cols, table_to_update, pred_view,
             already_checked);
@@ -132,13 +125,6 @@ void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
     proc->body.Emplace(proc, par);
 
     for (QueryView pred_view : view.Predecessors()) {
-
-      // `DELETE`s will always return `false`, so we don't dispatch down
-      // to them.
-      if (pred_view.IsDelete()) {
-        continue;
-      }
-
       par->AddRegion(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, nullptr, pred_view, nullptr));
     }

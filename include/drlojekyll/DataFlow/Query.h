@@ -59,7 +59,6 @@ class TypeLoc;
 class QueryColumn;
 class QueryConstant;
 class QueryCompare;
-class QueryDelete;
 class QueryImpl;
 class QueryInsert;
 class QueryIO;
@@ -119,7 +118,6 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   friend class QueryConstant;
   friend class QueryCompare;
-  friend class QueryDelete;
   friend class QueryInsert;
   friend class QueryJoin;
   friend class QueryMap;
@@ -322,7 +320,6 @@ class QueryView : public query::QueryNode<QueryView> {
   QueryView &operator=(const QueryView &) noexcept = default;
   QueryView &operator=(QueryView &&) noexcept = default;
 
-  QueryView(const QueryDelete &view);
   QueryView(const QuerySelect &view);
   QueryView(const QueryTuple &view);
   QueryView(const QueryKVIndex &view);
@@ -338,7 +335,6 @@ class QueryView : public query::QueryNode<QueryView> {
     return view;
   }
 
-  static QueryView From(const QueryDelete &view) noexcept;
   static QueryView From(const QuerySelect &view) noexcept;
   static QueryView From(const QueryTuple &view) noexcept;
   static QueryView From(const QueryKVIndex &view) noexcept;
@@ -357,7 +353,6 @@ class QueryView : public query::QueryNode<QueryView> {
   void SetTableId(unsigned id) const noexcept;
   std::optional<unsigned> TableId(void) const noexcept;
 
-  bool IsDelete(void) const noexcept;
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
   bool IsKVIndex(void) const noexcept;
@@ -797,32 +792,6 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
   friend class QueryView;
 };
 
-// A node that signals that its data should be deleted from its successor nodes.
-class QueryDelete : public query::QueryNode<QueryDelete> {
- public:
-  static QueryDelete From(QueryView view);
-
-  // The deleted columns.
-  DefinedNodeRange<QueryColumn> Columns(void) const;
-  QueryColumn NthColumn(unsigned n) const noexcept;
-
-  unsigned NumInputColumns(void) const noexcept;
-  QueryColumn NthInputColumn(unsigned n) const noexcept;
-  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
-
-  OutputStream &DebugString(OutputStream &) const noexcept;
-
-  // Apply a callback `with_col` to each input column of this view.
-  void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
-                                     std::optional<QueryColumn> /* out_col */)>
-                      with_col) const;
-
- private:
-  using query::QueryNode<QueryDelete>::QueryNode;
-
-  friend class QueryView;
-};
-
 // An tuple packages one or more columns into a temporary relation for
 // convenience.
 class QueryTuple : public query::QueryNode<QueryTuple> {
@@ -911,7 +880,6 @@ class Query {
   DefinedNodeRange<QueryKVIndex> KVIndices(void) const;
   DefinedNodeRange<QueryRelation> Relations(void) const;
   DefinedNodeRange<QueryInsert> Inserts(void) const;
-  DefinedNodeRange<QueryDelete> Deletes(void) const;
   DefinedNodeRange<QueryNegate> Negations(void) const;
   DefinedNodeRange<QueryMap> Maps(void) const;
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
@@ -959,10 +927,6 @@ class Query {
     }
 
     for (auto view : Inserts()) {
-      cb(QueryView::From(view));
-    }
-
-    for (auto view : Deletes()) {
       cb(QueryView::From(view));
     }
   }

@@ -371,7 +371,6 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
                                  COL *out_col, bool is_attached,
                                  Discoveries has);
 
-  virtual Node<QueryDelete> *AsDelete(void) noexcept;
   virtual Node<QuerySelect> *AsSelect(void) noexcept;
   virtual Node<QueryTuple> *AsTuple(void) noexcept;
   virtual Node<QueryKVIndex> *AsKVIndex(void) noexcept;
@@ -986,28 +985,6 @@ class Node<QueryInsert> : public Node<QueryView> {
 
 using INSERT = Node<QueryInsert>;
 
-// Deletes are tuple-like nodes. They exist to signal that some data should be
-// forwarded as a deletion.
-template <>
-class Node<QueryDelete> : public Node<QueryView> {
- public:
-  virtual ~Node(void);
-
-  inline Node(void) : Node<QueryView>() {
-    can_produce_deletions = true;
-  }
-
-  const char *KindName(void) const noexcept override;
-  Node<QueryDelete> *AsDelete(void) noexcept override;
-
-  uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
-  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
-                    const ErrorLog &) override;
-};
-
-using DELETE = Node<QueryDelete>;
-
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
   view->ForEachUse<VIEW>([&user_cb](VIEW *user, VIEW *) { user_cb(user); });
@@ -1053,9 +1030,6 @@ class QueryImpl {
       views.push_back(view);
     }
     for (auto view : inserts) {
-      views.push_back(view);
-    }
-    for (auto view : deletes) {
       views.push_back(view);
     }
 
@@ -1114,11 +1088,6 @@ class QueryImpl {
       }
     }
     for (auto view : inserts) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : deletes) {
       if (!view->is_dead) {
         do_view(view);
       }
@@ -1183,12 +1152,6 @@ class QueryImpl {
       }
     }
     for (auto view : inserts) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : deletes) {
       view->depth = 0;
       if (!view->is_dead) {
         views.push_back(view);
@@ -1261,12 +1224,6 @@ class QueryImpl {
       }
     }
     for (auto view : inserts) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : deletes) {
       view->depth = 0;
       if (!view->is_dead) {
         views.push_back(view);
@@ -1378,7 +1335,6 @@ class QueryImpl {
   DefList<NEGATION> negations;
   DefList<CMP> compares;
   DefList<INSERT> inserts;
-  DefList<DELETE> deletes;
 };
 
 }  // namespace hyde

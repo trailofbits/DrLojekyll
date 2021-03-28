@@ -697,7 +697,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   // Simple tests to figure out if `view` (treated as a predecessor) can
   // share its data model with its successors.
   auto can_share = +[](QueryView view, QueryView pred) {
-    if (pred.IsDelete() || pred.IsNegate()) {
+    if (pred.IsNegate()) {
       return false;
     }
     // With any special cases, we need to watch out for the following kind of
@@ -848,24 +848,6 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
         }
       }
 
-    // NOTE(pag): DELETE nodes don't have a data model per se. They exist
-    //            to delete things in the data model of their /successor/,
-    //            they can't delete anything in the model of their predecessor.
-    //
-    // NOTE(pag): If a DELETE flows into a DELETE then we permit them to
-    //            share a data model, for whatever that's worth.
-    } else if (view.IsDelete()) {
-      assert(preds.size() == 1u);
-      const auto pred = preds[0];
-      const auto del = QueryDelete::From(view);
-      if (can_share(view, pred) &&
-          !is_diff_map(pred) &&
-          !output_is_conditional(pred) &&
-          all_cols_match(del.InputColumns(), pred.Columns())) {
-        const auto pred_model = program->view_to_model[pred];
-        DisjointSet::Union(model, pred_model);
-      }
-
 #ifndef NDEBUG
 //      for (auto succ : view.Successors()) {
 //        assert(succ.IsMerge());
@@ -918,9 +900,6 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     } else if (to_view.IsInsert()) {
       CreateBottomUpInsertRemover(impl, context, to_view, let,
                                   already_checked);
-
-    } else if (to_view.IsDelete()) {
-      CreateBottomUpDeleteRemover(impl, context, to_view, let);
 
     } else if (to_view.IsMerge()) {
       if (context.inductive_successors.count(to_view) &&
@@ -1033,10 +1012,6 @@ static void BuildTopDownChecker(
       BuildTopDownInsertChecker(impl, context, proc, QueryInsert::From(view),
                                 view_cols, already_checked);
     }
-
-  } else if (view.IsDelete()) {
-
-    // Nothing to do.
 
   } else if (view.IsNegate()) {
     BuildTopDownNegationChecker(impl, context, proc, QueryNegate::From(view),
@@ -1228,7 +1203,6 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
 std::pair<OP *, CALL *> CallTopDownChecker(
     ProgramImpl *impl, Context &context, REGION *parent,
     QueryView succ_view, QueryView view) {
-  assert(!view.IsDelete());
   assert(!succ_view.IsInsert());
 
   std::vector<QueryColumn> succ_cols;
@@ -1987,11 +1961,6 @@ void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView from_view,
     CreateBottomUpInsertRemover(impl, context, to_view, parent,
                                 already_checked);
 
-  // We don't want to support any kind of double-negation :-/
-  } else if (to_view.IsDelete()) {
-    assert(false);
-    CreateBottomUpDeleteRemover(impl, context, to_view, parent);
-
   } else if (to_view.IsMerge()) {
     if (context.inductive_successors.count(to_view) &&
         !context.dominated_merges.count(to_view)) {
@@ -2098,9 +2067,6 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     const auto insert = QueryInsert::From(view);
     BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
                            last_table);
-
-  } else if (view.IsDelete()) {
-    BuildEagerDeleteRegion(impl, view, context, parent);
 
   } else if (view.IsNegate()) {
     const auto negate = QueryNegate::From(view);

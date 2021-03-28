@@ -198,15 +198,6 @@ void QueryImpl::LinkViews(void) {
     }
   }
 
-  for (auto view : deletes) {
-    assert(!view->is_dead);
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
-        incoming_view) {
-      view->predecessors.AddUse(incoming_view);
-      incoming_view->successors.AddUse(view);
-    }
-  }
-
   ForEachView([=](VIEW *view) {
     view->predecessors.Unique();
     view->successors.Unique();

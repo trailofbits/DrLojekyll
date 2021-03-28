@@ -691,41 +691,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     link_conds(view);
   }
 
-  for (auto view : query.Deletes()) {
-    os << "v" << view.UniqueId() << " [" << do_color(view)
-       << "label=<" << kBeginTable;
-    do_table(2, view);
-    do_conds(2, view);
-    os << "<TD rowspan=\"2\">" << QueryView(view).KindName() << "</TD>";
-    for (auto col : view.Columns()) {
-      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
-    }
-    os << "</TR><TR>";
-
-    for (auto i = 0u; i < view.NumInputColumns(); ++i) {
-      os << "<TD port=\"p" << i << "\">" << do_col(view.NthInputColumn(i))
-         << "</TD>";
-    }
-
-    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << view.DebugString(os)
-             << "</TD>";)
-
-    os << kEndTable << ">];\n";
-
-    auto color =
-        QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
-
-    // Link the input columns to their sources.
-    for (auto i = 0u; i < view.NumInputColumns(); ++i) {
-      auto col = view.NthInputColumn(i);
-      auto input_view = QueryView::Containing(col);
-      os << "v" << view.UniqueId() << ":p" << i << " -> v"
-         << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
-    }
-
-    link_conds(view);
-  }
-
   for (auto merge : query.Merges()) {
     os << "v" << merge.UniqueId() << " [" << do_color(merge)
        << "label=<" << kBeginTable;

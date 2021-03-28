@@ -400,10 +400,6 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryNegate negate, Context &context, OP *parent);
 
-// Build an eager region for deleting it.
-void BuildEagerDeleteRegion(ProgramImpl *impl, QueryView view, Context &context,
-                            OP *parent);
-
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                           QueryJoin view, Context &context, OP *parent,
@@ -528,9 +524,6 @@ std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
 PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
                                  QueryView from_view, QueryView to_view,
                                  TABLE *already_checked = nullptr);
-
-void CreateBottomUpDeleteRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, OP *parent);
 
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent,
