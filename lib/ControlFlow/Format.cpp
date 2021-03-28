@@ -137,7 +137,17 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
 
 OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
   auto message = region.Message();
-  os << os.Indent() << "publish " << message.Name() << '/' << message.Arity();
+  os << os.Indent() << "publish ";
+
+  if (message.IsDifferential()) {
+    if (region.IsRemoval()) {
+      os << "remove ";
+    } else {
+      os << "add ";
+    }
+  }
+
+  os << message.Name() << '/' << message.Arity();
   auto sep = "(";
   auto end = "";
   for (auto arg : region.VariableArguments()) {

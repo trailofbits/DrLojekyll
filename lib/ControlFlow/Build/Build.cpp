@@ -135,43 +135,65 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     return;
   }
 
+  assert(io.Declaration().IsMessage());
+  const auto message = ParsedMessage::From(io.Declaration());
+
+  VECTOR *removal_vec = nullptr;
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-  parent->AddRegion(loop);
 
-  auto par = impl->parallel_regions.Create(loop);
+  // Loop over the receives for adding.
+  for (auto receive : receives) {
 
-  for (auto col : receives[0].Columns()) {
-    const auto var = loop->defined_vars.Create(impl->next_id++,
-                                               VariableRole::kVectorVariable);
-    var->query_column = col;
-    loop->col_id_to_var.emplace(col.Id(), var);
-  }
-
-  loop->body.Emplace(loop, par);
-  loop->vector.Emplace(loop, vec);
-
-  for (auto receive : io.Receives()) {
-    auto let = impl->operation_regions.CreateDerived<LET>(par);
-    let->ExecuteAlongside(impl, par);
-
-    // Create the variable bindings for each received variable.
-    auto i = 0u;
-    for (auto col : receive.Columns()) {
-      auto first_col = receives[0].Columns()[i++];
-      if (col.Id() != first_col.Id()) {
-        let->used_vars.AddUse(par->VariableFor(impl, first_col));
-        const auto var = let->defined_vars.Create(impl->next_id++,
-                                                  VariableRole::kLetBinding);
-        var->query_column = col;
-        loop->col_id_to_var.emplace(col.Id(), var);
-      }
+    // Add a removal vector if any of the receives can receive deletions.
+    if (!removal_vec && receive.CanReceiveDeletions()) {
+      removal_vec = proc->VectorFor(
+          impl, VectorKind::kParameter, receive.Columns());
     }
 
-    BuildEagerInsertionRegions(impl, receive, context, let,
+    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+    parent->AddRegion(loop);
+    loop->vector.Emplace(loop, vec);
+
+    for (auto col : receives[0].Columns()) {
+      const auto var = loop->defined_vars.Create(impl->next_id++,
+                                                 VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+    }
+
+    BuildEagerInsertionRegions(impl, receive, context, loop,
                                receive.Successors(), nullptr);
+  }
+
+  if (!removal_vec) {
+    assert(!message.IsDifferential());
+    return;
+  }
+
+  assert(message.IsDifferential());
+
+  // Loop over the receives for adding.
+  for (auto receive : receives) {
+    if (!receive.CanReceiveDeletions()) {
+      continue;
+    }
+
+    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+    parent->AddRegion(loop);
+    loop->vector.Emplace(loop, removal_vec);
+
+    for (auto col : receives[0].Columns()) {
+      const auto var = loop->defined_vars.Create(impl->next_id++,
+                                                 VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+    }
+
+    BuildEagerRemovalRegions(impl, receive, context, loop,
+                             receive.Successors(), nullptr);
   }
 }
 
@@ -184,12 +206,21 @@ static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
     return;
   }
 
+  assert(io.Declaration().IsMessage());
+  const auto message = ParsedMessage::From(io.Declaration());
+
   const auto io_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kMessageHandler);
   io_proc->io = io;
 
   const auto io_vec =
       io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+
+  VECTOR *io_remove_vec = nullptr;
+  if (message.IsDifferential()) {
+    io_remove_vec =
+        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  }
 
   auto seq = impl->series_regions.Create(io_proc);
   io_proc->body.Emplace(io_proc, seq);
@@ -208,15 +239,27 @@ static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
       continue;
     }
 
+    // Pass in our input vector for additions, and possibly our input vector
+    // for removals.
     if (io == other_io) {
       call->arg_vecs.AddUse(io_vec);
+      if (io_remove_vec) {
+        call->arg_vecs.AddUse(io_remove_vec);
+      }
+
+    // Pass in the empty vector once or twice for other messages.
     } else {
-      call->arg_vecs.AddUse(io_proc->VectorFor(
-          impl, VectorKind::kEmpty, other_receives[0].Columns()));
+      const auto empty_vec = io_proc->VectorFor(
+          impl, VectorKind::kEmpty, other_receives[0].Columns());
+      call->arg_vecs.AddUse(empty_vec);
+      if (other_receives[0].CanReceiveDeletions()) {
+        call->arg_vecs.AddUse(empty_vec);
+      }
     }
   }
 }
 
+// Build the primary data flow procedure.
 static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
                                 Query query) {
 
@@ -2135,7 +2178,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     }
   }
 
-  // Build top-down provers and the bottom-up removers.
+  // Build top-down provers and the bottom-up removers (bottom-up removers are
+  // separate procedures when using the `IRFormat::kRecursive`; when using
+  // `IRFormat::kIterative`, the bottom-up removers are iterative and in-line
+  // with the inserters.
   while (BuildTopDownCheckers(program, context) ||
          BuildBottomUpRemovalProvers(program, context)) {}
 
