@@ -979,17 +979,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   const auto is_message_clause =
       DeclarationKind::kMessage == clause->declaration->context->kind;
 
-  // Go see if we depend on one or more messages.
-  Node<ParsedPredicate> *prev_message = nullptr;
-  for (auto &used_pred : clause->positive_predicates) {
-    const auto kind = used_pred->declaration->context->kind;
-    if (kind == DeclarationKind::kMessage) {
-      clause->depends_on_messages = true;
-      prev_message = used_pred.get();
-      continue;
-    }
-  }
-
   // Don't let us send out any messages if we have any uses of this message.
   if (is_message_clause && !decl->context->positive_uses.empty()) {
     auto err = context->error_log.Append(scope_range);
