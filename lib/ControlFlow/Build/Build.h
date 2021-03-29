@@ -643,7 +643,7 @@ void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
   // have a situation like this:
   //
   //               JOIN
-  //              /    \
+  //              /    \         .
   //        TUPLE1      TUPLE2
   //              \    /
   //              TUPLE3
