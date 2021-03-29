@@ -110,6 +110,7 @@ static void BuildInductiveSwaps(ProgramImpl *impl, Context &context,
   const auto proc = induction->containing_procedure;
   assert(clear_par->containing_procedure == proc);
   assert(swap_par->containing_procedure == proc);
+  (void) proc;
 
   // We start by clearing the swap vector, which may contain results from the
   // prior fixpoint iteration.
@@ -147,6 +148,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
 
   const auto proc = induction->containing_procedure;
   assert(cycle_par->containing_procedure == proc);
+  (void) proc;
 
   // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
   // the last fixpoint iteration.
@@ -245,6 +247,7 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
 
   const auto proc = induction->containing_procedure;
   assert(output_par->containing_procedure == proc);
+  (void) proc;
 
   const auto output_seq = impl->series_regions.Create(output_par);
   output_par->AddRegion(output_seq);
@@ -334,6 +337,7 @@ static void BuildInductiveClear(ProgramImpl *impl, Context &context,
 
   const auto proc = induction->containing_procedure;
   assert(done_par->containing_procedure == proc);
+  (void) proc;
 
   // NOTE(pag): At this point, we're done filling up the basics of the
   //            `induction->cyclic_region` and now move on to filling up
@@ -415,9 +419,6 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // before we actually add the successor regions in.
   auto merge_index = 0u;
   for (auto merge : induction_set->merges) {
-    const auto vec = induction->view_to_cycle_vec[merge];
-    assert(!!vec);
-
     BuildInductiveSwaps(impl, context, induction, merge,
                         clear_par, swap_par);
 
