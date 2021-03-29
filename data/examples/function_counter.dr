@@ -18,13 +18,11 @@ MAP(u64_to_bool_u32, bf, u32 Val) {
 #local num_functions(mutable(add_u32) Count).
 #query get_num_functions(free u32 Count).
 
-#message add_function(u64 EA).
-#message remove_function(u64 EA).
+#message add_function(u64 EA) @differential.
 
 #export function(u64 EA).
 
 function(EA) : add_function(EA).
-!function(EA) : remove_function(EA).
 
 num_functions(Bool) : function(EA), u64_to_bool_u32(EA, Bool).
 get_num_functions(Count) : num_functions(Count).

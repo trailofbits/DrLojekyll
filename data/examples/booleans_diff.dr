@@ -1,7 +1,6 @@
 ; This example shows boolean predicates, i.e. predicates that don't have any parameters.
 
-#message log_in(i32 UserId).
-#message log_out(i32 UserId).
+#message log_in(i32 UserId) @differential.
 #local user(i32 UserID).
 #local maybe_logged_in(i32 UserId).
 #message add_user(i32 UserID).
@@ -10,7 +9,6 @@
 user(ID) : add_user(ID).
 
 maybe_logged_in(ID) : log_in(ID).
-!maybe_logged_in(ID) : log_out(ID).
 
 is_logged_in : maybe_logged_in(ID), user(ID).
 

@@ -644,6 +644,12 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     }
   }
 
+  // TODO(pag): Needed to make Solypsis work for now. Hit the worst case of a
+  //            top-down checker call's behaviour.
+  for (auto merge : query.Merges()) {
+    (void) TABLE::GetOrCreate(impl, context, merge);
+  }
+
   // We need the tables to know about *all* views associated with them. This
   // helps with debugging, but more importantly, it helps us find the "top"
   // merge associated with a table.
@@ -651,10 +657,12 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     DataModel *model = impl->view_to_model[view]->FindAs<DataModel>();
     if (model->table) {
       (void) TABLE::GetOrCreate(impl, context, view);
-    } else {
-      // TODO(pag): !!! REMOVE ME!!!!
-      (void) TABLE::GetOrCreate(impl, context, view);
     }
+
+//    else {
+//      // TODO(pag): !!! REMOVE ME!!!!
+//      (void) TABLE::GetOrCreate(impl, context, view);
+//    }
   });
 }
 
@@ -668,6 +676,9 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
   });
+
+  // TODO(pag): Data modelling disabled until further notice!!!
+  //            Subtle bugs abound.
   return;
 
   // Inserts and selects from the same relation share the same data models.
