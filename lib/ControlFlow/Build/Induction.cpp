@@ -141,10 +141,8 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
   //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR * const vec = induction->view_to_cycle_vec[merge];
   VECTOR * const swap_vec = induction->view_to_swap_vec[merge];
-
-  assert(vec && swap_vec);
+  assert(swap_vec);
 
   const auto proc = induction->containing_procedure;
   assert(cycle_par->containing_procedure == proc);
