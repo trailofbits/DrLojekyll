@@ -10,7 +10,7 @@ class ContinueProductWorkItem final : public WorkItem {
   virtual ~ContinueProductWorkItem(void) {}
 
   ContinueProductWorkItem(Context &context, QueryView view_)
-      : WorkItem(context, view_.Depth()),
+      : WorkItem(context, (view_.Depth() << kOrderShift) + kConitnueJoinOrder),
         view(view_) {}
 
   // Find the common ancestor of all insert regions.
@@ -43,7 +43,13 @@ REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor->NearestRegionEnclosedByInduction();
+  // NOTE(pag): We *CAN'T* go any higher than `common_ancestor`, because then
+  //            we might accidentally "capture" the vector appends for an
+  //            unrelated induction, thereby introducing super weird ordering
+  //            problems where an induction A is contained in the init region
+  //            of an induction B, and B's fixpoint cycle region appends to
+  //            A's induction vector.
+  return common_ancestor;
 }
 
 void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {

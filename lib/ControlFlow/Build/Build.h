@@ -34,8 +34,10 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
-  static constexpr unsigned kContinueInductionOrder = (~0u) >> 2u;
-  static constexpr unsigned kFinalizeInductionOrder = (~0u) >> 1u;
+  static constexpr unsigned kOrderShift = 0u;
+  static constexpr unsigned kConitnueJoinOrder = 0u;
+  static constexpr unsigned kContinueInductionOrder = 1u << 30; // (~0u) >> 2u;
+  static constexpr unsigned kFinalizeInductionOrder = 2u << 30; // (~0u) >> 1u;
 
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;

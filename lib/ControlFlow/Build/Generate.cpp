@@ -330,8 +330,8 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     // check to them, but we don't (yet) have a way of doing this. This is
     // also kind of a problem for
     } else {
-//      assert(false &&
-//             "TODO(pag): Handle worst case of top-down generator checker");
+      assert(false &&
+             "TODO(pag): Handle worst case of top-down generator checker");
       auto ret = BuildStateCheckCaseReturnFalse(impl, series);
       ret->comment = "?!?! WORST CASE top-down generator checker";
       series->AddRegion(ret);

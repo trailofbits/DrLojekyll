@@ -1,0 +1,79 @@
+
+#prologue ```python
+Token = Tuple[str, str]
+Node = Tuple[Token, ...]
+StringExpr = str
+```.
+
+#foreign Token ```python Token``` @transparent.
+#foreign Node ```python Node``` @transparent.
+#foreign StringExpr ```python StringExpr``` @transparent.
+
+#message next_token(Token A, Token B).
+
+#functor lexeme_of_token(bound Token Tok, free utf8 Lexeme) @range(.).
+#functor build_string_literal(bound Token Tok, free Node N) @range(.).
+#functor build_string_expr(bound Node N, free StringExpr E) @range(.).
+#functor extend_string_expr(bound StringExpr BaseExpr, bound Node ExtNode,
+                            free StringExpr ExtExpr) @range(.).
+
+#local string_lexeme(utf8 Lexeme).
+string_lexeme("string").
+string_lexeme("string_error").
+
+
+; Something like `"hello"`.
+#local string_literal(Pred, T, Succ, N)
+    : next_token(Pred, T)
+    , lexeme_of_token(T, L)
+    , string_lexeme(L)
+    , next_token(T, Succ)
+    , build_string_literal(T, N).
+
+#local string_expression(Pred, StrNode, Succ)
+    : string_literal(Pred, _StrTok, Succ, N)
+    , lexeme_of_token(Pred, PredLexeme)
+    , !string_lexeme(PredLexeme)
+    , build_string_expr(N, StrNode).
+
+string_expression(Pred, StrNode, NextSucc)
+    : string_expression(Pred, BaseNode, Succ)
+    , string_literal(_, Succ, NextSucc, ExtNode)
+    , extend_string_expr(BaseNode, ExtNode, StrNode).
+
+#query strings(free StringExpr StrNode)
+    : string_expression(Pred, StrNode, Succ)
+    , lexeme_of_token(Pred, PredLexeme)
+    , !string_lexeme(PredLexeme)
+    , lexeme_of_token(Succ, SuccLexeme)
+    , !string_lexeme(SuccLexeme).
+
+#epilogue ```python
+
+def lexeme_of_token_bf(tok: Token) -> str:
+    return tok[1]
+
+def build_string_literal_bf(tok: Token) -> Node:
+    return (tok, )
+
+def build_string_expr_bf(node: Node) -> str:
+    return node[0][0]
+
+def extend_string_expr_bbf(expr: str, node: Node) -> str:
+    return expr + node[0][0]
+
+# Now go test things :-)
+if __name__ == "__main__":
+    db = Database(DatabaseLog(), DatabaseFunctors())
+
+    B = ("<", "begin")
+    STR1 = ("Hello ", "string")
+    STR2 = ("World!", "string")
+    E = (">", "end")
+
+    db.next_token_2([(B, STR1), (STR1, STR2), (STR2, E)])
+
+    found = list(db.strings_f())
+    assert len(found) == 1
+    assert found[0] == "Hello World!"
+```.

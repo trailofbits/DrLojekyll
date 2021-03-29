@@ -271,12 +271,35 @@ static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
 
   context.work_list.clear();
 
-  auto par = impl->parallel_regions.Create(proc);
-  proc->body.Emplace(proc, par);
-
   //  context.view_to_work_item.clear();
   //  context.view_to_induction.clear();
   //  context.product_vector.clear();
+
+  // TODO(pag): Possible future bug lies here. So, right now we group everything
+  //            into one PARALLEL, `par`, then build out from there. But maybe
+  //            the right approach is to place them into independent parallel
+  //            nodes, then somehow merge them. I think this will be critical
+  //            when there are more than one message being received. Comment
+  //            below, kept for posterity, relates to my thinking on this
+  //            subject.
+  //
+  // This is subtle. We can't group all messages into a single PARALLEL node,
+  // otherwise some messages will get "sucked into" an induction region reached
+  // by a possibly unrelated message, and thus the logical ordering of
+  // inductions will get totally screwed up. For example, one induction A might
+  // be embedded in another induction B's init region, but B's cycle/output
+  // regions will append to A's induction vector!
+  //
+  // Really, we need to pretend that all of messages are treated completely
+  // independently at first, and then allow `CompleteProcedure` and the work
+  // list, which partially uses depth for ordering, to figure the proper order
+  // for regions. This is tricky because we need to place anything we find,
+  // in terms of.
+  //
+  // --- END of old, semi-unrelated, speculative comment.
+
+  const auto par = impl->parallel_regions.Create(proc);
+  proc->body.Emplace(proc, par);
 
   for (auto io : query.IOs()) {
     ExtendEagerProcedure(impl, io, context, proc, par);
@@ -627,6 +650,9 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   query.ForEachView([&] (QueryView view) {
     DataModel *model = impl->view_to_model[view]->FindAs<DataModel>();
     if (model->table) {
+      (void) TABLE::GetOrCreate(impl, context, view);
+    } else {
+      // TODO(pag): !!! REMOVE ME!!!!
       (void) TABLE::GetOrCreate(impl, context, view);
     }
   });

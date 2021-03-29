@@ -30,6 +30,10 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   DisplayPosition next_pos;
   Token name;
 
+  // Interpretation of this query as a clause.
+  std::vector<Token> clause_toks;
+  bool has_embedded_clauses = false;
+
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
@@ -43,6 +47,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
+          clause_toks.push_back(tok);
           name = tok;
           state = 1;
           continue;
@@ -56,6 +61,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
       case 1:
         if (Lexeme::kPuncOpenParen == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
@@ -83,6 +89,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
       case 3:
         if (Lexeme::kIdentifierVariable == lexeme) {
+          clause_toks.push_back(tok);
           param->name = tok;
           state = 4;
           continue;
@@ -114,10 +121,12 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          clause_toks.push_back(tok);
           message.reset(AddDecl<ParsedMessage>(
               module, DeclarationKind::kMessage, name, params.size()));
           if (!message) {
@@ -144,6 +153,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           message->last_tok = tok;
           state = 6;
           continue;
+
         } else if (Lexeme::kPragmaDifferential == lexeme) {
           if (message->differential_attribute.IsValid()) {
             auto err = context->error_log.Append(scope_range, tok_range);
@@ -157,6 +167,31 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           }
           state = 5;
           continue;
+
+
+        } else if (Lexeme::kPuncColon == lexeme) {
+          clause_toks.push_back(tok);
+          has_embedded_clauses = true;
+          message->last_tok = tok;
+
+          for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
+            clause_toks.push_back(tok);
+          }
+
+          // Look at the last token.
+          if (Lexeme::kPuncPeriod == clause_toks.back().Lexeme()) {
+            message->last_tok = clause_toks.back();
+            state = 6;
+            continue;
+
+          } else {
+            context->error_log.Append(scope_range,
+                                      clause_toks.back().NextPosition())
+                << "Declaration of '" << message->name
+                << "' containing an embedded clause does not end with a period";
+            state = 7;
+            continue;
+          }
         }
         [[clang::fallthrough]];
 
@@ -182,8 +217,20 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
     RemoveDecl<ParsedMessage>(std::move(message));
 
   } else {
+    const auto decl_for_clause = message.get();
     FinalizeDeclAndCheckConsistency<ParsedMessage>(module->messages,
                                                    std::move(message));
+
+    // If we parsed a `:` after the head of the `#message` then
+    // go parse the attached bodies recursively.
+    if (has_embedded_clauses) {
+      sub_tokens.swap(clause_toks);
+      const auto prev_next_sub_tok_index = next_sub_tok_index;
+      next_sub_tok_index = 0;
+      ParseClause(module, decl_for_clause);
+      next_sub_tok_index = prev_next_sub_tok_index;
+      sub_tokens.swap(clause_toks);
+    }
   }
 }
 

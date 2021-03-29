@@ -10,7 +10,7 @@ class ContinueJoinWorkItem final : public WorkItem {
   virtual ~ContinueJoinWorkItem(void) {}
 
   ContinueJoinWorkItem(Context &context, QueryView view_)
-      : WorkItem(context, view_.Depth()),
+      : WorkItem(context, (view_.Depth() << kOrderShift) + kConitnueJoinOrder),
         view(view_) {}
 
   // Find the common ancestor of all insert regions.
@@ -42,7 +42,13 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor->NearestRegionEnclosedByInduction();
+  // NOTE(pag): We *CAN'T* go any higher than `common_ancestor`, because then
+  //            we might accidentally "capture" the vector appends for an
+  //            unrelated induction, thereby introducing super weird ordering
+  //            problems where an induction A is contained in the init region
+  //            of an induction B, and B's fixpoint cycle region appends to
+  //            A's induction vector.
+  return common_ancestor;
 }
 
 // Build a join region given a JOIN view and a pivot vector.
@@ -220,17 +226,54 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     std::vector<QueryColumn> view_cols(view.Columns().begin(),
                                        view.Columns().end());
 
+    // Map the JOIN's output variables to its inputs so that we can do the state
+    // checks below.
+    view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                        std::optional<QueryColumn> out_col) {
+      if (out_col) {
+        parent->col_id_to_var[in_col.Id()] =
+            parent->VariableFor(impl, *out_col);
+      }
+    });
+
     // Call the predecessors. If any of the predecessors return `false` then
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
-      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
-          impl, context, parent, view, view_cols, pred_view, nullptr);
 
-      COMMENT( index_is_good_call->comment =
-          __FILE__ ": ContinueJoinWorkItem::Run"; )
+      if (!pred_view.CanProduceDeletions()) {
+        continue;
+      }
 
-      parent->body.Emplace(parent, index_is_good);
-      parent = index_is_good_call;
+      // NOTE(pag): All views leading into a JOIN are always backed by a table.
+      DataModel * const pred_model =
+          impl->view_to_model[pred_view]->FindAs<DataModel>();
+      TABLE * const pred_table = pred_model->table;
+      assert(pred_table != nullptr);
+
+      // Check to see if the data is present. If it's not (either absent or
+      // unknown), then our assumption is that we are in some kind of inductive
+      // loop and it will eventually be proven in the forward direction.
+      OP *parent_out = nullptr;
+      CHECKSTATE * const check = BuildTopDownCheckerStateCheck(
+          impl, parent, pred_table, pred_view.Columns(),
+          [&parent_out] (ProgramImpl *impl_, REGION *in_check) {
+            parent_out = impl_->operation_regions.CreateDerived<LET>(in_check);
+            return parent_out;
+          },
+          BuildStateCheckCaseNothing,
+          BuildStateCheckCaseNothing);
+
+      parent->body.Emplace(parent, check);
+      parent = parent_out;
+
+//      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
+//          impl, context, parent, view, view_cols, pred_view, nullptr);
+//
+//      COMMENT( index_is_good_call->comment =
+//          __FILE__ ": ContinueJoinWorkItem::Run"; )
+//
+//      parent->body.Emplace(parent, index_is_good);
+//      parent = index_is_good_call;
     }
   }
 

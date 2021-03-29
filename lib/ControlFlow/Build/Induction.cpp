@@ -31,8 +31,8 @@ class ContinueInductionWorkItem final : public WorkItem {
 
   ContinueInductionWorkItem(Context &context, INDUCTION *induction_,
                             InductionSet *induction_set_)
-      : WorkItem(context,
-                 WorkItem::kContinueInductionOrder + MaxDepth(induction_set_)),
+      : WorkItem(context, (MaxDepth(induction_set_) << kOrderShift) +
+                          kContinueInductionOrder),
         induction(induction_),
         induction_set(induction_set_) {}
 
@@ -54,8 +54,8 @@ class FinalizeInductionWorkItem final : public WorkItem {
 
   FinalizeInductionWorkItem(Context &context, INDUCTION *induction_,
                             InductionSet *induction_set_)
-      : WorkItem(context,
-                 WorkItem::kFinalizeInductionOrder + MaxDepth(induction_set_)),
+      : WorkItem(context, (MaxDepth(induction_set_) << kOrderShift) +
+                          kFinalizeInductionOrder),
         induction(induction_),
         induction_set(induction_set_) {}
 
@@ -87,7 +87,13 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor->NearestRegionEnclosedByInduction();
+  // NOTE(pag): We *CAN'T* go any higher than `common_ancestor`, because then
+  //            we might accidentally "capture" the vector appends for an
+  //            unrelated induction, thereby introducing super weird ordering
+  //            problems where an induction A is contained in the init region
+  //            of an induction B, and B's fixpoint cycle region appends to
+  //            A's induction vector.
+  return common_ancestor;
 }
 
 static void BuildInductiveSwaps(ProgramImpl *impl, Context &context,

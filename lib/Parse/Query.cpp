@@ -223,7 +223,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
     FinalizeDeclAndCheckConsistency<ParsedQuery>(module->queries,
                                                  std::move(query));
 
-    // If we parsed a `:` after the head of the `#local` or `#export` then
+    // If we parsed a `:` after the head of the `#query` then
     // go parse the attached bodies recursively.
     if (has_embedded_clauses) {
       sub_tokens.swap(clause_toks);
