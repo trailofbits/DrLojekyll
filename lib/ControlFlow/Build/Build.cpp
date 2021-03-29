@@ -137,6 +137,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
   assert(io.Declaration().IsMessage());
   const auto message = ParsedMessage::From(io.Declaration());
+  (void) message;
 
   VECTOR *removal_vec = nullptr;
   const auto vec =
