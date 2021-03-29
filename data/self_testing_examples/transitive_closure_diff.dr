@@ -64,6 +64,7 @@ if __name__ == "__main__":
   assert (0, 3) in messages.removed_edges
   assert (1, 3) in messages.removed_edges
 
+  print("Adding (2, 3) again")
   db.add_edge_2([(2, 3)], [])
   reached_from_zero = list(db.reachable_from_bf(0))
   print("Reached from 0:", reached_from_zero)

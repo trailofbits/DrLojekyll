@@ -306,6 +306,7 @@ enum class ProgramOperation {
   kLoopOverInductionVector,
   kClearInductionVector,
   kSwapInductionVector,
+  kSortAndUniqueInductionVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
   // cycle.
@@ -1233,18 +1234,32 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // It could be the case that a when going through the induction we end up
   // going into a co-mingled induction, as is the case in
-  // `transitive_closure2.dr` and `transitive_closure3.dr`.
-  std::unordered_map<QueryView, VECTOR *> view_to_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_removal_vec;
+  // `transitive_closure2.dr` and `transitive_closure3.dr`. Thus, we have
+  // multiple vectors which must be maintained during an induction.
+
+  // This is the cycle vector, i.e. each iteration of the induction's fixpoint
+  // loop operates on this vector. The init region of an induction fills this
+  // vector.
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_vec;
+
+  // This is the swap vector. Inside of a fixpoint loop, we swap this with the
+  // normal vector, so that the current iteration of the loop can append to
+  // the normal vector, while still allowing us to iterate over what was added
+  // from the prior iteration of the fixpoint loop.
+  std::unordered_map<QueryView, VECTOR *> view_to_swap_vec;
+
+  // This is the output vector; it accumulates everything from all iterations
+  // of the fixpoint loop.
+  std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
   std::vector<OP *> init_appends;
   std::vector<OP *> cycle_appends;
 
   std::vector<PARALLEL *> output_cycles;
-  std::vector<PARALLEL *> fixpoint_cycles;
-
   std::vector<PARALLEL *> output_remove_cycles;
+
+  std::vector<PARALLEL *> fixpoint_cycles;
   std::vector<PARALLEL *> fixpoint_remove_cycles;
 
   enum State {

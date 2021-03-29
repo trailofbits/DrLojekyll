@@ -104,8 +104,8 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
   switch (vec.Kind()) {
     case VectorKind::kParameter: os << "$input"; break;
     case VectorKind::kInputOutputParameter: os << "$inout"; break;
-    case VectorKind::kInductionAdditions: os << "$induction_add"; break;
-    case VectorKind::kInductionRemovals: os << "$induction_remove"; break;
+    case VectorKind::kInductionCycles: os << "$induction_cycle"; break;
+    case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kTableScan: os << "$scan"; break;

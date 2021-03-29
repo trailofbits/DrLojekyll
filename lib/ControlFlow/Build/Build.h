@@ -489,15 +489,6 @@ PROC *GetOrCreateTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
     const std::vector<QueryColumn> &available_cols, TABLE *already_checked);
 
-// Calls a top-down checker that tries to figure out if some tuple (passed as
-// arguments to this function) is present or not.
-//
-// The idea is that we have the output columns of `succ_view`, and we want to
-// check if a tuple on `view` exists.
-std::pair<OP *, CALL *> CallTopDownChecker(
-    ProgramImpl *impl, Context &context, REGION *parent,
-    QueryView succ_view, QueryView view);
-
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
 std::pair<OP *, CALL *> CallTopDownChecker(
@@ -575,30 +566,50 @@ OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
                      OP *parent, TABLE *table, bool differential,
                      Columns &&columns) {
 
-  UseRef<REGION> *parent_body_ref = &(parent->body);
+//  // If we can receive deletions, then we need to call a functor that will
+//  // tell us if this tuple doesn't actually exist.
+//  if (differential) {
+//    const auto [check, check_call] = CallTopDownChecker(
+//        impl, context, parent, view, view);
+//    COMMENT( check_call->comment = __FILE__ ": BuildInsertCheck"; )
+//    parent->body.Emplace(parent, check);
+//    parent = check_call;
+//    parent_body_ref = &(check_call->false_body);
+//  }
 
-  // If we can receive deletions, then we need to call a functor that will
-  // tell us if this tuple doesn't actually exist.
-  if (differential) {
-    const auto [check, check_call] = CallTopDownChecker(
-        impl, context, parent, view, view);
-    COMMENT( check_call->comment = __FILE__ ": BuildInsertCheck"; )
-    parent->body.Emplace(parent, check);
-    parent = check_call;
-    parent_body_ref = &(check_call->false_body);
-  }
-
+  // If we succeed at this transition, then the tuple was not previously
+  // present. This is the case regardless of if we're in a normal or
+  // differential context. This condition is what decides "should we add more".
   const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
       parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+  insert->table.Emplace(insert, table);
 
   for (auto col : columns) {
     const auto var = parent->VariableFor(impl, col);
     insert->col_values.AddUse(var);
   }
 
-  insert->table.Emplace(insert, table);
-  parent_body_ref->Emplace(parent, insert);
+  parent->body.Emplace(parent, insert);
+
   return insert;
+//  // In a differential case, we want to go and actually "tell" the predecessors
+//  // about this, and make sure the thing was found.
+//  if (differential) {
+//
+//    std::vector<QueryColumn> view_cols;
+//    for (auto succ_view_col : view.Columns()) {
+//      view_cols.push_back(succ_view_col);
+//    }
+//
+//    // Nest our children within the `true` body of the finder function.
+//    const auto [check, call] = CallTopDownChecker(
+//        impl, context, insert, view, view_cols, view, table);
+//    insert->body.Emplace(insert, check);
+//    return call;
+//
+//  } else {
+//    return insert;
+//  }
 }
 
 

@@ -1679,6 +1679,65 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramCheckStateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+  // New parallel region for merged `body` into 'this'
+  auto new_par = prog->parallel_regions.Create(this);
+  if (auto body_ptr = body.get(); body_ptr) {
+    body_ptr->parent = new_par;
+    new_par->AddRegion(body_ptr);
+    body.Clear();
+  }
+
+  // New parallel region for merged `absent_body` into 'this'
+  auto new_absent_body = prog->parallel_regions.Create(this);
+  if (auto absent_body_ptr = absent_body.get(); absent_body_ptr) {
+    absent_body_ptr->parent = new_absent_body;
+    new_absent_body->AddRegion(absent_body_ptr);
+    absent_body.Clear();
+  }
+
+  // New parallel region for merged `unknown_body` into 'this'
+  auto new_unknown_body = prog->parallel_regions.Create(this);
+  if (auto unknown_body_ptr = unknown_body.get(); unknown_body_ptr) {
+    unknown_body_ptr->parent = new_unknown_body;
+    new_unknown_body->AddRegion(unknown_body_ptr);
+    unknown_body.Clear();
+  }
+
+  body.Emplace(this, new_par);
+  absent_body.Emplace(this, new_absent_body);
+  unknown_body.Emplace(this, new_unknown_body);
+
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsCheckState();
+    assert(merge);  // These should all be the same type
+    assert(merge != this);
+
+    if (auto merge_body_ptr = merge->body.get(); merge_body_ptr) {
+      merge_body_ptr->parent = new_par;
+      new_par->AddRegion(merge_body_ptr);
+      merge->body.Clear();
+    }
+
+    if (auto merge_unknown_body_ptr = merge->unknown_body.get();
+        merge_unknown_body_ptr) {
+      merge_unknown_body_ptr->parent = new_unknown_body;
+      new_unknown_body->AddRegion(merge_unknown_body_ptr);
+      merge->unknown_body.Clear();
+    }
+
+    if (auto merge_absent_body_ptr = merge->absent_body.get();
+        merge_absent_body_ptr) {
+      merge_absent_body_ptr->parent = new_absent_body;
+      new_absent_body->AddRegion(merge_absent_body_ptr);
+      merge->absent_body.Clear();
+    }
+
+    merge->parent = nullptr;
+  }
+
+  return true;
+
+
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramCheckStateRegion");
   assert(false);
   return false;

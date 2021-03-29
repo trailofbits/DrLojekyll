@@ -363,6 +363,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kClearInductionVector:
     case ProgramOperation::kLoopOverInductionVector:
     case ProgramOperation::kSwapInductionVector:
+    case ProgramOperation::kSortAndUniqueInductionVector:
       return VectorUsage::kInductionVector;
     case ProgramOperation::kAppendUnionInputToVector:
     case ProgramOperation::kLoopOverUnionInputVector:

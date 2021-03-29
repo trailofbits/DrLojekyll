@@ -240,8 +240,8 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 enum class VectorKind : unsigned {
   kParameter,
   kInputOutputParameter,
-  kInductionAdditions,
-  kInductionRemovals,
+  kInductionCycles,
+  kInductionOutputs,
   kJoinPivots,
   kProductInput,
   kTableScan,

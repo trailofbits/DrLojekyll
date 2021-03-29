@@ -1195,24 +1195,6 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
   return nullptr;
 }
 
-// Calls a top-down checker that tries to figure out if some tuple (passed as
-// arguments to this function) is present or not.
-//
-// The idea is that we have the output columns of `succ_view`, and we want to
-// check if a tuple on `view` exists.
-std::pair<OP *, CALL *> CallTopDownChecker(
-    ProgramImpl *impl, Context &context, REGION *parent,
-    QueryView succ_view, QueryView view) {
-  assert(!succ_view.IsInsert());
-
-  std::vector<QueryColumn> succ_cols;
-  for (auto succ_view_col : succ_view.Columns()) {
-    succ_cols.push_back(succ_view_col);
-  }
-
-  return CallTopDownChecker(impl, context, parent, succ_view, succ_cols, view);
-}
-
 // Gets or creates a top down checker function.
 PROC *GetOrCreateTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
