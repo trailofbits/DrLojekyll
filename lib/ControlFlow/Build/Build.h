@@ -63,6 +63,22 @@ class Context {
   // Merges in this set are inductive, but behave more like non-inductive
   // merges because all paths leading out of these views go through a single
   // other merge in their inductive set.
+  //
+  // Dominance idea: UNON1 and maybe UNION3 are inductive, and UNION2 appears
+  // inductive but only by virtue of its placement between two other inductive
+  // unions. The uniqueness of stuff coming out of UNION2 can be enforced via
+  // UNION1, thus UNION1 dominates UNION2.
+  //
+  //         ----UNION1----.
+  //               |       |
+  //              ...      |
+  //               |       |
+  //             UNION2    |
+  //            /     \    |
+  //           ..     ..   |
+  //            \     /    |
+  //            UNION3     |
+  //         ----' '-------'
   std::unordered_set<QueryView> dominated_merges;
 
   // Set of successors of a `QueryMerge` that may lead back to the merge
