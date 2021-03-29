@@ -2,6 +2,8 @@
 
 #include "Build.h"
 
+#include <drlojekyll/Parse/ErrorLog.h>
+
 #include <algorithm>
 #include <sstream>
 
@@ -19,18 +21,15 @@ static std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
     const auto view = frontier.back();
     frontier.pop_back();
     for (auto pred_view : view.Predecessors()) {
-      if (!dependencies.count(pred_view)) {
-        dependencies.insert(pred_view);
+      if (auto [it, added] = dependencies.insert(pred_view); added) {
         frontier.push_back(pred_view);
       }
     }
 
-    // TODO(pag): Think about this.
-    if (false && view.IsNegate()) {
+    if (view.IsNegate()) {
       const auto negate = QueryNegate::From(view);
       const auto pred_view = negate.NegatedView();
-      if (!dependencies.count(pred_view)) {
-        dependencies.insert(pred_view);
+      if (auto [it, added] = dependencies.insert(pred_view); added) {
         frontier.push_back(pred_view);
       }
     }
@@ -49,21 +48,16 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
     const auto view = frontier.back();
     frontier.pop_back();
     for (auto succ_view : view.Successors()) {
-      if (!dependents.count(succ_view)) {
-        dependents.insert(succ_view);
+      if (auto [it, added] = dependents.insert(succ_view); added) {
         frontier.push_back(succ_view);
       }
     }
 
-    // TODO(pag): Think about this.
-    if (false && view.IsUsedByNegation()) {
-      view.ForEachNegation([&] (QueryNegate negate) {
-        if (!dependents.count(negate)) {
-          dependents.insert(negate);
-          frontier.push_back(negate);
-        }
-      });
-    }
+    view.ForEachNegation([&] (QueryNegate negate) {
+      if (auto [it, added] = dependents.insert(negate); added) {
+        frontier.push_back(negate);
+      }
+    });
   }
 
   return dependents;
@@ -314,7 +308,8 @@ static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
 }
 
 // Analyze the MERGE/UNION nodes and figure out which ones are inductive.
-static void DiscoverInductions(const Query &query, Context &context) {
+static void DiscoverInductions(const Query &query, Context &context,
+                               const ErrorLog &log) {
   unsigned merge_id = 0u;
   for (auto view : query.Merges()) {
     context.merge_sets.emplace(view, merge_id++);
@@ -462,6 +457,69 @@ static void DiscoverInductions(const Query &query, Context &context) {
         context.dominated_merges.erase(merge);
       }
     }
+  }
+
+  auto missing_base_case = [&] (QueryView view) -> bool {
+    auto size = 0ull;
+    if (auto it = context.noninductive_predecessors.find(view);
+        it != context.noninductive_predecessors.end()) {
+      size = it->second.size();
+    }
+    return size == 0u;
+  };
+
+  // Sanity check; look for programs that cannot be linearized into our
+  // control-flow format.
+  std::unordered_map<ParsedClause, std::vector<ParsedVariable>> bad_vars;
+  for (const auto &[view, cyclic_pred_list] : context.inductive_predecessors) {
+    if (!missing_base_case(view)) {
+      continue;
+    }
+
+    // This inductive merge has no "true" base case. Lets go make sure that
+    // at least on of the inductions in this merge's induction set has a proper
+    // base case.
+    auto all_missing = true;
+    const auto &set = context.merge_sets[view];
+    for (auto other_view : set.all_merges) {
+      if (!missing_base_case(other_view)) {
+        all_missing = false;
+        break;
+      }
+    }
+
+    // At least one of them does.
+    if (!all_missing) {
+      continue;
+    }
+
+    // None of them do :-(
+    for (QueryColumn col : view.Columns()) {
+      if (col.IsConstant()) {
+        continue;
+      }
+
+      auto var = col.Variable();
+      auto clause = ParsedClause::Containing(var);
+      bad_vars[clause].push_back(var);
+    }
+  }
+
+  // Complain about this if the declarations aren't marked as divergent.
+  for (const auto &[clause, vars] : bad_vars) {
+    auto decl = ParsedDeclaration::Of(clause);
+    if (decl.IsDivergent()) {
+      continue;
+    }
+
+    auto err = log.Append(clause.SpellingRange());
+    err << "Clause introduces non-linearizable induction cycle; it seems like "
+        << "every body of this clause (in)directly depends upon itself -- at "
+        << "least one body must depend on something else";
+
+    err.Note(decl.SpellingRange())
+          << "This error can be disabled (at your own risk) by marking this "
+          << "declaration with the '@divergent' pragma";
   }
 }
 
@@ -2104,7 +2162,8 @@ WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
-                                      IRFormat format_) {
+                                      IRFormat format_,
+                                      const ErrorLog &log) {
   auto impl = std::make_shared<ProgramImpl>(query, format_);
   const auto program = impl.get();
 
@@ -2142,7 +2201,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Go figure out which merges are inductive, and then classify their
   // predecessors and successors in terms of which ones are inductive and
   // which aren't.
-  DiscoverInductions(query, context);
+  DiscoverInductions(query, context, log);
+  if (!log.IsEmpty()) {
+    return std::nullopt;
+  }
 
   // Now that we've identified our inductions, we can fill our data model,
   // i.e. assign persistent tables to each disjoint set of views.

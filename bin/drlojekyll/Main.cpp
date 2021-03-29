@@ -53,10 +53,11 @@ std::optional<fs::path> gMSGDir = std::nullopt;
 
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
-
+  auto ret = EXIT_SUCCESS;
   if (auto query_opt = Query::Build(module, error_log)) {
 
-    if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
+    if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative,
+                                          error_log)) {
       if (gIRStream) {
         (*gIRStream) << *program_opt;
         gIRStream->Flush();
@@ -77,6 +78,8 @@ static int CompileModule(hyde::DisplayManager display_manager,
         hyde::GeneratePythonInterfaceCode(
             *program_opt, *gPyInterfaceCodeStream);
       }
+    } else {
+      ret = EXIT_FAILURE;
     }
 
     // NOTE(pag): We do this later because if we produce the control-flow IR
@@ -86,11 +89,11 @@ static int CompileModule(hyde::DisplayManager display_manager,
       (*gDOTStream) << *query_opt;
       gDOTStream->Flush();
     }
-
-    return EXIT_SUCCESS;
   } else {
-    return EXIT_FAILURE;
+    ret = EXIT_FAILURE;
   }
+
+  return ret;
 }
 
 static int ProcessModule(hyde::DisplayManager display_manager,

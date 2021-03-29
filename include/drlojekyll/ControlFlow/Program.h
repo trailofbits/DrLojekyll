@@ -955,7 +955,8 @@ class Program {
  public:
   // Build a program from a query.
   static std::optional<Program> Build(const Query &query,
-                                      IRFormat format_=IRFormat::kIterative);
+                                      IRFormat format_,
+                                      const ErrorLog &log);
 
   // The format of the code in this program.
   IRFormat Format(void) const;

@@ -782,6 +782,12 @@ bool ParsedDeclaration::IsInline(void) const noexcept {
   return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
+// Is this declaration marked with the `@divergent` pragma?
+bool ParsedDeclaration::IsDivergent(void) const noexcept {
+  // TODO(pag): Implement me.
+  return true;
+}
+
 std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
   if (impl->binding_pattern.empty()) {
     impl->binding_pattern.reserve(impl->parameters.size());

@@ -172,8 +172,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
     for (auto succ_view : view.Successors()) {
       assert(succ_view.IsSelect());
 
-      const auto sel_cols = succ_view.Columns();
-      assert(sel_cols.size() == insert_cols.size());
+      assert(succ_view.Columns().size() == insert_cols.size());
 
       auto let = impl->operation_regions.CreateDerived<LET>(par);
       par->AddRegion(let);

@@ -545,7 +545,11 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   unsigned NumNegatedUses(void) const noexcept;
   unsigned NumClauses(void) const noexcept;
 
+  // Is this declaration marked with the `@inline` pragma?
   bool IsInline(void) const noexcept;
+
+  // Is this declaration marked with the `@divergent` pragma?
+  bool IsDivergent(void) const noexcept;
 
   inline unsigned NumUses(void) const noexcept {
     return NumPositiveUses() + NumNegatedUses();
@@ -1028,6 +1032,15 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
 }  // namespace hyde
 
 namespace std {
+
+template <>
+struct hash<::hyde::ParsedClause> {
+  using argument_type = ::hyde::ParsedClause;
+  using result_type = uint64_t;
+  inline uint64_t operator()(::hyde::ParsedClause clause) const noexcept {
+    return clause.UniqueId();
+  }
+};
 
 template <>
 struct hash<::hyde::ParsedParameter> {

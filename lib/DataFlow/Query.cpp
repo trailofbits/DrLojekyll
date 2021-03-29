@@ -246,9 +246,13 @@ bool QueryView::IsUsedByNegation(void) const noexcept {
 
 // Apply a callback `on_negate` to each negation using this view.
 void QueryView::ForEachNegation(std::function<void(QueryNegate)> on_negate) const {
-  impl->ForEachUse<NEGATION>([&on_negate] (NEGATION *negate, VIEW *) {
+  auto found_any = false;
+  impl->ForEachUse<NEGATION>([&on_negate, &found_any] (NEGATION *negate, VIEW *) {
     on_negate(QueryNegate(negate));
+    found_any = true;
   });
+  assert(found_any == impl->is_used_by_negation);
+  (void) found_any;
 }
 
 // Can this view receive inputs that should logically "delete" entries?
