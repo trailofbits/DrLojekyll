@@ -1240,11 +1240,11 @@ PROC *GetOrCreateTopDownChecker(
   // There is a pretty evil situation we might encounter:
   //
   //            ...   .----.
-  //              \  /      \
+  //              \  /      \        .
   //              UNION     |
   //             /    \     |
   //          TUPLE    .....'
-  //           /       /   \
+  //           /       /   \         .
   //         ...
   //
   // In this situation, the data model of the TUPLE and the inductive UNION
