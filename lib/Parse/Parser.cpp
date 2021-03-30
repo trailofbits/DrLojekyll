@@ -417,6 +417,10 @@ void ParserImpl::ParseLocalExport(
   std::unique_ptr<Node<ParsedParameter>> param;
   std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
 
+  // Interpretation of this local/export as a clause.
+  std::vector<Token> clause_toks;
+  bool has_embedded_clauses = false;
+
   DisplayPosition next_pos;
   Token name;
 
@@ -437,6 +441,7 @@ void ParserImpl::ParseLocalExport(
         if (Lexeme::kIdentifierAtom == lexeme) {
           name = tok;
           state = 1;
+          clause_toks.push_back(tok);
           continue;
 
         } else {
@@ -449,6 +454,7 @@ void ParserImpl::ParseLocalExport(
       case 1:
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
+          clause_toks.push_back(tok);
           continue;
 
         } else {
@@ -504,6 +510,7 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 4:
+        clause_toks.push_back(param->name);
 
         // Add the parameter in.
         if (!params.empty()) {
@@ -522,10 +529,12 @@ void ParserImpl::ParseLocalExport(
         params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          clause_toks.push_back(tok);
           local.reset(
               AddDecl<NodeType>(module, kDeclKind, name, params.size()));
           if (!local) {
@@ -750,12 +759,36 @@ void ParserImpl::ParseLocalExport(
           local->last_tok = tok;
           state = 9;
           continue;
+
+        } else if (Lexeme::kPuncColon == lexeme) {
+          has_embedded_clauses = true;
+          clause_toks.push_back(tok);
+          for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
+            clause_toks.push_back(tok);
+          }
+
+          // Look at the last token.
+          if (Lexeme::kPuncPeriod == clause_toks.back().Lexeme()) {
+            local->last_tok = clause_toks.back();
+            state = 9;
+            continue;
+
+          } else {
+            context->error_log.Append(scope_range,
+                                      clause_toks.back().NextPosition())
+                << "Declaration of '" << local->name
+                << "' containing an embedded clause does not end with a period";
+            state = 10;
+            continue;
+          }
+
         } else {
           DisplayRange err_range(tok.Position(),
                                  sub_tokens.back().NextPosition());
           context->error_log.Append(scope_range, err_range)
               << "Unexpected tokens before the terminating period in the"
-              << " declaration of the '" << local->name << "' local";
+              << " declaration of the '" << local->name << "' "
+              << introducer_tok;
           state = 10;
           continue;
         }
@@ -765,7 +798,7 @@ void ParserImpl::ParseLocalExport(
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
             << "Unexpected tokens following declaration of the '"
-            << local->name << "' local";
+            << local->name << "' " << introducer_tok;
         state = 10;  // Ignore further errors, but add the local in.
         continue;
       }
@@ -784,8 +817,20 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local to the module.
   } else {
+    const auto decl_for_clause = local.get();
     local->has_mutable_parameter = has_mutable_parameter;
     FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
+
+    // If we parsed a `:` after the head of the `#local` or `#export` then
+    // go parse the attached bodies recursively.
+    if (has_embedded_clauses) {
+      sub_tokens.swap(clause_toks);
+      const auto prev_next_sub_tok_index = next_sub_tok_index;
+      next_sub_tok_index = 0;
+      ParseClause(module, decl_for_clause);
+      next_sub_tok_index = prev_next_sub_tok_index;
+      sub_tokens.swap(clause_toks);
+    }
   }
 }
 
@@ -1069,7 +1114,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         }
         break;
 
-      // Import another module, e.g. `#import "foo/bar"`.
+      // Import another module, e.g. `#import "foo/bar".`.
       case Lexeme::kHashImportModuleStmt:
         ReadStatement();
         if (first_non_import.IsValid()) {
@@ -1090,10 +1135,11 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
       //
       //    #prologue ```
       //    ...
-      //    ```
+      //    ```.
+      //
       //    #epilogue ```
       //    ...
-      //    ```
+      //    ```.
       case Lexeme::kHashInlinePrologueStmt:
       case Lexeme::kHashInlineEpilogueStmt:
         ReadStatement();
@@ -1111,30 +1157,6 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
               << "Expected period at end of declaration/clause";
         } else {
           (void) ParseClause(module);
-        }
-
-        if (first_non_import.IsInvalid()) {
-          first_non_import = SubTokenRange();
-        }
-        break;
-
-      // A deletion clause. For example:
-      //
-      //    !foo(...) : message_to_delete_foo(...).
-      case Lexeme::kPuncExclaim:
-        if (!ReadStatement()) {
-          context->error_log.Append(scope_range,
-                                    sub_tokens.back().NextPosition())
-              << "Expected period here at end of declaration/clause";
-
-        } else if (2 > sub_tokens.size()) {
-          context->error_log.Append(scope_range, tok.NextPosition())
-              << "Expected atom here (lower case identifier) after the '!' "
-              << "for the name of the negated clause head being declared";
-
-        } else {
-          ++next_sub_tok_index;
-          ParseClause(module, tok);
         }
 
         if (first_non_import.IsInvalid()) {
@@ -1415,12 +1437,6 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
           return false;
         }
       }
-
-      for (auto clause : module->deletion_clauses) {
-        if (!do_clause(clause)) {
-          return false;
-        }
-      }
     }
   }
 
@@ -1472,10 +1488,8 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
                                       const ErrorLog &log) {
 
   auto do_decl = [&](ParsedDeclaration decl) {
-    for (ParsedClause clause : decl.Clauses()) {
-      if (!clause.IsDeletion()) {
-        return;
-      }
+    if (!decl.Clauses().empty()) {
+      return;
     }
 
     auto err = log.Append(decl.SpellingRange());
@@ -1505,40 +1519,6 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
   }
 
   return prev_num_errors == log.Size();
-}
-
-// Check that if we have any deletion clause, i.e. `!foo(...) : bar(...).`, that
-// all positive clauses of `foo(...)` depend directly on a message.
-static bool CheckDeletions(Node<ParsedModule> *root_module,
-                           const ErrorLog &log) {
-
-  auto all_good = true;
-  for (auto module : root_module->all_modules) {
-    for (auto del_clause : module->deletion_clauses) {
-      const auto decl = del_clause->declaration;
-
-      // Check that all other insertions depend on messages? The key here is to
-      // not permit a situation where you ask to remove a tuple, but where that
-      // tuple is independently provable via multiple "paths" (that don't use
-      // messages). Because a message is ultimately ephemeral, there is no prior
-      // record of its receipt per se, and so there is no prior evidence to re-
-      // prove a clause head that we're asking to remove.
-      for (const auto &clause : decl->context->clauses) {
-        if (!clause->depends_on_messages) {
-          auto err = log.Append(ParsedClause(del_clause).SpellingRange(),
-                                del_clause->negation.Position());
-          err << "All positive clauses of " << decl->name << '/'
-              << decl->parameters.size() << " must directly depend on a message"
-              << " because of the presence of a deletion clause";
-
-          auto note = err.Note(ParsedClause(clause.get()).SpellingRange());
-          note << "Clause without a direct message dependency is here";
-          all_good = false;
-        }
-      }
-    }
-  }
-  return all_good;
 }
 
 // Parse a display, returning the parsed module.
@@ -1591,8 +1571,7 @@ ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   // Only do usage and type checking when we're done parsing the root module.
   if (module->root_module == module.get()) {
     if (!AllDeclarationsAreDefined(module.get(), context->error_log) ||
-        !AssignTypes(module.get()) ||
-        !CheckDeletions(module.get(), context->error_log)) {
+        !AssignTypes(module.get())) {
       return std::nullopt;
     }
   }

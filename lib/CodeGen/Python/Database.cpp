@@ -60,14 +60,6 @@ static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) 
     const auto key_cols = index.KeyColumns();
     const auto val_cols = index.ValueColumns();
 
-    // The index can be implemented with the keys in the table's `defaultdict`.
-    // In this case, the index lookup will be an `if ... in ...`.
-    if (key_cols.size() == cols.size()) {
-      assert(val_cols.empty());
-      os << " = " << Table(os, table) << "\n";
-      continue;
-    }
-
     auto key_prefix = "Tuple[";
     auto key_suffix = "]";
     if (key_cols.size() == 1u) {
@@ -207,6 +199,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "Program Call Region");
 
     auto param_index = 0u;
+    const auto id = region.Id();
+
     const auto called_proc = region.CalledProcedure();
     const auto vec_params = called_proc.VectorParameters();
     const auto var_params = called_proc.VariableParameters();
@@ -233,7 +227,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    os << os.Indent() << "ret = self."
+    os << os.Indent() << "ret_" << id << ": bool = self."
        << Procedure(os, called_proc) << "(";
 
     auto sep = "";
@@ -288,26 +282,18 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       ++param_index;
     }
 
-    // Check the return value.
-    bool is_cond = true;
-    if (region.ExecuteBodyIfReturnIsTrue()) {
-      os << os.Indent() << "if ret:\n";
-    } else if (region.ExecuteBodyIfReturnIsFalse()) {
-      os << os.Indent() << "if not ret:\n";
-    } else {
-      is_cond = false;
+    if (auto true_body = region.BodyIfTrue(); true_body) {
+      os << os.Indent() << "if ret_" << id << ":\n";
+      os.PushIndent();
+      true_body->Accept(*this);
+      os.PopIndent();
     }
 
-    if (is_cond) {
+    if (auto false_body = region.BodyIfFalse(); false_body) {
+      os << os.Indent() << "if not ret_" << id << ":\n";
       os.PushIndent();
-      if (auto body = region.Body(); body) {
-        body->Accept(*this);
-      } else {
-        os << os.Indent() << "pass\n";
-      }
+      false_body->Accept(*this);
       os.PopIndent();
-    } else {
-      os << '\n';
     }
   }
 
@@ -339,23 +325,26 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
        << "\n";
   }
 
-  void Visit(ProgramExistenceAssertionRegion region) override {
-    os << Comment(os, region, "Program ExistenceAssertion Region");
-    const auto vars = region.ReferenceCounts();
-    for (auto var : vars) {
-      if (region.IsIncrement()) {
-        os << os.Indent() << Var(os, var) << " += 1\n";
-      } else {
-        os << os.Indent() << Var(os, var) << " -= 1\n";
-      }
+  void Visit(ProgramTestAndSetRegion region) override {
+    os << Comment(os, region, "Program TestAndSet Region");
+    const auto acc = region.Accumulator();
+    const auto disp = region.Displacement();
+    const auto cmp = region.Comparator();
+    if (region.IsAdd()) {
+      os << os.Indent() << Var(os, acc) << " += "
+         << Var(os, disp) << "\n";
+    } else {
+      os << os.Indent() << Var(os, acc) << " -= "
+         << Var(os, disp) << "\n";
     }
 
     if (auto body = region.Body(); body) {
-      assert(vars.size() == 1u);
-      if (region.IsIncrement()) {
-        os << os.Indent() << "if " << Var(os, vars[0]) << " == 1:\n";
+      if (region.IsAdd()) {
+        os << os.Indent() << "if " << Var(os, acc) << " == "
+           << Var(os, cmp) << ":\n";
       } else {
-        os << os.Indent() << "if " << Var(os, vars[0]) << " == 0:\n";
+        os << os.Indent() << "if " << Var(os, acc) << " == "
+           << Var(os, cmp) << ":\n";
       }
       os.PushIndent();
       body->Accept(*this);
@@ -365,13 +354,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramGenerateRegion region) override {
     const auto functor = region.Functor();
+    const auto id = region.Id();
     os << Comment(os, region, "Program Generate Region");
 
-    if (!region.IsPositive()) {
-      assert(functor.Range() != FunctorRange::kOneToOne);
-      assert(functor.Range() != FunctorRange::kOneOrMore);
-      os << os.Indent() << "found = False\n";
-    }
+    os << os.Indent() << "num_results_" << id << ": int = 0\n";
 
     switch (functor.Range()) {
       case FunctorRange::kZeroOrOne:
@@ -398,17 +384,18 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     };
 
     auto do_body = [&] (void) {
-      if (!region.IsPositive()) {
-        os << os.Indent() << "found = True\n";
-        os.PopIndent();
-        os << os.Indent() << "if not found:\n";
-        os.PushIndent();
-      }
-
-      if (auto body = region.Body(); body) {
+      os << os.Indent() << "num_results_" << id << " += 1\n";
+      if (auto body = region.BodyIfResults(); body) {
         body->Accept(*this);
-      } else {
-        os << os.Indent() << "pass";
+
+      // Break out of the body early if there is nothing to do, and if we've
+      // already counted at least one instance of results (in the case of the
+      // functor possibly producing more than one result tuples), then that
+      // is sufficient information to be able to enter into the "empty" body.
+      } else if (const auto range = functor.Range();
+                 FunctorRange::kOneOrMore == range ||
+                 FunctorRange::kZeroOrMore == range) {
+        os << os.Indent() << "break\n";
       }
     };
 
@@ -427,20 +414,20 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         } else {
           assert(!output_vars.empty());
 
-          os << os.Indent() << "tmp_" << region.Id();
+          os << os.Indent() << "tmp_" << id;
           auto sep = ": Tuple[";
           for (auto out_var : output_vars) {
             os << sep << TypeName(module, out_var.Type());
             sep = ", ";
           }
           os << "]\n"
-             << os.Indent() << "for tmp_" << region.Id() << " in ";
+             << os.Indent() << "for tmp_" << id << " in ";
           call_functor();
           os << ":\n";
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
                << '[' << (out_var_index++) << "]\n";
           }
           do_body();
@@ -469,7 +456,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           assert(!functor.IsFilter());
 
           const auto out_var = output_vars[0];
-          os << os.Indent() << "tmp_" << region.Id() << ": ";
+          os << os.Indent() << "tmp_" << id << ": ";
           if (range == FunctorRange::kZeroOrOne) {
             os << "Optional[";
           }
@@ -481,7 +468,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           call_functor();
           os << "\n";
           if (range == FunctorRange::kZeroOrOne) {
-            os << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+            os << os.Indent() << "if tmp_" << id << " is not None:\n";
             os.PushIndent();
           }
           os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
@@ -504,17 +491,24 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           os << "]] = ";
           call_functor();
           os << "\n"
-             << os.Indent() << "if tmp_" << region.Id() << " is not None:\n";
+             << os.Indent() << "if tmp_" << id << " is not None:\n";
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << region.Id()
+            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
                << '[' << (out_var_index++) << "]\n";
           }
           do_body();
           os.PopIndent();
         }
         break;
+    }
+
+    if (auto empty_body = region.BodyIfEmpty(); empty_body) {
+      os << os.Indent() << "if not num_results" << id << ":\n";
+      os.PushIndent();
+      empty_body->Accept(*this);
+      os.PopIndent();
     }
   }
 
@@ -560,6 +554,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
     }
   }
 
@@ -595,10 +591,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
 
-    if (region.IsRemoval()) {
-      os << sep << "False";
-    } else {
-      os << sep << "True";
+    if (message.IsDifferential()) {
+      if (region.IsRemoval()) {
+        os << sep << "False";
+      } else {
+        os << sep << "True";
+      }
     }
 
     os << ")\n";
@@ -706,22 +704,22 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
   void ResolveReference(DataVariable var) {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      if (var.DefiningRegion() &&
-          !foreign_type->IsReferentiallyTransparent(Language::kPython)) {
+      if (!foreign_type->IsReferentiallyTransparent(Language::kPython)) {
         os << os.Indent() << Var(os, var)
            << " = self._resolve_" << foreign_type->Name()
            << '(' << Var(os, var) << ")\n";
       } else {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
-          case VariableRole::kConstant:
           case VariableRole::kConstantZero:
           case VariableRole::kConstantOne:
           case VariableRole::kConstantFalse:
           case VariableRole::kConstantTrue:
-            break;
-          default:
             assert(false);
+            break;
+          case VariableRole::kConstant:
+          default:
+            break;
         }
       }
     }
@@ -831,13 +829,6 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           val_suffix = "";
         }
 
-        // The index is the set of keys in the table's `defaultdict`. Thus, we
-        // don't need to add anything because adding to the table will have done
-        // it.
-        if (tuple_vars.size() == key_cols.size()) {
-          continue;
-        }
-
         has_indices = true;
         os << os.Indent() << TableIndex(os, index);
 
@@ -933,6 +924,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableJoinRegion region) override {
+    const auto id = region.Id();
     os << Comment(os, region, "Program TableJoin Region");
 
     // Nested loop join
@@ -957,9 +949,13 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
+      const auto table = tables[i];
       const auto index = region.Index(i);
       const auto index_keys = index.KeyColumns();
       const auto index_vals = index.ValueColumns();
+
+      (void) table;
+
       auto key_prefix = "(";
       auto key_suffix = ")";
       if (index_keys.size() == 1u) {
@@ -970,7 +966,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       // The index is a set of key column values/tuples.
       if (index_vals.empty()) {
 
-        os << os.Indent() << "if " << key_prefix;
+
+        os << os.Indent() << "key_" << id << '_' << i << " = "
+           << key_prefix;
 
         sep = "";
         for (auto index_col : index_keys) {
@@ -984,7 +982,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           }
         }
 
-        os << key_suffix << " in " << TableIndex(os, index) << ":\n";
+        os << key_suffix << "\n";
+        os << os.Indent() << "if key_" << id << '_' << i
+           << " in " << TableIndex(os, index) << ":\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
@@ -1079,7 +1079,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           os << os.Indent() << Var(os, var) << " = tuple_" << region.Id() << "_"
              << i;
 
-          if (1u < out_vars.size()) {
+          if (1u < index_vals.size()) {
             os << "[" << select_col_idx - tuple_col_idx_offset << "]";
           }
           os << '\n';
@@ -1213,11 +1213,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     const auto input_vars = region.InputVariables();
     const auto output_cols = region.SelectedColumns();
     const auto filled_vec = region.FilledVector();
+    const auto vec_id = filled_vec.Id();
 
     // Make sure to resolve to the correct reference of the foreign object.
     ResolveReferences(input_vars);
 
-    os << os.Indent() << "scan_tuple_" << filled_vec.Id()
+    os << os.Indent() << "scan_tuple_" << vec_id
        << ": ";
 
     if (output_cols.size() == 1u) {
@@ -1233,51 +1234,34 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     // Index scan :-D
-    if (region.Index()) {
-      const auto index = *(region.Index());
+    if (auto maybe_index = region.Index();
+        maybe_index && !maybe_index->ValueColumns().empty()) {
 
-      os << os.Indent() << "scan_index_" << filled_vec.Id()
-         << ": int = 0\n"
-         << os.Indent() << "scan_tuple_" << filled_vec.Id() << "_vec: List[";
+      const auto index = *maybe_index;
 
-      // Types mapped by this index.
-      if (output_cols.size() == 1u) {
-        os << TypeName(module, output_cols[0].Type());
-      } else {
-        os << "Tuple[";
-        auto sep = "";
-        for (auto col : output_cols) {
-          os << sep << TypeName(module, col.Type());
-          sep = ", ";
-        }
-        os << "]";
+      os << os.Indent() << "for scan_tuple_" << vec_id
+         << " in " << TableIndex(os, index);
+
+      auto sep = "[";
+      if (1 < input_vars.size()) {
+        sep = "[(";
       }
-
-      os << "] = " << TableIndex(os, index) << "[";
-      auto sep = "";
       for (auto var : input_vars) {
         os << sep << Var(os, var);
         sep = ", ";
       }
-      os << "]\n";
-      os << os.Indent() << "while scan_index_" << filled_vec.Id()
-         << " < len(scan_tuple_" << filled_vec.Id() << "_vec):\n";
-      os.PushIndent();
-
-      os << os.Indent() << "scan_tuple_" << filled_vec.Id()
-         << " = scan_tuple_" << filled_vec.Id() << "_vec["
-         << "scan_index_" << filled_vec.Id() << "]\n"
-         << os.Indent() << "scan_index_" << filled_vec.Id()
-         << " += 1\n";
+      if (1 < input_vars.size()) {
+        os << ')';
+      }
+      os << "]:\n";
 
     // Full table scan.
     } else {
-      assert(input_vars.empty());
-      os << os.Indent() << "for scan_tuple_" << filled_vec.Id()
+      os << os.Indent() << "for scan_tuple_" << vec_id
          << " in " << Table(os, region.Table()) << ":\n";
-      os.PushIndent();
     }
 
+    os.PushIndent();
     os << os.Indent() << Vector(os, filled_vec)
        << ".append(scan_tuple_" << filled_vec.Id() << ")\n";
     os.PopIndent();
@@ -1427,7 +1411,10 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
     os << ", " << param.Name() << ": " << TypeName(module, param.Type());
   }
 
-  os << ", added: bool):\n";
+  if (message.IsDifferential()) {
+    os << ", added: bool";
+  }
+  os << "):\n";
   os.PushIndent();
   os << os.Indent() << impl << "\n\n";
   os.PopIndent();
@@ -1440,12 +1427,15 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
   const auto messages = Messages(root_module);
 
-  if (messages.empty()) {
-    os << os.Indent() << "pass\n\n";
-  } else {
-    for (auto message : messages) {
+  auto empty = true;
+  for (auto message : messages) {
+    if (message.IsPublished()) {
+      empty = false;
       DeclareMessageLogger(os, root_module, message, "...");
     }
+  }
+  if (empty) {
+    os << os.Indent() << "pass\n";
   }
   os.PopIndent();
 
@@ -1453,12 +1443,13 @@ static void DeclareMessageLog(OutputStream &os, Program program,
   os << os.Indent() << "class " << gClassName << "Log:\n";
   os.PushIndent();
 
-  if (messages.empty()) {
-    os << os.Indent() << "pass\n\n";
-  } else {
-    for (auto message : messages) {
+  for (auto message : messages) {
+    if (message.IsPublished()) {
       DeclareMessageLogger(os, root_module, message, "pass");
     }
+  }
+  if (empty) {
+    os << os.Indent() << "pass\n\n";
   }
   os.PopIndent();
 }
@@ -1587,6 +1578,12 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   PythonCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
 
+  // From a codegen perspective, we guarantee that all paths through all
+  // functions return, but mypy isn't always smart enough, mostly because we
+  // have our returns inside of conditionals that mypy doesn't know are
+  // complete.
+  os << os.Indent() << "assert False\n"
+     << os.Indent() << "return False\n";
   os.PopIndent();
   os << '\n';
 }
@@ -1652,7 +1649,9 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   // This is an index scan.
   if (num_bound_params && num_bound_params < num_params) {
+    assert(0 < num_free_params);
     assert(spec.index.has_value());
+
     const auto index = *(spec.index);
     const auto index_vals = index.ValueColumns();
     auto key_prefix = "(";
@@ -1694,8 +1693,38 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "tuple = tuple_vec[tuple_index]\n"
        << os.Indent() << "tuple_index += 1\n";
 
+  // This is an existence check; all parameters are bound.
+  } else if (num_bound_params && num_bound_params == num_params) {
+    assert(!num_free_params);
+    os << os.Indent() << "if ";
+
+    if (1 < num_bound_params) {
+      os << '(';
+    }
+
+    auto sep = "";
+    for (auto param : decl.Parameters()) {
+      assert(param.Binding() == ParameterBinding::kBound);
+      os << sep << "param_" << param.Index();
+      sep = ", ";
+    }
+
+    if (1 < num_bound_params) {
+      os << ')';
+    }
+
+    os << " in ";
+
+    if (spec.index) {
+      os << TableIndex(os, *(spec.index));
+    } else {
+      os << Table(os, spec.table);
+    }
+    os << ":\n";
+    os.PushIndent();
+
   // This is a full table scan.
-  } else if (num_free_params) {
+  } else if (!num_bound_params) {
     assert(0u < num_free_params);
 
     os << os.Indent() << "for tuple in " << Table(os, spec.table)
@@ -1786,6 +1815,10 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   }
 
   os.PopIndent();
+
+  if (!num_free_params) {
+    os << os.Indent() << "return False\n";
+  }
 
   os.PopIndent();
   os << '\n';

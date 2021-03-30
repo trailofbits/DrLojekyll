@@ -246,7 +246,7 @@ switch (...) {
 
 ### Goto labels
 
-You may use `goto` statements, although please use them judiciously.
+You may use `goto` statements, although please use them sparingly.
 When using a `goto` statement, indent the label in line with the nearest
 enclosing `}`. For example:
 

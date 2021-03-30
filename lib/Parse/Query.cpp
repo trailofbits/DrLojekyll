@@ -30,6 +30,10 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
   DisplayPosition next_pos;
   Token name;
 
+  // Interpretation of this query as a clause.
+  std::vector<Token> clause_toks;
+  bool has_embedded_clauses = false;
+
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
@@ -43,6 +47,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
     switch (state) {
       case 0:
         if (Lexeme::kIdentifierAtom == lexeme) {
+          clause_toks.push_back(tok);
           name = tok;
           state = 1;
           continue;
@@ -55,6 +60,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         }
       case 1:
         if (Lexeme::kPuncOpenParen == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
@@ -115,6 +121,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         }
 
       case 5:
+        clause_toks.push_back(param->name);
 
         // Add the parameter in.
         if (!params.empty()) {
@@ -133,10 +140,12 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
+          clause_toks.push_back(tok);
           state = 2;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          clause_toks.push_back(tok);
           query.reset(AddDecl<ParsedQuery>(module, DeclarationKind::kQuery,
                                            name, params.size()));
           if (!query) {
@@ -163,6 +172,28 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
           query->last_tok = tok;
           state = 7;
           continue;
+
+        } else if (Lexeme::kPuncColon == lexeme) {
+          has_embedded_clauses = true;
+          clause_toks.push_back(tok);
+          for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
+            clause_toks.push_back(tok);
+          }
+
+          // Look at the last token.
+          if (Lexeme::kPuncPeriod == clause_toks.back().Lexeme()) {
+            query->last_tok = clause_toks.back();
+            state = 7;
+            continue;
+
+          } else {
+            context->error_log.Append(scope_range,
+                                      clause_toks.back().NextPosition())
+                << "Declaration of '" << query->name
+                << "' containing an embedded clause does not end with a period";
+            state = 8;
+            continue;
+          }
         }
         [[clang::fallthrough]];
 
@@ -188,8 +219,20 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
 
     RemoveDecl<ParsedQuery>(std::move(query));
   } else {
+    const auto decl_for_clause = query.get();
     FinalizeDeclAndCheckConsistency<ParsedQuery>(module->queries,
                                                  std::move(query));
+
+    // If we parsed a `:` after the head of the `#query` then
+    // go parse the attached bodies recursively.
+    if (has_embedded_clauses) {
+      sub_tokens.swap(clause_toks);
+      const auto prev_next_sub_tok_index = next_sub_tok_index;
+      next_sub_tok_index = 0;
+      ParseClause(module, decl_for_clause);
+      next_sub_tok_index = prev_next_sub_tok_index;
+      sub_tokens.swap(clause_toks);
+    }
   }
 }
 

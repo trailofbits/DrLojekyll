@@ -247,7 +247,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
             // Go try to parse the synthetic clause body, telling about our
             // synthetic declaration head.
-            ParseClause(module, Token(), anon_decl.get());
+            ParseClause(module, anon_decl.get());
 
             next_sub_tok_index = prev_next_sub_tok_index;
             sub_tokens.swap(anon_clause_toks);
@@ -294,7 +294,10 @@ bool ParserImpl::ParseAggregatedPredicate(
 
         // Convert literals into variables, just-in-time.
         if (Lexeme::kLiteralString == lexeme ||
-            Lexeme::kLiteralNumber == lexeme) {
+            Lexeme::kLiteralNumber == lexeme ||
+            Lexeme::kLiteralTrue == lexeme ||
+            Lexeme::kLiteralFalse == lexeme ||
+            Lexeme::kIdentifierConstant == lexeme) {
           arg = CreateLiteralVariable(clause, tok, false, true);
 
         } else if (Lexeme::kIdentifierVariable == lexeme ||
@@ -340,16 +343,27 @@ bool ParserImpl::ParseAggregatedPredicate(
             return false;
           }
 
-          // If it's an aggregating functor then we need to follow-up with
-          // the `over` keyword.
+          // Do some minor checks on the functor over which aggregation is
+          // happening. We disallow `blah1(..) over blah2(...) over ...`, and
+          // instead require intermediate or inline clause bodies to be used.
           auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred.get()));
-          if (pred_decl.IsFunctor() &&
-              ParsedFunctor::From(pred_decl).IsAggregate()) {
-
+          if (pred_decl.IsFunctor()) {
+            const auto pred_functor = ParsedFunctor::From(pred_decl);
             const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
-            context->error_log.Append(scope_range, err_range)
-                << "Cannot aggregate an aggregating functor '" << pred->name
-                << "', try using inline clauses instead";
+            if (pred_functor.IsAggregate()) {
+              context->error_log.Append(scope_range, err_range)
+                  << "Cannot aggregate an aggregating functor '" << pred->name
+                  << "', try using inline clauses instead";
+
+            // This is basically to keep the data flow builder simpler; we want
+            // to source of data feeding an aggregate into a basic view on which
+            // we can build, and thus treat as unconditionally and immediately
+            // available.
+            } else {
+              context->error_log.Append(scope_range, err_range)
+                  << "Cannot aggregate over a functor '" << pred->name
+                  << "'; aggregates must operate over relations";
+            }
             return false;
           }
 

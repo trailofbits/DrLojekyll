@@ -104,10 +104,12 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
   switch (vec.Kind()) {
     case VectorKind::kParameter: os << "$input"; break;
     case VectorKind::kInputOutputParameter: os << "$inout"; break;
-    case VectorKind::kInduction: os << "$induction"; break;
+    case VectorKind::kInductionCycles: os << "$induction_cycle"; break;
+    case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kTableScan: os << "$scan"; break;
+    case VectorKind::kEmpty: os << "$empty"; break;
   }
 
   os << ':' << vec.Id();
@@ -135,7 +137,17 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
 
 OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
   auto message = region.Message();
-  os << os.Indent() << "publish " << message.Name() << '/' << message.Arity();
+  os << os.Indent() << "publish ";
+
+  if (message.IsDifferential()) {
+    if (region.IsRemoval()) {
+      os << "remove ";
+    } else {
+      os << "add ";
+    }
+  }
+
+  os << message.Name() << '/' << message.Arity();
   auto sep = "(";
   auto end = "";
   for (auto arg : region.VariableArguments()) {
@@ -149,12 +161,6 @@ OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
 
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
   os << os.Indent();
-
-  const auto conditional =
-      region.ExecuteBodyIfReturnIsTrue() || region.ExecuteBodyIfReturnIsFalse();
-  if (conditional) {
-    os << "if ";
-  }
 
   os << "call " << region.CalledProcedure();
   auto sep = "(";
@@ -171,23 +177,23 @@ OutputStream &operator<<(OutputStream &os, ProgramCallRegion region) {
   }
   os << end;
 
-  if (region.ExecuteBodyIfReturnIsTrue()) {
-    os << " returns true";
-  } else if (region.ExecuteBodyIfReturnIsFalse()) {
-    os << " returns false";
-  }
+  os.PushIndent();
 
-  if (auto body = region.Body(); body) {
-    assert(conditional);
-
-    os << '\n';
+  if (auto true_body = region.BodyIfTrue(); true_body) {
+    os << '\n' << os.Indent() << "if-true\n";
     os.PushIndent();
-    os << *body;
+    os << *true_body;
     os.PopIndent();
-
-  } else {
-    assert(!conditional);
   }
+
+  if (auto false_body = region.BodyIfFalse(); false_body) {
+    os << '\n' << os.Indent() << "if-false\n";
+    os.PushIndent();
+    os << *false_body;
+    os.PopIndent();
+  }
+
+  os.PopIndent();
 
   return os;
 }
@@ -228,36 +234,30 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os,
-                         ProgramExistenceAssertionRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
   os << os.Indent();
+
+  const auto acc = region.Accumulator();
+  const auto disp = region.Displacement();
+  const auto cmp = region.Comparator();
+
   if (auto maybe_body = region.Body(); maybe_body) {
-    auto end = " result is 1\n";
-    auto sep = "if increment ";
-    if (region.IsDecrement()) {
-      sep = "if decrement ";
-      end = " result is 0\n";
-    }
+    if (region.IsAdd()) {
+      os << "if (" << acc << " += " << disp << ") == " << cmp << '\n';
 
-    for (auto var : region.ReferenceCounts()) {
-      os << sep << var;
-      sep = ", ";
+    } else if (region.IsSubtract()) {
+      os << "if (" << acc << " -= " << disp << ") == " << cmp << '\n';
     }
-
-    os << end;
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
 
   } else {
-    auto sep = "increment ";
-    if (region.IsDecrement()) {
-      sep = "decrement ";
-    }
+    if (region.IsAdd()) {
+      os << acc << " += " << disp << '\n';
 
-    for (auto var : region.ReferenceCounts()) {
-      os << sep << var;
-      sep = ", ";
+    } else if (region.IsSubtract()) {
+      os << acc << " -= " << disp << '\n';
     }
   }
 
@@ -267,15 +267,8 @@ OutputStream &operator<<(OutputStream &os,
 OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
   auto functor = region.Functor();
   os << os.Indent();
-  if (region.IsFilter()) {
-    os << "if ";
-  } else {
-    const char *sep = nullptr;
-    switch (functor.Range()) {
-      case FunctorRange::kZeroOrOne: sep = "assign-if {"; break;
-      case FunctorRange::kOneToOne: sep = "assign {"; break;
-      default: sep = "assign-each {"; break;
-    }
+  if (!region.IsFilter()) {
+    const char *sep = "assign {";
     for (auto var : region.OutputVariables()) {
       os << sep << var;
       sep = ", ";
@@ -298,16 +291,33 @@ OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
     sep = ", ";
   }
 
-  os << ")\n";
+  os << ')';
 
+  auto has_body = false;
+  os.PushIndent();
 
-  if (auto maybe_body = region.Body(); maybe_body) {
+  if (auto true_body = region.BodyIfResults(); true_body) {
+    os << '\n' << os.Indent() << "if-results\n";
     os.PushIndent();
-    os << (*maybe_body);
+    os << *true_body;
     os.PopIndent();
-  } else {
-    os << os.Indent() << "empty";
+    has_body = true;
   }
+
+  if (auto false_body = region.BodyIfEmpty(); false_body) {
+    os << '\n' << os.Indent() << "if-empty\n";
+    os.PushIndent();
+    os << *false_body;
+    os.PopIndent();
+    has_body = true;
+  }
+
+  if (!has_body) {
+    os << os.Indent() << "\n" << os.Indent() << "empty?!\n";
+  }
+
+  os.PopIndent();
+
   return os;
 }
 
@@ -643,7 +653,7 @@ class FormatDispatcher final : public ProgramVisitor {
 
   MAKE_VISITOR(ProgramCallRegion)
   MAKE_VISITOR(ProgramReturnRegion)
-  MAKE_VISITOR(ProgramExistenceAssertionRegion)
+  MAKE_VISITOR(ProgramTestAndSetRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
@@ -681,6 +691,7 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
     case ProcedureKind::kInitializer: os << "^init:"; break;
+    case ProcedureKind::kPrimaryDataFlowFunc: os << "^flow:"; break;
     case ProcedureKind::kMessageHandler:
       os << "^receive:";
       if (auto message = proc.Message(); message) {

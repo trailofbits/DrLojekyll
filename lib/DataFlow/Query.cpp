@@ -105,8 +105,6 @@ QueryView QueryView::Containing(QueryColumn col) {
   return QueryView(col.impl->view);
 }
 
-QueryView::QueryView(const QueryDelete &view) : QueryView(view.impl) {}
-
 QueryView::QueryView(const QuerySelect &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryTuple &view) : QueryView(view.impl) {}
@@ -126,10 +124,6 @@ QueryView::QueryView(const QueryNegate &view) : QueryView(view.impl) {}
 QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
-
-QueryView QueryView::From(const QueryDelete &view) noexcept {
-  return reinterpret_cast<const QueryView &>(view);
-}
 
 QueryView QueryView::From(const QuerySelect &view) noexcept {
   return reinterpret_cast<const QueryView &>(view);
@@ -198,8 +192,12 @@ const char *QueryView::KindName(void) const noexcept {
   return impl->KindName();
 }
 
-bool QueryView::IsDelete(void) const noexcept {
-  return impl->AsDelete() != nullptr;
+void QueryView::SetTableId(unsigned id) const noexcept {
+  impl->table_id.emplace(id);
+}
+
+std::optional<unsigned> QueryView::TableId(void) const noexcept {
+  return impl->table_id;
 }
 
 bool QueryView::IsSelect(void) const noexcept {
@@ -249,9 +247,13 @@ bool QueryView::IsUsedByNegation(void) const noexcept {
 
 // Apply a callback `on_negate` to each negation using this view.
 void QueryView::ForEachNegation(std::function<void(QueryNegate)> on_negate) const {
-  impl->ForEachUse<NEGATION>([&on_negate] (NEGATION *negate, VIEW *) {
+  auto found_any = false;
+  impl->ForEachUse<NEGATION>([&on_negate, &found_any] (NEGATION *negate, VIEW *) {
     on_negate(QueryNegate(negate));
+    found_any = true;
   });
+  assert(found_any == impl->is_used_by_negation);
+  (void) found_any;
 }
 
 // Can this view receive inputs that should logically "delete" entries?
@@ -423,9 +425,6 @@ void QueryView::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   } else if (auto insert = impl->AsInsert(); insert) {
     QueryInsert(insert).ForEachUse(std::move(with_col));
 
-  } else if (auto del = impl->AsDelete(); del) {
-    QueryDelete(del).ForEachUse(std::move(with_col));
-
   } else if (auto tuple = impl->AsTuple(); tuple) {
     QueryTuple(tuple).ForEachUse(std::move(with_col));
 
@@ -573,15 +572,6 @@ UsedNodeRange<QueryView> QueryCondition::NegativeUsers(void) const {
 // The list of views that set or unset this condition.
 UsedNodeRange<QueryView> QueryCondition::Setters(void) const {
   return {impl->setters.begin(), impl->setters.end()};
-}
-
-// Can this condition be deleted?
-bool QueryCondition::CanBeDeleted(void) const noexcept {
-  if (impl->declaration) {
-    return 0 < impl->declaration->NumDeletionClauses();
-  } else {
-    return false;
-  }
 }
 
 // Depth of this node.
@@ -1392,52 +1382,6 @@ void QueryInsert::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   }
 }
 
-QueryDelete QueryDelete::From(QueryView view) {
-  assert(view.IsDelete());
-  return reinterpret_cast<QueryDelete &>(view);
-}
-
-// The deleted columns.
-DefinedNodeRange<QueryColumn> QueryDelete::Columns(void) const {
-  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
-          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
-}
-
-QueryColumn QueryDelete::NthColumn(unsigned n) const noexcept {
-  assert(n < impl->columns.Size());
-  return QueryColumn(impl->columns[n]);
-}
-
-unsigned QueryDelete::NumInputColumns(void) const noexcept {
-  return static_cast<unsigned>(impl->input_columns.Size());
-}
-
-QueryColumn QueryDelete::NthInputColumn(unsigned n) const noexcept {
-  assert(n < impl->input_columns.Size());
-  return QueryColumn(impl->input_columns[n]);
-}
-
-UsedNodeRange<QueryColumn> QueryDelete::InputColumns(void) const noexcept {
-  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
-          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
-}
-
-OutputStream &QueryDelete::DebugString(OutputStream &os) const noexcept {
-  return impl->DebugString(os);
-}
-
-// Apply a callback `with_col` to each input column of this view.
-void QueryDelete::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
-                                                std::optional<QueryColumn>)>
-                                 with_col) const {
-  for (auto i = 0u, max_i = impl->columns.Size(); i < max_i; ++i) {
-    const auto out_col = impl->columns[i];
-    const auto in_col = impl->input_columns[i];
-    with_col(QueryColumn(in_col), InputColumnRole::kDeleted,
-             QueryColumn(out_col));
-  }
-}
-
 QueryTuple QueryTuple::From(QueryView view) {
   assert(view.IsTuple());
   return reinterpret_cast<QueryTuple &>(view);
@@ -1622,11 +1566,6 @@ DefinedNodeRange<QueryIO> Query::IOs(void) const {
 DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
   return {DefinedNodeIterator<QueryInsert>(impl->inserts.begin()),
           DefinedNodeIterator<QueryInsert>(impl->inserts.end())};
-}
-
-DefinedNodeRange<QueryDelete> Query::Deletes(void) const {
-  return {DefinedNodeIterator<QueryDelete>(impl->deletes.begin()),
-          DefinedNodeIterator<QueryDelete>(impl->deletes.end())};
 }
 
 DefinedNodeRange<QueryNegate> Query::Negations(void) const {

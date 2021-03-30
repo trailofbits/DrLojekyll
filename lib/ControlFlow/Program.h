@@ -79,6 +79,8 @@ class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
 
 using TABLEINDEX = Node<DataIndex>;
 
+class Context;
+
 // Represents a table of data.
 //
 // NOTE(pag): By default all tables already have a UNIQUE index on them.
@@ -97,7 +99,8 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   void Accept(ProgramVisitor &visitor);
 
   // Get or create a table in the program.
-  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, QueryView view);
+  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, Context &context,
+                                      QueryView view);
 
   // Get or create an index on the table.
   TABLEINDEX *GetOrCreateIndex(ProgramImpl *impl, std::vector<unsigned> cols);
@@ -110,6 +113,9 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   // Indexes that should be created on this table. By default, all tables have
   // a UNIQUE index.
   DefList<TABLEINDEX> indices;
+
+  // All views sharing this table.
+  std::vector<QueryView> views;
 };
 
 using TABLE = Node<DataTable>;
@@ -296,10 +302,11 @@ enum class ProgramOperation {
   kCheckStateInTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
-  kAppendInductionInputToVector,
-  kLoopOverInductionInputVector,
-  kClearInductionInputVector,
+  kAppendToInductionVector,
+  kLoopOverInductionVector,
+  kClearInductionVector,
   kSwapInductionVector,
+  kSortAndUniqueInductionVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
   // cycle.
@@ -359,17 +366,11 @@ enum class ProgramOperation {
 
   // Used to test reference count variables associated with `QueryCondition`
   // nodes in the data flow.
-  kTestAllNonZero,
-  kTestAllZero,
-  kIncrementAll,
-  kIncrementAllAndTest,
-  kDecrementAll,
-  kDecrementAllAndTest,
+  kTestAndAdd,
+  kTestAndSub,
 
   // Call another procedure.
   kCallProcedure,
-  kCallProcedureCheckTrue,
-  kCallProcedureCheckFalse,
 
   // Return from a procedure.
   kReturnTrueFromProcedure,
@@ -397,8 +398,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
   virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
-  virtual Node<ProgramExistenceAssertionRegion> *
-  AsExistenceAssertion(void) noexcept;
+  virtual Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
@@ -472,8 +472,9 @@ class Node<ProgramVectorLoopRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
-  inline Node(REGION *parent_, ProgramOperation op_)
+  inline Node(unsigned id_, REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
+        id(id_),
         defined_vars(this) {}
 
   uint64_t Hash(uint32_t depth) const override;
@@ -488,6 +489,9 @@ class Node<ProgramVectorLoopRegion> final
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
+
+  // ID of this region.
+  const unsigned id;
 
   // Local variables bound to the vector being looped.
   DefList<VAR> defined_vars;
@@ -744,6 +748,10 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
   // Vectors passed as arguments.
   UseList<VECTOR> arg_vecs;
 
+  // If the `call` returns `true`, then `body` is executed, otherwise if it
+  // returns `false` then `false_body` is executed.
+  UseRef<REGION> false_body;
+
   const unsigned id;
 };
 
@@ -811,14 +819,13 @@ using PUBLISH = Node<ProgramPublishRegion>;
 
 // Represents a positive or negative existence check.
 template <>
-class Node<ProgramExistenceAssertionRegion> final
+class Node<ProgramTestAndSetRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
   inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
-      : Node<ProgramOperationRegion>(parent_, op_),
-        cond_vars(this) {}
+      : Node<ProgramOperationRegion>(parent_, op_) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -833,14 +840,16 @@ class Node<ProgramExistenceAssertionRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
-  Node<ProgramExistenceAssertionRegion> *
-  AsExistenceAssertion(void) noexcept override;
+  Node<ProgramTestAndSetRegion> *
+  AsTestAndSet(void) noexcept override;
 
-  // Variables associated with these existence checks.
-  UseList<VAR> cond_vars;
+  // The variables are used as `(src_dest OP= update_val) == comapre_val`.
+  UseRef<VAR> accumulator;
+  UseRef<VAR> displacement;
+  UseRef<VAR> comparator;
 };
 
-using ASSERT = Node<ProgramExistenceAssertionRegion>;
+using ASSERT = Node<ProgramTestAndSetRegion>;
 
 // An equi-join between two or more tables.
 template <>
@@ -1004,15 +1013,14 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
   inline Node(Node<ProgramRegion> *parent_, ParsedFunctor functor_,
-              unsigned id_, bool is_positive_)
+              unsigned id_)
       : Node<ProgramOperationRegion>(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
         defined_vars(this),
         used_vars(this),
-        id(id_),
-        is_positive(is_positive_) {}
+        id(id_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1036,9 +1044,14 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
   // Bound variables passed in as arguments to the functor.
   UseList<VAR> used_vars;
 
-  const unsigned id;
+  // If the `functor` produces results, then `body` is executed, otherwise if it
+  // doesn't produce results then `empty_body` is executed.
+  UseRef<REGION> empty_body;
 
-  const bool is_positive;
+  // Unique ID of this node. Useful during codegen to ensure we can count the
+  // results of one generate without it interfering with the count of a nested
+  // generate.
+  const unsigned id;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;
@@ -1104,11 +1117,6 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
   // a raw, non-`UseRef`/`UseList` pointer to this procedure, such as inside
   // of `ProgramQuery` specifications.
   bool has_raw_use{false};
-
-  // Should we not bother trying to merge this function with another one? This
-  // comes up when this function has been converted into a call to another one
-  // (due to equivalence, but where both are marked with `has_raw_use`).
-  bool is_alias{false};
 };
 
 using PROC = Node<ProgramProcedure>;
@@ -1226,22 +1234,42 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // It could be the case that a when going through the induction we end up
   // going into a co-mingled induction, as is the case in
-  // `transitive_closure2.dr` and `transitive_closure3.dr`.
-  std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_input_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_induction_vec;
+  // `transitive_closure2.dr` and `transitive_closure3.dr`. Thus, we have
+  // multiple vectors which must be maintained during an induction.
+
+  // This is the cycle vector, i.e. each iteration of the induction's fixpoint
+  // loop operates on this vector. The init region of an induction fills this
+  // vector.
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_vec;
+
+  // This is the swap vector. Inside of a fixpoint loop, we swap this with the
+  // normal vector, so that the current iteration of the loop can append to
+  // the normal vector, while still allowing us to iterate over what was added
+  // from the prior iteration of the fixpoint loop.
+  std::unordered_map<QueryView, VECTOR *> view_to_swap_vec;
+
+  // This is the output vector; it accumulates everything from all iterations
+  // of the fixpoint loop.
+  std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
-  std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
+  std::vector<OP *> init_appends;
+  std::vector<OP *> cycle_appends;
 
-  PROC *cycle_proc{nullptr};
-  PROC *output_proc{nullptr};
+  std::vector<PARALLEL *> output_cycles;
+  std::vector<PARALLEL *> output_remove_cycles;
+
+  std::vector<PARALLEL *> fixpoint_cycles;
+  std::vector<PARALLEL *> fixpoint_remove_cycles;
 
   enum State {
     kAccumulatingInputRegions,
     kAccumulatingCycleRegions,
     kBuildingOutputRegions
   } state = kAccumulatingInputRegions;
+
+  // Can this induction produce deletions?
+  bool is_differential{false};
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;
@@ -1250,9 +1278,10 @@ class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
 
-  inline explicit ProgramImpl(Query query_)
+  inline explicit ProgramImpl(Query query_, IRFormat format_)
       : User(this),
         query(query_),
+        format(format_),
         query_checkers(this),
         procedure_regions(this),
         series_regions(this),
@@ -1271,6 +1300,9 @@ class ProgramImpl : public User {
 
   // The data flow representation from which this was created.
   const Query query;
+
+  // The format of the IR.
+  const IRFormat format;
 
   // Globally numbers things like procedures, variables, vectors, etc.
   unsigned next_id{0u};

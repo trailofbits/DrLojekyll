@@ -10,7 +10,7 @@ class ContinueProductWorkItem final : public WorkItem {
   virtual ~ContinueProductWorkItem(void) {}
 
   ContinueProductWorkItem(Context &context, QueryView view_)
-      : WorkItem(context, view_.Depth()),
+      : WorkItem(context, (view_.Depth() << kOrderShift) + kConitnueJoinOrder),
         view(view_) {}
 
   // Find the common ancestor of all insert regions.
@@ -43,7 +43,13 @@ REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor->NearestRegionEnclosedByInduction();
+  // NOTE(pag): We *CAN'T* go any higher than `common_ancestor`, because then
+  //            we might accidentally "capture" the vector appends for an
+  //            unrelated induction, thereby introducing super weird ordering
+  //            problems where an induction A is contained in the init region
+  //            of an induction B, and B's fixpoint cycle region appends to
+  //            A's induction vector.
+  return common_ancestor;
 }
 
 void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
@@ -138,18 +144,18 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     // Call the predecessors. If any of the predecessors return `false` then
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
-      const auto index_is_good = CallTopDownChecker(
-          impl, context, parent, view, view_cols, pred_view,
-          ProgramOperation::kCallProcedureCheckTrue, nullptr);
+      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
+          impl, context, parent, view, view_cols, pred_view, nullptr);
 
-      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
+      COMMENT( index_is_good_call->comment =
+          __FILE__ ": ContinueJoinWorkItem::Run"; )
 
       parent->body.Emplace(parent, index_is_good);
-      parent = index_is_good;
+      parent = index_is_good_call;
     }
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              nullptr);
 }
 
@@ -187,7 +193,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
       }
     });
 
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                                last_table);
     return;
   }

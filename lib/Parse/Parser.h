@@ -184,7 +184,7 @@ class ParserImpl {
                                  Node<ParsedPredicate> *pred);
 
   // Try to parse `sub_range` as a clause.
-  void ParseClause(Node<ParsedModule> *module, Token negation_tok = Token(),
+  void ParseClause(Node<ParsedModule> *module,
                    Node<ParsedDeclaration> *decl = nullptr);
 
   // Create a variable.
@@ -233,12 +233,9 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
 
-  std::shared_ptr<parse::DeclarationContext> decl_context;
-
   // This is the first time we've seen this declaration.
   if (first_decl_it == context->declarations.end()) {
     auto decl = new Node<T>(module, kind);
-    decl_context = decl->context;
     context->declarations.emplace(id, decl);
     return decl;
   }
@@ -246,7 +243,7 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
   // We've seen this declaration before.
   const auto first_decl = first_decl_it->second;
 
-  decl_context = first_decl->context;
+  const auto &decl_context = first_decl->context;
   if (decl_context->kind != kind) {
     auto err = context->error_log.Append(scope_range, name.SpellingRange());
     err << "Cannot re-declare '" << first_decl->name << "' as a "
@@ -313,6 +310,29 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
       assert(!decl->is_merge);
       decl->is_merge = true;
       decl->range = FunctorRange::kOneToOne;
+    }
+
+    // Different differential attributes.
+    if (prev_decl->differential_attribute.IsValid() !=
+        decl->differential_attribute.IsValid()) {
+
+      if (decl->differential_attribute.IsValid()) {
+        auto err = context->error_log.Append(
+            scope_range, decl->differential_attribute.SpellingRange());
+        err << "Message is marked as differential, but prior declaration isn't";
+
+        auto note = err.Note(T(prev_decl).SpellingRange());
+        note << "Previous declaration is here";
+
+      } else {
+        auto err = context->error_log.Append(
+            T(prev_decl).SpellingRange(),
+            prev_decl->differential_attribute.SpellingRange());
+        err << "Message is marked as differential, but redeclaration isn't";
+
+        auto note = err.Note(scope_range);
+        note << "Redeclaration is here";
+      }
     }
 
     // The inferred range specifications don't match.

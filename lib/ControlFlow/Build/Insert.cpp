@@ -63,7 +63,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                                last_table);
 
   } else {
@@ -75,84 +75,67 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 // that backs this INSERT is somehow subject to differential updates, e.g.
 // because it is downstream from an aggregate or kvindex.
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, PROC *proc,
-                                 TABLE *already_checked) {
-  const auto insert = QueryInsert::From(view);
-  const auto insert_cols = insert.InputColumns();
+                                 QueryView view, OP *parent_,
+                                 TABLE *already_removed_) {
 
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  REGION *parent = proc;
-  UseRef<REGION> *parent_body = &(proc->body);
-
-  // This insert is associated with persistent storage. It could be an insert
-  // into a relation or a stream; in the stream case, it just means the insert
-  // shares its data model with its predecessor.
-  if (model->table) {
-
-    // The caller didn't already do a state transition, so we have to do it.
-    if (already_checked != model->table) {
-      auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, insert_cols,
-          [&](PARALLEL *par) {
-            const auto let = impl->operation_regions.CreateDerived<LET>(par);
-            par->AddRegion(let);
-            parent = let;
-            parent_body = &(let->body);
-          });
-
-      proc->body.Emplace(proc, remove);
-      already_checked = model->table;
-    }
-
-  // This insert isn't associated with any persistent storage.
-  // It must be a stream.
-  } else {
-    assert(insert.IsStream());
-    already_checked = nullptr;
-  }
 
   // Figure out which columns of the predecessor we have.
   const auto predecessors = view.Predecessors();
   assert(predecessors.size() == 1u);
   const QueryView pred_view = predecessors[0];
 
-  std::vector<QueryColumn> available_cols;
-  for (auto col : insert_cols) {
-    if (QueryView::Containing(col) == pred_view) {
-      available_cols.push_back(col);
-    }
-  }
-
-  // Sort in order of index, and then unique them.
-  std::sort(available_cols.begin(), available_cols.end(),
-            [] (QueryColumn a, QueryColumn b) {
-              return *(a.Index()) < *(b.Index());
-            });
-  auto it = std::unique(available_cols.begin(), available_cols.end());
-  available_cols.erase(it, available_cols.end());
-
-  const auto checker_proc = GetOrCreateTopDownChecker(
-      impl, context, pred_view, available_cols, model->table);
-
-  // Now call the checker procedure. Unlike in normal checkers, we're doing
-  // a check on `false`.
-  const auto check = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent, checker_proc,
-      ProgramOperation::kCallProcedureCheckFalse);
-  for (auto col : available_cols) {
-    check->arg_vars.AddUse(parent->VariableFor(impl, col));
-  }
-
-  COMMENT( check->comment = __FILE__ ": CreateBottomUpInsertRemover"; )
-
-  // Now we're inside of the check, and we know for certain this tuple has
-  // been removed because the checker function returned `false`.
-  parent_body->Emplace(parent, check);
-  parent = check;
-  parent_body = &(check->body);
+  const auto insert = QueryInsert::From(view);
+  const auto insert_cols = insert.InputColumns();
 
   // If were doing a removal to a stream, then we want to publish the removal.
   if (insert.IsStream()) {
+    auto parent = parent_;
+    auto parent_body = &(parent->body);
+
+    // If we're removing from a stream, and our caller is telling us that
+    // is hasn't checked anything, then it means we should check stuff,
+    // otherwise we'll trust that the thing is truly gone.
+    if (!already_removed_) {
+      auto [parent2, table, already_removed] = InTryMarkUnknown(
+          impl, view, parent_, already_removed_);
+      parent = parent2;
+      parent_body = &(parent->body);
+
+      std::vector<QueryColumn> available_cols;
+      for (auto col : insert_cols) {
+        if (QueryView::Containing(col) == pred_view) {
+          available_cols.push_back(col);
+        }
+      }
+
+      // Sort in order of index, and then unique them.
+      std::sort(available_cols.begin(), available_cols.end(),
+                [] (QueryColumn a, QueryColumn b) {
+                  return *(a.Index()) < *(b.Index());
+                });
+      auto it = std::unique(available_cols.begin(), available_cols.end());
+      available_cols.erase(it, available_cols.end());
+
+      const auto checker_proc = GetOrCreateTopDownChecker(
+          impl, context, pred_view, available_cols, table);
+
+      // Now call the checker procedure. Unlike in normal checkers, we're doing
+      // a check on `false`.
+      const auto check = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, parent, checker_proc);
+      for (auto col : available_cols) {
+        check->arg_vars.AddUse(parent->VariableFor(impl, col));
+      }
+
+      COMMENT( check->comment = __FILE__ ": CreateBottomUpInsertRemover"; )
+
+      // Now we're inside of the check, and we know for certain this tuple has
+      // been removed because the checker function returned `false`.
+      parent_body->Emplace(parent, check);
+      parent = check;
+      parent_body = &(check->false_body);
+    }
+
     const auto stream = insert.Stream();
     assert(stream.IsIO());
     auto io = QueryIO::From(stream);
@@ -173,33 +156,29 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
   // Otherwise, call our successor removal functions. In this case, we're trying
   // to call the removers associated with every `QuerySelect` node.
   } else {
+    auto [parent, table, already_removed] = InTryMarkUnknown(
+        impl, view, parent_, already_removed_);
+    auto parent_body = &(parent->body);
+
     const auto par = impl->parallel_regions.Create(parent);
     parent_body->Emplace(parent, par);
     parent_body = nullptr;
-    parent = par;
+    parent = nullptr;
+
+    // Make sure that we've already done the checking for these nodes.
+    assert(table != nullptr);
+    assert(already_removed == table);
 
     for (auto succ_view : view.Successors()) {
       assert(succ_view.IsSelect());
 
-      const auto sel_cols = succ_view.Columns();
-      assert(sel_cols.size() == insert_cols.size());
+      assert(succ_view.Columns().size() == insert_cols.size());
 
-      for (auto sel_succ : succ_view.Successors()) {
+      auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
 
-        const auto call = impl->operation_regions.CreateDerived<CALL>(
-            impl->next_id++, par,
-            GetOrCreateBottomUpRemover(impl, context, succ_view, sel_succ,
-                                       already_checked));
-
-        for (auto sel_col : sel_cols) {
-          const auto var =
-              proc->VariableFor(impl, insert_cols[*(sel_col.Index())]);
-          assert(var != nullptr);
-          call->arg_vars.AddUse(var);
-        }
-
-        par->AddRegion(call);
-      }
+      BuildEagerRemovalRegions(impl, succ_view, context, let,
+                               succ_view.Successors(), already_removed);
     }
   }
 }
@@ -225,15 +204,14 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // NOTE(pag): `view_cols` is already expressed in terms of `pred_view`.
   if (already_checked == model->table ||
       model->table == pred_model->table) {
-    const auto check = CallTopDownChecker(
-        impl, context, proc, pred_view, view_cols, pred_view,
-        ProgramOperation::kCallProcedureCheckTrue, already_checked);
+    const auto [check, check_call] = CallTopDownChecker(
+        impl, context, proc, pred_view, view_cols, pred_view, already_checked);
     proc->body.Emplace(proc, check);
 
-    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker"; )
+    COMMENT( check_call->comment = __FILE__ ": BuildTopDownInsertChecker"; )
 
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    check->body.Emplace(check, ret_true);
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
+    check_call->body.Emplace(check_call, ret_true);
     return;
   }
 

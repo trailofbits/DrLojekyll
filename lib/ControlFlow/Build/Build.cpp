@@ -2,6 +2,8 @@
 
 #include "Build.h"
 
+#include <drlojekyll/Parse/ErrorLog.h>
+
 #include <algorithm>
 #include <sstream>
 
@@ -19,18 +21,15 @@ static std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
     const auto view = frontier.back();
     frontier.pop_back();
     for (auto pred_view : view.Predecessors()) {
-      if (!dependencies.count(pred_view)) {
-        dependencies.insert(pred_view);
+      if (auto [it, added] = dependencies.insert(pred_view); added) {
         frontier.push_back(pred_view);
       }
     }
 
-    // TODO(pag): Think about this.
-    if (false && view.IsNegate()) {
+    if (view.IsNegate()) {
       const auto negate = QueryNegate::From(view);
       const auto pred_view = negate.NegatedView();
-      if (!dependencies.count(pred_view)) {
-        dependencies.insert(pred_view);
+      if (auto [it, added] = dependencies.insert(pred_view); added) {
         frontier.push_back(pred_view);
       }
     }
@@ -49,95 +48,19 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
     const auto view = frontier.back();
     frontier.pop_back();
     for (auto succ_view : view.Successors()) {
-      if (!dependents.count(succ_view)) {
-        dependents.insert(succ_view);
+      if (auto [it, added] = dependents.insert(succ_view); added) {
         frontier.push_back(succ_view);
       }
     }
 
-    // TODO(pag): Think about this.
-    if (false && view.IsUsedByNegation()) {
-      view.ForEachNegation([&] (QueryNegate negate) {
-        if (!dependents.count(negate)) {
-          dependents.insert(negate);
-          frontier.push_back(negate);
-        }
-      });
-    }
+    view.ForEachNegation([&] (QueryNegate negate) {
+      if (auto [it, added] = dependents.insert(negate); added) {
+        frontier.push_back(negate);
+      }
+    });
   }
 
   return dependents;
-}
-
-// Build an eager region where this eager region is being unconditionally
-// executed, i.e. ignoring whether or not `view.PositiveConditions()` or
-// `view.NegativeConditions()` have elements.
-static void BuildUnconditionalEagerRegion(ProgramImpl *impl,
-                                          QueryView pred_view, QueryView view,
-                                          Context &context, OP *parent,
-                                          TABLE *last_table) {
-
-  if (view.IsJoin()) {
-    const auto join = QueryJoin::From(view);
-    if (join.NumPivotColumns()) {
-      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
-    } else {
-      BuildEagerProductRegion(impl, pred_view, join, context, parent,
-                              last_table);
-    }
-
-  } else if (view.IsMerge()) {
-    const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view) &&
-        !context.dominated_merges.count(view)) {
-      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
-                                last_table);
-    } else {
-      BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
-                            last_table);
-    }
-
-  } else if (view.IsAggregate()) {
-    assert(false && "TODO(pag): Aggregates");
-
-  } else if (view.IsKVIndex()) {
-    assert(false && "TODO(pag): KV Indices.");
-
-  } else if (view.IsMap()) {
-    auto map = QueryMap::From(view);
-    if (map.Functor().IsPure()) {
-      BuildEagerGenerateRegion(impl, map, context, parent);
-
-    } else {
-      assert(false && "TODO(pag): Impure functors");
-    }
-
-  } else if (view.IsCompare()) {
-    BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
-
-  } else if (view.IsSelect()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
-                               last_table);
-
-  } else if (view.IsTuple()) {
-    BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
-                          parent, last_table);
-
-  } else if (view.IsInsert()) {
-    const auto insert = QueryInsert::From(view);
-    BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
-                           last_table);
-
-  } else if (view.IsDelete()) {
-    BuildEagerDeleteRegion(impl, view, context, parent);
-
-  } else if (view.IsNegate()) {
-    const auto negate = QueryNegate::From(view);
-    BuildEagerNegateRegion(impl, pred_view, negate, context, parent);
-
-  } else {
-    assert(false);
-  }
 }
 
 // Map all variables to their defining regions.
@@ -167,6 +90,11 @@ static void MapVariables(REGION *region) {
       for (auto var : gen->defined_vars) {
         var->defining_region = region;
       }
+
+      MapVariables(gen->empty_body.get());
+
+    } else if (auto call = op->AsCall(); call) {
+      MapVariables(call->false_body.get());
     }
 
     MapVariables(op->body.get());
@@ -193,67 +121,195 @@ static void MapVariables(REGION *region) {
 }
 
 // Create a procedure for a view.
-static void BuildEagerProcedure(ProgramImpl *impl, QueryIO io,
-                                Context &context) {
+static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
+                                 Context &context, PROC *proc,
+                                 PARALLEL *parent) {
   const auto receives = io.Receives();
   if (receives.empty()) {
     return;
   }
 
-  const auto proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kMessageHandler);
-  proc->io = io;
+  assert(io.Declaration().IsMessage());
+  const auto message = ParsedMessage::From(io.Declaration());
+  (void) message;
 
+  VECTOR *removal_vec = nullptr;
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      proc, ProgramOperation::kLoopOverInputVector);
-  auto par = impl->parallel_regions.Create(loop);
 
-  for (auto col : receives[0].Columns()) {
-    const auto var = loop->defined_vars.Create(impl->next_id++,
-                                               VariableRole::kVectorVariable);
-    var->query_column = col;
-    loop->col_id_to_var.emplace(col.Id(), var);
+  // Loop over the receives for adding.
+  for (auto receive : receives) {
+
+    // Add a removal vector if any of the receives can receive deletions.
+    if (!removal_vec && receive.CanReceiveDeletions()) {
+      removal_vec = proc->VectorFor(
+          impl, VectorKind::kParameter, receive.Columns());
+    }
+
+    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+    parent->AddRegion(loop);
+    loop->vector.Emplace(loop, vec);
+
+    for (auto col : receives[0].Columns()) {
+      const auto var = loop->defined_vars.Create(impl->next_id++,
+                                                 VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+    }
+
+    BuildEagerInsertionRegions(impl, receive, context, loop,
+                               receive.Successors(), nullptr);
   }
 
-  loop->body.Emplace(loop, par);
-  loop->vector.Emplace(loop, vec);
-  proc->body.Emplace(proc, loop);
+  if (!removal_vec) {
+    assert(!message.IsDifferential());
+    return;
+  }
+
+  assert(message.IsDifferential());
+
+  // Loop over the receives for adding.
+  for (auto receive : receives) {
+    if (!receive.CanReceiveDeletions()) {
+      continue;
+    }
+
+    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+    parent->AddRegion(loop);
+    loop->vector.Emplace(loop, removal_vec);
+
+    for (auto col : receives[0].Columns()) {
+      const auto var = loop->defined_vars.Create(impl->next_id++,
+                                                 VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+    }
+
+    BuildEagerRemovalRegions(impl, receive, context, loop,
+                             receive.Successors(), nullptr);
+  }
+}
+
+// Builds an I/O procedure, which goes and invokes the primary data flow
+// procedure.
+static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
+                             Context &context, PROC *proc) {
+  const auto receives = io.Receives();
+  if (receives.empty()) {
+    return;
+  }
+
+  assert(io.Declaration().IsMessage());
+  const auto message = ParsedMessage::From(io.Declaration());
+
+  const auto io_proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kMessageHandler);
+  io_proc->io = io;
+
+  const auto io_vec =
+      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+
+  VECTOR *io_remove_vec = nullptr;
+  if (message.IsDifferential()) {
+    io_remove_vec =
+        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  }
+
+  auto seq = impl->series_regions.Create(io_proc);
+  io_proc->body.Emplace(io_proc, seq);
+
+  auto call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, seq, proc);
+  seq->AddRegion(call);
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->AddRegion(ret);
+
+  for (auto other_io : query.IOs()) {
+    const auto other_receives = other_io.Receives();
+    if (other_receives.empty()) {
+      continue;
+    }
+
+    // Pass in our input vector for additions, and possibly our input vector
+    // for removals.
+    if (io == other_io) {
+      call->arg_vecs.AddUse(io_vec);
+      if (io_remove_vec) {
+        call->arg_vecs.AddUse(io_remove_vec);
+      }
+
+    // Pass in the empty vector once or twice for other messages.
+    } else {
+      const auto empty_vec = io_proc->VectorFor(
+          impl, VectorKind::kEmpty, other_receives[0].Columns());
+      call->arg_vecs.AddUse(empty_vec);
+      if (other_receives[0].CanReceiveDeletions()) {
+        call->arg_vecs.AddUse(empty_vec);
+      }
+    }
+  }
+}
+
+// Build the primary data flow procedure.
+static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
+                                Query query) {
 
   assert(context.work_list.empty());
   assert(context.view_to_work_item.empty());
 
+  const auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
+
   context.work_list.clear();
-//  context.view_to_work_item.clear();
-//  context.view_to_induction.clear();
-//  context.product_vector.clear();
 
-  for (auto receive : io.Receives()) {
-    auto let = impl->operation_regions.CreateDerived<LET>(par);
-    let->ExecuteAlongside(impl, par);
+  //  context.view_to_work_item.clear();
+  //  context.view_to_induction.clear();
+  //  context.product_vector.clear();
 
-    auto i = 0u;
-    for (auto col : receive.Columns()) {
-      auto first_col = receives[0].Columns()[i++];
-      if (col.Id() != first_col.Id()) {
-        let->used_vars.AddUse(par->VariableFor(impl, first_col));
-        const auto var = let->defined_vars.Create(impl->next_id++,
-                                                  VariableRole::kLetBinding);
-        var->query_column = col;
-        loop->col_id_to_var.emplace(col.Id(), var);
-      }
-    }
+  // TODO(pag): Possible future bug lies here. So, right now we group everything
+  //            into one PARALLEL, `par`, then build out from there. But maybe
+  //            the right approach is to place them into independent parallel
+  //            nodes, then somehow merge them. I think this will be critical
+  //            when there are more than one message being received. Comment
+  //            below, kept for posterity, relates to my thinking on this
+  //            subject.
+  //
+  // This is subtle. We can't group all messages into a single PARALLEL node,
+  // otherwise some messages will get "sucked into" an induction region reached
+  // by a possibly unrelated message, and thus the logical ordering of
+  // inductions will get totally screwed up. For example, one induction A might
+  // be embedded in another induction B's init region, but B's cycle/output
+  // regions will append to A's induction vector!
+  //
+  // Really, we need to pretend that all of messages are treated completely
+  // independently at first, and then allow `CompleteProcedure` and the work
+  // list, which partially uses depth for ordering, to figure the proper order
+  // for regions. This is tricky because we need to place anything we find,
+  // in terms of.
+  //
+  // --- END of old, semi-unrelated, speculative comment.
 
-    BuildEagerSuccessorRegions(impl, receive, context, let,
-                               receive.Successors(), nullptr);
+  const auto par = impl->parallel_regions.Create(proc);
+  proc->body.Emplace(proc, par);
+
+  for (auto io : query.IOs()) {
+    ExtendEagerProcedure(impl, io, context, proc, par);
   }
 
   CompleteProcedure(impl, proc, context);
+
+  for (auto io : query.IOs()) {
+    BuildIOProcedure(impl, query, io, context, proc);
+  }
 }
 
 // Analyze the MERGE/UNION nodes and figure out which ones are inductive.
-static void DiscoverInductions(const Query &query, Context &context) {
+static void DiscoverInductions(const Query &query, Context &context,
+                               const ErrorLog &log) {
   unsigned merge_id = 0u;
   for (auto view : query.Merges()) {
     context.merge_sets.emplace(view, merge_id++);
@@ -402,6 +458,69 @@ static void DiscoverInductions(const Query &query, Context &context) {
       }
     }
   }
+
+  auto missing_base_case = [&] (QueryView view) -> bool {
+    auto size = 0ull;
+    if (auto it = context.noninductive_predecessors.find(view);
+        it != context.noninductive_predecessors.end()) {
+      size = it->second.size();
+    }
+    return size == 0u;
+  };
+
+  // Sanity check; look for programs that cannot be linearized into our
+  // control-flow format.
+  std::unordered_map<ParsedClause, std::vector<ParsedVariable>> bad_vars;
+  for (const auto &[view, cyclic_pred_list] : context.inductive_predecessors) {
+    if (!missing_base_case(view)) {
+      continue;
+    }
+
+    // This inductive merge has no "true" base case. Lets go make sure that
+    // at least on of the inductions in this merge's induction set has a proper
+    // base case.
+    auto all_missing = true;
+    const auto &set = context.merge_sets[view];
+    for (auto other_view : set.all_merges) {
+      if (!missing_base_case(other_view)) {
+        all_missing = false;
+        break;
+      }
+    }
+
+    // At least one of them does.
+    if (!all_missing) {
+      continue;
+    }
+
+    // None of them do :-(
+    for (QueryColumn col : view.Columns()) {
+      if (col.IsConstant()) {
+        continue;
+      }
+
+      auto var = col.Variable();
+      auto clause = ParsedClause::Containing(var);
+      bad_vars[clause].push_back(var);
+    }
+  }
+
+  // Complain about this if the declarations aren't marked as divergent.
+  for (const auto &[clause, vars] : bad_vars) {
+    auto decl = ParsedDeclaration::Of(clause);
+    if (decl.IsDivergent()) {
+      continue;
+    }
+
+    auto err = log.Append(clause.SpellingRange());
+    err << "Clause introduces non-linearizable induction cycle; it seems like "
+        << "every body of this clause (in)directly depends upon itself -- at "
+        << "least one body must depend on something else";
+
+    err.Note(decl.SpellingRange())
+          << "This error can be disabled (at your own risk) by marking this "
+          << "declaration with the '@divergent' pragma";
+  }
 }
 
 // Figure out what data definitely must be stored persistently. We need to do
@@ -445,61 +564,64 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     const QueryView view(merge);
 
     if (is_conditional(view)) {
-      (void) TABLE::GetOrCreate(impl, view);
+      (void) TABLE::GetOrCreate(impl, context, view);
 
     // All inductions need to have persistent storage.
     } else if (context.inductive_successors.count(view) &&
                !context.dominated_merges.count(view)) {
-      (void) TABLE::GetOrCreate(impl, view);
+      (void) TABLE::GetOrCreate(impl, context, view);
 
     // UNIONs that aren't dominating their inductions, or that aren't part of
     // inductions, need to be persisted if they are differential.
     } else if (MayNeedToBePersistedDifferential(view)) {
-      (void) TABLE::GetOrCreate(impl, view);
+      (void) TABLE::GetOrCreate(impl, context, view);
     }
   }
 
   // Inserting into a relation requires a table.
   for (auto insert : query.Inserts()) {
     if (insert.IsRelation()) {
-      (void) TABLE::GetOrCreate(impl, insert);
+      (void) TABLE::GetOrCreate(impl, context, insert);
     }
   }
 
   // Selecting from a relation requires a model.
   for (auto select : query.Selects()) {
     if (select.IsRelation()) {
-      (void) TABLE::GetOrCreate(impl, select);
+      (void) TABLE::GetOrCreate(impl, context, select);
     }
   }
 
   // Negations must be backed by tables.
   for (auto negate : query.Negations()) {
-    (void) TABLE::GetOrCreate(impl, negate);
-    (void) TABLE::GetOrCreate(impl, negate.NegatedView());
+    (void) TABLE::GetOrCreate(impl, context, negate);
+    (void) TABLE::GetOrCreate(impl, context, negate.NegatedView());
+    for (QueryView pred : QueryView(negate).Predecessors()) {
+      (void) TABLE::GetOrCreate(impl, context, pred);
+    }
   }
 
   // All data feeding into a join must be persistently backed.
   for (auto join : query.Joins()) {
     for (QueryView pred : QueryView(join).Predecessors()) {
-      (void) TABLE::GetOrCreate(impl, pred);
+      (void) TABLE::GetOrCreate(impl, context, pred);
     }
 
     // If this join sets a condition, then persist it.
     if (is_conditional(join)) {
-      (void) TABLE::GetOrCreate(impl, join);
+      (void) TABLE::GetOrCreate(impl, context, join);
     }
   }
 
   for (auto cmp : query.Compares()) {
     if (is_conditional(cmp)) {
-      (void) TABLE::GetOrCreate(impl, cmp);
+      (void) TABLE::GetOrCreate(impl, context, cmp);
     }
   }
 
   for (auto map : query.Maps()) {
     if (is_conditional(map)) {
-      (void) TABLE::GetOrCreate(impl, map);
+      (void) TABLE::GetOrCreate(impl, context, map);
     }
   }
 
@@ -507,7 +629,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     const QueryView view(tuple);
 
     if (is_conditional(view)) {
-      (void) TABLE::GetOrCreate(impl, view);
+      (void) TABLE::GetOrCreate(impl, context, view);
     }
 
     // NOTE(pag): TUPLEs are the only view types allowed to have all-constant
@@ -520,7 +642,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     const auto pred_view = predecessors[0];
     if (MayNeedToBePersistedDifferential(view) &&
         !CanDeferPersistingToPredecessor(impl, context, view, pred_view)) {
-      (void) TABLE::GetOrCreate(impl, view);
+      (void) TABLE::GetOrCreate(impl, context, view);
     }
   }
 
@@ -562,7 +684,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
       }
 
       if (should_persist) {
-        (void) TABLE::GetOrCreate(impl, view);
+        (void) TABLE::GetOrCreate(impl, context, view);
         changed = true;
       }
     }
@@ -575,11 +697,32 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
       }
 
       if (!!view.SetCondition() || view.CanReceiveDeletions()) {
-        (void) TABLE::GetOrCreate(impl, view);
+        (void) TABLE::GetOrCreate(impl, context, view);
         changed = true;
       }
     }
   }
+
+  // TODO(pag): Needed to make Solypsis work for now. Hit the worst case of a
+  //            top-down checker call's behaviour.
+  for (auto merge : query.Merges()) {
+    (void) TABLE::GetOrCreate(impl, context, merge);
+  }
+
+  // We need the tables to know about *all* views associated with them. This
+  // helps with debugging, but more importantly, it helps us find the "top"
+  // merge associated with a table.
+  query.ForEachView([&] (QueryView view) {
+    DataModel *model = impl->view_to_model[view]->FindAs<DataModel>();
+    if (model->table) {
+      (void) TABLE::GetOrCreate(impl, context, view);
+    }
+
+//    else {
+//      // TODO(pag): !!! REMOVE ME!!!!
+//      (void) TABLE::GetOrCreate(impl, context, view);
+//    }
+  });
 }
 
 // Building the data model means figuring out which `QueryView`s can share the
@@ -592,6 +735,10 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
   });
+
+  // TODO(pag): Data modelling disabled until further notice!!!
+  //            Subtle bugs abound.
+  return;
 
   // Inserts and selects from the same relation share the same data models.
   for (auto rel : query.Relations()) {
@@ -643,6 +790,76 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
            !view.NegativeConditions().empty();
   };
 
+  // Simple tests to figure out if `view` (treated as a predecessor) can
+  // share its data model with its successors.
+  auto can_share = +[](QueryView view, QueryView pred) {
+    if (pred.IsNegate()) {
+      return false;
+    }
+    // With any special cases, we need to watch out for the following kind of
+    // pattern:
+    //
+    //                               ...
+    //      ... ----.                 |
+    //           UNION1 -- TUPLE -- UNION2
+    //      ... ----'
+    //
+    // In this case, suppose TUPLE perfectly forwards data of UNION1 to
+    // UNION2. Thus, UNION1 is a subset of UNION2. We don't want to accidentally
+    // merge the data models of UNION1 and UNION2, otherwise we'd lose this
+    // subset relation. At the same time, we don't want to break all sorts of
+    // other stuff out, so we have a bunch of special cases to try to be more
+    // aggressive about merging data models without falling prey to this
+    // specific case.
+    //
+    // Another situation comes up with things like:
+    //
+    //          UNION1 -- INSERT -- SELECT -- UNION2
+    //
+    // In this situation, we want UNION1 and the INSERT/SELECT to share the
+    // same data model, but UNION2 should not be allowed to share it. Similarly,
+    // in this situation:
+    //
+    //
+    //          UNION1 -- INSERT -- SELECT -- TUPLE -- UNION2
+    //
+    // We want the UNION1, INSERT, SELECT, and TUPLE to share the same data
+    // model, but not UNION2.
+
+
+    // Here we also need to check on the number of successors of the tuple's
+    // predecessor, e.g.
+    //
+    //             --> flow -->
+    //
+    //      TUPLE1 -- TUPLE2 -- UNION1
+    //         |
+    //         '----- TUPLE3 -- UNION2
+    //                            |
+    //                TUPLE4 -----'
+    //
+    // In this case, UNION1 and TUPLE2 will share their data models, but we
+    // can't let TUPLE1 and TUPLE2 or TUPLE1 and TUPLE3 share their data models,
+    // otherwise the UNION1 might end up sharing its data model with completely
+    // unrelated stuff in UNION2 (via TUPLE4).
+    return pred.Successors().size() == 1u;
+
+//    if () {
+//      return true;
+//
+//    // Special case for letting us share a data model with a predecessor.
+//    } else if (view.IsInsert()) {
+//      return true;
+//
+//    } else if (view.Successors().size() == 1 &&
+//               view.Successors()[0].IsJoin()) {
+//      return true;
+//
+//    } else {
+//      return false;
+//    }
+  };
+
   // With maps, we try to avoid saving the outputs and attached columns
   // when the maps are differential.
   //
@@ -681,12 +898,15 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     // We also have to be careful about merges that receive deletions. If so,
     // then we need to be able to distinguish where data is from. This is
     // especially important for comparisons or maps leading into merges.
+    //
+    // If `pred` is another UNION, then `pred` may be a subset of `view`, thus
+    // we cannot merge `pred` and `view`.
     if (view.IsMerge()) {
       for (auto pred : preds) {
-        if (!pred.IsDelete() &&
+        if (can_share(view, pred) &&
             !is_diff_map(pred) &&
             !output_is_conditional(pred) &&
-            pred.Successors().size() == 1u) {
+            !pred.IsMerge()) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
@@ -698,9 +918,9 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
         const auto tuple = QueryTuple::From(view);
-        if (!is_diff_map(pred) &&
+        if (can_share(view, pred) &&
+            !is_diff_map(pred) &&
             !output_is_conditional(pred) &&
-            !pred.IsDelete() &&
             all_cols_match(tuple.InputColumns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
@@ -715,29 +935,13 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
         const auto insert = QueryInsert::From(view);
-        if (!is_diff_map(pred) && !pred.IsDelete() &&
+        if (can_share(view, pred) &&
+            !is_diff_map(pred) &&
             !output_is_conditional(pred) &&
             all_cols_match(insert.InputColumns(), pred.Columns())) {
           const auto pred_model = program->view_to_model[pred];
           DisjointSet::Union(model, pred_model);
         }
-      }
-
-    // NOTE(pag): DELETE nodes don't have a data model per se. They exist
-    //            to delete things in the data model of their /successor/,
-    //            they can't delete anything in the model of their predecessor.
-    //
-    // NOTE(pag): If a DELETE flows into a DELETE then we permit them to
-    //            share a data model, for whatever that's worth.
-    } else if (view.IsDelete()) {
-      assert(preds.size() == 1u);
-      const auto pred = preds[0];
-      const auto del = QueryDelete::From(view);
-      if (!is_diff_map(pred) &&
-          !output_is_conditional(pred) &&
-          all_cols_match(del.InputColumns(), pred.Columns())) {
-        const auto pred_model = program->view_to_model[pred];
-        DisjointSet::Union(model, pred_model);
       }
 
 #ifndef NDEBUG
@@ -754,6 +958,7 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     } else if (view.IsSelect()) {
       for (auto pred : preds) {
         assert(pred.IsInsert());
+        assert(can_share(view, pred));
         assert(!output_is_conditional(pred));
         const auto pred_model = program->view_to_model[pred];
         DisjointSet::Union(model, pred_model);
@@ -778,29 +983,33 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
     assert(context.work_list.empty());
     context.work_list.clear();
 
+    auto let = impl->operation_regions.CreateDerived<LET>(proc);
+      proc->body.Emplace(proc, let);
+
     if (to_view.IsTuple()) {
-      CreateBottomUpTupleRemover(impl, context, to_view, proc, already_checked);
+      CreateBottomUpTupleRemover(impl, context, to_view, let, already_checked);
 
     } else if (to_view.IsCompare()) {
-      CreateBottomUpCompareRemover(impl, context, to_view, proc,
+      CreateBottomUpCompareRemover(impl, context, to_view, let,
                                    already_checked);
 
     } else if (to_view.IsInsert()) {
-      CreateBottomUpInsertRemover(impl, context, to_view, proc,
+      CreateBottomUpInsertRemover(impl, context, to_view, let,
                                   already_checked);
 
-    } else if (to_view.IsDelete()) {
-      CreateBottomUpDeleteRemover(impl, context, to_view, proc);
-
-    // NOTE(pag): We don't need to distinguish between unions that are
-    //            inductions and unions that are merges.
     } else if (to_view.IsMerge()) {
-      CreateBottomUpUnionRemover(impl, context, to_view, proc, already_checked);
+      if (context.inductive_successors.count(to_view) &&
+          !context.dominated_merges.count(to_view)) {
+        CreateBottomUpInductionRemover(impl, context, to_view, let,
+                                       already_checked);
+      } else {
+        CreateBottomUpUnionRemover(impl, context, to_view, let, already_checked);
+      }
 
     } else if (to_view.IsJoin()) {
       auto join = QueryJoin::From(to_view);
       if (join.NumPivotColumns()) {
-        CreateBottomUpJoinRemover(impl, context, from_view, join, proc,
+        CreateBottomUpJoinRemover(impl, context, from_view, join, let,
                                   already_checked);
       } else {
         assert(false && "TODO: Cross-products!");
@@ -815,7 +1024,7 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       auto map = QueryMap::From(to_view);
       auto functor = map.Functor();
       if (functor.IsPure()) {
-        CreateBottomUpGenerateRemover(impl, context, map, functor, proc,
+        CreateBottomUpGenerateRemover(impl, context, map, functor, let,
                                       already_checked);
 
       } else {
@@ -823,7 +1032,8 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
       }
 
     } else if (to_view.IsNegate()) {
-      CreateBottomUpNegationRemover(impl, context, to_view, proc);
+      CreateBottomUpNegationRemover(impl, context, to_view, let,
+                                    already_checked);
 
     // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
     //            removers jump past SELECTs.
@@ -838,6 +1048,118 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
   }
 
   return changed;
+}
+
+static void BuildTopDownChecker(
+    ProgramImpl *impl, Context &context, QueryView view,
+    std::vector<QueryColumn> &view_cols, PROC *proc,
+    TABLE *already_checked) {
+
+  if (view.IsJoin()) {
+    const auto join = QueryJoin::From(view);
+    if (join.NumPivotColumns()) {
+      BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
+                              already_checked);
+    } else {
+      assert(false && "TODO: Checker for cross-product.");
+    }
+
+  } else if (view.IsMerge()) {
+    const auto merge = QueryMerge::From(view);
+    if (context.inductive_successors.count(view) &&
+        !context.dominated_merges.count(view)) {
+      BuildTopDownInductionChecker(impl, context, proc, merge, view_cols,
+                                   already_checked);
+
+    } else {
+      BuildTopDownUnionChecker(impl, context, proc, merge, view_cols,
+                               already_checked);
+    }
+
+  } else if (view.IsAggregate()) {
+    assert(false && "TODO: Checker for aggregates.");
+
+  } else if (view.IsKVIndex()) {
+    assert(false && "TODO: Checker for k/v indices.");
+
+  } else if (view.IsMap()) {
+    BuildTopDownGeneratorChecker(impl, context, proc, QueryMap::From(view),
+                                 view_cols, already_checked);
+
+  } else if (view.IsCompare()) {
+    BuildTopDownCompareChecker(impl, context, proc, QueryCompare::From(view),
+                               view_cols, already_checked);
+
+  } else if (view.IsSelect()) {
+    BuildTopDownSelectChecker(impl, context, proc, QuerySelect::From(view),
+                              view_cols, already_checked);
+
+  } else if (view.IsTuple()) {
+    BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view),
+                             view_cols, already_checked);
+
+  } else if (view.IsInsert()) {
+    const auto insert = QueryInsert::From(view);
+
+    if (insert.IsStream()) {
+      // Nothing to do.
+
+    } else {
+      BuildTopDownInsertChecker(impl, context, proc, QueryInsert::From(view),
+                                view_cols, already_checked);
+    }
+
+  } else if (view.IsNegate()) {
+    BuildTopDownNegationChecker(impl, context, proc, QueryNegate::From(view),
+                                view_cols, already_checked);
+
+
+  // Not possible?
+  } else {
+    assert(false);
+  }
+
+  CompleteProcedure(impl, proc, context);
+
+  // This view is conditional, wrap whatever we had generated in a big
+  // if statement.
+  const auto pos_conds = view.PositiveConditions();
+  const auto neg_conds = view.NegativeConditions();
+  const auto proc_body = proc->body.get();
+
+  // Innermost test for negative conditions.
+  if (!neg_conds.empty()) {
+    auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+        proc, ComparisonOperator::kEqual);
+
+    for (auto cond : neg_conds) {
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
+    }
+
+    proc->body.Emplace(proc, test);
+    test->body.Emplace(test, proc_body);
+  }
+
+  // Outermost test for positive conditions.
+  if (!pos_conds.empty()) {
+    auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
+        proc, ComparisonOperator::kNotEqual);
+
+    for (auto cond : pos_conds) {
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
+    }
+
+    proc->body.Emplace(proc, test);
+    test->body.Emplace(test, proc_body);
+  }
+
+  if (!EndsWithReturn(proc)) {
+    const auto ret = impl->operation_regions.CreateDerived<RETURN>(
+        proc, ProgramOperation::kReturnFalseFromProcedure);
+    ret->ExecuteAfter(impl, proc);
+  }
 }
 
 // Build out all the top-down checkers. We want to do this after building all
@@ -855,115 +1177,7 @@ static bool BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
     assert(context.work_list.empty());
     context.work_list.clear();
 
-    if (view.IsJoin()) {
-      const auto join = QueryJoin::From(view);
-      if (join.NumPivotColumns()) {
-        BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
-                                already_checked);
-      } else {
-        assert(false && "TODO: Checker for cross-product.");
-      }
-
-    } else if (view.IsMerge()) {
-      const auto merge = QueryMerge::From(view);
-      if (context.inductive_successors.count(view) &&
-          !context.dominated_merges.count(view)) {
-        BuildTopDownInductionChecker(impl, context, proc, merge, view_cols,
-                                     already_checked);
-
-      } else {
-        BuildTopDownUnionChecker(impl, context, proc, merge, view_cols,
-                                 already_checked);
-      }
-
-    } else if (view.IsAggregate()) {
-      assert(false && "TODO: Checker for aggregates.");
-
-    } else if (view.IsKVIndex()) {
-      assert(false && "TODO: Checker for k/v indices.");
-
-    } else if (view.IsMap()) {
-      BuildTopDownGeneratorChecker(impl, context, proc, QueryMap::From(view),
-                                   view_cols, already_checked);
-
-    } else if (view.IsCompare()) {
-      BuildTopDownCompareChecker(impl, context, proc, QueryCompare::From(view),
-                                 view_cols, already_checked);
-
-    } else if (view.IsSelect()) {
-      BuildTopDownSelectChecker(impl, context, proc, QuerySelect::From(view),
-                                view_cols, already_checked);
-
-    } else if (view.IsTuple()) {
-      BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view),
-                               view_cols, already_checked);
-
-    } else if (view.IsInsert()) {
-      const auto insert = QueryInsert::From(view);
-
-      if (insert.IsStream()) {
-        // Nothing to do.
-
-      } else {
-        BuildTopDownInsertChecker(impl, context, proc, QueryInsert::From(view),
-                                  view_cols, already_checked);
-      }
-
-    } else if (view.IsDelete()) {
-
-      // Nothing to do.
-
-    } else if (view.IsNegate()) {
-      BuildTopDownNegationChecker(impl, context, proc, QueryNegate::From(view),
-                                  view_cols, already_checked);
-
-
-    // Not possible?
-    } else {
-      assert(false);
-    }
-
-    CompleteProcedure(impl, proc, context);
-
-    // This view is conditional, wrap whatever we had generated in a big
-    // if statement.
-    const auto pos_conds = view.PositiveConditions();
-    const auto neg_conds = view.NegativeConditions();
-    const auto proc_body = proc->body.get();
-
-    // Innermost test for negative conditions.
-    if (!neg_conds.empty()) {
-      auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-          proc, ComparisonOperator::kEqual);
-
-      for (auto cond : neg_conds) {
-        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-        test->rhs_vars.AddUse(impl->zero);
-      }
-
-      proc->body.Emplace(proc, test);
-      test->body.Emplace(test, proc_body);
-    }
-
-    // Outermost test for positive conditions.
-    if (!pos_conds.empty()) {
-      auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-          proc, ComparisonOperator::kNotEqual);
-
-      for (auto cond : pos_conds) {
-        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-        test->rhs_vars.AddUse(impl->zero);
-      }
-
-      proc->body.Emplace(proc, test);
-      test->body.Emplace(test, proc_body);
-    }
-
-    if (!EndsWithReturn(proc)) {
-      const auto ret = impl->operation_regions.CreateDerived<RETURN>(
-          proc, ProgramOperation::kReturnFalseFromProcedure);
-      ret->ExecuteAfter(impl, proc);
-    }
+    BuildTopDownChecker(impl, context, view, view_cols, proc, already_checked);
   }
   return changed;
 }
@@ -1077,30 +1291,53 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
   return nullptr;
 }
 
-// Calls a top-down checker that tries to figure out if some tuple (passed as
-// arguments to this function) is present or not.
-//
-// The idea is that we have the output columns of `succ_view`, and we want to
-// check if a tuple on `view` exists.
-CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
-                         QueryView succ_view, QueryView view,
-                         ProgramOperation call_op) {
-  assert(!view.IsDelete());
-  assert(!succ_view.IsInsert());
-
-  std::vector<QueryColumn> succ_cols;
-  for (auto succ_view_col : succ_view.Columns()) {
-    succ_cols.push_back(succ_view_col);
-  }
-
-  return CallTopDownChecker(impl, context, parent, succ_view, succ_cols, view,
-                            call_op);
-}
-
 // Gets or creates a top down checker function.
 PROC *GetOrCreateTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
     const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
+
+  // There is a pretty evil situation we might encounter:
+  //
+  //            ...   .----.
+  //              \  /      \        .
+  //              UNION     |
+  //             /    \     |
+  //          TUPLE    .....'
+  //           /       /   \         .
+  //         ...
+  //
+  // In this situation, the data model of the TUPLE and the inductive UNION
+  // are identical. If we're calling the top-down checker for the TUPLE, and
+  // we have `already_checked == nullptr`, then it's the tuple's responsibility
+  // to assert the absence of the row/tuple in the table, then call the
+  // predecessors to try to prove the presence of that row/tuple in its own
+  // absence. The tricky bit here, though, is that this is strictly downward-
+  // facing: the TUPLE will ask its predecessors, and totally ignore the
+  // inductive UNION which it feeds. Thus, it's preventing that UNION and its
+  // predecessors (which includes the TUPLE) from even participating in this
+  // decision. This is bad because the TUPLE and the UNION share their data
+  // models!
+  if (const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+      !already_checked && model->table &&
+      model->table->views[0].IsMerge() && model->table->views[0] != view) {
+
+    std::vector<QueryColumn> available_cols_in_merge;
+
+    auto top_merge = model->table->views[0];
+    auto top_merge_cols = top_merge.Columns();
+
+    for (auto col : available_cols) {
+      if (col.IsConstant()) {
+        available_cols_in_merge.push_back(col);
+      } else {
+        available_cols_in_merge.push_back(top_merge_cols[*(col.Index())]);
+      }
+    }
+
+    return GetOrCreateTopDownChecker(
+        impl, context, top_merge, available_cols_in_merge,
+        already_checked  /* nullptr */);
+  }
 
   assert(CanImplementTopDownChecker(impl, view, available_cols));
   (void) CanImplementTopDownChecker;
@@ -1191,11 +1428,13 @@ PROC *GetOrCreateTopDownChecker(
 
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
-CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
-                         QueryView succ_view,
-                         const std::vector<QueryColumn> &succ_cols,
-                         QueryView view, ProgramOperation call_op,
-                         TABLE *already_checked) {
+//
+// Return value is either `{call, call}` or `{cmp, call}` where the `cmp`
+// contains the `call`.
+std::pair<OP *, CALL *> CallTopDownChecker(
+    ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
+    const std::vector<QueryColumn> &succ_cols, QueryView view,
+    TABLE *already_checked) {
 
   // List of output columns of `view` that can be derived from the output
   // columns of `succ_view`, as available in `succ_cols`.
@@ -1223,6 +1462,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     }
   }
 
+  const auto let = impl->operation_regions.CreateDerived<LET>(parent);
+  OP *call_parent = let;
   // Now we need to map the outputs of `succ_view` back to the outputs of
   // `view`.
   succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
@@ -1256,8 +1497,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     } else if (std::find(succ_cols.begin(), succ_cols.end(), *succ_view_col) !=
                succ_cols.end()) {
       available_cols.push_back(view_col);
-      const auto succ_var = parent->VariableFor(impl, *succ_view_col);
-      parent->col_id_to_var[view_col.Id()] = succ_var;
+      const auto succ_var = let->VariableFor(impl, *succ_view_col);
+      let->col_id_to_var[view_col.Id()] = succ_var;
 
     // If it's a constant ref then we have it. Note that we take `view_col`
     // as the lookup for the `VariableFor` and not `*succ_view_col` because
@@ -1267,8 +1508,8 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     //            multiple constants flowing into a column in a MERGE/UNION
     //            don't end up all getting matched.
     } else if (succ_view_col->IsConstantRef()) {
-      auto succ_var = parent->VariableFor(impl, *succ_view_col);
-      parent->col_id_to_var[view_col.Id()] = succ_var;
+      const auto succ_var = let->VariableFor(impl, *succ_view_col);
+      let->col_id_to_var[view_col.Id()] = succ_var;
       available_cols.push_back(view_col);
     }
   });
@@ -1284,17 +1525,94 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
                         });
   available_cols.erase(it, available_cols.end());
 
+  // We need to create a mapping of input-to-output columns in `succ_view`.
+  // For example, we might have the following case:
+  //
+  //           +-------+---+---+
+  //           |       | A | B |
+  //           | TUPLE +---+---+    succ_view
+  //           |       | C | C |
+  //           +-------+-+-+-+-+
+  //                     |  /
+  //                     | /
+  //                     |/
+  //           +-------+-+-+
+  //           |       | C |
+  //           | TUPLE +---+        view
+  //           |       | . |
+  //           +-------+---+
+  //
+  // Here, column `C` from `view` is projected into columns `A` and `B` of
+  // succ_view. In a top-down checker, this turns into a requirement to
+  // only call `view` if `A == B`.
+  std::unordered_map<QueryColumn, std::vector<QueryColumn>> in_to_out;
+  succ_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> succ_view_col) {
+
+    // The inputs that align with the outputs don't necessarily relate in
+    // a straightforward way, due to going through merge/aggregate functors.
+    //
+    // For inequality comparisons, the comparison node will do the checking. For
+    // equality comparisons, two inputs are merged into one output, so there is
+    // no burden of comparison.
+    if (InputColumnRole::kIndexValue == role ||
+        InputColumnRole::kAggregatedColumn == role ||
+        InputColumnRole::kCompareLHS == role ||
+        InputColumnRole::kCompareRHS == role) {
+      return;
+    }
+
+    if (!succ_view_col) {
+      return;
+    }
+
+    in_to_out[in_col].push_back(*succ_view_col);
+  });
+
   const auto proc = GetOrCreateTopDownChecker(
       impl, context, view, available_cols, already_checked);
 
+  std::vector<std::pair<QueryColumn, QueryColumn>> must_be_equal;
+  for (auto avail_col : available_cols) {
+    auto &cols = in_to_out[avail_col];
+    for (auto i = 1u; i < cols.size(); ++i) {
+      must_be_equal.emplace_back(cols[i - 1u], cols[i]);
+    }
+  }
+
+  TUPLECMP *cmp = nullptr;
+  if (!must_be_equal.empty()) {
+    cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+        let, ComparisonOperator::kEqual);
+    let->body.Emplace(let, cmp);
+    COMMENT( cmp->comment = "Ensuring downward equality of projection"; )
+
+    // NOTE(pag): We're looking up the variables in `parent` and *not* in `let`
+    //            because in the above code, when finding the `available_cols`,
+    //            we forced a bunch of variable bindings in the `let` for the
+    //            convenience of the `call`, and those bindings would work
+    //            against this comparison, making it looking like it was
+    //            comparing variables against themselves, thereby resulting in
+    //            the comparison eventually being optimized away.
+    for (auto [lhs_col, rhs_col] : must_be_equal) {
+      const auto lhs_var = parent->VariableFor(impl, lhs_col);
+      const auto rhs_var = parent->VariableFor(impl, rhs_col);
+      cmp->lhs_vars.AddUse(lhs_var);
+      cmp->rhs_vars.AddUse(rhs_var);
+    }
+
+    call_parent = cmp;
+  }
+
   // Now call the checker procedure.
-  const auto check =
-      impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, parent, proc, call_op);
+  const auto check = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, call_parent, proc);
+
+  call_parent->body.Emplace(call_parent, check);
 
   auto i = 0u;
   for (auto col : available_cols) {
-    const auto var = parent->VariableFor(impl, col);
+    const auto var = call_parent->VariableFor(impl, col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
     const auto param = proc->input_vars[i++];
@@ -1303,20 +1621,19 @@ CALL *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
   }
 
   assert(check->arg_vars.Size() == proc->input_vars.Size());
-  return check;
+  return {let, check};
 }
 
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
 // table.
-CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     ProgramImpl *impl, Context &context, REGION *parent, QueryView view,
     const std::vector<QueryColumn> &view_cols, TABLE *table,
     QueryView pred_view, TABLE *already_checked) {
 
-  const auto check = CallTopDownChecker(
-      impl, context, parent, view, view_cols, pred_view,
-      ProgramOperation::kCallProcedureCheckTrue, already_checked);
+  const auto [check, check_call] = CallTopDownChecker(
+      impl, context, parent, view, view_cols, pred_view, already_checked);
 
   // Change the tuple's state to mark it as present now that we've proven
   // it true via one of the paths into this node.
@@ -1327,20 +1644,58 @@ CALL *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
       assert(view_cols.size() == view.Columns().size());
     }
     auto change_state =
-        BuildChangeState(impl, table, check, view_cols,
+        BuildChangeState(impl, table, check_call, view_cols,
                          TupleState::kAbsentOrUnknown, TupleState::kPresent);
-    check->body.Emplace(check, change_state);
+    check_call->body.Emplace(check_call, change_state);
 
     const auto ret_true = BuildStateCheckCaseReturnTrue(impl, change_state);
     ret_true->ExecuteAfter(impl, change_state);
 
   // No table, just return `true` to the caller.
   } else {
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    check->body.Emplace(check, ret_true);
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
+    check_call->body.Emplace(check_call, ret_true);
   }
 
   return check;
+}
+
+// Possibly add a check to into `parent` to transition the tuple with the table
+// associated with `view` to be in an unknown state. Returns the table of `view`
+// and the updated `already_removed`.
+std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
+    ProgramImpl *impl, QueryView view, OP *parent, TABLE *already_removed) {
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  if (table) {
+    if (already_removed != table) {
+
+      // Figure out what columns to pass in for marking.
+      std::vector<QueryColumn> cols;
+      if (view.IsInsert()) {
+        auto insert = QueryInsert::From(view);
+        cols.insert(cols.end(), insert.InputColumns().begin(),
+                    insert.InputColumns().end());
+      } else {
+        cols.insert(cols.end(), view.Columns().begin(), view.Columns().end());
+      }
+
+      assert(!cols.empty());
+
+      // Do the marking.
+      const auto table_remove = BuildChangeState(
+          impl, table, parent, cols, TupleState::kPresent, TupleState::kUnknown);
+
+      parent->body.Emplace(parent, table_remove);
+      parent = table_remove;
+      already_removed = table;
+    }
+  } else {
+    already_removed = nullptr;
+  }
+
+  return {parent, table, already_removed};
 }
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
@@ -1627,11 +1982,8 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
   }
 }
 
-// Build an eager region. This guards the execution of the region in
-// conditionals if the view itself is conditional.
-void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
-                      Context &usage, OP *parent, TABLE *last_model) {
-
+static void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
+                                      QueryView view, OP *parent) {
   view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                       std::optional<QueryColumn> out_col) {
 
@@ -1668,9 +2020,139 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       parent->col_id_to_var.emplace(out_col->Id(), src_var);
     }
   });
+}
 
-  BuildUnconditionalEagerRegion(impl, pred_view, view, usage, parent,
-                                last_model);
+// Build an eager region for removing data.
+void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView from_view,
+                             QueryView to_view, Context &context, OP *parent,
+                             TABLE *already_checked) {
+  MapVariablesInEagerRegion(impl, from_view, to_view, parent);
+
+  if (to_view.IsTuple()) {
+    CreateBottomUpTupleRemover(impl, context, to_view, parent, already_checked);
+
+  } else if (to_view.IsCompare()) {
+    CreateBottomUpCompareRemover(impl, context, to_view, parent,
+                                 already_checked);
+
+  } else if (to_view.IsInsert()) {
+    CreateBottomUpInsertRemover(impl, context, to_view, parent,
+                                already_checked);
+
+  } else if (to_view.IsMerge()) {
+    if (context.inductive_successors.count(to_view) &&
+        !context.dominated_merges.count(to_view)) {
+      CreateBottomUpInductionRemover(impl, context, to_view, parent,
+                                     already_checked);
+    } else {
+      CreateBottomUpUnionRemover(impl, context, to_view, parent,
+                                 already_checked);
+    }
+
+  } else if (to_view.IsJoin()) {
+    auto join = QueryJoin::From(to_view);
+    if (join.NumPivotColumns()) {
+      CreateBottomUpJoinRemover(impl, context, from_view, join, parent,
+                                already_checked);
+    } else {
+      assert(false && "TODO: Cross-products!");
+    }
+  } else if (to_view.IsAggregate()) {
+    assert(false && "TODO Aggregates!");
+
+  } else if (to_view.IsKVIndex()) {
+    assert(false && "TODO Key Values!");
+
+  } else if (to_view.IsMap()) {
+    auto map = QueryMap::From(to_view);
+    auto functor = map.Functor();
+    if (functor.IsPure()) {
+      CreateBottomUpGenerateRemover(impl, context, map, functor, parent,
+                                    already_checked);
+
+    } else {
+      assert(false && "TODO Impure Functors!");
+    }
+
+  } else if (to_view.IsNegate()) {
+    CreateBottomUpNegationRemover(impl, context, to_view, parent,
+                                  already_checked);
+
+  // NOTE(pag): This shouldn't be reachable, as the bottom-up INSERT
+  //            removers jump past SELECTs.
+  } else if (to_view.IsSelect()) {
+    assert(false);
+
+  } else {
+    assert(false);
+  }
+}
+
+// Build an eager region. This guards the execution of the region in
+// conditionals if the view itself is conditional.
+void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
+                      Context &context, OP *parent, TABLE *last_table) {
+
+  MapVariablesInEagerRegion(impl, pred_view, view, parent);
+
+  if (view.IsJoin()) {
+    const auto join = QueryJoin::From(view);
+    if (join.NumPivotColumns()) {
+      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
+    } else {
+      BuildEagerProductRegion(impl, pred_view, join, context, parent,
+                              last_table);
+    }
+
+  } else if (view.IsMerge()) {
+    const auto merge = QueryMerge::From(view);
+    if (context.inductive_successors.count(view) &&
+        !context.dominated_merges.count(view)) {
+      BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
+                                last_table);
+    } else {
+      BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
+                            last_table);
+    }
+
+  } else if (view.IsAggregate()) {
+    assert(false && "TODO(pag): Aggregates");
+
+  } else if (view.IsKVIndex()) {
+    assert(false && "TODO(pag): KV Indices.");
+
+  } else if (view.IsMap()) {
+    auto map = QueryMap::From(view);
+    if (map.Functor().IsPure()) {
+      BuildEagerGenerateRegion(impl, map, context, parent);
+
+    } else {
+      assert(false && "TODO(pag): Impure functors");
+    }
+
+  } else if (view.IsCompare()) {
+    BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
+
+  } else if (view.IsSelect()) {
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
+                               last_table);
+
+  } else if (view.IsTuple()) {
+    BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
+                          parent, last_table);
+
+  } else if (view.IsInsert()) {
+    const auto insert = QueryInsert::From(view);
+    BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
+                           last_table);
+
+  } else if (view.IsNegate()) {
+    const auto negate = QueryNegate::From(view);
+    BuildEagerNegateRegion(impl, pred_view, negate, context, parent);
+
+  } else {
+    assert(false);
+  }
 }
 
 WorkItem::WorkItem(Context &context, unsigned order_)
@@ -1680,8 +2162,9 @@ WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
-                                      const ErrorLog &) {
-  auto impl = std::make_shared<ProgramImpl>(query);
+                                      IRFormat format_,
+                                      const ErrorLog &log) {
+  auto impl = std::make_shared<ProgramImpl>(query, format_);
   const auto program = impl.get();
 
   BuildDataModel(query, program);
@@ -1718,7 +2201,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Go figure out which merges are inductive, and then classify their
   // predecessors and successors in terms of which ones are inductive and
   // which aren't.
-  DiscoverInductions(query, context);
+  DiscoverInductions(query, context, log);
+  if (!log.IsEmpty()) {
+    return std::nullopt;
+  }
 
   // Now that we've identified our inductions, we can fill our data model,
   // i.e. assign persistent tables to each disjoint set of views.
@@ -1729,9 +2215,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   BuildInitProcedure(program, context);
 
   // Build bottom-up procedures starting from message receives.
-  for (auto io : query.IOs()) {
-    BuildEagerProcedure(program, io, context);
-  }
+  BuildEagerProcedure(program, context, query);
 
   for (auto insert : query.Inserts()) {
     if (insert.IsRelation()) {
@@ -1742,7 +2226,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     }
   }
 
-  // Build top-down provers and the bottom-up removers.
+  // Build top-down provers and the bottom-up removers (bottom-up removers are
+  // separate procedures when using the `IRFormat::kRecursive`; when using
+  // `IRFormat::kIterative`, the bottom-up removers are iterative and in-line
+  // with the inserters.
   while (BuildTopDownCheckers(program, context) ||
          BuildBottomUpRemovalProvers(program, context)) {}
 

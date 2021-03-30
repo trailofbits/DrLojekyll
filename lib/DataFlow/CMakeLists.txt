@@ -19,7 +19,6 @@ set(DataFlow_SRCS
     "Connect.cpp"
     "Compare.cpp"
     "Constant.cpp"
-    "Delete.cpp"
     "DeadFlowElimination.cpp"
     "Differential.cpp"
     "Format.cpp"

@@ -34,11 +34,13 @@ OutputStream &Comment(OutputStream &os, ProgramRegion region,
 OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
     case ProcedureKind::kInitializer: return os << "init_" << proc.Id() << "_";
+    case ProcedureKind::kPrimaryDataFlowFunc:
+      return os << "flow_" << proc.Id() << "_";
     case ProcedureKind::kMessageHandler:
       return os << proc.Message()->Name() << "_"
                 << proc.Message()->Arity();
-    case ProcedureKind::kTupleFinder:
-    case ProcedureKind::kTupleRemover:
+    case ProcedureKind::kTupleFinder: return os << "find_" << proc.Id() << "_";
+    case ProcedureKind::kTupleRemover: return os << "remove_" << proc.Id() << "_";
     case ProcedureKind::kInductionCycleHandler:
     case ProcedureKind::kInductionOutputHandler:
     default: return os << "proc_" << proc.Id() << "_";
