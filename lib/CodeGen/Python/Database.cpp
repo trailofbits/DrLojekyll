@@ -591,10 +591,12 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
 
-    if (region.IsRemoval()) {
-      os << sep << "False";
-    } else {
-      os << sep << "True";
+    if (message.IsDifferential()) {
+      if (region.IsRemoval()) {
+        os << sep << "False";
+      } else {
+        os << sep << "True";
+      }
     }
 
     os << ")\n";
