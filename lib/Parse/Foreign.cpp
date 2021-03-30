@@ -101,7 +101,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           context->error_log.Append(scope_range, tok_range)
               << "Expected atom or variable here for the name of "
               << "the foreign type being declared, got '" << tok << "' instead";
-          return;
+
+          state = 1;
+          report_trailing = false;
+          continue;
         }
 
       case 1:
@@ -113,7 +116,8 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             context->error_log.Append(scope_range, tok_range)
                 << "Empty or invalid C++ code literal in foreign type "
                 << "declaration";
-            return;
+            state = 5;
+            continue;
           }
 
           auto &data = type->info[static_cast<unsigned>(Language::kCxx)];
@@ -462,7 +466,9 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             context->error_log.Append(scope_range, tok_range)
                 << "Empty or invalid C++ code literal in foreign constant "
                 << "declaration";
-            return;
+            state = 3;
+            report_trailing = false;
+            continue;
           }
 
         } else if (Lexeme::kLiteralPythonCode == lexeme) {
