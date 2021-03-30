@@ -4,7 +4,7 @@
 #local user(i32 UserID).
 #local maybe_logged_in(i32 UserId).
 #message add_user(i32 UserID).
-#message user_is_logged_in(i32 UserId).
+#message user_is_logged_in(i32 UserId) @differential.
 
 user(ID) : add_user(ID).
 

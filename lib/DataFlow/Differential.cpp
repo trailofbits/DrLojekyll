@@ -71,6 +71,11 @@ void QueryImpl::TrackDifferentialUpdates(
     });
   }
 
+  // Conditions introduce additional deletions, so only error check when we
+  // propagate based on them.
+  if (!check_conds) {
+    return;
+  }
 
   for (auto view : inserts) {
     if (!view->stream) {
@@ -90,10 +95,11 @@ void QueryImpl::TrackDifferentialUpdates(
 
     if (message.IsDifferential()) {
       if (!view->can_produce_deletions) {
-        log.Append(range, message.Differential().SpellingRange())
-            << "Message '" << message.Name() << '/' << message.Arity()
-            << "' is marked with the '@differential' attribute but cannot "
-            << "produce deletions";
+        assert(!view->can_receive_deletions);
+//        log.Append(range, message.Differential().SpellingRange())
+//            << "Message '" << message.Name() << '/' << message.Arity()
+//            << "' is marked with the '@differential' attribute but cannot "
+//            << "produce deletions";
       }
 
     } else if (view->can_produce_deletions) {
