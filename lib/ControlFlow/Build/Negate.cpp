@@ -42,7 +42,7 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   // Call the top-down checker on the tuple. If it returns `false` then it
   // means that we've not found the tuple in the negated view, and so we can
   // proceed.
-  const auto check = CallTopDownChecker(
+  const auto [check, check_call] = CallTopDownChecker(
       impl, context, let, negated_view, view_cols, negated_view, nullptr);
 
   let->body.Emplace(let, check);
@@ -51,15 +51,23 @@ static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
   //            `with_check_absent` might fiddle with `sub_let->body`, and we
   //            can't pass in `check` because we might need to operate in
   //            `false_body`.
-  const auto sub_let = impl->operation_regions.CreateDerived<LET>(check);
+  const auto sub_let = impl->operation_regions.CreateDerived<LET>(check_call);
   if (call_return_value) {
-    check->body.Emplace(check, sub_let);
+    check_call->body.Emplace(check_call, sub_let);
   } else {
-    check->false_body.Emplace(check, sub_let);
+    check_call->false_body.Emplace(check_call, sub_let);
   }
 
-  with_check_absent(sub_let);
-  assert(!check->body != !check->false_body);
+  auto ret = with_check_absent(sub_let);
+  assert(ret->parent == sub_let);
+  assert(!check_call->body != !check_call->false_body);
+
+  if (sub_let->body.get() != ret) {
+    assert(!sub_let->body);
+    sub_let->body.Emplace(sub_let, ret);
+  } else {
+    assert(sub_let->body.get() == ret);
+  }
 
   return let;
 }
@@ -105,7 +113,7 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
             impl, view, context, if_absent, table, false,
             view.Columns());
 
-        BuildEagerSuccessorRegions(impl, view, context, insert,
+        BuildEagerInsertionRegions(impl, view, context, insert,
                                    view.Successors(), table);
 
         return insert;
@@ -184,7 +192,7 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
   proc->body.Emplace(proc, BuildMaybeScanPartial(
       impl, view, view_cols, model->table, proc,
-      [&](REGION *in_scan, bool) -> REGION * {
+      [&](REGION *in_scan, bool in_loop) -> REGION * {
 
         negate.ForEachUse([&](QueryColumn in_col, InputColumnRole,
                               std::optional<QueryColumn> out_col) {
@@ -199,10 +207,14 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
 
         if (already_checked != model->table) {
           already_checked = model->table;
+
+          auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                    BuildStateCheckCaseReturnFalse;
+
           return BuildTopDownCheckerStateCheck(
               impl, in_scan, model->table, view.Columns(),
               do_check_on_true_not_checked,
-              BuildStateCheckCaseNothing,
+              continue_or_return,
               do_check_on_unknown_not_checked);
 
         // If we're here then it means our caller has found a candidate tuple
@@ -214,131 +226,185 @@ void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
       }));
 }
 
+//static PROC *CreateCheckInNegatedViewProc(ProgramImpl *impl, Context &context,
+//                                          QueryNegate negate) {
+//  const auto negated_view = negate.NegatedView();
+//
+//  const auto proc = impl->procedure_regions.Create(
+//      impl->next_id++, ProcedureKind::kTupleFinder);
+//
+//  // Add the parameters to the negated checker procedure, and map all the
+//  // variable IDs so that things work nicely.
+//  for (auto col : negate.NegatedColumns()) {
+//    auto param_var = proc->input_vars.Create(
+//        impl->next_id++, VariableRole::kParameter);
+//    param_var->query_column = col;
+//    proc->col_id_to_var[col.Id()] = param_var;
+//
+//    const auto col_index = *(col.Index());
+//    const auto input_col = negate.NthInputColumn(col_index);
+//    proc->col_id_to_var[input_col.Id()] = param_var;
+//
+//    if (input_col.IsConstantOrConstantRef()) {
+//      param_var->query_const = QueryConstant::From(input_col);
+//    }
+//
+//    const auto negated_col = negated_view.Columns()[col_index];
+//    proc->col_id_to_var[negated_col.Id()] = param_var;
+//  }
+//
+//
+//  std::vector<QueryColumn> view_cols;
+//  for (auto col : negated_view.Columns()) {
+//    view_cols.push_back(col);
+//  }
+//
+//  // Call the top-down checker on the tuple. If it returns `false` then it
+//  // means that we've not found the tuple in the negated view, and so we can
+//  // proceed.
+//  const auto check = CallTopDownChecker(
+//      impl, context, proc, negated_view, view_cols, negated_view, nullptr);
+//
+//  proc->body.Emplace(proc, check);
+//
+//  auto ret = CheckInNegatedView(
+//    impl, negate, context, proc, true  /* checker return value */,
+//    [&] (REGION *if_present) {
+//      auto seq = impl->series_regions.Create(if_present);
+//      auto change = BuildChangeState(
+//          impl, table, seq, view.Columns(),
+//          TupleState::kUnknown, TupleState::kAbsent);
+//      seq->AddRegion(change);
+//
+//      auto par = impl->parallel_regions.Create(change);
+//      change->body.Emplace(change, par);
+//
+//      handle_sucesssors(par);
+//
+//      // Return early after marking the successors.
+//      seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
+//
+//      return seq;
+//    });
+//
+//  return proc;
+//}
+
 void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
-                                   QueryView view, PROC *proc) {
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  assert(model->table != nullptr);
+                                   QueryView view, OP *parent_,
+                                   TABLE *already_removed_) {
 
-  // Call the successors.
-  auto handle_sucesssors = [&] (PARALLEL *par) {
-    for (auto succ_view : view.Successors()) {
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+        impl, view, parent_, already_removed_);
 
-      const auto called_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, model->table);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, called_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = proc->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = called_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
-  };
-
-  SERIES *parent = nullptr;  // NOTE(pag): Assigned in callback below.
-
-  proc->body.Emplace(proc, BuildBottomUpTryMarkUnknown(
-      impl, model->table, proc, view.Columns(),
-      [&](PARALLEL *par) {
-        const auto seq = impl->series_regions.Create(par);
-        parent = seq;
-        par->AddRegion(seq);
-      }));
-
-  // The state is now unknown. Check the negated view. If the tuple is present
-  // then change our state to absent and keep going.
-
-  const auto negate = QueryNegate::From(view);
-  parent->AddRegion(CheckInNegatedView(
-      impl, negate, context, parent, true  /* checker return value */,
-      [&] (REGION *if_present) {
-        auto seq = impl->series_regions.Create(if_present);
-        auto change = BuildChangeState(
-            impl, model->table, seq, view.Columns(),
-            TupleState::kUnknown, TupleState::kAbsent);
-        seq->AddRegion(change);
-
-        auto par = impl->parallel_regions.Create(change);
-        change->body.Emplace(change, par);
-
-        handle_sucesssors(par);
-
-        // Return early after marking the successors.
-        seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
-
-        return seq;
-      }));
-
-  // If we're down here then it means that the tuple's data is not in
-  // the negated view (otherwise the above code would have returned false).
-  // We will double check that indeed the data is in our view (now that we're
-  // in an unknown state).
-  const auto pred_view = view.Predecessors()[0];
-
-  std::vector<QueryColumn> pred_cols;
-  for (auto col : negate.InputColumns()) {
-    pred_cols.push_back(col);
-  }
-  for (auto col : negate.InputCopiedColumns()) {
-    pred_cols.push_back(col);
-  }
-
-  // NOTE(pag): Passing `nullptr` because a negation can't share the data
-  //            model of its predecessor, because it represents a subset of
-  //            that data.
-  const auto checker_proc = GetOrCreateTopDownChecker(
-      impl, context, pred_view, pred_cols, nullptr);
-
-  // Now call the checker procedure for our predecessor. If it returns `true`
-  // then it means that the columns are available in our predecessor, the
-  // columns are not in the negated view, and thus we have proved the presence
-  // of this tuple and can stop.
-  const auto check = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent, checker_proc);
-
-  COMMENT( check->comment = __FILE__ ": CreateBottomUpNegationRemover"; )
-
-  auto i = 0u;
-  for (auto col : pred_cols) {
-    const auto var = parent->VariableFor(impl, col);
-    assert(var != nullptr);
-    check->arg_vars.AddUse(var);
-    const auto param = checker_proc->input_vars[i++];
-    assert(var->Type() == param->Type());
-    (void) param;
-  }
-
-  parent->AddRegion(check);
-
-  // If we're down here then it means that we've proven that the tuple exists
-  // and so we want to return early.
-  auto seq = impl->series_regions.Create(check);
-  check->body.Emplace(check, seq);
-  auto change = BuildChangeState(
-      impl, model->table, seq, view.Columns(),
-      TupleState::kAbsentOrUnknown, TupleState::kPresent);
-  seq->AddRegion(change);
-  seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
-
-  // If we're down here then it means the data isn't present in the negated
-  // view, but it's also not present in our predecessor, so it's time to keep
-  // going.
-
-  change = BuildChangeState(
-      impl, model->table, parent, view.Columns(),
-      TupleState::kAbsentOrUnknown, TupleState::kAbsent);
-  parent->AddRegion(change);
-  auto par = impl->parallel_regions.Create(change);
-  change->body.Emplace(change, par);
-  handle_sucesssors(par);
+  BuildEagerRemovalRegions(impl, view, context, parent,
+                           view.Successors(), already_removed);
+//  // Call the successors.
+//  auto handle_sucesssors = [&] (PARALLEL *par) {
+//    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+//    par->AddRegion(let);
+//
+//    BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+//                             table);
+//  };
+//
+//  SERIES *seq = impl->series_regions.Create(parent);
+//  parent->body.Emplace(parent, seq);
+//
+//  // The state is now unknown. Check the negated view. If the tuple is present
+//  // then change our state to absent and keep going.
+//
+//  const auto negate = QueryNegate::From(view);
+//
+//  auto &check_negated_view_proc = context.negation_checker_procs[view];
+//  if (!check_negated_view_proc) {
+//    check_negated_view_proc = CreateCheckInNegatedViewProc(
+//        impl, context, negate);
+//  }
+//
+//  seq->AddRegion(CheckInNegatedView(
+//      impl, negate, context, seq, true  /* checker return value */,
+//      [&] (REGION *if_present) {
+//        auto seq = impl->series_regions.Create(if_present);
+//        auto change = BuildChangeState(
+//            impl, table, seq, view.Columns(),
+//            TupleState::kUnknown, TupleState::kAbsent);
+//        seq->AddRegion(change);
+//
+//        auto par = impl->parallel_regions.Create(change);
+//        change->body.Emplace(change, par);
+//
+//        handle_sucesssors(par);
+//
+//        // Return early after marking the successors.
+//        seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
+//
+//        return seq;
+//      }));
+//
+//  // If we're down here then it means that the tuple's data is not in
+//  // the negated view (otherwise the above code would have returned false).
+//  // We will double check that indeed the data is in our view (now that we're
+//  // in an unknown state).
+//  const auto pred_view = view.Predecessors()[0];
+//
+//  std::vector<QueryColumn> pred_cols;
+//  for (auto col : negate.InputColumns()) {
+//    pred_cols.push_back(col);
+//  }
+//  for (auto col : negate.InputCopiedColumns()) {
+//    pred_cols.push_back(col);
+//  }
+//
+//  // NOTE(pag): Passing `nullptr` because a negation can't share the data
+//  //            model of its predecessor, because it represents a subset of
+//  //            that data.
+//  const auto checker_proc = GetOrCreateTopDownChecker(
+//      impl, context, pred_view, pred_cols, nullptr);
+//
+//  // Now call the checker procedure for our predecessor. If it returns `true`
+//  // then it means that the columns are available in our predecessor, the
+//  // columns are not in the negated view, and thus we have proved the presence
+//  // of this tuple and can stop.
+//  const auto check = impl->operation_regions.CreateDerived<CALL>(
+//      impl->next_id++, seq, checker_proc);
+//
+//  COMMENT( check->comment = __FILE__ ": CreateBottomUpNegationRemover"; )
+//
+//  auto i = 0u;
+//  for (auto col : pred_cols) {
+//    const auto var = parent->VariableFor(impl, col);
+//    assert(var != nullptr);
+//    check->arg_vars.AddUse(var);
+//    const auto param = checker_proc->input_vars[i++];
+//    assert(var->Type() == param->Type());
+//    (void) param;
+//  }
+//
+//  seq->AddRegion(check);
+//
+//  // If we're down here then it means that we've proven that the tuple exists
+//  // and so we want to return early.
+//  auto seq_in_check = impl->series_regions.Create(check);
+//  check->body.Emplace(check, seq_in_check);
+//  auto change = BuildChangeState(
+//      impl, table, seq_in_check, view.Columns(),
+//      TupleState::kAbsentOrUnknown, TupleState::kPresent);
+//  seq_in_check->AddRegion(change);
+//  seq_in_check->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq_in_check));
+//
+//  // If we're down here then it means the data isn't present in the negated
+//  // view, but it's also not present in our predecessor, so it's time to keep
+//  // going.
+//
+//  change = BuildChangeState(
+//      impl, table, seq, view.Columns(),
+//      TupleState::kAbsentOrUnknown, TupleState::kAbsent);
+//  seq->AddRegion(change);
+//
+//  auto par = impl->parallel_regions.Create(change);
+//  change->body.Emplace(change, par);
+//  handle_sucesssors(par);
 }
 
 }  // namespace hyde

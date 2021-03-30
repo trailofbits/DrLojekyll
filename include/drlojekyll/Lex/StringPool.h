@@ -13,6 +13,11 @@ class StringPool {
   ~StringPool(void);
   StringPool(void);
 
+  // Default IDs.
+  unsigned UnderscoreId(void) const;
+  unsigned LiteralTrueId(void) const;
+  unsigned LiteralFalseId(void) const;
+
   // Intern a code block into the pool, returning its ID.
   unsigned InternCode(std::string_view code) const;
 

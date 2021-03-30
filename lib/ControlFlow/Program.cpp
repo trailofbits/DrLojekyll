@@ -26,16 +26,10 @@ ProgramImpl::~ProgramImpl(void) {
   }
 
   for (auto induction : induction_regions) {
-    for (auto &entry : induction->view_to_init_appends) {
-      entry.second.ClearWithoutErasure();
-    }
-    for (auto &entry : induction->view_to_vec) {
-      entry.second.ClearWithoutErasure();
-    }
     induction->init_region.ClearWithoutErasure();
     induction->cyclic_region.ClearWithoutErasure();
     induction->output_region.ClearWithoutErasure();
-    induction->vectors.Clear();
+    induction->vectors.ClearWithoutErasure();
   }
 
   for (auto op : operation_regions) {
@@ -88,8 +82,10 @@ ProgramImpl::~ProgramImpl(void) {
       view_scan->output_vector.ClearWithoutErasure();
       view_scan->table.ClearWithoutErasure();
 
-    } else if (auto exists_assert = op->AsExistenceAssertion(); exists_assert) {
-      exists_assert->cond_vars.ClearWithoutErasure();
+    } else if (auto exists_assert = op->AsTestAndSet(); exists_assert) {
+      exists_assert->accumulator.ClearWithoutErasure();
+      exists_assert->displacement.ClearWithoutErasure();
+      exists_assert->comparator.ClearWithoutErasure();
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
@@ -191,7 +187,7 @@ bool ProgramRegion::IsParallel(void) const noexcept {
 
 IS_OP(Call)
 IS_OP(Return)
-IS_OP(ExistenceAssertion)
+IS_OP(TestAndSet)
 IS_OP(Generate)
 IS_OP(LetBinding)
 IS_OP(Publish)
@@ -222,14 +218,29 @@ ProgramParallelRegion::From(ProgramRegion region) noexcept {
   return ProgramParallelRegion(derived_impl);
 }
 
-bool ProgramExistenceAssertionRegion::IsIncrement(void) const noexcept {
-  return impl->op == ProgramOperation::kIncrementAll ||
-         impl->op == ProgramOperation::kIncrementAllAndTest;
+bool ProgramTestAndSetRegion::IsAdd(void) const noexcept {
+  return impl->op == ProgramOperation::kTestAndAdd;
 }
 
-bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
-  return impl->op == ProgramOperation::kDecrementAll ||
-         impl->op == ProgramOperation::kDecrementAllAndTest;
+bool ProgramTestAndSetRegion::IsSubtract(void) const noexcept {
+  return impl->op == ProgramOperation::kTestAndSub;
+}
+
+// The source/destination variable. This is `A` in `(A += D) == C`.
+DataVariable ProgramTestAndSetRegion::Accumulator(void) const {
+  return DataVariable(impl->accumulator.get());
+}
+
+// The amount by which the accumulator is displacement. This is `D` in
+// `(A += D) == C`.
+DataVariable ProgramTestAndSetRegion::Displacement(void) const {
+  return DataVariable(impl->displacement.get());
+}
+
+// The value which must match the accumulated result for `Body` to execute.
+// This is `C` in `(A += D) == C`.
+DataVariable ProgramTestAndSetRegion::Comparator(void) const {
+  return DataVariable(impl->comparator.get());
 }
 
 #define OPTIONAL_BODY(method_name, name, field) \
@@ -241,7 +252,7 @@ bool ProgramExistenceAssertionRegion::IsDecrement(void) const noexcept {
     } \
   }
 
-OPTIONAL_BODY(Body, ProgramExistenceAssertionRegion, body)
+OPTIONAL_BODY(Body, ProgramTestAndSetRegion, body)
 OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
 OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
 OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
@@ -266,7 +277,7 @@ OPTIONAL_BODY(BodyIfFalse, ProgramCallRegion, false_body)
 
 FROM_OP(ProgramCallRegion, AsCall)
 FROM_OP(ProgramReturnRegion, AsReturn)
-FROM_OP(ProgramExistenceAssertionRegion, AsExistenceAssertion)
+FROM_OP(ProgramTestAndSetRegion, AsTestAndSet)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
 FROM_OP(ProgramPublishRegion, AsPublish)
@@ -312,8 +323,6 @@ DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_
 USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
 USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
-USED_RANGE(ProgramExistenceAssertionRegion, ReferenceCounts, DataVariable,
-           cond_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
@@ -339,16 +348,22 @@ USED_RANGE(ProgramTableScanRegion, InputVariables, DataVariable, in_vars)
 #undef DEFINED_RANGE
 #undef USED_RANGE
 
+// The format of the code in this program.
+IRFormat Program::Format(void) const {
+  return impl->format;
+}
+
 namespace {
 
 static VectorUsage VectorUsageOfOp(ProgramOperation op) {
   switch (op) {
     case ProgramOperation::kLoopOverInputVector:
       return VectorUsage::kProcedureInputVector;
-    case ProgramOperation::kAppendInductionInputToVector:
-    case ProgramOperation::kClearInductionInputVector:
-    case ProgramOperation::kLoopOverInductionInputVector:
+    case ProgramOperation::kAppendToInductionVector:
+    case ProgramOperation::kClearInductionVector:
+    case ProgramOperation::kLoopOverInductionVector:
     case ProgramOperation::kSwapInductionVector:
+    case ProgramOperation::kSortAndUniqueInductionVector:
       return VectorUsage::kInductionVector;
     case ProgramOperation::kAppendUnionInputToVector:
     case ProgramOperation::kLoopOverUnionInputVector:
@@ -503,12 +518,11 @@ Token DataVariable::Name(void) const noexcept {
 
 // The literal, constant value of this variable.
 std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
-  if (impl->query_column) {
-    if (impl->query_column->IsConstantOrConstantRef()) {
-      return QueryConstant::From(*impl->query_column).Literal();
-    }
-  } else if (impl->query_const) {
+  if (impl->query_const) {
     return impl->query_const->Literal();
+  }
+  if (impl->query_column && impl->query_column->IsConstantOrConstantRef()) {
+    return QueryConstant::From(*impl->query_column).Literal();
   }
   return std::nullopt;
 }

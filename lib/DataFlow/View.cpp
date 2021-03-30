@@ -74,10 +74,6 @@ const char *Node<QueryCompare>::KindName(void) const noexcept {
   return "COMPARE";
 }
 
-const char *Node<QueryDelete>::KindName(void) const noexcept {
-  return "DELETE";
-}
-
 const char *Node<QueryNegate>::KindName(void) const noexcept {
   return "AND-NOT";
 }
@@ -96,10 +92,6 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
       return "INCREMENT";
     }
   }
-}
-
-Node<QueryDelete> *Node<QueryView>::AsDelete(void) noexcept {
-  return nullptr;
 }
 
 Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {

@@ -1,7 +1,7 @@
 ; This example exists to try to create a join that is infeasible due to one side being infeasable, but where
 ; optimization nonetheless permits it to work.
 
-#message output(i32 A).
+#message output(i32 A) @differential.
 #message input(i32 A).
 #local impossible(A, B).
 #local one(i32 A).

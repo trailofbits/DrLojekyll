@@ -24,8 +24,6 @@ bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
 
 Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
     : Node<ProgramRegion>(parent_->containing_procedure),
-      cyclic_region(this, impl->parallel_regions.Create(this)),
-      output_region(this, impl->parallel_regions.Create(this)),
       vectors(this) {}
 
 uint64_t Node<ProgramInductionRegion>::Hash(uint32_t depth) const {

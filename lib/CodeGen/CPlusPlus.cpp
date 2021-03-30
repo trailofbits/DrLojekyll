@@ -416,7 +416,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << "ProgramReturnRegion\n";
   }
 
-  void Visit(ProgramExistenceAssertionRegion val) override {
+  void Visit(ProgramTestAndSetRegion val) override {
     os << "ProgramExistenceAssertionRegion\n";
   }
 

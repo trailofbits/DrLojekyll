@@ -1,5 +1,5 @@
-#message add_attr(i32 DocId, i8 AttrKind, utf8 Attr).
-#message remove_attr(i32 DocId, i8 AttrKind, utf8 Attr).
+#message add_attr(i32 DocId, i8 AttrKind, utf8 Attr) @differential.
+
 #local attr(i32 DocId, i8 AttrKind, utf8 Attr).
 #query get_info(bound i32 DocId,
                 free utf8 Title,
@@ -8,7 +8,6 @@
                 free utf8 Summary).
 
 attr(DocId, AttrKind, Attr) : add_attr(DocId, AttrKind, Attr).
-!attr(DocId, AttrKind, Attr) : remove_attr(DocId, AttrKind, Attr).
 
 get_info(DocId, Title, SubTitle, Author, Summary)
     : attr(DocId, 1, Title)

@@ -186,83 +186,85 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
     changed = true;
   }
 
-  auto parent_region = induction->parent;
-  if (!parent_region) {
-    return changed;
-  }
-
-  auto parent_induction = parent_region->AsInduction();
-  if (!parent_induction) {
-    return changed;
-  }
-
-  // Optimize nested inductions.
-
-  // Form like
-  // induction
-  //   init
-  //    induction
-  if (induction == parent_induction->init_region.get()) {
-
-    // Fixup vectors
-    for (auto def : induction->vectors) {
-      changed = true;
-      parent_induction->vectors.AddUse(def);
-    }
-    induction->vectors.Clear();
-
-    // Fixup output region
-    if (auto output_region = induction->output_region.get(); output_region) {
-      assert(!output_region->IsNoOp());  // Handled above.
-      induction->output_region.Clear();
-      output_region->parent = parent_induction;
-      if (auto parent_output_region = parent_induction->output_region.get();
-          parent_output_region) {
-        output_region->ExecuteBefore(prog, parent_output_region);
-      } else {
-        parent_induction->output_region.Emplace(parent_induction,
-                                                output_region);
-      }
-    }
-
-    // Fixup init region
-    auto init_region = induction->init_region.get();
-    induction->init_region.Clear();
-    init_region->parent = parent_induction;
-    parent_induction->init_region.Emplace(parent_induction, init_region);
-
-    // Fixup cyclic region
-    auto cyclic_region = induction->cyclic_region.get();
-    induction->cyclic_region.Clear();
-    cyclic_region->parent = parent_induction;
-    if (auto parent_cyclic_region = parent_induction->cyclic_region.get();
-        parent_cyclic_region) {
-      cyclic_region->ExecuteBefore(prog, parent_cyclic_region);
-    } else {
-      parent_induction->cyclic_region.Emplace(parent_induction, cyclic_region);
-    }
-
-    induction->parent = nullptr;
-
-    changed = true;
-
-  // Form like
-  // induction:
-  // init:
-  //   init-code-0
-  // fixpoint-loop:
-  //   induction:
-  //     init:
-  //       init-code-1
-  //     fixpoint-loop:
-  //       code-2
-  //   code-3
-  } else if (induction == parent_induction->cyclic_region.get()) {
-
-    // TODO(ekilmer)
-  }
-
   return changed;
+//
+//  auto parent_region = induction->parent;
+//  if (!parent_region) {
+//    return changed;
+//  }
+//
+//  auto parent_induction = parent_region->AsInduction();
+//  if (!parent_induction) {
+//    return changed;
+//  }
+//
+//  // Optimize nested inductions.
+//
+//  // Form like
+//  // induction
+//  //   init
+//  //    induction
+//  if (induction == parent_induction->init_region.get()) {
+//
+//    // Fixup vectors
+//    for (auto def : induction->vectors) {
+//      changed = true;
+//      parent_induction->vectors.AddUse(def);
+//    }
+//    induction->vectors.Clear();
+//
+//    // Fixup output region
+//    if (auto output_region = induction->output_region.get(); output_region) {
+//      assert(!output_region->IsNoOp());  // Handled above.
+//      induction->output_region.Clear();
+//      output_region->parent = parent_induction;
+//      if (auto parent_output_region = parent_induction->output_region.get();
+//          parent_output_region) {
+//        output_region->ExecuteBefore(prog, parent_output_region);
+//      } else {
+//        parent_induction->output_region.Emplace(parent_induction,
+//                                                output_region);
+//      }
+//    }
+//
+//    // Fixup init region
+//    auto init_region = induction->init_region.get();
+//    induction->init_region.Clear();
+//    init_region->parent = parent_induction;
+//    parent_induction->init_region.Emplace(parent_induction, init_region);
+//
+//    // Fixup cyclic region
+//    auto cyclic_region = induction->cyclic_region.get();
+//    induction->cyclic_region.Clear();
+//    cyclic_region->parent = parent_induction;
+//    if (auto parent_cyclic_region = parent_induction->cyclic_region.get();
+//        parent_cyclic_region) {
+//      cyclic_region->ExecuteBefore(prog, parent_cyclic_region);
+//    } else {
+//      parent_induction->cyclic_region.Emplace(parent_induction, cyclic_region);
+//    }
+//
+//    induction->parent = nullptr;
+//
+//    changed = true;
+//
+//  // Form like
+//  // induction:
+//  // init:
+//  //   init-code-0
+//  // fixpoint-loop:
+//  //   induction:
+//  //     init:
+//  //       init-code-1
+//  //     fixpoint-loop:
+//  //       code-2
+//  //   code-3
+//  } else if (induction == parent_induction->cyclic_region.get()) {
+//
+//    // TODO(ekilmer)
+//  }
+//
+//  return changed;
 }
 
 static bool OptimizeImpl(SERIES *series) {
@@ -538,6 +540,52 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
   return changed;
 }
 
+
+// Try to eliminate unnecessary children of a check state region.
+static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
+  auto changed = false;
+
+  if (check->body) {
+    assert(check->body->parent == check);
+
+    if (check->body->IsNoOp()) {
+      check->body->parent = nullptr;
+      check->body.Clear();
+      changed = true;
+    }
+  }
+
+  if (check->unknown_body) {
+    assert(check->unknown_body->parent == check);
+
+    if (check->unknown_body->IsNoOp()) {
+      check->unknown_body->parent = nullptr;
+      check->unknown_body.Clear();
+      changed = true;
+    }
+  }
+
+  if (check->absent_body) {
+    assert(check->absent_body->parent == check);
+
+    if (check->absent_body->IsNoOp()) {
+      check->absent_body->parent = nullptr;
+      check->absent_body.Clear();
+      changed = true;
+    }
+  }
+
+  // Dead code eliminate the check state.
+  if (!check->body && !check->unknown_body && !check->absent_body) {
+    auto let = impl->operation_regions.CreateDerived<LET>(check->parent);
+    check->ReplaceAllUsesWith(let);
+    check->parent = nullptr;
+    changed = true;
+  }
+
+  return changed;
+}
+
 // Perform dead argument elimination.
 static bool OptimizeImpl(PROC *proc) {
   return false;
@@ -546,7 +594,6 @@ static bool OptimizeImpl(PROC *proc) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
-
 #ifndef NDEBUG
   for (auto par : parallel_regions) {
     assert(par->parent != nullptr);
@@ -639,6 +686,9 @@ void ProgramImpl::Optimize(void) {
 
       } else if (auto gen = op->AsGenerate(); gen) {
         changed = OptimizeImpl(this, gen) | changed;
+
+      } else if (auto check = op->AsCheckState(); check) {
+        changed = OptimizeImpl(this, check) | changed;
 
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.

@@ -94,6 +94,9 @@ class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
   // Is this a string literal? This does not include code literals.
   bool IsString(void) const noexcept;
 
+  // Is this a Boolean literal, i.e. `true` or `false`.
+  bool IsBoolean(void) const noexcept;
+
   // What is the type of this literal? The returned `TypeLoc` refers to the
   // source of the type that we used to infer the type, based off of usage.
   TypeLoc Type(void) const noexcept;
@@ -412,6 +415,10 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
   // Should this clause be highlighted in the data flow representation?
   bool IsHighlighted(void) const noexcept;
 
+  // Returns `true` if this clause body is disabled. A disabled clause body
+  // is one that contains a free `false` or `!true` predicate.
+  bool IsDisabled(DisplayRange *disabled_by=nullptr) const noexcept;
+
   // Are cross-products permitted when building the data flow representation
   // for this clause?
   bool CrossProductsArePermitted(void) const noexcept;
@@ -530,7 +537,6 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   NodeRange<ParsedDeclaration> Redeclarations(void) const;
   NodeRange<ParsedParameter> Parameters(void) const;
   NodeRange<ParsedClause> Clauses(void) const;
-  NodeRange<ParsedClause> DeletionClauses(void) const;
 
   NodeRange<ParsedPredicate> PositiveUses(void) const;
   NodeRange<ParsedPredicate> NegativeUses(void) const;
@@ -538,9 +544,12 @@ class ParsedDeclaration : public parse::ParsedNode<ParsedDeclaration> {
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
   unsigned NumClauses(void) const noexcept;
-  unsigned NumDeletionClauses(void) const noexcept;
 
+  // Is this declaration marked with the `@inline` pragma?
   bool IsInline(void) const noexcept;
+
+  // Is this declaration marked with the `@divergent` pragma?
+  bool IsDivergent(void) const noexcept;
 
   inline unsigned NumUses(void) const noexcept {
     return NumPositiveUses() + NumNegatedUses();
@@ -813,6 +822,10 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
   // are rules that publish this message.
   bool IsPublished(void) const noexcept;
 
+  // Can this message receive/publish removals?
+  bool IsDifferential(void) const noexcept;
+  Token Differential(void) const noexcept;
+
   unsigned NumPositiveUses(void) const noexcept;
 
   inline unsigned NumNegatedUses(void) const noexcept {
@@ -1019,6 +1032,15 @@ class ParsedInline : public parse::ParsedNode<ParsedInline> {
 }  // namespace hyde
 
 namespace std {
+
+template <>
+struct hash<::hyde::ParsedClause> {
+  using argument_type = ::hyde::ParsedClause;
+  using result_type = uint64_t;
+  inline uint64_t operator()(::hyde::ParsedClause clause) const noexcept {
+    return clause.UniqueId();
+  }
+};
 
 template <>
 struct hash<::hyde::ParsedParameter> {

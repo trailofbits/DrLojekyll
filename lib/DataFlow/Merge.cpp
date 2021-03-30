@@ -88,9 +88,9 @@ bool Node<QueryMerge>::Canonicalize(
     }
   }
 
-  if (is_canonical) {
-    return false;
-  }
+//  if (is_canonical) {
+//    return false;
+//  }
 
   bool non_local_changes = false;
   is_canonical = true;
@@ -119,6 +119,7 @@ bool Node<QueryMerge>::Canonicalize(
     // before then that could affect `VIEW::OnlyUser()`.
     const auto end = seen.end();
     if (std::find(seen.begin(), end, view) != end) {
+      is_canonical = false;
       non_local_changes = true;
       continue;
     }
@@ -132,6 +133,7 @@ bool Node<QueryMerge>::Canonicalize(
       // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
         non_local_changes = true;
+        is_canonical = false;
         work_list.push_back(tuple_source);
 
       } else {
@@ -147,6 +149,7 @@ bool Node<QueryMerge>::Canonicalize(
                merge->negative_conditions.Empty() &&
                merge->OnlyUser()) {
 
+      is_canonical = false;
       non_local_changes = true;
       for (auto i = merge->merged_views.Size(); i;) {
         work_list.push_back(merge->merged_views[--i]);

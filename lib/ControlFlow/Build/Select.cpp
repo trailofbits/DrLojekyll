@@ -63,15 +63,18 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
   const auto region = BuildMaybeScanPartial(
       impl, view, view_cols, model->table, proc,
-      [&](REGION *parent, bool in_scan) -> REGION * {
+      [&](REGION *parent, bool in_loop) -> REGION * {
         if (already_checked != model->table) {
           already_checked = model->table;
+
+          auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
+                                              BuildStateCheckCaseReturnFalse;
 
           if (view.CanProduceDeletions()) {
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseNothing,
+                continue_or_return,
                 [&](ProgramImpl *, REGION *parent) -> REGION * {
 
                   // No predecessors, and the tuple is marked as unknown, so
@@ -93,8 +96,8 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
                 BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseNothing,
-                BuildStateCheckCaseNothing);
+                continue_or_return,
+                continue_or_return);
           }
 
         // No predecessors, not our job to change states; return true to the
@@ -105,7 +108,7 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
           //
           // TODO(pag): This should imply that `already_checked` doesn't match
           //            the parent...
-          if (in_scan) {
+          if (in_loop) {
 
             // TODO(pag): Finding it in a scan with no predecessors ought to
             //            mean that there is no way for that data to be deleted.

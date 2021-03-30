@@ -184,7 +184,7 @@ class ParserImpl {
                                  Node<ParsedPredicate> *pred);
 
   // Try to parse `sub_range` as a clause.
-  void ParseClause(Node<ParsedModule> *module, Token negation_tok = Token(),
+  void ParseClause(Node<ParsedModule> *module,
                    Node<ParsedDeclaration> *decl = nullptr);
 
   // Create a variable.
@@ -310,6 +310,29 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(
       assert(!decl->is_merge);
       decl->is_merge = true;
       decl->range = FunctorRange::kOneToOne;
+    }
+
+    // Different differential attributes.
+    if (prev_decl->differential_attribute.IsValid() !=
+        decl->differential_attribute.IsValid()) {
+
+      if (decl->differential_attribute.IsValid()) {
+        auto err = context->error_log.Append(
+            scope_range, decl->differential_attribute.SpellingRange());
+        err << "Message is marked as differential, but prior declaration isn't";
+
+        auto note = err.Note(T(prev_decl).SpellingRange());
+        note << "Previous declaration is here";
+
+      } else {
+        auto err = context->error_log.Append(
+            T(prev_decl).SpellingRange(),
+            prev_decl->differential_attribute.SpellingRange());
+        err << "Message is marked as differential, but redeclaration isn't";
+
+        auto note = err.Note(scope_range);
+        note << "Redeclaration is here";
+      }
     }
 
     // The inferred range specifications don't match.

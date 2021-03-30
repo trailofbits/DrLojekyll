@@ -110,11 +110,14 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   //
   // Note: Some tests fail to build -- handle those specially
   if (kBuildDebugFailExamples.count(path_filename_str)) {
-    ASSERT_DEBUG_DEATH(hyde::Program::Build(*query_opt, err_log), ".*TODO.*");
+    ASSERT_DEBUG_DEATH(hyde::Program::Build(
+        *query_opt, hyde::IRFormat::kIterative, err_log),
+        ".*TODO.*");
     return;
   }
 
-  auto program_opt = hyde::Program::Build(*query_opt, err_log);
+  auto program_opt = hyde::Program::Build(
+      *query_opt, hyde::IRFormat::kIterative, err_log);
   ASSERT_TRUE(program_opt.has_value());
 
   auto generated_file_base =

@@ -247,7 +247,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
             // Go try to parse the synthetic clause body, telling about our
             // synthetic declaration head.
-            ParseClause(module, Token(), anon_decl.get());
+            ParseClause(module, anon_decl.get());
 
             next_sub_tok_index = prev_next_sub_tok_index;
             sub_tokens.swap(anon_clause_toks);
@@ -295,6 +295,8 @@ bool ParserImpl::ParseAggregatedPredicate(
         // Convert literals into variables, just-in-time.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme ||
+            Lexeme::kLiteralTrue == lexeme ||
+            Lexeme::kLiteralFalse == lexeme ||
             Lexeme::kIdentifierConstant == lexeme) {
           arg = CreateLiteralVariable(clause, tok, false, true);
 

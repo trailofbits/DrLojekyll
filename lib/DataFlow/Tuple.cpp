@@ -59,14 +59,6 @@ bool Node<QueryTuple>::Canonicalize(
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
       GetIncomingView(input_columns), input_columns, attached_columns);
 
-  // If this tuple is proxing a DELETE, then replace it with the DELETE.
-  if (incoming_view && incoming_view->AsDelete() &&
-      this->ForwardsAllInputsAsIs(incoming_view)) {
-    input_columns.Clear();
-    this->ReplaceAllUsesWith(incoming_view);
-    return true;
-  }
-
   auto i = 0u;
   for (; i < num_cols; ++i) {
 
