@@ -102,7 +102,7 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
               << "Expected atom or variable here for the name of "
               << "the foreign type being declared, got '" << tok << "' instead";
 
-          state = 1;
+          state = 5;
           report_trailing = false;
           continue;
         }
