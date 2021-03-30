@@ -531,7 +531,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   assert_error_log_empty("successful query compilation");
 
-  const auto program_opt = hyde::Program::Build(*query_opt, cxt.error_log);
+  const auto program_opt = hyde::Program::Build(
+      *query_opt, hyde::IRFormat::kIterative, cxt.error_log);
   if (!program_opt) {
 
     // Bail out early if program compilation failed.  Expected to be rare!
