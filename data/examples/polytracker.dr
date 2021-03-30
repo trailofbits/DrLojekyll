@@ -1,5 +1,6 @@
 
 #prologue ```python
+from typing import Iterable
 OffsetList = Tuple[int, ...]
 ```.
 
@@ -62,7 +63,7 @@ def append_offset_list_bbf(l: OffsetList, r: int) -> OffsetList:
   return l + (r, )
 
 def prepend_offset_list_bbf(l: int, r: OffsetList) -> OffsetList:
-  return (r, ) + l
+  return (l, ) + r
 
 def concat_offset_lists_bbf(l: OffsetList, r: OffsetList) -> OffsetList:
   return l + r
