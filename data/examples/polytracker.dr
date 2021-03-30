@@ -1,0 +1,83 @@
+
+#prologue ```python
+OffsetList = Tuple[int, ...]
+```.
+
+#foreign OffsetList ```python OffsetList``` @transparent.
+#functor make_offset_list(bound u32 LhsOffset, bound u32 RhsOffset,
+                          free OffsetList Offsets) @range(.).
+#functor append_offset_list(bound OffsetList LhsList, bound u32 RhsOffset,
+                            free OffsetList Offsets) @range(.).
+#functor prepend_offset_list(bound u32 LhsOffset, bound OffsetList RhsList,
+                             free OffsetList Offsets) @range(.).
+#functor concat_offset_lists(bound OffsetList LhsList, bound OffsetList RhsList,
+                             free OffsetList Offsets) @range(.).
+#functor enumerate_offset_lists(bound OffsetList List, free u32 Index,
+                                free u32 Offset) @range(+).
+
+#message offset(u64 Label, u32 Offset).
+#message union(u64 ParentLabel, u64 LeftLabel, u64 RightLabel).
+#message input(u64 Label, utf8 FuncName).
+
+#local label_chunk(UnionLabel, Chunk)
+
+    ; Base case 1: a union of two labels, where both labels are directly
+    ; related to a byte offset.
+    : union(UnionLabel, LeftLabel, RightLabel)
+    , offset(LeftLabel, LeftOffset)
+    , offset(RightLabel, RightOffset)
+    , make_offset_list(LeftOffset, RightOffset, Chunk)
+
+    ; Inductive case 1: a union of two labels, where the left label is a union
+    ; label and the right label is a byte label.
+    : union(UnionLabel, LeftLabel, RightLabel)
+    , label_chunk(LeftLabel, LeftChunk)
+    , offset(RightLabel, RightOffset)
+    , append_offset_list(LeftChunk, RightOffset, Chunk)
+
+    ; Inductive case 2: a union of two labels, where the left label is a byte
+    ; label and the right label is a union label.
+    : union(UnionLabel, LeftLabel, RightLabel)
+    , offset(LeftLabel, LeftOffset)
+    , label_chunk(RightLabel, RightChunk)
+    , prepend_offset_list(LeftOffset, RightChunk, Chunk)
+
+    ; Inductive case 3: a union of two labels, where both the left- and right-
+    ; hand labels are union labels.
+    : union(UnionLabel, LeftLabel, RightLabel)
+    , label_chunk(LeftLabel, LeftChunk)
+    , label_chunk(RightLabel, RightChunk)
+    , concat_offset_lists(LeftChunk, RightChunk, Chunk).
+
+#query function_chunks(free utf8 FuncName, free OffsetList Offsets)
+    : input(ChunkLabel, FuncName)
+    , label_chunk(ChunkLabel, Offsets).
+
+#epilogue ```python
+
+def make_offset_list_bbf(l: int, r: int) -> OffsetList:
+  return (l, r)
+
+def append_offset_list_bbf(l: OffsetList, r: int) -> OffsetList:
+  return l + (r, )
+
+def prepend_offset_list_bbf(l: int, r: OffsetList) -> OffsetList:
+  return (r, ) + l
+
+def concat_offset_lists_bbf(l: OffsetList, r: OffsetList) -> OffsetList:
+  return l + r
+
+def enumerate_offset_lists(l: OffsetList) -> Iterable[Tuple[int, int]]:
+  yield from enumerate(l)
+
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), DatabaseFunctors())
+  db.offset_2([(1, 0), (2, 1), (3, 2), (4, 3)])
+  db.union_3([(5, 1, 2), (6, 5, 3), (7, 6, 4)])
+  db.input_2([(1, "main"), (2, "main"), (3, "main"), (4, "main"),
+              (7, "do_with_int")])
+
+  for func_name, touched_offsets in db.function_chunks_ff():
+    print(func_name, touched_offsets)
+```.

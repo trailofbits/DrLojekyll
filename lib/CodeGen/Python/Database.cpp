@@ -1079,7 +1079,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           os << os.Indent() << Var(os, var) << " = tuple_" << region.Id() << "_"
              << i;
 
-          if (1u < out_vars.size()) {
+          if (1u < index_vals.size()) {
             os << "[" << select_col_idx - tuple_col_idx_offset << "]";
           }
           os << '\n';
