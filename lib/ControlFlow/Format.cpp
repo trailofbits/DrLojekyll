@@ -691,6 +691,7 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
     case ProcedureKind::kInitializer: os << "^init:"; break;
+    case ProcedureKind::kEntryDataFlowFunc: os << "^entry:"; break;
     case ProcedureKind::kPrimaryDataFlowFunc: os << "^flow:"; break;
     case ProcedureKind::kMessageHandler:
       os << "^receive:";
