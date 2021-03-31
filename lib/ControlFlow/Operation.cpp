@@ -35,7 +35,9 @@ Node<ProgramVectorUniqueRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
-      op(op_) {}
+      op(op_) {
+  assert(parent_->Ancestor()->AsProcedure());
+}
 
 Node<ProgramOperationRegion> *
 Node<ProgramOperationRegion>::AsOperation(void) noexcept {

@@ -5,6 +5,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <unordered_map>

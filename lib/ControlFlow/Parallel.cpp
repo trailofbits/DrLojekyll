@@ -4,6 +4,11 @@
 
 namespace hyde {
 
+Node<ProgramParallelRegion>::Node(REGION *parent_)
+    : Node<ProgramRegion>(parent_), regions(this) {
+  assert(parent_->Ancestor()->AsProcedure());
+}
+
 Node<ProgramParallelRegion>::~Node(void) {}
 
 Node<ProgramParallelRegion> *

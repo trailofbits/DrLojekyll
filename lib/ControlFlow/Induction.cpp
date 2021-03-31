@@ -24,7 +24,9 @@ bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
 
 Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
     : Node<ProgramRegion>(parent_->containing_procedure),
-      vectors(this) {}
+      vectors(this) {
+  assert(parent_->Ancestor()->AsProcedure());
+}
 
 uint64_t Node<ProgramInductionRegion>::Hash(uint32_t depth) const {
   uint64_t hash = 117u;

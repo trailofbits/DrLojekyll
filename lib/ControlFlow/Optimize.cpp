@@ -634,11 +634,14 @@ void ProgramImpl::Optimize(void) {
       changed |= series_regions.RemoveUnused();
       changed |= operation_regions.RemoveUnused();
       changed |= procedure_regions.RemoveIf([](PROC *proc) {
-        if (proc->kind == ProcedureKind::kInitializer ||
-            proc->kind == ProcedureKind::kMessageHandler) {
-          return false;
-        } else {
-          return !proc->has_raw_use && !proc->IsUsed();
+        switch (proc->kind) {
+          case ProcedureKind::kInitializer:
+          case ProcedureKind::kEntryDataFlowFunc:
+          case ProcedureKind::kPrimaryDataFlowFunc:
+          case ProcedureKind::kMessageHandler:
+            return false;
+          default:
+            return !proc->has_raw_use && !proc->IsUsed();
         }
       });
     }
@@ -715,13 +718,18 @@ void ProgramImpl::Optimize(void) {
   // Go find possibly similar procedures.
   std::unordered_map<uint64_t, std::vector<PROC *>> similar_procs;
   for (auto proc : procedure_regions) {
-    if (proc->kind == ProcedureKind::kInitializer ||
-        proc->kind == ProcedureKind::kMessageHandler) {
-      continue;
-
-    } else if (proc->IsUsed() || proc->has_raw_use) {
-      const auto hash = proc->Hash(UINT32_MAX);
-      similar_procs[hash].emplace_back(proc);
+    switch (proc->kind) {
+      case ProcedureKind::kInitializer:
+      case ProcedureKind::kEntryDataFlowFunc:
+      case ProcedureKind::kPrimaryDataFlowFunc:
+      case ProcedureKind::kMessageHandler:
+        continue;
+      default:
+        if (proc->IsUsed() || proc->has_raw_use) {
+          const auto hash = proc->Hash(UINT32_MAX);
+          similar_procs[hash].emplace_back(proc);
+        }
+        break;
     }
   }
 
