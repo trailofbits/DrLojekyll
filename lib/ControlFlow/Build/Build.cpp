@@ -270,6 +270,25 @@ static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
   //  context.view_to_induction.clear();
   //  context.product_vector.clear();
 
+  const auto proc_par = impl->parallel_regions.Create(proc);
+
+  for (auto io : query.IOs()) {
+    const auto par = impl->parallel_regions.Create(proc);
+    proc->body.Emplace(proc, par);
+    ExtendEagerProcedure(impl, io, context, proc, par);
+
+    auto curr_body = proc->body.get();
+    proc->body.Clear();
+    curr_body->parent = proc_par;
+    proc_par->AddRegion(curr_body);
+  }
+
+  // TODO(pag): I think I have half-fixed the bug described below. Basically,
+  //            I think I've "fixed" it for the first "level" of inductions,
+  //            but none of the subsequent levels of inductions. It's possible
+  //            that we'll need to break out work lists to separate joins and
+  //            such, so that I can do this type of fixing up in phases.
+  //
   // TODO(pag): Possible future bug lies here. So, right now we group everything
   //            into one PARALLEL, `par`, then build out from there. But maybe
   //            the right approach is to place them into independent parallel
@@ -290,15 +309,7 @@ static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
   // list, which partially uses depth for ordering, to figure the proper order
   // for regions. This is tricky because we need to place anything we find,
   // in terms of.
-  //
-  // --- END of old, semi-unrelated, speculative comment.
-
-  const auto par = impl->parallel_regions.Create(proc);
-  proc->body.Emplace(proc, par);
-
-  for (auto io : query.IOs()) {
-    ExtendEagerProcedure(impl, io, context, proc, par);
-  }
+  proc->body.Emplace(proc, proc_par);
 
   CompleteProcedure(impl, proc, context);
 
