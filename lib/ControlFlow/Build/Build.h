@@ -488,6 +488,10 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context);
 
+// Build the primary and entry data flow procedures.
+void BuildEagerProcedure(ProgramImpl *impl, Context &context,
+                         Query query);
+
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
 
