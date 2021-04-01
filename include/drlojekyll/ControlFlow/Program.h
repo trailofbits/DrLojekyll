@@ -202,6 +202,7 @@ enum class VariableRole : int {
   kProductOutput,
   kScanOutput,
   kFunctorOutput,
+  kMessageOutput,
   kParameter,
   kInputOutputParameter,
 };
@@ -245,6 +246,9 @@ enum class VectorKind : unsigned {
   kJoinPivots,
   kProductInput,
   kTableScan,
+
+  // Vector that collects outputs for messages marked with `@differential`.
+  kMessageOutputs,
 
   // This is a vector created inside of a message procedure and passed down to
   // the primary data flow function. It is guaranteed to be empty.
@@ -448,7 +452,8 @@ enum class VectorUsage : unsigned {
   kJoinPivots,
   kProductInputVector,
   kProcedureInputVector,
-  kTableScan
+  kTableScan,
+  kMessageOutputVector,
 };
 
 // Loop over a vector.
@@ -738,7 +743,7 @@ class ProgramInductionRegion
   // and cleared in the `Output()` region.
   UsedNodeRange<DataVector> Vectors(void) const;
 
-  ProgramRegion Initializer(void) const noexcept;
+  std::optional<ProgramRegion> Initializer(void) const noexcept;
   ProgramRegion FixpointLoop(void) const noexcept;
   std::optional<ProgramRegion> Output(void) const noexcept;
 

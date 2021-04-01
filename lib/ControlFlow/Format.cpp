@@ -109,6 +109,7 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kTableScan: os << "$scan"; break;
+    case VectorKind::kMessageOutputs: os << "$publish"; break;
     case VectorKind::kEmpty: os << "$empty"; break;
   }
 
@@ -580,10 +581,15 @@ OutputStream &operator<<(OutputStream &os, ProgramTableScanRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
   os << os.Indent() << "induction\n";
   os.PushIndent();
-  os << os.Indent() << "init\n";
-  os.PushIndent();
-  os << region.Initializer() << '\n';
-  os.PopIndent();
+  if (auto init = region.Initializer(); init) {
+    os << os.Indent() << "init\n";
+    os.PushIndent();
+    os << *init << '\n';
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-init\n";
+  }
+
   os << os.Indent() << "fixpoint-loop testing ";
 
   auto sep = "";
