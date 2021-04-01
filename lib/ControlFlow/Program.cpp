@@ -379,6 +379,11 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     case ProgramOperation::kScanTable:
     case ProgramOperation::kLoopOverScanVector:
     case ProgramOperation::kClearScanVector: return VectorUsage::kTableScan;
+    case ProgramOperation::kAppendToMessageOutputVector:
+    case ProgramOperation::kSortAndUniqueMessageOutputVector:
+    case ProgramOperation::kClearMessageOutputVector:
+    case ProgramOperation::kLoopOverMessageOutputVector:
+      return VectorUsage::kMessageOutputVector;
     default: assert(false); return VectorUsage::kInvalid;
   }
 }
@@ -681,8 +686,13 @@ ProgramInductionRegion::From(ProgramRegion region) noexcept {
   return ProgramInductionRegion(derived_impl);
 }
 
-ProgramRegion ProgramInductionRegion::Initializer(void) const noexcept {
-  return ProgramRegion(impl->init_region.get());
+std::optional<ProgramRegion>
+ProgramInductionRegion::Initializer(void) const noexcept {
+  if (auto region = impl->init_region.get(); region) {
+    return ProgramRegion(region);
+  } else {
+    return std::nullopt;
+  }
 }
 
 ProgramRegion ProgramInductionRegion::FixpointLoop(void) const noexcept {

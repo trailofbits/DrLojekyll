@@ -50,15 +50,32 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
     assert(!view.SetCondition());  // TODO(pag): Is this possible?
     auto stream = insert.Stream();
     assert(stream.IsIO());
-    auto io = QueryIO::From(stream);
+    auto io = QueryIO::From(insert.Stream());
+    auto message = ParsedMessage::From(io.Declaration());
 
-    const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
-        parent, ParsedMessage::From(io.Declaration()));
-    parent->body.Emplace(parent, message_publish);
+    // There's an accumulation vector, add it in.
+    if (const auto pub_vec = context.publish_vecs[message];
+    pub_vec != nullptr) {
 
-    for (auto col : cols) {
-      const auto var = parent->VariableFor(impl, col);
-      message_publish->arg_vars.AddUse(var);
+      auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          parent, ProgramOperation::kAppendToMessageOutputVector);
+      parent->body.Emplace(parent, append);
+      append->vector.Emplace(append, pub_vec);
+
+      for (auto col : insert.InputColumns()) {
+        append->tuple_vars.AddUse(append->VariableFor(impl, col));
+      }
+
+    // No accumulation vector, publish right now.
+    } else {
+      const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
+          parent, message);
+      parent->body.Emplace(parent, message_publish);
+
+      for (auto col : cols) {
+        const auto var = parent->VariableFor(impl, col);
+        message_publish->arg_vars.AddUse(var);
+      }
     }
 
   // Inserting into a relation.
@@ -77,93 +94,36 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent_,
                                  TABLE *already_removed_) {
-
-
-  // Figure out which columns of the predecessor we have.
-  const auto predecessors = view.Predecessors();
-  assert(predecessors.size() == 1u);
-  const QueryView pred_view = predecessors[0];
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+        impl, view, parent_, already_removed_);
 
   const auto insert = QueryInsert::From(view);
   const auto insert_cols = insert.InputColumns();
 
-  // If were doing a removal to a stream, then we want to publish the removal.
+  // If were doing a removal to a stream, then we want to defer publication
+  // of the removal until later, when we know the thing is truly gone.
   if (insert.IsStream()) {
-    auto parent = parent_;
-    auto parent_body = &(parent->body);
+    auto io = QueryIO::From(insert.Stream());
+    auto message = ParsedMessage::From(io.Declaration());
 
-    // If we're removing from a stream, and our caller is telling us that
-    // is hasn't checked anything, then it means we should check stuff,
-    // otherwise we'll trust that the thing is truly gone.
-    if (!already_removed_) {
-      auto [parent2, table, already_removed] = InTryMarkUnknown(
-          impl, view, parent_, already_removed_);
-      parent = parent2;
-      parent_body = &(parent->body);
+    const auto pub_vec = context.publish_vecs[message];
+    assert(pub_vec != nullptr);
 
-      std::vector<QueryColumn> available_cols;
-      for (auto col : insert_cols) {
-        if (QueryView::Containing(col) == pred_view) {
-          available_cols.push_back(col);
-        }
-      }
+    auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+        parent, ProgramOperation::kAppendToMessageOutputVector);
+    parent->body.Emplace(parent, append);
+    append->vector.Emplace(append, pub_vec);
 
-      // Sort in order of index, and then unique them.
-      std::sort(available_cols.begin(), available_cols.end(),
-                [] (QueryColumn a, QueryColumn b) {
-                  return *(a.Index()) < *(b.Index());
-                });
-      auto it = std::unique(available_cols.begin(), available_cols.end());
-      available_cols.erase(it, available_cols.end());
-
-      const auto checker_proc = GetOrCreateTopDownChecker(
-          impl, context, pred_view, available_cols, table);
-
-      // Now call the checker procedure. Unlike in normal checkers, we're doing
-      // a check on `false`.
-      const auto check = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, parent, checker_proc);
-      for (auto col : available_cols) {
-        check->arg_vars.AddUse(parent->VariableFor(impl, col));
-      }
-
-      COMMENT( check->comment = __FILE__ ": CreateBottomUpInsertRemover"; )
-
-      // Now we're inside of the check, and we know for certain this tuple has
-      // been removed because the checker function returned `false`.
-      parent_body->Emplace(parent, check);
-      parent = check;
-      parent_body = &(check->false_body);
+    for (auto col : insert.InputColumns()) {
+      append->tuple_vars.AddUse(append->VariableFor(impl, col));
     }
-
-    const auto stream = insert.Stream();
-    assert(stream.IsIO());
-    auto io = QueryIO::From(stream);
-
-    const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
-        parent, ParsedMessage::From(io.Declaration()),
-        ProgramOperation::kPublishMessageRemoval);
-
-    for (auto col : insert_cols) {
-      const auto var = parent->VariableFor(impl, col);
-      message_publish->arg_vars.AddUse(var);
-    }
-
-    parent_body->Emplace(parent, message_publish);
-    parent_body = nullptr;
-    parent = nullptr;
 
   // Otherwise, call our successor removal functions. In this case, we're trying
   // to call the removers associated with every `QuerySelect` node.
   } else {
-    auto [parent, table, already_removed] = InTryMarkUnknown(
-        impl, view, parent_, already_removed_);
-    auto parent_body = &(parent->body);
 
     const auto par = impl->parallel_regions.Create(parent);
-    parent_body->Emplace(parent, par);
-    parent_body = nullptr;
-    parent = nullptr;
+    parent->body.Emplace(parent, par);
 
     // Make sure that we've already done the checking for these nodes.
     assert(table != nullptr);

@@ -516,7 +516,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "Program Induction Init Region");
 
     // Base case
-    region.Initializer().Accept(*this);
+    if (auto init_region = region.Initializer(); init_region) {
+      init_region->Accept(*this);
+    }
 
     // Fixpoint
     os << Comment(os, region, "Induction Fixpoint Loop Region");

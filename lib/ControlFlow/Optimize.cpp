@@ -179,6 +179,13 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
 
   auto changed = false;
 
+  // Cleae out empty init regions of inductions.
+  if (induction->init_region && induction->init_region->IsNoOp()) {
+    induction->init_region->parent = nullptr;
+    induction->init_region.Clear();
+    changed = true;
+  }
+
   // Clear out empty output regions of inductions.
   if (induction->output_region && induction->output_region->IsNoOp()) {
     induction->output_region->parent = nullptr;
