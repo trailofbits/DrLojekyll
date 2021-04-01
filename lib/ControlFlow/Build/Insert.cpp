@@ -49,7 +49,6 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   if (insert.IsStream()) {
     assert(!view.SetCondition());  // TODO(pag): Is this possible?
     auto stream = insert.Stream();
-    assert(stream.IsIO());
     auto io = QueryIO::From(insert.Stream());
     auto message = ParsedMessage::From(io.Declaration());
 
