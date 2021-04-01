@@ -55,7 +55,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
     // There's an accumulation vector, add it in.
     if (const auto pub_vec = context.publish_vecs[message];
-    pub_vec != nullptr) {
+        pub_vec != nullptr) {
 
       auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
           parent, ProgramOperation::kAppendToMessageOutputVector);
@@ -99,6 +99,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
   const auto insert = QueryInsert::From(view);
   const auto insert_cols = insert.InputColumns();
+  (void) insert_cols;
 
   // If were doing a removal to a stream, then we want to defer publication
   // of the removal until later, when we know the thing is truly gone.
