@@ -48,7 +48,6 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   // This insert represents a message publication.
   if (insert.IsStream()) {
     assert(!view.SetCondition());  // TODO(pag): Is this possible?
-    auto stream = insert.Stream();
     auto io = QueryIO::From(insert.Stream());
     auto message = ParsedMessage::From(io.Declaration());
 
