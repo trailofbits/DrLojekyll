@@ -63,250 +63,6 @@ static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
   return dependents;
 }
 
-// Map all variables to their defining regions.
-static void MapVariables(REGION *region) {
-  if (!region) {
-    return;
-
-  } else if (auto op = region->AsOperation(); op) {
-    if (auto let = op->AsLetBinding(); let) {
-      for (auto var : let->defined_vars) {
-        var->defining_region = region;
-      }
-    } else if (auto loop = op->AsVectorLoop(); loop) {
-      for (auto var : loop->defined_vars) {
-        var->defining_region = region;
-      }
-    } else if (auto join = op->AsTableJoin(); join) {
-      for (auto var : join->pivot_vars) {
-        var->defining_region = region;
-      }
-      for (const auto &var_list : join->output_vars) {
-        for (auto var : var_list) {
-          var->defining_region = region;
-        }
-      }
-    } else if (auto gen = op->AsGenerate(); gen) {
-      for (auto var : gen->defined_vars) {
-        var->defining_region = region;
-      }
-
-      MapVariables(gen->empty_body.get());
-
-    } else if (auto call = op->AsCall(); call) {
-      MapVariables(call->false_body.get());
-    }
-
-    MapVariables(op->body.get());
-
-  } else if (auto induction = region->AsInduction(); induction) {
-    MapVariables(induction->init_region.get());
-    MapVariables(induction->cyclic_region.get());
-    MapVariables(induction->output_region.get());
-
-  } else if (auto par = region->AsParallel(); par) {
-    for (auto sub_region : par->regions) {
-      MapVariables(sub_region);
-    }
-  } else if (auto series = region->AsSeries(); series) {
-    for (auto sub_region : series->regions) {
-      MapVariables(sub_region);
-    }
-  } else if (auto proc = region->AsProcedure(); proc) {
-    for (auto var : proc->input_vars) {
-      var->defining_region = proc;
-    }
-    MapVariables(proc->body.get());
-  }
-}
-
-// Create a procedure for a view.
-static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
-                                 Context &context, PROC *proc,
-                                 PARALLEL *parent) {
-  const auto receives = io.Receives();
-  if (receives.empty()) {
-    return;
-  }
-
-  assert(io.Declaration().IsMessage());
-  const auto message = ParsedMessage::From(io.Declaration());
-  (void) message;
-
-  VECTOR *removal_vec = nullptr;
-  const auto vec =
-      proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-
-  // Loop over the receives for adding.
-  for (auto receive : receives) {
-
-    // Add a removal vector if any of the receives can receive deletions.
-    if (!removal_vec && receive.CanReceiveDeletions()) {
-      removal_vec = proc->VectorFor(
-          impl, VectorKind::kParameter, receive.Columns());
-    }
-
-    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-    parent->AddRegion(loop);
-    loop->vector.Emplace(loop, vec);
-
-    for (auto col : receives[0].Columns()) {
-      const auto var = loop->defined_vars.Create(impl->next_id++,
-                                                 VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
-    }
-
-    BuildEagerInsertionRegions(impl, receive, context, loop,
-                               receive.Successors(), nullptr);
-  }
-
-  if (!removal_vec) {
-    assert(!message.IsDifferential());
-    return;
-  }
-
-  assert(message.IsDifferential());
-
-  // Loop over the receives for adding.
-  for (auto receive : receives) {
-    if (!receive.CanReceiveDeletions()) {
-      continue;
-    }
-
-    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-    parent->AddRegion(loop);
-    loop->vector.Emplace(loop, removal_vec);
-
-    for (auto col : receives[0].Columns()) {
-      const auto var = loop->defined_vars.Create(impl->next_id++,
-                                                 VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
-    }
-
-    BuildEagerRemovalRegions(impl, receive, context, loop,
-                             receive.Successors(), nullptr);
-  }
-}
-
-// Builds an I/O procedure, which goes and invokes the primary data flow
-// procedure.
-static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
-                             Context &context, PROC *proc) {
-  const auto receives = io.Receives();
-  if (receives.empty()) {
-    return;
-  }
-
-  assert(io.Declaration().IsMessage());
-  const auto message = ParsedMessage::From(io.Declaration());
-
-  const auto io_proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kMessageHandler);
-  io_proc->io = io;
-
-  const auto io_vec =
-      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-
-  VECTOR *io_remove_vec = nullptr;
-  if (message.IsDifferential()) {
-    io_remove_vec =
-        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-  }
-
-  auto seq = impl->series_regions.Create(io_proc);
-  io_proc->body.Emplace(io_proc, seq);
-
-  auto call = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, seq, proc);
-  seq->AddRegion(call);
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      seq, ProgramOperation::kReturnTrueFromProcedure);
-  seq->AddRegion(ret);
-
-  for (auto other_io : query.IOs()) {
-    const auto other_receives = other_io.Receives();
-    if (other_receives.empty()) {
-      continue;
-    }
-
-    // Pass in our input vector for additions, and possibly our input vector
-    // for removals.
-    if (io == other_io) {
-      call->arg_vecs.AddUse(io_vec);
-      if (io_remove_vec) {
-        call->arg_vecs.AddUse(io_remove_vec);
-      }
-
-    // Pass in the empty vector once or twice for other messages.
-    } else {
-      const auto empty_vec = io_proc->VectorFor(
-          impl, VectorKind::kEmpty, other_receives[0].Columns());
-      call->arg_vecs.AddUse(empty_vec);
-      if (other_receives[0].CanReceiveDeletions()) {
-        call->arg_vecs.AddUse(empty_vec);
-      }
-    }
-  }
-}
-
-// Build the primary data flow procedure.
-static void BuildEagerProcedure(ProgramImpl *impl, Context &context,
-                                Query query) {
-
-  assert(context.work_list.empty());
-  assert(context.view_to_work_item.empty());
-
-  const auto proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
-
-  context.work_list.clear();
-
-  //  context.view_to_work_item.clear();
-  //  context.view_to_induction.clear();
-  //  context.product_vector.clear();
-
-  // TODO(pag): Possible future bug lies here. So, right now we group everything
-  //            into one PARALLEL, `par`, then build out from there. But maybe
-  //            the right approach is to place them into independent parallel
-  //            nodes, then somehow merge them. I think this will be critical
-  //            when there are more than one message being received. Comment
-  //            below, kept for posterity, relates to my thinking on this
-  //            subject.
-  //
-  // This is subtle. We can't group all messages into a single PARALLEL node,
-  // otherwise some messages will get "sucked into" an induction region reached
-  // by a possibly unrelated message, and thus the logical ordering of
-  // inductions will get totally screwed up. For example, one induction A might
-  // be embedded in another induction B's init region, but B's cycle/output
-  // regions will append to A's induction vector!
-  //
-  // Really, we need to pretend that all of messages are treated completely
-  // independently at first, and then allow `CompleteProcedure` and the work
-  // list, which partially uses depth for ordering, to figure the proper order
-  // for regions. This is tricky because we need to place anything we find,
-  // in terms of.
-  //
-  // --- END of old, semi-unrelated, speculative comment.
-
-  const auto par = impl->parallel_regions.Create(proc);
-  proc->body.Emplace(proc, par);
-
-  for (auto io : query.IOs()) {
-    ExtendEagerProcedure(impl, io, context, proc, par);
-  }
-
-  CompleteProcedure(impl, proc, context);
-
-  for (auto io : query.IOs()) {
-    BuildIOProcedure(impl, query, io, context, proc);
-  }
-}
-
 // Analyze the MERGE/UNION nodes and figure out which ones are inductive.
 static void DiscoverInductions(const Query &query, Context &context,
                                const ErrorLog &log) {
@@ -1262,6 +1018,64 @@ static bool CanImplementTopDownChecker(
 
   // We need
   return !available_cols.empty();
+}
+
+
+// Map all variables to their defining regions.
+static void MapVariables(REGION *region) {
+  if (!region) {
+    return;
+
+  } else if (auto op = region->AsOperation(); op) {
+    if (auto let = op->AsLetBinding(); let) {
+      for (auto var : let->defined_vars) {
+        var->defining_region = region;
+      }
+    } else if (auto loop = op->AsVectorLoop(); loop) {
+      for (auto var : loop->defined_vars) {
+        var->defining_region = region;
+      }
+    } else if (auto join = op->AsTableJoin(); join) {
+      for (auto var : join->pivot_vars) {
+        var->defining_region = region;
+      }
+      for (const auto &var_list : join->output_vars) {
+        for (auto var : var_list) {
+          var->defining_region = region;
+        }
+      }
+    } else if (auto gen = op->AsGenerate(); gen) {
+      for (auto var : gen->defined_vars) {
+        var->defining_region = region;
+      }
+
+      MapVariables(gen->empty_body.get());
+
+    } else if (auto call = op->AsCall(); call) {
+      MapVariables(call->false_body.get());
+    }
+
+    MapVariables(op->body.get());
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    MapVariables(induction->init_region.get());
+    MapVariables(induction->cyclic_region.get());
+    MapVariables(induction->output_region.get());
+
+  } else if (auto par = region->AsParallel(); par) {
+    for (auto sub_region : par->regions) {
+      MapVariables(sub_region);
+    }
+  } else if (auto series = region->AsSeries(); series) {
+    for (auto sub_region : series->regions) {
+      MapVariables(sub_region);
+    }
+  } else if (auto proc = region->AsProcedure(); proc) {
+    for (auto var : proc->input_vars) {
+      var->defining_region = proc;
+    }
+    MapVariables(proc->body.get());
+  }
 }
 
 }  // namespace

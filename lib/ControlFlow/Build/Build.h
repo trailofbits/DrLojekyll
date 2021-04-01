@@ -5,6 +5,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -486,6 +487,10 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 // Builds an initialization function which does any work that depends purely
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context);
+
+// Build the primary and entry data flow procedures.
+void BuildEagerProcedure(ProgramImpl *impl, Context &context,
+                         Query query);
 
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);

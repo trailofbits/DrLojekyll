@@ -142,6 +142,12 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
     }
   }
 
+  Node(Node<DataVector> *that_)
+      : Def<Node<DataVector>>(this),
+        id(that_->id),
+        kind(that_->kind),
+        col_types(that_->col_types) {}
+
   bool IsRead(void) const;
 
   void Accept(ProgramVisitor &visitor);
@@ -250,6 +256,10 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // whichever is first, and where `depth` is 0, compare `this` to `that.
   virtual bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
                       uint32_t depth) const noexcept;
+
+  // Return the farthest ancestor of this region, in terms of linkage. Often this
+  // just returns a `PROC *` if this region is linked in to its procedure.
+  Node<ProgramRegion> *Ancestor(void) noexcept;
 
   // Return the nearest enclosing region that is itself enclosed by an
   // induction.
@@ -1126,7 +1136,7 @@ using PROC = Node<ProgramProcedure>;
 template <>
 class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
+  Node(REGION *parent_);
 
   virtual ~Node(void);
 
@@ -1161,7 +1171,7 @@ using SERIES = Node<ProgramSeriesRegion>;
 template <>
 class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
+  Node(REGION *parent_);
 
   virtual ~Node(void);
 

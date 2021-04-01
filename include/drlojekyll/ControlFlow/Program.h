@@ -796,6 +796,13 @@ enum class ProcedureKind : unsigned {
   // constant tuple as input, then this function initializes those flows.
   kInitializer,
 
+  // This is the initial data flow function, which gets us into the primary
+  // data flow function. The purpose of the separation is that the initial
+  // data flow function collects the init induction vectors induced by message
+  // receipts, whereas the primary dataflow function pushes forward all
+  // computations from that point forward.
+  kEntryDataFlowFunc,
+
   // The primary function that executes most data flows.
   kPrimaryDataFlowFunc,
 
