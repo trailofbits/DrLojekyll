@@ -1831,6 +1831,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits Python code for the given program to `os`.
 void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
+     << "# flake8: noqa\n\n"  // Disable Flake8 linting.
      << "from __future__ import annotations\n"
      << "import sys\n"
      << "from dataclasses import dataclass\n"

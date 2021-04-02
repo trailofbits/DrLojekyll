@@ -15,6 +15,7 @@ namespace hyde {
 // Emits Python code for the given program to `os`.
 void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
+     << "# flake8: noqa\n\n"  // Disable Flake8 linting.
      << "from __future__ import annotations\n"
      << "from dataclasses import dataclass\n"
      << "from typing import Final, Iterator, List, Optional, Tuple\n"
