@@ -462,6 +462,32 @@ static void PublishDifferentialMessageVectors(
       seq, ProgramOperation::kReturnTrueFromProcedure));
 }
 
+static void FixupContainingProcedure(ProgramImpl *impl) {
+  for (auto region : impl->operation_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+
+  for (auto region : impl->series_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+
+  for (auto region : impl->parallel_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+
+  for (auto region : impl->induction_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+}
+
 }  // namespace
 
 // Build the primary and entry data flow procedures.
@@ -533,6 +559,8 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context,
   for (auto io : query.IOs()) {
     BuildIOProcedure(impl, query, io, context, proc);
   }
+
+  FixupContainingProcedure(impl);
 }
 
 }  // namespace hyde
