@@ -344,6 +344,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << "]] = None\n";
   }
 
+  auto r = 0u;
+
   // Then, expose them via properties / accessor functions.
   for (auto message : messages) {
     if (!message.IsPublished()) {
@@ -379,28 +381,30 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << os.Indent() << "if self._add_" << message.Name() << '_'
          << message.Arity() << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for _row in self._add_" << message.Name() << '_'
-         << message.Arity() << ":\n";
+      os << os.Indent() << "for _row" << r << " in self._add_"
+         << message.Name() << '_' << message.Arity() << ":\n";
       os.PushIndent();
-      os << os.Indent() << "yield _row\n";
+      os << os.Indent() << "yield _row" << r << "\n";
       os.PopIndent();
       os.PopIndent();
       os.PopIndent();
+      ++r;
 
       os << os.Indent() << "else:\n";
       os.PushIndent();
       os << os.Indent() << "if self._rem_" << message.Name() << '_'
          << message.Arity() << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for _row in self._rem_" << message.Name() << '_'
-         << message.Arity() << ":\n";
+      os << os.Indent() << "for _row" << r << " in self._rem_"
+         << message.Name() << '_' << message.Arity() << ":\n";
       os.PushIndent();
-      os << os.Indent() << "yield _row\n";
+      os << os.Indent() << "yield _row" << r << "\n";
       os.PopIndent();
       os.PopIndent();
 
       os.PopIndent();
       os.PopIndent();
+      ++r;
 
     // In the non-differential case, we have a property giving access to the
     // private field, in terms of an iterator.
@@ -428,13 +432,15 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << os.Indent() << "if self._add_" << message.Name() << '_'
          << message.Arity() << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for _row in self._add_" << message.Name() << '_'
-         << message.Arity() << ":\n";
+      os << os.Indent() << "for _row" << r << " in self._add_"
+         << message.Name() << '_' << message.Arity() << ":\n";
       os.PushIndent();
-      os << os.Indent() << "yield _row\n";
+      os << os.Indent() << "yield _row" << r << "\n";
       os.PopIndent();
       os.PopIndent();
       os.PopIndent();
+
+      ++r;
     }
   }
 
@@ -520,7 +526,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     if (1 < message.Arity()) {
       os << ")";
     }
-    os << ")\n";
+    os << ")  # type: ignore\n";
 
     os << os.Indent() << "self._num_msgs += 1\n\n";
     os.PopIndent();
@@ -552,6 +558,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "def consume(self, msg: " << gClassName
      << "OutputMessage):\n";
   os.PushIndent();
+
   for (auto message : messages) {
     if (!message.IsPublished()) {
       continue;
@@ -559,18 +566,18 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "if msg._add_" << message.Name() << '_' << message.Arity()
        << " is not None:\n";
     os.PushIndent();
-    os << os.Indent() << "for _row in msg._add_" << message.Name() << '_'
-       << message.Arity() << ":\n";
+    os << os.Indent() << "for _row" << r << " in msg._add_" << message.Name()
+       << '_' << message.Arity() << ":\n";
     os.PushIndent();
     os << os.Indent() << "self.consume_" << message.Name() << '_'
        << message.Arity() << "(";
 
     if (1 == message.Arity()) {
-      os << "_row";
+      os << "_row" << r;
     } else {
       auto sep = "";
       for (auto i = 0u; i < message.Arity(); ++i) {
-        os << sep << "_row[" << i << ']';
+        os << sep << "_row" << r << "[" << i << ']';
         sep = ", ";
       }
     }
@@ -583,6 +590,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os.PopIndent();
     os.PopIndent();
 
+    ++r;
+
     if (!message.IsDifferential()) {
       continue;
     }
@@ -590,21 +599,23 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "if msg._rem_" << message.Name() << '_' << message.Arity()
        << " is not None:\n";
     os.PushIndent();
-    os << os.Indent() << "for _row in msg._rem_" << message.Name() << '_'
-       << message.Arity() << ":\n";
+    os << os.Indent() << "for _row" << r << " in msg._rem_"
+       << message.Name() << '_' << message.Arity() << ":\n";
     os.PushIndent();
     os << os.Indent() << "self.consume_" << message.Name() << '_'
        << message.Arity() << "(";
 
     if (1 == message.Arity()) {
-      os << "_row";
+      os << "_row" << r;
     } else {
       auto sep = "";
       for (auto i = 0u; i < message.Arity(); ++i) {
-        os << sep << "_row[" << i << ']';
+        os << sep << "_row" << r << "[" << i << ']';
         sep = ", ";
       }
     }
+
+    ++r;
 
     os << ", False)\n";
     os.PopIndent();
