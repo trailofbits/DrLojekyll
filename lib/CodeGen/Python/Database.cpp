@@ -1930,6 +1930,9 @@ void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
       }
     }
   }
+
+  // Stupid hack to make Flake8 / Black happy.
+  os << "# End of auto-generated file\n";
 }
 
 }  // namespace hyde

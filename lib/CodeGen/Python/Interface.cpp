@@ -646,6 +646,9 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os.PopIndent();
   }
   os.PopIndent();
+
+  // Stupid hack to make Flake8 / Black happy.
+  os << "# End of auto-generated file\n";
 }
 
 }  // namespace hyde
