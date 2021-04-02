@@ -68,8 +68,8 @@ jobs:
         run: >
           cmake -B build
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_C_COMPILER=clang-6.0
-          -DCMAKE_CXX_COMPILER=clang++-6.0
+          -DCMAKE_C_COMPILER=clang-8
+          -DCMAKE_CXX_COMPILER=clang++-8
           -DWARNINGS_AS_ERRORS=1
           -DENABLE_TEST_MYPY_CHECKS=OFF
           -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
@@ -88,8 +88,8 @@ jobs:
           cd tests/external_build
           cmake -B build \
             -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
-            -DCMAKE_C_COMPILER=clang-6.0 \
-            -DCMAKE_CXX_COMPILER=clang++-6.0 \
+            -DCMAKE_C_COMPILER=clang-8
+            -DCMAKE_CXX_COMPILER=clang++-8
             .
           cmake --build build
 
