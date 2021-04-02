@@ -23,77 +23,6 @@ env:
 # maximize problem detection ability with a minimal number of configurations.
 jobs:
   build1:
-    name: Ubuntu 18.04 / GCC 8 / Debug
-    runs-on: ubuntu-18.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Configure
-        run: >
-          cmake
-          -B build
-          -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_C_COMPILER=gcc-8
-          -DCMAKE_CXX_COMPILER=g++-8
-          -DWARNINGS_AS_ERRORS=1
-          -DENABLE_TEST_MYPY_CHECKS=OFF
-          -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
-          .
-      - name: Build
-        run: make -C build -j "$(nproc)"
-
-      - name: Test
-        run: cd build && ctest --output-on-failure -j 2 --schedule-random
-
-      - name: Install
-        run: |
-          cmake --build build --target install
-          rm -rf build
-
-      - name: Test Install
-        run: |
-          cd tests/external_build
-          cmake -B build \
-            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
-            -DCMAKE_C_COMPILER=gcc-8 \
-            -DCMAKE_CXX_COMPILER=g++-8 \
-            .
-          cmake --build build
-
-  build2:
-    name: Ubuntu 18.04 / Clang 6.0 / Release
-    runs-on: ubuntu-18.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Configure
-        run: >
-          cmake -B build
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_C_COMPILER=clang-8
-          -DCMAKE_CXX_COMPILER=clang++-8
-          -DWARNINGS_AS_ERRORS=1
-          -DENABLE_TEST_MYPY_CHECKS=OFF
-          -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR"
-          .
-      - name: Build
-        run: cmake --build build -j "$(nproc)"
-
-      - name: Test
-        run: cd build && ctest --output-on-failure -j 2 --schedule-random
-
-      - name: Install
-        run: cmake --build build --target install
-
-      - name: Test Install
-        run: |
-          cd tests/external_build
-          cmake -B build \
-            -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" \
-            -DCMAKE_C_COMPILER=clang-8
-            -DCMAKE_CXX_COMPILER=clang++-8
-            .
-          cmake --build build
-
-  build3:
     name: Ubuntu 20.04 / Clang 10 / Multi-Config / Fuzz / Sanitizers
     runs-on: ubuntu-20.04
     steps:
@@ -229,8 +158,7 @@ jobs:
             exit 1
           fi
 
-
-  build4:
+  build2:
     name: macOS 10.15 / Debug / Sanitizers
     runs-on: macos-10.15
     steps:
@@ -259,7 +187,7 @@ jobs:
           cmake -B build -G Xcode -DCMAKE_INSTALL_PREFIX="$DR_INSTALL_DIR" .
           cmake --build build
 
-  build5:
+  build3:
     name: Windows Server 2019 / Debug
     runs-on: windows-2019
     steps:
@@ -288,24 +216,7 @@ jobs:
           cmake -B build -DCMAKE_INSTALL_PREFIX="$env:DR_INSTALL_DIR" -G "Visual Studio 16 2019" .
           cmake --build build
 
-  build6:
-    name: Ubuntu 18.04 / Clang 8 / Release / Tests Disabled
-    runs-on: ubuntu-18.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Configure
-        run: >
-          cmake -B build
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang-8
-          -DCMAKE_CXX_COMPILER=clang++-8
-          -DWARNINGS_AS_ERRORS=1
-          -DENABLE_TESTS=0
-          .
-      - name: Build
-        run: make -C build -j "$(nproc)"
-
-  build7:
+  build4:
     name: Docker image
     runs-on: ubuntu-latest
     env:
