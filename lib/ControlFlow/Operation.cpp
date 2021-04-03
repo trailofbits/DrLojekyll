@@ -20,6 +20,7 @@ Node<ProgramReturnRegion>::~Node(void) {}
 Node<ProgramTestAndSetRegion>::~Node(void) {}
 Node<ProgramGenerateRegion>::~Node(void) {}
 Node<ProgramLetBindingRegion>::~Node(void) {}
+Node<ProgramWorkerIdRegion>::~Node(void) {}
 Node<ProgramPublishRegion>::~Node(void) {}
 Node<ProgramTransitionStateRegion>::~Node(void) {}
 Node<ProgramCheckStateRegion>::~Node(void) {}
@@ -94,6 +95,11 @@ Node<ProgramOperationRegion>::AsVectorSwap(void) noexcept {
 
 Node<ProgramVectorUniqueRegion> *
 Node<ProgramOperationRegion>::AsVectorUnique(void) noexcept {
+  return nullptr;
+}
+
+Node<ProgramWorkerIdRegion> *
+Node<ProgramOperationRegion>::AsWorkerId(void) noexcept {
   return nullptr;
 }
 
@@ -239,6 +245,111 @@ uint64_t Node<ProgramVectorLoopRegion>::Hash(uint32_t depth) const {
 }
 
 bool Node<ProgramVectorLoopRegion>::IsNoOp(void) const noexcept {
+  return !this->OP::body || this->OP::body->IsNoOp();
+}
+
+
+Node<ProgramWorkerIdRegion> *
+Node<ProgramWorkerIdRegion>::AsWorkerId(void) noexcept {
+  return this;
+}
+
+uint64_t Node<ProgramWorkerIdRegion>::Hash(uint32_t depth) const {
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
+  for (auto var : hashed_vars) {
+    hash ^= RotateRight64(hash, 13) *
+            ((static_cast<unsigned>(var->role) + 7u) *
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
+  }
+
+  if (depth == 0) {
+    return hash;
+  }
+
+  if (this->OP::body) {
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
+  }
+  return hash;
+}
+
+bool Node<ProgramWorkerIdRegion>::Equals(EqualitySet &eq,
+                                         Node<ProgramRegion> *that_,
+                                         uint32_t depth) const noexcept {
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  const auto that = that_op->AsWorkerId();
+  const auto num_hashed_vars = hashed_vars.Size();
+  if (!that || num_hashed_vars != that->hashed_vars.Size()) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  for (auto i = 0u; i < num_hashed_vars; ++i) {
+    if (!eq.Contains(hashed_vars[i], that->hashed_vars[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if ((!body.get()) != (!that->body.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  if (auto that_body = that->OP::body.get(); that_body) {
+    eq.Insert(worker_id.get(), that->worker_id.get());
+
+    return this->OP::body->Equals(eq, that_body, depth - 1u);
+
+  } else {
+    return true;
+  }
+}
+
+const bool Node<ProgramWorkerIdRegion>::MergeEqual(
+    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
+  const auto num_hashed_vars = hashed_vars.Size();
+
+  auto par = prog->parallel_regions.Create(this);
+  if (auto curr_body = body.get(); curr_body) {
+    curr_body->parent = par;
+    par->AddRegion(curr_body);
+    body.Clear();
+  }
+
+  body.Emplace(this, par);
+
+  for (auto merge : merges) {
+    auto merged_worker_id = merge->AsOperation()->AsWorkerId();
+    assert(merged_worker_id != nullptr);
+    assert(merged_worker_id != this);
+    assert(merged_worker_id->hashed_vars.Size() == num_hashed_vars);
+
+    merged_worker_id->worker_id->ReplaceAllUsesWith(worker_id.get());
+
+    if (auto merged_body = merged_worker_id->body.get(); merged_body) {
+      merged_body->parent = par;
+      par->AddRegion(merged_body);
+      merged_worker_id->body.Clear();
+    }
+
+    merged_worker_id->hashed_vars.Clear();
+    merged_worker_id->parent = nullptr;
+  }
+
+  return true;
+}
+
+bool Node<ProgramWorkerIdRegion>::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 

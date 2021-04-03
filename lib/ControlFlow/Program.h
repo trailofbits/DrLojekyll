@@ -129,8 +129,6 @@ struct DataModel : public DisjointSet {
 template <>
 class Node<DataVector> final : public Def<Node<DataVector>> {
  public:
-  static constexpr unsigned kInputVectorId = 0u;
-
   template <typename ColList>
   Node(unsigned id_, VectorKind kind_, ColList &&cols)
       : Def<Node<DataVector>>(this),
@@ -155,6 +153,9 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
   const unsigned id;
   const VectorKind kind;
   std::vector<TypeKind> col_types;
+
+  // `true` if this vector must have variants of itself sharded across workers.
+  bool is_sharded{false};
 };
 
 using VECTOR = Node<DataVector>;
@@ -381,6 +382,9 @@ enum class ProgramOperation {
   // of optimization.
   kLetBinding,
 
+  // Computes a worker ID by hashing a bunch of variables.
+  kWorkerId,
+
   // Used to test reference count variables associated with `QueryCondition`
   // nodes in the data flow.
   kTestAndAdd,
@@ -430,6 +434,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
   virtual Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept;
   virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
+  virtual Node<ProgramWorkerIdRegion> *AsWorkerId(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
@@ -478,6 +483,39 @@ class Node<ProgramLetBindingRegion> final
 };
 
 using LET = Node<ProgramLetBindingRegion>;
+
+// Computes a worker ID by hashing one or more variables.
+template <>
+class Node<ProgramWorkerIdRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
+  inline Node(REGION *parent_)
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kWorkerId),
+        hashed_vars(this) {}
+
+  Node<ProgramWorkerIdRegion> *AsWorkerId(void) noexcept override;
+
+  // Local variables that are hashed together to compute `worker_id`.
+  UseList<VAR> hashed_vars;
+
+  // Variable storing the hashed result.
+  std::unique_ptr<VAR> worker_id;
+};
+
+using WORKERID = Node<ProgramWorkerIdRegion>;
 
 // Loop over the vector `vector` and bind the extracted tuple elements into
 // the variables specified in `defined_vars`.
@@ -547,6 +585,9 @@ class Node<ProgramVectorAppendRegion> final
 
   UseList<VAR> tuple_vars;
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread. If
+  UseRef<VAR> worker_id;
 };
 
 using VECTORAPPEND = Node<ProgramVectorAppendRegion>;

@@ -198,89 +198,28 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "Program Call Region");
 
-    auto param_index = 0u;
     const auto id = region.Id();
 
     const auto called_proc = region.CalledProcedure();
-    const auto vec_params = called_proc.VectorParameters();
-    const auto var_params = called_proc.VariableParameters();
-
-    // Create the by-reference vector parameters, if any.
-    for (auto vec : region.VectorArguments()) {
-      const auto param = vec_params[param_index];
-      if (param.Kind() == VectorKind::kInputOutputParameter) {
-        os << os.Indent() << "param_" << region.Id() << '_' << param_index
-           << " = [" << Vector(os, vec) << "]\n";
-      }
-      ++param_index;
-    }
-
-    const auto num_vec_params = param_index;
-
-    // Create the by-reference variable parameters, if any.
-    for (auto var : region.VariableArguments()) {
-      const auto param = var_params[param_index - num_vec_params];
-      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << os.Indent() << "param_" << region.Id() << '_' << param_index
-           << " = [" << Var(os, var) << "]\n";
-      }
-      ++param_index;
-    }
 
     os << os.Indent() << "ret_" << id << ": bool = self."
        << Procedure(os, called_proc) << "(";
 
     auto sep = "";
-    param_index = 0u;
 
     // Pass in the vector parameters, or the references to the vectors.
     for (auto vec : region.VectorArguments()) {
-      const auto param = vec_params[param_index];
-      if (param.Kind() == VectorKind::kInputOutputParameter) {
-        os << sep << "param_" << region.Id() << '_' << param_index;
-      } else {
-        os << sep << Vector(os, vec);
-      }
-
+      os << sep << Vector(os, vec);
       sep = ", ";
-      ++param_index;
     }
 
     // Pass in the variable parameters, or the references to the variables.
     for (auto var : region.VariableArguments()) {
-      const auto param = var_params[param_index - num_vec_params];
-      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << sep << "param_" << region.Id() << '_' << param_index;
-      } else {
-        os << sep << Var(os, var);
-      }
+      os << sep << Var(os, var);
       sep = ", ";
-      ++param_index;
     }
 
     os << ")\n";
-
-    param_index = 0u;
-
-    // Pull out the updated version of the referenced vectors.
-    for (auto vec : region.VectorArguments()) {
-      const auto param = vec_params[param_index];
-      if (param.Kind() == VectorKind::kInputOutputParameter) {
-        os << os.Indent() << Vector(os, vec) << " = param_" << region.Id()
-           << '_' << param_index << "[0]\n";
-      }
-      ++param_index;
-    }
-
-    // Pull out the updated version of the referenced variables.
-    for (auto var : region.VariableArguments()) {
-      const auto param = var_params[param_index - num_vec_params];
-      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << os.Indent() << Var(os, var) << " = param_" << region.Id()
-           << '_' << param_index << "[0]\n";
-      }
-      ++param_index;
-    }
 
     if (auto true_body = region.BodyIfTrue(); true_body) {
       os << os.Indent() << "if ret_" << id << ":\n";
@@ -298,30 +237,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramReturnRegion region) override {
-    os << Comment(os, region, "Program Return Region");
-
-    auto proc = ProgramProcedure::Containing(region);
-    auto param_index = 0u;
-
-    // Update any vectors in the caller by reference.
-    for (auto vec : proc.VectorParameters()) {
-      if (vec.Kind() == VectorKind::kInputOutputParameter) {
-        os << os.Indent() << "param_" << param_index << "[0] = "
-           << Vector(os, vec) << '\n';
-      }
-      ++param_index;
-    }
-
-    // Update any vectors in the caller by reference.
-    for (auto var : proc.VariableParameters()) {
-      if (var.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << os.Indent() << "param_" << param_index << "[0] = "
-           << Var(os, var) << '\n';
-      }
-      ++param_index;
-    }
-
-    os << os.Indent() << "return " << (region.ReturnsFalse() ? "False" : "True")
+    os << Comment(os, region, "Program Return Region")
+       << os.Indent() << "return " << (region.ReturnsFalse() ? "False" : "True")
        << "\n";
   }
 
@@ -1462,17 +1379,11 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   const auto vec_params = proc.VectorParameters();
   const auto var_params = proc.VariableParameters();
-  auto param_index = 0u;
 
   // First, declare all vector parameters.
   for (auto vec : vec_params) {
-    const auto is_byref = vec.Kind() == VectorKind::kInputOutputParameter;
     os << ", ";
-    if (is_byref) {
-      os << "param_" << param_index << ": List[";
-    } else {
-      os << Vector(os, vec) << ": ";
-    }
+    os << Vector(os, vec) << ": ";
     os << "List[";
     const auto &col_types = vec.ColumnTypes();
     if (1u < col_types.size()) {
@@ -1486,22 +1397,12 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     if (1u < col_types.size()) {
       os << ']';
     }
-    if (is_byref) {
-      os << ']';
-    }
     os << ']';
-    ++param_index;
   }
 
   // Then, declare all variable parameters.
   for (auto param : var_params) {
-    if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-      os << ", param_" << param_index << ": List["
-         << TypeName(module, param.Type()) << "]";
-    } else {
-      os << ", " << Var(os, param) << ": " << TypeName(module, param.Type());
-    }
-    ++param_index;
+    os << ", " << Var(os, param) << ": " << TypeName(module, param.Type());
   }
 
   // Every procedure has a boolean return type. A lot of the time the return
@@ -1515,26 +1416,6 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
      << os.Indent() << "present_bit: int = 0\n"
      << os.Indent() << "ret: bool = False\n"
      << os.Indent() << "found: bool = False\n";
-
-  param_index = 0u;
-
-  // Pull out the referenced vectors.
-  for (auto vec : vec_params) {
-    if (vec.Kind() == VectorKind::kInputOutputParameter) {
-      os << os.Indent() << Vector(os, vec) << " = param_"
-         << param_index << "[0]\n";
-    }
-    ++param_index;
-  }
-
-  // Pull out the referenced variables.
-  for (auto var : var_params) {
-    if (var.DefiningRole() == VariableRole::kInputOutputParameter) {
-      os << os.Indent() << Var(os, var) << " = param_"
-         << param_index << "[0]\n";
-    }
-    ++param_index;
-  }
 
   // Every vector, including parameter vectors, has a variable tracking the
   // current index into that vector.

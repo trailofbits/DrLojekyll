@@ -102,8 +102,7 @@ OutputStream &operator<<(OutputStream &os, DataTable table) {
 OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
-    case VectorKind::kParameter: os << "$input"; break;
-    case VectorKind::kInputOutputParameter: os << "$inout"; break;
+    case VectorKind::kParameter: os << "$param"; break;
     case VectorKind::kInductionCycles: os << "$induction_cycle"; break;
     case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
@@ -363,7 +362,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty-vector-loop";
   }
   return os;
 }
@@ -376,6 +375,27 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorAppendRegion region) {
     sep = ", ";
   }
   os << "} into " << region.Vector();
+  if (auto worker_id = region.WorkerId(); worker_id) {
+    os << " of-worker " << *worker_id;
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramWorkerIdRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os << os.Indent() << "hash {";
+    auto sep = "";
+    for (auto var : region.HashedVariables()) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "} into " << region.WorkerId() << '\n';
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-hash";
+  }
   return os;
 }
 

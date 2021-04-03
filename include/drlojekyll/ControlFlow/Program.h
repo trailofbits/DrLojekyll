@@ -78,6 +78,7 @@ class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTableScanRegion;
 class ProgramTupleCompareRegion;
+class ProgramWorkerIdRegion;
 
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
@@ -107,6 +108,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramTableProductRegion &);
   ProgramRegion(const ProgramTableScanRegion &);
   ProgramRegion(const ProgramTupleCompareRegion &);
+  ProgramRegion(const ProgramWorkerIdRegion &);
 
   void Accept(ProgramVisitor &visitor) const;
 
@@ -130,6 +132,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsParallel(void) const noexcept;
   bool IsPublish(void) const noexcept;
   bool IsTupleCompare(void) const noexcept;
+  bool IsWorkerId(void) const noexcept;
 
   std::string_view Comment(void) const noexcept;
 
@@ -155,6 +158,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramTableProductRegion;
   friend class ProgramTableScanRegion;
   friend class ProgramTupleCompareRegion;
+  friend class ProgramWorkerIdRegion;
 
   using program::ProgramNode<ProgramRegion>::ProgramNode;
 };
@@ -204,7 +208,7 @@ enum class VariableRole : int {
   kFunctorOutput,
   kMessageOutput,
   kParameter,
-  kInputOutputParameter,
+  kWorkerId
 };
 
 // A variable in the program.
@@ -240,7 +244,6 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 
 enum class VectorKind : unsigned {
   kParameter,
-  kInputOutputParameter,
   kInductionCycles,
   kInductionOutputs,
   kJoinPivots,
@@ -329,8 +332,10 @@ class DataVector : public program::ProgramNode<DataVector> {
 
   unsigned Id(void) const noexcept;
 
-  bool IsInputVector(void) const noexcept;
+  // Do we need to shard this vector across workers?
+  bool IsSharded(void) const noexcept;
 
+  // Types of the variables/columns stored in this vector.
   const std::vector<TypeKind> ColumnTypes(void) const noexcept;
 
   // Visit the users of this vector.
@@ -486,6 +491,9 @@ class ProgramVectorAppendRegion
   VectorUsage Usage(void) const noexcept;
   DataVector Vector(void) const noexcept;
   UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  // Optional worker ID variable.
+  std::optional<DataVariable> WorkerId(void) const;
 
  private:
   friend class ProgramRegion;
@@ -911,6 +919,28 @@ class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
   using program::ProgramNode<ProgramReturnRegion>::ProgramNode;
 };
 
+// Computes a worker ID from a set of variables.
+class ProgramWorkerIdRegion
+    : public program::ProgramNode<ProgramWorkerIdRegion> {
+ public:
+  static ProgramWorkerIdRegion From(ProgramRegion) noexcept;
+
+  // Body, executed in a context where the worker ID has been computed.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+  // List of variables that will be mixed and hashed together to compute
+  // the worker id.
+  UsedNodeRange<DataVariable> HashedVariables(void) const;
+
+  // Computed output that is a worker ID. These are 16 bit integers.
+  DataVariable WorkerId(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramWorkerIdRegion>::ProgramNode;
+};
+
 // Specifies a relationship between a `#query` declaration, backing storage and
 // various procedures needed to fill or check that storage. This information is
 // sufficient for code generators to implement a notion of queries without
@@ -1040,6 +1070,7 @@ class ProgramVisitor {
   virtual void Visit(ProgramTableProductRegion val);
   virtual void Visit(ProgramTableScanRegion val);
   virtual void Visit(ProgramTupleCompareRegion val);
+  virtual void Visit(ProgramWorkerIdRegion val);
 };
 
 }  // namespace hyde

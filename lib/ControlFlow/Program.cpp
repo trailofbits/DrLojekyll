@@ -109,6 +109,9 @@ ProgramImpl::~ProgramImpl(void) {
 
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
+
+    } else if (auto wid = op->AsWorkerId(); wid) {
+      wid->hashed_vars.ClearWithoutErasure();
     }
   }
 
@@ -197,6 +200,7 @@ IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TableScan)
 IS_OP(TupleCompare)
+IS_OP(WorkerId)
 IS_OP(VectorLoop)
 IS_OP(VectorAppend)
 IS_OP(VectorClear)
@@ -261,6 +265,7 @@ OPTIONAL_BODY(Body, ProgramTransitionStateRegion, body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
 OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
 OPTIONAL_BODY(Body, ProgramTupleCompareRegion, body)
+OPTIONAL_BODY(Body, ProgramWorkerIdRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramCallRegion, body)
 OPTIONAL_BODY(BodyIfFalse, ProgramCallRegion, false_body)
 
@@ -291,6 +296,7 @@ FROM_OP(ProgramVectorAppendRegion, AsVectorAppend)
 FROM_OP(ProgramVectorClearRegion, AsVectorClear)
 FROM_OP(ProgramVectorSwapRegion, AsVectorSwap)
 FROM_OP(ProgramVectorUniqueRegion, AsVectorUnique)
+FROM_OP(ProgramWorkerIdRegion, AsWorkerId)
 
 #undef FROM_OP
 
@@ -342,6 +348,7 @@ USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vecs)
 USED_RANGE(ProgramTableScanRegion, IndexedColumns, DataColumn, in_cols)
 USED_RANGE(ProgramTableScanRegion, SelectedColumns, DataColumn, out_cols)
 USED_RANGE(ProgramTableScanRegion, InputVariables, DataVariable, in_vars)
+USED_RANGE(ProgramWorkerIdRegion, HashedVariables, DataVariable, hashed_vars)
 
 // clang-format on
 
@@ -405,6 +412,14 @@ VECTOR_OPS(ProgramVectorUniqueRegion)
 
 #undef VECTOR_OPS
 
+std::optional<DataVariable> ProgramVectorAppendRegion::WorkerId(void) const {
+  if (impl->worker_id) {
+    return DataVariable(impl->worker_id.get());
+  } else {
+    return std::nullopt;
+  }
+}
+
 DataVector ProgramVectorSwapRegion::LHS(void) const noexcept {
   return DataVector(impl->lhs.get());
 }
@@ -415,6 +430,10 @@ DataVector ProgramVectorSwapRegion::RHS(void) const noexcept {
 
 unsigned ProgramGenerateRegion::Id(void) const noexcept {
   return impl->id;
+}
+
+DataVariable ProgramWorkerIdRegion::WorkerId(void) const {
+  return DataVariable(impl->worker_id.get());
 }
 
 // Does this functor application behave like a filter function?
@@ -628,8 +647,9 @@ unsigned DataVector::Id(void) const noexcept {
   return impl->id;
 }
 
-bool DataVector::IsInputVector(void) const noexcept {
-  return impl->id == VECTOR::kInputVectorId;
+// Do we need to shard this vector across workers?
+bool DataVector::IsSharded(void) const noexcept {
+  return impl->is_sharded;
 }
 
 const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {

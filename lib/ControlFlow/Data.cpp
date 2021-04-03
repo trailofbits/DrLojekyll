@@ -34,9 +34,14 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
       return TypeKind::kUnsigned64;
+
+    case VariableRole::kWorkerId:
+      return TypeKind::kUnsigned16;
+
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue:
       return TypeKind::kBoolean;
+
     case VariableRole::kConstant:
       if (query_const) {
         return query_const->Literal().Type().Kind();
