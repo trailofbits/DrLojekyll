@@ -478,6 +478,11 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
             ((static_cast<unsigned>(var->role) + 7u) *
              (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
   }
+  if (auto wid = worker_id.get(); wid) {
+    hash ^= RotateRight64(hash, 17) *
+            ((static_cast<unsigned>(wid->role) + 7u) *
+             (static_cast<unsigned>(DataVariable(wid).Type().Kind()) + 13u));
+  }
   (void) depth;
   return hash;
 }
@@ -501,6 +506,10 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
+  if (!eq.Contains(worker_id.get(), that->worker_id.get())) {
+    return false;
+  }
+
   for (auto i = 0u, max_i = tuple_vars.Size(); i < max_i; ++i) {
     if (!eq.Contains(tuple_vars[i], that->tuple_vars[i])) {
       FAILED_EQ(that_);
@@ -514,7 +523,7 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
 const bool Node<ProgramVectorAppendRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
 
-  assert(false && "Likely a bug has ocurred somewhere");
+  assert(false && "Likely a bug has occurred somewhere");
 
   // NOTE(pag): This should probably always return false because this should be
   // covered by the CSE over REGIONs.
@@ -548,6 +557,11 @@ uint64_t Node<ProgramTransitionStateRegion>::Hash(uint32_t depth) const {
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
+
+  if (this->failed_body) {
+    hash ^= RotateRight64(hash, 53) * ~this->failed_body->Hash(depth - 1u);
+  }
+
   return hash;
 }
 
@@ -583,15 +597,29 @@ bool Node<ProgramTransitionStateRegion>::Equals(EqualitySet &eq,
     return true;
   }
 
-  if (!body != !(that->body)) {
+  if (!body != !(that->body) || !failed_body != !(that->failed_body)) {
     return false;
   }
 
-  if (body) {
-    return body->Equals(eq, that->body.get(), depth - 1u);
+  if (body && !body->Equals(eq, that->body.get(), depth - 1u)) {
+    return false;
+  }
+
+  if (failed_body &&
+      !failed_body->Equals(eq, that->failed_body.get(), depth - 1u)) {
+    return false;
   }
 
   return true;
+}
+
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramTransitionStateRegion>::EndsWithReturn(void) const noexcept {
+  if (body && failed_body) {
+    return body->EndsWithReturn() && failed_body->EndsWithReturn();
+  } else {
+    return false;
+  }
 }
 
 const bool Node<ProgramTransitionStateRegion>::MergeEqual(
@@ -610,23 +638,41 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
-  auto transition_body = body.get();
-  if (transition_body) {
+  auto new_failed_par = prog->parallel_regions.Create(this);
+
+  if (auto transition_body = body.get(); transition_body) {
     transition_body->parent = new_par;
     new_par->AddRegion(transition_body);
     body.Clear();
   }
+
+  if (auto transition_failed_body = failed_body.get(); transition_failed_body) {
+    transition_failed_body->parent = new_failed_par;
+    new_failed_par->AddRegion(transition_failed_body);
+    failed_body.Clear();
+  }
+
   body.Emplace(this, new_par);
+  failed_body.Emplace(this, new_failed_par);
+
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsTransitionState();
     assert(merge);  // These should all be the same type
     assert(merge != this);
-    const auto merge_body = merge->body.get();
-    if (merge_body) {
+
+    if (const auto merge_body = merge->body.get(); merge_body) {
       merge_body->parent = new_par;
       new_par->AddRegion(merge_body);
       merge->body.Clear();
     }
+
+    if (const auto merge_failed_body = merge->failed_body.get();
+        merge_failed_body) {
+      merge_failed_body->parent = new_failed_par;
+      new_failed_par->AddRegion(merge_failed_body);
+      merge->failed_body.Clear();
+    }
+
     merge->parent = nullptr;
   }
   return true;
@@ -1134,6 +1180,9 @@ uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
+  if (this->false_body) {
+    hash ^= RotateRight64(hash, 53) * ~this->false_body->Hash(depth - 1u);
+  }
   return hash;
 }
 
@@ -1142,8 +1191,23 @@ Node<ProgramTupleCompareRegion>::AsTupleCompare(void) noexcept {
   return this;
 }
 
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramTupleCompareRegion>::EndsWithReturn(void) const noexcept {
+  if (body && false_body) {
+    return body->EndsWithReturn() && false_body->EndsWithReturn();
+  } else {
+    return false;
+  }
+}
+
 bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
-  return !this->OP::body || this->OP::body->IsNoOp();
+  if (body && !body->IsNoOp()) {
+    return false;
+  } else if (false_body && !false_body->IsNoOp()) {
+    return false;
+  } else {
+    return true;
+  }
 }
 
 bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
@@ -1186,12 +1250,21 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body, depth - 1u);
-
-  } else {
-    return true;
+  if ((!this->false_body.get()) != (!that->false_body.get())) {
+    return false;
   }
+
+  if (auto that_body = that->OP::body.get();
+      that_body && !body->Equals(eq, that_body, depth - 1u)) {
+    return false;
+  }
+
+  if (auto that_false_body = that->false_body.get();
+      that_false_body && !false_body->Equals(eq, that_false_body, depth - 1u)) {
+    return false;
+  }
+
+  return true;
 }
 
 const bool Node<ProgramTupleCompareRegion>::MergeEqual(
@@ -1201,24 +1274,42 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
-  auto this_body = body.get();
-  if (this_body) {
+  auto new_false_par = prog->parallel_regions.Create(this);
+
+  if (auto this_body = body.get(); this_body) {
     new_par->regions.AddUse(this_body);
     this_body->parent = new_par;
+    body.Clear();
   }
-  body.Clear();
+
+  if (auto this_false_body = false_body.get(); this_false_body) {
+    new_par->regions.AddUse(this_false_body);
+    this_false_body->parent = new_false_par;
+    false_body.Clear();
+  }
+
   body.Emplace(this, new_par);
+  false_body.Emplace(this, new_false_par);
+
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsTupleCompare();
     assert(merge);  // These should all be the same type
     assert(merge->lhs_vars.Size() == num_vars);
 
-    const auto merge_body = merge->body.get();
-    if (merge_body) {
+    if (const auto merge_body = merge->body.get(); merge_body) {
       new_par->regions.AddUse(merge_body);
       merge_body->parent = new_par;
+      merge->body.Clear();
     }
-    merge->body.Clear();
+
+    if (const auto merge_false_body = merge->body.get(); merge_false_body) {
+      new_false_par->regions.AddUse(merge_false_body);
+      merge_false_body->parent = new_par;
+      merge->false_body.Clear();
+    }
+
+    merge->lhs_vars.Clear();
+    merge->rhs_vars.Clear();
     merge->parent = nullptr;
   }
 
@@ -1230,6 +1321,15 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
 Node<ProgramGenerateRegion> *
 Node<ProgramGenerateRegion>::AsGenerate(void) noexcept {
   return this;
+}
+
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramGenerateRegion>::EndsWithReturn(void) const noexcept {
+  if (body && empty_body) {
+    return body->EndsWithReturn() && empty_body->EndsWithReturn();
+  } else {
+    return false;
+  }
 }
 
 uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
@@ -1389,6 +1489,15 @@ const bool Node<ProgramGenerateRegion>::MergeEqual(
 
 Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
   return this;
+}
+
+// Returns `true` if all paths through `this` ends with a `return` region.
+bool Node<ProgramCallRegion>::EndsWithReturn(void) const noexcept {
+  if (body && false_body) {
+    return body->EndsWithReturn() && false_body->EndsWithReturn();
+  } else {
+    return false;
+  }
 }
 
 uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
@@ -1669,30 +1778,13 @@ Node<ProgramCheckStateRegion>::AsCheckState(void) noexcept {
 
 // Returns `true` if all paths through `this` ends with a `return` region.
 bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
-  auto has_any = 0;
-  if (body) {
-    if (!body->EndsWithReturn()) {
-      return false;
-    } else {
-      ++has_any;
-    }
+  if (body && absent_body && unknown_body) {
+    return body->EndsWithReturn() &&
+           absent_body->EndsWithReturn() &&
+           unknown_body->EndsWithReturn();
+  } else {
+    return false;
   }
-  if (absent_body) {
-    if (!absent_body->EndsWithReturn()) {
-      return false;
-    } else {
-      ++has_any;
-    }
-  }
-  if (unknown_body) {
-    if (!unknown_body->EndsWithReturn()) {
-      return false;
-    } else {
-      ++has_any;
-    }
-  }
-
-  return 3 == has_any;
 }
 
 uint64_t Node<ProgramCheckStateRegion>::Hash(uint32_t depth) const {

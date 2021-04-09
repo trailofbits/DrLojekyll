@@ -793,10 +793,20 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os.PopIndent();
     }
 
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
+    if (auto succeeded_body = region.BodyIfSucceeded(); succeeded_body) {
+      succeeded_body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
     }
+
     os.PopIndent();
+
+    if (auto failed_body = region.BodyIfFailed(); failed_body) {
+      os << os.Indent() << "else:\n";
+      os.PushIndent();
+      failed_body->Accept(*this);
+      os.PopIndent();
+    }
   }
 
   void Visit(ProgramCheckStateRegion region) override {
@@ -1212,12 +1222,29 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     os.PushIndent();
+    if (auto true_body = region.BodyIfTrue(); true_body) {
+      true_body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass";
+    }
+    os.PopIndent();
+    os << os.Indent() << "else:\n";
+    os.PushIndent();
+    if (auto false_body = region.BodyIfFalse(); false_body) {
+      false_body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass";
+    }
+    os.PopIndent();
+  }
+
+  void Visit(ProgramWorkerIdRegion region) override {
+    os << Comment(os, region, "Program WorkerId Region");
     if (auto body = region.Body(); body) {
       body->Accept(*this);
     } else {
       os << os.Indent() << "pass";
     }
-    os.PopIndent();
   }
 
  private:

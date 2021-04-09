@@ -45,7 +45,8 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
       if (!in_var->query_column) {
         in_var->query_column = in_col;
       }
-      if (in_col.IsConstantOrConstantRef() && !in_var->query_const) {
+      if (bottom_up && !in_var->query_const &&
+          in_col.IsConstantOrConstantRef()) {
         in_var->query_const = QueryConstant::From(in_col);
       }
     }
@@ -105,239 +106,167 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
     parent = gen;
   }
 
-  // If we can receive deletions, and if we're in a path where we haven't
-  // actually inserted into a view, then we need to go and do a differential
-  // insert/update/check.
-  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
-  if (table) {
-    parent = BuildInsertCheck(impl, view, context, parent, table,
-                              view.CanReceiveDeletions(), view.Columns());
-  }
-
+  // NOTE(pag): A generator will never share the data model of its predecessor,
+  //            otherwise it would be too accepting.
   BuildEagerInsertionRegions(
-      impl, view, context, parent, view.Successors(), table);
+      impl, view, context, parent, view.Successors(), nullptr);
 }
 
 // Build a bottom-up remover for generator calls.
 void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
-                                   OP *root, TABLE *already_checked) {
-  QueryView view(map);
-  const auto gen = CreateGeneratorCall(
-      impl, map, functor, context, root, true);
-  root->body.Emplace(root, gen);
+                                   OP *parent, TABLE *already_checked) {
+  const QueryView view(map);
+  LET *let = nullptr;
 
-  auto parent = impl->parallel_regions.Create(gen);
-
-  // If this is a positive use then children go on the positive side; otherwise
-  // they go in the 'empty' side.
-  if (map.IsPositive()) {
-    gen->body.Emplace(gen, parent);
-  } else {
-    gen->empty_body.Emplace(gen, parent);
-  }
-
+  // If we do have a data model, then scan for the outputs and remove them
+  // that way.
+  //
+  // TODO(pag): Have some sort of smarter decision, e.g. allowing people to
+  //            mark functors as cheap or expensive (choose one).
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   if (model->table) {
 
-    // The caller didn't already do a state transition, so we can do it.
-    if (already_checked != model->table) {
-      const auto orig_parent = parent;
-      orig_parent->AddRegion(BuildBottomUpTryMarkUnknown(
-          impl, model->table, parent, view.Columns(),
-          [&](PARALLEL *par) { parent = par; }));
+    const auto seq = impl->series_regions.Create(parent);
+    parent->body.Emplace(parent, seq);
+
+    // NOTE(pag): MAPs never share their data models with their predecessors.
+    assert(model->table != already_checked);
+
+    // We have input columns but we need to translate them to output columns
+    // for the sake of the `BuildMaybeScanPartial`.
+    std::vector<QueryColumn> view_cols;
+    map.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                       std::optional<QueryColumn> out_col) {
+                     if (InputColumnRole::kFunctorInput == role) {
+                       const auto in_var = parent->VariableFor(impl, in_col);
+                       parent->col_id_to_var[out_col->Id()] = in_var;
+                       view_cols.push_back(*out_col);
+                     }
+                   });
+
+    // Scan over the index.
+    (void) BuildMaybeScanPartial(
+        impl, view, view_cols, model->table, seq,
+        [&](REGION *in_scan, bool) -> REGION * {
+          assert(!let);
+          let = impl->operation_regions.CreateDerived<LET>(in_scan);
+          return let;
+        });
+
+  // If we don't have a data model then repeat the call to the generator.
+  } else {
+    const auto gen = CreateGeneratorCall(
+        impl, map, functor, context, parent, true);
+    parent->body.Emplace(parent, gen);
+
+    // If this is a positive use then children go on the positive side;
+    // otherwise they go in the 'empty' side.
+    let = impl->operation_regions.CreateDerived<LET>(gen);
+    if (map.IsPositive()) {
+      gen->body.Emplace(gen, let);
+    } else {
+      gen->empty_body.Emplace(gen, let);
     }
   }
 
-  const auto let = impl->operation_regions.CreateDerived<LET>(parent);
-  parent->AddRegion(let);
+  // NOTE(pag): We'll let `BuildEagerRemovalRegions` mark the removal
+  //            for us.
   BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
-                           model->table);
+                           nullptr  /* already_removed */);
 }
 
 // Build a top-down checker on a map / generator.
-void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMap gen,
-                                  std::vector<QueryColumn> &view_cols,
-                                  TABLE *already_checked) {
-  const auto functor = gen.Functor();
+REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
+                                     REGION *proc, QueryMap map,
+                                     std::vector<QueryColumn> &view_cols,
+                                     TABLE *already_checked) {
+  const auto functor = map.Functor();
   assert(functor.IsPure());
 
-  const QueryView view(gen);
-  const QueryView pred_view = view.Predecessors()[0];
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+  const QueryView view(map);
 
-  auto series = impl->series_regions.Create(proc);
-  proc->body.Emplace(proc, series);
+  // So, we have a tuple of data, we know it was part of this model, but this
+  // model may be shared with another table. Our goal is this:
+  //
+  // First, figure out if this is a plausible tuple for this node. This means
+  // invoking the functor, and checking if the outputs of the functor match
+  // what we have in `view_cols`.
+  //
+  // If the outputs match, then we have a plausible tuple, and we then want to
+  // take the inputs and copied columns and call down to our predecessor and
+  // ask our predecessor if the plausible data was indeed provided.
 
-  // This map was persisted, we're not going to re-execute the functor because
-  // it is pure. We'll do a partial or complete scan to recover the inputs
-  // needed by the predecessor to check the predecessor.
-  if (model->table) {
 
-    TABLE *table_to_update = model->table;
-
-    // Maps are conditional, i.e. they might admit fewer tuples through
-    // than they are fed, so they never share the data model with their
-    // predecessors.
-    assert(model->table != pred_model->table);
-
-    auto call_pred = [&](PARALLEL *par) {
-      const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, par, view, view_cols, table_to_update, pred_view,
-          already_checked);
-      COMMENT( check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred"; )
-      par->AddRegion(check);
-    };
-
-    auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
-      return BuildTopDownTryMarkAbsent(impl, model->table, parent,
-                                       view_cols, call_pred);
-    };
-
-    series->AddRegion(BuildMaybeScanPartial(
-        impl, view, view_cols, model->table, series,
-        [&](REGION *parent, bool in_loop) -> REGION * {
-          if (already_checked != model->table) {
-            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
-                                                BuildStateCheckCaseReturnFalse;
-
-            already_checked = model->table;
-            if (view.CanProduceDeletions()) {
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, continue_or_return,
-                  if_unknown);
-            } else {
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, continue_or_return,
-                  continue_or_return);
-            }
-
-          } else {
-            table_to_update = nullptr;
-
-            return ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-                impl, context, parent, view, view_cols, nullptr, pred_view,
-                already_checked);
-          }
-        }));
-
-  // The predecessor has a table; this is good because we can scan it, and
-  // then re-check the condition with the found variables.
-  } else if (pred_model->table) {
-
-    std::vector<QueryColumn> pred_view_cols;
-
-    // Get a list of output columns of the predecessor that we have.
-    gen.ForEachUse(
-        [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
-          if (in_col.IsConstantOrConstantRef()) {
-            pred_view_cols.push_back(in_col);
-
-          } else if (QueryView::Containing(in_col) == pred_view &&
-                     proc->col_id_to_var.count(in_col.Id())) {
-            pred_view_cols.push_back(in_col);
-          }
-        });
-
-    // This sucks; we don't really have any of the predecessor columns
-    // available :-/
-    if (pred_view_cols.empty()) {
-      goto handle_worst_case;
-    }
-
-    series->AddRegion(BuildMaybeScanPartial(
-        impl, pred_view, pred_view_cols, pred_model->table, series,
-        [&](REGION *parent, bool) -> REGION * {
-          const auto call = CreateGeneratorCall(
-              impl, gen, gen.Functor(), context, parent, false);
-          const auto child = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-              impl, context, call, view, view_cols, nullptr,
-              pred_view, nullptr);
-
-          // Figure out where to place the child nodes inside the generator.
-          if (gen.IsPositive()) {
-            call->body.Emplace(call, child);
-          } else {
-            call->empty_body.Emplace(call, child);
-          }
-
-          return call;
-        }));
-
-  // This generator doesn't have persistent backing, nor does its predecessor,
-  // so we have to call down to its predecessor. If we've already done the
-  // check and the predecessor call returns `true` then we can return `true`.
-  // Otherwise we have bigger problems :-(
-  } else {
-  handle_worst_case:
-
-    std::vector<QueryColumn> bound_cols;
-    for (auto col : gen.MappedColumns()) {
-      if (functor.NthParameter(*(col.Index())).Binding() ==
-          ParameterBinding::kBound) {
-        bound_cols.push_back(col);
-      }
-    }
-
-    // Try to figure out if we have sufficient columns to be able to invoke
-    // the generator.
-    bool done_check = true;
-    for (auto out_of_in_col : bound_cols) {
-      if (out_of_in_col.IsConstantRef()) {
-        continue;  // The input column is constant, so we have it.
-
-      // We don't have an input variable associated with the output column
-      // which maps up with the input column associated with a `bound`-
-      // attributed parameter of the functor.
-      } else if (!proc->col_id_to_var.count(out_of_in_col.Id())) {
-        done_check = false;
-        break;
-      }
-    }
-
-    // If we can do the check because we have enough input columns then we'll
-    // trust things.
-    if (done_check) {
-
-      // Map in the variables.
-      for (auto out_of_in_col : bound_cols) {
-        auto out_var = series->VariableFor(impl, out_of_in_col);
-        auto in_col = gen.NthInputColumn(*(out_of_in_col.Index()));
-        series->col_id_to_var[in_col.Id()] = out_var;
-      }
-
-      const auto call = CreateGeneratorCall(
-          impl, gen, gen.Functor(), context, series, false);
-      series->AddRegion(call);
-
-      const auto child = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, call, view, view_cols, nullptr, pred_view, nullptr);
-
-      if (gen.IsPositive()) {
-        call->body.Emplace(call, child);
-      } else {
-        call->empty_body.Emplace(call, child);
-      }
-
-    // The issue here is that our codegen model of top-down checking treats
-    // predecessors as black boxes. We really need to recover the columns from
-    // the predecessor that are used for comparison, so that we can apply the
-    // check to them, but we don't (yet) have a way of doing this. This is
-    // also kind of a problem for
-    } else {
-//      view.SetTableId(9999999);
-      assert(false &&
-             "TODO(pag): Handle worst case of top-down generator checker");
-      auto ret = BuildStateCheckCaseReturnFalse(impl, series);
-      ret->comment = "?!?! WORST CASE top-down generator checker";
-      series->AddRegion(ret);
-    }
+  // Save the variables associated with the view; the var/id mapping may get
+  // clobbered by `CreateGeneratorCall`.
+  std::vector<VAR *> view_vars;
+  for (auto col : view_cols) {
+    view_vars.push_back(proc->VariableFor(impl, col));
   }
+
+  const auto gen = CreateGeneratorCall(
+      impl, map, functor, context, proc, false  /* bottom_up */);
+
+  // If nothing is generated, then it wasn't plausible!
+  gen->empty_body.Emplace(gen, BuildStateCheckCaseReturnFalse(impl, gen));
+
+  OP *parent = gen;
+
+  // Outputs correspond to `free`-attributed parameters, and this functor
+  // has at least one `free`-attributed parameter, which therefore must be
+  // compared against what we have in `view_vars`.
+  if (!functor.IsFilter()) {
+    const auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+        gen, ComparisonOperator::kEqual);
+    gen->body.Emplace(gen, cmp);
+
+    // Deal with the comparison failing.
+    switch (functor.Range()) {
+
+      // If we can get more outputs from this generator, then keep generating
+      // until we fall through the procedure. Higher level code will inject
+      // a terminating `return-false` for us.
+      case FunctorRange::kOneOrMore:
+      case FunctorRange::kZeroOrMore:
+        break;
+
+      // Emit a `return-false` if the comparison failed and we can never get
+      // more than one set of outputs from this generator.
+      case FunctorRange::kZeroOrOne:
+      case FunctorRange::kOneToOne:
+        cmp->false_body.Emplace(gen, BuildStateCheckCaseReturnFalse(impl, gen));
+        break;
+    }
+
+    // `free`-attributed parameters are the outputs of the functor.
+    for (auto i = 0u; i < functor.Arity(); ++i) {
+      if (functor.NthParameter(i).Binding() == ParameterBinding::kFree) {
+        cmp->lhs_vars.AddUse(view_vars[i]);
+        cmp->rhs_vars.AddUse(gen->VariableFor(impl, map.NthColumn(i)));
+      }
+    }
+
+    parent = cmp;
+  }
+
+  // We now have a plausible tuple. Go call the checker for our predecessor.
+  // In the case that the predecessor checker returns false, we know that we
+  // can return false because we've already checked that the output of the
+  // functor matches our arguments.
+  const QueryView pred_view = view.Predecessors()[0];
+  parent->body.Emplace(
+      parent,
+      CallTopDownChecker(
+          impl, context, parent, view, view_cols, pred_view, already_checked,
+          [=] (REGION *parent_if_true) -> REGION * {
+            return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
+          },
+          [=] (REGION *parent_if_false) -> REGION * {
+            return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
+          }));
+
+  return gen;
 }
 
 

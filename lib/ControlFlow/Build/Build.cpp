@@ -350,7 +350,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 
   // Negations must be backed by tables.
   for (auto negate : query.Negations()) {
-    (void) TABLE::GetOrCreate(impl, context, negate);
+//    (void) TABLE::GetOrCreate(impl, context, negate);
     (void) TABLE::GetOrCreate(impl, context, negate.NegatedView());
     for (QueryView pred : QueryView(negate).Predecessors()) {
       (void) TABLE::GetOrCreate(impl, context, pred);
@@ -492,30 +492,41 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     program->view_to_model.emplace(view, model);
   });
 
+  // Inserts and selects from the same relation share the same data models.
+  for (auto rel : query.Relations()) {
+    DataModel *last_model = nullptr;
+    for (auto view : rel.Selects()) {
+      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
+      if (last_model) {
+        DisjointSet::Union(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+
+    for (auto view : rel.Inserts()) {
+      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
+      if (last_model) {
+        DisjointSet::Union(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+
+      // Join together the tables of inserts and their predecessors, which are
+      // always TUPLEs.
+      for (auto pred_view : view.Predecessors()) {
+        auto pred_model = program->view_to_model[pred_view];
+        DisjointSet::Union(last_model, pred_model);
+      }
+    }
+  }
+
+
   // TODO(pag): Data modelling disabled until further notice!!!
   //            Subtle bugs abound.
   return;
 
-  // Inserts and selects from the same relation share the same data models.
-  for (auto rel : query.Relations()) {
-    DataModel *last_model = nullptr;
-    for (auto view : rel.Inserts()) {
-      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-      if (last_model) {
-        DisjointSet::Union(curr_model, last_model);
-      } else {
-        last_model = curr_model;
-      }
-    }
-    for (auto view : rel.Inserts()) {
-      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-      if (last_model) {
-        DisjointSet::Union(curr_model, last_model);
-      } else {
-        last_model = curr_model;
-      }
-    }
-  }
+
 
   auto all_cols_match = [](auto cols, auto pred_cols) {
     const auto num_cols = cols.size();
@@ -806,16 +817,298 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
   return changed;
 }
 
+static REGION *RemoveFromNegatedView(
+    ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
+  assert(false && "TODO");
+  return nullptr;
+}
+
+static REGION *MaybeReAddToNegatedView(
+    ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
+  assert(false && "TODO");
+  return nullptr;
+}
+
 static void BuildTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
     std::vector<QueryColumn> &view_cols, PROC *proc,
     TABLE *already_checked) {
 
+  // If we have a table, and if we don't have all of the columns, then go
+  // and get all of the columns via a recursive check and a scan over the
+  // backing store. The fall-through at the end is to return false if none
+  // of the recursive calls returns true.
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  if (const auto table = model->table; table) {
+
+    // If we have a table, and our caller has a table, and they don't match
+    // then clear out `already_checked`, as it's unrelated to our table.
+    if (already_checked != table) {
+      already_checked = nullptr;
+    }
+
+    // Recursively call the top-down checker with all columns available.
+    //
+    // Key dependencies: `already_checked`, `view`, `view_cols`.
+    auto call_self = [&] (REGION *parent) -> CALL * {
+      const auto available_cols = ComputeAvailableColumns(view, view_cols);
+      const auto checker_proc = GetOrCreateTopDownChecker(
+          impl, context, view, available_cols, already_checked);
+
+      const auto check = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, parent, checker_proc);
+
+      // Pass in the arguments.
+      auto i = 0u;
+      for (auto [col, avail_col] : available_cols) {
+        const auto var = parent->VariableFor(impl, avail_col);
+        assert(var != nullptr);
+        check->arg_vars.AddUse(var);
+
+        const auto param = checker_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
+      }
+
+      return check;
+    };
+
+    SERIES *seq = impl->series_regions.Create(proc);
+
+    // Try to build a scan. If we can't then return `nullptr`, and `did_scan`
+    // will be `false`. If we do build a scan, then do a recursive call in the
+    // scan, where we'll have all columns available. If the recursive call
+    // returns `true` then it means we've proven the tuple exists, and we can
+    // return true.
+    const auto did_scan = BuildMaybeScanPartial(
+        impl, view, view_cols, model->table, seq,
+        [&](REGION *parent, bool in_loop) -> REGION * {
+          if (!in_loop) {
+            return nullptr;
+          }
+
+          assert(!already_checked);
+
+          const auto check = call_self(parent);
+
+          // If the call succeeds, then `return-true`. If it fails, then do
+          // nothing, i.e. continue in our partial scan to the next tuple
+          // from our index.
+          check->body.Emplace(
+              check, BuildStateCheckCaseReturnTrue(impl, check));
+
+          return check;
+        });
+
+    // If we did a scan, and if execution falls through post-scan, then it means
+    // that none of the recursive calls to finders succeeded, so we must return
+    // false because we failed to prove the tuple.
+    if (did_scan) {
+      assert(!already_checked);
+
+      proc->body.Emplace(proc, seq);
+      seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
+      return;
+
+    // If this view can't produce deletions, and if we have a table for it, then
+    // all we need to do is check the state.
+    } else if (!view.CanProduceDeletions()) {
+      assert(view.PositiveConditions().empty());
+      assert(view.NegativeConditions().empty());
+
+      seq->parent = nullptr;
+
+      // If our caller did a check and we got to here, and we can't produce
+      // deletions, then this is really weird, but also just means the data
+      // wasn't found and all we can do is return false.
+      if (already_checked == model->table) {
+        proc->body.Emplace(proc, BuildStateCheckCaseReturnFalse(impl, proc));
+
+      // Our called didn't do a check, so we'll do it, and we'll just return
+      // whatever the check tells us. In practice, the `if-unknown` case should
+      // never execute.
+      //
+      // TODO(pag): Would be good to have an "abort" block.
+      } else {
+        proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
+            impl, proc, model->table, view_cols,
+            BuildStateCheckCaseReturnTrue,
+            BuildStateCheckCaseReturnFalse,
+            BuildStateCheckCaseReturnFalse));
+      }
+      return;
+
+    // This node can produce differential updates, it has a model, and we
+    // haven't yet checked the state of the tuple. We're down here so we know
+    // the tuple once existed, because we found it in an index. We haven't
+    // actually checked the tuple's state, though, so now we'll check it, and
+    // if it's unknown then we'll recursively call ourselves and try to prove
+    // it in its own absence.
+    } else if (already_checked == nullptr) {
+
+      seq->parent = nullptr;
+
+      // It's possible that we'll need to re-try this (or a nearly similar)
+      // call due to a race condition. In that event, we'll make a tail-call.
+      SERIES *retry_seq = impl->series_regions.Create(proc);
+      proc->body.Emplace(proc, retry_seq);
+
+      // These will be executed if the recursive call returns `true` or
+      // `false`, respectively.
+      SERIES *true_seq = nullptr;
+      SERIES *false_seq = nullptr;
+
+      retry_seq->AddRegion(BuildTopDownCheckerStateCheck(
+          impl, retry_seq, model->table, view.Columns(),
+          BuildStateCheckCaseReturnTrue,
+          BuildStateCheckCaseReturnFalse,
+          [&](ProgramImpl *, REGION *parent) -> REGION * {
+
+            // Change the tuple's state to mark it as absent so that we can't
+            // use it as its own base case.
+            const auto table_remove = BuildChangeState(
+                impl, table, parent, view_cols, TupleState::kUnknown,
+                TupleState::kAbsent);
+
+            already_checked = model->table;
+            const auto recursive_call_if_changed = call_self(table_remove);
+            table_remove->body.Emplace(table_remove, recursive_call_if_changed);
+
+            // If we're proven the tuple, then try to mark it as present.
+            const auto table_add = BuildChangeState(
+                impl, table, recursive_call_if_changed, view_cols,
+                TupleState::kAbsent, TupleState::kPresent);
+
+            recursive_call_if_changed->body.Emplace(
+                recursive_call_if_changed, table_add);
+
+            // If updating the state succeeded, then we'll go down the `true`
+            // path.
+            true_seq = impl->series_regions.Create(table_add);
+            table_add->body.Emplace(table_add, true_seq);
+
+            // If the recursive call failed, and we were the ones to change
+            // the tuple's state to absent, then we'll go down the `false`
+            // path.
+            false_seq = impl->series_regions.Create(recursive_call_if_changed);
+            recursive_call_if_changed->false_body.Emplace(
+                recursive_call_if_changed, false_seq);
+
+            return table_remove;
+          }));
+
+      // If this view is used by a negation, then on the true or false paths
+      // we may need to adjust things.
+      if (view.IsUsedByNegation()) {
+        true_seq->AddRegion(RemoveFromNegatedView(impl, context, view, true_seq));
+        false_seq->AddRegion(MaybeReAddToNegatedView(impl, context, view, true_seq));
+      }
+
+      // Make sure that we `return-true` and `return-false` to our callers.
+      true_seq->AddRegion(BuildStateCheckCaseReturnTrue(impl, true_seq));
+      false_seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, false_seq));
+
+      // If we fall through to the end, then a race condition has occurred
+      // during one of the above state transitions. To recover, call ourselves
+      // recursively and return the result.
+      already_checked = nullptr;
+      const auto recursive_call_if_race = call_self(retry_seq);
+      retry_seq->AddRegion(recursive_call_if_race);
+
+      recursive_call_if_race->body.Emplace(
+          recursive_call_if_race,
+          BuildStateCheckCaseReturnTrue(impl, recursive_call_if_race));
+
+      recursive_call_if_race->false_body.Emplace(
+          recursive_call_if_race,
+          BuildStateCheckCaseReturnTrue(impl, recursive_call_if_race));
+
+      return;
+
+    // Mark the series as "dead". Fall through to the "actual" child calls.
+    } else {
+      seq->parent = nullptr;
+    }
+
+  // No table associated with this view.
+  } else {
+    assert(!view.IsUsedByNegation());
+    assert(!view.IsUsedByJoin());
+    already_checked = nullptr;
+
+    // TODO(pag): Consider returning false?
+  }
+
+  // If we're down here, then it means one of the following:
+  //
+  //    1)  `view` doesn't have a table, and so we didn't do a scan.
+  //    2)  `view_cols` is "complete" for `view`, and so we didn't do a scan.
+  //    3)  we've been recursively called in the context of a scan.
+
+  REGION *child = nullptr;
+  REGION *parent = proc;
+  UseRef<REGION> *parent_body = &(proc->body);
+
+  // Before proceeding, we must ensure that if any constants flowed up through
+  // this node, then on our way down, we check that the columns we have match
+  // the constants that flowed up.
+
+  std::vector<std::pair<QueryColumn, QueryColumn>> constants_to_check;
+  view.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                       std::optional<QueryColumn> out_col) {
+    if (out_col && in_col.IsConstantOrConstantRef() &&
+        std::find(view_cols.begin(), view_cols.end(), *out_col) !=
+            view_cols.end()) {
+      switch (role) {
+        case InputColumnRole::kIndexValue:
+        case InputColumnRole::kAggregatedColumn: return;
+        default:
+          constants_to_check.emplace_back(*out_col, in_col);
+          break;
+      }
+    }
+  });
+
+  // We need to compare some of the arguments against constants. This may
+  // be tricky because some of the argument columns may be marked as
+  // constant refs, so we can't trust `VariableFor`; we need to find the
+  // arguments "by index."
+  if (!constants_to_check.empty()) {
+    const auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+        parent, ComparisonOperator::kEqual);
+    parent_body->Emplace(parent, cmp);
+
+    for (auto [out_col, in_col] : constants_to_check) {
+      assert(in_col.IsConstantOrConstantRef());
+      cmp->lhs_vars.AddUse(proc->input_vars[*(out_col.Index())]);
+      cmp->rhs_vars.AddUse(proc->VariableFor(impl, in_col));
+    }
+
+    // NOTE(pag): We *don't* do conditional constant propagation (via injecting
+    //            stuff into `col_id_to_var`) here because `view` might be a
+    //            comparison, and so there could be repeats of `out_col` in
+    //            `constants_to_check` that would screw up our checks going
+    //            down.
+
+    // If the comparison failed then return false.
+    cmp->false_body.Emplace(cmp, BuildStateCheckCaseReturnFalse(impl, cmp));
+
+    // Everything else will nest inside of the comparison.
+    parent = cmp;
+    parent_body = &(cmp->body);
+  }
+
+  // Alright, now it's finally time to call the view-specific checkers.
+
+  // If we have a table, then being down here implies we've already checked
+  // the state and transitioned it to absent. Or, we don't have a table.
+  assert(!model->table || already_checked);
+
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      BuildTopDownJoinChecker(impl, context, proc, join, view_cols,
-                              already_checked);
+      child = BuildTopDownJoinChecker(impl, context, parent, join, view_cols,
+                                      already_checked);
     } else {
       assert(false && "TODO: Checker for cross-product.");
     }
@@ -824,12 +1117,12 @@ static void BuildTopDownChecker(
     const auto merge = QueryMerge::From(view);
     if (context.inductive_successors.count(view) &&
         !context.dominated_merges.count(view)) {
-      BuildTopDownInductionChecker(impl, context, proc, merge, view_cols,
-                                   already_checked);
+      child = BuildTopDownInductionChecker(
+          impl, context, parent, merge, view_cols, already_checked);
 
     } else {
-      BuildTopDownUnionChecker(impl, context, proc, merge, view_cols,
-                               already_checked);
+      child = BuildTopDownUnionChecker(
+          impl, context, parent, merge, view_cols, already_checked);
     }
 
   } else if (view.IsAggregate()) {
@@ -839,40 +1132,44 @@ static void BuildTopDownChecker(
     assert(false && "TODO: Checker for k/v indices.");
 
   } else if (view.IsMap()) {
-    BuildTopDownGeneratorChecker(impl, context, proc, QueryMap::From(view),
-                                 view_cols, already_checked);
+    const auto map = QueryMap::From(view);
+    child = BuildTopDownGeneratorChecker(
+        impl, context, parent, map, view_cols, already_checked);
 
   } else if (view.IsCompare()) {
-    BuildTopDownCompareChecker(impl, context, proc, QueryCompare::From(view),
-                               view_cols, already_checked);
+    const auto cmp = QueryCompare::From(view);
+    child = BuildTopDownCompareChecker(
+        impl, context, parent, cmp, view_cols, already_checked);
 
   } else if (view.IsSelect()) {
-    BuildTopDownSelectChecker(impl, context, proc, QuerySelect::From(view),
-                              view_cols, already_checked);
+    const auto select = QuerySelect::From(view);
+    child = BuildTopDownSelectChecker(
+        impl, context, parent, select, view_cols, already_checked);
 
   } else if (view.IsTuple()) {
-    BuildTopDownTupleChecker(impl, context, proc, QueryTuple::From(view),
-                             view_cols, already_checked);
+    const auto tuple = QueryTuple::From(view);
+    child = BuildTopDownTupleChecker(
+        impl, context, parent, tuple, view_cols, already_checked);
 
+  // The only way, from the top-down, to reach an INSERT is via a SELECT, but
+  // the top-down SELECT checker skips over the INSERTs and jumps into the
+  // TUPLEs that precede them.
   } else if (view.IsInsert()) {
-    const auto insert = QueryInsert::From(view);
-
-    if (insert.IsStream()) {
-      // Nothing to do.
-
-    } else {
-      BuildTopDownInsertChecker(impl, context, proc, QueryInsert::From(view),
-                                view_cols, already_checked);
-    }
+    assert(false);
 
   } else if (view.IsNegate()) {
-    BuildTopDownNegationChecker(impl, context, proc, QueryNegate::From(view),
-                                view_cols, already_checked);
-
+    const auto negate = QueryNegate::From(view);
+    child = BuildTopDownNegationChecker(
+        impl, context, parent, negate, view_cols, already_checked);
 
   // Not possible?
   } else {
     assert(false);
+  }
+
+  if (child) {
+    assert(child->parent == parent);
+    parent_body->Emplace(parent, child);
   }
 
   CompleteProcedure(impl, proc, context);
@@ -938,7 +1235,7 @@ static bool BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
   return changed;
 }
 
-// Add entry point records for each query to the program.
+// Add entry point records for each query of the program.
 static void BuildQueryEntryPointImpl(
     ProgramImpl * impl, Context &context,
     ParsedDeclaration decl, QueryInsert insert) {
@@ -948,13 +1245,15 @@ static void BuildQueryEntryPointImpl(
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   assert(model->table != nullptr);
 
-  std::vector<QueryColumn> cols;
+  std::vector<std::pair<QueryColumn, QueryColumn>> available_cols;
   std::vector<unsigned> col_indices;
   for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       col_indices.push_back(param.Index());
     }
-    cols.push_back(insert.NthInputColumn(param.Index()));
+
+    const auto in_col = insert.NthInputColumn(param.Index());
+    available_cols.emplace_back(in_col, in_col);
   }
 
   const DataTable table(model->table);
@@ -968,8 +1267,11 @@ static void BuildQueryEntryPointImpl(
   }
 
   if (view.CanReceiveDeletions()) {
+    auto pred_view = view.Predecessors()[0];
+    assert(pred_view.IsTuple());
+
     const auto checker = GetOrCreateTopDownChecker(
-        impl, context, view, cols, nullptr);
+        impl, context, pred_view, available_cols, nullptr);
     impl->query_checkers.AddUse(checker);
     checker_proc.emplace(ProgramProcedure(checker));
     checker->has_raw_use = true;
@@ -1008,6 +1310,9 @@ static bool CanImplementTopDownChecker(
   // to have models.
   } else if (view.IsJoin()) {
     return true;
+
+  } else if (view.IsInsert()) {
+    return false;
   }
 
   // We have a model, so worst case, we can do a full table scan.
@@ -1016,7 +1321,7 @@ static bool CanImplementTopDownChecker(
     return true;
   }
 
-  // We need
+  // We need some columns.
   return !available_cols.empty();
 }
 
@@ -1105,10 +1410,82 @@ OP *BuildStateCheckCaseNothing(ProgramImpl *, REGION *) {
   return nullptr;
 }
 
+// Expand the set of available columns.
+void ExpandAvailableColumns(
+    QueryView view,
+    std::unordered_map<unsigned, QueryColumn> &wanted_to_avail) {
+
+  // Now, map outputs to inputs.
+  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                      std::optional<QueryColumn> out_col) {
+
+    if (out_col &&
+        InputColumnRole::kIndexValue != role &&
+        InputColumnRole::kAggregatedColumn != role) {
+
+      if (auto it = wanted_to_avail.find(out_col->Id());
+          it != wanted_to_avail.end()) {
+        wanted_to_avail.emplace(in_col.Id(), it->second);
+      }
+    }
+  });
+
+  // The same input column may be used multiple times, and so if we have one
+  // of the outputs, then we can find the other output via the inputs.
+  auto pivot_ins_to_outs = [&] (void) {
+    view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                        std::optional<QueryColumn> out_col) {
+      if (out_col &&
+          InputColumnRole::kIndexValue != role &&
+          InputColumnRole::kAggregatedColumn != role) {
+
+        if (auto it = wanted_to_avail.find(in_col.Id());
+            it != wanted_to_avail.end()) {
+          wanted_to_avail.emplace(out_col->Id(), it->second);
+        }
+      }
+    });
+  };
+
+  pivot_ins_to_outs();
+
+  // Finally, some of the inputs may be constants. We have to do constants
+  // last because something in `available_cols` might be a "variable" that
+  // takes on a different value than a constant, and thus needs to be checked
+  // against that constant.
+  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                      std::optional<QueryColumn> out_col) {
+    if (out_col &&
+        InputColumnRole::kIndexValue != role &&
+        InputColumnRole::kAggregatedColumn != role &&
+        in_col.IsConstantOrConstantRef()) {
+      wanted_to_avail.emplace(out_col->Id(), in_col);
+    }
+  });
+
+  pivot_ins_to_outs();
+}
+
+// Filter out only the available columns that are part of the view we care
+// about.
+std::vector<std::pair<QueryColumn, QueryColumn>>
+FilterAvailableColumns(
+    QueryView view,
+    const std::unordered_map<unsigned, QueryColumn> &wanted_to_avail) {
+  std::vector<std::pair<QueryColumn, QueryColumn>> ret;
+  for (auto col : view.Columns()) {
+    if (auto it = wanted_to_avail.find(col.Id()); it != wanted_to_avail.end()) {
+      ret.emplace_back(col, it->second);
+    }
+  }
+  return ret;
+}
+
 // Gets or creates a top down checker function.
 PROC *GetOrCreateTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
-    const std::vector<QueryColumn> &available_cols, TABLE *already_checked) {
+    const std::vector<std::pair<QueryColumn, QueryColumn>> &available_cols,
+    TABLE *already_checked) {
 
   // There is a pretty evil situation we might encounter:
   //
@@ -1140,30 +1517,32 @@ PROC *GetOrCreateTopDownChecker(
     auto top_merge = model->table->views[0];
     auto top_merge_cols = top_merge.Columns();
 
-    for (auto col : available_cols) {
-      if (col.IsConstant()) {
-        available_cols_in_merge.push_back(col);
-      } else {
-        available_cols_in_merge.push_back(top_merge_cols[*(col.Index())]);
-      }
+    for (auto [col, avail_col] : available_cols) {
+      available_cols_in_merge.push_back(top_merge_cols[*(col.Index())]);
     }
 
+    auto sub_wanted_to_avail = ComputeAvailableColumns(
+        view, available_cols_in_merge);
+
     return GetOrCreateTopDownChecker(
-        impl, context, top_merge, available_cols_in_merge,
+        impl, context, top_merge, sub_wanted_to_avail,
         already_checked  /* nullptr */);
   }
 
-  assert(CanImplementTopDownChecker(impl, view, available_cols));
+//  assert(CanImplementTopDownChecker(impl, view, available_cols));
   (void) CanImplementTopDownChecker;
 
   // Make up a string that captures what we have available.
   std::stringstream ss;
-  ss << view.UniqueId();
-  for (auto view_col : available_cols) {
+  ss << view.KindName() << ':' << view.UniqueId();
+  for (auto [view_col, avail_col] : available_cols) {
     ss << ',' << view_col.Id() << '/'
        << static_cast<uint32_t>(view_col.Type().Kind());
   }
-  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
+  if (already_checked) {
+    ss << ':' << already_checked->id;
+  }
+
   auto &proc = context.view_to_top_down_checker[ss.str()];
 
   // We haven't made this procedure before; so we'll declare it now and
@@ -1175,66 +1554,26 @@ PROC *GetOrCreateTopDownChecker(
     proc = impl->procedure_regions.Create(impl->next_id++,
                                           ProcedureKind::kTupleFinder);
 
-    // Preferentially map constants now. This might help with dead arg
-    // elimination later.
-    for (auto col : view.Columns()) {
-      if (col.IsConstantRef()) {
-        (void) proc->VariableFor(impl, col);
-      }
-    }
+    std::vector<QueryColumn> view_cols;
+    std::unordered_map<unsigned, QueryColumn> wanted_to_avail;
 
-    for (auto param_col : available_cols) {
+    for (auto [view_col, avail_col] : available_cols) {
       const auto var =
           proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-      var->query_column = param_col;
-
-      // NOTE(pag): `emplace` so that constants mapped in above are given
-      //            preference.
-      proc->col_id_to_var.emplace(param_col.Id(), var);
+      var->query_column = view_col;
+      proc->col_id_to_var[view_col.Id()] = var;
+      wanted_to_avail.emplace(view_col.Id(), view_col);
+      view_cols.push_back(view_col);
     }
 
     // Now, map outputs to inputs.
-    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                       std::optional<QueryColumn> out_col) {
+    ExpandAvailableColumns(view, wanted_to_avail);
+    for (auto [col_id, avail_col] : wanted_to_avail) {
+      proc->col_id_to_var.emplace(col_id, proc->VariableFor(impl, avail_col));
+    }
 
-      if (out_col &&
-          InputColumnRole::kIndexValue != role &&
-          InputColumnRole::kAggregatedColumn != role) {
-
-        if (proc->col_id_to_var.count(out_col->Id())) {
-          proc->col_id_to_var.emplace(in_col.Id(),
-                                      proc->VariableFor(impl, *out_col));
-        }
-      }
-    });
-
-    // Then, any input columns that match the outputs, map those. For example,
-    // it may be the case that a single input column feeds multiple output
-    // columns, but not all of the output columns are available.
-    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                       std::optional<QueryColumn> out_col) {
-      if (out_col &&
-          InputColumnRole::kIndexValue != role &&
-          InputColumnRole::kAggregatedColumn != role &&
-          InputColumnRole::kMergedColumn != role) {
-
-        if (proc->col_id_to_var.count(in_col.Id())) {
-          proc->col_id_to_var.emplace(out_col->Id(),
-                                      proc->VariableFor(impl, in_col));
-        }
-      }
-    });
-
-//    // Finally, map available constants to output vars.
-//    view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-//                       std::optional<QueryColumn> out_col) {
-//      if (in_col.IsConstantOrConstantRef()) {
-//        (void) proc->VariableFor(impl, in_col);
-//      }
-//    });
-
-    context.top_down_checker_work_list.emplace_back(view, available_cols, proc,
-                                                    already_checked);
+    context.top_down_checker_work_list.emplace_back(
+        view, view_cols, proc, already_checked);
   }
 
   return proc;
@@ -1250,94 +1589,121 @@ std::pair<OP *, CALL *> CallTopDownChecker(
     const std::vector<QueryColumn> &succ_cols, QueryView view,
     TABLE *already_checked) {
 
-  // List of output columns of `view` that can be derived from the output
-  // columns of `succ_view`, as available in `succ_cols`.
-  std::vector<QueryColumn> available_cols;
+  assert(!succ_view.IsInsert());
+  assert(!view.IsInsert());
 
-  // Inserts only have input columns, and that what gets passed in here.
-  if (succ_view.IsInsert()) {
-    available_cols = succ_cols;
+  std::unordered_map<unsigned, QueryColumn> wanted_to_avail;
+  for (auto succ_col : succ_cols) {
+    wanted_to_avail.emplace(succ_col.Id(), succ_col);
   }
 
-  // Everything is available, yay!
-  if (view == succ_view) {
-    for (auto col : view.Columns()) {
-      available_cols.push_back(col);
-    }
+  ExpandAvailableColumns(succ_view, wanted_to_avail);
+  if (succ_view != view) {
+    ExpandAvailableColumns(view, wanted_to_avail);
   }
+  const auto available_cols = FilterAvailableColumns(view, wanted_to_avail);
 
-  // If any of the columns of the view we want to call are constant references
-  // then they are available. We know the outputs of a view are never themselves
-  // constants.
-  for (auto col : view.Columns()) {
-    if (col.IsConstantRef()) {
-      available_cols.push_back(col);
-      (void) parent->VariableFor(impl, col);
-    }
-  }
-
+  // Map the variables for the call.
   const auto let = impl->operation_regions.CreateDerived<LET>(parent);
   OP *call_parent = let;
-  // Now we need to map the outputs of `succ_view` back to the outputs of
-  // `view`.
-  succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
-                           std::optional<QueryColumn> succ_view_col) {
+  for (auto [wanted_col, avail_col] : available_cols) {
+    let->col_id_to_var[wanted_col.Id()] = parent->VariableFor(impl, avail_col);
+  }
 
-    // `view_col` is unrelated to `view`.
-    if (QueryView::Containing(view_col) != view) {
-      return;
+  // Also map in the available columnns, but don't override anything that's
+  // there (hence use of `emplace`).
+  for (auto [wanted_col, avail_col] : available_cols) {
+    let->col_id_to_var.emplace(avail_col.Id(),
+                               parent->VariableFor(impl, avail_col));
+  }
 
-    // The input column from `view` is not present in `succ_view`.
-    } else if (!succ_view_col) {
-      return;
+  // List of output columns of `view` that can be derived from the output
+  // columns of `succ_view`, as available in `succ_cols`.
+//  std::vector<QueryColumn> view_cols;
 
-    // We cannot depend on the output value of this column
-    // (from `succ_view_col`) to derive the input value `view_col`. However,
-    // if the input column is a constant or constant ref then we have it.
-    } else if (InputColumnRole::kIndexValue == role ||
-               InputColumnRole::kAggregatedColumn == role) {
-      return;
-
-//    // Two input values are conditionally merged into one output value. We can
-//    // never convert an output into an input in this case.
-//    } else if ((InputColumnRole::kCompareLHS == role ||
-//                InputColumnRole::kCompareRHS == role) &&
-//               (QueryCompare::From(succ_view).Operator() ==
-//                ComparisonOperator::kEqual)) {
+//  // Everything is available, yay!
+//  if (view == succ_view) {
+//    for (auto col : view.Columns()) {
+//      available_cols.push_back(col);
+//    }
+//  }
+//
+//  // If any of the columns of the view we want to call are constant references
+//  // then they are available. We know the outputs of a view are never themselves
+//  // constants.
+//  for (auto col : view.Columns()) {
+//    if (col.IsConstantRef()) {
+//      available_cols.push_back(col);
+//      (void) parent->VariableFor(impl, col);
+//    }
+//  }
+//
+//  const auto let = impl->operation_regions.CreateDerived<LET>(parent);
+//  OP *call_parent = let;
+//
+//  // Now we need to map the outputs of `succ_view` back to the outputs of
+//  // `view`.
+//  succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
+//                           std::optional<QueryColumn> succ_view_col) {
+//
+//    // `view_col` is unrelated to `view`.
+//    if (QueryView::Containing(view_col) != view) {
 //      return;
+//
+//    // The input column from `view` is not present in `succ_view`.
+//    } else if (!succ_view_col) {
+//      return;
+//
+//    // We cannot depend on the output value of this column
+//    // (from `succ_view_col`) to derive the input value `view_col`. However,
+//    // if the input column is a constant or constant ref then we have it.
+//    } else if (InputColumnRole::kIndexValue == role ||
+//               InputColumnRole::kAggregatedColumn == role) {
+//      return;
+//
+////    // Two input values are conditionally merged into one output value. We can
+////    // never convert an output into an input in this case.
+////    } else if ((InputColumnRole::kCompareLHS == role ||
+////                InputColumnRole::kCompareRHS == role) &&
+////               (QueryCompare::From(succ_view).Operator() ==
+////                ComparisonOperator::kEqual)) {
+////      return;
+//
+//    // `*succ_view_col` is available in `view_cols`, thus `view_col` is
+//    // also available.
+//    } else if (std::find(succ_cols.begin(), succ_cols.end(), *succ_view_col) !=
+//               succ_cols.end()) {
+//      available_cols.push_back(view_col);
+//      const auto succ_var = let->VariableFor(impl, *succ_view_col);
+//      let->col_id_to_var[view_col.Id()] = succ_var;
+//
+//    // If it's a constant ref then we have it. Note that we take `view_col`
+//    // as the lookup for the `VariableFor` and not `*succ_view_col` because
+//    // that might give us the output of a mutable column in a key/value store.
+//    //
+//    // NOTE(pag): This follows a check that `view_col` belongs to `view` so that
+//    //            multiple constants flowing into a column in a MERGE/UNION
+//    //            don't end up all getting matched.
+//    } else if (succ_view_col->IsConstantRef()) {
+//      const auto succ_var = let->VariableFor(impl, *succ_view_col);
+//      let->col_id_to_var[view_col.Id()] = succ_var;
+//      available_cols.push_back(view_col);
+//    }
+//  });
+//
+//  // Sort and unique out the available columns.
+//  std::sort(available_cols.begin(), available_cols.end(),
+//            [] (QueryColumn a, QueryColumn b) {
+//              return *(a.Index()) < *(b.Index());
+//            });
+//  auto it = std::unique(available_cols.begin(), available_cols.end(),
+//                        [] (QueryColumn a, QueryColumn b) {
+//                          return *(a.Index()) == *(b.Index());
+//                        });
+//  available_cols.erase(it, available_cols.end());
 
-    // `*succ_view_col` is available in `view_cols`, thus `view_col` is
-    // also available.
-    } else if (std::find(succ_cols.begin(), succ_cols.end(), *succ_view_col) !=
-               succ_cols.end()) {
-      available_cols.push_back(view_col);
-      const auto succ_var = let->VariableFor(impl, *succ_view_col);
-      let->col_id_to_var[view_col.Id()] = succ_var;
 
-    // If it's a constant ref then we have it. Note that we take `view_col`
-    // as the lookup for the `VariableFor` and not `*succ_view_col` because
-    // that might give us the output of a mutable column in a key/value store.
-    //
-    // NOTE(pag): This follows a check that `view_col` belongs to `view` so that
-    //            multiple constants flowing into a column in a MERGE/UNION
-    //            don't end up all getting matched.
-    } else if (succ_view_col->IsConstantRef()) {
-      const auto succ_var = let->VariableFor(impl, *succ_view_col);
-      let->col_id_to_var[view_col.Id()] = succ_var;
-      available_cols.push_back(view_col);
-    }
-  });
 
-  // Sort and unique out the available columns.
-  std::sort(available_cols.begin(), available_cols.end(),
-            [] (QueryColumn a, QueryColumn b) {
-              return *(a.Index()) < *(b.Index());
-            });
-  auto it = std::unique(available_cols.begin(), available_cols.end(),
-                        [] (QueryColumn a, QueryColumn b) {
-                          return *(a.Index()) == *(b.Index());
-                        });
-  available_cols.erase(it, available_cols.end());
 
   // We need to create a mapping of input-to-output columns in `succ_view`.
   // For example, we might have the following case:
@@ -1387,8 +1753,8 @@ std::pair<OP *, CALL *> CallTopDownChecker(
       impl, context, view, available_cols, already_checked);
 
   std::vector<std::pair<QueryColumn, QueryColumn>> must_be_equal;
-  for (auto avail_col : available_cols) {
-    auto &cols = in_to_out[avail_col];
+  for (auto [wanted_col, avail_col] : available_cols) {
+    const std::vector<QueryColumn> &cols = in_to_out[wanted_col];
     for (auto i = 1u; i < cols.size(); ++i) {
       must_be_equal.emplace_back(cols[i - 1u], cols[i]);
     }
@@ -1425,8 +1791,8 @@ std::pair<OP *, CALL *> CallTopDownChecker(
   call_parent->body.Emplace(call_parent, check);
 
   auto i = 0u;
-  for (auto col : available_cols) {
-    const auto var = call_parent->VariableFor(impl, col);
+  for (auto [wanted_col, avail_col] : available_cols) {
+    const auto var = call_parent->VariableFor(impl, wanted_col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
     const auto param = proc->input_vars[i++];
@@ -1449,40 +1815,84 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   const auto [check, check_call] = CallTopDownChecker(
       impl, context, parent, view, view_cols, pred_view, already_checked);
 
-  // Change the tuple's state to mark it as present now that we've proven
-  // it true via one of the paths into this node.
-  if (table) {
-    if (view.IsInsert()) {
-      assert(view_cols.size() == QueryInsert::From(view).InputColumns().size());
-    } else {
-      assert(view_cols.size() == view.Columns().size());
-    }
-    auto change_state =
-        BuildChangeState(impl, table, check_call, view_cols,
-                         TupleState::kAbsentOrUnknown, TupleState::kPresent);
-    check_call->body.Emplace(check_call, change_state);
-
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, change_state);
-    ret_true->ExecuteAfter(impl, change_state);
-
-  // No table, just return `true` to the caller.
-  } else {
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
-    check_call->body.Emplace(check_call, ret_true);
-  }
+  const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
+  check_call->body.Emplace(check_call, ret_true);
 
   return check;
+}
+
+// If any of the views associated with this table are associated with an
+// inductive union, then we will defer the state transitioning to the
+// inductive union.
+static bool ShouldDeferStateTransition(Context &context, TABLE *table) {
+  for (auto view : table->views) {
+    if (context.inductive_predecessors.count(view)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Possibly add a check to into `parent` to transition the tuple with the table
+// associated with `view` to be in an present state. Returns the table of `view`
+// and the updated `already_removed`.
+std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
+    ProgramImpl *impl, Context &context, QueryView view, OP *parent,
+    TABLE *already_added) {
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  if (table) {
+
+    if (ShouldDeferStateTransition(context, table)) {
+      return {parent, table, already_added};
+    }
+
+    if (already_added != table) {
+
+      // Figure out what columns to pass in for marking.
+      std::vector<QueryColumn> cols;
+      if (view.IsInsert()) {
+        auto insert = QueryInsert::From(view);
+        cols.insert(cols.end(), insert.InputColumns().begin(),
+                    insert.InputColumns().end());
+      } else {
+        cols.insert(cols.end(), view.Columns().begin(), view.Columns().end());
+      }
+
+      assert(!cols.empty());
+
+      // Do the marking.
+      const auto table_remove = BuildChangeState(
+          impl, table, parent, cols, TupleState::kAbsentOrUnknown,
+          TupleState::kPresent);
+
+      parent->body.Emplace(parent, table_remove);
+      parent = table_remove;
+      already_added = table;
+    }
+  } else {
+    already_added = nullptr;
+  }
+
+  return {parent, table, already_added};
 }
 
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an unknown state. Returns the table of `view`
 // and the updated `already_removed`.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
-    ProgramImpl *impl, QueryView view, OP *parent, TABLE *already_removed) {
+    ProgramImpl *impl, Context &context, QueryView view, OP *parent,
+    TABLE *already_removed) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
+
+    if (ShouldDeferStateTransition(context, table)) {
+      return {parent, table, already_removed};
+    }
+
     if (already_removed != table) {
 
       // Figure out what columns to pass in for marking.
@@ -1963,7 +2373,8 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
 
   } else if (view.IsNegate()) {
     const auto negate = QueryNegate::From(view);
-    BuildEagerNegateRegion(impl, pred_view, negate, context, parent);
+    BuildEagerNegateRegion(impl, pred_view, negate, context,
+                           parent, last_table);
 
   } else {
     assert(false);

@@ -103,7 +103,9 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
     case VectorKind::kParameter: os << "$param"; break;
-    case VectorKind::kInductionCycles: os << "$induction_cycle"; break;
+    case VectorKind::kInductionAdditions: os << "$induction_add"; break;
+    case VectorKind::kInductionRemovals: os << "$induction_rem"; break;
+    case VectorKind::kInductionSwaps: os << "$induction_swap"; break;
     case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
@@ -208,28 +210,45 @@ OutputStream &operator<<(OutputStream &os, ProgramReturnRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
-  if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent();
-    auto sep = "if-compare {";
-    for (auto var : region.LHS()) {
-      os << sep << var;
-      sep = ", ";
-    }
+  os << os.Indent();
+  auto sep = "if-compare {";
+  for (auto var : region.LHS()) {
+    os << sep << var;
+    sep = ", ";
+  }
 
-    os << "} " << region.Operator();
+  os << "} " << region.Operator();
 
-    sep = " {";
-    for (auto var : region.RHS()) {
-      os << sep << var;
-      sep = ", ";
-    }
-    os << "}\n";
+  sep = " {";
+  for (auto var : region.RHS()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "}\n";
+  auto has_body = false;
 
+  if (auto maybe_true_body = region.BodyIfTrue(); maybe_true_body) {
     os.PushIndent();
-    os << (*maybe_body);
+    os << os.Indent() << "if-true\n";
+    os.PushIndent();
+    os << (*maybe_true_body);
     os.PopIndent();
-  } else {
-    os << os.Indent() << "empty";
+    os.PopIndent();
+    has_body = true;
+  }
+
+  if (auto maybe_false_body = region.BodyIfFalse(); maybe_false_body) {
+    os.PushIndent();
+    os << os.Indent() << "if-false\n";
+    os.PushIndent();
+    os << (*maybe_false_body);
+    os.PopIndent();
+    os.PopIndent();
+    has_body = true;
+  }
+
+  if (!has_body) {
+    os << os.Indent() << "empty-compare";
   }
   return os;
 }
@@ -417,12 +436,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorSwapRegion region) {
 OutputStream &operator<<(OutputStream &os,
                          ProgramTransitionStateRegion region) {
 
-  os << os.Indent();
-  if (region.Body()) {
-    os << "if-";
-  }
-
-  os << "transition-state {";
+  os << os.Indent() << "transition-state {";
 
   auto sep = "";
   for (auto var : region.TupleVariables()) {
@@ -445,10 +459,23 @@ OutputStream &operator<<(OutputStream &os,
     case TupleState::kAbsentOrUnknown: os << "unknown"; break;
   }
 
-  if (auto maybe_body = region.Body(); maybe_body) {
+  if (auto maybe_body = region.BodyIfSucceeded(); maybe_body) {
     os << '\n';
     os.PushIndent();
+    os << os.Indent() << "if-transitioned\n";
+    os.PushIndent();
     os << (*maybe_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+
+  if (auto maybe_failed_body = region.BodyIfFailed(); maybe_failed_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-failed\n";
+    os.PushIndent();
+    os << (*maybe_failed_body);
+    os.PopIndent();
     os.PopIndent();
   }
   return os;
@@ -698,6 +725,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramTableProductRegion)
   MAKE_VISITOR(ProgramTableScanRegion)
   MAKE_VISITOR(ProgramTupleCompareRegion)
+  MAKE_VISITOR(ProgramWorkerIdRegion)
 
  private:
   OutputStream &os;

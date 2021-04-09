@@ -58,6 +58,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto view_insert = op->AsTransitionState(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
+      view_insert->failed_body.ClearWithoutErasure();
 
     } else if (auto view_join = op->AsTableJoin(); view_join) {
       view_join->tables.ClearWithoutErasure();
@@ -90,6 +91,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
       cmp->rhs_vars.ClearWithoutErasure();
+      cmp->false_body.ClearWithoutErasure();
 
     } else if (auto gen = op->AsGenerate(); gen) {
       gen->used_vars.ClearWithoutErasure();
@@ -261,10 +263,12 @@ OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
 OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
 OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
 OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
-OPTIONAL_BODY(Body, ProgramTransitionStateRegion, body)
+OPTIONAL_BODY(BodyIfSucceeded, ProgramTransitionStateRegion, body)
+OPTIONAL_BODY(BodyIfFailed, ProgramTransitionStateRegion, failed_body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
 OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
-OPTIONAL_BODY(Body, ProgramTupleCompareRegion, body)
+OPTIONAL_BODY(BodyIfTrue, ProgramTupleCompareRegion, body)
+OPTIONAL_BODY(BodyIfFalse, ProgramTupleCompareRegion, false_body)
 OPTIONAL_BODY(Body, ProgramWorkerIdRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramCallRegion, body)
 OPTIONAL_BODY(BodyIfFalse, ProgramCallRegion, false_body)

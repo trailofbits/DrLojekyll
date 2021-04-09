@@ -93,7 +93,7 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent_,
                                  TABLE *already_removed_) {
   auto [parent, table, already_removed] = InTryMarkUnknown(
-        impl, view, parent_, already_removed_);
+        impl, context, view, parent_, already_removed_);
 
   const auto insert = QueryInsert::From(view);
   const auto insert_cols = insert.InputColumns();
@@ -139,74 +139,6 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
       BuildEagerRemovalRegions(impl, succ_view, context, let,
                                succ_view.Successors(), already_removed);
     }
-  }
-}
-
-// Build a top-down checker for a relational insert.
-//
-// NOTE(pag): `available_cols` is always some subset of the input columns read
-//            by the insert.
-void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                               QueryInsert insert,
-                               std::vector<QueryColumn> &view_cols,
-                               TABLE *already_checked) {
-  const QueryView view(insert);
-  const auto pred_views = view.Predecessors();
-  assert(!pred_views.empty());
-  const QueryView pred_view = pred_views[0];
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
-
-  // If the predecessor persists the same data then we'll call the
-  // predecessor's checker.
-  //
-  // NOTE(pag): `view_cols` is already expressed in terms of `pred_view`.
-  if (already_checked == model->table ||
-      model->table == pred_model->table) {
-    const auto [check, check_call] = CallTopDownChecker(
-        impl, context, proc, pred_view, view_cols, pred_view, already_checked);
-    proc->body.Emplace(proc, check);
-
-    COMMENT( check_call->comment = __FILE__ ": BuildTopDownInsertChecker"; )
-
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
-    check_call->body.Emplace(check_call, ret_true);
-    return;
-  }
-
-  // The predecessor persists different data, so we'll check in the table,
-  // and if it's not present, /then/ we'll call the predecessor handler.
-  assert(view_cols.size() == insert.NumInputColumns());
-
-  // This INSERT was persisted, thus we can check it.
-  assert(model->table);
-  TABLE *table_to_update = model->table;
-  already_checked = model->table;
-
-  auto call_pred = [&](REGION *parent) -> REGION * {
-    const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-        impl, context, parent, view, view_cols, table_to_update, pred_view,
-        already_checked);
-    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker::call_pred"; )
-    return check;
-  };
-
-  if (view.CanReceiveDeletions()) {
-    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
-        impl, proc, model->table, view_cols,
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-        [&](ProgramImpl *, REGION *parent) -> REGION * {
-          return BuildTopDownTryMarkAbsent(
-              impl, model->table, parent, view_cols,
-              [&](PARALLEL *par) {
-                call_pred(par)->ExecuteAlongside(impl, par);
-              });
-        }));
-  } else {
-    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
-        impl, proc, model->table, view_cols,
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-        BuildStateCheckCaseReturnFalse));
   }
 }
 

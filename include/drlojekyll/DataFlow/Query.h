@@ -301,9 +301,6 @@ enum class InputColumnRole {
 
   // The input column is published into a message.
   kPublished,
-
-  // The input column is deleted from the relation containing the output column.
-  kDeleted
 };
 
 // A view into a collection of rows. The rows may be derived from a selection
@@ -364,8 +361,14 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
 
-  // Returns `true` if this node is used by a negation.
+  // Returns `true` if this node is used by a `QueryNegate`.
   bool IsUsedByNegation(void) const noexcept;
+
+  // Returns `true` if this node is used by a `QueryJoin`.
+  bool IsUsedByJoin(void) const noexcept;
+
+  // Returns `true` if this node is used by a `QueryMerge`.
+  bool IsUsedByMerge(void) const noexcept;
 
   // Apply a callback `on_negate` to each negation using this view.
   void ForEachNegation(std::function<void(QueryNegate)> on_negate) const;

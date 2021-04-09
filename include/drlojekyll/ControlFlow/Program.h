@@ -244,7 +244,9 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 
 enum class VectorKind : unsigned {
   kParameter,
-  kInductionCycles,
+  kInductionAdditions,
+  kInductionRemovals,
+  kInductionSwaps,
   kInductionOutputs,
   kJoinPivots,
   kProductInput,
@@ -552,8 +554,11 @@ class ProgramTransitionStateRegion
  public:
   static ProgramTransitionStateRegion From(ProgramRegion) noexcept;
 
-  // The body that conditionally executes if the insert succeeds.
-  std::optional<ProgramRegion> Body(void) const noexcept;
+  // The body that conditionally executes if the state transition succeeds.
+  std::optional<ProgramRegion> BodyIfSucceeded(void) const noexcept;
+
+  // The body that conditionally executes if the state transition fails.
+  std::optional<ProgramRegion> BodyIfFailed(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
 
@@ -776,7 +781,10 @@ class ProgramTupleCompareRegion
   UsedNodeRange<DataVariable> RHS(void) const;
 
   // Code conditionally executed if the comparison is true.
-  std::optional<ProgramRegion> Body(void) const noexcept;
+  std::optional<ProgramRegion> BodyIfTrue(void) const noexcept;
+
+  // Code conditionally executed if the comparison is false.
+  std::optional<ProgramRegion> BodyIfFalse(void) const noexcept;
 
  private:
   friend class ProgramRegion;

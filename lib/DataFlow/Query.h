@@ -517,6 +517,12 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Is this view used by a negation?
   bool is_used_by_negation{false};
 
+  // Is this view used by a join?
+  bool is_used_by_join{false};
+
+  // Is this view used by a merge?
+  bool is_used_by_merge{false};
+
   // Color to use in the eventual data flow output. Default is black. This
   // is influenced by `ParsedClause::IsHighlighted`, which in turn is enabled
   // by using the `@highlight` pragma after a clause head.

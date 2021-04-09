@@ -69,6 +69,7 @@ void QueryImpl::LinkViews(void) {
     assert(!view->is_dead);
     auto has_incoming_merge = false;
     for (auto incoming_view : view->merged_views) {
+      incoming_view->is_used_by_merge = true;
       if (incoming_view->AsMerge()) {
         has_incoming_merge = true;
         break;
@@ -149,6 +150,7 @@ void QueryImpl::LinkViews(void) {
     for (auto incoming_view : view->joined_views) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
+      incoming_view->is_used_by_join = true;
     }
   }
 
@@ -193,6 +195,7 @@ void QueryImpl::LinkViews(void) {
     assert(view->columns.Empty());
     if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
         incoming_view) {
+      assert(incoming_view->AsTuple() != nullptr);
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
     }

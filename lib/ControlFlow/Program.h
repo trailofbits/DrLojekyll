@@ -709,11 +709,17 @@ class Node<ProgramTransitionStateRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
   // View into which the tuple is being inserted.
   UseRef<TABLE> table;
+
+  // If we failed to change the state, then execute this body.
+  UseRef<REGION> failed_body;
 
   const TupleState from_state;
   const TupleState to_state;
@@ -796,6 +802,9 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   // Procedure being called.
   UseRef<Node<ProgramProcedure>, REGION> called_proc;
@@ -1058,6 +1067,12 @@ class Node<ProgramTupleCompareRegion> final
 
   Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
+  // Optional body executed if the comparison fails.
+  UseRef<REGION> false_body;
+
   const ComparisonOperator cmp_op;
   UseList<VAR> lhs_vars;
   UseList<VAR> rhs_vars;
@@ -1093,6 +1108,9 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   const ParsedFunctor functor;
 
@@ -1298,7 +1316,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // This is the cycle vector, i.e. each iteration of the induction's fixpoint
   // loop operates on this vector. The init region of an induction fills this
   // vector.
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_add_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_remove_vec;
 
   // This is the swap vector. Inside of a fixpoint loop, we swap this with the
   // normal vector, so that the current iteration of the loop can append to
@@ -1314,10 +1333,10 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   std::vector<OP *> init_appends;
   std::vector<OP *> cycle_appends;
 
-  std::vector<PARALLEL *> output_cycles;
+  std::vector<PARALLEL *> output_add_cycles;
   std::vector<PARALLEL *> output_remove_cycles;
 
-  std::vector<PARALLEL *> fixpoint_cycles;
+  std::vector<PARALLEL *> fixpoint_add_cycles;
   std::vector<PARALLEL *> fixpoint_remove_cycles;
 
   enum State {

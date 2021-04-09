@@ -319,7 +319,7 @@ static bool OptimizeImpl(SERIES *series) {
 
     auto has_unneeded = false;
     auto seen_return = false;
-    auto seen_indirect_return = false;
+    REGION *seen_indirect_return = nullptr;
 
     for (auto region : series->regions) {
       assert(region->parent == series);
@@ -331,8 +331,16 @@ static bool OptimizeImpl(SERIES *series) {
         has_unneeded = true;
         break;
 
+      } else if (auto op = region->AsOperation(); op && op->AsReturn()) {
+        assert(!seen_return);
+        if (seen_indirect_return) {
+          has_unneeded = true;
+        }
+        seen_return = true;
+
       } else if (seen_indirect_return) {
         assert(false);
+        seen_indirect_return->comment += "????? INDIRECT RETURN HERE?????";
         has_unneeded = true;
         break;
 
@@ -342,7 +350,7 @@ static bool OptimizeImpl(SERIES *series) {
         break;
 
       } else if (region->EndsWithReturn()) {
-        seen_indirect_return = true;
+        seen_indirect_return = region;
         if (auto op = region->AsOperation(); op && op->AsReturn()) {
           seen_return = true;
         }
@@ -425,8 +433,14 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
   // body.
   if (!max_i) {
     const auto body = cmp->body.get();
-    cmp->body.Clear();
+    if (const auto false_body = cmp->false_body.get(); false_body) {
+      false_body->parent = nullptr;
+      cmp->false_body.Clear();
+      changed = true;
+    }
+
     if (body) {
+      cmp->body.Clear();
       cmp->ReplaceAllUsesWith(body);
       changed = true;
     }
@@ -469,15 +483,21 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       cmp->rhs_vars.Swap(new_rhs_vars);
     }
 
-  // This tuple compare with never be satisfiable, and so everything inside
-  // it is dead.
+  // This tuple compare will never be satisfiable, and so everything inside
+  // it is dead. Replace it with its `false_body`, if any.
   } else {
     if (const auto body = cmp->body.get(); body) {
       body->parent = nullptr;
     }
+
     cmp->body.Clear();
     cmp->lhs_vars.Clear();
     cmp->rhs_vars.Clear();
+
+    if (auto false_body = cmp->false_body.get(); false_body) {
+      false_body->parent = cmp->parent;
+      cmp->ReplaceAllUsesWith(false_body);
+    }
   }
 
   return true;
@@ -601,31 +621,6 @@ static bool OptimizeImpl(PROC *proc) {
 }  // namespace
 
 void ProgramImpl::Optimize(void) {
-#ifndef NDEBUG
-  for (auto par : parallel_regions) {
-    assert(par->parent != nullptr);
-    for (auto region : par->regions) {
-      if (region->parent != par) {
-        assert(false);
-        region->parent = par;
-      }
-    }
-  }
-
-  for (auto series : series_regions) {
-    assert(series->parent != nullptr);
-    for (auto region : series->regions) {
-      if (region->parent != series) {
-        assert(false);
-        region->parent = series;
-      }
-    }
-  }
-
-  for (auto op : operation_regions) {
-    assert(op->parent != nullptr);
-  }
-#endif
 
   // A bunch of the optimizations check `region->IsNoOp()`, which looks down
   // to their children, or move children nodes into parent nodes. Thus, we want

@@ -239,9 +239,19 @@ bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
 }
 
-// Returns `true` if this node is used by a negation.
+// Returns `true` if this node is used by a `QueryNegate`.
 bool QueryView::IsUsedByNegation(void) const noexcept {
   return impl->is_used_by_negation;
+}
+
+// Returns `true` if this node is used by a `QueryJoin`.
+bool QueryView::IsUsedByJoin(void) const noexcept {
+  return impl->is_used_by_join;
+}
+
+// Returns `true` if this node is used by a `QueryMerge`.
+bool QueryView::IsUsedByMerge(void) const noexcept {
+  return impl->is_used_by_merge;
 }
 
 // Apply a callback `on_negate` to each negation using this view.

@@ -228,25 +228,45 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
 
 // Return a lexically available use of a variable.
 VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
-  if (col.IsConstantOrConstantRef()) {
-    auto &var = col_id_to_var[col.Id()];
-    if (!var) {
+  auto &var = col_id_to_var[col.Id()];
+  if (!var) {
+
+    // NOTE(pag): This is a bit subtle. Sometimes we'll want to force our own
+    //            variable value in for `col_id_to_var`, regardless of if
+    //            `col.IsConstantOrConstantRef()` is true. Thus, any value
+    //            already present is given priority. So, we do a lexical lookup
+    //            first.
+    if (this != parent && parent) {
+      var = parent->VariableForRec(col);
+    }
+
+    // If the lexical lookup failed, and if the column is a constant, then
+    // use our constant.
+    if (!var && col.IsConstantOrConstantRef()) {
       var = impl->const_to_var[QueryConstant::From(col)];
     }
-    return var;
-  } else {
-    return VariableForRec(col);
   }
+  return var;
 }
 
 // Return a lexically available use of a variable.
 VAR *Node<ProgramRegion>::VariableForRec(QueryColumn col) {
-  auto &var = col_id_to_var[col.Id()];
-  if (!var && this != parent) {
-    var = parent->VariableForRec(col);
-    assert(var != nullptr);
+  auto it = col_id_to_var.find(col.Id());
+  if (it != col_id_to_var.end()) {
+    assert(it->second != nullptr);
+    return it->second;
   }
-  return var;
+
+  if (!parent || this == parent) {
+    return nullptr;
+  }
+
+  if (auto var = parent->VariableForRec(col); var) {
+    col_id_to_var.emplace(col.Id(), var);
+    return var;
+  }
+
+  return nullptr;
 }
 
 }  // namespace hyde

@@ -164,32 +164,30 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 // Build an eager cross-product for a join.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
                              QueryJoin product_view, Context &context,
-                             OP *parent, TABLE *last_table) {
+                             OP *parent_, TABLE *last_table_) {
   const QueryView view(product_view);
 
   // First, check if we should push this tuple through the PRODUCT. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
-  DataModel * const pred_model = \
-      impl->view_to_model[pred_view]->FindAs<DataModel>();
-  TABLE * const pred_table = pred_model->table;
-  if (pred_table != last_table) {
-    parent =
-        BuildInsertCheck(impl, pred_view, context, parent, pred_table,
-                         pred_view.CanProduceDeletions(), pred_view.Columns());
-    last_table = pred_table;
-  }
+  //
+  // NOTE(pag): What's interesting about JOINs is that we force the data of
+  //            our *predecessors* into tables, so that we can always complete
+  //            the JOINs later and see "the other sides."
+  const auto [parent, pred_table, last_table] =
+      InTryInsert(impl, context, pred_view, parent_, last_table_);
 
   // Nothing really to do, this cross-product just needs to pass its data
   // through. This is some kind of weird degenerate case that might happen
   // due to a failure in optimization.
   if (view.Predecessors().size() == 1u) {
-    product_view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+    const auto captured_parent = parent;
+    product_view.ForEachUse([=](QueryColumn in_col, InputColumnRole,
                                 std::optional<QueryColumn> out_col) {
       if (out_col) {
-        const auto in_var = parent->VariableFor(impl, in_col);
+        const auto in_var = captured_parent->VariableFor(impl, in_col);
         assert(in_var != nullptr);
-        parent->col_id_to_var[out_col->Id()] = in_var;
+        captured_parent->col_id_to_var[out_col->Id()] = in_var;
       }
     });
 

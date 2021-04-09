@@ -401,7 +401,7 @@ static void PublishDifferentialMessageVectors(
     iter->vector.Emplace(iter, vec);
 
     // Add in variable bindings.
-    std::vector<QueryColumn> available_cols;
+    std::vector<std::pair<QueryColumn, QueryColumn>> available_cols;
     for (auto col : insert.InputColumns()) {
       const auto var = iter->defined_vars.Create(
           impl->next_id++, VariableRole::kMessageOutput);
@@ -412,7 +412,7 @@ static void PublishDifferentialMessageVectors(
       }
 
       iter->col_id_to_var[col.Id()] = var;
-      available_cols.push_back(col);
+      available_cols.emplace_back(col, col);
     }
 
     const auto model = impl->view_to_model[view]->FindAs<DataModel>();
