@@ -842,11 +842,9 @@ enum class ProcedureKind : unsigned {
   // tuples as being in an unknown state.
   kTupleRemover,
 
-  // Handles the cycle of an induction.
-  kInductionCycleHandler,
-
-  // Handles the outputs of an induction.
-  kInductionOutputHandler
+  // Tests condition variables, returning `true` or `false` if the conditions
+  // are all satisfied or if at least one fails, respectively.
+  kConditionTester,
 };
 
 // A procedure in the program. All procedures return either `true` or `false`.

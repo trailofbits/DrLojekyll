@@ -1247,6 +1247,8 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
         cond = query->conditions.Create(export_);
       }
 
+      assert(cond->UsersAreConsistent());
+
       conds.push_back(cond);
     }
 
@@ -1262,6 +1264,8 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
       } else {
         cond->negative_users.AddUse(user);
       }
+
+      assert(cond->UsersAreConsistent());
     }
   };
 

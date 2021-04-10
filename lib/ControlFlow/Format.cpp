@@ -224,10 +224,11 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
     os << sep << var;
     sep = ", ";
   }
-  os << "}\n";
+  os << "}";
   auto has_body = false;
 
   if (auto maybe_true_body = region.BodyIfTrue(); maybe_true_body) {
+    os << '\n';
     os.PushIndent();
     os << os.Indent() << "if-true\n";
     os.PushIndent();
@@ -238,6 +239,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
   }
 
   if (auto maybe_false_body = region.BodyIfFalse(); maybe_false_body) {
+    os << '\n';
     os.PushIndent();
     os << os.Indent() << "if-false\n";
     os.PushIndent();
@@ -248,7 +250,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
   }
 
   if (!has_body) {
-    os << os.Indent() << "empty-compare";
+    os << '\n' << os.Indent() << "empty-compare";
   }
   return os;
 }
@@ -266,6 +268,9 @@ OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
 
     } else if (region.IsSubtract()) {
       os << "if (" << acc << " -= " << disp << ") == " << cmp << '\n';
+
+    } else {
+      assert(false);
     }
     os.PushIndent();
     os << (*maybe_body);
@@ -273,10 +278,13 @@ OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
 
   } else {
     if (region.IsAdd()) {
-      os << acc << " += " << disp << '\n';
+      os << acc << " += " << disp;
 
     } else if (region.IsSubtract()) {
-      os << acc << " -= " << disp << '\n';
+      os << acc << " -= " << disp;
+
+    } else {
+      assert(false);
     }
   }
 
@@ -755,9 +763,7 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
       break;
     case ProcedureKind::kTupleFinder: os << "^find:"; break;
     case ProcedureKind::kTupleRemover: os << "^remove:"; break;
-    case ProcedureKind::kInductionCycleHandler:
-      os << "^induction_cycle:"; break;
-    case ProcedureKind::kInductionOutputHandler: os << "^induction_out:"; break;
+    case ProcedureKind::kConditionTester: os << "^test:"; break;
   }
   os << proc.Id();
 

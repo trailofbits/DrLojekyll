@@ -14,26 +14,6 @@ void QueryImpl::ProxyInsertsWithTuples(void) {
   for (auto view : inserts) {
     auto incoming_view = VIEW::GetIncomingView(view->input_columns);
 
-//    // If the incoming view has a different number of columns then we need
-//    // to proxy.
-//    auto needs_proxy = incoming_view->columns.Size() !=
-//                       view->input_columns.Size();
-//
-//    // If the incoming view's columns aren't perfectly forwarded then we need
-//    // to proxy.
-//    auto i = 0u;
-//    for (auto in_col : view->input_columns) {
-//      if (in_col->view != incoming_view || in_col->Index() != i) {
-//        needs_proxy = true;
-//        break;
-//      }
-//      ++i;
-//    }
-//
-//    if (!needs_proxy) {
-//      continue;
-//    }
-
     TUPLE * const proxy = tuples.Create();
     proxy->color = incoming_view->color;
     proxy->can_receive_deletions = incoming_view->can_produce_deletions;

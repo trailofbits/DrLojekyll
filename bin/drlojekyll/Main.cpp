@@ -53,8 +53,15 @@ std::optional<fs::path> gMSGDir = std::nullopt;
 
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
+  auto query_opt = Query::Build(module, error_log);
+  if (!query_opt) {
+    return EXIT_FAILURE;
+  }
+
   auto ret = EXIT_SUCCESS;
-  if (auto query_opt = Query::Build(module, error_log)) {
+
+  if (gIRStream || gCxxCodeStream || gPyCodeStream ||
+      gPyInterfaceCodeStream) {
 
     if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative,
                                           error_log)) {
@@ -81,16 +88,14 @@ static int CompileModule(hyde::DisplayManager display_manager,
     } else {
       ret = EXIT_FAILURE;
     }
+  }
 
-    // NOTE(pag): We do this later because if we produce the control-flow IR
-    //            then we break abstraction layers in order to annotate the
-    //            data flow IR with table IDs.
-    if (gDOTStream) {
-      (*gDOTStream) << *query_opt;
-      gDOTStream->Flush();
-    }
-  } else {
-    ret = EXIT_FAILURE;
+  // NOTE(pag): We do this later because if we produce the control-flow IR
+  //            then we break abstraction layers in order to annotate the
+  //            data flow IR with table IDs.
+  if (gDOTStream) {
+    (*gDOTStream) << *query_opt;
+    gDOTStream->Flush();
   }
 
   return ret;

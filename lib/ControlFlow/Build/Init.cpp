@@ -13,6 +13,12 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
   const auto init_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kInitializer);
 
+
+  return;
+  // TODO(pag): Think about re-adding this!!
+
+
+
   const auto seq = impl->series_regions.Create(init_proc);
   init_proc->body.Emplace(init_proc, seq);
 
@@ -20,7 +26,7 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context) {
       impl->next_id++, VariableRole::kConditionRefCount);
 
   // Test that we haven't yet done an initialization.
-  const auto test_and_set = impl->operation_regions.CreateDerived<ASSERT>(
+  const auto test_and_set = impl->operation_regions.CreateDerived<TESTANDSET>(
       seq, ProgramOperation::kTestAndAdd);
   seq->regions.AddUse(test_and_set);
 

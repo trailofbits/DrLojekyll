@@ -817,6 +817,77 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
   return changed;
 }
 
+
+// Will return `nullptr` if no conditional tests need to be done.
+static CALL *InCondionalTests(ProgramImpl *impl, QueryView view,
+                              Context &context, REGION *parent) {
+
+  const auto pos_conds = view.PositiveConditions();
+  const auto neg_conds = view.NegativeConditions();
+
+  if (pos_conds.empty() && neg_conds.empty()) {
+    return nullptr;
+  }
+
+  // Letting this view be used by a negation would complicate things when
+  // doing the return-true path in top-down checking.
+  assert(!view.IsUsedByNegation());
+
+  auto &checker_proc = context.cond_checker_procs[view];
+  if (!checker_proc) {
+    checker_proc = impl->procedure_regions.Create(
+        impl->next_id++, ProcedureKind::kConditionTester);
+
+    REGION *parent = checker_proc;
+    auto parent_body = &(checker_proc->body);
+
+    // Outermost test for negative conditions.
+    if (!neg_conds.empty()) {
+      TUPLECMP * const test = impl->operation_regions.CreateDerived<TUPLECMP>(
+          parent, ComparisonOperator::kEqual);
+
+      for (auto cond : neg_conds) {
+        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+        test->rhs_vars.AddUse(impl->zero);
+      }
+
+      test->false_body.Emplace(
+          test, BuildStateCheckCaseReturnFalse(impl, test));
+
+      parent_body->Emplace(parent, test);
+      parent_body = &(test->body);
+      parent = test;
+    }
+
+    // Innermost test for positive conditions.
+    if (!pos_conds.empty()) {
+      TUPLECMP * const test = impl->operation_regions.CreateDerived<TUPLECMP>(
+          parent, ComparisonOperator::kNotEqual);
+
+      for (auto cond : pos_conds) {
+        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+        test->rhs_vars.AddUse(impl->zero);
+      }
+
+      test->false_body.Emplace(
+          test, BuildStateCheckCaseReturnFalse(impl, test));
+
+      parent_body->Emplace(parent, test);
+      parent_body = &(test->body);
+      parent = test;
+    }
+
+    // If we made it down here, then return true.
+    parent_body->Emplace(parent, BuildStateCheckCaseReturnTrue(impl, parent));
+  }
+
+  CALL * const call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, parent, checker_proc);
+
+  return call;
+}
+
+
 static REGION *RemoveFromNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
   assert(false && "TODO");
@@ -833,6 +904,18 @@ static void BuildTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
     std::vector<QueryColumn> &view_cols, PROC *proc,
     TABLE *already_checked) {
+
+  // If this view is conditional, then the /last/ thing that we do, i.e. before
+  // returning `true`, is check if the conditions are actually satisfied.
+  auto ret_true = [&] (ProgramImpl *, REGION *parent) -> REGION * {
+    CALL * const call = InCondionalTests(impl, view, context, parent);
+    if (!call) {
+      return BuildStateCheckCaseReturnTrue(impl, parent);
+    }
+    call->body.Emplace(call, BuildStateCheckCaseReturnTrue(impl, call));
+    call->false_body.Emplace(call, BuildStateCheckCaseReturnFalse(impl, call));
+    return call;
+  };
 
   // If we have a table, and if we don't have all of the columns, then go
   // and get all of the columns via a recursive check and a scan over the
@@ -894,8 +977,7 @@ static void BuildTopDownChecker(
           // If the call succeeds, then `return-true`. If it fails, then do
           // nothing, i.e. continue in our partial scan to the next tuple
           // from our index.
-          check->body.Emplace(
-              check, BuildStateCheckCaseReturnTrue(impl, check));
+          check->body.Emplace(check, ret_true(impl, check));
 
           return check;
         });
@@ -932,7 +1014,7 @@ static void BuildTopDownChecker(
       } else {
         proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
             impl, proc, model->table, view_cols,
-            BuildStateCheckCaseReturnTrue,
+            ret_true,
             BuildStateCheckCaseReturnFalse,
             BuildStateCheckCaseReturnFalse));
       }
@@ -960,7 +1042,7 @@ static void BuildTopDownChecker(
 
       retry_seq->AddRegion(BuildTopDownCheckerStateCheck(
           impl, retry_seq, model->table, view.Columns(),
-          BuildStateCheckCaseReturnTrue,
+          ret_true,
           BuildStateCheckCaseReturnFalse,
           [&](ProgramImpl *, REGION *parent) -> REGION * {
 
@@ -1005,12 +1087,18 @@ static void BuildTopDownChecker(
       }
 
       // Make sure that we `return-true` and `return-false` to our callers.
-      true_seq->AddRegion(BuildStateCheckCaseReturnTrue(impl, true_seq));
+      true_seq->AddRegion(ret_true(impl, true_seq));
       false_seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, false_seq));
 
       // If we fall through to the end, then a race condition has occurred
       // during one of the above state transitions. To recover, call ourselves
       // recursively and return the result.
+      //
+      // NOTE(pag): We set `already_checked = nullptr;`, which is visible to
+      //            `call_self`.
+      //
+      // NOTE(pag): The recursive call will end doing the condition test, so
+      //            we don't double-check that here (via `ret_true`).
       already_checked = nullptr;
       const auto recursive_call_if_race = call_self(retry_seq);
       retry_seq->AddRegion(recursive_call_if_race);
@@ -1617,94 +1705,6 @@ std::pair<OP *, CALL *> CallTopDownChecker(
                                parent->VariableFor(impl, avail_col));
   }
 
-  // List of output columns of `view` that can be derived from the output
-  // columns of `succ_view`, as available in `succ_cols`.
-//  std::vector<QueryColumn> view_cols;
-
-//  // Everything is available, yay!
-//  if (view == succ_view) {
-//    for (auto col : view.Columns()) {
-//      available_cols.push_back(col);
-//    }
-//  }
-//
-//  // If any of the columns of the view we want to call are constant references
-//  // then they are available. We know the outputs of a view are never themselves
-//  // constants.
-//  for (auto col : view.Columns()) {
-//    if (col.IsConstantRef()) {
-//      available_cols.push_back(col);
-//      (void) parent->VariableFor(impl, col);
-//    }
-//  }
-//
-//  const auto let = impl->operation_regions.CreateDerived<LET>(parent);
-//  OP *call_parent = let;
-//
-//  // Now we need to map the outputs of `succ_view` back to the outputs of
-//  // `view`.
-//  succ_view.ForEachUse([&](QueryColumn view_col, InputColumnRole role,
-//                           std::optional<QueryColumn> succ_view_col) {
-//
-//    // `view_col` is unrelated to `view`.
-//    if (QueryView::Containing(view_col) != view) {
-//      return;
-//
-//    // The input column from `view` is not present in `succ_view`.
-//    } else if (!succ_view_col) {
-//      return;
-//
-//    // We cannot depend on the output value of this column
-//    // (from `succ_view_col`) to derive the input value `view_col`. However,
-//    // if the input column is a constant or constant ref then we have it.
-//    } else if (InputColumnRole::kIndexValue == role ||
-//               InputColumnRole::kAggregatedColumn == role) {
-//      return;
-//
-////    // Two input values are conditionally merged into one output value. We can
-////    // never convert an output into an input in this case.
-////    } else if ((InputColumnRole::kCompareLHS == role ||
-////                InputColumnRole::kCompareRHS == role) &&
-////               (QueryCompare::From(succ_view).Operator() ==
-////                ComparisonOperator::kEqual)) {
-////      return;
-//
-//    // `*succ_view_col` is available in `view_cols`, thus `view_col` is
-//    // also available.
-//    } else if (std::find(succ_cols.begin(), succ_cols.end(), *succ_view_col) !=
-//               succ_cols.end()) {
-//      available_cols.push_back(view_col);
-//      const auto succ_var = let->VariableFor(impl, *succ_view_col);
-//      let->col_id_to_var[view_col.Id()] = succ_var;
-//
-//    // If it's a constant ref then we have it. Note that we take `view_col`
-//    // as the lookup for the `VariableFor` and not `*succ_view_col` because
-//    // that might give us the output of a mutable column in a key/value store.
-//    //
-//    // NOTE(pag): This follows a check that `view_col` belongs to `view` so that
-//    //            multiple constants flowing into a column in a MERGE/UNION
-//    //            don't end up all getting matched.
-//    } else if (succ_view_col->IsConstantRef()) {
-//      const auto succ_var = let->VariableFor(impl, *succ_view_col);
-//      let->col_id_to_var[view_col.Id()] = succ_var;
-//      available_cols.push_back(view_col);
-//    }
-//  });
-//
-//  // Sort and unique out the available columns.
-//  std::sort(available_cols.begin(), available_cols.end(),
-//            [] (QueryColumn a, QueryColumn b) {
-//              return *(a.Index()) < *(b.Index());
-//            });
-//  auto it = std::unique(available_cols.begin(), available_cols.end(),
-//                        [] (QueryColumn a, QueryColumn b) {
-//                          return *(a.Index()) == *(b.Index());
-//                        });
-//  available_cols.erase(it, available_cols.end());
-
-
-
-
   // We need to create a mapping of input-to-output columns in `succ_view`.
   // For example, we might have the following case:
   //
@@ -1836,6 +1836,10 @@ static bool ShouldDeferStateTransition(Context &context, TABLE *table) {
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an present state. Returns the table of `view`
 // and the updated `already_removed`.
+//
+// NOTE(pag): If the table associated with `view` is also associated with an
+//            induction, then we defer insertion until we get into that
+//            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
     TABLE *already_added) {
@@ -1843,12 +1847,10 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
-
-    if (ShouldDeferStateTransition(context, table)) {
-      return {parent, table, already_added};
-    }
-
     if (already_added != table) {
+      if (ShouldDeferStateTransition(context, table)) {
+        return {parent, table, nullptr};
+      }
 
       // Figure out what columns to pass in for marking.
       std::vector<QueryColumn> cols;
@@ -1881,6 +1883,10 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an unknown state. Returns the table of `view`
 // and the updated `already_removed`.
+//
+// NOTE(pag): If the table associated with `view` is also associated with an
+//            induction, then we defer insertion until we get into that
+//            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
     TABLE *already_removed) {
@@ -1888,12 +1894,11 @@ std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
-
-    if (ShouldDeferStateTransition(context, table)) {
-      return {parent, table, already_removed};
-    }
-
     if (already_removed != table) {
+
+      if (ShouldDeferStateTransition(context, table)) {
+        return {parent, table, nullptr};
+      }
 
       // Figure out what columns to pass in for marking.
       std::vector<QueryColumn> cols;
@@ -1920,6 +1925,252 @@ std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
   }
 
   return {parent, table, already_removed};
+}
+
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
+void BuildEagerRemovalRegionsImpl(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
+    const std::vector<QueryView> &successors, TABLE *already_removed_) {
+
+  // TODO(pag): Handle conditions!!
+  // TODO(pag): Handle negations!!
+
+  // The caller didn't already do a state transition, so we can do it. We might
+  // have a situation like this:
+  //
+  //               JOIN
+  //              /    \         .
+  //        TUPLE1      TUPLE2
+  //              \    /
+  //              TUPLE3
+  //
+  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
+  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
+  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
+  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
+  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
+  // because otherwise whichever executed first would prevent the other from
+  // actually doing the marking.
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, context, view, parent_, already_removed_);
+
+  // All successors execute in parallel.
+  const auto par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+
+  for (auto succ_view : successors) {
+
+    // New style: use iterative method for removal.
+    if (IRFormat::kIterative == impl->format) {
+      const auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
+
+      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
+                              already_removed);
+
+    // Old style: Use recursive push method for removal. This creates lots of
+    // tuple remover procedures.
+    } else {
+      const auto remover_proc = GetOrCreateBottomUpRemover(
+          impl, context, view, succ_view, already_removed);
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, par, remover_proc);
+
+      auto i = 0u;
+      for (auto col : view.Columns()) {
+        const auto var = parent->VariableFor(impl, col);
+        assert(var != nullptr);
+        call->arg_vars.AddUse(var);
+
+        const auto param = remover_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
+      }
+
+      par->AddRegion(call);
+    }
+  }
+}
+
+template <typename T>
+static void EvaluateConditionAndNotify(
+    ProgramImpl *impl, QueryView view, Context &context, PARALLEL *parent,
+    bool for_add, T with_tuple) {
+
+  // Make a call to test that the conditions of `pos_view` are satisfied.
+  CALL * const cond_call = InCondionalTests(impl, view, context, parent);
+  if (!cond_call) {
+    assert(false);
+    return;
+  }
+
+  parent->AddRegion(cond_call);
+
+  // If all of `pos_view`s conditions are satisfied, then we can push through
+  // any data from its table. We'll do the table scan, and
+  auto seq = impl->series_regions.Create(cond_call);
+
+  if (for_add) {
+    cond_call->body.Emplace(cond_call, seq);
+  } else {
+    cond_call->false_body.Emplace(cond_call, seq);
+  }
+
+  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  const auto table = model->table;
+  assert(table != nullptr);
+
+  std::vector<QueryColumn> selected_cols;
+  for (auto col : view.Columns()) {
+    selected_cols.push_back(col);
+  }
+
+  PROC * const proc = parent->containing_procedure;
+  VECTOR * const vec = proc->vectors.Create(
+      impl->next_id++, VectorKind::kTableScan, selected_cols);
+
+  TABLESCAN * const scan =
+      impl->operation_regions.CreateDerived<TABLESCAN>(seq);
+  seq->AddRegion(scan);
+
+  scan->table.Emplace(scan, table);
+  scan->output_vector.Emplace(scan, vec);
+  for (auto col : table->columns) {
+    scan->out_cols.AddUse(col);
+  }
+
+  // Loop over the results of the table scan.
+  VECTORLOOP * const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, seq, ProgramOperation::kLoopOverScanVector);
+  seq->AddRegion(loop);
+  loop->vector.Emplace(loop, vec);
+
+  for (auto col : selected_cols) {
+    const auto var =
+        loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
+    var->query_column = col;
+    loop->col_id_to_var[col.Id()] = var;
+  }
+
+  OP *succ_parent = loop;
+
+  // We might need to double check that the tuple is actually present.
+  if (view.CanReceiveDeletions()) {
+    const auto [call_parent, check_call] = CallTopDownChecker(
+        impl, context, succ_parent, view, selected_cols,
+        view, nullptr);
+
+    succ_parent->body.Emplace(succ_parent, call_parent);
+    succ_parent = check_call;
+  }
+
+  with_tuple(succ_parent, table);
+}
+
+// If we've transitioned a condition from `0 -> 1`, i.e. done the first enable
+// of the condition, so we need to allow data through, or rip back data that
+// got through.
+static void BuildEagerUpdateCondAndNotify(
+    ProgramImpl *impl, Context &context, QueryCondition cond,
+    PARALLEL *parent) {
+
+  // Now that we know that the data has been dealt with, we increment the
+  // condition variable.
+  const auto set = impl->operation_regions.CreateDerived<TESTANDSET>(
+      parent, ProgramOperation::kTestAndAdd);
+  parent->AddRegion(set);
+
+  set->accumulator.Emplace(set, ConditionVariable(impl, cond));
+  set->displacement.Emplace(set, impl->one);
+  set->comparator.Emplace(set, impl->one);
+
+  parent = impl->parallel_regions.Create(set);
+  set->body.Emplace(set, parent);
+
+  // If we transitioned from zero-to-one, then we can possibly "unleash"
+  // positive users.
+  for (auto view : cond.PositiveUsers()) {
+    EvaluateConditionAndNotify(
+        impl, view, context, parent, true  /* for_add */,
+        [&] (OP *in_loop, TABLE *table) {
+          BuildEagerInsertionRegions(impl, view, context, in_loop,
+                                         view.Successors(), table);
+        });
+  }
+
+  // If we transitioned from zero-to-one, then assuming the conditions
+  // previously passed (they might not have), then we want to push through
+  // deletions.
+  for (auto view : cond.NegativeUsers()) {
+    EvaluateConditionAndNotify(
+        impl, view, context, parent, false  /* for_add */,
+        [&] (OP *in_loop, TABLE *table) {
+          BuildEagerRemovalRegions(impl, view, context, in_loop,
+                                   view.Successors(), table);
+        });
+  }
+}
+
+// Add in all of the successors of a view inside of `parent`, which is
+// usually some kind of loop. The successors execute in parallel.
+void BuildEagerInsertionRegionsImpl(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
+    const std::vector<QueryView> &successors, TABLE *last_table_) {
+
+  // Make sure all output columns are available.
+  for (auto col : view.Columns()) {
+    (void) parent_->VariableFor(impl, col);
+  }
+
+  auto [parent, table, last_table] =
+      InTryInsert(impl, context, view, parent_, last_table_);
+
+  // At this point, we know that if `view`s data needed to be persisted then
+  // it has been. If `view` tests any conditions, then we evaluate those *after*
+  // persisting its data, so that if the state of the conditions changes, then
+  // we can send through the data that wasn't sent through (if the condition
+  // wasn't previously satisfied), or delete the data that no longer satisfies
+  // the condition.
+  if (auto cond_call = InCondionalTests(impl, view, context, parent)) {
+    assert(table && table == last_table);  // The data should be persisted.
+    parent->body.Emplace(parent, cond_call);
+    parent = cond_call;
+    last_table = nullptr;
+  }
+
+  // All successors execute in a PARALLEL region, even if there are zero or
+  // one successors. Empty and trivial PARALLEL regions are optimized out later.
+  //
+  // A key benefit of PARALLEL regions is that within them, CSE can be performed
+  // to identify and eliminate repeated branches.
+  PARALLEL *par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+
+  // Proving this `view` might set a condition. If we set a condition, then
+  // we need to make sure than a CHANGESTATE actually happened. That could
+  // mean re-parenting all successors within a CHANGESTATE.
+  if (auto set_cond = view.SetCondition(); set_cond) {
+    assert(table != nullptr);
+    BuildEagerUpdateCondAndNotify(impl, context, *set_cond, par);
+  }
+
+  // If this view is used by a negation, and if we just proved this view, then
+  // we need to go and make sure that the corresponding data gets removed from
+  // the negation.
+  if (view.IsUsedByNegation()) {
+    OP * const let = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(let);
+    // TODO(pag): !!! do this!!
+    assert(false && "TODO!");
+  }
+
+  for (QueryView succ_view : successors) {
+    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(let);
+    BuildEagerRegion(impl, view, succ_view, context, let, last_table);
+  }
 }
 
 // Build a bottom-up tuple remover, which marks tuples as being in the

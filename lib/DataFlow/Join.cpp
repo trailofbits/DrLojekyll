@@ -471,6 +471,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
       tuple->positive_conditions.AddUse(cond);
       cond->positive_users.AddUse(tuple);
+
+      assert(cond->UsersAreConsistent());
     }
   }
 

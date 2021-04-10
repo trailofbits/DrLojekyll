@@ -149,6 +149,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   // Is this a trivial condition?
   bool IsTrivial(void);
 
+  // Are the `positive_users` and `negative_users` lists consistent?
+  bool UsersAreConsistent(void) const;
+
   // The declaration of the `ParsedExport` that is associated with this
   // zero-argument predicate.
   const std::optional<ParsedDeclaration> declaration;

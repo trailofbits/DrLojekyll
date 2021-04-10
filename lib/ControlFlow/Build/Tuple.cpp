@@ -153,56 +153,10 @@ static void ReAddToNegatedViews(ProgramImpl *impl, Context &context,
 // Build an eager region for tuple. If the tuple can receive differential
 // updates then its data needs to be saved.
 void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
-                           QueryTuple tuple, Context &context, OP *parent_,
-                           TABLE *last_table_) {
-  const QueryView view(tuple);
-  auto [parent, table, last_table] =
-      InTryInsert(impl, context, view, parent_, last_table_);
-
-  // If this view is used by a negation then we need to go and see if we should
-  // do a delete in the negation, then call a bunch of other deletion stuff.
-  if (view.IsUsedByNegation()) {
-    const auto par = impl->parallel_regions.Create(parent);
-    parent->body.Emplace(parent, par);
-
-    view.ForEachNegation([&] (QueryNegate negate) {
-      DataModel * const negate_model = \
-          impl->view_to_model[negate]->FindAs<DataModel>();
-      TABLE * const negate_table = negate_model->table;
-      auto col_index = 0u;
-
-      std::vector<QueryColumn> negate_cols;
-
-      for (auto col : view.Columns()) {
-        auto in_var = par->VariableFor(impl, col);
-        auto neg_out_col = negate.Columns()[col_index];
-        auto neg_in_col = negate.InputColumns()[col_index];
-        par->col_id_to_var[neg_in_col.Id()] = in_var;
-        par->col_id_to_var[neg_out_col.Id()] = in_var;
-        ++col_index;
-        negate_cols.push_back(neg_out_col);
-      }
-
-      // For each thing that we find in the index scan, we will push through
-      // a removal.
-      const auto seq = impl->series_regions.Create(par);
-      par->AddRegion(seq);
-
-      (void) BuildMaybeScanPartial(
-          impl, negate, negate_cols, negate_table, seq,
-          [&](REGION *in_scan, bool) -> REGION * {
-            return RemoveFromNegatedView(impl, context, in_scan, negate,
-                                         negate_cols, negate_table);
-          });
-    });
-
-    // TODO(pag): Is it safe to have the insert proceed "in parallel" with the
-    //            deletions?
-    parent = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(parent);
-  }
-
-  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
+                           QueryTuple tuple, Context &context, OP *parent,
+                           TABLE *last_table) {
+  QueryView view(tuple);
+  BuildEagerInsertionRegions(impl, tuple, context, parent, view.Successors(),
                              last_table);
 }
 

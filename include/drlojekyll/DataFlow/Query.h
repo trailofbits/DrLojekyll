@@ -374,9 +374,16 @@ class QueryView : public query::QueryNode<QueryView> {
   void ForEachNegation(std::function<void(QueryNegate)> on_negate) const;
 
   // Can this view receive inputs that should logically "delete" entries?
+  //
+  // NOTE(pag): Not being able to receive deletions does not imply that a
+  //            view can't produce deletions.
   bool CanReceiveDeletions(void) const noexcept;
 
   // Can this view produce outputs that should logically "delete" entries?
+  //
+  // NOTE(pag): Some views can produce deletions without receiving them. These
+  //            include aggregates, key/value indices, and any view that tests
+  //            condition variables.
   bool CanProduceDeletions(void) const noexcept;
 
   // Returns `true` if all users of this view use all the columns of this

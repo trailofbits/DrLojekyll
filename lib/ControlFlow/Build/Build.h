@@ -54,6 +54,10 @@ using WorkItemPtr = std::unique_ptr<WorkItem>;
 // control flow representation.
 class Context {
  public:
+  // Maps views to the functions that check if their conditions are satisfied
+  // or not.
+  std::unordered_map<QueryView, PROC *> cond_checker_procs;
+
   // Maps negations to the checker procedure that tries to figure out if the
   // negated view has some data or not.
 //  std::unordered_map<QueryView, PROC *> negation_checker_procs;
@@ -315,7 +319,10 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
 
   assert(0u < selected_cols.size());
 
-  const auto index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
+  TABLEINDEX *index = nullptr;
+  if (!in_col_indices.empty()) {
+    index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
+  }
   const auto proc = seq->containing_procedure;
   const auto vec = proc->vectors.Create(impl->next_id++, VectorKind::kTableScan,
                                         selected_cols);
@@ -325,7 +332,9 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
   seq->AddRegion(scan);
   scan->table.Emplace(scan, table);
-  scan->index.Emplace(scan, index);
+  if (index) {
+    scan->index.Emplace(scan, index);
+  }
   scan->output_vector.Emplace(scan, vec);
 
   for (auto view_col : view_cols) {
@@ -335,6 +344,7 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
 
   for (auto table_col : table->columns) {
     if (indexed_cols[table_col->index]) {
+      assert(index != nullptr);
       scan->in_cols.AddUse(table_col);
 
     } else {
@@ -587,6 +597,10 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an present state. Returns the table of `view`
 // and the updated `already_removed`.
+//
+// NOTE(pag): If the table associated with `view` is also associated with an
+//            induction, then we defer insertion until we get into that
+//            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
     TABLE *already_added);
@@ -594,6 +608,10 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an unknown state. Returns the table of `view`
 // and the updated `already_removed`.
+//
+// NOTE(pag): If the table associated with `view` is also associated with an
+//            induction, then we defer removal until we get into that
+//            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
     TABLE *already_removed);
@@ -651,167 +669,46 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
 // Build and dispatch to the bottom-up remover regions for `view`. The idea
 // is that we've just removed data from `view`, and now want to tell the
 // successors of this.
+void BuildEagerRemovalRegionsImpl(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
+    const std::vector<QueryView> &successors, TABLE *already_removed_);
+
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
 template <typename List>
-void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
-                              Context &context, OP *parent_, List &&successors,
-                              TABLE *already_removed_) {
+static void BuildEagerRemovalRegions(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent,
+    List &&successors_, TABLE *already_removed) {
 
-  // The caller didn't already do a state transition, so we can do it. We might
-  // have a situation like this:
-  //
-  //               JOIN
-  //              /    \         .
-  //        TUPLE1      TUPLE2
-  //              \    /
-  //              TUPLE3
-  //
-  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
-  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
-  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
-  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
-  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
-  // because otherwise whichever executed first would prevent the other from
-  // actually doing the marking.
-  auto [parent, table, already_removed] = InTryMarkUnknown(
-      impl, context, view, parent_, already_removed_);
-
-  // All successors execute in parallel.
-  const auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (auto succ_view : successors) {
-
-    // New style: use iterative method for removal.
-    if (IRFormat::kIterative == impl->format) {
-      const auto let = impl->operation_regions.CreateDerived<LET>(par);
-      par->AddRegion(let);
-
-      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
-                              already_removed);
-
-    // Old style: Use recursive push method for removal. This creates lots of
-    // tuple remover procedures.
-    } else {
-      const auto remover_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, already_removed);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, remover_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = parent->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = remover_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
+  std::vector<QueryView> successors;
+  for (auto succ_view : successors_) {
+    successors.push_back(succ_view);
   }
+
+  BuildEagerRemovalRegionsImpl(impl, view, context, parent,
+                               successors, already_removed);
 }
 
 // Add in all of the successors of a view inside of `parent`, which is
 // usually some kind of loop. The successors execute in parallel.
+void BuildEagerInsertionRegionsImpl(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
+    const std::vector<QueryView> &successors, TABLE *last_table_);
+
+// Add in all of the successors of a view inside of `parent`, which is
+// usually some kind of loop. The successors execute in parallel.
 template <typename List>
-void BuildEagerInsertionRegions(ProgramImpl *impl, QueryView view,
-                                Context &context, OP *parent_, List &&successors,
-                                TABLE *last_table_) {
-  for (auto col : view.Columns()) {
-    (void) parent_->VariableFor(impl, col);
+static void BuildEagerInsertionRegions(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
+    List &&successors_, TABLE *last_table) {
+  std::vector<QueryView> successors;
+  for (auto succ_view : successors_) {
+    successors.push_back(succ_view);
   }
 
-  auto [parent, table, last_table] =
-      InTryInsert(impl, context, view, parent_, last_table_);
-
-  // At this point, we know that if `view`s data needed to be persisted then
-  // it has been. If `view` tests any conditions, then we evaluate those *after*
-  // persisting its data, so that if the state of the conditions changes, then
-  // we can send through the data that wasn't sent through (if the condition
-  // wasn't previously satisfied), or delete the data that no longer satisfies
-  // the condition.
-
-  const auto pos_conds = view.PositiveConditions();
-  const auto neg_conds = view.NegativeConditions();
-
-  // Innermost test for negative conditions.
-  if (!neg_conds.empty()) {
-    assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-        parent, ComparisonOperator::kEqual);
-
-    for (auto cond : neg_conds) {
-      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-      test->rhs_vars.AddUse(impl->zero);
-    }
-
-    parent->body.Emplace(parent, test);
-    parent = test;
-    last_table = nullptr;
-  }
-
-  // Outermost test for positive conditions.
-  if (!pos_conds.empty()) {
-    assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-        parent, ComparisonOperator::kNotEqual);
-
-    for (auto cond : pos_conds) {
-      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-      test->rhs_vars.AddUse(impl->zero);
-    }
-
-    parent->body.Emplace(parent, test);
-    parent = test;
-    last_table = nullptr;
-  }
-
-  // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
-  if (auto set_cond = view.SetCondition(); set_cond) {
-    assert(table != nullptr);
-
-    const auto seq = impl->series_regions.Create(parent);
-    parent->body.Emplace(parent, seq);
-
-    // Now that we know that the data has been dealt with, we increment the
-    // condition variable.
-    const auto set = impl->operation_regions.CreateDerived<ASSERT>(
-        seq, ProgramOperation::kTestAndAdd);
-    set->accumulator.Emplace(set, ConditionVariable(impl, *set_cond));
-    set->displacement.Emplace(set, impl->one);
-    set->comparator.Emplace(set, impl->one);
-    set->ExecuteAfter(impl, seq);
-
-    // Call the initialization procedure. The initialization procedure is
-    // responsible for initializing data flow from constant tuples that
-    // may be condition-variable dependent.
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, set, impl->procedure_regions[0]);
-    set->body.Emplace(set, call);
-
-    // Create a dummy/empty LET binding so that we have an `OP *` as a parent
-    // going forward.
-    parent = impl->operation_regions.CreateDerived<LET>(seq);
-    parent->ExecuteAfter(impl, seq);
-  }
-
-  // All successors execute in a PARALLEL region, even if there are zero or
-  // one successors. Empty and trivial PARALLEL regions are optimized out later.
-  //
-  // A key benefit of PARALLEL regions is that within them, CSE can be performed
-  // to identify and eliminate repeated branches.
-  PARALLEL *par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (QueryView succ_view : successors) {
-    const auto let = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(let);
-    BuildEagerRegion(impl, view, succ_view, context, let, last_table);
-  }
+  BuildEagerInsertionRegionsImpl(
+      impl, view, context, parent_, successors, last_table);
 }
 
 }  // namespace hyde

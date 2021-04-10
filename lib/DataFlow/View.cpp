@@ -500,6 +500,19 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 void Node<QueryView>::DropTestedConditions(void) {
   const auto is_this_view = [this](VIEW *v) { return v == this; };
 
+#ifndef NDEBUG
+  std::vector<COND *> conds_seen;
+  for (auto cond : positive_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : negative_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
+
   for (auto cond : positive_conditions) {
     cond->positive_users.RemoveIf(is_this_view);
   }
@@ -509,6 +522,12 @@ void Node<QueryView>::DropTestedConditions(void) {
 
   positive_conditions.Clear();
   negative_conditions.Clear();
+
+#ifndef NDEBUG
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 }
 
 // Converts this node to not set any conditions.
@@ -609,6 +628,18 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
 // Copy all positive and negative conditions from `this` into `that`.
 void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
+#ifndef NDEBUG
+  std::vector<COND *> conds_seen;
+  for (auto cond : positive_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : negative_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 
   for (auto cond : positive_conditions) {
     assert(cond);
@@ -625,6 +656,12 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
   }
 
   that->OrderConditions();
+
+#ifndef NDEBUG
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 }
 
 // If `sets_condition` is non-null, then transfer the setter to `that`.
@@ -724,14 +761,37 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
     that->is_used_by_negation = true;
   }
 
+#ifndef NDEBUG
+  std::vector<COND *> conds_seen;
+  for (auto cond : positive_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : negative_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
+
   unsigned i = 0u;
   for (auto col : columns) {
     col->ReplaceAllUsesWith(that->columns[i++]);
   }
-  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+
+  // We don't want to replace the weak uses of `this` in any condition's
+  // `positive_users` or `negative_users`.
+  this->Def<Node<QueryView>>::ReplaceUsesWithIf<User>(
+      that, [=] (User *user, VIEW *) { return !dynamic_cast<COND *>(user); });
 
   CopyDifferentialAndGroupIdsTo(that);
   TransferSetConditionTo(that);
+
+#ifndef NDEBUG
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 
   if (color && that->color) {
     if (color != that->color) {
@@ -791,9 +851,12 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
   const auto tuple = query->tuples.Create();
   tuple->color = color;
 
+  assert(!AsInsert());  // INSERTs don't have output columns.
+
   auto col_index = 0u;
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(col->var, tuple, col->id, col_index++);
+    auto out_col = tuple->columns.Create(
+        col->var, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 
@@ -1241,6 +1304,7 @@ void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
   if (!condition->IsTrivial()) {
     positive_conditions.AddUse(condition);
     condition->positive_users.AddUse(this);
+    assert(condition->UsersAreConsistent());
   }
 }
 

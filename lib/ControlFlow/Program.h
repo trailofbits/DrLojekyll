@@ -916,7 +916,7 @@ class Node<ProgramTestAndSetRegion> final
   UseRef<VAR> comparator;
 };
 
-using ASSERT = Node<ProgramTestAndSetRegion>;
+using TESTANDSET = Node<ProgramTestAndSetRegion>;
 
 // An equi-join between two or more tables.
 template <>
