@@ -970,6 +970,8 @@ static void BuildTopDownChecker(
             return nullptr;
           }
 
+          // If `already_checked` was non-null, then all of `view_cols` should
+          // have been provided, thus not requiring a partial scan.
           assert(!already_checked);
 
           const auto check = call_self(parent);
@@ -1006,7 +1008,7 @@ static void BuildTopDownChecker(
       if (already_checked == model->table) {
         proc->body.Emplace(proc, BuildStateCheckCaseReturnFalse(impl, proc));
 
-      // Our called didn't do a check, so we'll do it, and we'll just return
+      // Our caller didn't do a check, so we'll do it, and we'll just return
       // whatever the check tells us. In practice, the `if-unknown` case should
       // never execute.
       //
@@ -1120,6 +1122,8 @@ static void BuildTopDownChecker(
 
   // No table associated with this view.
   } else {
+    assert(view.PositiveConditions().empty());
+    assert(view.NegativeConditions().empty());
     assert(!view.IsUsedByNegation());
     assert(!view.IsUsedByJoin());
     already_checked = nullptr;
@@ -1927,73 +1931,8 @@ std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
   return {parent, table, already_removed};
 }
 
-// Build and dispatch to the bottom-up remover regions for `view`. The idea
-// is that we've just removed data from `view`, and now want to tell the
-// successors of this.
-void BuildEagerRemovalRegionsImpl(
-    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
-    const std::vector<QueryView> &successors, TABLE *already_removed_) {
-
-  // TODO(pag): Handle conditions!!
-  // TODO(pag): Handle negations!!
-
-  // The caller didn't already do a state transition, so we can do it. We might
-  // have a situation like this:
-  //
-  //               JOIN
-  //              /    \         .
-  //        TUPLE1      TUPLE2
-  //              \    /
-  //              TUPLE3
-  //
-  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
-  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
-  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
-  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
-  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
-  // because otherwise whichever executed first would prevent the other from
-  // actually doing the marking.
-  auto [parent, table, already_removed] = InTryMarkUnknown(
-      impl, context, view, parent_, already_removed_);
-
-  // All successors execute in parallel.
-  const auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (auto succ_view : successors) {
-
-    // New style: use iterative method for removal.
-    if (IRFormat::kIterative == impl->format) {
-      const auto let = impl->operation_regions.CreateDerived<LET>(par);
-      par->AddRegion(let);
-
-      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
-                              already_removed);
-
-    // Old style: Use recursive push method for removal. This creates lots of
-    // tuple remover procedures.
-    } else {
-      const auto remover_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, already_removed);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, remover_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = parent->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = remover_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
-  }
-}
-
+// If we've just updated a condition, then we might need to notify all
+// users of that condition.
 template <typename T>
 static void EvaluateConditionAndNotify(
     ProgramImpl *impl, QueryView view, Context &context, PARALLEL *parent,
@@ -2069,22 +2008,24 @@ static void EvaluateConditionAndNotify(
   with_tuple(succ_parent, table);
 }
 
+
 // If we've transitioned a condition from `0 -> 1`, i.e. done the first enable
 // of the condition, so we need to allow data through, or rip back data that
 // got through.
 static void BuildEagerUpdateCondAndNotify(
     ProgramImpl *impl, Context &context, QueryCondition cond,
-    PARALLEL *parent) {
+    PARALLEL *parent, bool for_add) {
 
-  // Now that we know that the data has been dealt with, we increment the
-  // condition variable.
-  const auto set = impl->operation_regions.CreateDerived<TESTANDSET>(
-      parent, ProgramOperation::kTestAndAdd);
+  // Now that we know that the data has been dealt with, we increment or
+  // decrement the condition variable.
+  TESTANDSET * const set = impl->operation_regions.CreateDerived<TESTANDSET>(
+      parent, (for_add ? ProgramOperation::kTestAndAdd :
+                         ProgramOperation::kTestAndSub));
   parent->AddRegion(set);
 
   set->accumulator.Emplace(set, ConditionVariable(impl, cond));
   set->displacement.Emplace(set, impl->one);
-  set->comparator.Emplace(set, impl->one);
+  set->comparator.Emplace(set, for_add ? impl->one : impl->zero);
 
   parent = impl->parallel_regions.Create(set);
   set->body.Emplace(set, parent);
@@ -2093,10 +2034,15 @@ static void BuildEagerUpdateCondAndNotify(
   // positive users.
   for (auto view : cond.PositiveUsers()) {
     EvaluateConditionAndNotify(
-        impl, view, context, parent, true  /* for_add */,
+        impl, view, context, parent, for_add  /* for_add */,
         [&] (OP *in_loop, TABLE *table) {
-          BuildEagerInsertionRegions(impl, view, context, in_loop,
-                                         view.Successors(), table);
+          if (for_add) {
+            BuildEagerInsertionRegions(impl, view, context, in_loop,
+                                       view.Successors(), table);
+          } else {
+            BuildEagerRemovalRegions(impl, view, context, in_loop,
+                                     view.Successors(), table);
+          }
         });
   }
 
@@ -2105,11 +2051,129 @@ static void BuildEagerUpdateCondAndNotify(
   // deletions.
   for (auto view : cond.NegativeUsers()) {
     EvaluateConditionAndNotify(
-        impl, view, context, parent, false  /* for_add */,
+        impl, view, context, parent, !for_add  /* for_add */,
         [&] (OP *in_loop, TABLE *table) {
-          BuildEagerRemovalRegions(impl, view, context, in_loop,
-                                   view.Successors(), table);
+          if (!for_add) {
+            BuildEagerInsertionRegions(impl, view, context, in_loop,
+                                       view.Successors(), table);
+          } else {
+            BuildEagerRemovalRegions(impl, view, context, in_loop,
+                                     view.Successors(), table);
+          }
         });
+  }
+}
+
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
+void BuildEagerRemovalRegionsImpl(
+    ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
+    const std::vector<QueryView> &successors, TABLE *already_removed_) {
+
+  // TODO(pag): Handle conditions!!
+  // TODO(pag): Handle negations!!
+
+  // The caller didn't already do a state transition, so we can do it. We might
+  // have a situation like this:
+  //
+  //               JOIN
+  //              /    \         .
+  //        TUPLE1      TUPLE2
+  //              \    /
+  //              TUPLE3
+  //
+  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
+  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
+  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
+  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
+  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
+  // because otherwise whichever executed first would prevent the other from
+  // actually doing the marking.
+  auto [parent, table, already_removed] = InTryMarkUnknown(
+      impl, context, view, parent_, already_removed_);
+
+  // At this point, we know that if `view`s data needed to be marked as
+  // unknown then it has been.
+  // persisting its data, so that if the state of the conditions changes, then
+  // we can send through the data that wasn't sent through (if the condition
+  // wasn't previously satisfied), or delete the data that no longer satisfies
+  // the condition.
+  if (!view.PositiveConditions().empty() ||
+      !view.NegativeConditions().empty() ||
+      view.SetCondition().has_value()) {
+    assert(view.IsTuple());  // Only tuples should have conditions.
+    assert(table && table == already_removed);  // The data should be persisted.
+
+    std::vector<QueryColumn> view_cols;
+    for (auto col : view.Columns()) {
+      view_cols.push_back(col);
+    }
+
+    // The top-down checker will evaluate the conditions. If this truly got
+    // removed and the conditions still pass, then sent it through.
+    const auto [check, check_call] = CallTopDownChecker(
+        impl, context, parent, view, view_cols, view, already_removed);
+
+    const auto let = impl->operation_regions.CreateDerived<LET>(check_call);
+    check_call->false_body.Emplace(check_call, let);
+
+    parent->body.Emplace(parent, check);
+    parent = let;
+  }
+
+  // All successors execute in a PARALLEL region, even if there are zero or
+  // one successors. Empty and trivial PARALLEL regions are optimized out later.
+  //
+  // A key benefit of PARALLEL regions is that within them, CSE can be performed
+  // to identify and eliminate repeated branches.
+  PARALLEL *par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+
+  // Proving this `view` might set a condition. If we set a condition, then
+  // we need to make sure than a CHANGESTATE actually happened. That could
+  // mean re-parenting all successors within a CHANGESTATE.
+  //
+  // NOTE(pag): Above we made certain to call the top-down checker to make
+  //            sure the data is actually gone.
+  if (auto set_cond = view.SetCondition(); set_cond) {
+    assert(table != nullptr);
+    assert(already_removed != nullptr);
+    BuildEagerUpdateCondAndNotify(impl, context, *set_cond, par,
+                                  false  /* for_add */);
+  }
+
+  for (auto succ_view : successors) {
+
+    // New style: use iterative method for removal.
+    if (IRFormat::kIterative == impl->format) {
+      const auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
+
+      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
+                              already_removed);
+
+    // Old style: Use recursive push method for removal. This creates lots of
+    // tuple remover procedures.
+    } else {
+      const auto remover_proc = GetOrCreateBottomUpRemover(
+          impl, context, view, succ_view, already_removed);
+      const auto call = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, par, remover_proc);
+
+      auto i = 0u;
+      for (auto col : view.Columns()) {
+        const auto var = parent->VariableFor(impl, col);
+        assert(var != nullptr);
+        call->arg_vars.AddUse(var);
+
+        const auto param = remover_proc->input_vars[i++];
+        assert(var->Type() == param->Type());
+        (void) param;
+      }
+
+      par->AddRegion(call);
+    }
   }
 }
 
@@ -2153,7 +2217,8 @@ void BuildEagerInsertionRegionsImpl(
   // mean re-parenting all successors within a CHANGESTATE.
   if (auto set_cond = view.SetCondition(); set_cond) {
     assert(table != nullptr);
-    BuildEagerUpdateCondAndNotify(impl, context, *set_cond, par);
+    BuildEagerUpdateCondAndNotify(impl, context, *set_cond, par,
+                                  true  /* for_add */);
   }
 
   // If this view is used by a negation, and if we just proved this view, then
