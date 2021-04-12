@@ -3,87 +3,6 @@
 #include "Build.h"
 
 namespace hyde {
-namespace {
-
-template <typename C1, typename C2>
-static OP *CheckInNegatedView(ProgramImpl *impl, QueryNegate negate,
-                              Context &context, REGION *parent,
-                              C1 with_check_present,
-                              C2 with_check_absent) {
-  const auto let = impl->operation_regions.CreateDerived<LET>(parent);
-
-  std::vector<QueryColumn> view_cols;
-
-  const auto negated_view = negate.NegatedView();
-  unsigned col_index = 0u;
-
-  for (auto col : negated_view.Columns()) {
-    const QueryColumn in_col = negate.InputColumns()[col_index++];
-    auto out_var = let->defined_vars.Create(
-        impl->next_id++, VariableRole::kLetBinding);
-    out_var->query_column = col;
-    if (in_col.IsConstantOrConstantRef()) {
-      out_var->query_const = QueryConstant::From(in_col);
-    }
-
-    const auto in_var = let->VariableFor(impl, in_col);
-    let->used_vars.AddUse(in_var);
-
-    // NOTE(pag): We *don't* want to use `emplace` here because multiple
-    //            nodes in a "tower" might all check back on the same negated
-    //            view, and we want each check to be associated with logically
-    //            different variables.
-    let->col_id_to_var[col.Id()] = out_var;
-    let->col_id_to_var[in_col.Id()] = out_var;
-
-    view_cols.push_back(col);
-  }
-
-  // Call the top-down checker on the tuple. If it returns `false` then it
-  // means that we've not found the tuple in the negated view, and so we can
-  // proceed.
-  const auto [check, check_call] = CallTopDownChecker(
-      impl, context, let, negated_view, view_cols, negated_view, nullptr);
-
-  let->body.Emplace(let, check);
-
-  // NOTE(pag): We need the extra `OP *` region here (the `LET`) because
-  //            `with_check_absent` might fiddle with `sub_let->body`, and we
-  //            can't pass in `check` because we might need to operate in
-  //            `false_body`.
-  const auto present_let = impl->operation_regions.CreateDerived<LET>(check_call);
-  const auto absent_let = impl->operation_regions.CreateDerived<LET>(check_call);
-
-  check_call->body.Emplace(check_call, present_let);
-  check_call->false_body.Emplace(check_call, absent_let);
-
-  auto present_ret = with_check_absent(present_let);
-  auto absent_ret = with_check_absent(absent_let);
-
-  if (present_ret) {
-    assert(present_ret->parent == present_let);
-    if (present_let->body.get() != present_ret) {
-      assert(!present_let->body);
-      present_let->body.Emplace(present_let, present_ret);
-    } else {
-      assert(present_let->body.get() == present_ret);
-    }
-  }
-
-  if (absent_ret) {
-    assert(absent_ret->parent == absent_let);
-    if (absent_let->body.get() != absent_ret) {
-      assert(!absent_let->body);
-      absent_let->body.Emplace(absent_let, absent_ret);
-    } else {
-      assert(absent_let->body.get() == absent_ret);
-    }
-  }
-
-  return let;
-}
-
-}  // namespace
 
 // Build an eager region for testing the absence of some data in another view.
 void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
@@ -101,27 +20,33 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   auto [parent, pred_table, last_table] =
       InTryInsert(impl, context, pred_view, parent_, last_table_);
 
+  const QueryTuple negated_view = negate.NegatedView();
+  std::vector<QueryColumn> negated_view_cols;
+  for (QueryColumn out_col : negate.NegatedColumns()) {
+    const auto i = *(out_col.Index());
+    const auto neg_col = negated_view.NthColumn(i);
+    VAR * out_col_var = parent->VariableFor(impl, out_col);
+    assert(out_col_var != nullptr);
+    parent->col_id_to_var[neg_col.Id()] = out_col_var;
+    negated_view_cols.push_back(neg_col);
+  }
 
-  LET *let = nullptr;
+  // Call the top-down checker for the negated view.
+  const auto [neg_check, neg_check_call] = CallTopDownChecker(
+      impl, context, parent, negated_view, negated_view_cols,
+      negated_view, nullptr);
+  parent->body.Emplace(parent, neg_check);
 
-  // Okay, if we're inside of some kind of check that our predecessor has the
-  // data and so now we need to make sure that the negated view doesn't have
-  // the data.
-  parent->body.Emplace(parent, CheckInNegatedView(
-      impl, negate, context, parent,
-      [] (OP *) -> REGION * { return nullptr; },
-      [&] (OP *if_absent) -> REGION * {
-        let = impl->operation_regions.CreateDerived<LET>(if_absent);
-        return let;
-      }));
+  // If the data isn't there, then keep going.
+  OP *let = impl->operation_regions.CreateDerived<LET>(neg_check_call);
+  neg_check_call->false_body.Emplace(neg_check_call, let);
 
   // NOTE(pag): A negation can never share the same data model as its
   //            predecessor, as it might not pass through all of its
   //            predecessor's data.
   const QueryView view(negate);
   return BuildEagerInsertionRegions(
-      impl, view, context, let, view.Successors(),
-      nullptr  /* last_table */);
+      impl, view, context, let, view.Successors(), nullptr  /* last_table */);
 }
 
 // Build a top-down checker on a negation.
@@ -130,35 +55,123 @@ REGION *BuildTopDownNegationChecker(
     std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
 
   const QueryView view(negate);
+  const QueryTuple negated_view = negate.NegatedView();
   const auto pred_views = view.Predecessors();
   assert(pred_views.size() == 1u);
-  const auto pred_view = pred_views[0];
+  const QueryView pred_view = pred_views[0];
+
+  // Negations aren't guaranteed to be persisted, but their inputs (on both
+  // sides) are. So, if we don't have all of the columns that we need, then
+  // go and find them.
+  if (view_cols.size() != view.Columns().size()) {
+
+    // If `already_checked` were not `nullptr`, then it means we have a table
+    // for the negation, and that the top-down checker builder should have
+    // filled up `view_cols`.
+    assert(!already_checked);
+
+    // Map outputs to the inputs we have, and build up a list of inputs we
+    // have in `pred_view_cols` so that we can do a table scan of `pred_view`.
+    std::vector<QueryColumn> pred_view_cols;
+    negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
+      if (out_col && InputColumnRole::kCopied == role &&
+          std::find(view_cols.begin(), view_cols.end(), *out_col) !=
+              view_cols.end()) {
+        VAR * const out_var = proc->VariableFor(impl, *out_col);
+        assert(out_var != nullptr);
+
+        proc->col_id_to_var[in_col.Id()] = out_var;
+        pred_view_cols.push_back(in_col);
+      }
+    });
+
+    const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+    const auto pred_table = pred_model->table;
+    assert(pred_table != nullptr);
+
+    // Clear out and re-fill `view_cols`; we'll pass it to a recursive finder
+    // function now that we have values for all of the columns (from the scan
+    // of `pred_view`).
+    view_cols.clear();
+    for (auto col : view.Columns()) {
+      view_cols.push_back(col);
+    }
+
+    SERIES * const seq = impl->series_regions.Create(proc);
+    BuildMaybeScanPartial(
+        impl, pred_view, pred_view_cols, pred_table, seq,
+        [&](REGION *in_scan, bool in_loop) -> REGION * {
+
+          assert(in_loop);
+
+          // Make sure to make the variables for the negation's output columns
+          // available to our recursive call.
+          negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                                 std::optional<QueryColumn> out_col) {
+            if (out_col && InputColumnRole::kCopied == role) {
+              VAR * const in_var = in_scan->VariableFor(impl, in_col);
+              in_scan->col_id_to_var[out_col->Id()] = in_var;
+            }
+          });
+
+          // Recursively call ourselves with all view columns.
+          const auto [rec_check, rec_check_call] = CallTopDownChecker(
+              impl, context, in_scan, negate, view_cols, negate, nullptr);
+
+          // If any recursive call succeeded, then return true.
+          rec_check_call->body.Emplace(
+              rec_check_call,
+              BuildStateCheckCaseReturnTrue(impl, rec_check_call));
+
+          return rec_check;
+        });
+
+    // If nothing in the scan returned true, then return false.
+    seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
+
+    return seq;
+  }
 
   // First, check in the non-negated view.
   const auto [check, check_call] = CallTopDownChecker(
       impl, context, proc, negate, view_cols, pred_view, already_checked);
 
-  // If it's there, then we need to make sure it's not in the negated view.
-  check_call->body.Emplace(
-      check_call, CheckInNegatedView(
-          impl, negate, context, check_call,
-          [=] (OP *in_check) -> REGION * {
-            return BuildStateCheckCaseReturnFalse(impl, in_check);
-          },
-          [=] (OP *in_check) -> REGION * {
-            return BuildStateCheckCaseReturnTrue(impl, in_check);
-          }));
+  std::vector<QueryColumn> negated_view_cols;
+  for (QueryColumn out_col : negate.NegatedColumns()) {
+    const auto i = *(out_col.Index());
+    const auto in_col = negate.NthInputColumn(i);
+    const auto neg_col = negated_view.NthColumn(i);
+    VAR * out_col_var = check_call->VariableFor(impl, out_col);
+    assert(out_col_var != nullptr);
+    check_call->col_id_to_var[in_col.Id()] = out_col_var;
+    check_call->col_id_to_var[neg_col.Id()] = out_col_var;
 
-  // If it's not there, then we need to make sure it is in the negated view.
+    negated_view_cols.push_back(neg_col);
+  }
+
+  // If it's there, then we need to make sure it's not in the negated view.
+  const auto [neg_check, neg_check_call] = CallTopDownChecker(
+      impl, context, check_call, negated_view, negated_view_cols,
+      negated_view, nullptr);
+
+  check_call->body.Emplace(check_call, neg_check);
+
+  // If it's in `view` and in `negated_view`, then return false.
+  neg_check_call->body.Emplace(
+      neg_check_call,
+      BuildStateCheckCaseReturnFalse(impl, neg_check_call));
+
+  // If it's in `view` but not in `negated_view`, then return true.
+  neg_check_call->false_body.Emplace(
+      neg_check_call,
+      BuildStateCheckCaseReturnTrue(impl, neg_check_call));
+
+  // If it's not in `view`, then it doesn't matter if it is or isn't in
+  // `negated_view`, because we only care about stuff that has previously
+  // flowed through the data flow.
   check_call->false_body.Emplace(
-      check_call, CheckInNegatedView(
-          impl, negate, context, check_call,
-          [=] (OP *in_check) -> REGION * {
-            return BuildStateCheckCaseReturnTrue(impl, in_check);
-          },
-          [=] (OP *in_check) -> REGION * {
-            return BuildStateCheckCaseReturnFalse(impl, in_check);
-          }));
+      check_call, BuildStateCheckCaseReturnFalse(impl, check_call));
 
   return check;
 }
