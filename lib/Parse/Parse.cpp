@@ -106,15 +106,6 @@ NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
   }
 }
 
-// Return a list of clauses associated with this declaration.
-NodeRange<ParsedClause> Node<ParsedDeclaration>::DeletionClauses(void) const {
-  if (context->deletion_clauses.empty()) {
-    return NodeRange<ParsedClause>();
-  } else {
-    return NodeRange<ParsedClause>(context->deletion_clauses.front().get());
-  }
-}
-
 // Return a list of positive uses of this definition.
 NodeRange<ParsedPredicate> Node<ParsedDeclaration>::PositiveUses(void) const {
   if (context->positive_uses.empty()) {
@@ -340,6 +331,11 @@ bool ParsedLiteral::IsString(void) const noexcept {
   return impl->literal.Lexeme() == Lexeme::kLiteralString;
 }
 
+bool ParsedLiteral::IsBoolean(void) const noexcept {
+  return impl->literal.Lexeme() == Lexeme::kLiteralTrue ||
+         impl->literal.Lexeme() == Lexeme::kLiteralFalse;
+}
+
 TypeLoc ParsedLiteral::Type(void) const noexcept {
   return impl->type;
 }
@@ -563,7 +559,7 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedPredicate &pred)
-: parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
+    : parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
@@ -762,10 +758,6 @@ NodeRange<ParsedClause> ParsedDeclaration::Clauses(void) const {
   return impl->Clauses();
 }
 
-NodeRange<ParsedClause> ParsedDeclaration::DeletionClauses(void) const {
-  return impl->DeletionClauses();
-}
-
 NodeRange<ParsedPredicate> ParsedDeclaration::PositiveUses(void) const {
   return impl->PositiveUses();
 }
@@ -786,12 +778,16 @@ unsigned ParsedDeclaration::NumClauses(void) const noexcept {
   return static_cast<unsigned>(impl->context->clauses.size());
 }
 
-unsigned ParsedDeclaration::NumDeletionClauses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->deletion_clauses.size());
+bool ParsedDeclaration::IsInline(void) const noexcept {
+  return IsQuery() ||
+         impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
-bool ParsedDeclaration::IsInline(void) const noexcept {
-  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
+// Is this declaration marked with the `@divergent` pragma?
+bool ParsedDeclaration::IsDivergent(void) const noexcept {
+
+  // TODO(pag): Implement me.
+  return true;
 }
 
 std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
@@ -884,8 +880,7 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
-  auto last_tok =
-      impl->last_tok.IsValid() && false ? impl->last_tok : impl->dot;
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
                       last_tok.NextPosition());
@@ -894,6 +889,19 @@ DisplayRange ParsedClause::SpellingRange(void) const noexcept {
 // Should this clause be highlighted in the data flow representation?
 bool ParsedClause::IsHighlighted(void) const noexcept {
   return impl->highlight.IsValid();
+}
+
+// Returns `true` if this clause body is disabled. A disabled clause body
+// is one that contains a free `false` or `!true` predicate.
+bool ParsedClause::IsDisabled(DisplayRange *disabled_by) const noexcept {
+  if (impl->disabled_by.From().IsValid()) {
+    if (disabled_by) {
+      *disabled_by = impl->disabled_by;
+    }
+    return true;
+  } else {
+    return false;
+  }
 }
 
 // Are cross-products permitted when building the data flow representation
@@ -1217,6 +1225,15 @@ bool ParsedMessage::IsPublished(void) const noexcept {
   return !impl->context->clauses.empty();
 }
 
+// Can this message receive/publish removals?
+bool ParsedMessage::IsDifferential(void) const noexcept {
+  return impl->differential_attribute.IsValid();
+}
+
+Token ParsedMessage::Differential(void) const noexcept {
+  return impl->differential_attribute;
+}
+
 unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
 }
@@ -1422,9 +1439,10 @@ bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
 // Returns `true` if the representation of this foreign type in the target
 // language `lang` is referentially transparent, i.e. if equality implies
 // identity. This is the case for trivial types, e.g. integers.
-bool ParsedForeignType::IsReferentiallyTransparent(Language lang_) const noexcept {
+bool ParsedForeignType::IsReferentiallyTransparent(
+    Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);
-    return impl->is_built_in || impl->info[lang].is_transparent;
+  return impl->is_built_in || impl->info[lang].is_transparent;
 }
 
 // Return the prefix and suffix for construction for this language.
@@ -1435,16 +1453,15 @@ ParsedForeignType::Constructor(Language lang_) const noexcept {
   if (lang_ != Language::kUnknown && info.is_present &&
       (!info.constructor_prefix.empty() || !info.constructor_suffix.empty())) {
     return std::make_pair<std::string_view, std::string_view>(
-        info.constructor_prefix,
-        info.constructor_suffix);
+        info.constructor_prefix, info.constructor_suffix);
   } else {
     return std::nullopt;
   }
 }
 
 // List of constants defined on this type for a particular language.
-NodeRange<ParsedForeignConstant> ParsedForeignType::Constants(
-    Language lang_) const noexcept {
+NodeRange<ParsedForeignConstant>
+ParsedForeignType::Constants(Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);
   const auto &info = impl->info[lang];
   if (info.constants.empty()) {

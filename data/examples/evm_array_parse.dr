@@ -40,7 +40,7 @@ type_name(ArrayNode)
     , lexeme_of_token(RSquare, PUNC_R_SQUARE)
     , build_empty_array_type(Node, LSquare, RSquare, ArrayNode).
 
-type_name(ArrayNode) @highlight
+type_name(ArrayNode)
     : type_name(BaseType)
     , right_corner(BaseType, LastTokOfBaseType)
     , next_token(LastTokOfBaseType, LSquare)

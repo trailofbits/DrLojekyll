@@ -59,7 +59,7 @@ class DataVector;
 class Program;
 class ProgramCallRegion;
 class ProgramReturnRegion;
-class ProgramExistenceAssertionRegion;
+class ProgramTestAndSetRegion;
 class ProgramGenerateRegion;
 class ProgramInductionRegion;
 class ProgramLetBindingRegion;
@@ -82,14 +82,13 @@ class ProgramTupleCompareRegion;
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  public:
-
   // Return the region containing `child`, or `std::nullopt` if this is the
   // topmost region in a procedure.
   static std::optional<ProgramRegion> Containing(ProgramRegion &child) noexcept;
 
   ProgramRegion(const ProgramCallRegion &);
   ProgramRegion(const ProgramReturnRegion &);
-  ProgramRegion(const ProgramExistenceAssertionRegion &);
+  ProgramRegion(const ProgramTestAndSetRegion &);
   ProgramRegion(const ProgramGenerateRegion &);
   ProgramRegion(const ProgramInductionRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
@@ -112,7 +111,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
 
   bool IsCall(void) const noexcept;
   bool IsReturn(void) const noexcept;
-  bool IsExistenceAssertion(void) const noexcept;
+  bool IsTestAndSet(void) const noexcept;
   bool IsGenerate(void) const noexcept;
   bool IsInduction(void) const noexcept;
   bool IsVectorLoop(void) const noexcept;
@@ -136,7 +135,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  private:
   friend class ProgramCallRegion;
   friend class ProgramReturnRegion;
-  friend class ProgramExistenceAssertionRegion;
+  friend class ProgramTestAndSetRegion;
   friend class ProgramGenerateRegion;
   friend class ProgramInductionRegion;
   friend class ProgramLetBindingRegion;
@@ -202,6 +201,7 @@ enum class VariableRole : int {
   kProductOutput,
   kScanOutput,
   kFunctorOutput,
+  kMessageOutput,
   kParameter,
   kInputOutputParameter,
 };
@@ -240,10 +240,18 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 enum class VectorKind : unsigned {
   kParameter,
   kInputOutputParameter,
-  kInduction,
+  kInductionCycles,
+  kInductionOutputs,
   kJoinPivots,
   kProductInput,
-  kTableScan
+  kTableScan,
+
+  // Vector that collects outputs for messages marked with `@differential`.
+  kMessageOutputs,
+
+  // This is a vector created inside of a message procedure and passed down to
+  // the primary data flow function. It is guaranteed to be empty.
+  kEmpty
 };
 
 // A column in a table.
@@ -338,32 +346,35 @@ class DataVector : public program::ProgramNode<DataVector> {
   using program::ProgramNode<DataVector>::ProgramNode;
 };
 
-// Increment or decrement a reference counter, asserting that some set of tuples
-// exists or does not exist.
-//
-// This is related to a there-exists clause, and the assertion here is to say
-// "something definitely exits" (i.e. increment), or "something may no longer
-// exist" (i.e. decrement).
-class ProgramExistenceAssertionRegion
-    : public program::ProgramNode<ProgramExistenceAssertionRegion> {
+// Perform a test-and-set like operation. In practice, this is used to operate
+// one reference counts, or counters that summarize a group of reference counts.
+class ProgramTestAndSetRegion
+    : public program::ProgramNode<ProgramTestAndSetRegion> {
  public:
-  static ProgramExistenceAssertionRegion From(ProgramRegion) noexcept;
+  static ProgramTestAndSetRegion From(ProgramRegion) noexcept;
 
-  bool IsIncrement(void) const noexcept;
-  bool IsDecrement(void) const noexcept;
+  bool IsAdd(void) const noexcept;
+  bool IsSubtract(void) const noexcept;
 
-  // List of reference count variables that are mutated.
-  UsedNodeRange<DataVariable> ReferenceCounts(void) const;
+  // The source/destination variable. This is `A` in `(A += D) == C`.
+  DataVariable Accumulator(void) const;
 
-  // Return the body which is conditionally executed if all reference counts
-  // just went from `0` to `1` (in the increment case) or `1` to `0` in the
-  // decrement case.
+  // The amount by which the accumulator is displacement. This is `D` in
+  // `(A += D) == C`.
+  DataVariable Displacement(void) const;
+
+  // The value which must match the accumulated result for `Body` to execute.
+  // This is `C` in `(A += D) == C`.
+  DataVariable Comparator(void) const;
+
+  // Return the body which is conditionally executed if the condition of this
+  // operation is satisfied.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramExistenceAssertionRegion>::ProgramNode;
+  using program::ProgramNode<ProgramTestAndSetRegion>::ProgramNode;
 };
 
 // Apply a functor to one or more inputs, yield zero or more outputs. In the
@@ -440,7 +451,8 @@ enum class VectorUsage : unsigned {
   kJoinPivots,
   kProductInputVector,
   kProcedureInputVector,
-  kTableScan
+  kTableScan,
+  kMessageOutputVector,
 };
 
 // Loop over a vector.
@@ -486,6 +498,7 @@ class ProgramVectorAppendRegion
     static name From(ProgramRegion) noexcept; \
     VectorUsage Usage(void) const noexcept; \
     DataVector Vector(void) const noexcept; \
+\
    private: \
     friend class ProgramRegion; \
     using program::ProgramNode<name>::ProgramNode; \
@@ -688,6 +701,10 @@ class ProgramTableScanRegion
 
   // These are the output columns associated with the table scan. These
   // do NOT include any indexed columns.
+  //
+  // NOTE(pag): These will be ordered, such that the first selected column
+  //            is also the earlier appearing column of all selected columns
+  //            within the table.
   UsedNodeRange<DataColumn> SelectedColumns(void) const;
 
   // The variables being provided for each of the `IndexedColumns()`, which are
@@ -726,7 +743,7 @@ class ProgramInductionRegion
   // and cleared in the `Output()` region.
   UsedNodeRange<DataVector> Vectors(void) const;
 
-  ProgramRegion Initializer(void) const noexcept;
+  std::optional<ProgramRegion> Initializer(void) const noexcept;
   ProgramRegion FixpointLoop(void) const noexcept;
   std::optional<ProgramRegion> Output(void) const noexcept;
 
@@ -783,6 +800,16 @@ enum class ProcedureKind : unsigned {
   // Function to initialize all relations. If any relation takes a purely
   // constant tuple as input, then this function initializes those flows.
   kInitializer,
+
+  // This is the initial data flow function, which gets us into the primary
+  // data flow function. The purpose of the separation is that the initial
+  // data flow function collects the init induction vectors induced by message
+  // receipts, whereas the primary dataflow function pushes forward all
+  // computations from that point forward.
+  kEntryDataFlowFunc,
+
+  // The primary function that executes most data flows.
+  kPrimaryDataFlowFunc,
 
   // Process an input vector of zero-or-more tuples received from the
   // network. This is a kind of bottom-up execution of the dataflow.
@@ -910,8 +937,7 @@ class ProgramQuery {
   std::optional<ProgramProcedure> forcing_function;
 
   inline explicit ProgramQuery(
-      ParsedQuery query_, DataTable table_,
-      std::optional<DataIndex> index_,
+      ParsedQuery query_, DataTable table_, std::optional<DataIndex> index_,
       std::optional<ProgramProcedure> tuple_checker_,
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),
@@ -924,11 +950,26 @@ class ProgramQuery {
   ProgramQuery(ProgramQuery &&) noexcept = default;
 };
 
+enum IRFormat {
+
+  // An iterative code format uses induction regions with fixpoint loops over
+  // vectors in order advance the data flow.
+  kIterative,
+
+  // A recursive code format follows Stefan Brass' "push method" of pipelined
+  // bottom-up datalog execute.
+  kRecursive
+};
+
 // A program in its entirety.
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query, const ErrorLog &log);
+  static std::optional<Program> Build(const Query &query, IRFormat format_,
+                                      const ErrorLog &log);
+
+  // The format of the code in this program.
+  IRFormat Format(void) const;
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;
@@ -978,7 +1019,7 @@ class ProgramVisitor {
   virtual void Visit(DataVector val);
   virtual void Visit(ProgramCallRegion val);
   virtual void Visit(ProgramReturnRegion val);
-  virtual void Visit(ProgramExistenceAssertionRegion val);
+  virtual void Visit(ProgramTestAndSetRegion val);
   virtual void Visit(ProgramGenerateRegion val);
   virtual void Visit(ProgramInductionRegion val);
   virtual void Visit(ProgramLetBindingRegion val);

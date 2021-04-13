@@ -167,7 +167,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
 }  // namespace
 
 // Try to parse `sub_range` as a clause.
-void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
+void ParserImpl::ParseClause(Node<ParsedModule> *module,
                              Node<ParsedDeclaration> *decl) {
 
   auto clause = std::make_unique<Node<ParsedClause>>(module);
@@ -246,7 +246,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         }
 
       case 1:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
           continue;
@@ -274,7 +274,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       // a parameter and have seen a comma, it's now time to try to parse
       // another clause head parameter.
       case 2:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kIdentifierVariable == lexeme) {
           auto param_var = CreateVariable(clause.get(), tok, true, false);
           auto param_use = new Node<ParsedUse<ParsedClause>>(
@@ -298,19 +298,21 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
         // Support something like `foo(1, ...) : ...`, converting it into
         // `foo(V, ...) : V=1, ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
-                   Lexeme::kLiteralNumber == lexeme) {
+                   Lexeme::kLiteralNumber == lexeme ||
+                   Lexeme::kLiteralTrue == lexeme ||
+                   Lexeme::kLiteralFalse == lexeme) {
           (void) CreateLiteralVariable(clause.get(), tok, true, false);
           state = 3;
           continue;
 
         // Kick-start type inference when using a named constant.
         } else if (Lexeme::kIdentifierConstant == lexeme) {
-          auto unnamed_var = CreateLiteralVariable(
-              clause.get(), tok, true, false);
+          auto unnamed_var =
+              CreateLiteralVariable(clause.get(), tok, true, false);
           const TypeLoc type_loc(tok.TypeKind());
           unnamed_var->type = type_loc;
-          auto foreign_const_it = context->foreign_constants.find(
-              tok.IdentifierId());
+          auto foreign_const_it =
+              context->foreign_constants.find(tok.IdentifierId());
           if (foreign_const_it != context->foreign_constants.end()) {
             unnamed_var->type = foreign_const_it->second->type;
           }
@@ -328,7 +330,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       // We've read a variable/literal/constant, now we expect a comma and more
       // clause head parameters, or a closing paren to end the clause head.
       case 3:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kPuncComma == lexeme) {
           state = 2;
           continue;
@@ -367,7 +369,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
       // Time to see if we have a clause body to parse or not.
       case 4:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kPuncColon == lexeme) {
           state = 5;
           continue;
@@ -433,6 +435,52 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 6;
           continue;
 
+        // We're seeing a `false` token. It could be something like `false = V`
+        // or `..., false, ...` on its own that "disables" the clause.
+        } else if (Lexeme::kLiteralFalse == lexeme) {
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            UnreadSubToken();
+            switch (peek_tok.Lexeme()) {
+              case Lexeme::kPuncComma:
+              case Lexeme::kPuncColon:
+              case Lexeme::kPuncPeriod: {
+                break;
+              }
+              default: {
+                lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+                state = 6;
+                continue;
+              }
+            }
+          }
+
+          // No next token, or at the end of this clause body or predicate.
+          clause->disabled_by = tok.SpellingRange();
+          state = 8;
+          continue;
+
+        // We're seeing a `true` token. It could be something like `true = V`
+        // or `..., true, ...` on its own that gets ignored.
+        } else if (Lexeme::kLiteralFalse == lexeme) {
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            UnreadSubToken();
+            switch (peek_tok.Lexeme()) {
+              case Lexeme::kPuncComma:
+              case Lexeme::kPuncColon:
+              case Lexeme::kPuncPeriod: {
+                break;  // Ignore it.
+              }
+              default: {
+                lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+                state = 6;
+                continue;
+              }
+            }
+          }
+
+          // No next token, or at the end of this clause body or predicate.
+          state = 8;
+          continue;
 
         // The `1` in `1 = ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
@@ -442,7 +490,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           state = 6;
           continue;
 
-        // The `!` in `!pred(...)`.
+        // The `!` in `!pred(...)` or in `!V` where `V` has Boolean type.
         } else if (Lexeme::kPuncExclaim == lexeme) {
           negation_pos = tok.Position();
           state = 11;
@@ -462,18 +510,73 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
 
-      // We've just seen a variable, literal, or constant; try to combine it
-      // with a binary operator.
       case 6:
+
+        // We've just seen a variable, literal, or constant; try to combine it
+        // with a binary operator.
         if (Lexeme::kPuncEqual == lexeme || Lexeme::kPuncNotEqual == lexeme ||
             Lexeme::kPuncLess == lexeme || Lexeme::kPuncGreater == lexeme) {
           compare_op = tok;
           state = 7;
           continue;
 
-        // TODO(pag): Add support for a variable on its own, in the case of
-        //            Boolean-typed variables, so that we can then use the
-        //            boolean to continue the clause or not.
+        // We've just seen a variable, and now we see a comma, so we interpret
+        // it as "variable is true."
+        } else if (Lexeme::kPuncComma == lexeme ||
+                   Lexeme::kPuncPeriod == lexeme ||
+                   Lexeme::kPuncColon == lexeme) {
+          assert(lhs);
+
+          // Likely a constant/literal; we'll keep parsing anyway.
+          if (lhs->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected variable here but got '"
+                << lhs->name.SpellingRange() << "' instead";
+          }
+
+          const auto assign = new Node<ParsedAssignment>(lhs);
+          assign->rhs.literal =
+              Token::Synthetic(Lexeme::kLiteralTrue, DisplayRange());
+          assign->rhs.assigned_to = lhs;
+          assign->rhs.data = "true";
+          assign->rhs.type =
+              TypeLoc(TypeKind::kBoolean, lhs->name.SpellingRange());
+
+          // Add to the clause's assignment list.
+          if (!clause->assignments.empty()) {
+            clause->assignments.back()->next = assign;
+          }
+          clause->assignments.emplace_back(assign);
+
+          // Add to the variable's assignment list. We support the list, but for
+          // these auto-created variables, there can be only one use.
+          lhs->context->assignment_uses.push_back(&(assign->lhs));
+
+          pred.reset();
+          if (Lexeme::kPuncComma == lexeme) {
+            state = 5;
+            continue;
+
+          } else if (Lexeme::kPuncPeriod == lexeme) {
+            clause->dot = tok;
+            state = 9;
+            continue;
+
+          } else if (Lexeme::kPuncColon == lexeme) {
+
+            // let the "dot" be the colon token
+            clause->dot = tok;
+
+            // there's another clause let's go accumulate the remaining tokens
+            state = 16;
+            multi_clause = true;
+            continue;
+
+          } else {
+            assert(false);
+            state = 9;
+            continue;
+          }
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -599,8 +702,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           continue;
 
         } else if (Lexeme::kPuncColon == lexeme) {
+
           // let the "dot" be the colon token
           clause->dot = tok;
+
           // there's another clause let's go accumulate the remaining tokens
           state = 16;
           multi_clause = true;
@@ -624,13 +729,51 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       // We're just chugging tokens at the end, ignore them.
       case 10: continue;
 
-      // We think we're parsing a negated predicate.
       case 11:
+
+        // We think we're parsing a negated predicate, i.e. `!pred(...)`.
         if (Lexeme::kIdentifierAtom == lexeme) {
           pred.reset(new Node<ParsedPredicate>(module, clause.get()));
           pred->name = tok;
           pred->negation_pos = negation_pos;
           state = 12;
+          continue;
+
+        // We think we're parsing a negated Boolean variable, e.g. `!V`;
+        // this gets treated as `V = false`.
+        } else if (Lexeme::kIdentifierVariable == lexeme) {
+          lhs = CreateVariable(clause.get(), tok, false, false);
+          const auto assign = new Node<ParsedAssignment>(lhs);
+          assign->rhs.literal =
+              Token::Synthetic(Lexeme::kLiteralFalse, DisplayRange());
+          assign->rhs.assigned_to = lhs;
+          assign->rhs.data = "false";
+          assign->rhs.type =
+              TypeLoc(TypeKind::kBoolean,
+                      DisplayRange(negation_pos, tok.NextPosition()));
+
+          // Add to the clause's assignment list.
+          if (!clause->assignments.empty()) {
+            clause->assignments.back()->next = assign;
+          }
+          clause->assignments.emplace_back(assign);
+
+          // Add to the variable's assignment list. We support the list, but for
+          // these auto-created variables, there can be only one use.
+          lhs->context->assignment_uses.push_back(&(assign->lhs));
+          state = 8;
+          continue;
+
+        // `!true`, i.e. `false`, this gets treated as `false`.
+        } else if (Lexeme::kLiteralTrue == lexeme) {
+          clause->disabled_by = DisplayRange(negation_pos, tok.NextPosition());
+          state = 8;
+          continue;
+
+        // `!false`, i.e. `true`, we ignore this, and we anticipate either a
+        // comma or a
+        } else if (Lexeme::kLiteralFalse == lexeme) {
+          state = 8;
           continue;
 
         } else {
@@ -721,8 +864,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
             return;
           }
 
-          const auto pred_range =
-              ParsedPredicate(pred.get()).SpellingRange();
+          const auto pred_range = ParsedPredicate(pred.get()).SpellingRange();
 
           // Not allowed to negate inline declarations, as they might not be
           // backed by actual relations.
@@ -758,25 +900,25 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
             const auto kind = pred->declaration->context->kind;
 
-            // We don't allow negations of messages because we think of them
-            // as ephemeral, i.e. not even part of the database. They come in
-            // to trigger some action, and leave.
-            //
-            // We *do* allow negation of queries because we proxy them
-            // externally via later source-to-source transforms.
-            if (kind == DeclarationKind::kMessage) {
-              context->error_log.Append(scope_range, pred_range)
-                  << "Cannot negate message '" << pred->name
-                  << "'; if you want to test that a message has never been "
-                  << "received then proxy it with a `#local` or `#export`";
-              return;
+            //            // We don't allow negations of messages because we think of them
+            //            // as ephemeral, i.e. not even part of the database. They come in
+            //            // to trigger some action, and leave.
+            //            //
+            //            // We *do* allow negation of queries because we proxy them
+            //            // externally via later source-to-source transforms.
+            //            if (kind == DeclarationKind::kMessage) {
+            //              context->error_log.Append(scope_range, pred_range)
+            //                  << "Cannot negate message '" << pred->name
+            //                  << "'; if you want to test that a message has never been "
+            //                  << "received then proxy it with a `#local` or `#export`";
+            //              return;
 
             // A functor with a range of one-to-one or one-or-more is guaranteed
             // to produce at least one output, and so negating it would yield
             // and always-false situation.
-            } else if (kind == DeclarationKind::kFunctor &&
-                       (pred->declaration->range == FunctorRange::kOneToOne ||
-                        pred->declaration->range == FunctorRange::kOneOrMore)) {
+            if (kind == DeclarationKind::kFunctor &&
+                (pred->declaration->range == FunctorRange::kOneToOne ||
+                 pred->declaration->range == FunctorRange::kOneOrMore)) {
               auto err = context->error_log.Append(scope_range, pred_range);
               err << "Cannot negate functor '" << pred->name
                   << "' declared with a one-to-one or one-or-more range";
@@ -823,6 +965,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
           return;
         }
       case 16:
+
         // Accumulate multi-clause tokens
         assert(multi_clause);
         clause_toks.push_back(tok);
@@ -839,79 +982,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
     return;
   }
 
-  const auto is_query_clause =
-      DeclarationKind::kQuery == clause->declaration->context->kind;
   const auto is_message_clause =
       DeclarationKind::kMessage == clause->declaration->context->kind;
 
-  // Go see if we depend on one or more messages.
-  Node<ParsedPredicate> *prev_message = nullptr;
-  for (auto &used_pred : clause->positive_predicates) {
-    const auto kind = used_pred->declaration->context->kind;
-    if (kind == DeclarationKind::kMessage) {
-      clause->depends_on_messages = true;
-      prev_message = used_pred.get();
-      continue;
-    }
-  }
-
-  if (negation_tok.IsValid()) {
-    const auto negation_tok_range = negation_tok.SpellingRange();
-
-    // We don't let deletion clauses be specified on queries because a query
-    // gives us point-in-time results according to some request.
-    if (is_query_clause) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "Deletion clauses cannot be specified on queries";
-      return;
-
-    // We also don't support negations of messages, as it's a message isn't
-    // something that "exists" in the database. That is, we can publish the
-    // fact that something was deleted/changed, but we can't publish the
-    // deletion of a message because they are ephemeral, and even if we had
-    // received a corresponding "equivalent" message, then we never really
-    // stored it to begin with.
-    } else if (is_message_clause) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "Deletion clauses cannot be specified on messages";
-      return;
-
-    // Negation (i.e. removal) clauses must have a direct dependency on a
-    // message. This keeps removal in the control of external users, and means
-    // that, absent external messages, the system won't get into trivial cycles
-    // that prevent fixpoints.
-    } else if (!prev_message) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "The explicit deletion clause for " << decl->name << '/'
-          << decl->parameters.size() << " must directly depend on a message";
-      return;
-
-    // We're not allowed to directly delete things from k/v stores, as we can't
-    // reasonably match up the values supplied for the values, and the keys of
-    // the current value associated with the same keys.
-    } else if (ParsedDeclaration(clause->declaration).HasMutableParameter()) {
-      auto err = context->error_log.Append(scope_range, negation_tok_range);
-      err << "Deletion clauses cannot be specified on declarations with "
-          << "mutable paramaters";
-
-      for (const auto &param_ : clause->declaration->parameters) {
-        ParsedParameter param(param_.get());
-        err.Note(param.SpellingRange(), param.Type().SpellingRange())
-            << "Mutable parameter is here";
-      }
-      return;
-
-    // We don't allow negation of zero-argument predicates, because if they
-    // are dataflow-dependent, then there's no real way to "merge" multiple
-    // positive and negative flows.
-    } else if (clause->head_variables.empty()) {
-      context->error_log.Append(scope_range, negation_tok_range)
-          << "Deletion clauses cannot be specified on zero-argument predicates";
-      return;
-    }
-
   // Don't let us send out any messages if we have any uses of this message.
-  } else if (is_message_clause && !decl->context->positive_uses.empty()) {
+  if (is_message_clause && !decl->context->positive_uses.empty()) {
     auto err = context->error_log.Append(scope_range);
     err << "Cannot send output in message " << decl->name << '/'
         << decl->parameters.size()
@@ -923,19 +998,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
       err.Note(clause.SpellingRange(), pred.SpellingRange())
           << "Message receipt is here";
     }
-
-  // We've found a positive clause definition, and there are negative clause
-  // definitions, and this positive clause definition does not actually use
-  // any messages.
-  } else if (!prev_message && !decl->context->deletion_clauses.empty()) {
-    auto err = context->error_log.Append(scope_range, negation_tok.Position());
-    err << "All positive clauses of " << decl->name << '/'
-        << decl->parameters.size() << " must directly depend on a message "
-        << "because of the presence of a deletion clause";
-
-    auto del_clause = decl->context->deletion_clauses.front().get();
-    auto note = err.Note(ParsedClause(del_clause).SpellingRange());
-    note << "First deletion clause is here";
   }
 
   // Link all positive predicate uses into their respective declarations.
@@ -959,19 +1021,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
   }
 
   auto &clause_decl_context = clause->declaration->context;
-
-  std::vector<Node<ParsedClause> *> *module_clause_list = nullptr;
-  std::vector<std::unique_ptr<Node<ParsedClause>>> *decl_clause_list = nullptr;
-
-  if (negation_tok.IsValid()) {
-    clause->negation = negation_tok;
-    module_clause_list = &(module->deletion_clauses);
-    decl_clause_list = &(clause_decl_context->deletion_clauses);
-
-  } else {
-    module_clause_list = &(module->clauses);
-    decl_clause_list = &(clause_decl_context->clauses);
-  }
+  auto module_clause_list = &(module->clauses);
+  auto decl_clause_list = &(clause_decl_context->clauses);
 
   FindUnrelatedConditions(clause.get(), context->error_log);
 
@@ -995,14 +1046,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module, Token negation_tok,
 
     sub_tokens.swap(clause_toks);
     next_sub_tok_index = 0;
-    ParseClause(module, negation_tok);
+    ParseClause(module);
 
     // NOTE(sonya): restore previous token list and index for debugging in
     // ParseAllTokens()
     sub_tokens.swap(clause_toks);
     next_sub_tok_index = end_index;
   }
-
 }
 
 }  // namespace hyde

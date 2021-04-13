@@ -45,13 +45,14 @@ static Stream &Var(Stream &os, const DataVariable var) {
 
 template <typename Stream>
 static Stream &ReifyVar(Stream &os, const DataVariable var) {
-  const auto role = var.DefiningRole();
-  if (role != VariableRole::kVectorVariable &&
-      role != VariableRole::kConstant && role != VariableRole::kJoinPivot &&
-      role != VariableRole::kProductOutput) {
-    os << ".Reify()";
+  switch (var.DefiningRole()) {
+    case VariableRole::kVectorVariable:
+    case VariableRole::kConstant:
+    case VariableRole::kJoinPivot:
+    case VariableRole::kProductOutput:
+    case VariableRole::kScanOutput: return os;
+    default: return os << ".Reify()";
   }
-  return os;
 }
 
 // CPlusPlus representation of TypeKind

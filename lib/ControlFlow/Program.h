@@ -79,6 +79,8 @@ class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
 
 using TABLEINDEX = Node<DataIndex>;
 
+class Context;
+
 // Represents a table of data.
 //
 // NOTE(pag): By default all tables already have a UNIQUE index on them.
@@ -97,7 +99,8 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   void Accept(ProgramVisitor &visitor);
 
   // Get or create a table in the program.
-  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, QueryView view);
+  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, Context &context,
+                                      QueryView view);
 
   // Get or create an index on the table.
   TABLEINDEX *GetOrCreateIndex(ProgramImpl *impl, std::vector<unsigned> cols);
@@ -110,6 +113,9 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   // Indexes that should be created on this table. By default, all tables have
   // a UNIQUE index.
   DefList<TABLEINDEX> indices;
+
+  // All views sharing this table.
+  std::vector<QueryView> views;
 };
 
 using TABLE = Node<DataTable>;
@@ -135,6 +141,12 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
       col_types.push_back(col.Type().Kind());
     }
   }
+
+  Node(Node<DataVector> *that_)
+      : Def<Node<DataVector>>(this),
+        id(that_->id),
+        kind(that_->kind),
+        col_types(that_->col_types) {}
 
   bool IsRead(void) const;
 
@@ -245,6 +257,10 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   virtual bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
                       uint32_t depth) const noexcept;
 
+  // Return the farthest ancestor of this region, in terms of linkage. Often this
+  // just returns a `PROC *` if this region is linked in to its procedure.
+  Node<ProgramRegion> *Ancestor(void) noexcept;
+
   // Return the nearest enclosing region that is itself enclosed by an
   // induction.
   Node<ProgramRegion> *NearestRegionEnclosedByInduction(void) noexcept;
@@ -264,7 +280,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   // Every child REGION of a procedure will have easy access to create new
   // variables.
-  Node<ProgramProcedure> *const containing_procedure;
+  Node<ProgramProcedure> *containing_procedure;
   Node<ProgramRegion> *parent{nullptr};
 
   // Maps `QueryColumn::Id()` values to variables. Used to provide lexical
@@ -296,10 +312,11 @@ enum class ProgramOperation {
   kCheckStateInTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
-  kAppendInductionInputToVector,
-  kLoopOverInductionInputVector,
-  kClearInductionInputVector,
+  kAppendToInductionVector,
+  kLoopOverInductionVector,
+  kClearInductionVector,
   kSwapInductionVector,
+  kSortAndUniqueInductionVector,
 
   // When dealing with a MERGE/UNION node that isn't part of an inductive
   // cycle.
@@ -332,6 +349,13 @@ enum class ProgramOperation {
   kLoopOverScanVector,
   kClearScanVector,
 
+  // Used to implement publication of messages that can be published with
+  // additions or removals.
+  kAppendToMessageOutputVector,
+  kSortAndUniqueMessageOutputVector,
+  kClearMessageOutputVector,
+  kLoopOverMessageOutputVector,
+
   // Loop over a vector of inputs. The format of the vector is based off of
   // the variables in `variables`. The region `body` is executed for each
   // loop iteration.
@@ -359,12 +383,8 @@ enum class ProgramOperation {
 
   // Used to test reference count variables associated with `QueryCondition`
   // nodes in the data flow.
-  kTestAllNonZero,
-  kTestAllZero,
-  kIncrementAll,
-  kIncrementAllAndTest,
-  kDecrementAll,
-  kDecrementAllAndTest,
+  kTestAndAdd,
+  kTestAndSub,
 
   // Call another procedure.
   kCallProcedure,
@@ -395,8 +415,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
   virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
-  virtual Node<ProgramExistenceAssertionRegion> *
-  AsExistenceAssertion(void) noexcept;
+  virtual Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
@@ -470,8 +489,9 @@ class Node<ProgramVectorLoopRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
-  inline Node(REGION *parent_, ProgramOperation op_)
+  inline Node(unsigned id_, REGION *parent_, ProgramOperation op_)
       : Node<ProgramOperationRegion>(parent_, op_),
+        id(id_),
         defined_vars(this) {}
 
   uint64_t Hash(uint32_t depth) const override;
@@ -486,6 +506,9 @@ class Node<ProgramVectorLoopRegion> final
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
+
+  // ID of this region.
+  const unsigned id;
 
   // Local variables bound to the vector being looped.
   DefList<VAR> defined_vars;
@@ -813,14 +836,13 @@ using PUBLISH = Node<ProgramPublishRegion>;
 
 // Represents a positive or negative existence check.
 template <>
-class Node<ProgramExistenceAssertionRegion> final
+class Node<ProgramTestAndSetRegion> final
     : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
   inline Node(Node<ProgramRegion> *parent_, ProgramOperation op_)
-      : Node<ProgramOperationRegion>(parent_, op_),
-        cond_vars(this) {}
+      : Node<ProgramOperationRegion>(parent_, op_) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -835,14 +857,15 @@ class Node<ProgramExistenceAssertionRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
-  Node<ProgramExistenceAssertionRegion> *
-  AsExistenceAssertion(void) noexcept override;
+  Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept override;
 
-  // Variables associated with these existence checks.
-  UseList<VAR> cond_vars;
+  // The variables are used as `(src_dest OP= update_val) == comapre_val`.
+  UseRef<VAR> accumulator;
+  UseRef<VAR> displacement;
+  UseRef<VAR> comparator;
 };
 
-using ASSERT = Node<ProgramExistenceAssertionRegion>;
+using ASSERT = Node<ProgramTestAndSetRegion>;
 
 // An equi-join between two or more tables.
 template <>
@@ -1119,7 +1142,7 @@ using PROC = Node<ProgramProcedure>;
 template <>
 class Node<ProgramSeriesRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
+  Node(REGION *parent_);
 
   virtual ~Node(void);
 
@@ -1154,7 +1177,7 @@ using SERIES = Node<ProgramSeriesRegion>;
 template <>
 class Node<ProgramParallelRegion> final : public Node<ProgramRegion> {
  public:
-  inline Node(REGION *parent_) : Node<ProgramRegion>(parent_), regions(this) {}
+  Node(REGION *parent_);
 
   virtual ~Node(void);
 
@@ -1227,22 +1250,42 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // It could be the case that a when going through the induction we end up
   // going into a co-mingled induction, as is the case in
-  // `transitive_closure2.dr` and `transitive_closure3.dr`.
-  std::unordered_map<QueryView, UseRef<VECTOR>> view_to_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_input_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_induction_vec;
+  // `transitive_closure2.dr` and `transitive_closure3.dr`. Thus, we have
+  // multiple vectors which must be maintained during an induction.
+
+  // This is the cycle vector, i.e. each iteration of the induction's fixpoint
+  // loop operates on this vector. The init region of an induction fills this
+  // vector.
+  std::unordered_map<QueryView, VECTOR *> view_to_cycle_vec;
+
+  // This is the swap vector. Inside of a fixpoint loop, we swap this with the
+  // normal vector, so that the current iteration of the loop can append to
+  // the normal vector, while still allowing us to iterate over what was added
+  // from the prior iteration of the fixpoint loop.
+  std::unordered_map<QueryView, VECTOR *> view_to_swap_vec;
+
+  // This is the output vector; it accumulates everything from all iterations
+  // of the fixpoint loop.
+  std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
-  std::unordered_map<QueryView, UseList<REGION>> view_to_init_appends;
+  std::vector<OP *> init_appends;
+  std::vector<OP *> cycle_appends;
 
-  PROC *cycle_proc{nullptr};
-  PROC *output_proc{nullptr};
+  std::vector<PARALLEL *> output_cycles;
+  std::vector<PARALLEL *> output_remove_cycles;
+
+  std::vector<PARALLEL *> fixpoint_cycles;
+  std::vector<PARALLEL *> fixpoint_remove_cycles;
 
   enum State {
     kAccumulatingInputRegions,
     kAccumulatingCycleRegions,
     kBuildingOutputRegions
   } state = kAccumulatingInputRegions;
+
+  // Can this induction produce deletions?
+  bool is_differential{false};
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;
@@ -1251,9 +1294,10 @@ class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
 
-  inline explicit ProgramImpl(Query query_)
+  inline explicit ProgramImpl(Query query_, IRFormat format_)
       : User(this),
         query(query_),
+        format(format_),
         query_checkers(this),
         procedure_regions(this),
         series_regions(this),
@@ -1272,6 +1316,9 @@ class ProgramImpl : public User {
 
   // The data flow representation from which this was created.
   const Query query;
+
+  // The format of the IR.
+  const IRFormat format;
 
   // Globally numbers things like procedures, variables, vectors, etc.
   unsigned next_id{0u};
@@ -1293,10 +1340,10 @@ class ProgramImpl : public User {
   // List of variables associated with constants.
   DefList<VAR> const_vars;
 
-  VAR * const zero;
-  VAR * const one;
-  VAR * const false_;
-  VAR * const true_;
+  VAR *const zero;
+  VAR *const one;
+  VAR *const false_;
+  VAR *const true_;
 
   // Maps constants to their global variables.
   std::unordered_map<QueryConstant, VAR *> const_to_var;

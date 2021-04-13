@@ -38,42 +38,41 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
     for (auto col : select.Columns()) {
       const QueryColumn in_col = insert.InputColumns()[*(col.Index())];
       insert_cols.push_back(in_col);
-      parent->col_id_to_var[in_col.Id()] =
-          parent->VariableFor(impl, col);
+      parent->col_id_to_var[in_col.Id()] = parent->VariableFor(impl, col);
     }
 
     const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
         impl, context, parent, insert, insert_cols, table_to_update, insert,
         already_checked);
 
-    COMMENT( check->comment = __FILE__ ": BuildTopDownSelectChecker::call_pred"; )
+    COMMENT(check->comment = __FILE__ ": BuildTopDownSelectChecker::call_pred";)
 
     return check;
   };
 
   // Mark the tuple as absent and return false.
-  auto remove = [&] (REGION *parent) -> REGION * {
+  auto remove = [&](REGION *parent) -> REGION * {
     const auto seq = impl->series_regions.Create(parent);
-    seq->AddRegion(BuildChangeState(
-        impl, model->table, seq, view.Columns(), TupleState::kUnknown,
-        TupleState::kAbsent));
+    seq->AddRegion(BuildChangeState(impl, model->table, seq, view.Columns(),
+                                    TupleState::kUnknown, TupleState::kAbsent));
     seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
     return seq;
   };
 
   const auto region = BuildMaybeScanPartial(
       impl, view, view_cols, model->table, proc,
-      [&](REGION *parent, bool in_scan) -> REGION * {
+      [&](REGION *parent, bool in_loop) -> REGION * {
         if (already_checked != model->table) {
           already_checked = model->table;
+
+          auto continue_or_return = in_loop ? BuildStateCheckCaseNothing
+                                            : BuildStateCheckCaseReturnFalse;
 
           if (view.CanProduceDeletions()) {
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseNothing,
+                BuildStateCheckCaseReturnTrue, continue_or_return,
                 [&](ProgramImpl *, REGION *parent) -> REGION * {
-
                   // No predecessors, and the tuple is marked as unknown, so
                   // change it to absent and return `false` to our caller.
                   if (pred_views.empty()) {
@@ -92,9 +91,8 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
           } else {
             return BuildTopDownCheckerStateCheck(
                 impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue,
-                BuildStateCheckCaseNothing,
-                BuildStateCheckCaseNothing);
+                BuildStateCheckCaseReturnTrue, continue_or_return,
+                continue_or_return);
           }
 
         // No predecessors, not our job to change states; return true to the
@@ -105,7 +103,7 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
           //
           // TODO(pag): This should imply that `already_checked` doesn't match
           //            the parent...
-          if (in_scan) {
+          if (in_loop) {
 
             // TODO(pag): Finding it in a scan with no predecessors ought to
             //            mean that there is no way for that data to be deleted.
@@ -126,7 +124,9 @@ void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
           //            a RECEIVE of a message.
           } else {
             auto ret = BuildStateCheckCaseReturnFalse(impl, parent);
-            COMMENT( ret->comment = __FILE__ ": BuildTopDownSelectChecker, not in scan, no preds, already checked"; )
+            COMMENT(
+                ret->comment = __FILE__
+                ": BuildTopDownSelectChecker, not in scan, no preds, already checked";)
             return ret;
           }
 

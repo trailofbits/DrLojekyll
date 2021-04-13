@@ -25,7 +25,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto cols = insert.InputColumns();
 
   DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
+  TABLE *const table = model->table;
 
   if (table) {
     if (table != last_table) {
@@ -48,22 +48,37 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   // This insert represents a message publication.
   if (insert.IsStream()) {
     assert(!view.SetCondition());  // TODO(pag): Is this possible?
-    auto stream = insert.Stream();
-    assert(stream.IsIO());
-    auto io = QueryIO::From(stream);
+    auto io = QueryIO::From(insert.Stream());
+    auto message = ParsedMessage::From(io.Declaration());
 
-    const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
-        parent, ParsedMessage::From(io.Declaration()));
-    parent->body.Emplace(parent, message_publish);
+    // There's an accumulation vector, add it in.
+    if (const auto pub_vec = context.publish_vecs[message];
+        pub_vec != nullptr) {
 
-    for (auto col : cols) {
-      const auto var = parent->VariableFor(impl, col);
-      message_publish->arg_vars.AddUse(var);
+      auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          parent, ProgramOperation::kAppendToMessageOutputVector);
+      parent->body.Emplace(parent, append);
+      append->vector.Emplace(append, pub_vec);
+
+      for (auto col : insert.InputColumns()) {
+        append->tuple_vars.AddUse(append->VariableFor(impl, col));
+      }
+
+    // No accumulation vector, publish right now.
+    } else {
+      const auto message_publish =
+          impl->operation_regions.CreateDerived<PUBLISH>(parent, message);
+      parent->body.Emplace(parent, message_publish);
+
+      for (auto col : cols) {
+        const auto var = parent->VariableFor(impl, col);
+        message_publish->arg_vars.AddUse(var);
+      }
     }
 
   // Inserting into a relation.
   } else if (insert.IsRelation()) {
-    BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                                last_table);
 
   } else {
@@ -75,130 +90,54 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 // that backs this INSERT is somehow subject to differential updates, e.g.
 // because it is downstream from an aggregate or kvindex.
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
-                                 QueryView view, PROC *proc,
-                                 TABLE *already_checked) {
+                                 QueryView view, OP *parent_,
+                                 TABLE *already_removed_) {
+  auto [parent, table, already_removed] =
+      InTryMarkUnknown(impl, view, parent_, already_removed_);
+
   const auto insert = QueryInsert::From(view);
   const auto insert_cols = insert.InputColumns();
+  (void) insert_cols;
 
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  REGION *parent = proc;
-  UseRef<REGION> *parent_body = &(proc->body);
-
-  // This insert is associated with persistent storage. It could be an insert
-  // into a relation or a stream; in the stream case, it just means the insert
-  // shares its data model with its predecessor.
-  if (model->table) {
-
-    // The caller didn't already do a state transition, so we have to do it.
-    if (already_checked != model->table) {
-      auto remove = BuildBottomUpTryMarkUnknown(
-          impl, model->table, proc, insert_cols,
-          [&](PARALLEL *par) {
-            const auto let = impl->operation_regions.CreateDerived<LET>(par);
-            par->AddRegion(let);
-            parent = let;
-            parent_body = &(let->body);
-          });
-
-      proc->body.Emplace(proc, remove);
-      already_checked = model->table;
-    }
-
-  // This insert isn't associated with any persistent storage.
-  // It must be a stream.
-  } else {
-    assert(insert.IsStream());
-    already_checked = nullptr;
-  }
-
-  // Figure out which columns of the predecessor we have.
-  const auto predecessors = view.Predecessors();
-  assert(predecessors.size() == 1u);
-  const QueryView pred_view = predecessors[0];
-
-  std::vector<QueryColumn> available_cols;
-  for (auto col : insert_cols) {
-    if (QueryView::Containing(col) == pred_view) {
-      available_cols.push_back(col);
-    }
-  }
-
-  // Sort in order of index, and then unique them.
-  std::sort(available_cols.begin(), available_cols.end(),
-            [] (QueryColumn a, QueryColumn b) {
-              return *(a.Index()) < *(b.Index());
-            });
-  auto it = std::unique(available_cols.begin(), available_cols.end());
-  available_cols.erase(it, available_cols.end());
-
-  const auto checker_proc = GetOrCreateTopDownChecker(
-      impl, context, pred_view, available_cols, model->table);
-
-  // Now call the checker procedure. Unlike in normal checkers, we're doing
-  // a check on `false`.
-  const auto check = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, parent, checker_proc);
-  for (auto col : available_cols) {
-    check->arg_vars.AddUse(parent->VariableFor(impl, col));
-  }
-
-  COMMENT( check->comment = __FILE__ ": CreateBottomUpInsertRemover"; )
-
-  // Now we're inside of the check, and we know for certain this tuple has
-  // been removed because the checker function returned `false`.
-  parent_body->Emplace(parent, check);
-  parent = check;
-  parent_body = &(check->false_body);
-
-  // If were doing a removal to a stream, then we want to publish the removal.
+  // If were doing a removal to a stream, then we want to defer publication
+  // of the removal until later, when we know the thing is truly gone.
   if (insert.IsStream()) {
-    const auto stream = insert.Stream();
-    assert(stream.IsIO());
-    auto io = QueryIO::From(stream);
+    auto io = QueryIO::From(insert.Stream());
+    auto message = ParsedMessage::From(io.Declaration());
 
-    const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
-        parent, ParsedMessage::From(io.Declaration()),
-        ProgramOperation::kPublishMessageRemoval);
+    const auto pub_vec = context.publish_vecs[message];
+    assert(pub_vec != nullptr);
 
-    for (auto col : insert_cols) {
-      const auto var = parent->VariableFor(impl, col);
-      message_publish->arg_vars.AddUse(var);
+    auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+        parent, ProgramOperation::kAppendToMessageOutputVector);
+    parent->body.Emplace(parent, append);
+    append->vector.Emplace(append, pub_vec);
+
+    for (auto col : insert.InputColumns()) {
+      append->tuple_vars.AddUse(append->VariableFor(impl, col));
     }
-
-    parent_body->Emplace(parent, message_publish);
-    parent_body = nullptr;
-    parent = nullptr;
 
   // Otherwise, call our successor removal functions. In this case, we're trying
   // to call the removers associated with every `QuerySelect` node.
   } else {
+
     const auto par = impl->parallel_regions.Create(parent);
-    parent_body->Emplace(parent, par);
-    parent_body = nullptr;
-    parent = par;
+    parent->body.Emplace(parent, par);
+
+    // Make sure that we've already done the checking for these nodes.
+    assert(table != nullptr);
+    assert(already_removed == table);
 
     for (auto succ_view : view.Successors()) {
       assert(succ_view.IsSelect());
 
-      const auto sel_cols = succ_view.Columns();
-      assert(sel_cols.size() == insert_cols.size());
+      assert(succ_view.Columns().size() == insert_cols.size());
 
-      for (auto sel_succ : succ_view.Successors()) {
+      auto let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(let);
 
-        const auto call = impl->operation_regions.CreateDerived<CALL>(
-            impl->next_id++, par,
-            GetOrCreateBottomUpRemover(impl, context, succ_view, sel_succ,
-                                       already_checked));
-
-        for (auto sel_col : sel_cols) {
-          const auto var =
-              proc->VariableFor(impl, insert_cols[*(sel_col.Index())]);
-          assert(var != nullptr);
-          call->arg_vars.AddUse(var);
-        }
-
-        par->AddRegion(call);
-      }
+      BuildEagerRemovalRegions(impl, succ_view, context, let,
+                               succ_view.Successors(), already_removed);
     }
   }
 }
@@ -222,16 +161,15 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
   // predecessor's checker.
   //
   // NOTE(pag): `view_cols` is already expressed in terms of `pred_view`.
-  if (already_checked == model->table ||
-      model->table == pred_model->table) {
-    const auto check = CallTopDownChecker(
+  if (already_checked == model->table || model->table == pred_model->table) {
+    const auto [check, check_call] = CallTopDownChecker(
         impl, context, proc, pred_view, view_cols, pred_view, already_checked);
     proc->body.Emplace(proc, check);
 
-    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker"; )
+    COMMENT(check_call->comment = __FILE__ ": BuildTopDownInsertChecker";)
 
-    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check);
-    check->body.Emplace(check, ret_true);
+    const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
+    check_call->body.Emplace(check_call, ret_true);
     return;
   }
 
@@ -248,26 +186,28 @@ void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
     const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
         impl, context, parent, view, view_cols, table_to_update, pred_view,
         already_checked);
-    COMMENT( check->comment = __FILE__ ": BuildTopDownInsertChecker::call_pred"; )
+    COMMENT(check->comment = __FILE__ ": BuildTopDownInsertChecker::call_pred";)
     return check;
   };
 
   if (view.CanReceiveDeletions()) {
-    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
-        impl, proc, model->table, view_cols,
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-        [&](ProgramImpl *, REGION *parent) -> REGION * {
-          return BuildTopDownTryMarkAbsent(
-              impl, model->table, parent, view_cols,
-              [&](PARALLEL *par) {
-                call_pred(par)->ExecuteAlongside(impl, par);
-              });
-        }));
+    proc->body.Emplace(
+        proc, BuildTopDownCheckerStateCheck(
+                  impl, proc, model->table, view_cols,
+                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
+                  [&](ProgramImpl *, REGION *parent) -> REGION * {
+                    return BuildTopDownTryMarkAbsent(
+                        impl, model->table, parent, view_cols,
+                        [&](PARALLEL *par) {
+                          call_pred(par)->ExecuteAlongside(impl, par);
+                        });
+                  }));
   } else {
-    proc->body.Emplace(proc, BuildTopDownCheckerStateCheck(
-        impl, proc, model->table, view_cols,
-        BuildStateCheckCaseReturnTrue, BuildStateCheckCaseReturnFalse,
-        BuildStateCheckCaseReturnFalse));
+    proc->body.Emplace(
+        proc, BuildTopDownCheckerStateCheck(impl, proc, model->table, view_cols,
+                                            BuildStateCheckCaseReturnTrue,
+                                            BuildStateCheckCaseReturnFalse,
+                                            BuildStateCheckCaseReturnFalse));
   }
 }
 

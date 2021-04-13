@@ -114,6 +114,12 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
 
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " @inline";
+
+  } else if (decl.IsMessage()) {
+    auto message = ParsedMessage::From(decl);
+    if (message.IsDifferential()) {
+      os << " @differential";
+    }
   }
   os << ".";
   return os;
@@ -185,13 +191,16 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
     comma = ", ";
   }
 
+  // If there is something like `!true` or `false` in the clause body, then
+  // it gets marked as being disabled.
+  if (clause.clause.IsDisabled()) {
+    os << comma << "false";
+  }
+
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedClause clause) {
-  if (clause.IsDeletion()) {
-    os << '!';
-  }
   os << ParsedClauseHead(clause);
   if (clause.IsHighlighted()) {
     os << " @highlight";
@@ -216,15 +225,9 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   }
 
   switch (code_.Language()) {
-    case Language::kUnknown:
-      os << '\n';
-      break;
-    case Language::kCxx:
-      os << "c++\n";
-      break;
-    case Language::kPython:
-      os << "python\n";
-      break;
+    case Language::kUnknown: os << '\n'; break;
+    case Language::kCxx: os << "c++\n"; break;
+    case Language::kPython: os << "python\n"; break;
   }
 
   os << code << "\n```.";
@@ -251,21 +254,16 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       os << "\n#foreign " << type.Name() << " ```";
 
       switch (lang) {
-        case Language::kUnknown:
-          break;
-        case Language::kCxx:
-          os << "c++ ";
-          break;
-        case Language::kPython:
-          os << "python ";
-          break;
+        case Language::kUnknown: break;
+        case Language::kCxx: os << "c++ "; break;
+        case Language::kPython: os << "python "; break;
       }
 
       os << code << "```";
 
       if (auto constructor = type.Constructor(lang); constructor) {
-        os << " ```" << constructor->first << '$'
-           << constructor->second << "```";
+        os << " ```" << constructor->first << '$' << constructor->second
+           << "```";
       }
 
       if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
@@ -284,14 +282,9 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
   os << "#constant " << constant.Type() << ' ' << constant.Name() << " ```";
   switch (constant.Language()) {
-    case Language::kUnknown:
-      break;
-    case Language::kCxx:
-      os << "c++ ";
-      break;
-    case Language::kPython:
-      os << "python ";
-      break;
+    case Language::kUnknown: break;
+    case Language::kCxx: os << "c++ "; break;
+    case Language::kPython: os << "python "; break;
   }
 
   os << constant.Constructor() << "```";

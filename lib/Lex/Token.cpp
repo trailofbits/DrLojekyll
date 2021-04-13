@@ -60,8 +60,8 @@ DisplayPosition Token::ErrorPosition(void) const {
     assert(error_line < next_line);
   }
 #endif
-  return DisplayPosition(position.DisplayId(), error_index,
-                         error_line, error_col);
+  return DisplayPosition(position.DisplayId(), error_index, error_line,
+                         error_col);
 }
 
 // Return the range of characters covered by this token. This is an open range
@@ -257,10 +257,10 @@ unsigned Token::IdentifierLength(void) const {
 // for foreign constants.
 ::hyde::TypeKind Token::TypeKind(void) const {
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kTypeASCII:
-    case ::hyde::Lexeme::kTypeUTF8:
-    case ::hyde::Lexeme::kTypeBytes:
-    case ::hyde::Lexeme::kTypeUUID:
+    case ::hyde::Lexeme::kTypeASCII: return ::hyde::TypeKind::kASCII;
+    case ::hyde::Lexeme::kTypeUTF8: return ::hyde::TypeKind::kUTF8;
+    case ::hyde::Lexeme::kTypeBytes: return ::hyde::TypeKind::kBytes;
+    case ::hyde::Lexeme::kTypeUUID: return ::hyde::TypeKind::kUUID;
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
     case ::hyde::Lexeme::kTypeFn:
@@ -268,6 +268,9 @@ unsigned Token::IdentifierLength(void) const {
     case ::hyde::Lexeme::kIdentifierConstant:
     case ::hyde::Lexeme::kIdentifierType:
       return As<lex::IdentifierToken>().Load<::hyde::TypeKind>();
+    case ::hyde::Lexeme::kTypeBoolean:
+    case ::hyde::Lexeme::kLiteralTrue:
+    case ::hyde::Lexeme::kLiteralFalse: return ::hyde::TypeKind::kBoolean;
     default: return ::hyde::TypeKind::kInvalid;
   }
 }
@@ -285,8 +288,7 @@ char Token::InvalidChar(void) const {
 Token Token::AsForeignType(void) const {
   Token ret;
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kIdentifierType:
-      return *this;
+    case ::hyde::Lexeme::kIdentifierType: return *this;
     case ::hyde::Lexeme::kIdentifierAtom:
     case ::hyde::Lexeme::kIdentifierVariable: {
       ret = *this;
@@ -308,8 +310,7 @@ Token Token::AsForeignType(void) const {
 Token Token::AsForeignConstant(::hyde::TypeKind kind) const {
   Token ret;
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kIdentifierConstant:
-      return *this;
+    case ::hyde::Lexeme::kIdentifierConstant: return *this;
     case ::hyde::Lexeme::kIdentifierAtom:
     case ::hyde::Lexeme::kIdentifierVariable: {
       ret = *this;
@@ -384,14 +385,43 @@ Token Token::Synthetic(::hyde::Lexeme lexeme, DisplayRange range) {
   Token ret = {};
   ret.position = range.From();
 
-  auto &basic = ret.As<lex::BasicToken>();
-  basic.Store<::hyde::Lexeme>(lexeme);
-
   int64_t num_lines = 0;
   int64_t num_cols = 0;
+  uint64_t spelling_width = 0;
   if (range.TryComputeDistance(nullptr, &num_lines, &num_cols) && !num_lines &&
       0 < num_cols) {
-    basic.Store<lex::SpellingWidth>(static_cast<uint64_t>(num_cols));
+    spelling_width = static_cast<uint64_t>(num_cols);
+  }
+
+  switch (lexeme) {
+    case Lexeme::kIdentifierUnnamedVariable: {
+      auto &ident = ret.As<lex::IdentifierToken>();
+      ident.Store<::hyde::Lexeme>(Lexeme::kIdentifierUnnamedVariable);
+      ident.Store<lex::SpellingWidth>(spelling_width ? spelling_width : 1u);
+      ident.Store<lex::Id>(1u);  // See `StringPool::Impl::Impl`.
+      ident.Store<::hyde::TypeKind>(TypeKind::kBoolean);
+      break;
+    }
+    case Lexeme::kLiteralFalse:
+    case Lexeme::kLiteralTrue: {
+      auto &ident = ret.As<lex::IdentifierToken>();
+      ident.Store<::hyde::Lexeme>(lexeme);
+      if (spelling_width) {
+        ident.Store<lex::SpellingWidth>(spelling_width);
+      } else {
+        ident.Store<lex::Id>(Lexeme::kLiteralTrue == lexeme ? 4u : 5u);
+      }
+      // See `StringPool::Impl::Impl`.
+      ident.Store<lex::Id>(Lexeme::kLiteralTrue == lexeme ? 3u : 8u);
+      ident.Store<::hyde::TypeKind>(TypeKind::kBoolean);
+      break;
+    }
+    default: {
+      auto &basic = ret.As<lex::BasicToken>();
+      basic.Store<::hyde::Lexeme>(lexeme);
+      basic.Store<lex::SpellingWidth>(spelling_width);
+      break;
+    }
   }
 
   return ret;

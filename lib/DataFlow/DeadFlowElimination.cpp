@@ -62,15 +62,9 @@ bool QueryImpl::EliminateDeadFlows(void) {
       }
     }
 
-    for (DELETE *view : deletes) {
-      if (!view->is_dead && !VIEW::GetIncomingView(view->input_columns)) {
-        derived_from_input.insert(view);  // All inputs are constants.
-      }
-    }
-
     for (NEGATION *view : negations) {
-      if (!view->is_dead && !VIEW::GetIncomingView(view->input_columns,
-                                                   view->attached_columns)) {
+      if (!view->is_dead &&
+          !VIEW::GetIncomingView(view->input_columns, view->attached_columns)) {
         derived_from_input.insert(view);  // All inputs are constants.
       }
     }

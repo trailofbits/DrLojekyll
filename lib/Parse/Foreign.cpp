@@ -23,27 +23,26 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
   std::unique_ptr<Node<ParsedForeignType>> alloc_type;
   Node<ParsedForeignType> *type = nullptr;
 
-  auto set_data =
-      [&] (Node<ParsedForeignType>::Info &info, bool can_override) -> bool {
-        if (!info.can_override) {
-          auto err = context->error_log.Append(scope_range, tok_range);
-          err << "Can't override pre-existing foreign type substitution";
+  auto set_data = [&](Node<ParsedForeignType>::Info &info,
+                      bool can_override) -> bool {
+    if (!info.can_override) {
+      auto err = context->error_log.Append(scope_range, tok_range);
+      err << "Can't override pre-existing foreign type substitution";
 
-          err.Note(info.range)
-              << "Conflicting previous type substitution is here";
-          return false;
-        }
+      err.Note(info.range) << "Conflicting previous type substitution is here";
+      return false;
+    }
 
-        info.can_override = can_override;
-        info.is_present = true;
-        info.range = scope_range;
-        info.code.clear();
-        info.code.insert(info.code.end(), code.begin(), code.end());
-        return true;
-      };
+    info.can_override = can_override;
+    info.is_present = true;
+    info.range = scope_range;
+    info.code.clear();
+    info.code.insert(info.code.end(), code.begin(), code.end());
+    return true;
+  };
 
   // Strip out leading and trailing whitespace.
-  auto fixup_code = [&code] (void) -> bool {
+  auto fixup_code = [&code](void) -> bool {
     while (!code.empty() && (code.front() == ' ' || code.front() == '\n')) {
       code = code.substr(1u);
     }
@@ -59,7 +58,7 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
   Language last_lang = Language::kUnknown;
   Token transparent;
 
-  auto set_transparent = [&] () {
+  auto set_transparent = [&]() {
     type->info[static_cast<unsigned>(last_lang)].is_transparent = true;
     if (last_lang == Language::kUnknown) {
       for (auto &info : type->info) {
@@ -89,8 +88,8 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             found_type = alloc_type.get();
             found_type->name = tok.AsForeignType();
 
-            module->root_module->foreign_types.emplace(
-                tok.IdentifierId(), found_type);
+            module->root_module->foreign_types.emplace(tok.IdentifierId(),
+                                                       found_type);
           }
 
           type = found_type;
@@ -101,7 +100,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           context->error_log.Append(scope_range, tok_range)
               << "Expected atom or variable here for the name of "
               << "the foreign type being declared, got '" << tok << "' instead";
-          return;
+
+          state = 5;
+          report_trailing = false;
+          continue;
         }
 
       case 1:
@@ -113,7 +115,8 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             context->error_log.Append(scope_range, tok_range)
                 << "Empty or invalid C++ code literal in foreign type "
                 << "declaration";
-            return;
+            state = 5;
+            continue;
           }
 
           auto &data = type->info[static_cast<unsigned>(Language::kCxx)];
@@ -155,7 +158,8 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
             continue;
           }
 
-          auto &unk_data = type->info[static_cast<unsigned>(Language::kUnknown)];
+          auto &unk_data =
+              type->info[static_cast<unsigned>(Language::kUnknown)];
           auto &py_data = type->info[static_cast<unsigned>(Language::kPython)];
           auto &cxx_data = type->info[static_cast<unsigned>(Language::kCxx)];
 
@@ -310,7 +314,6 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         } else if (Lexeme::kPuncPeriod == lexeme) {
           state = 4;
           continue;
-
         }
 
         [[clang::fallthrough]];
@@ -327,6 +330,7 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         continue;
 
       case 5:
+
         // absorb any excess tokens
         continue;
     }
@@ -366,7 +370,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
   const_val.range = scope_range;
 
   // Strip out leading and trailing whitespace.
-  auto fixup_code = [&code] (void) -> bool {
+  auto fixup_code = [&code](void) -> bool {
     while (!code.empty() && (code.front() == ' ' || code.front() == '\n')) {
       code = code.substr(1u);
     }
@@ -431,10 +435,12 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
           default:
             context->error_log.Append(scope_range, tok_range)
-                << "Expected foreign type name here, got '" << tok << "' instead";
+                << "Expected foreign type name here, got '" << tok
+                << "' instead";
             return;
         }
 
+      // Name of the foreign constant.
       case 1:
         if (Lexeme::kIdentifierAtom == lexeme ||
             Lexeme::kIdentifierVariable == lexeme ||
@@ -447,10 +453,12 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected atom or variable here for the name of "
-              << "the foreign constant being declared, got '" << tok << "' instead";
+              << "the foreign constant being declared, got '" << tok
+              << "' instead";
           return;
         }
 
+      // Value of the foreign constant.
       case 2:
         if (Lexeme::kLiteralCxxCode == lexeme) {
           const_val.lang = Language::kCxx;
@@ -461,7 +469,9 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             context->error_log.Append(scope_range, tok_range)
                 << "Empty or invalid C++ code literal in foreign constant "
                 << "declaration";
-            return;
+            state = 3;
+            report_trailing = false;
+            continue;
           }
 
         } else if (Lexeme::kLiteralPythonCode == lexeme) {
@@ -522,11 +532,14 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
               continue;
           }
 
+        // Named number; basically like an enumerator.
         } else if (Lexeme::kLiteralNumber == lexeme) {
           switch (const_val.type.UnderlyingKind()) {
             case TypeKind::kASCII:
             case TypeKind::kBytes:
             case TypeKind::kUTF8:
+            case TypeKind::kUUID:
+            case TypeKind::kBoolean:
               context->error_log.Append(scope_range, tok_range)
                   << "Cannot initialize named constant of built-in type '"
                   << const_val.type.SpellingRange() << "' with number literal";
@@ -535,6 +548,24 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
               continue;
 
             default:
+              const_val.lang = Language::kUnknown;
+              context->display_manager.TryReadData(tok_range, &code);
+              break;
+          }
+
+        // Named Boolean; a bit weird, but maybe people want `yes` and `no`.
+        } else if (Lexeme::kLiteralTrue == lexeme ||
+                   Lexeme::kLiteralFalse == lexeme) {
+          switch (const_val.type.UnderlyingKind()) {
+            default:
+              context->error_log.Append(scope_range, tok_range)
+                  << "Cannot initialize named constant of built-in type '"
+                  << const_val.type.SpellingRange() << "' with Boolean literal";
+              state = 3;
+              report_trailing = false;
+              continue;
+
+            case TypeKind::kBoolean:
               const_val.lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
@@ -572,6 +603,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
         continue;
 
       case 5:
+
         // absorb any excess tokens
         continue;
     }
@@ -631,8 +663,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
         auto err = context->error_log.Append(scope_range, tok_range);
         err << "Can't override pre-existing foreign constant";
 
-        err.Note(prev_const->range)
-            << "Conflicting previous constant is here";
+        err.Note(prev_const->range) << "Conflicting previous constant is here";
         return;
       }
     }

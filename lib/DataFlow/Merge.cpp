@@ -68,8 +68,9 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 // views might be the same.
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
-bool Node<QueryMerge>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
+                                    const OptimizationContext &opt,
+                                    const ErrorLog &) {
 
   if (is_dead) {
     is_canonical = true;
@@ -88,9 +89,9 @@ bool Node<QueryMerge>::Canonicalize(
     }
   }
 
-  if (is_canonical) {
-    return false;
-  }
+  //  if (is_canonical) {
+  //    return false;
+  //  }
 
   bool non_local_changes = false;
   is_canonical = true;
@@ -119,6 +120,7 @@ bool Node<QueryMerge>::Canonicalize(
     // before then that could affect `VIEW::OnlyUser()`.
     const auto end = seen.end();
     if (std::find(seen.begin(), end, view) != end) {
+      is_canonical = false;
       non_local_changes = true;
       continue;
     }
@@ -132,6 +134,7 @@ bool Node<QueryMerge>::Canonicalize(
       // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
         non_local_changes = true;
+        is_canonical = false;
         work_list.push_back(tuple_source);
 
       } else {
@@ -144,9 +147,9 @@ bool Node<QueryMerge>::Canonicalize(
     } else if (auto merge = view->AsMerge();
                merge && !merge->sets_condition &&
                merge->positive_conditions.Empty() &&
-               merge->negative_conditions.Empty() &&
-               merge->OnlyUser()) {
+               merge->negative_conditions.Empty() && merge->OnlyUser()) {
 
+      is_canonical = false;
       non_local_changes = true;
       for (auto i = merge->merged_views.Size(); i;) {
         work_list.push_back(merge->merged_views[--i]);
@@ -285,7 +288,7 @@ bool Node<QueryMerge>::Canonicalize(
     // We have at least one set of views that look similar are thus might
     // be mergeable.
     for (auto &[kind_name, similar_views] : grouped_views) {
-      VIEW * const first_view = similar_views[0];
+      VIEW *const first_view = similar_views[0];
       if (first_view->AsTuple()) {
         if (SinkThroughTuples(query, similar_views)) {
           changed = true;
@@ -328,8 +331,8 @@ done:
 // wider than the tuple itself, hence the returned tuple).
 // Returns `true` if successful, and updates `tuples` in place with the
 // new merged entries.
-bool Node<QueryMerge>::SinkThroughTuples(
-    QueryImpl *impl, std::vector<VIEW *> &inout_views) {
+bool Node<QueryMerge>::SinkThroughTuples(QueryImpl *impl,
+                                         std::vector<VIEW *> &inout_views) {
 
   VIEW *first_tuple_pred = nullptr;
   TUPLE *first_tuple = nullptr;
@@ -381,7 +384,8 @@ bool Node<QueryMerge>::SinkThroughTuples(
       if (next_tuple_input_col->IsConstant()) {
         goto skip_to_next_tuple;
       } else {
-        assert(!next_tuple_pred || next_tuple_pred == next_tuple_input_col->view);
+        assert(!next_tuple_pred ||
+               next_tuple_pred == next_tuple_input_col->view);
         next_tuple_pred = next_tuple_input_col->view;
       }
     }
@@ -404,8 +408,8 @@ bool Node<QueryMerge>::SinkThroughTuples(
     // Make sure that `first_tuple` and `next_tuple` take their inputs from
     // the same indexed columns of their predecessors.
     for (auto j = 0u; j < num_cols; ++j) {
-      COL * const first_tuple_col = first_tuple->input_columns[j];
-      COL * const next_tuple_col = next_tuple->input_columns[j];
+      COL *const first_tuple_col = first_tuple->input_columns[j];
+      COL *const next_tuple_col = next_tuple->input_columns[j];
 
       if (first_tuple_col->Index() != next_tuple_col->Index()) {
         goto count_and_skip_to_next_tuple;
@@ -423,8 +427,8 @@ bool Node<QueryMerge>::SinkThroughTuples(
       sunk_merge->color = color;
       for (auto j = 0u; j < num_pred_cols; ++j) {
         const auto first_tuple_pred_col = first_tuple_pred->columns[j];
-        sunk_merge->columns.Create(
-            first_tuple_pred_col->var, sunk_merge, first_tuple_pred_col->id, j);
+        sunk_merge->columns.Create(first_tuple_pred_col->var, sunk_merge,
+                                   first_tuple_pred_col->id, j);
       }
 
       // Now create the merged tuple that will select only the columns of
@@ -434,8 +438,8 @@ bool Node<QueryMerge>::SinkThroughTuples(
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_tuple_col = first_tuple->columns[j];
         const auto first_tuple_pred_col = first_tuple->input_columns[j];
-        (void) merged_tuple->columns.Create(
-            first_tuple_col->var, merged_tuple, first_tuple_col->id, j);
+        (void) merged_tuple->columns.Create(first_tuple_col->var, merged_tuple,
+                                            first_tuple_col->id, j);
 
         // Select in the correct column from the sunken merge to pass into
         // the final tuple.
@@ -490,8 +494,8 @@ done:
 // Convert two or more MAPs into a single MAP that reads its data from
 // a union, where that union reads its data from the sources of the two
 // MAPs.
-bool Node<QueryMerge>::SinkThroughMaps(
-    QueryImpl *impl, std::vector<VIEW *> &inout_views) {
+bool Node<QueryMerge>::SinkThroughMaps(QueryImpl *impl,
+                                       std::vector<VIEW *> &inout_views) {
 
   VIEW *first_map_pred = nullptr;
   MAP *first_map = nullptr;
@@ -507,24 +511,24 @@ bool Node<QueryMerge>::SinkThroughMaps(
 
   // Create a TUPLE that will package up the inputs and attached columns to
   // `map`.
-  auto proxy_inputs = [&] (MAP *map) -> TUPLE * {
+  auto proxy_inputs = [&](MAP *map) -> TUPLE * {
     const auto input_tuple_for_map = impl->tuples.Create();
     input_tuple_for_map->color = color;
     auto col_index = 0u;
 
     for (auto j = 0u; j < num_input_cols; ++j) {
       const auto orig_input_col = map->input_columns[j];
-      input_tuple_for_map->columns.Create(
-          orig_input_col->var, input_tuple_for_map, orig_input_col->id,
-          col_index++);
+      input_tuple_for_map->columns.Create(orig_input_col->var,
+                                          input_tuple_for_map,
+                                          orig_input_col->id, col_index++);
       input_tuple_for_map->input_columns.AddUse(orig_input_col);
     }
 
     for (auto j = 0u; j < num_attached_cols; ++j) {
       const auto orig_attached_col = map->attached_columns[j];
-      input_tuple_for_map->columns.Create(
-          orig_attached_col->var, input_tuple_for_map, orig_attached_col->id,
-          col_index++);
+      input_tuple_for_map->columns.Create(orig_attached_col->var,
+                                          input_tuple_for_map,
+                                          orig_attached_col->id, col_index++);
       input_tuple_for_map->input_columns.AddUse(orig_attached_col);
     }
 
@@ -576,8 +580,8 @@ bool Node<QueryMerge>::SinkThroughMaps(
       sunk_merge->color = color;
       for (auto j = 0u; j < (num_input_cols + num_attached_cols); ++j) {
         const auto first_tuple_pred_col = first_map_input_tuple->columns[j];
-        sunk_merge->columns.Create(
-            first_tuple_pred_col->var, sunk_merge, first_tuple_pred_col->id, j);
+        sunk_merge->columns.Create(first_tuple_pred_col->var, sunk_merge,
+                                   first_tuple_pred_col->id, j);
       }
 
       // Now create the merged MAP that will operate on the sunken MERGE.
@@ -586,8 +590,8 @@ bool Node<QueryMerge>::SinkThroughMaps(
       merged_map->color = color;
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_map_col = first_map->columns[j];
-        (void) merged_map->columns.Create(
-            first_map_col->var, merged_map, first_map_col->id, j);
+        (void) merged_map->columns.Create(first_map_col->var, merged_map,
+                                          first_map_col->id, j);
       }
 
       // The sunken merge's first set of columns are the input columns to the

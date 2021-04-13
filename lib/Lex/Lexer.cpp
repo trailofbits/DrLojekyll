@@ -452,8 +452,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Pragmas.
     case '@': {
-      accumulate_if(
-          [](char next_ch) { return kStopChars.find(next_ch) == std::string::npos; });
+      accumulate_if([](char next_ch) {
+        return kStopChars.find(next_ch) == std::string::npos;
+      });
       if (impl->data == "@highlight") {
         auto &basic = ret.As<lex::BasicToken>();
         basic.Store<Lexeme>(Lexeme::kPragmaDebugHighlight);
@@ -484,10 +485,16 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaPerfTransparent);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
+      } else if (impl->data == "@differential") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaDifferential);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);
-        error.Store<char>(impl->data.size() == 1u ? impl->data[1] : impl->data[0]);
+        error.Store<char>(impl->data.size() == 1u ? impl->data[1]
+                                                  : impl->data[0]);
         error.Store<lex::ErrorIndexDisp>(1u);
         error.Store<lex::ErrorLineDisp>(0);
         error.Store<lex::ErrorColumn>(ret.position.Column() + 1u);
@@ -577,8 +584,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       }
 
       switch (impl->data.size()) {
-        case 1:
-          break;
+        case 1: break;
 
         case 2:
           if (impl->data == "i8") {
@@ -647,6 +653,14 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           } else if (impl->data == "bool") {
             tentative_lexeme = Lexeme::kTypeBoolean;
             tentative_type_kind = TypeKind::kBoolean;
+
+          } else if (impl->data == "true") {
+            auto &ident = ret.As<lex::IdentifierToken>();
+            ident.Store<Lexeme>(Lexeme::kLiteralTrue);
+            ident.Store<lex::SpellingWidth>(4u);
+            ident.Store<lex::Id>(string_pool.LiteralTrueId());
+            ident.Store<TypeKind>(TypeKind::kBoolean);
+            return true;
           }
           break;
         case 5:
@@ -661,6 +675,13 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             tentative_lexeme = Lexeme::kTypeBytes;
             tentative_type_kind = TypeKind::kBytes;
 
+          } else if (impl->data == "false") {
+            auto &ident = ret.As<lex::IdentifierToken>();
+            ident.Store<Lexeme>(Lexeme::kLiteralFalse);
+            ident.Store<lex::SpellingWidth>(5u);
+            ident.Store<lex::Id>(string_pool.LiteralFalseId());
+            ident.Store<TypeKind>(TypeKind::kBoolean);
+            return true;
           }
           break;
         case 6:
@@ -678,9 +699,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
             } else if (impl->data == "#import") {
               tentative_lexeme = Lexeme::kHashImportModuleStmt;
-
             }
-
           } else if (impl->data == "summary") {
             tentative_lexeme = Lexeme::kKeywordSummary;
 
@@ -762,7 +781,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         // A normal unnamed variable.
         if (1u == impl->data.size()) {
           ident.Store<lex::SpellingWidth>(1u);  // Length of `_`.
-          ident.Store<lex::Id>(1u);  // See `DisplayManager::Impl::Impl`.
+          ident.Store<lex::Id>(string_pool.UnderscoreId());
 
         // A "named" unnamed variable, e.g. `_foo`. Re-uses of the same unnamed
         // variable, even within the same clause, are treated as distinct.
@@ -828,8 +847,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           auto &error = ret.As<lex::ErrorToken>();
           const auto error_pos = impl->reader.CurrentPosition();
           error.Store<Lexeme>(Lexeme::kInvalidNumber);
-          error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
-          error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
+          error.Store<lex::ErrorIndexDisp>(error_pos.Index() -
+                                           ret.position.Index());
+          error.Store<lex::ErrorLineDisp>(error_pos.Line() -
+                                          ret.position.Line());
           error.Store<lex::ErrorColumn>(error_pos.Column());
 
           accumulate_if([](char next_ch) {

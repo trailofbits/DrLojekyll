@@ -6,6 +6,50 @@
 
 namespace hyde {
 
+// Ensure that every INSERT view is preceded by a TUPLE. This makes a bunch
+// of things easier downstream in the control-flow IR generation, because
+// then the input column indices of an insert line up perfectly with the
+// SELECTs and such.
+void QueryImpl::ProxyInsertsWithTuples(void) {
+  for (auto view : inserts) {
+    auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+
+    //    // If the incoming view has a different number of columns then we need
+    //    // to proxy.
+    //    auto needs_proxy = incoming_view->columns.Size() !=
+    //                       view->input_columns.Size();
+    //
+    //    // If the incoming view's columns aren't perfectly forwarded then we need
+    //    // to proxy.
+    //    auto i = 0u;
+    //    for (auto in_col : view->input_columns) {
+    //      if (in_col->view != incoming_view || in_col->Index() != i) {
+    //        needs_proxy = true;
+    //        break;
+    //      }
+    //      ++i;
+    //    }
+    //
+    //    if (!needs_proxy) {
+    //      continue;
+    //    }
+
+    TUPLE *const proxy = tuples.Create();
+    proxy->color = incoming_view->color;
+    proxy->can_receive_deletions = incoming_view->can_produce_deletions;
+    proxy->can_produce_deletions = proxy->can_receive_deletions;
+
+    proxy->input_columns.Swap(view->input_columns);
+
+    auto i = 0u;
+    for (auto in_col : proxy->input_columns) {
+      COL *const out_col =
+          proxy->columns.Create(in_col->var, proxy, in_col->id, i++);
+      view->input_columns.AddUse(out_col);
+    }
+  }
+}
+
 // Link together views in terms of predecessors and successors.
 void QueryImpl::LinkViews(void) {
 
@@ -48,8 +92,8 @@ void QueryImpl::LinkViews(void) {
 
   for (auto view : negations) {
     assert(!view->is_dead);
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                   view->attached_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
@@ -147,15 +191,6 @@ void QueryImpl::LinkViews(void) {
   for (auto view : inserts) {
     assert(!view->is_dead);
     assert(view->columns.Empty());
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
-        incoming_view) {
-      view->predecessors.AddUse(incoming_view);
-      incoming_view->successors.AddUse(view);
-    }
-  }
-
-  for (auto view : deletes) {
-    assert(!view->is_dead);
     if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);

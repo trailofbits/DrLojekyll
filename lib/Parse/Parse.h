@@ -330,6 +330,10 @@ class Node<ParsedClause> {
   // this particular clause.
   Token product;
 
+  // If there's a `false` or a `!true` in the body of the clause, then we mark
+  // this clause as being disabled by this token.
+  DisplayRange disabled_by;
+
   // Variables used in this clause.
   std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
   std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;
@@ -378,9 +382,6 @@ class Node<ParsedDeclaration> {
   // Return a list of clauses associated with this declaration.
   NodeRange<ParsedClause> Clauses(void) const;
 
-  // Return a list of clauses associated with this declaration.
-  NodeRange<ParsedClause> DeletionClauses(void) const;
-
   // Return a list of positive uses of this definition.
   NodeRange<ParsedPredicate> PositiveUses(void) const;
 
@@ -408,6 +409,7 @@ class Node<ParsedDeclaration> {
   Token range_end_opt;
   FunctorRange range{FunctorRange::kZeroOrMore};
   Token inline_attribute;
+  Token differential_attribute;
   Token last_tok;
 
   // Is this decl a functor, and if so, does it have `aggregate`- and
@@ -479,7 +481,6 @@ class Node<ParsedImport> {
 template <>
 class Node<ParsedForeignConstant> {
  public:
-
   // The next foreign constant defined on this type for a particular language.
   Node<ParsedForeignConstant> *next{nullptr};
   Node<ParsedForeignConstant> *next_with_same_name{nullptr};
@@ -496,7 +497,6 @@ class Node<ParsedForeignConstant> {
 template <>
 class Node<ParsedForeignType> {
  public:
-
   // The next foreign type anywhere in the parse.
   Node<ParsedForeignType> *next{nullptr};
 

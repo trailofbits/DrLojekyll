@@ -32,7 +32,8 @@ static OutputStream &Type(OutputStream &os, ParsedModule module,
   return Type(os, module, var.Type().Kind());
 }
 
-static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) {
+static void DefineTable(OutputStream &os, ParsedModule module,
+                        DataTable table) {
   os << os.Indent() << "create " << table;
   os.PushIndent();
   for (auto col : table.Columns()) {
@@ -104,10 +105,13 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
   switch (vec.Kind()) {
     case VectorKind::kParameter: os << "$input"; break;
     case VectorKind::kInputOutputParameter: os << "$inout"; break;
-    case VectorKind::kInduction: os << "$induction"; break;
+    case VectorKind::kInductionCycles: os << "$induction_cycle"; break;
+    case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kTableScan: os << "$scan"; break;
+    case VectorKind::kMessageOutputs: os << "$publish"; break;
+    case VectorKind::kEmpty: os << "$empty"; break;
   }
 
   os << ':' << vec.Id();
@@ -135,7 +139,17 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
 
 OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region) {
   auto message = region.Message();
-  os << os.Indent() << "publish " << message.Name() << '/' << message.Arity();
+  os << os.Indent() << "publish ";
+
+  if (message.IsDifferential()) {
+    if (region.IsRemoval()) {
+      os << "remove ";
+    } else {
+      os << "add ";
+    }
+  }
+
+  os << message.Name() << '/' << message.Arity();
   auto sep = "(";
   auto end = "";
   for (auto arg : region.VariableArguments()) {
@@ -222,36 +236,30 @@ OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os,
-                         ProgramExistenceAssertionRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
   os << os.Indent();
+
+  const auto acc = region.Accumulator();
+  const auto disp = region.Displacement();
+  const auto cmp = region.Comparator();
+
   if (auto maybe_body = region.Body(); maybe_body) {
-    auto end = " result is 1\n";
-    auto sep = "if increment ";
-    if (region.IsDecrement()) {
-      sep = "if decrement ";
-      end = " result is 0\n";
-    }
+    if (region.IsAdd()) {
+      os << "if (" << acc << " += " << disp << ") == " << cmp << '\n';
 
-    for (auto var : region.ReferenceCounts()) {
-      os << sep << var;
-      sep = ", ";
+    } else if (region.IsSubtract()) {
+      os << "if (" << acc << " -= " << disp << ") == " << cmp << '\n';
     }
-
-    os << end;
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
 
   } else {
-    auto sep = "increment ";
-    if (region.IsDecrement()) {
-      sep = "decrement ";
-    }
+    if (region.IsAdd()) {
+      os << acc << " += " << disp << '\n';
 
-    for (auto var : region.ReferenceCounts()) {
-      os << sep << var;
-      sep = ", ";
+    } else if (region.IsSubtract()) {
+      os << acc << " -= " << disp << '\n';
     }
   }
 
@@ -574,10 +582,15 @@ OutputStream &operator<<(OutputStream &os, ProgramTableScanRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramInductionRegion region) {
   os << os.Indent() << "induction\n";
   os.PushIndent();
-  os << os.Indent() << "init\n";
-  os.PushIndent();
-  os << region.Initializer() << '\n';
-  os.PopIndent();
+  if (auto init = region.Initializer(); init) {
+    os << os.Indent() << "init\n";
+    os.PushIndent();
+    os << *init << '\n';
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-init\n";
+  }
+
   os << os.Indent() << "fixpoint-loop testing ";
 
   auto sep = "";
@@ -647,7 +660,7 @@ class FormatDispatcher final : public ProgramVisitor {
 
   MAKE_VISITOR(ProgramCallRegion)
   MAKE_VISITOR(ProgramReturnRegion)
-  MAKE_VISITOR(ProgramExistenceAssertionRegion)
+  MAKE_VISITOR(ProgramTestAndSetRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
@@ -685,6 +698,8 @@ OutputStream &operator<<(OutputStream &os, ProgramRegion region) {
 OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
     case ProcedureKind::kInitializer: os << "^init:"; break;
+    case ProcedureKind::kEntryDataFlowFunc: os << "^entry:"; break;
+    case ProcedureKind::kPrimaryDataFlowFunc: os << "^flow:"; break;
     case ProcedureKind::kMessageHandler:
       os << "^receive:";
       if (auto message = proc.Message(); message) {
@@ -694,7 +709,8 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
     case ProcedureKind::kTupleFinder: os << "^find:"; break;
     case ProcedureKind::kTupleRemover: os << "^remove:"; break;
     case ProcedureKind::kInductionCycleHandler:
-      os << "^induction_cycle:"; break;
+      os << "^induction_cycle:";
+      break;
     case ProcedureKind::kInductionOutputHandler: os << "^induction_out:"; break;
   }
   os << proc.Id();
@@ -707,8 +723,7 @@ OutputStream &operator<<(OutputStream &os, Program program) {
 
   const auto module = program.ParsedModule();
   for (auto var : program.Constants()) {
-    os << sep << os.Indent() << "const " << Type(os, module, var) << ' '
-       << var;
+    os << sep << os.Indent() << "const " << Type(os, module, var) << ' ' << var;
     switch (var.DefiningRole()) {
       case VariableRole::kConstantZero: os << " = 0"; break;
       case VariableRole::kConstantOne: os << " = 1"; break;

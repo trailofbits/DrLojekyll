@@ -6,6 +6,12 @@
 
 namespace hyde {
 
+Node<ProgramSeriesRegion>::Node(REGION *parent_)
+    : Node<ProgramRegion>(parent_),
+      regions(this) {
+  assert(parent_->Ancestor()->AsProcedure());
+}
+
 Node<ProgramSeriesRegion>::~Node(void) {}
 
 Node<ProgramSeriesRegion> *Node<ProgramSeriesRegion>::AsSeries(void) noexcept {

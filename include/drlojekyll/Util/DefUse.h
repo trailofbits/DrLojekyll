@@ -486,6 +486,68 @@ class Def {
     }
   }
 
+  template <typename U, typename CB>
+  void ReplaceUsesWithIf(T *that, CB cond) {
+    if (self == that->self) {
+      return;
+    }
+
+    // Migrate the weak uses; we don't actually own them.
+    std::vector<Use<T> *> new_weak_uses;
+    for (Use<T> *weak_use : weak_uses) {
+      if (weak_use && weak_use->user) {
+        assert(weak_use->def_being_used == self);
+        if (auto user = dynamic_cast<U *>(weak_use->user);
+            user && cond(user, weak_use->def_being_used)) {
+          weak_use->def_being_used = that->self;
+          that->weak_uses.push_back(weak_use);
+        } else {
+          new_weak_uses.push_back(weak_use);
+        }
+      } else {
+        new_weak_uses.push_back(weak_use);
+      }
+    }
+
+    new_weak_uses.swap(weak_uses);
+    new_weak_uses.clear();
+
+    auto i = that->uses.size();
+
+    std::vector<std::unique_ptr<Use<T>>> new_uses;
+
+    // First, move the uses into the target's use list.
+    for (auto &use : uses) {
+      if (auto user = dynamic_cast<U *>(use->user);
+          user && cond(user, use->def_being_used)) {
+
+        if (const auto use_val = use.release(); use_val) {
+          use_val->def_being_used = that->self;
+          that->uses.emplace_back(use_val);
+        }
+
+      } else {
+        new_uses.emplace_back(std::move(use));
+      }
+    }
+
+    new_uses.swap(uses);
+    new_uses.clear();
+
+    // Now, go through all those moved uses (in the target's use list), and
+    // tell all the users that there's been a strong update.
+    //
+    // NOTE(pag): We assume that `Update` does not end up triggering any
+    //            use removals.
+    const auto max_i = that->uses.size();
+    const auto time = User::gNextTimestamp++;
+    for (; i < max_i; ++i) {
+      if (Use<T> *use_val = that->uses[i].get(); use_val) {
+        use_val->user->Update(time);
+      }
+    }
+  }
+
   T *operator->(void) const noexcept {
     return self;
   }
@@ -620,6 +682,7 @@ class UseRef {
   }
 
   void Emplace(User *user, T *def) {
+    assert(def != nullptr);
     SelfT(user, def).Swap(*this);
   }
 

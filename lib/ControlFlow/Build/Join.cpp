@@ -10,7 +10,7 @@ class ContinueJoinWorkItem final : public WorkItem {
   virtual ~ContinueJoinWorkItem(void) {}
 
   ContinueJoinWorkItem(Context &context, QueryView view_)
-      : WorkItem(context, view_.Depth()),
+      : WorkItem(context, (view_.Depth() << kOrderShift) + kConitnueJoinOrder),
         view(view_) {}
 
   // Find the common ancestor of all insert regions.
@@ -42,7 +42,13 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
     common_ancestor = proc->body.get();
   }
 
-  return common_ancestor->NearestRegionEnclosedByInduction();
+  // NOTE(pag): We *CAN'T* go any higher than `common_ancestor`, because then
+  //            we might accidentally "capture" the vector appends for an
+  //            unrelated induction, thereby introducing super weird ordering
+  //            problems where an induction A is contained in the init region
+  //            of an induction B, and B's fixpoint cycle region appends to
+  //            A's induction vector.
+  return common_ancestor;
 }
 
 // Build a join region given a JOIN view and a pivot vector.
@@ -102,10 +108,10 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
       }
     }
 
-    DataModel * const pred_model = \
+    DataModel *const pred_model =
         impl->view_to_model[pred_view]->FindAs<DataModel>();
-    TABLE * const pred_table = pred_model->table;
-    TABLEINDEX * const pred_index =
+    TABLE *const pred_table = pred_model->table;
+    TABLEINDEX *const pred_index =
         pred_table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
     join->tables.AddUse(pred_table);
     join->indices.AddUse(pred_index);
@@ -220,20 +226,57 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     std::vector<QueryColumn> view_cols(view.Columns().begin(),
                                        view.Columns().end());
 
+    // Map the JOIN's output variables to its inputs so that we can do the state
+    // checks below.
+    view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                        std::optional<QueryColumn> out_col) {
+      if (out_col) {
+        parent->col_id_to_var[in_col.Id()] =
+            parent->VariableFor(impl, *out_col);
+      }
+    });
+
     // Call the predecessors. If any of the predecessors return `false` then
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
-      const auto index_is_good = CallTopDownChecker(
-          impl, context, parent, view, view_cols, pred_view, nullptr);
 
-      COMMENT( index_is_good->comment = __FILE__ ": ContinueJoinWorkItem::Run"; )
+      if (!pred_view.CanProduceDeletions()) {
+        continue;
+      }
 
-      parent->body.Emplace(parent, index_is_good);
-      parent = index_is_good;
+      // NOTE(pag): All views leading into a JOIN are always backed by a table.
+      DataModel *const pred_model =
+          impl->view_to_model[pred_view]->FindAs<DataModel>();
+      TABLE *const pred_table = pred_model->table;
+      assert(pred_table != nullptr);
+
+      // Check to see if the data is present. If it's not (either absent or
+      // unknown), then our assumption is that we are in some kind of inductive
+      // loop and it will eventually be proven in the forward direction.
+      OP *parent_out = nullptr;
+      CHECKSTATE *const check = BuildTopDownCheckerStateCheck(
+          impl, parent, pred_table, pred_view.Columns(),
+          [&parent_out](ProgramImpl *impl_, REGION *in_check) {
+            parent_out = impl_->operation_regions.CreateDerived<LET>(in_check);
+            return parent_out;
+          },
+          BuildStateCheckCaseNothing, BuildStateCheckCaseNothing);
+
+      parent->body.Emplace(parent, check);
+      parent = parent_out;
+
+      //      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
+      //          impl, context, parent, view, view_cols, pred_view, nullptr);
+      //
+      //      COMMENT( index_is_good_call->comment =
+      //          __FILE__ ": ContinueJoinWorkItem::Run"; )
+      //
+      //      parent->body.Emplace(parent, index_is_good);
+      //      parent = index_is_good_call;
     }
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              nullptr);
 }
 
@@ -244,22 +287,24 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                           QueryJoin view, Context &context, OP *parent,
                           TABLE *last_table) {
 
-  DataModel *const pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
-  TABLE * const pred_table = pred_model->table;
+  DataModel *const pred_model =
+      impl->view_to_model[pred_view]->FindAs<DataModel>();
+  TABLE *const pred_table = pred_model->table;
 
   // First, check if we should push this tuple through the JOIN. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.
   if (pred_table != last_table) {
 
-    parent = BuildInsertCheck(impl, pred_view, context, parent, pred_table,
-                              pred_view.CanProduceDeletions(),
-                              pred_view.Columns());
+    parent =
+        BuildInsertCheck(impl, pred_view, context, parent, pred_table,
+                         pred_view.CanProduceDeletions(), pred_view.Columns());
     last_table = pred_table;
   }
 
-  auto &action = context.view_to_work_item[{parent->containing_procedure,
-                                            view.UniqueId()}];
+  auto &action =
+      context
+          .view_to_work_item[{parent->containing_procedure, view.UniqueId()}];
   if (!action) {
     action = new ContinueJoinWorkItem(context, view);
     context.work_list.emplace_back(action);
@@ -352,11 +397,11 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
     //            the original is preserved.
     auto view_cols_copy = view_cols;
 
-    seq->AddRegion(BuildMaybeScanPartial(
-        impl, view, view_cols_copy, model->table, seq,
-        [&](REGION *parent, bool) -> REGION * {
-          return add_to_pivot_vec(parent);
-        }));
+    seq->AddRegion(BuildMaybeScanPartial(impl, view, view_cols_copy,
+                                         model->table, seq,
+                                         [&](REGION *parent, bool) -> REGION * {
+                                           return add_to_pivot_vec(parent);
+                                         }));
 
   // Worst-case, but really not so bad. The JOIN itself doesn't have a data
   // model. We don't yet have all the pivots. We know, however, that all
@@ -472,14 +517,15 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
       continue;
     }
 
-    const auto one_is_bad = CallTopDownChecker(
+    const auto [one_is_bad, one_is_bad_call] = CallTopDownChecker(
         impl, context, par, view, view_cols, pred_view, already_checked);
 
-    COMMENT( one_is_bad->comment = __FILE__ ": BuildTopDownJoinChecker"; )
-
-    const auto ret_false = BuildStateCheckCaseReturnFalse(impl, one_is_bad);
-    one_is_bad->false_body.Emplace(one_is_bad, ret_false);
     par->AddRegion(one_is_bad);
+    COMMENT(one_is_bad_call->comment = __FILE__ ": BuildTopDownJoinChecker";)
+
+    const auto ret_false =
+        BuildStateCheckCaseReturnFalse(impl, one_is_bad_call);
+    one_is_bad_call->false_body.Emplace(one_is_bad_call, ret_false);
   }
 
   // If all predecessors return `true`, then we can change this tuple's state
@@ -497,13 +543,13 @@ void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
 // Build a bottom-up join remover.
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
                                QueryView from_view, QueryJoin join_view,
-                               PROC *proc, TABLE *already_checked) {
+                               OP *root, TABLE *already_checked) {
   assert(join_view.NumPivotColumns());
 
   const QueryView view(join_view);
 
-  auto parent = impl->series_regions.Create(proc);
-  proc->body.Emplace(proc, parent);
+  auto parent = impl->series_regions.Create(root);
+  root->body.Emplace(root, parent);
 
   // First, and somewhat unlike other bottom-up removers, we will make sure that
   // the data is gone in the data model associated with this particular
@@ -563,9 +609,9 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       assert(pred_pivots.size() == num_pivots);
 
       for (auto i = 0u; i < num_pivots; ++i) {
-        const auto param_var = proc->VariableFor(impl, from_view_pivots[i]);
+        const auto param_var = root->VariableFor(impl, from_view_pivots[i]);
         assert(param_var != nullptr);
-        proc->col_id_to_var[pred_pivots[i].Id()] = param_var;
+        root->col_id_to_var[pred_pivots[i].Id()] = param_var;
       }
     }
   }
@@ -579,27 +625,10 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
       }
     });
 
-    auto par = impl->parallel_regions.Create(join);
-    for (auto succ_view : view.Successors()) {
-
-      const auto called_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, nullptr);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, called_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = join->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-        const auto param = called_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
-    return par;
+    const auto let = impl->operation_regions.CreateDerived<LET>(join);
+    BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                             nullptr);
+    return let;
   };
 
   // If this is more than a two-way join then we're going to make a join region
@@ -608,7 +637,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   if (2u < pred_views.size()) {
 
     // Create a pivot vector, which is needed by a join region.
-    const auto pivot_vec = proc->vectors.Create(
+    const auto pivot_vec = root->containing_procedure->vectors.Create(
         impl->next_id++, VectorKind::kJoinPivots, from_view_pivots);
 
     // Create the region that will add the tuple to-be-removed to the pivot
@@ -620,7 +649,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     add_to_vec->vector.Emplace(add_to_vec, pivot_vec);
 
     for (auto in_col : from_view_pivots) {
-      auto pivot_var = proc->VariableFor(impl, in_col);
+      auto pivot_var = root->VariableFor(impl, in_col);
       assert(pivot_var != nullptr);
       add_to_vec->tuple_vars.AddUse(pivot_var);
     }

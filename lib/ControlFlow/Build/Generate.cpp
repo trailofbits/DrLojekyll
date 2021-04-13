@@ -11,8 +11,8 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
-  auto gen = impl->operation_regions.CreateDerived<GENERATOR>(
-      parent, functor, impl->next_id++);
+  auto gen = impl->operation_regions.CreateDerived<GENERATOR>(parent, functor,
+                                                              impl->next_id++);
   auto i = 0u;
 
   // Deal with the functor inputs and outputs.
@@ -80,8 +80,8 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
 }  // namespace
 
 // Build an eager region for a `QueryMap`.
-void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
-                              Context &context, OP *parent) {
+void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map, Context &context,
+                              OP *parent) {
   const QueryView view(map);
 
   const auto functor = map.Functor();
@@ -90,8 +90,8 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   // TODO(pag): Think about requiring persistence of the predecessor, so that
   //            we always have the inputs persisted.
 
-  const auto gen = CreateGeneratorCall(
-      impl, map, functor, context, parent, true);
+  const auto gen =
+      CreateGeneratorCall(impl, map, functor, context, parent, true);
   parent->body.Emplace(parent, gen);
 
   // If we're dealing with a negated generator, then make sure that children
@@ -108,25 +108,24 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE *const table = model->table;
   if (table) {
     parent = BuildInsertCheck(impl, view, context, parent, table,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(
-      impl, view, context, parent, view.Successors(), table);
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
+                             table);
 }
 
 // Build a bottom-up remover for generator calls.
 void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
                                    QueryMap map, ParsedFunctor functor,
-                                   PROC *proc, TABLE *already_checked) {
+                                   OP *root, TABLE *already_checked) {
   QueryView view(map);
-  const auto gen = CreateGeneratorCall(
-      impl, map, functor, context, proc, true);
-  proc->body.Emplace(proc, gen);
+  const auto gen = CreateGeneratorCall(impl, map, functor, context, root, true);
+  root->body.Emplace(root, gen);
 
   auto parent = impl->parallel_regions.Create(gen);
 
@@ -150,28 +149,10 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
     }
   }
 
-  for (auto succ_view : view.Successors()) {
-
-    assert(!succ_view.IsMerge());  // TODO(pag): I don't recall why.
-
-    const auto called_proc = GetOrCreateBottomUpRemover(
-        impl, context, view, succ_view, model->table);
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent, called_proc);
-
-    auto i = 0u;
-    for (auto col : view.Columns()) {
-      const auto var = call->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-
-      const auto param = called_proc->input_vars[i++];
-      assert(var->Type() == param->Type());
-      (void) param;
-    }
-
-    parent->AddRegion(call);
-  }
+  const auto let = impl->operation_regions.CreateDerived<LET>(parent);
+  parent->AddRegion(let);
+  BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                           model->table);
 }
 
 // Build a top-down checker on a map / generator.
@@ -206,30 +187,34 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, par, view, view_cols, table_to_update, pred_view,
           already_checked);
-      COMMENT( check->comment = __FILE__ ": BuildTopDownGeneratorChecker::call_pred"; )
+      COMMENT(check->comment =
+                  __FILE__ ": BuildTopDownGeneratorChecker::call_pred";)
       par->AddRegion(check);
     };
 
     auto if_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
-      return BuildTopDownTryMarkAbsent(impl, model->table, parent,
-                                       view_cols, call_pred);
+      return BuildTopDownTryMarkAbsent(impl, model->table, parent, view_cols,
+                                       call_pred);
     };
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&](REGION *parent, bool) -> REGION * {
+        [&](REGION *parent, bool in_loop) -> REGION * {
           if (already_checked != model->table) {
+            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing
+                                              : BuildStateCheckCaseReturnFalse;
+
             already_checked = model->table;
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseReturnTrue, continue_or_return,
                   if_unknown);
             } else {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view_cols,
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                  BuildStateCheckCaseNothing);
+                  BuildStateCheckCaseReturnTrue, continue_or_return,
+                  continue_or_return);
             }
 
           } else {
@@ -268,11 +253,11 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     series->AddRegion(BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_model->table, series,
         [&](REGION *parent, bool) -> REGION * {
-          const auto call = CreateGeneratorCall(
-              impl, gen, gen.Functor(), context, parent, false);
+          const auto call = CreateGeneratorCall(impl, gen, gen.Functor(),
+                                                context, parent, false);
           const auto child = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-              impl, context, call, view, view_cols, nullptr,
-              pred_view, nullptr);
+              impl, context, call, view, view_cols, nullptr, pred_view,
+              nullptr);
 
           // Figure out where to place the child nodes inside the generator.
           if (gen.IsPositive()) {
@@ -326,8 +311,8 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
         series->col_id_to_var[in_col.Id()] = out_var;
       }
 
-      const auto call = CreateGeneratorCall(
-          impl, gen, gen.Functor(), context, series, false);
+      const auto call =
+          CreateGeneratorCall(impl, gen, gen.Functor(), context, series, false);
       series->AddRegion(call);
 
       const auto child = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
@@ -345,9 +330,13 @@ void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     // check to them, but we don't (yet) have a way of doing this. This is
     // also kind of a problem for
     } else {
+
+      //      view.SetTableId(9999999);
       assert(false &&
              "TODO(pag): Handle worst case of top-down generator checker");
-      series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));
+      auto ret = BuildStateCheckCaseReturnFalse(impl, series);
+      ret->comment = "?!?! WORST CASE top-down generator checker";
+      series->AddRegion(ret);
     }
   }
 }

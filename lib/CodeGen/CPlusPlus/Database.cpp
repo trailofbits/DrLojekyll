@@ -347,23 +347,24 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
        << ";\n";
   }
 
-  void Visit(ProgramExistenceAssertionRegion region) override {
-    os << Comment(os, region, "ProgramExistenceAssertionRegion");
-    const auto vars = region.ReferenceCounts();
-    for (auto var : vars) {
-      if (region.IsIncrement()) {
-        os << os.Indent() << Var(os, var) << " += 1;\n";
-      } else {
-        os << os.Indent() << Var(os, var) << " -= 1;\n";
-      }
+  void Visit(ProgramTestAndSetRegion region) override {
+    os << Comment(os, region, "ProgramTestAndSetRegion");
+    const auto acc = region.Accumulator();
+    const auto disp = region.Displacement();
+    const auto cmp = region.Comparator();
+    if (region.IsAdd()) {
+      os << os.Indent() << Var(os, acc) << " += " << Var(os, disp) << ";\n";
+    } else {
+      os << os.Indent() << Var(os, acc) << " -= " << Var(os, disp) << ";\n";
     }
 
     if (auto body = region.Body(); body) {
-      assert(vars.size() == 1u);
-      if (region.IsIncrement()) {
-        os << os.Indent() << "if (" << Var(os, vars[0]) << " == 1) {\n";
+      if (region.IsAdd()) {
+        os << os.Indent() << "if (" << Var(os, acc) << " == " << Var(os, cmp)
+           << ") {\n";
       } else {
-        os << os.Indent() << "if (" << Var(os, vars[0]) << " == 0) {\n";
+        os << os.Indent() << "if (" << Var(os, acc) << " == " << Var(os, cmp)
+           << ") {\n";
       }
       os.PushIndent();
       body->Accept(*this);
@@ -533,7 +534,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramInductionRegion");
 
     // Base case
-    region.Initializer().Accept(*this);
+    if (auto init_region = region.Initializer(); init_region) {
+      init_region->Accept(*this);
+    }
 
     // Fixpoint
     os << Comment(os, region, "Induction Fixpoint Loop Region");
@@ -729,12 +732,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       } else {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
-          case VariableRole::kConstant:
           case VariableRole::kConstantZero:
           case VariableRole::kConstantOne:
           case VariableRole::kConstantFalse:
-          case VariableRole::kConstantTrue: break;
-          default: assert(false);
+          case VariableRole::kConstantTrue: assert(false); break;
+          case VariableRole::kConstant:
+          default: break;
         }
       }
     }

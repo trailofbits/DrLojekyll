@@ -109,7 +109,7 @@ static void FillViews(T &def_list, CandidateList &views_out) {
     }
   }
   std::sort(views_out.begin(), views_out.end(),
-            [] (VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
+            [](VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
 }
 
 }  // namespace
@@ -200,8 +200,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
   std::vector<VIEW *> views;
 
   conditions.RemoveIf([](COND *cond) {
-    return cond->positive_users.Empty() &&
-           cond->negative_users.Empty();
+    return cond->positive_users.Empty() && cond->negative_users.Empty();
   });
 
   ForEachViewInReverseDepthOrder([&](VIEW *view) { views.push_back(view); });
@@ -223,8 +222,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
            kv_indices.RemoveUnused() | joins.RemoveUnused() |
            maps.RemoveUnused() | aggregates.RemoveUnused() |
            merges.RemoveUnused() | compares.RemoveUnused() |
-           inserts.RemoveUnused() | deletes.RemoveUnused() |
-           negations.RemoveUnused();
+           inserts.RemoveUnused() | negations.RemoveUnused();
     all_ret |= ret;
   } while (ret);
 
@@ -451,7 +449,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
 
-    for (auto max_cse = views.size(); max_cse-- && CSE(views); ) {
+    for (auto max_cse = views.size(); max_cse-- && CSE(views);) {
       RemoveUnusedViews();
       RelabelGroupIDs();
       views.clear();
@@ -473,7 +471,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     max_depth = std::max(view->Depth(), max_depth);
   }
 
-  for (auto changed = true; changed && max_depth--; ) {
+  for (auto changed = true; changed && max_depth--;) {
 
     // Now do a stronger form of canonicalization.
     opt.can_remove_unused_columns = true;

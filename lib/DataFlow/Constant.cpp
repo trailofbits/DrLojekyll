@@ -36,23 +36,15 @@ void QueryImpl::ConvertConstantInputsToTuples(void) {
                            &(view->attached_columns));
   }
 
-  for (auto view : deletes) {
-    const auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+  for (auto view : negations) {
+    const auto incoming_view =
+        VIEW::GetIncomingView(view->input_columns, view->attached_columns);
     if (incoming_view) {
       continue;
     }
-    ReplaceInputsWithTuple(this, view, &(view->input_columns));
+    ReplaceInputsWithTuple(this, view, &(view->input_columns),
+                           &(view->attached_columns));
   }
-
-  for (auto view : negations) {
-      const auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                       view->attached_columns);
-      if (incoming_view) {
-        continue;
-      }
-      ReplaceInputsWithTuple(this, view, &(view->input_columns),
-                             &(view->attached_columns));
-    }
 
   for (auto view : maps) {
     const auto incoming_view =

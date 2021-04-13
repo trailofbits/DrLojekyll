@@ -17,8 +17,7 @@ OutputStream &operator<<(OutputStream &os, ProgramPublishRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramCallRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramReturnRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region);
-OutputStream &operator<<(OutputStream &os,
-                         ProgramExistenceAssertionRegion region);
+OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region);

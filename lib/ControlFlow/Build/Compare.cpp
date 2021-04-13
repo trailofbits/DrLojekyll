@@ -48,14 +48,14 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
   // If we can receive deletions, and if we're in a path where we haven't
   // actually inserted into a view, then we need to go and do a differential
   // insert/update/check.
-  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE *const table = model->table;
   if (table) {
     parent = BuildInsertCheck(impl, view, context, parent, table,
                               view.CanReceiveDeletions(), view.Columns());
   }
 
-  BuildEagerSuccessorRegions(impl, view, context, parent, view.Successors(),
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
                              table);
 }
 
@@ -93,8 +93,8 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
   const auto lhs_var_it = proc->col_id_to_var.find(cmp.InputLHS().Id());
   const auto rhs_var_it = proc->col_id_to_var.find(cmp.InputRHS().Id());
   if (lhs_var_it != proc->col_id_to_var.end() &&
-      rhs_var_it != proc->col_id_to_var.end() &&
-      lhs_var_it->second && rhs_var_it->second) {
+      rhs_var_it != proc->col_id_to_var.end() && lhs_var_it->second &&
+      rhs_var_it->second) {
 
     if (cmp.Operator() != ComparisonOperator::kEqual) {
       auto check = CreateCompareRegion(impl, cmp, context, series);
@@ -143,7 +143,8 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
       const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
           impl, context, parent, view, view_cols, table_to_update, pred_view,
           already_checked);
-      COMMENT( check->comment = __FILE__ ": BuildTopDownCompareChecker::call_pred"; )
+      COMMENT(check->comment =
+                  __FILE__ ": BuildTopDownCompareChecker::call_pred";)
       parent->AddRegion(check);
     };
 
@@ -164,19 +165,22 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
 
     series->AddRegion(BuildMaybeScanPartial(
         impl, view, view_cols, model->table, series,
-        [&](REGION *parent, bool) -> REGION * {
+        [&](REGION *parent, bool in_loop) -> REGION * {
           if (already_checked != model->table) {
+            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing
+                                              : BuildStateCheckCaseReturnFalse;
+
             already_checked = model->table;
             if (view.CanProduceDeletions()) {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
+                  BuildStateCheckCaseReturnTrue, continue_or_return,
                   if_unknown);
             } else {
               return BuildTopDownCheckerStateCheck(
                   impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue, BuildStateCheckCaseNothing,
-                  BuildStateCheckCaseNothing);
+                  BuildStateCheckCaseReturnTrue, continue_or_return,
+                  continue_or_return);
             }
 
           } else {
@@ -203,7 +207,6 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     // Get a list of output columns of the predecessor that we have.
     cmp.ForEachUse(
         [&](QueryColumn in_col, InputColumnRole, std::optional<QueryColumn>) {
-
           // NOTE(pag): Can't use `IsConstant` as that won't be associated with
           //            the input view.
           if (in_col.IsConstantRef()) {
@@ -265,7 +268,8 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
     //            the comparators, or if one of the comparators is a constant,
     //            then send both down.
     } else {
-      assert(false && "TODO(pag): Handle worst case of top-down compare checker");
+      assert(false &&
+             "TODO(pag): Handle worst case of top-down compare checker");
       assert(!view.CanReceiveDeletions());
       assert(!view.CanProduceDeletions());
       series->AddRegion(BuildStateCheckCaseReturnFalse(impl, series));
@@ -274,10 +278,10 @@ void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
 }
 
 void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
-                                  QueryView view, PROC *proc,
+                                  QueryView view, OP *root,
                                   TABLE *already_checked) {
-  auto cmp = CreateCompareRegion(impl, QueryCompare::From(view), context, proc);
-  proc->body.Emplace(proc, cmp);
+  auto cmp = CreateCompareRegion(impl, QueryCompare::From(view), context, root);
+  root->body.Emplace(root, cmp);
 
   auto parent = impl->parallel_regions.Create(cmp);
   cmp->body.Emplace(cmp, parent);
@@ -287,27 +291,22 @@ void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
 
     // The caller didn't already do a state transition, so we can do it.
     if (already_checked != model->table) {
+      already_checked = model->table;
+
       const auto orig_parent = parent;
       orig_parent->AddRegion(BuildBottomUpTryMarkUnknown(
           impl, model->table, parent, view.Columns(),
           [&](PARALLEL *par) { parent = par; }));
     }
+  } else {
+    already_checked = nullptr;
   }
 
-  for (auto succ_view : view.Successors()) {
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, parent,
-        GetOrCreateBottomUpRemover(impl, context, view, succ_view,
-                                   nullptr));
+  auto let = impl->operation_regions.CreateDerived<LET>(parent);
+  parent->AddRegion(let);
 
-    for (auto col : view.Columns()) {
-      const auto var = call->VariableFor(impl, col);
-      assert(var != nullptr);
-      call->arg_vars.AddUse(var);
-    }
-
-    parent->AddRegion(call);
-  }
+  BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
+                           already_checked);
 }
 
 }  // namespace hyde

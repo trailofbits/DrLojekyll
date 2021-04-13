@@ -24,9 +24,9 @@ bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
 
 Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
     : Node<ProgramRegion>(parent_->containing_procedure),
-      cyclic_region(this, impl->parallel_regions.Create(this)),
-      output_region(this, impl->parallel_regions.Create(this)),
-      vectors(this) {}
+      vectors(this) {
+  assert(parent_->Ancestor()->AsProcedure());
+}
 
 uint64_t Node<ProgramInductionRegion>::Hash(uint32_t depth) const {
   uint64_t hash = 117u;
@@ -62,11 +62,16 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
   if (depth == 0) {
     return true;
   }
+
   auto next_depth = depth - 1;
 
+  // One (but not both) of the inductions has a null input region.
+  if (!init_region != !that->init_region) {
+    return false;
+  }
+
   // One (but not both) of the inductions has a null output region.
-  if ((!output_region && that->output_region) ||
-      (output_region && !that->output_region)) {
+  if (!output_region != !that->output_region) {
     return false;
   }
 
@@ -77,13 +82,17 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
     }
   }
 
+  if (init_region &&
+      !init_region->Equals(eq, that->init_region.get(), next_depth)) {
+    return false;
+  }
+
   if (output_region &&
       !output_region->Equals(eq, that->output_region.get(), next_depth)) {
     return false;
   }
 
-  return init_region->Equals(eq, that->init_region.get(), next_depth) &&
-         cyclic_region->Equals(eq, that->cyclic_region.get(), next_depth);
+  return cyclic_region->Equals(eq, that->cyclic_region.get(), next_depth);
 }
 
 const bool Node<ProgramInductionRegion>::MergeEqual(

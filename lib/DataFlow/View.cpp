@@ -74,10 +74,6 @@ const char *Node<QueryCompare>::KindName(void) const noexcept {
   return "COMPARE";
 }
 
-const char *Node<QueryDelete>::KindName(void) const noexcept {
-  return "DELETE";
-}
-
 const char *Node<QueryNegate>::KindName(void) const noexcept {
   return "AND-NOT";
 }
@@ -96,10 +92,6 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
       return "INCREMENT";
     }
   }
-}
-
-Node<QueryDelete> *Node<QueryView>::AsDelete(void) noexcept {
-  return nullptr;
 }
 
 Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {
@@ -289,9 +281,8 @@ void Node<QueryView>::OrderConditions(void) {
 // do constant propagation, and possibly to replacements. Sets
 // `is_canonical = false;` if anything is changed or should be changed.
 Node<QueryView>::Discoveries
-Node<QueryView>::CanonicalizeColumn(const OptimizationContext &,
-                                    COL *in_col, COL *out_col,
-                                    bool is_attached,
+Node<QueryView>::CanonicalizeColumn(const OptimizationContext &, COL *in_col,
+                                    COL *out_col, bool is_attached,
                                     Node<QueryView>::Discoveries has) {
   auto [it, added] = in_to_out.emplace(in_col, out_col);
 
@@ -342,7 +333,8 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
     COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept {
 
   const auto out_col_is_constref = out_col->IsConstantRef();
-//  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
+
+  //  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
   auto non_local_changes = false;
 
   if (in_col->IsConstant()) {
@@ -645,6 +637,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
   auto is_this_or_that = [=](VIEW *v) { return v == this || v == that; };
 
 #ifndef NDEBUG
+
   // Don't introduce cycles?
   for (auto tested_cond : that->positive_conditions) {
     assert(tested_cond != cond);
@@ -838,9 +831,10 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 // NOTE(pag): This assumes `in_to_out` is filled up, and operates on
 //            `input_columns` and `attached_columns` to find the best version
 //            of a column from `in_to_out`.
-Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
-    QueryImpl *query, unsigned first_attached_col,
-    Node<QueryView> *incoming_view) {
+Node<QueryTuple> *
+Node<QueryView>::GuardWithOptimizedTuple(QueryImpl *query,
+                                         unsigned first_attached_col,
+                                         Node<QueryView> *incoming_view) {
 
   auto tuple = query->tuples.Create();
   tuple->color = color;
@@ -883,8 +877,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
         tuple->input_columns.AddUse(col);
 
       } else {
-        tuple->input_columns.AddUse(
-            in_to_out[input_columns[i]]);
+        tuple->input_columns.AddUse(in_to_out[input_columns[i]]);
       }
 
     // Drop duplicates if we have them.
@@ -1022,8 +1015,7 @@ bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
       return false;
 
     } else if (a->type.Kind() != b->type.Kind() ||
-               !a->view->Equals(eq, b->view) ||
-               a->Index() != b->Index()) {
+               !a->view->Equals(eq, b->view) || a->Index() != b->Index()) {
       return false;
     }
   }
@@ -1126,8 +1118,7 @@ Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialUnions(
   VIEW *incoming_view = nullptr;
   for (auto merged_view : merge->merged_views) {
 
-    if (merged_view == this ||
-        merged_view == merge ||
+    if (merged_view == this || merged_view == merge ||
         merged_view == incoming_view) {
       continue;
 
@@ -1351,18 +1342,18 @@ bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
 
   return false;
 
-//double_check:
-//  auto a_used_by_join = false;
-//  a->ForEachUse<JOIN>([&a_used_by_join] (JOIN *, VIEW *) {
-//    a_used_by_join = true;
-//  });
-//
-//  auto b_used_by_join = false;
-//  b->ForEachUse<JOIN>([&b_used_by_join] (JOIN *, VIEW *) {
-//    b_used_by_join = true;
-//  });
-//
-//  return a_used_by_join || b_used_by_join;
+  //double_check:
+  //  auto a_used_by_join = false;
+  //  a->ForEachUse<JOIN>([&a_used_by_join] (JOIN *, VIEW *) {
+  //    a_used_by_join = true;
+  //  });
+  //
+  //  auto b_used_by_join = false;
+  //  b->ForEachUse<JOIN>([&b_used_by_join] (JOIN *, VIEW *) {
+  //    b_used_by_join = true;
+  //  });
+  //
+  //  return a_used_by_join || b_used_by_join;
 }
 
 }  // namespace hyde

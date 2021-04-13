@@ -241,6 +241,14 @@ enum class Lexeme : uint8_t {
   kLiteralNumber,
   kLiteralString,
 
+  // Boolean literals, i.e. `true` and `false`. Booleans are nifty for a variety
+  // of reasons -- they let one enable/disable rules based on variables, and
+  // the `false` literal is also super nifty for testing, as it can let us
+  // drill down on which rules are significant to the reproduction of some
+  // unexpected behavior.
+  kLiteralTrue,
+  kLiteralFalse,
+
   // Literal C/C++ code. Looks like:
   //
   // <! ... stuff here ... !>
@@ -255,6 +263,10 @@ enum class Lexeme : uint8_t {
   kIdentifierUnnamedVariable,  // `_`.
   kIdentifierType,  // Foreign type names.
   kIdentifierConstant,  // Foreign constant name.
+
+  // `@differential` is a pragma used to mark messages that can receive or
+  // publish removals.
+  kPragmaDifferential,
 
   // `@highlight` is a debugging pragma, used to mark data flow nodes associated
   // with a particular clause body as "highlighted" so they are easier to
@@ -317,7 +329,7 @@ enum class Lexeme : uint8_t {
   // This is a performance pragma because it reduces the code generation burden
   // because function calls to resolve the earliest identity of an object and
   // merge with that need not be generated.
-  kPragmaPerfTransparent
+  kPragmaPerfTransparent,
 };
 
 enum class TypeKind : uint32_t;
