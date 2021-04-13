@@ -37,7 +37,8 @@ class ContinueInductionWorkItem final : public WorkItem {
         induction_set(induction_set_) {}
 
   // Find the common ancestor of all initialization regions.
-  REGION *FindCommonAncestorOfInitRegions(void) const;
+  REGION *FindCommonAncestorOfInitRegions(
+      const std::vector<REGION *> &regions) const;
 
   void Run(ProgramImpl *impl, Context &context) override;
 
@@ -67,11 +68,13 @@ class FinalizeInductionWorkItem final : public WorkItem {
 };
 
 // Find the common ancestor of all initialization regions.
-REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
+REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(
+    const std::vector<REGION *> &regions) const {
+
   PROC *const proc = induction->containing_procedure;
   REGION *common_ancestor = nullptr;
 
-  for (const auto init_append : induction->init_appends) {
+  for (const auto init_append : regions) {
     if (!common_ancestor) {
       common_ancestor = init_append;
     } else {
@@ -79,7 +82,7 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
     }
   }
 
-  if (1u >= induction->init_appends.size()) {
+  if (1u >= regions.size()) {
     common_ancestor = proc;
   }
 
@@ -160,6 +163,9 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
   VECTOR * const swap_vec = induction->view_to_swap_vec[merge];
   assert(swap_vec);
 
+  VECTOR *output_vec = induction->view_to_output_vec[merge];
+  assert(output_vec != nullptr);
+
   const auto proc = induction->containing_procedure;
   assert(cycle_par->containing_procedure == proc);
   (void) proc;
@@ -231,6 +237,18 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
   auto cycle_body_par = impl->parallel_regions.Create(cycle);
   cycle->body.Emplace(cycle, cycle_body_par);
 
+  // Add a tuple to the output vector. We don't need to compute a worker ID
+  // because we know we're dealing with only worker-specific data in this
+  // cycle.
+  const auto append_to_output_vec =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          cycle_body_par, ProgramOperation::kAppendToInductionVector);
+  append_to_output_vec->vector.Emplace(append_to_output_vec, output_vec);
+  for (auto col : merge.Columns()) {
+    append_to_output_vec->tuple_vars.AddUse(cycle->VariableFor(impl, col));
+  }
+  cycle_body_par->AddRegion(append_to_output_vec);
+
   if (for_add) {
     induction->fixpoint_add_cycles.push_back(cycle_body_par);
   } else {
@@ -242,10 +260,15 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
                             INDUCTION *induction, QueryView merge,
                             PARALLEL *output_par) {
 
+  VECTOR * const add_vec = induction->view_to_add_vec[merge];
+  VECTOR * const swap_vec = induction->view_to_swap_vec[merge];
+  VECTOR * const remove_vec = induction->view_to_remove_vec[merge];
+
   // NOTE(pag): We can use the same vector for insertion and removal, because
   //            we use `CHECKSTATE` to figure out what to do!
   VECTOR * const output_vec = induction->view_to_output_vec[merge];
-  assert(output_vec);
+
+  assert(add_vec && swap_vec && output_vec);
 
   const auto proc = induction->containing_procedure;
   assert(output_par->containing_procedure == proc);
@@ -253,6 +276,27 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
 
   const auto output_seq = impl->series_regions.Create(output_par);
   output_par->AddRegion(output_seq);
+
+  // In the output region we'll clear out the vectors that we've used.
+  const auto done_clear_add_vec =
+      impl->operation_regions.CreateDerived<VECTORCLEAR>(
+          output_seq, ProgramOperation::kClearInductionVector);
+  done_clear_add_vec->vector.Emplace(done_clear_add_vec, add_vec);
+  output_seq->AddRegion(done_clear_add_vec);
+
+  if (remove_vec) {
+    const auto done_clear_remove_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            output_seq, ProgramOperation::kClearInductionVector);
+    done_clear_remove_vec->vector.Emplace(done_clear_remove_vec, remove_vec);
+    output_seq->AddRegion(done_clear_remove_vec);
+  }
+
+  const auto done_clear_swap_vec =
+      impl->operation_regions.CreateDerived<VECTORCLEAR>(
+          output_seq, ProgramOperation::kClearInductionVector);
+  done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, swap_vec);
+  output_seq->AddRegion(done_clear_swap_vec);
 
   // We sort & unique the `output_vec`, so that we don't send extraneous
   // stuff forward.
@@ -326,12 +370,10 @@ static void BuildInductiveClear(ProgramImpl *impl, Context &context,
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
   //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR * const add_vec = induction->view_to_add_vec[merge];
-  VECTOR * const swap_vec = induction->view_to_swap_vec[merge];
-  VECTOR * const remove_vec = induction->view_to_remove_vec[merge];
+
   VECTOR * const output_vec = induction->view_to_output_vec[merge];
 
-  assert(add_vec && swap_vec && output_vec);
+  assert(output_vec);
 
   const auto proc = induction->containing_procedure;
   assert(done_par->containing_procedure == proc);
@@ -340,27 +382,6 @@ static void BuildInductiveClear(ProgramImpl *impl, Context &context,
   // NOTE(pag): At this point, we're done filling up the basics of the
   //            `induction->cyclic_region` and now move on to filling up
   //            `induction->output_region`.
-
-  // In the output region we'll clear out the vectors that we've used.
-  const auto done_clear_add_vec =
-      impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          done_par, ProgramOperation::kClearInductionVector);
-  done_clear_add_vec->vector.Emplace(done_clear_add_vec, add_vec);
-  done_par->AddRegion(done_clear_add_vec);
-
-  if (remove_vec) {
-    const auto done_clear_remove_vec =
-        impl->operation_regions.CreateDerived<VECTORCLEAR>(
-            done_par, ProgramOperation::kClearInductionVector);
-    done_clear_remove_vec->vector.Emplace(done_clear_remove_vec, remove_vec);
-    done_par->AddRegion(done_clear_remove_vec);
-  }
-
-  const auto done_clear_swap_vec =
-      impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          done_par, ProgramOperation::kClearInductionVector);
-  done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, swap_vec);
-  done_par->AddRegion(done_clear_swap_vec);
 
   const auto done_clear_output_vec =
       impl->operation_regions.CreateDerived<VECTORCLEAR>(
@@ -377,7 +398,15 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Replace the common ancestor with the INDUCTION, and move that common
   // ancestor to be the init region of this induction.
-  const auto ancestor_of_inits = FindCommonAncestorOfInitRegions();
+  std::vector<REGION *> regions;
+  if (auto r1 = FindCommonAncestorOfInitRegions(induction->init_appends_add)) {
+    regions.push_back(r1);
+  }
+  if (auto r2 = FindCommonAncestorOfInitRegions(induction->init_appends_remove)) {
+    regions.push_back(r2);
+  }
+
+  auto ancestor_of_inits = FindCommonAncestorOfInitRegions(regions);
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
   induction->init_region.Emplace(induction, ancestor_of_inits);
@@ -632,9 +661,7 @@ static void AppendToInductionVectors(
     vec = induction->view_to_remove_vec[view];
   }
 
-  VECTOR *output_vec = induction->view_to_output_vec[view];
   assert(vec != nullptr);
-  assert(output_vec != nullptr);
 
   // Hash the variables together to form a worker ID.
   WORKERID * const hash = impl->operation_regions.CreateDerived<WORKERID>(parent);
@@ -652,27 +679,22 @@ static void AppendToInductionVectors(
   append_to_vec->vector.Emplace(append_to_vec, vec);
   append_to_vec->worker_id.Emplace(append_to_vec, worker_id);
 
-  // Add a tuple to the output vector.
-  const auto append_to_output_vec =
-      impl->operation_regions.CreateDerived<VECTORAPPEND>(
-          par, ProgramOperation::kAppendToInductionVector);
-  append_to_output_vec->vector.Emplace(append_to_vec, output_vec);
-  append_to_output_vec->worker_id.Emplace(append_to_vec, worker_id);
-
   for (auto col : view.Columns()) {
     const auto var = par->VariableFor(impl, col);
     hash->hashed_vars.AddUse(var);
     append_to_vec->tuple_vars.AddUse(var);
-    append_to_output_vec->tuple_vars.AddUse(var);
   }
 
   par->AddRegion(append_to_vec);
-  par->AddRegion(append_to_output_vec);
 
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:
       assert(proc == induction->containing_procedure);
-      induction->init_appends.push_back(append_to_vec);
+      if (for_add) {
+        induction->init_appends_add.push_back(append_to_vec);
+      } else {
+        induction->init_appends_remove.push_back(append_to_vec);
+      }
       break;
 
     case INDUCTION::kAccumulatingCycleRegions:
@@ -699,17 +721,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
   assert(already_added != table);
   (void) already_added;
 
-  auto do_child = [&] (ProgramImpl *impl, REGION *in_check) -> OP * {
-    auto let = impl->operation_regions.CreateDerived<LET>(in_check);
-    AppendToInductionVectors(impl, view, context, let, true);
-    return let;
-  };
-
-  parent->body.Emplace(
-      parent,
-      BuildTopDownCheckerStateCheck(
-          impl, parent, table, view.Columns(), BuildStateCheckCaseNothing,
-          do_child, do_child));
+  AppendToInductionVectors(impl, view, context, parent, true);
 }
 
 void CreateBottomUpInductionRemover(ProgramImpl *impl, Context &context,
@@ -721,17 +733,7 @@ void CreateBottomUpInductionRemover(ProgramImpl *impl, Context &context,
   assert(already_removed != table);
   (void) already_removed;
 
-  auto do_child = [&] (ProgramImpl *impl, REGION *in_check) -> OP * {
-    auto let = impl->operation_regions.CreateDerived<LET>(in_check);
-    AppendToInductionVectors(impl, view, context, let, false);
-    return let;
-  };
-
-  parent->body.Emplace(
-      parent,
-      BuildTopDownCheckerStateCheck(
-          impl, parent, table, view.Columns(), do_child,
-          BuildStateCheckCaseNothing, BuildStateCheckCaseNothing));
+  AppendToInductionVectors(impl, view, context, parent, false);
 }
 
 // Build a top-down checker on an induction.

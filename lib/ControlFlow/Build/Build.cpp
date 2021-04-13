@@ -887,17 +887,213 @@ static CALL *InCondionalTests(ProgramImpl *impl, QueryView view,
   return call;
 }
 
+// Starting from a negated view, work up to the negation, then down to the
+// source view for the negation, doing a scan over the source view columns.
+// Invoke `cb` within the context of that scan.
+template <typename CB>
+static REGION *PivotAroundNegation(
+    ProgramImpl *impl, Context &context, QueryView view, QueryNegate negate,
+    REGION *parent, CB cb_present) {
+  SERIES * const seq = impl->series_regions.Create(parent);
 
-static REGION *RemoveFromNegatedView(
+  // Map from negated view columns to the negate.
+  negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                         std::optional<QueryColumn> out_col) {
+    if (role == InputColumnRole::kNegated) {
+      assert(out_col.has_value());
+      assert(QueryView::Containing(in_col) == view);
+      const auto in_var = seq->VariableFor(impl, in_col);
+      assert(in_var != nullptr);
+      seq->col_id_to_var[out_col->Id()] = in_var;
+    }
+  });
+
+  std::vector<QueryColumn> source_view_cols;
+  const QueryView source_view = QueryView(negate).Predecessors()[0];
+
+  // Now map from negate to source view columns.
+  negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                         std::optional<QueryColumn> out_col) {
+    if (role == InputColumnRole::kCopied && out_col.has_value() &&
+        QueryView::Containing(in_col) == source_view) {
+      if (auto out_var_it = seq->col_id_to_var.find(out_col->Id());
+          out_var_it != seq->col_id_to_var.end()) {
+        VAR * const out_var = out_var_it->second;
+        seq->col_id_to_var[in_col.Id()] = out_var;
+        source_view_cols.push_back(in_col);
+      }
+    }
+  });
+
+  DataModel * const source_view_model =
+      impl->view_to_model[source_view]->FindAs<DataModel>();
+  TABLE * const source_view_table = source_view_model->table;
+  assert(source_view_table != nullptr);
+
+  // We know we have a source view data model and table, so do a scan over the
+  // source view.
+  BuildMaybeScanPartial(
+      impl, source_view, source_view_cols, source_view_table, seq,
+      [&](REGION *in_scan, bool in_loop) -> REGION * {
+
+        // Make sure to make the variables for the negation's output columns
+        // available to our recursive call.
+        negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                               std::optional<QueryColumn> out_col) {
+          if (out_col && InputColumnRole::kCopied == role) {
+            VAR * const in_var = in_scan->VariableFor(impl, in_col);
+            in_scan->col_id_to_var[out_col->Id()] = in_var;
+          }
+        });
+
+        // Recursively call the checker for the source view of the negation.
+        // If the data is available in the source view, then we'll do something.
+        const auto [rec_check, rec_check_call] = CallTopDownChecker(
+            impl, context, in_scan, source_view, source_view_cols,
+            source_view, nullptr);
+
+        cb_present(rec_check_call);
+
+        return rec_check;
+      });
+
+  return seq;
+}
+
+
+// Starting from a negated view, work up to the negation, then look at the
+// data that has come through it (without inspecting its source view).
+template <typename CB>
+static REGION *PivotIntoNegation(
+    ProgramImpl *impl, Context &context, QueryView view, QueryNegate negate,
+    REGION *parent, CB in_scan_cb) {
+  SERIES * const seq = impl->series_regions.Create(parent);
+
+  // Map from negated view columns to the negate.
+  std::vector<QueryColumn> negate_cols;
+  negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                         std::optional<QueryColumn> out_col) {
+    if (role == InputColumnRole::kNegated) {
+      assert(out_col.has_value());
+      assert(QueryView::Containing(in_col) == view);
+      const auto in_var = seq->VariableFor(impl, in_col);
+      assert(in_var != nullptr);
+      seq->col_id_to_var[out_col->Id()] = in_var;
+      negate_cols.push_back(*out_col);
+    }
+  });
+
+  DataModel * const model = impl->view_to_model[negate]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+  assert(table != nullptr);
+
+  // We know we have a source view data model and table, so do a scan over the
+  // source view.
+  BuildMaybeScanPartial(
+      impl, negate, negate_cols, table, seq,
+      [&](REGION *in_scan, bool in_loop) -> REGION * {
+
+        // Map the output columns to input columns; this is convenient for
+        // `in_scan_cb`.
+        negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
+                               std::optional<QueryColumn> out_col) {
+          if (role == InputColumnRole::kCopied) {
+            assert(out_col.has_value());
+            assert(QueryView::Containing(in_col) == view);
+            const auto out_var = seq->VariableFor(impl, *out_col);
+            assert(out_var != nullptr);
+            seq->col_id_to_var[in_col.Id()] = out_var;
+          }
+        });
+
+        return in_scan_cb(in_scan);
+      });
+
+  return seq;
+}
+
+static REGION *MaybeRemoveFromNegatedView(
+    ProgramImpl *impl, Context &context, QueryView view, QueryNegate negate,
+    REGION *parent) {
+
+  DataModel * const model = impl->view_to_model[negate]->FindAs<DataModel>();
+  TABLE * const table = model->table;
+
+  // If we don't have a table for the negation, then we need to pivot from the
+  // negated view, up to the negation, and down to the source view of the
+  // negation.
+  if (!table) {
+    const QueryView source_view = QueryView(negate).Predecessors()[0];
+    DataModel * const source_view_model =
+        impl->view_to_model[source_view]->FindAs<DataModel>();
+    TABLE * const source_view_table = source_view_model->table;
+    assert(source_view_table != nullptr);
+
+    return PivotAroundNegation(
+        impl, context, view, negate, parent,
+        [&] (OP *if_present_in_source) {
+          BuildEagerRemovalRegion(impl, source_view, negate, context,
+                                  if_present_in_source, source_view_table);
+        });
+
+  // Otherwise we do have a view for the negation, so we can just send things
+  // through it.
+  } else {
+    return PivotIntoNegation(
+        impl, context, view, negate, parent,
+        [&] (REGION *in_scan) -> REGION * {
+          return BuildTopDownCheckerStateCheck(
+              impl, in_scan, table, negate.Columns(),
+              [&] (ProgramImpl *, REGION *if_present_in_negate) -> OP * {
+                OP *let = impl->operation_regions.CreateDerived<LET>(
+                    if_present_in_negate);
+                BuildEagerRemovalRegion(impl, negate, negate,
+                                        context, let, nullptr);
+                return let;
+              },
+              BuildStateCheckCaseNothing,
+              BuildStateCheckCaseNothing);
+        });
+  }
+}
+
+static REGION *MaybeReAddToNegatedView(
+    ProgramImpl *impl, Context &context, QueryView view, QueryNegate negate,
+    REGION *parent) {
+
+  const QueryView source_view = QueryView(negate).Predecessors()[0];
+  DataModel * const source_view_model =
+      impl->view_to_model[source_view]->FindAs<DataModel>();
+  TABLE * const source_view_table = source_view_model->table;
+  assert(source_view_table != nullptr);
+
+  // If we don't have a table for the negation, then we need to pivot from the
+  // negated view, up to the negation, and down to the source view of the
+  // negation.
+  return PivotAroundNegation(
+      impl, context, view, negate, parent,
+      [&] (OP *if_present_in_source) {
+        BuildEagerRegion(impl, source_view, negate, context,
+                         if_present_in_source, source_view_table);
+      });
+}
+
+static REGION *MaybeRemoveFromNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
-  assert(false && "TODO");
-  return nullptr;
+  PARALLEL * const par = impl->parallel_regions.Create(parent);
+  view.ForEachNegation([&] (QueryNegate negate) {
+    par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, negate, par));
+  });
+  return par;
 }
 
 static REGION *MaybeReAddToNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
-  assert(false && "TODO");
-  return nullptr;
+  PARALLEL * const par = impl->parallel_regions.Create(parent);
+  view.ForEachNegation([&] (QueryNegate negate) {
+    par->AddRegion(MaybeReAddToNegatedView(impl, context, view, negate, par));
+  });
+  return par;
 }
 
 static void BuildTopDownChecker(
@@ -1081,12 +1277,18 @@ static void BuildTopDownChecker(
             return table_remove;
           }));
 
-      // If this view is used by a negation, then on the true or false paths
-      // we may need to adjust things.
-      if (view.IsUsedByNegation()) {
-        true_seq->AddRegion(RemoveFromNegatedView(impl, context, view, true_seq));
-        false_seq->AddRegion(MaybeReAddToNegatedView(impl, context, view, true_seq));
-      }
+      // TODO(pag): If `view` is used by a negation, then we should have seen
+      //            the right things happen in the bottom-up insertion/removal
+      //            paths.
+
+//      // If this view is used by a negation, then on the true or false paths
+//      // we may need to adjust things.
+//      if (view.IsUsedByNegation()) {
+//        true_seq->AddRegion(
+//            MaybeRemoveFromNegatedView(impl, context, view, true_seq));
+//        false_seq->AddRegion(
+//            MaybeReAddToNegatedView(impl, context, view, false_seq));
+//      }
 
       // Make sure that we `return-true` and `return-false` to our callers.
       true_seq->AddRegion(ret_true(impl, true_seq));
@@ -2008,7 +2210,6 @@ static void EvaluateConditionAndNotify(
   with_tuple(succ_parent, table);
 }
 
-
 // If we've transitioned a condition from `0 -> 1`, i.e. done the first enable
 // of the condition, so we need to allow data through, or rip back data that
 // got through.
@@ -2143,6 +2344,10 @@ void BuildEagerRemovalRegionsImpl(
                                   false  /* for_add */);
   }
 
+  if (view.IsUsedByNegation()) {
+    par->AddRegion(MaybeReAddToNegatedView(impl, context, view, par));
+  }
+
   for (auto succ_view : successors) {
 
     // New style: use iterative method for removal.
@@ -2225,10 +2430,7 @@ void BuildEagerInsertionRegionsImpl(
   // we need to go and make sure that the corresponding data gets removed from
   // the negation.
   if (view.IsUsedByNegation()) {
-    OP * const let = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(let);
-    // TODO(pag): !!! do this!!
-    assert(false && "TODO!");
+    par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, par));
   }
 
   for (QueryView succ_view : successors) {

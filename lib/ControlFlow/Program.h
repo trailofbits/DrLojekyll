@@ -1330,7 +1330,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
-  std::vector<OP *> init_appends;
+  std::vector<REGION *> init_appends_add;
+  std::vector<REGION *> init_appends_remove;
   std::vector<OP *> cycle_appends;
 
   std::vector<PARALLEL *> output_add_cycles;
