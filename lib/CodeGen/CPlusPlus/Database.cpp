@@ -63,15 +63,83 @@ static void DeclareDescriptors(OutputStream &os, Program program,
   os << "\n";
 }
 
+// Print out the type of an index. Specify whether this is being used for an index or within a table type
+static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
+                                   const DataIndex index, bool index_decl) {
+  const auto cols = table.Columns();
+  const auto key_cols = index.KeyColumns();
+  const auto val_cols = index.ValueColumns();
+
+  // The index can be implemented with the keys in the Table.
+  // In this case, the index lookup will be like an `if ... in ...`.
+  if (key_cols.size() == cols.size()) {
+    assert(val_cols.empty());
+    if (!index_decl) {
+      return os;
+    }
+
+    // Implement this index as a reference to the Table
+    return os << "decltype(" << Table(os, table) << ") & "
+              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
+  }
+
+  os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
+     << index.Id();
+
+  // In C++ codegen, the Index knows which columns are keys/values, but they
+  // need to be ordered as they were in the table
+  auto key_col_iter = key_cols.begin();
+  auto val_col_iter = val_cols.begin();
+
+  // Assumes keys and values are sorted by index within their respective lists
+  while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
+    os << ", ";
+    if (val_col_iter == val_cols.end() ||
+        (key_col_iter != key_cols.end() &&
+         (*key_col_iter).Index() < (*val_col_iter).Index())) {
+      os << "::hyde::rt::Key<column_desc_" << table.Id() << "_"
+         << (*key_col_iter).Index() << ">";
+      key_col_iter++;
+    } else {
+      os << "::hyde::rt::Value<column_desc_" << table.Id() << "_"
+         << (*val_col_iter).Index() << ">";
+      val_col_iter++;
+    }
+  }
+  os << ">";
+
+  // Declare the actual index
+  if (index_decl) {
+    os << " " << TableIndex(os, index) << ";\n";
+  }
+  return os;
+}
+
 // Declare a structure containing the information about a table.
 static void DeclareTable(OutputStream &os, ParsedModule module,
                          DataTable table) {
   os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
-     << ", ";
-  auto sep = "";
+     << ", hyde::rt::TypeList<";
+
   const auto cols = table.Columns();
+
+  // List index types first
+  auto sep = "";
+  for (auto index : table.Indices()) {
+    const auto key_cols = index.KeyColumns();
+
+    // The index can be implemented with the keys in the Table.
+    // In this case, the index lookup will be like an `if ... in ...`.
+    if (key_cols.size() != cols.size()) {
+      os << sep << IndexTypeDecl(os, table, index, false);
+      sep = ", ";
+    }
+  }
+
+  // Then column types
+  sep = ">, hyde::rt::TypeList<";
   if (cols.size() == 1u) {
-    os << TypeName(module, cols[0].Type());
+    os << sep << TypeName(module, cols[0].Type());
 
   } else {
     for (auto col : cols) {
@@ -79,52 +147,12 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
       sep = ", ";
     }
   }
-  os << "> " << Table(os, table) << ";\n";
+  os << ">> " << Table(os, table) << ";\n";
 
   // We represent indices as mappings to vectors so that we can concurrently
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
-    const auto key_cols = index.KeyColumns();
-    const auto val_cols = index.ValueColumns();
-
-    // The index can be implemented with the keys in the Table.
-    // In this case, the index lookup will be like an `if ... in ...`.
-    if (key_cols.size() == cols.size()) {
-      assert(val_cols.empty());
-
-      // Implement this index as a reference to the Table
-      os << os.Indent() << "decltype(" << Table(os, table) << ") & "
-         << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
-      continue;
-    }
-
-    os << os.Indent() << "::hyde::rt::Index<StorageT, table_desc_" << table.Id()
-       << ", " << index.Id();
-
-    // In C++ codegen, the Index knows which columns are keys/values, but they
-    // need to be ordered as they were in the table
-    auto key_col_iter = key_cols.begin();
-    auto val_col_iter = val_cols.begin();
-
-    // Assumes keys and values are sorted by index within their respective lists
-    while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
-      os << ", ";
-      if (val_col_iter == val_cols.end() ||
-          (key_col_iter != key_cols.end() &&
-           (*key_col_iter).Index() < (*val_col_iter).Index())) {
-        os << "::hyde::rt::Key<column_desc_" << table.Id() << "_"
-           << (*key_col_iter).Index() << ">";
-        key_col_iter++;
-      } else {
-        os << "::hyde::rt::Value<column_desc_" << table.Id() << "_"
-           << (*val_col_iter).Index() << ">";
-        val_col_iter++;
-      }
-    }
-    os << ">";
-
-
-    os << " " << TableIndex(os, index) << ";\n";
+    os << os.Indent() << IndexTypeDecl(os, table, index, true);
   }
   os << "\n";
 }
@@ -165,19 +193,20 @@ static void DefineTypeRefResolver(OutputStream &os) {
   os << os.Indent() << "template<typename T>\n"
      << os.Indent()
      << "typename ::hyde::rt::enable_if<::hyde::rt::has_merge_into<T,\n"
-     << os.Indent() << "         std::string(T::*)()>::value, T>::type\n"
-     << os.Indent() << "_resolve(T obj) {\n";
+     << os.Indent() << "         void(T::*)(T &)>::value, T>::type\n"
+     << os.Indent() << "_resolve(T &obj) {\n";
   os.PushIndent();
   os << os.Indent() << "auto ref_list = _refs[std::hash<T>(obj)];\n"
      << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
   os.PushIndent();
+  os << os.Indent() << "// TODO(ekilmer): This isn't going to work...\n";
   os << os.Indent() << "if (&obj == &maybe_obj) {\n";
   os.PushIndent();
   os << os.Indent() << "return obj;\n";
   os.PopIndent();
   os << os.Indent() << "} else if (obj == maybe_obj) {\n";
   os.PushIndent();
-  os << os.Indent() << "T prior_obj  = static_cast<T>(maybe_obj);\n"
+  os << os.Indent() << "T prior_obj = static_cast<T>(maybe_obj);\n"
      << os.Indent() << "obj.merge_into(prior_obj);\n"
      << os.Indent() << "return prior_obj;\n";
   os.PopIndent();
@@ -193,8 +222,8 @@ static void DefineTypeRefResolver(OutputStream &os) {
   os << os.Indent() << "template<typename T>\n"
      << os.Indent()
      << "typename ::hyde::rt::enable_if<!::hyde::rt::has_merge_into<T,\n"
-     << os.Indent() << "         std::string(T::*)()>::value, T>::type\n"
-     << os.Indent() << "_resolve(T obj) {\n";
+     << os.Indent() << "         void(T::*)(T &)>::value, T>::type\n"
+     << os.Indent() << "_resolve(T &obj) {\n";
   os.PushIndent();
   os << os.Indent() << "return obj;\n";
   os.PopIndent();
@@ -626,7 +655,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << "std::make_tuple(";
       auto sep = "";
       for (auto var : tuple_vars) {
-        os << sep << Var(os, var);
+        os << sep << Var(os, var) << ReifyVar(os, var);
         sep = ", ";
       }
       os << ')';
@@ -694,7 +723,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
       if (var.DefiningRegion()) {
         if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
-          os << os.Indent() << Var(os, var) << " = _resolve<"
+          os << os.Indent() << "auto reified_" << Var(os, var) << " = _resolve<"
              << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
         }
       } else {
@@ -919,11 +948,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           sep = ", ";
         }
 
-        os << "] = tuple_" << region.Id() << "_" << i << "_vec[tuple_"
-           << region.Id() << "_" << i << "_index];\n";
+        os << ", tmp_" << region.Id() << "_" << i << "_index] = tuple_"
+           << region.Id() << "_" << i << "_vec[tuple_" << region.Id() << "_"
+           << i << "_index];\n";
 
         os << os.Indent() << "tuple_" << region.Id() << "_" << i
-           << "_index += 1;\n";
+           << "_index = tmp_" << region.Id() << "_" << i << "_index;\n";
       }
     }
 
@@ -1563,17 +1593,36 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
     os << os.Indent() << "while (tuple_index < tuple_vec.size()) {\n";
     os.PushIndent();
-    os << os.Indent() << "auto tuple = tuple_vec[tuple_index];\n"
-       << os.Indent() << "tuple_index += 1;\n";
+    os << os.Indent() << "auto [";
+    sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+
+    os << ", offset] = tuple_vec[tuple_index];\n"
+       << os.Indent() << "tuple_index = offset;\n";
 
   // This is a full table scan.
   } else if (num_free_params) {
     assert(0u < num_free_params);
 
-    os << os.Indent() << "for (auto tuple : " << Table(os, spec.table)
+    os << os.Indent() << "for (auto &tuple : " << Table(os, spec.table)
+       << ".Keys()"
        << ") {\n";
     os.PushIndent();
-    os << os.Indent() << "tuple_index += 1;\n";
+
+    os << os.Indent() << "auto [";
+    sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+    os << ", _] = tuple.Get();\n";
 
   // Either the tuple checker will figure out of the tuple is present, or our
   // state check on the full tuple will figure it out.
@@ -1582,18 +1631,6 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os.PushIndent();
   }
 
-  auto col_index = 0u;
-  for (auto param : params) {
-    if (param.Binding() != ParameterBinding::kBound) {
-      os << os.Indent() << TypeName(module, param.Type()) << " param_"
-         << param.Index() << " = tuple";
-      if (num_free_params != 1u) {
-        os << '[' << col_index << ']';
-      }
-      ++col_index;
-      os << ";\n";
-    }
-  }
 
   if (spec.tuple_checker) {
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
@@ -1614,24 +1651,17 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   // Double check the tuple's state.
   } else {
-    os << os.Indent() << "auto full_tuple = ";
-    if (1 < num_params) {
-      os << "std::make_tuple(";
-    }
+    os << os.Indent() << "state = " << Table(os, spec.table) << ".GetState(";
 
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
       os << sep << "param_" << param.Index();
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << ".Reify()";
+      }
       sep = ", ";
     }
-
-    if (1 < num_params) {
-      os << ')';
-    }
-
-    os << ";\n"
-       << os.Indent() << "state = " << Table(os, spec.table)
-       << ".GetState(full_tuple) & " << kStateMask << ";\n"
+    os << ") & " << kStateMask << ";\n"
        << os.Indent() << "if (state != " << kStatePresent << ") {\n";
     os.PushIndent();
     if (num_free_params) {
@@ -1651,7 +1681,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     }
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
+        os << sep << "param_" << param.Index() << ".Reify()";
         sep = ", ";
       }
     }

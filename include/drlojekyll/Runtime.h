@@ -10,6 +10,14 @@ namespace hyde {
 namespace rt {
 
 template <class T>
+struct TypeIdentity {
+  using type = T;
+};
+
+template <typename... Ts>
+struct TypeList;
+
+template <class T>
 class Key;
 
 template <typename T>
@@ -53,13 +61,14 @@ template <typename... T>
 using tuple_cat_t = decltype(std::tuple_cat(std::declval<T>()...));
 
 template <template <typename> class F, typename... Ts>
-struct filtered {
+struct filtered_tuple {
   using type = tuple_cat_t<typename filter<F, Ts>::type...>;
 };
 
-// Methods to overload for writing data
+
+// Methods to overload for serializing data
 template <typename Writer, typename DataT>
-struct WriteData {
+struct Serializer {
   static inline void AppendKeySort(Writer &writer, const DataT &data);
   static inline void AppendKeyUnique(Writer &writer, const DataT &data);
   static inline void AppendKeyData(Writer &writer, const DataT &data);
@@ -76,13 +85,13 @@ struct KeyValueWriter<Writer, Key<Column>> {
  public:
   using ColumnType = typename Column::type;
   static inline void WriteKeySort(Writer &writer, const ColumnType &val) {
-    WriteData<Writer, ColumnType>::AppendKeySort(writer, val);
+    Serializer<Writer, ColumnType>::AppendKeySort(writer, val);
   }
   static inline void WriteKeyUnique(Writer &writer, const ColumnType &val) {
-    WriteData<Writer, ColumnType>::AppendKeyUnique(writer, val);
+    Serializer<Writer, ColumnType>::AppendKeyUnique(writer, val);
   }
   static inline void WriteKeyData(Writer &writer, const ColumnType &val) {
-    WriteData<Writer, ColumnType>::AppendKeyData(writer, val);
+    Serializer<Writer, ColumnType>::AppendKeyData(writer, val);
   }
   static inline void WriteValue(Writer &, const ColumnType &val) {}
 };
@@ -96,7 +105,7 @@ struct KeyValueWriter<Writer, Value<Column>> {
   static inline void WriteKeyUnique(Writer &writer, const ColumnType &val) {}
   static inline void WriteKeyData(Writer &writer, const ColumnType &val) {}
   static inline void WriteValue(Writer &writer, const ColumnType &val) {
-    WriteData<Writer, ColumnType>::AppendValue(writer, val);
+    Serializer<Writer, ColumnType>::AppendValue(writer, val);
   }
 };
 
@@ -158,7 +167,7 @@ using Any = void;
 // Templated function <T, Sign> named 'name' that checks whether the type `T`
 // has a member function named 'func' with signature `Sign`.
 // See stackoverflow link for usage.
-#define HAS_MEM_FUNC(func, name) \
+#define HAS_MEMBER_FUNC(func, name) \
   template <typename T, typename Sign> \
   struct name { \
     typedef char yes[1]; \
@@ -180,7 +189,7 @@ struct enable_if {
 template <typename T>
 struct enable_if<false, T> {};
 
-HAS_MEM_FUNC(merge_into, has_merge_into);
+HAS_MEMBER_FUNC(merge_into, has_merge_into);
 
 /* END  https://stackoverflow.com/a/264088 */
 /* *************************************** */

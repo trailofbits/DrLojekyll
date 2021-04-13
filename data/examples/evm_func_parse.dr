@@ -218,42 +218,42 @@ if __name__ == "__main__":
 // #include "impl.cpp"
 #include "runtime_std_impl.h"
 
-int main() {
-  auto functors = DatabaseFunctors();
-  auto log = DatabaseLog();
-  auto backend = hyde::rt::std_containers();
-  Database db = Database(backend, log, functors);
-
-  std::vector<Token> tokens = {{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}, {"foo", 4}};
-
-  for (size_t i = 1; i < tokens.size(); i++) {
-    db.next_token_2({{tokens[i-1], tokens[i]}});
-  }
-  db.other_type_1({{tokens[2]}});
-
-  //std::map<ASTNode, ASTNode> good ({{"bytes", 2}},
-  //            ASTNode({{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}}));
-
-  //// If negation handling is broken then `function()` with a fake `)` will
-  //// appear.
-
-  //bool passed = true;
-  //for (auto t : db.type_name_f()) {
-  //  if (!good.count(t)) {
-  //    auto sep = "";
-  //    for (auto v: t) {
-  //      std::cout << sep;
-  //      print_tuple(v);
-  //      sep = " ";
-  //    }
-  //    std::cout << "\n";
-  //    passed = false;
-  //  } else {
-  //    good.erase(t);
-  //  }
-  //}
-
-  //assert(0 == good.size());
-  //assert(passed);
-}
+// int main() {
+//   auto functors = DatabaseFunctors();
+//   auto log = DatabaseLog();
+//   auto backend = hyde::rt::std_containers();
+//   Database db = Database(backend, log, functors);
+//
+//   std::vector<Token> tokens = {{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}, {"foo", 4}};
+//
+//   for (size_t i = 1; i < tokens.size(); i++) {
+//     db.next_token_2({{tokens[i-1], tokens[i]}});
+//   }
+//   db.other_type_1({{tokens[2]}});
+//
+//   //std::map<ASTNode, ASTNode> good ({{"bytes", 2}},
+//   //            ASTNode({{"function", 0}, {"(", 1}, {"bytes", 2}, {")", 3}}));
+//
+//   //// If negation handling is broken then `function()` with a fake `)` will
+//   //// appear.
+//
+//   //bool passed = true;
+//   //for (auto t : db.type_name_f()) {
+//   //  if (!good.count(t)) {
+//   //    auto sep = "";
+//   //    for (auto v: t) {
+//   //      std::cout << sep;
+//   //      print_tuple(v);
+//   //      sep = " ";
+//   //    }
+//   //    std::cout << "\n";
+//   //    passed = false;
+//   //  } else {
+//   //    good.erase(t);
+//   //  }
+//   //}
+//
+//   //assert(0 == good.size());
+//   //assert(passed);
+// }
 ```.

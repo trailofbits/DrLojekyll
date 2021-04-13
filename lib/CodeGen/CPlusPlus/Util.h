@@ -42,6 +42,18 @@ static Stream &Var(Stream &os, const DataVariable var) {
   return os;
 }
 
+
+template <typename Stream>
+static Stream &ReifyVar(Stream &os, const DataVariable var) {
+  const auto role = var.DefiningRole();
+  if (role != VariableRole::kVectorVariable &&
+      role != VariableRole::kConstant && role != VariableRole::kJoinPivot &&
+      role != VariableRole::kProductOutput) {
+    os << ".Reify()";
+  }
+  return os;
+}
+
 // CPlusPlus representation of TypeKind
 const std::string_view TypeName(ParsedForeignType type);
 
