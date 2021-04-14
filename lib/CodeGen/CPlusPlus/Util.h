@@ -50,6 +50,7 @@ static Stream &ReifyVar(Stream &os, const DataVariable var) {
     case VariableRole::kConstant:
     case VariableRole::kJoinPivot:
     case VariableRole::kProductOutput:
+    case VariableRole::kFunctorOutput:
     case VariableRole::kScanOutput: return os;
     default: return os << ".Reify()";
   }
