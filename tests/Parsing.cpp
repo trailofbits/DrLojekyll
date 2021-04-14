@@ -75,6 +75,10 @@ static const std::unordered_set<std::string> kBuildReleaseFailExamples{
 static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
     "average_weight.dr", "pairwise_average_weight.dr"};
 
+// Set of examples that have a "main" and asserts that can be run for correctness checks
+static const std::unordered_set<std::string> kFunctionalCxxExample{
+    "transitive_closure.dr"};
+
 // Test that the well-formed example files parse and build.
 TEST_P(PassingExamplesParsingSuite, Examples) {
   fs::path path = GetParam();
@@ -144,32 +148,49 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   }
 
   // Generate C++ code
-  auto cxx_out_path = generated_file_base.string() + ".cpp";
+  auto cxx_gen_path = generated_file_base.string() + ".cpp";
   {
-    std::ofstream os(cxx_out_path);
+    std::ofstream os(cxx_gen_path);
     hyde::OutputStream cxx_out_fs(display_mgr, os);
     hyde::GenerateCxxDatabaseCode(*program_opt, cxx_out_fs);
   }
 
-  // Try to compile generated C++ code (no main so do library)
+  // Whether or not to compile to object file or main executable for correctness testing
+  const bool cxx_full_test = kFunctionalCxxExample.count(path_filename_str);
+  auto cxx_out_path = generated_file_base.string() + ".out";
+
+  // Try to compile generated C++ code
   // FIXME: possible command injection here!
-  std::string compile_cmd = "\"" + std::string(kCxxCompilerPath) + "\"" +
+  std::string compile_cmd =
+      "\"" + std::string(kCxxCompilerPath) + "\"" +
 #ifdef _WIN32
-                            " /std:c++17 /c /I\"" + kDrlogPublicHeaders +
-                            "\" /I\"" + kDrlogRuntimeImplHeaders
+      " /std:c++17 " + (cxx_full_test ? "/o " + cxx_out_path : "/c") + " /I\"" +
+      kDrlogPublicHeaders + "\" /I\"" + kDrlogRuntimeImplHeaders
 #else
-                            " -std=c++17 -c -I\"" + kDrlogPublicHeaders +
-                            "\" -I\"" + kDrlogRuntimeImplHeaders
+      " -std=c++17 " + (cxx_full_test ? "-o " + cxx_out_path : "-c") + " -I\"" +
+      kDrlogPublicHeaders + "\" -I\"" + kDrlogRuntimeImplHeaders
 #endif
-                            + "\" " + kCxxFlags + " \"" + cxx_out_path + "\"";
+      + "\" " + kCxxFlags + " \"" + cxx_gen_path + "\"";
 #ifdef _WIN32
   int compile_ret_code = std::system(("\"" + compile_cmd + "\"").c_str());
 #else
   int compile_ret_code = std::system(compile_cmd.c_str());
 #endif
   EXPECT_TRUE(compile_ret_code == 0)
-      << "C++ compilation failed! Saved generated code at " << cxx_out_path
-      << std::endl;
+      << "C++ compilation failed with command:\n\t\"" << compile_cmd
+      << "\"\n\tSaved generated code at: \"" << cxx_gen_path << "\"\n";
+
+  // Check if we get a 0 output when trying to run it!
+  if (cxx_full_test) {
+#ifdef _WIN32
+    int run_ret_code = std::system(("\"" + cxx_out_path + "\"").c_str());
+#else
+    int run_ret_code = std::system(cxx_out_path.c_str());
+#endif
+    EXPECT_TRUE(run_ret_code == 0)
+        << "Running the compiled binary failed!\n\t\"" << compile_cmd
+        << "\"\n\tSaved binary at: \"" << cxx_out_path << "\"\n";
+  }
 
   // Type-check the generated Python code with mypy, if available
 #ifdef MYPY_PATH
@@ -183,6 +204,12 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   int mypy_ret_code = std::system(mypy_cmd.c_str());
   EXPECT_TRUE(mypy_ret_code == 0)
       << "Python mypy type-checking failed! Saved generated code at "
+      << py_out_path << std::endl;
+
+  std::string python_cmd = "python3 " + py_out_path;
+  int python_ret_code = std::system(python_cmd.c_str());
+  EXPECT_TRUE(python_ret_code == 0)
+      << "Python correctness testing failed! Saved generated code at "
       << py_out_path << std::endl;
 #endif  // MYPY_PATH
 }
