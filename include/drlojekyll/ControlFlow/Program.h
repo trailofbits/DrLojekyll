@@ -478,6 +478,9 @@ class ProgramVectorLoopRegion
   // Variables extracted from the vector during each iteration of the loop
   DefinedNodeRange<DataVariable> TupleVariables(void) const;
 
+  // Optional worker ID variable.
+  std::optional<DataVariable> WorkerId(void) const;
+
  private:
   friend class ProgramRegion;
 
@@ -509,6 +512,7 @@ class ProgramVectorAppendRegion
     static name From(ProgramRegion) noexcept; \
     VectorUsage Usage(void) const noexcept; \
     DataVector Vector(void) const noexcept; \
+    std::optional<DataVariable> WorkerId(void) const; \
    private: \
     friend class ProgramRegion; \
     using program::ProgramNode<name>::ProgramNode; \

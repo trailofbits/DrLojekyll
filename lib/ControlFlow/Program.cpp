@@ -407,6 +407,13 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
   } \
   DataVector name::Vector(void) const noexcept { \
     return DataVector(impl->Node<name>::vector.get()); \
+  } \
+  std::optional<DataVariable> name::WorkerId(void) const { \
+    if (impl->worker_id) { \
+      return DataVariable(impl->worker_id.get()); \
+    } else { \
+      return std::nullopt; \
+    } \
   }
 
 VECTOR_OPS(ProgramVectorLoopRegion)
@@ -415,14 +422,6 @@ VECTOR_OPS(ProgramVectorClearRegion)
 VECTOR_OPS(ProgramVectorUniqueRegion)
 
 #undef VECTOR_OPS
-
-std::optional<DataVariable> ProgramVectorAppendRegion::WorkerId(void) const {
-  if (impl->worker_id) {
-    return DataVariable(impl->worker_id.get());
-  } else {
-    return std::nullopt;
-  }
-}
 
 DataVector ProgramVectorSwapRegion::LHS(void) const noexcept {
   return DataVector(impl->lhs.get());

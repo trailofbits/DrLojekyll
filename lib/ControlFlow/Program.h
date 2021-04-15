@@ -553,6 +553,9 @@ class Node<ProgramVectorLoopRegion> final
 
   // Vector being looped.
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORLOOP = Node<ProgramVectorLoopRegion>;
@@ -586,7 +589,7 @@ class Node<ProgramVectorAppendRegion> final
   UseList<VAR> tuple_vars;
   UseRef<VECTOR> vector;
 
-  // Optional ID of the target worker thread. If
+  // Optional ID of the target worker thread.
   UseRef<VAR> worker_id;
 };
 
@@ -615,6 +618,9 @@ class Node<ProgramVectorClearRegion> final
   Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept override;
 
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORCLEAR = Node<ProgramVectorClearRegion>;
@@ -669,6 +675,9 @@ class Node<ProgramVectorUniqueRegion> final
   Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept override;
 
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
@@ -1348,6 +1357,12 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // Can this induction produce deletions?
   bool is_differential{false};
+
+  // The primary, "dominating" UNIONs of the induction.
+  std::vector<QueryView> merges;
+
+  // All of the UNIONs of the induction.
+  std::vector<QueryView> all_merges;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;

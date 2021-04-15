@@ -188,16 +188,25 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       proc->VectorFor(impl, VectorKind::kJoinPivots, join_view.PivotColumns());
 
   for (auto insert : inserts) {
+    // Hash the variables together to form a worker ID.
+    WORKERID * const hash =
+        impl->operation_regions.CreateDerived<WORKERID>(insert);
+    VAR * const worker_id = new VAR(impl->next_id++, VariableRole::kWorkerId);
+    hash->worker_id.reset(worker_id);
+    insert->body.Emplace(insert, hash);
+
     const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
-        insert, ProgramOperation::kAppendJoinPivotsToVector);
+        hash, ProgramOperation::kAppendJoinPivotsToVector);
+    hash->body.Emplace(insert, append);
 
     for (auto col : join_view.PivotColumns()) {
       const auto var = insert->VariableFor(impl, col);
+      hash->hashed_vars.AddUse(var);
       append->tuple_vars.AddUse(var);
     }
 
     append->vector.Emplace(append, pivot_vec);
-    insert->body.Emplace(insert, append);
+    append->worker_id.Emplace(append, worker_id);
   }
 
   // Find the common ancestor of all of the `kInsertIntoView` associated with

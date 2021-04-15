@@ -50,6 +50,8 @@ class WorkItem {
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
 
+class ContinueInductionWorkItem;
+
 // General wrapper around data used when lifting from the data flow to the
 // control flow representation.
 class Context {
@@ -121,6 +123,20 @@ class Context {
   //  // Boolean variable to test if we've ever produced anything for this product,
   //  // and thus should push data through.
   //  std::unordered_map<QueryView, VAR *> product_guard_var;
+
+  // The current "pending" induction. Consider the following:
+  //
+  //        UNION0        UNION1
+  //           \            /
+  //            '-- JOIN --'
+  //                  |
+  //
+  // In this case, we don't want UNION0 to be nest inside UNION1 or vice
+  // versa, they should both "activate" at the same time. The work list
+  // operates in such a way that we exhaust all JOINs before any UNIONs, so in
+  // this process, we want to discover the frontiers to as many inductive UNIONs
+  // as possible, so that they can all share the same INDUCTION.
+  ContinueInductionWorkItem *pending_induction_action{nullptr};
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;

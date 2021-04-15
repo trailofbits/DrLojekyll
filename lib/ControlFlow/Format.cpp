@@ -428,11 +428,17 @@ OutputStream &operator<<(OutputStream &os, ProgramWorkerIdRegion region) {
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region) {
   os << os.Indent() << "vector-clear " << region.Vector();
+  if (auto worker_id = region.WorkerId(); worker_id) {
+    os << " of-worker " << *worker_id;
+  }
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region) {
   os << os.Indent() << "vector-unique " << region.Vector();
+  if (auto worker_id = region.WorkerId(); worker_id) {
+    os << " of-worker " << *worker_id;
+  }
   return os;
 }
 
