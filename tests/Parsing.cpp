@@ -110,14 +110,14 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   //
   // Note: Some tests fail to build -- handle those specially
   if (kBuildDebugFailExamples.count(path_filename_str)) {
-    ASSERT_DEBUG_DEATH(hyde::Program::Build(
-        *query_opt, hyde::IRFormat::kIterative, err_log),
+    ASSERT_DEBUG_DEATH(
+        hyde::Program::Build(*query_opt, hyde::IRFormat::kIterative, err_log),
         ".*TODO.*");
     return;
   }
 
-  auto program_opt = hyde::Program::Build(
-      *query_opt, hyde::IRFormat::kIterative, err_log);
+  auto program_opt =
+      hyde::Program::Build(*query_opt, hyde::IRFormat::kIterative, err_log);
   ASSERT_TRUE(program_opt.has_value());
 
   auto generated_file_base =
@@ -143,7 +143,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     hyde::GeneratePythonDatabaseCode(*program_opt, py_out_fs);
   }
 
-  // Type-check the generated Python code with mypy, if available
+  // Type-check the generated Python code with mypy, and try to run it
 #ifdef MYPY_PATH
 
   // Note, mypy can take input from a command line string via '-c STRING'
@@ -151,10 +151,16 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   // instead.
   //
   // FIXME: possible command injection here!
-  std::string cmd = std::string(MYPY_PATH) + " " + py_out_path;
-  int ret_code = std::system(cmd.c_str());
-  EXPECT_TRUE(ret_code == 0)
+  std::string mypy_cmd = std::string(MYPY_PATH) + " " + py_out_path;
+  int mypy_ret_code = std::system(mypy_cmd.c_str());
+  EXPECT_TRUE(mypy_ret_code == 0)
       << "Python mypy type-checking failed! Saved generated code at "
+      << py_out_path << std::endl;
+
+  std::string python_cmd = "python3 " + py_out_path;
+  int python_ret_code = std::system(python_cmd.c_str());
+  EXPECT_TRUE(python_ret_code == 0)
+      << "Python correctness testing failed! Saved generated code at "
       << py_out_path << std::endl;
 #endif  // MYPY_PATH
 }
