@@ -691,6 +691,25 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;
 
+  bool CanReceiveDeletions(void) const;
+  bool CanProduceDeletions(void) const;
+
+  // A unique integer that labels all UNIONs in the same induction.
+  std::optional<unsigned> InductionGroupId(void) const;
+
+  UsedNodeRange<QueryView> InductiveSuccessors(void) const;
+  UsedNodeRange<QueryView> InductivePredecessors(void) const;
+
+  UsedNodeRange<QueryView> NonInductiveSuccessors(void) const;
+  UsedNodeRange<QueryView> NonInductivePredecessors(void) const;
+
+  // All UNIONs, including this one, in the same inductive set.
+  UsedNodeRange<QueryView> InductiveSet(void) const;
+
+  // Can this view reach back to itself without first going through another
+  // inductive union?
+  bool IsOwnIndirectInductiveSuccessor(void) const;
+
  private:
   using query::QueryNode<QueryMerge>::QueryNode;
 

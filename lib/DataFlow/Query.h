@@ -89,7 +89,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   const TypeLoc type;
 
   // View to which this column belongs.
-  Node<QueryView> *const view;
+  Node<QueryView> * const view;
 
   // Reference to a use of a real constant. We need this indirection because
   // we depend on dataflow to sometimes encode control dependencies, but if we
@@ -273,6 +273,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
+
+  // Returns `true` if this node is inductive. Only MERGEs can be inductive.
+  virtual bool IsInductive(void) const;
 
   // Prepare to delete this node. This tries to drop all dependencies and
   // unlink this node from the dataflow graph. It returns `true` if successful
@@ -870,9 +873,17 @@ using AGG = Node<QueryAggregate>;
 template <>
 class Node<QueryMerge> : public Node<QueryView> {
  public:
-  Node(void) : merged_views(this) {}
+  Node(void)
+      : merged_views(this),
+        inductive_predecessors(this),
+        inductive_successors(this),
+        noninductive_predecessors(this),
+        noninductive_successors(this) {}
 
   virtual ~Node(void);
+
+  // Returns `true` if this node is inductive. Only MERGEs can be inductive.
+  bool IsInductive(void) const override;
 
   const char *KindName(void) const noexcept override;
   Node<QueryMerge> *AsMerge(void) noexcept override;
@@ -904,6 +915,23 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
+
+  std::shared_ptr<WeakUseList<VIEW>> related_merges;
+
+  WeakUseList<VIEW> inductive_predecessors;
+  WeakUseList<VIEW> inductive_successors;
+
+  WeakUseList<VIEW> noninductive_predecessors;
+  WeakUseList<VIEW> noninductive_successors;
+
+  std::optional<unsigned> merge_set_id;
+
+  // Can we reach back to ourselves by not flowing through another induction?
+  bool can_reach_self_not_through_another_induction{false};
+
+  // Do all inductive successors of this union lead into one or more other
+  // inductive unions?
+  bool all_inductive_successors_reach_other_inductions{false};
 
   // If this is non-zero, then we're not allowed to do sinking. This exists to
   // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
@@ -1288,6 +1316,9 @@ class QueryImpl {
   // that we have the invariant that the only type of view that can take all
   // constants is a tuple. This simplifies lots of stuff later.
   void ConvertConstantInputsToTuples(void);
+
+  // Identify the inductive unions in the data flow.
+  void IdentifyInductions(const ErrorLog &log);
 
   // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(const ErrorLog &log,

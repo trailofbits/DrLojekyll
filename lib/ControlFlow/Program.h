@@ -1334,6 +1334,9 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // from the prior iteration of the fixpoint loop.
   std::unordered_map<QueryView, VECTOR *> view_to_swap_vec;
 
+  // We try to share swap vectors as much as possible.
+  std::unordered_map<std::string, VECTOR *> col_types_to_swap_vec;
+
   // This is the output vector; it accumulates everything from all iterations
   // of the fixpoint loop.
   std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
@@ -1343,11 +1346,11 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   std::vector<REGION *> init_appends_remove;
   std::vector<OP *> cycle_appends;
 
-  std::vector<PARALLEL *> output_add_cycles;
-  std::vector<PARALLEL *> output_remove_cycles;
+  std::unordered_map<QueryView, PARALLEL *> output_add_cycles;
+  std::unordered_map<QueryView, PARALLEL *> output_remove_cycles;
 
-  std::vector<PARALLEL *> fixpoint_add_cycles;
-  std::vector<PARALLEL *> fixpoint_remove_cycles;
+  std::unordered_map<QueryView, PARALLEL *> fixpoint_add_cycles;
+  std::unordered_map<QueryView, PARALLEL *> fixpoint_remove_cycles;
 
   enum State {
     kAccumulatingInputRegions,
@@ -1362,7 +1365,7 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   std::vector<QueryView> merges;
 
   // All of the UNIONs of the induction.
-  std::vector<QueryView> all_merges;
+  std::vector<QueryMerge> all_merges;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;

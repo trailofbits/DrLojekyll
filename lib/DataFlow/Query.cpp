@@ -52,6 +52,16 @@ QueryImpl::~QueryImpl(void) {
 
   for (auto merge : merges) {
     merge->merged_views.ClearWithoutErasure();
+    if (merge->related_merges) {
+      if (merge->related_merges->Owner() == merge) {
+        merge->related_merges->ClearWithoutErasure();
+      }
+      merge->related_merges.reset();
+    }
+    merge->inductive_successors.ClearWithoutErasure();
+    merge->inductive_predecessors.ClearWithoutErasure();
+    merge->noninductive_successors.ClearWithoutErasure();
+    merge->noninductive_predecessors.ClearWithoutErasure();
   }
 
   for (auto cond : conditions) {
@@ -1124,6 +1134,56 @@ void QueryMerge::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                QueryColumn(out_col));
     }
   }
+}
+
+bool QueryMerge::CanReceiveDeletions(void) const {
+  return impl->can_receive_deletions;
+}
+
+bool QueryMerge::CanProduceDeletions(void) const {
+  return impl->can_produce_deletions;
+}
+
+// A unique integer that labels all UNIONs in the same induction.
+std::optional<unsigned> QueryMerge::InductionGroupId(void) const {
+  return impl->merge_set_id;
+}
+
+UsedNodeRange<QueryView> QueryMerge::InductiveSuccessors(void) const {
+  assert(impl->merge_set_id.has_value());
+  return {UsedNodeIterator<QueryView>(impl->inductive_successors.begin()),
+          UsedNodeIterator<QueryView>(impl->inductive_successors.end())};
+}
+
+UsedNodeRange<QueryView> QueryMerge::InductivePredecessors(void) const {
+  assert(impl->merge_set_id.has_value());
+  return {UsedNodeIterator<QueryView>(impl->inductive_predecessors.begin()),
+          UsedNodeIterator<QueryView>(impl->inductive_predecessors.end())};
+}
+
+UsedNodeRange<QueryView> QueryMerge::NonInductiveSuccessors(void) const {
+  assert(impl->merge_set_id.has_value());
+  return {UsedNodeIterator<QueryView>(impl->noninductive_successors.begin()),
+          UsedNodeIterator<QueryView>(impl->noninductive_successors.end())};
+}
+
+UsedNodeRange<QueryView> QueryMerge::NonInductivePredecessors(void) const {
+  assert(impl->merge_set_id.has_value());
+  return {UsedNodeIterator<QueryView>(impl->noninductive_predecessors.begin()),
+          UsedNodeIterator<QueryView>(impl->noninductive_predecessors.end())};
+}
+
+// All UNIONs, including this one, in the same inductive set.
+UsedNodeRange<QueryView> QueryMerge::InductiveSet(void) const {
+  assert(impl->merge_set_id.has_value());
+  return {UsedNodeIterator<QueryView>(impl->related_merges->begin()),
+          UsedNodeIterator<QueryView>(impl->related_merges->end())};
+}
+
+// Can this view reach back to itself without first going through another
+// inductive union?
+bool QueryMerge::IsOwnIndirectInductiveSuccessor(void) const {
+  return impl->can_reach_self_not_through_another_induction;
 }
 
 ComparisonOperator QueryCompare::Operator(void) const {

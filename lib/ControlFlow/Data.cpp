@@ -80,7 +80,7 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
 
 // Get or create a table in the program.
 Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
-                                              Context &context,
+                                              Context &,
                                               QueryView view) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -149,22 +149,29 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
   // without consulting whether or not the other sources feeding the union
   // might have provided the data.
   std::sort(model->table->views.begin(), model->table->views.end(),
-            [&context] (QueryView a, QueryView b) -> bool {
+            [] (QueryView a, QueryView b) -> bool {
+
+              if (!a.IsMerge() && !b.IsMerge()) {
+                return a.Depth() > b.Depth();
 
               // Order merges first.
-              if (a.IsMerge() && !b.IsMerge()) {
+              } else if (a.IsMerge() && !b.IsMerge()) {
                 return true;
 
               } else if (!a.IsMerge() && b.IsMerge()) {
                 return false;
+              }
+
+              const auto a_merge = QueryMerge::From(a);
+              const auto b_merge = QueryMerge::From(b);
 
               // Order inductive merges first.
-              } else if (context.inductive_successors.count(a) &&
-                         !context.inductive_successors.count(b)) {
+              if (a_merge.InductionGroupId().has_value() &&
+                  !b_merge.InductionGroupId().has_value()) {
                 return true;
 
-              } else if (!context.inductive_successors.count(a) &&
-                         context.inductive_successors.count(b)) {
+              } else if (!a_merge.InductionGroupId().has_value() &&
+                         b_merge.InductionGroupId().has_value()) {
                 return false;
 
               // Order deepest first.

@@ -67,7 +67,20 @@ const char *Node<QueryAggregate>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryMerge>::KindName(void) const noexcept {
-  return "UNION";
+  if (merge_set_id.has_value()) {
+    if (!noninductive_successors.Empty() &&
+        !noninductive_predecessors.Empty()) {
+      return "INDUCTION IN/OUT";
+    } else if (!noninductive_successors.Empty()) {
+      return "INDUCTION OUT";
+    } else if (!noninductive_predecessors.Empty()) {
+      return "INDUCTION IN";
+    } else {
+      return "INDUCTION";
+    }
+  } else {
+    return "UNION";
+  }
 }
 
 const char *Node<QueryCompare>::KindName(void) const noexcept {
@@ -132,6 +145,11 @@ Node<QueryCompare> *Node<QueryView>::AsCompare(void) noexcept {
 
 Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
   return nullptr;
+}
+
+// Returns `true` if this node is inductive. Only MERGEs can be inductive.
+bool Node<QueryView>::IsInductive(void) const {
+  return false;
 }
 
 // Useful for communicating low-level debug info back to the formatter.
@@ -759,6 +777,7 @@ void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
 void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   if (is_used_by_negation) {
     that->is_used_by_negation = true;
+    is_used_by_negation = false;
   }
 
 #ifndef NDEBUG

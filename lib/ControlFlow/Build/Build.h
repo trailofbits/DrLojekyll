@@ -56,6 +56,9 @@ class ContinueInductionWorkItem;
 // control flow representation.
 class Context {
  public:
+  PROC *init_proc{nullptr};
+  PROC *entry_proc{nullptr};
+
   // Maps views to the functions that check if their conditions are satisfied
   // or not.
   std::unordered_map<QueryView, PROC *> cond_checker_procs;
@@ -70,43 +73,43 @@ class Context {
   std::unordered_map<ParsedMessage, VECTOR *> publish_vecs;
   std::unordered_map<ParsedMessage, QueryView> published_view;
 
-  // Mapping of `QueryMerge` instances to their equivalence classes.
-  std::unordered_map<QueryView, InductionSet> merge_sets;
-
-  // Merges in this set are inductive, but behave more like non-inductive
-  // merges because all paths leading out of these views go through a single
-  // other merge in their inductive set.
-  //
-  // Dominance idea: UNON1 and maybe UNION3 are inductive, and UNION2 appears
-  // inductive but only by virtue of its placement between two other inductive
-  // unions. The uniqueness of stuff coming out of UNION2 can be enforced via
-  // UNION1, thus UNION1 dominates UNION2.
-  //
-  //         ----UNION1----.
-  //               |       |
-  //              ...      |
-  //               |       |
-  //             UNION2    |
-  //            /     \    |
-  //           ..     ..   |
-  //            \     /    |
-  //            UNION3     |
-  //         ----' '-------'
-  std::unordered_set<QueryView> dominated_merges;
-
-  // Set of successors of a `QueryMerge` that may lead back to the merge
-  // (inductive) and never lead back to the merge (noninductive), respectively.
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      inductive_successors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      noninductive_successors;
-
-  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
-  // an inductive
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      inductive_predecessors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      noninductive_predecessors;
+//  // Mapping of `QueryMerge` instances to their equivalence classes.
+//  std::unordered_map<QueryView, InductionSet> merge_sets;
+//
+//  // Merges in this set are inductive, but behave more like non-inductive
+//  // merges because all paths leading out of these views go through a single
+//  // other merge in their inductive set.
+//  //
+//  // Dominance idea: UNON1 and maybe UNION3 are inductive, and UNION2 appears
+//  // inductive but only by virtue of its placement between two other inductive
+//  // unions. The uniqueness of stuff coming out of UNION2 can be enforced via
+//  // UNION1, thus UNION1 dominates UNION2.
+//  //
+//  //         ----UNION1----.
+//  //               |       |
+//  //              ...      |
+//  //               |       |
+//  //             UNION2    |
+//  //            /     \    |
+//  //           ..     ..   |
+//  //            \     /    |
+//  //            UNION3     |
+//  //         ----' '-------'
+//  std::unordered_set<QueryView> dominated_merges;
+//
+//  // Set of successors of a `QueryMerge` that may lead back to the merge
+//  // (inductive) and never lead back to the merge (noninductive), respectively.
+//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+//      inductive_successors;
+//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+//      noninductive_successors;
+//
+//  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
+//  // an inductive
+//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+//      inductive_predecessors;
+//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
+//      noninductive_predecessors;
 
   // Set of regions that execute eagerly. In practice this means that these
   // regions are directly needed in order to produce an output message.
@@ -514,7 +517,7 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 
 // Builds an initialization function which does any work that depends purely
 // on constants.
-void BuildInitProcedure(ProgramImpl *impl, Context &context);
+void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query);
 
 // Build the primary and entry data flow procedures.
 void BuildEagerProcedure(ProgramImpl *impl, Context &context,
@@ -619,7 +622,7 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_added);
+    TABLE *already_added, bool defer_to_inductions=true);
 
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an unknown state. Returns the table of `view`
@@ -630,7 +633,7 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_removed);
+    TABLE *already_removed, bool defer_to_inductions=true);
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
@@ -677,10 +680,10 @@ bool MayNeedToBePersisted(QueryView view);
 // sake of supporting differential updates / verification.
 bool MayNeedToBePersistedDifferential(QueryView view);
 
-// Decides whether or not `view` can depend on `pred_view` for persistence
-// of its data.
-bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
-                                     QueryView view, QueryView pred_view);
+//// Decides whether or not `view` can depend on `pred_view` for persistence
+//// of its data.
+//bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
+//                                     QueryView view, QueryView pred_view);
 
 // Build and dispatch to the bottom-up remover regions for `view`. The idea
 // is that we've just removed data from `view`, and now want to tell the

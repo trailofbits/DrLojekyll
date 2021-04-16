@@ -265,6 +265,10 @@ class UseList {
 
   void Clear(void);
 
+  const User *Owner(void) const {
+    return owner;
+  }
+
  private:
   void DeleteUse(Use<T> *use) {
     const auto def = use->def_being_used;

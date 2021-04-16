@@ -1794,6 +1794,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->ProxyInsertsWithTuples();
   impl->TrackDifferentialUpdates(log, true);
   impl->LinkViews();
+  impl->IdentifyInductions(log);
   impl->FinalizeColumnIDs();
 
   return Query(std::move(impl));

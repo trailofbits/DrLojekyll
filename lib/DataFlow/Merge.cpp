@@ -13,6 +13,11 @@ Node<QueryMerge> *Node<QueryMerge>::AsMerge(void) noexcept {
   return this;
 }
 
+// Returns `true` if this node is inductive. Only MERGEs can be inductive.
+bool Node<QueryMerge>::IsInductive(void) const {
+  return (inductive_successors.Size() + inductive_predecessors.Size()) != 0u;
+}
+
 uint64_t Node<QueryMerge>::Hash(void) noexcept {
   if (hash) {
     return hash;

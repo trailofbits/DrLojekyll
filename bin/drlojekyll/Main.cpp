@@ -63,8 +63,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
   if (gIRStream || gCxxCodeStream || gPyCodeStream ||
       gPyInterfaceCodeStream) {
 
-    if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative,
-                                          error_log)) {
+    if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
       if (gIRStream) {
         (*gIRStream) << *program_opt;
         gIRStream->Flush();

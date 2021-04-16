@@ -1006,9 +1006,7 @@ enum IRFormat {
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query,
-                                      IRFormat format_,
-                                      const ErrorLog &log);
+  static std::optional<Program> Build(const Query &query, IRFormat format_);
 
   // The format of the code in this program.
   IRFormat Format(void) const;

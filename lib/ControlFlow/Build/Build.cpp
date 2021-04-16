@@ -38,247 +38,6 @@ static std::set<QueryView> TransitivePredecessorsOf(QueryView output) {
   return dependencies;
 }
 
-// Return the set of all views that are transitively derived from `input`.
-static std::set<QueryView> TransitiveSuccessorsOf(QueryView input) {
-  std::set<QueryView> dependents;
-  std::vector<QueryView> frontier;
-  frontier.push_back(input);
-
-  while (!frontier.empty()) {
-    const auto view = frontier.back();
-    frontier.pop_back();
-    for (auto succ_view : view.Successors()) {
-      if (auto [it, added] = dependents.insert(succ_view); added) {
-        frontier.push_back(succ_view);
-      }
-    }
-
-    view.ForEachNegation([&] (QueryNegate negate) {
-      if (auto [it, added] = dependents.insert(negate); added) {
-        frontier.push_back(negate);
-      }
-    });
-  }
-
-  return dependents;
-}
-
-// Analyze the MERGE/UNION nodes and figure out which ones are inductive.
-static void DiscoverInductions(const Query &query, Context &context,
-                               const ErrorLog &log) {
-  unsigned merge_id = 0u;
-  for (auto view : query.Merges()) {
-    context.merge_sets.emplace(view, merge_id++);
-    auto preds = TransitivePredecessorsOf(view);
-
-    // This is not an inductive merge.
-    if (!preds.count(view)) {
-      continue;
-    }
-
-    for (auto succ_view : QueryView(view).Successors()) {
-      if (preds.count(succ_view)) {
-        context.inductive_successors[view].insert(succ_view);
-
-      } else {
-        context.noninductive_successors[view].insert(succ_view);
-      }
-    }
-
-    auto succs = TransitiveSuccessorsOf(view);
-    for (auto pred_view : QueryView(view).Predecessors()) {
-      if (succs.count(pred_view)) {
-        context.inductive_predecessors[view].insert(pred_view);
-      } else {
-        context.noninductive_predecessors[view].insert(pred_view);
-      }
-    }
-  }
-
-  // Now group together the merges into co-inductive sets, i.e. when one
-  // induction is tied with another induction.
-  std::set<QueryView> seen;
-  std::unordered_set<QueryView> reached_cycles;
-  std::vector<QueryView> frontier;
-  std::set<std::pair<QueryView, QueryView>> disallowed_edges;
-
-  for (const auto &[view, noninductive_predecessors] :
-       context.noninductive_predecessors) {
-    for (QueryView pred_view : noninductive_predecessors) {
-      disallowed_edges.emplace(pred_view, view);
-    }
-  }
-
-  for (const auto &[view, inductive_successors] :
-       context.inductive_successors) {
-    if (inductive_successors.empty()) {
-      continue;
-    }
-
-    frontier.clear();
-    seen.clear();
-    reached_cycles.clear();
-
-    // This is a variant of transitive successors, except that we don't allow
-    // ourselves to walk through non-inductive output paths of merges because
-    // otherwise we would end up merging two unrelated induction sets.
-
-    for (QueryView succ_view : inductive_successors) {
-      frontier.push_back(succ_view);
-    }
-
-    // We want to express something similar to dominance analysis here.
-    // Specifically, suppose we have a set of UNIONs that all logically belong
-    // to the same co-inductive set. That is, the outputs of each of the unions
-    // somehow cycle into all of the other unions.
-
-    InductionSet &base_set = context.merge_sets[view];
-
-    bool appears_dominated = true;
-
-    while (!frontier.empty()) {
-      const auto frontier_view = frontier.back();
-      frontier.pop_back();
-
-      // We've cycled back to ourselves. If we get back to ourselves along
-      // some path that doesn't itself go through another inductive merge/cycle,
-      // which would have been caught by the `else if` case below, then it means
-      // that this view isn't subordinate to any other one, and that is actually
-      // does in fact need storage.
-      if (frontier_view == view) {
-        appears_dominated = false;
-        continue;
-
-      // We've cycled to a UNION that is inductive.
-      } else if (context.inductive_successors.count(frontier_view)) {
-        reached_cycles.insert(frontier_view);
-        InductionSet &reached_set = context.merge_sets[frontier_view];
-        DisjointSet::Union(&base_set, &reached_set);
-
-      // We need to follow the frontier view's successors.
-      } else {
-        for (auto succ_view : frontier_view.Successors()) {
-          if (!seen.count(succ_view) &&
-              !disallowed_edges.count({frontier_view, succ_view})) {
-            seen.insert(succ_view);
-            frontier.push_back(succ_view);
-          }
-        }
-      }
-    }
-
-    // All inductive paths out of this union lead to another inductive union.
-    if (appears_dominated && reached_cycles.size() == 1u) {
-      context.dominated_merges.insert(view);
-    }
-  }
-
-  for (auto &[merge, merge_set] : context.merge_sets) {
-    InductionSet * const set = merge_set.FindAs<InductionSet>();
-    set->all_merges.push_back(merge);
-    if (!context.dominated_merges.count(merge)) {
-      set->merges.push_back(merge);
-    }
-  }
-
-  // Do a final pass over the induction sets. It's possible that the approximate
-  // dominance analysis led us astray, as it doesn't consider the graph as a
-  // whole.
-  for (auto &[view, set_] : context.merge_sets) {
-    InductionSet &set = set_;
-    if (set.all_merges.empty()) {
-      continue;
-    }
-
-    for (auto merge : set.all_merges) {
-
-      // Even though this merge appears dominated, it needs to be treated as
-      // undominated because it has some non-inductive successors. Non-inductive
-      // successors are processed with the same induction vectors as the cyclic
-      // cases.
-      if (context.dominated_merges.count(merge) &&
-          !context.noninductive_successors[merge].empty()) {
-        context.dominated_merges.erase(merge);
-        set.merges.push_back(merge);
-      }
-    }
-
-    // We've got a perfect cycle, and none of the unions in the cycle have a
-    // direct output successor. The output it probably guarded behind a join.
-    // We'll be conservative and just assume all unions need to be
-    // co-represented.
-    if (set.merges.empty()) {
-      set.merges = set.all_merges;
-      for (auto merge : set.all_merges) {
-        context.dominated_merges.erase(merge);
-      }
-    }
-  }
-
-  auto missing_base_case = [&] (QueryView view) -> bool {
-    auto size = 0ull;
-    if (auto it = context.noninductive_predecessors.find(view);
-        it != context.noninductive_predecessors.end()) {
-      size = it->second.size();
-    }
-    return size == 0u;
-  };
-
-  // Sanity check; look for programs that cannot be linearized into our
-  // control-flow format.
-  std::unordered_map<ParsedClause, std::vector<ParsedVariable>> bad_vars;
-  for (const auto &[view, cyclic_pred_list] : context.inductive_predecessors) {
-    if (!missing_base_case(view)) {
-      continue;
-    }
-
-    // This inductive merge has no "true" base case. Lets go make sure that
-    // at least on of the inductions in this merge's induction set has a proper
-    // base case.
-    auto all_missing = true;
-    const auto &set = context.merge_sets[view];
-    for (auto other_view : set.all_merges) {
-      if (!missing_base_case(other_view)) {
-        all_missing = false;
-        break;
-      }
-    }
-
-    // At least one of them does.
-    if (!all_missing) {
-      continue;
-    }
-
-    // None of them do :-(
-    for (QueryColumn col : view.Columns()) {
-      if (col.IsConstant()) {
-        continue;
-      }
-
-      auto var = col.Variable();
-      auto clause = ParsedClause::Containing(var);
-      bad_vars[clause].push_back(var);
-    }
-  }
-
-  // Complain about this if the declarations aren't marked as divergent.
-  for (const auto &[clause, vars] : bad_vars) {
-    auto decl = ParsedDeclaration::Of(clause);
-    if (decl.IsDivergent()) {
-      continue;
-    }
-
-    auto err = log.Append(clause.SpellingRange());
-    err << "Clause introduces non-linearizable induction cycle; it seems like "
-        << "every body of this clause (in)directly depends upon itself -- at "
-        << "least one body must depend on something else";
-
-    err.Note(decl.SpellingRange())
-          << "This error can be disabled (at your own risk) by marking this "
-          << "declaration with the '@divergent' pragma";
-  }
-}
-
 // Figure out what data definitely must be stored persistently. We need to do
 // this ahead-of-time, as opposed to just-in-time, because otherwise we run
 // into situations where a node N will have two successors S1 and S2, e.g.
@@ -323,8 +82,9 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
       (void) TABLE::GetOrCreate(impl, context, view);
 
     // All inductions need to have persistent storage.
-    } else if (context.inductive_successors.count(view) &&
-               !context.dominated_merges.count(view)) {
+    //
+    // TODO(pag): If all paths go elsewhere then we don't need a table?
+    } else if (merge.InductionGroupId().has_value()) {
       (void) TABLE::GetOrCreate(impl, context, view);
 
     // UNIONs that aren't dominating their inductions, or that aren't part of
@@ -384,20 +144,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   for (auto tuple : query.Tuples()) {
     const QueryView view(tuple);
 
-    if (is_conditional(view)) {
-      (void) TABLE::GetOrCreate(impl, context, view);
-    }
-
-    // NOTE(pag): TUPLEs are the only view types allowed to have all-constant
-    //            inputs.
-    auto predecessors = view.Predecessors();
-    if (predecessors.empty()) {
-      continue;
-    }
-
-    const auto pred_view = predecessors[0];
-    if (MayNeedToBePersistedDifferential(view) &&
-        !CanDeferPersistingToPredecessor(impl, context, view, pred_view)) {
+    if (MayNeedToBePersistedDifferential(view)) {
       (void) TABLE::GetOrCreate(impl, context, view);
     }
   }
@@ -765,12 +512,13 @@ static bool BuildBottomUpRemovalProvers(ProgramImpl *impl, Context &context) {
                                   already_checked);
 
     } else if (to_view.IsMerge()) {
-      if (context.inductive_successors.count(to_view) &&
-          !context.dominated_merges.count(to_view)) {
+      auto merge = QueryMerge::From(to_view);
+      if (merge.InductionGroupId().has_value()) {
         CreateBottomUpInductionRemover(impl, context, to_view, let,
                                        already_checked);
       } else {
-        CreateBottomUpUnionRemover(impl, context, to_view, let, already_checked);
+        CreateBottomUpUnionRemover(impl, context, to_view, let,
+                                   already_checked);
       }
 
     } else if (to_view.IsJoin()) {
@@ -960,101 +708,26 @@ static REGION *PivotAroundNegation(
   return seq;
 }
 
-
-// Starting from a negated view, work up to the negation, then look at the
-// data that has come through it (without inspecting its source view).
-template <typename CB>
-static REGION *PivotIntoNegation(
-    ProgramImpl *impl, Context &context, QueryView view, QueryNegate negate,
-    REGION *parent, CB in_scan_cb) {
-  SERIES * const seq = impl->series_regions.Create(parent);
-
-  // Map from negated view columns to the negate.
-  std::vector<QueryColumn> negate_cols;
-  negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                         std::optional<QueryColumn> out_col) {
-    if (role == InputColumnRole::kNegated) {
-      assert(out_col.has_value());
-      assert(QueryView::Containing(in_col) == view);
-      const auto in_var = seq->VariableFor(impl, in_col);
-      assert(in_var != nullptr);
-      seq->col_id_to_var[out_col->Id()] = in_var;
-      negate_cols.push_back(*out_col);
-    }
-  });
-
-  DataModel * const model = impl->view_to_model[negate]->FindAs<DataModel>();
-  TABLE * const table = model->table;
-  assert(table != nullptr);
-
-  // We know we have a source view data model and table, so do a scan over the
-  // source view.
-  BuildMaybeScanPartial(
-      impl, negate, negate_cols, table, seq,
-      [&](REGION *in_scan, bool in_loop) -> REGION * {
-
-        // Map the output columns to input columns; this is convenient for
-        // `in_scan_cb`.
-        negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                               std::optional<QueryColumn> out_col) {
-          if (role == InputColumnRole::kCopied) {
-            assert(out_col.has_value());
-            assert(QueryView::Containing(in_col) == view);
-            const auto out_var = seq->VariableFor(impl, *out_col);
-            assert(out_var != nullptr);
-            seq->col_id_to_var[in_col.Id()] = out_var;
-          }
-        });
-
-        return in_scan_cb(in_scan);
-      });
-
-  return seq;
-}
-
 static REGION *MaybeRemoveFromNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, QueryNegate negate,
     REGION *parent) {
 
-  DataModel * const model = impl->view_to_model[negate]->FindAs<DataModel>();
-  TABLE * const table = model->table;
+  // We know we have a table for the predecessor of the negation, and we may or
+  // may not have a table for the negation. Even with a table for the negation,
+  // that table might not use all of the predecessor's columns, so we're best
+  // off just scanning the negation's predecessor.
+  const QueryView source_view = QueryView(negate).Predecessors()[0];
+  DataModel * const source_view_model =
+      impl->view_to_model[source_view]->FindAs<DataModel>();
+  TABLE * const source_view_table = source_view_model->table;
+  assert(source_view_table != nullptr);
 
-  // If we don't have a table for the negation, then we need to pivot from the
-  // negated view, up to the negation, and down to the source view of the
-  // negation.
-  if (!table) {
-    const QueryView source_view = QueryView(negate).Predecessors()[0];
-    DataModel * const source_view_model =
-        impl->view_to_model[source_view]->FindAs<DataModel>();
-    TABLE * const source_view_table = source_view_model->table;
-    assert(source_view_table != nullptr);
-
-    return PivotAroundNegation(
-        impl, context, view, negate, parent,
-        [&] (OP *if_present_in_source) {
-          BuildEagerRemovalRegion(impl, source_view, negate, context,
-                                  if_present_in_source, source_view_table);
-        });
-
-  // Otherwise we do have a view for the negation, so we can just send things
-  // through it.
-  } else {
-    return PivotIntoNegation(
-        impl, context, view, negate, parent,
-        [&] (REGION *in_scan) -> REGION * {
-          return BuildTopDownCheckerStateCheck(
-              impl, in_scan, table, negate.Columns(),
-              [&] (ProgramImpl *, REGION *if_present_in_negate) -> OP * {
-                OP *let = impl->operation_regions.CreateDerived<LET>(
-                    if_present_in_negate);
-                BuildEagerRemovalRegion(impl, negate, negate,
-                                        context, let, nullptr);
-                return let;
-              },
-              BuildStateCheckCaseNothing,
-              BuildStateCheckCaseNothing);
-        });
-  }
+  return PivotAroundNegation(
+      impl, context, view, negate, parent,
+      [&] (OP *if_present_in_source) {
+        BuildEagerRemovalRegion(impl, source_view, negate, context,
+                                if_present_in_source, source_view_table);
+      });
 }
 
 static REGION *MaybeReAddToNegatedView(
@@ -1409,8 +1082,7 @@ static void BuildTopDownChecker(
 
   } else if (view.IsMerge()) {
     const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view) &&
-        !context.dominated_merges.count(view)) {
+    if (merge.InductionGroupId().has_value()) {
       child = BuildTopDownInductionChecker(
           impl, context, parent, merge, view_cols, already_checked);
 
@@ -2032,8 +1704,11 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // inductive union.
 static bool ShouldDeferStateTransition(Context &context, TABLE *table) {
   for (auto view : table->views) {
-    if (context.inductive_predecessors.count(view)) {
-      return true;
+    if (view.IsMerge()) {
+      const auto merge = QueryMerge::From(view);
+      if (merge.InductionGroupId().has_value()) {
+        return true;
+      }
     }
   }
   return false;
@@ -2048,13 +1723,13 @@ static bool ShouldDeferStateTransition(Context &context, TABLE *table) {
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_added) {
+    TABLE *already_added, bool defer_to_inductions) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
     if (already_added != table) {
-      if (ShouldDeferStateTransition(context, table)) {
+      if (defer_to_inductions && ShouldDeferStateTransition(context, table)) {
         return {parent, table, nullptr};
       }
 
@@ -2095,14 +1770,14 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_removed) {
+    TABLE *already_removed, bool defer_to_inductions) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
     if (already_removed != table) {
 
-      if (ShouldDeferStateTransition(context, table)) {
+      if (defer_to_inductions && ShouldDeferStateTransition(context, table)) {
         return {parent, table, nullptr};
       }
 
@@ -2271,9 +1946,6 @@ static void BuildEagerUpdateCondAndNotify(
 void BuildEagerRemovalRegionsImpl(
     ProgramImpl *impl, QueryView view, Context &context, OP *parent_,
     const std::vector<QueryView> &successors, TABLE *already_removed_) {
-
-  // TODO(pag): Handle conditions!!
-  // TODO(pag): Handle negations!!
 
   // The caller didn't already do a state transition, so we can do it. We might
   // have a situation like this:
@@ -2591,116 +2263,115 @@ bool MayNeedToBePersisted(QueryView view) {
   return view.SetCondition() ||
          !view.PositiveConditions().empty() ||
          !view.NegativeConditions().empty() ||
-         view.IsNegate() ||
          view.IsUsedByNegation();
 }
-
-// Decides whether or not `view` can depend on `pred_view` for persistence
-// of its data.
-bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
-                                     QueryView view, QueryView pred_view) {
-
-  auto &det = context.can_defer_to_predecessor[std::make_pair(view, pred_view)];
-
-  // Check out cache; we may have already determined this.
-  if (det != Context::kDeferUnknown) {
-    return det == Context::kCanDeferToPredecessor;
-  }
-
-  // If this view sets a condition, then the reference counter of that condition
-  // partially reflects the arity of this view, i.e. number of records in the
-  // view. Similarly, if this view has the possiblity of filtering or increasing
-  // the number of tuples admitted by the predecessor, then we can't defer to
-  // the predecessor.
-  if (view.SetCondition() ||
-      !view.PositiveConditions().empty() ||
-      !view.NegativeConditions().empty() ||
-      view.IsNegate() ||
-      view.IsCompare() ||
-      view.IsMap()) {
-    det = Context::kCantDeferToPredecessor;
-    return false;
-  }
-
-  // If this tuple can receive deletions, then whatever is providing data is
-  // sending deletions, so we can depend on how it handles persistence.
-  if (view.CanReceiveDeletions()) {
-    det = Context::kCanDeferToPredecessor;
-    return true;
-  }
-
-  // NOTE(pag): The special casing on JOINs here is a kind of optimization.
-  //            If this TUPLE's predecessor is a JOIN, then it must be using
-  //            at least one of the output columns, which is related to one or
-  //            more of the views feeding the JOIN, and thus we can recover
-  //            the tuple based off of partial information from the JOIN's
-  //            data.
-  //
-  // NOTE(pag): The special casing on a MERGE and SELECT is similar to the
-  //            JOIN case, where we know that the MERGE will be persisted.
-  if (pred_view.IsJoin() || pred_view.IsMerge() || pred_view.IsSelect() ||
-      pred_view.IsNegate()) {
-    det = Context::kCanDeferToPredecessor;
-    return true;
-  }
-
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
-
-  // If the data model of `view` and `pred_view` match, then we can defer
-  // to `pred_model`.
-  if (model == pred_model) {
-    det = Context::kCanDeferToPredecessor;
-    return true;
-  }
-
-  // The data models of `view` and `pred_view` don't match, so we want to
-  // figure out if `pred_view` will be persisted.
-  for (auto succ_of_pred : pred_view.Successors()) {
-
-    // If one of the successors of `pred_view` is a JOIN then all of
-    // `pred_view` is persisted, and thus we can depend upon it. This applies
-    // to both equi-joins and cross-products.
-    if (succ_of_pred.IsJoin()) {
-      det = Context::kCanDeferToPredecessor;
-      return true;
-
-    // If one of the successors of `pred_view` is a merge then we have to
-    // figure out if `succ_of_pred` is an induction or just a plain old
-    // union. If it's an induction, then we know that `pred_view` will
-    // be persisted.
-    } else if (succ_of_pred.IsMerge()) {
-
-      // It's an induction, and thus `pred_view` and `succ_of_pred` should
-      // both share the same data model, but further, it should be persisted.
-      if (context.inductive_predecessors.count(succ_of_pred)) {
-        det = Context::kCanDeferToPredecessor;
-        return true;
-
-      // It's a union, and it will persist the data.
-      } else if (MayNeedToBePersistedDifferential(succ_of_pred)) {
-        det = Context::kCanDeferToPredecessor;
-        return true;
-      }
-
-    // If one of the successors of `pred_view` inserts into a relation, and if
-    // that INSERT's data model is the same as our predecessor's data model,
-    // then we can use it.
-    } else if (succ_of_pred.IsInsert() &&
-               QueryInsert::From(succ_of_pred).IsRelation()) {
-      const auto succ_of_pred_model =
-          impl->view_to_model[pred_view]->FindAs<DataModel>();
-
-      if (succ_of_pred_model == pred_model) {
-        det = Context::kCanDeferToPredecessor;
-        return true;
-      }
-    }
-  }
-
-  det = Context::kCantDeferToPredecessor;
-  return false;
-}
+//
+//// Decides whether or not `view` can depend on `pred_view` for persistence
+//// of its data.
+//bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
+//                                     QueryView view, QueryView pred_view) {
+//
+//  auto &det = context.can_defer_to_predecessor[std::make_pair(view, pred_view)];
+//
+//  // Check out cache; we may have already determined this.
+//  if (det != Context::kDeferUnknown) {
+//    return det == Context::kCanDeferToPredecessor;
+//  }
+//
+//  // If this view sets a condition, then the reference counter of that condition
+//  // partially reflects the arity of this view, i.e. number of records in the
+//  // view. Similarly, if this view has the possiblity of filtering or increasing
+//  // the number of tuples admitted by the predecessor, then we can't defer to
+//  // the predecessor.
+//  if (view.SetCondition() ||
+//      !view.PositiveConditions().empty() ||
+//      !view.NegativeConditions().empty() ||
+//      view.IsNegate() ||
+//      view.IsCompare() ||
+//      view.IsMap()) {
+//    det = Context::kCantDeferToPredecessor;
+//    return false;
+//  }
+//
+//  // If this tuple can receive deletions, then whatever is providing data is
+//  // sending deletions, so we can depend on how it handles persistence.
+//  if (view.CanReceiveDeletions()) {
+//    det = Context::kCanDeferToPredecessor;
+//    return true;
+//  }
+//
+//  // NOTE(pag): The special casing on JOINs here is a kind of optimization.
+//  //            If this TUPLE's predecessor is a JOIN, then it must be using
+//  //            at least one of the output columns, which is related to one or
+//  //            more of the views feeding the JOIN, and thus we can recover
+//  //            the tuple based off of partial information from the JOIN's
+//  //            data.
+//  //
+//  // NOTE(pag): The special casing on a MERGE and SELECT is similar to the
+//  //            JOIN case, where we know that the MERGE will be persisted.
+//  if (pred_view.IsJoin() || pred_view.IsMerge() || pred_view.IsSelect() ||
+//      pred_view.IsNegate()) {
+//    det = Context::kCanDeferToPredecessor;
+//    return true;
+//  }
+//
+//  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+//  const auto pred_model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+//
+//  // If the data model of `view` and `pred_view` match, then we can defer
+//  // to `pred_model`.
+//  if (model == pred_model) {
+//    det = Context::kCanDeferToPredecessor;
+//    return true;
+//  }
+//
+//  // The data models of `view` and `pred_view` don't match, so we want to
+//  // figure out if `pred_view` will be persisted.
+//  for (auto succ_of_pred : pred_view.Successors()) {
+//
+//    // If one of the successors of `pred_view` is a JOIN then all of
+//    // `pred_view` is persisted, and thus we can depend upon it. This applies
+//    // to both equi-joins and cross-products.
+//    if (succ_of_pred.IsJoin()) {
+//      det = Context::kCanDeferToPredecessor;
+//      return true;
+//
+//    // If one of the successors of `pred_view` is a merge then we have to
+//    // figure out if `succ_of_pred` is an induction or just a plain old
+//    // union. If it's an induction, then we know that `pred_view` will
+//    // be persisted.
+//    } else if (succ_of_pred.IsMerge()) {
+//
+//      // It's an induction, and thus `pred_view` and `succ_of_pred` should
+//      // both share the same data model, but further, it should be persisted.
+//      if (context.inductive_predecessors.count(succ_of_pred)) {
+//        det = Context::kCanDeferToPredecessor;
+//        return true;
+//
+//      // It's a union, and it will persist the data.
+//      } else if (MayNeedToBePersistedDifferential(succ_of_pred)) {
+//        det = Context::kCanDeferToPredecessor;
+//        return true;
+//      }
+//
+//    // If one of the successors of `pred_view` inserts into a relation, and if
+//    // that INSERT's data model is the same as our predecessor's data model,
+//    // then we can use it.
+//    } else if (succ_of_pred.IsInsert() &&
+//               QueryInsert::From(succ_of_pred).IsRelation()) {
+//      const auto succ_of_pred_model =
+//          impl->view_to_model[pred_view]->FindAs<DataModel>();
+//
+//      if (succ_of_pred_model == pred_model) {
+//        det = Context::kCanDeferToPredecessor;
+//        return true;
+//      }
+//    }
+//  }
+//
+//  det = Context::kCantDeferToPredecessor;
+//  return false;
+//}
 
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,
@@ -2783,8 +2454,8 @@ void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView from_view,
                                 already_checked);
 
   } else if (to_view.IsMerge()) {
-    if (context.inductive_successors.count(to_view) &&
-        !context.dominated_merges.count(to_view)) {
+    const auto merge = QueryMerge::From(to_view);
+    if (merge.InductionGroupId().has_value()) {
       CreateBottomUpInductionRemover(impl, context, to_view, parent,
                                      already_checked);
     } else {
@@ -2849,8 +2520,7 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
 
   } else if (view.IsMerge()) {
     const auto merge = QueryMerge::From(view);
-    if (context.inductive_successors.count(view) &&
-        !context.dominated_merges.count(view)) {
+    if (merge.InductionGroupId().has_value()) {
       BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
                                 last_table);
     } else {
@@ -2906,14 +2576,16 @@ WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
-                                      IRFormat format_,
-                                      const ErrorLog &log) {
+                                      IRFormat format_) {
   auto impl = std::make_shared<ProgramImpl>(query, format_);
   const auto program = impl.get();
 
+  Context context;
+  context.init_proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kInitializer);
+
   BuildDataModel(query, program);
 
-  Context context;
 
   // Conditions need to be eagerly updated. Transmits and queries may need to
   // depend on them so they must be up-to-date.
@@ -2942,24 +2614,24 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     impl->const_to_var.emplace(const_val, var);
   }
 
-  // Go figure out which merges are inductive, and then classify their
-  // predecessors and successors in terms of which ones are inductive and
-  // which aren't.
-  DiscoverInductions(query, context, log);
-  if (!log.IsEmpty()) {
-    return std::nullopt;
-  }
+//  // Go figure out which merges are inductive, and then classify their
+//  // predecessors and successors in terms of which ones are inductive and
+//  // which aren't.
+//  DiscoverInductions(query, context, log);
+//  if (!log.IsEmpty()) {
+//    return std::nullopt;
+//  }
 
   // Now that we've identified our inductions, we can fill our data model,
   // i.e. assign persistent tables to each disjoint set of views.
   FillDataModel(query, program, context);
 
-  // Build the initialization procedure, needed to start data flows from
-  // things like constant tuples.
-  BuildInitProcedure(program, context);
-
   // Build bottom-up procedures starting from message receives.
   BuildEagerProcedure(program, context, query);
+
+  // Build the initialization procedure, needed to start data flows from
+  // things like constant tuples.
+  BuildInitProcedure(program, context, query);
 
   for (auto insert : query.Inserts()) {
     if (insert.IsRelation()) {
