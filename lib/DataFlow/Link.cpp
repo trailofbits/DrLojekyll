@@ -33,6 +33,14 @@ void QueryImpl::ProxyInsertsWithTuples(void) {
 // Link together views in terms of predecessors and successors.
 void QueryImpl::LinkViews(void) {
 
+  const_cast<const QueryImpl *>(this)->ForEachView([&] (VIEW *view) {
+    view->successors.Clear();
+    view->predecessors.Clear();
+    view->is_used_by_merge = false;
+    view->is_used_by_negation = false;
+    view->is_used_by_join = false;
+  });
+
   // NOTE(pag): Process these before `tuples` because it might create tuples.
   for (auto view : negations) {
     assert(!view->is_dead);
@@ -54,20 +62,6 @@ void QueryImpl::LinkViews(void) {
         has_incoming_merge = true;
         break;
       }
-    }
-
-    // TODO(pag): Other parts seem to want this invariant but I don't
-    //            recall why.
-    if (has_incoming_merge) {
-      UseList<VIEW> new_merged_views(view);
-      for (auto incoming_view : view->merged_views) {
-        if (incoming_view->AsMerge()) {
-          new_merged_views.AddUse(incoming_view->GuardWithTuple(this, true));
-        } else {
-          new_merged_views.AddUse(incoming_view);
-        }
-      }
-      view->merged_views.Swap(new_merged_views);
     }
   }
 

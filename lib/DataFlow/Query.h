@@ -925,6 +925,7 @@ class Node<QueryMerge> : public Node<QueryView> {
   WeakUseList<VIEW> noninductive_successors;
 
   std::optional<unsigned> merge_set_id;
+  std::optional<unsigned> merge_depth_id;
 
   // Can we reach back to ourselves by not flowing through another induction?
   bool can_reach_self_not_through_another_induction{false};

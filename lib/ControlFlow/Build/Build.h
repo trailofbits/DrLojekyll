@@ -139,7 +139,8 @@ class Context {
   // operates in such a way that we exhaust all JOINs before any UNIONs, so in
   // this process, we want to discover the frontiers to as many inductive UNIONs
   // as possible, so that they can all share the same INDUCTION.
-  ContinueInductionWorkItem *pending_induction_action{nullptr};
+  std::unordered_map<unsigned, ContinueInductionWorkItem *>
+      pending_induction_action;
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;

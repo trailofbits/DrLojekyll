@@ -20,7 +20,7 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   auto [parent, pred_table, last_table] =
       InTryInsert(impl, context, pred_view, parent_, last_table_);
 
-  const QueryTuple negated_view = negate.NegatedView();
+  const QueryView negated_view = negate.NegatedView();
   std::vector<QueryColumn> negated_view_cols;
   for (QueryColumn out_col : negate.NegatedColumns()) {
     const auto i = *(out_col.Index());
@@ -55,7 +55,7 @@ REGION *BuildTopDownNegationChecker(
     std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
 
   const QueryView view(negate);
-  const QueryTuple negated_view = negate.NegatedView();
+  const QueryView negated_view = negate.NegatedView();
   const auto pred_views = view.Predecessors();
   assert(pred_views.size() == 1u);
   const QueryView pred_view = pred_views[0];

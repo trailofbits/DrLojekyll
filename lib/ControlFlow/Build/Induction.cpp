@@ -12,8 +12,10 @@ class ContinueInductionWorkItem final : public WorkItem {
  public:
   virtual ~ContinueInductionWorkItem(void) {}
 
-  ContinueInductionWorkItem(Context &context, INDUCTION *induction_)
-      : WorkItem(context, kContinueInductionOrder),
+  ContinueInductionWorkItem(Context &context, QueryMerge merge,
+                            INDUCTION *induction_)
+      : WorkItem(context,
+                 (kContinueInductionOrder | *(merge.InductionDepthId()))),
         induction(induction_) {}
 
   // Find the common ancestor of all initialization regions.
@@ -33,8 +35,10 @@ class FinalizeInductionWorkItem final : public WorkItem {
  public:
   virtual ~FinalizeInductionWorkItem(void) {}
 
-  FinalizeInductionWorkItem(Context &context, INDUCTION *induction_)
-      : WorkItem(context, kFinalizeInductionOrder),
+  FinalizeInductionWorkItem(Context &context, QueryMerge merge,
+                            INDUCTION *induction_)
+      : WorkItem(context,
+                 (kFinalizeInductionOrder | *(merge.InductionDepthId()))),
         induction(induction_) {}
 
   void Run(ProgramImpl *impl, Context &context) override;
@@ -399,8 +403,10 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // Once we run the first continue worker, it means we've reached all inductive
   // unions on the previous frontier, and so we can reset this, so any new
   // reached ones represent a new frontier.
-  assert(context.pending_induction_action == this);
-  context.pending_induction_action = nullptr;
+  const auto merge_depth = *(induction->merges[0].InductionDepthId());
+  auto &pending_action = context.pending_induction_action[merge_depth];
+  assert(pending_action == this);
+  pending_action = nullptr;
 
   assert(induction->state == INDUCTION::kAccumulatingInputRegions);
   induction->state = INDUCTION::kAccumulatingCycleRegions;
@@ -474,7 +480,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Now build the inductive cycle regions and add them in. We'll do this
   // before we actually add the successor regions in.
-  for (auto merge : induction->all_merges) {
+  for (auto merge : induction->merges) {
     const auto has_inputs = NeedsInductionCycleVector(merge);
     const auto has_outputs = NeedsInductionOutputVector(merge);
 
@@ -506,7 +512,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Now that we have all of the regions arranged and the loops, add in the
   // inductive successors.
-  for (auto merge : induction->all_merges) {
+  for (auto merge : induction->merges) {
     if (!NeedsInductionCycleVector(merge)) {
       continue;
     }
@@ -521,7 +527,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
                                merge.InductiveSuccessors(), table);
   }
 
-  for (auto merge : induction->all_merges) {
+  for (auto merge : induction->merges) {
     if (!merge.CanReceiveDeletions() || !NeedsInductionCycleVector(merge)) {
       continue;
     }
@@ -543,7 +549,8 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // the outputs. It is possible that we're not actually done filling out
   // the INDUCTION's cycles, even after the above, due to WorkItems being
   // added by other nodes.
-  const auto action = new FinalizeInductionWorkItem(context, induction);
+  const auto action = new FinalizeInductionWorkItem(
+      context, induction->merges[0], induction);
   context.work_list.emplace_back(action);
 }
 
@@ -557,13 +564,13 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   induction->state = INDUCTION::kBuildingOutputRegions;
 
   // Pass in the induction vectors to the handlers.
-  for (auto merge : induction->all_merges) {
+  for (auto merge : induction->merges) {
     context.view_to_work_item.erase({proc, merge.UniqueId()});
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // non-inductive successors.
-  for (auto merge : induction->all_merges) {
+  for (auto merge : induction->merges) {
     if (!NeedsInductionOutputVector(merge)) {
       continue;
     }
@@ -577,7 +584,7 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
                                merge.NonInductiveSuccessors(), table);
   }
 
-  for (auto merge : induction->all_merges) {
+  for (auto merge : induction->merges) {
     if (!merge.CanReceiveDeletions() || !NeedsInductionOutputVector(merge)) {
       continue;
     }
@@ -607,6 +614,8 @@ static INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryMerge view,
     return induction;
   }
 
+  const auto merge_depth = *(view.InductionDepthId());
+
   // This is the first time seeing any MERGE associated with this induction.
   // We'll make an INDUCTION, and a work item that will let us explore the
   // cycle of this induction.
@@ -625,20 +634,21 @@ static INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryMerge view,
   // inductive UNIONs as possible, so that they can all share the same
   // INDUCTION.
   ContinueInductionWorkItem *action = nullptr;
-  if (context.pending_induction_action) {
-    action = context.pending_induction_action;
-    induction = context.pending_induction_action->induction;
+  auto &pending_action = context.pending_induction_action[merge_depth];
+  if (pending_action) {
+    action = pending_action;
+    induction = pending_action->induction;
   } else {
     induction = impl->induction_regions.Create(impl, parent);
-    action = new ContinueInductionWorkItem(context, induction);
-    context.pending_induction_action = action;
+    action = new ContinueInductionWorkItem(context, view, induction);
+    pending_action = action;
     context.work_list.emplace_back(action);
   }
 
   for (auto other_view : view.InductiveSet()) {
     const auto other_merge = QueryMerge::From(other_view);
 
-    induction->all_merges.push_back(other_merge);
+    induction->merges.push_back(other_merge);
 
     context.view_to_work_item[{proc, other_view.UniqueId()}] = action;
     context.view_to_induction[{proc, other_view.UniqueId()}] = induction;
@@ -742,6 +752,8 @@ static void AppendToInductionVectors(
       break;
 
     default:
+      view.SetTableId(99999);
+      break;
       assert(false); break;
   }
 }

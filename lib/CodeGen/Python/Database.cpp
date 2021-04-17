@@ -1225,7 +1225,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     if (auto true_body = region.BodyIfTrue(); true_body) {
       true_body->Accept(*this);
     } else {
-      os << os.Indent() << "pass";
+      os << os.Indent() << "pass\n";
     }
     os.PopIndent();
     os << os.Indent() << "else:\n";
@@ -1233,7 +1233,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     if (auto false_body = region.BodyIfFalse(); false_body) {
       false_body->Accept(*this);
     } else {
-      os << os.Indent() << "pass";
+      os << os.Indent() << "pass\n";
     }
     os.PopIndent();
   }

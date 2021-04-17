@@ -332,6 +332,9 @@ class QueryView : public query::QueryNode<QueryView> {
     return view;
   }
 
+  // Returns the `nth` output column.
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
   static QueryView From(const QuerySelect &view) noexcept;
   static QueryView From(const QueryTuple &view) noexcept;
   static QueryView From(const QueryKVIndex &view) noexcept;
@@ -697,6 +700,10 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   // A unique integer that labels all UNIONs in the same induction.
   std::optional<unsigned> InductionGroupId(void) const;
 
+  // A total ordering on the "depth" of inductions. Two inductions at the same
+  // depth can be processed in parallel.
+  std::optional<unsigned> InductionDepthId(void) const;
+
   UsedNodeRange<QueryView> InductiveSuccessors(void) const;
   UsedNodeRange<QueryView> InductivePredecessors(void) const;
 
@@ -775,7 +782,7 @@ class QueryNegate : public query::QueryNode<QueryNegate> {
 
   // Incoming view that represents a flow of data between the relation and
   // the negation.
-  QueryTuple NegatedView(void) const noexcept;
+  QueryView NegatedView(void) const noexcept;
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 

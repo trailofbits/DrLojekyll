@@ -134,6 +134,13 @@ QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
 
+
+// Returns the `nth` output column.
+QueryColumn QueryView::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
+
 QueryView QueryView::From(const QuerySelect &view) noexcept {
   return reinterpret_cast<const QueryView &>(view);
 }
@@ -1149,6 +1156,12 @@ std::optional<unsigned> QueryMerge::InductionGroupId(void) const {
   return impl->merge_set_id;
 }
 
+// A total ordering on the "depth" of inductions. Two inductions at the same
+// depth can be processed in parallel.
+std::optional<unsigned> QueryMerge::InductionDepthId(void) const {
+  return impl->merge_depth_id;
+}
+
 UsedNodeRange<QueryView> QueryMerge::InductiveSuccessors(void) const {
   assert(impl->merge_set_id.has_value());
   return {UsedNodeIterator<QueryView>(impl->inductive_successors.begin()),
@@ -1331,8 +1344,8 @@ UsedNodeRange<QueryColumn> QueryNegate::InputCopiedColumns(void) const noexcept 
 
 // Incoming view that represents a flow of data between the relation and
 // the negation.
-QueryTuple QueryNegate::NegatedView(void) const noexcept {
-  return QueryTuple(impl->negated_view->AsTuple());
+QueryView QueryNegate::NegatedView(void) const noexcept {
+  return QueryView(impl->negated_view.get());
 }
 
 OutputStream &QueryNegate::DebugString(OutputStream &os) const noexcept {

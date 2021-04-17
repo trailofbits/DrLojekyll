@@ -44,8 +44,28 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   };
 
   auto do_table = [&](int row_span, QueryView view) {
-    if (auto table_id = view.TableId(); table_id) {
-      os << "<TD rowspan=\"" << row_span << "\">TABLE " << *table_id << "</TD>";
+    std::optional<unsigned> table_id = view.TableId();
+    std::optional<unsigned> induction_id;
+    std::optional<unsigned> induction_depth;
+
+    if (view.IsMerge()) {
+      auto merge = QueryMerge::From(view);
+      merge.InductionGroupId().swap(induction_id);
+      merge.InductionDepthId().swap(induction_depth);
+    }
+
+    if (table_id || induction_id || induction_depth) {
+      os << "<TD rowspan=\"" << row_span << "\">";
+      auto sep = "";
+      if (table_id) {
+        os << sep << "TABLE " << *table_id;
+        sep = "<BR />";
+      }
+      if (induction_id && induction_depth) {
+        os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
+        sep = "<BR />";
+      }
+      os << "</TD>";
     }
   };
 

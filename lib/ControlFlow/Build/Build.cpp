@@ -92,6 +92,16 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     } else if (MayNeedToBePersistedDifferential(view)) {
       (void) TABLE::GetOrCreate(impl, context, view);
     }
+
+//    if (merge.CanProduceDeletions()) {
+//      for (auto pred_view : merge.MergedViews()) {
+//        if (!pred_view.CanProduceDeletions() &&
+//            !pred_view.IsJoin()) {
+//          (void) TABLE::GetOrCreate(impl, context, pred_view);
+//        }
+//      }
+//    }
+
   }
 
   // Inserting into a relation requires a table.

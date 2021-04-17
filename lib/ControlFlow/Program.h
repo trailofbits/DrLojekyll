@@ -1361,11 +1361,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // Can this induction produce deletions?
   bool is_differential{false};
 
-  // The primary, "dominating" UNIONs of the induction.
-  std::vector<QueryView> merges;
-
   // All of the UNIONs of the induction.
-  std::vector<QueryMerge> all_merges;
+  std::vector<QueryMerge> merges;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;
