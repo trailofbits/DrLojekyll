@@ -514,7 +514,7 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context,
   // First, build up the initialization code for all constants.
   {
     const auto uncond_inserts_var = impl->global_vars.Create(
-        impl->next_id++, VariableRole::kConditionRefCount);
+        impl->next_id++, VariableRole::kInitGuard);
 
     // Test that we haven't yet done an initialization.
     const auto test_and_set = impl->operation_regions.CreateDerived<TESTANDSET>(

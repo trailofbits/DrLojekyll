@@ -752,8 +752,8 @@ static void AppendToInductionVectors(
       break;
 
     default:
-      view.SetTableId(99999);
-      break;
+//      view.SetTableId(99999);
+//      break;
       assert(false); break;
   }
 }

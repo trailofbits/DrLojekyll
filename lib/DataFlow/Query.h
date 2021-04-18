@@ -1319,7 +1319,7 @@ class QueryImpl {
   void ConvertConstantInputsToTuples(void);
 
   // Identify the inductive unions in the data flow.
-  void IdentifyInductions(const ErrorLog &log);
+  void IdentifyInductions(const ErrorLog &log, bool recursive=false);
 
   // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(const ErrorLog &log,

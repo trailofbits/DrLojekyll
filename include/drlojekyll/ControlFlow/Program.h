@@ -194,6 +194,7 @@ class ProgramParallelRegion
 
 enum class VariableRole : int {
   kConditionRefCount,
+  kInitGuard,
   kConstant,
   kConstantZero,
   kConstantOne,

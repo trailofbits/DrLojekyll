@@ -188,6 +188,7 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
   inline bool IsGlobal(void) const noexcept {
     switch (role) {
       case VariableRole::kConditionRefCount:
+      case VariableRole::kInitGuard:
       case VariableRole::kConstant:
       case VariableRole::kConstantZero:
       case VariableRole::kConstantOne:

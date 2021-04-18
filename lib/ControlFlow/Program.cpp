@@ -563,6 +563,7 @@ TypeLoc DataVariable::Type(void) const noexcept {
 bool DataVariable::IsGlobal(void) const noexcept {
   switch (DefiningRole()) {
     case VariableRole::kConditionRefCount:
+    case VariableRole::kInitGuard:
     case VariableRole::kConstant:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:

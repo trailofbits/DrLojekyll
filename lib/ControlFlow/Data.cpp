@@ -31,6 +31,7 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 TypeLoc Node<DataVariable>::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kConditionRefCount:
+    case VariableRole::kInitGuard:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
       return TypeKind::kUnsigned64;
