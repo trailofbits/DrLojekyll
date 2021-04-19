@@ -17,14 +17,10 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   // TODO(pag): We can probably relax this constraint in some cases, e.g. if
   //            we have a tower of negations. That type of check could get
   //            tricky, though, due to cycles in the data flow graph.
-  auto [parent, pred_table, last_table] =
+  auto [parent, pred_table, _] =
       InTryInsert(impl, context, pred_view, parent_, last_table_);
 
   const QueryView negate_view(negate);
-  if (negate_view.InductionGroupId().has_value()) {
-    (void) GetOrInitInduction(impl, negate_view, context, parent);
-  }
-
   const QueryView negated_view = negate.NegatedView();
   std::vector<QueryColumn> negated_view_cols;
   for (QueryColumn out_col : negate.NegatedColumns()) {
@@ -49,9 +45,24 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   // NOTE(pag): A negation can never share the same data model as its
   //            predecessor, as it might not pass through all of its
   //            predecessor's data.
-  const QueryView view(negate);
-  return BuildEagerInsertionRegions(
-      impl, view, context, let, view.Successors(), nullptr  /* last_table */);
+  auto [succ_parent, table, last_table] =
+      InTryInsert(impl, context, negate_view, let, nullptr);
+
+  // If this is an inductive negation, then we might defer processing its
+  // outputs until we get into a sucessor.
+  if (negate_view.InductionGroupId().has_value()) {
+    INDUCTION * const induction = GetOrInitInduction(
+        impl, negate_view, context, succ_parent);
+    if (NeedsInductionCycleVector(negate_view)) {
+      AppendToInductionInputVectors(
+          impl, negate_view, context, succ_parent, induction, true);
+      return;
+    }
+  }
+
+  BuildEagerInsertionRegions(
+      impl, negate_view, context, succ_parent, negate_view.Successors(),
+      last_table);
 }
 
 void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
@@ -63,8 +74,14 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   //            data must be present in both sides of the negation, similar to
   //            what is needed for it being required in both sides of a JOIN.
   auto pred_view = view.Predecessors()[0];
-  auto [parent, pred_table, already_removed] = InTryMarkUnknown(
+  auto [parent, pred_table_, _] = InTryMarkUnknown(
         impl, context, pred_view, parent_, already_removed_);
+
+  // NOTE(pag): A negation can never share the same data model as its
+  //            predecessor, as it might not pass through all of its
+  //            predecessor's data.
+  auto [succ_parent, table, already_removed] = InTryMarkUnknown(
+      impl, context, view, parent, nullptr);
 
   // Normally, the above `InTryMarkUnknown` shouldn't do anything, but we have
   // it there for completeness. The reason why is because the data modelling
@@ -72,18 +89,24 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   // don't the unknown marking. If we have a tower of negations then the above
   // may be necessary.
 
+  // If this is an inductive negation, then we might defer processing its
+  // outputs until we get into a sucessor.
   if (view.InductionGroupId().has_value()) {
-    (void) GetOrInitInduction(impl, view, context, parent);
+    INDUCTION * const induction = GetOrInitInduction(
+        impl, view, context, succ_parent);
+    if (NeedsInductionCycleVector(view)) {
+      AppendToInductionInputVectors(
+          impl, view, context, succ_parent, induction, false);
+      return;
+    }
   }
 
   // NOTE(pag): We defer to downstream in the data flow to figure out if
   //            checking the negated view was even necessary.
   //
-  // NOTE(pag): A negation can never share the same data model as its
-  //            predecessor, as it might not pass through all of its
-  //            predecessor's data.
-  BuildEagerRemovalRegions(impl, view, context, parent,
-                           view.Successors(), nullptr  /* already_removed */);
+
+  BuildEagerRemovalRegions(impl, view, context, succ_parent,
+                           view.Successors(), already_removed);
 }
 
 // Build a top-down checker on a negation.

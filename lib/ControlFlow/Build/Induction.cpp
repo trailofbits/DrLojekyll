@@ -15,8 +15,7 @@ bool NeedsInductionCycleVector(QueryView view) {
     return !view.NonInductivePredecessors().empty();
 
   } else if (view.IsNegate()) {
-    return false;
-    //return !view.NonInductivePredecessors().empty();
+    return !view.NonInductivePredecessors().empty();
 
   } else {
     return false;
@@ -141,6 +140,13 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
   OP *cycle = nullptr;
   PARALLEL *cycle_body_par = nullptr;
 
+
+  // Fill in the variables of the output and inductive cycle loops.
+  std::vector<QueryColumn> view_cols;
+  for (auto col : view.Columns()) {
+    view_cols.push_back(col);
+  }
+
   if (view.IsMerge()) {
 
     // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
@@ -157,10 +163,9 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     TABLE * const table = model->table;
     assert(table != nullptr);
 
-    // Fill in the variables of the output and inductive cycle loops.
-    for (auto col : view.Columns()) {
 
-      // Add the variables to the fixpoint loop.
+    // Fill in the variables of the output and inductive cycle loops.
+    for (auto col : view_cols) {
       const auto cycle_var = inductive_cycle->defined_vars.Create(
           impl->next_id++, VariableRole::kVectorVariable);
       cycle_var->query_column = col;
@@ -189,7 +194,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
       // as possible.
       OP *parent_out = nullptr;
       CHECKSTATE * const check = BuildTopDownCheckerStateCheck(
-          impl, cycle, table, view.Columns(),
+          impl, cycle, table, view_cols,
           [&] (ProgramImpl *impl_, REGION *in_check) -> OP * {
             if (for_add) {
               parent_out = impl_->operation_regions.CreateDerived<LET>(in_check);
@@ -217,6 +222,54 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     cycle_body_par = impl->parallel_regions.Create(cycle);
     cycle->body.Emplace(cycle, cycle_body_par);
 
+  // Negation fixpoint loops are similar but different than merge fixpoint
+  // loops. With inductive unions, we can't call a top-down checker because
+  // we need to "removal" status pushed around the loop. E.g. in the case of
+  // transitive closure, of the form `tc(F, T) : tc(F, X), tc(X, T).`, the join
+  // is entirely contained in the inductive cycle, and the base case, and thus
+  // removal of the base case comes from a non-inductive predecessor. If an
+  // edge was provable by the join, but was ultimately derived via the edge
+  // itself, then the removal of the edge might be ignored if we did a top-down
+  // check, as the check would find the data in the join itself. We don't have
+  // this issue with inductive negations because we know that inductive
+  // necessarily straddle the inside and outside of an inductive cycle. Unlike
+  // inductive MERGEs, we can't depend on the presence of a TABLE, so we'll
+  // invoke the top-down checker and let it figure out how to verify if the
+  // data is present or absent.
+  } else if (view.IsNegate()) {
+    assert(view.InductivePredecessors().size() == 1u);
+    assert(view.NonInductivePredecessors().size() == 1u);
+
+    // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
+    // the last fixpoint iteration.
+    const auto inductive_cycle =
+        impl->operation_regions.CreateDerived<VECTORLOOP>(
+            impl->next_id++, cycle_par,
+            ProgramOperation::kLoopOverInductionVector);
+    inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
+    cycle_par->AddRegion(inductive_cycle);
+    cycle = inductive_cycle;
+
+    // Fill in the variables of the output and inductive cycle loops.
+    for (auto col : view_cols) {
+      const auto cycle_var = inductive_cycle->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      cycle_var->query_column = col;
+      cycle->col_id_to_var[col.Id()] = cycle_var;
+    }
+
+    const auto [check, check_call] = CallTopDownChecker(
+        impl, context, cycle, view, view_cols, view, nullptr);
+    cycle->body.Emplace(cycle, check);
+
+    cycle_body_par = impl->parallel_regions.Create(check_call);
+
+    if (for_add) {
+      check_call->body.Emplace(check_call, cycle_body_par);
+    } else {
+      check_call->false_body.Emplace(check_call, cycle_body_par);
+    }
+
   // We don't need to loop over the join here. This is EVIL!!!
   //
   // So, the induction's `ContinueInductionWorker::Run` is going to execute
@@ -235,7 +288,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
 
       auto i = 0u;
       const auto num_pivots = join.NumPivotColumns();
-      for (auto col : view.Columns()) {
+      for (auto col : view_cols) {
         VariableRole role = VariableRole::kJoinNonPivot;
         if (i < num_pivots) {
           role = VariableRole::kJoinPivot;
@@ -289,9 +342,6 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
 //
 //    }
 
-  } else if (view.IsNegate()) {
-    assert(false && "TODO: fixpoint loop of negations");
-
   } else {
     assert(false);
   }
@@ -312,7 +362,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
 }
 
 static void BuildOutputLoop(ProgramImpl *impl, Context &context,
-                            INDUCTION *induction, QueryView merge,
+                            INDUCTION *induction, QueryView view,
                             PARALLEL *output_par) {
 
   const auto proc = induction->containing_procedure;
@@ -323,7 +373,7 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   output_par->AddRegion(output_seq);
 
   // In the output region we'll clear out the vectors that we've used.
-  VECTOR * const output_vec = induction->view_to_output_vec[merge];
+  VECTOR * const output_vec = induction->view_to_output_vec[view];
   assert(output_vec != nullptr);
   // NOTE(pag): We can use the same vector for insertion and removal, because
   //            we use `CHECKSTATE` to figure out what to do!
@@ -346,7 +396,7 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   OP *output = output_cycle;
 
   // Fill in the variables of the output and inductive cycle loops.
-  for (auto col : merge.Columns()) {
+  for (auto col : view.Columns()) {
 
     // Add the variables to the output loop.
     const auto output_var = output_cycle->defined_vars.Create(
@@ -358,10 +408,10 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   // If this merge can produce deletions, then it's possible that something
   // which was added to an induction vector has since been removed, and so we
   // can't count on pushing it forward until it is double checked.
-  if (merge.CanReceiveDeletions()) {
-    const auto available_cols = ComputeAvailableColumns(merge, merge.Columns());
+  if (view.CanProduceDeletions()) {
+    const auto available_cols = ComputeAvailableColumns(view, view.Columns());
     const auto checker_proc = GetOrCreateTopDownChecker(
-        impl, context, merge, available_cols, nullptr);
+        impl, context, view, available_cols, nullptr);
 
     // Call the checker procedure in the output cycle.
     const auto output_check = impl->operation_regions.CreateDerived<CALL>(
@@ -383,13 +433,13 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
     auto output_removed_par = impl->parallel_regions.Create(output_check);
     output_check->false_body.Emplace(output, output_removed_par);
 
-    induction->output_add_cycles[merge] = output_added_par;
-    induction->output_remove_cycles[merge] = output_removed_par;
+    induction->output_add_cycles[view] = output_added_par;
+    induction->output_remove_cycles[view] = output_removed_par;
 
   } else {
     auto output_added_par = impl->parallel_regions.Create(output);
     output->body.Emplace(output, output_added_par);
-    induction->output_add_cycles[merge] = output_added_par;
+    induction->output_add_cycles[view] = output_added_par;
   }
 }
 
@@ -564,8 +614,16 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
       continue;
     }
 
+    // Join cycle vectors are really pivot vectors, which is the only way to
+    // unify the columns of the non-uniform joined views; however, in the
+    // case of deletions, we don't use pivot vectors, as deletions are actually
+    // record-specific. Thus, for inductive removals, we ignore joins and let
+    // the bottom-up join removers handle them in their own way when they are
+    // eventually reached via visiting the inductive successors of the one or
+    // more UNIONs that must necessarily be part of `induction->views`.
     if (view.IsJoin()) {
-      continue;  // TODO!?
+      assert(QueryJoin::From(view).NumPivotColumns() && "TODO: Cross-products");
+      continue;
     }
 
     PARALLEL *const cycle_par =
@@ -741,15 +799,13 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
 //        }
 //      }
 
-    // If we're dealing wiht an inductive merge, then our induction vector
+    // If we're dealing with an inductive merge, then our induction vector
     // is the join pivots themselves.
-    } else if (other_view.IsMerge()) {
+    } else if (other_view.IsMerge() || other_view.IsNegate()) {
 
       // Figure out if we need a vector for tracking additions/removals.
       if (NeedsInductionCycleVector(other_view)) {
         auto &add_vec = induction->view_to_add_vec[other_view];
-        auto &swap_vec = induction->view_to_swap_vec[other_view];
-
         if (!add_vec) {
           add_vec = proc->VectorFor(impl, VectorKind::kInductionInputs,
                                     other_view.Columns());
@@ -759,16 +815,12 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
         // These are a bunch of swap vectors that we use for the sake of allowing
         // ourselves to see the results of the prior iteration, while minimizing
         // the amount of cross-iteration resident data.
+        auto &swap_vec = induction->view_to_swap_vec[other_view];
         if (!swap_vec) {
           swap_vec = proc->VectorFor(impl, VectorKind::kInductionSwaps,
                                      other_view.Columns());
         }
       }
-    } else if (other_view.IsNegate()) {
-
-      // Won't use any input vectors....
-
-      //assert(false && "TODO: induction vectors for negation");
 
     } else {
       assert(false);
@@ -779,8 +831,10 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
     // NEGATEs.
     if (NeedsInductionOutputVector(other_view)) {
       auto &output_vec = induction->view_to_output_vec[other_view];
-      output_vec = proc->VectorFor(impl, VectorKind::kInductionOutputs,
-                                   other_view.Columns());
+      if (!output_vec) {
+        output_vec = proc->VectorFor(impl, VectorKind::kInductionOutputs,
+                                     other_view.Columns());
+      }
     }
   }
 
@@ -837,6 +891,22 @@ void AppendToInductionInputVectors(
       append_to_vec->tuple_vars.AddUse(var);
     }
 
+  // Negations differ from merges only in that they hash just the negated
+  // columns, and not all of the columns of the negation. It's similar to how
+  // joins hash the pivot columns.
+  } else if (view.IsNegate()) {
+    QueryNegate negate = QueryNegate::From(view);
+    for (auto col : negate.NegatedColumns()) {
+      const auto var = par->VariableFor(impl, col);
+      hash->hashed_vars.AddUse(var);
+    }
+
+    for (auto col : view.Columns()) {
+      const auto var = par->VariableFor(impl, col);
+      append_to_vec->tuple_vars.AddUse(var);
+    }
+
+  // Joins hash and append just the pivot columns.
   } else if (view.IsJoin()) {
     QueryJoin join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
@@ -849,9 +919,6 @@ void AppendToInductionInputVectors(
     } else {
       assert(false && "TODO! Inductive products");
     }
-
-  } else if (view.IsNegate()) {
-    assert(false && "TODO! Inductive negations");
 
   } else {
     assert(false);
