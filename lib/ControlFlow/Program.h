@@ -280,7 +280,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   // Every child REGION of a procedure will have easy access to create new
   // variables.
-  Node<ProgramProcedure> *const containing_procedure;
+  Node<ProgramProcedure> *containing_procedure;
   Node<ProgramRegion> *parent{nullptr};
 
   // Maps `QueryColumn::Id()` values to variables. Used to provide lexical
@@ -348,6 +348,13 @@ enum class ProgramOperation {
   kScanTable,
   kLoopOverScanVector,
   kClearScanVector,
+
+  // Used to implement publication of messages that can be published with
+  // additions or removals.
+  kAppendToMessageOutputVector,
+  kSortAndUniqueMessageOutputVector,
+  kClearMessageOutputVector,
+  kLoopOverMessageOutputVector,
 
   // Loop over a vector of inputs. The format of the vector is based off of
   // the variables in `variables`. The region `body` is executed for each

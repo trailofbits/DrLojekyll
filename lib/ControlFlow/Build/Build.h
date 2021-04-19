@@ -58,6 +58,12 @@ class Context {
   // negated view has some data or not.
 //  std::unordered_map<QueryView, PROC *> negation_checker_procs;
 
+  // Vectors that are associated with differential messages that we will
+  // publish. We unique the contents of these at the end of the data flow
+  // procedure, then iterate, check, and publish.
+  std::unordered_map<ParsedMessage, VECTOR *> publish_vecs;
+  std::unordered_map<ParsedMessage, QueryView> published_view;
+
   // Mapping of `QueryMerge` instances to their equivalence classes.
   std::unordered_map<QueryView, InductionSet> merge_sets;
 
@@ -493,7 +499,8 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context,
                          Query query);
 
 // Complete a procedure by exhausting the work list.
-void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context);
+void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,
+                       bool add_return=true);
 
 // Returns `true` if all paths through `region` ends with a `return` region.
 inline bool EndsWithReturn(REGION *region) {

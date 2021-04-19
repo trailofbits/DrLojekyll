@@ -1775,7 +1775,8 @@ bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
 }
 
 // Complete a procedure by exhausting the work list.
-void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
+void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,
+                       bool add_return) {
   while (!context.work_list.empty()) {
 
     std::stable_sort(context.work_list.begin(), context.work_list.end(),
@@ -1789,7 +1790,7 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context) {
   }
 
   // Add a default `return false` at the end of normal procedures.
-  if (!EndsWithReturn(proc)) {
+  if (add_return && !EndsWithReturn(proc)) {
     const auto ret = impl->operation_regions.CreateDerived<RETURN>(
         proc, ProgramOperation::kReturnFalseFromProcedure);
     ret->ExecuteAfter(impl, proc);

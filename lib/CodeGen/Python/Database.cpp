@@ -516,7 +516,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "Program Induction Init Region");
 
     // Base case
-    region.Initializer().Accept(*this);
+    if (auto init_region = region.Initializer(); init_region) {
+      init_region->Accept(*this);
+    }
 
     // Fixpoint
     os << Comment(os, region, "Induction Fixpoint Loop Region");
@@ -1829,6 +1831,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits Python code for the given program to `os`.
 void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
+     << "# flake8: noqa\n"  // Disable Flake8 linting.
+     << "# fmt: off\n\n"  // Disable Black auto-formatting.
      << "from __future__ import annotations\n"
      << "import sys\n"
      << "from dataclasses import dataclass\n"
@@ -1926,6 +1930,9 @@ void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
       }
     }
   }
+
+  // Stupid hack to make Flake8 / Black happy.
+  os << "# End of auto-generated file\n";
 }
 
 }  // namespace hyde

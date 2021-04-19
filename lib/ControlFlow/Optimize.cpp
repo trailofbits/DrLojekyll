@@ -179,6 +179,13 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
 
   auto changed = false;
 
+  // Cleae out empty init regions of inductions.
+  if (induction->init_region && induction->init_region->IsNoOp()) {
+    induction->init_region->parent = nullptr;
+    induction->init_region.Clear();
+    changed = true;
+  }
+
   // Clear out empty output regions of inductions.
   if (induction->output_region && induction->output_region->IsNoOp()) {
     induction->output_region->parent = nullptr;
@@ -656,23 +663,32 @@ void ProgramImpl::Optimize(void) {
     //            via `MergeEquals`.
     for (auto i = 0ull; i < parallel_regions.Size(); ++i) {
       const auto par = parallel_regions[i];
+      if (!par->IsUsed() || !par->Ancestor()->parent) {
+        continue;
+      }
       changed = OptimizeImpl(this, par) | changed;
     }
 
     induction_regions.Sort(depth_cmp);
     for (auto induction : induction_regions) {
+      if (!induction->IsUsed() || !induction->Ancestor()->parent) {
+        continue;
+      }
       changed = OptimizeImpl(this, induction) | changed;
     }
 
     series_regions.Sort(depth_cmp);
     for (auto series : series_regions) {
+      if (!series->IsUsed() || !series->Ancestor()->parent) {
+        continue;
+      }
       changed = OptimizeImpl(series) | changed;
     }
 
     operation_regions.Sort(depth_cmp);
     for (auto i = 0u; i < operation_regions.Size(); ++i) {
       const auto op = operation_regions[i];
-      if (!op->IsUsed() || !op->parent) {
+      if (!op->IsUsed() || !op->Ancestor()->parent) {
         continue;
       }
 
