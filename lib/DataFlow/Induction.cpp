@@ -111,8 +111,11 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   std::unordered_map<VIEW *, MergeSet> merge_sets;
   std::set<std::pair<VIEW *, VIEW *>> eventually_noninductive_successors;
 
-  // Special "disallowed edges" when following paths that we would otherwise
-  // use to merge two UNIONs together. Roughly, what can happen is this:
+  // Places where we need to inject UNION nodes so that we can better capture
+  // the non-inductive successors of an inductive set. In the below example,
+  // `TUPLE` will be discovered as an injection site. It is an inductive
+  // successor of UNION0, but UNION0 and UNION1 are not in the same strongly
+  // connected component.
   //                         ___
   //                     \  /   \
   //                    UNION1  |
@@ -125,22 +128,10 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   //          UNION0   |
   //              \    |
   //               '--...
-  //
-  // UNION1 is inductive, and assume UNION0 is also inductive. UNION1 will
-  // show up in UNION0's *inductive* successors by way od TUPLE, even though
-  // UNION1 is really a kind of non-inductive successor of UNION0. We will
-  // eventually try to introduce an injection site, but we also need to avoid
-  // over-merging UNION0 and UNION1, so we try to say "when trying to merge
-  // UNION0 with UNION1, don't follow the TUPLE->JOIN path."
-  std::set<std::pair<VIEW *, VIEW *>> disallowed_edges;
-
-  // Places where we need to inject UNION nodes so that we can better capture
-  // the non-inductive successors of an inductive set.
   std::set<VIEW *> injection_sites;
 
   std::set<VIEW *> seen;
   std::vector<VIEW *> frontier;
-
 
   for (MERGE *view : merges) {
     frontier.push_back(view);
