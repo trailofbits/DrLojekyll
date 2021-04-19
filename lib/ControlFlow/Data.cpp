@@ -163,16 +163,27 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
                 return false;
               }
 
-              const auto a_merge = QueryMerge::From(a);
-              const auto b_merge = QueryMerge::From(b);
+              auto a_inductive = a.InductionGroupId().has_value();
+              auto b_inductive = b.InductionGroupId().has_value();
+
+              // If both are inductive, then order by the deepest.
+              if (a_inductive && b_inductive) {
+                auto a_order = *(a.InductionDepth());
+                auto b_order = *(a.InductionDepth());
+
+                if (a_order != b_order) {
+                  assert(false);  // Shouldn't be possible.
+                  return a_order > b_order;
+
+                } else {
+                  return a.Depth() > b.Depth();
+                }
 
               // Order inductive merges first.
-              if (a_merge.InductionGroupId().has_value() &&
-                  !b_merge.InductionGroupId().has_value()) {
+              } else if (a_inductive && !b_inductive) {
                 return true;
 
-              } else if (!a_merge.InductionGroupId().has_value() &&
-                         b_merge.InductionGroupId().has_value()) {
+              } else if (!a_inductive && b_inductive) {
                 return false;
 
               // Order deepest first.

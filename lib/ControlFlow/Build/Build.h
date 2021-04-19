@@ -35,8 +35,7 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
-  static constexpr unsigned kOrderShift = 0u;
-  static constexpr unsigned kConitnueJoinOrder = 0u;
+  static constexpr unsigned kContinueJoinOrder = 0u;
   static constexpr unsigned kContinueInductionOrder = 1u << 30; // (~0u) >> 2u;
   static constexpr unsigned kFinalizeInductionOrder = 2u << 30; // (~0u) >> 1u;
 
@@ -51,6 +50,7 @@ class WorkItem {
 using WorkItemPtr = std::unique_ptr<WorkItem>;
 
 class ContinueInductionWorkItem;
+class ContinueJoinWorkItem;
 
 // General wrapper around data used when lifting from the data flow to the
 // control flow representation.
@@ -118,7 +118,7 @@ class Context {
   // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
   // the same INDUCTION if they belong to the same "inductive set". This happens
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
-  std::map<std::pair<PROC *, uint64_t>, INDUCTION *> view_to_induction;
+  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
 
   // Maps tables to their product input vectors.
   std::map<std::pair<PROC *, TABLE *>, VECTOR *> product_vector;
@@ -144,6 +144,11 @@ class Context {
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
+
+  std::unordered_map<QueryView, ContinueJoinWorkItem *> view_to_join_action;
+  std::unordered_map<QueryView, ContinueInductionWorkItem *>
+      view_to_induction_action;
+
   std::map<std::pair<PROC *, uint64_t>, WorkItem *> view_to_work_item;
 
   // Maps views to procedures for top-down execution. The top-down executors
@@ -177,6 +182,9 @@ class Context {
 OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseNothing(ProgramImpl *impl, REGION *parent);
+
+bool NeedsInductionCycleVector(QueryView view);
+bool NeedsInductionOutputVector(QueryView view);
 
 template <typename Cols, typename IfPresent, typename IfAbsent,
           typename IfUnknown>

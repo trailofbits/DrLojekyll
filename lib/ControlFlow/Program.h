@@ -1362,8 +1362,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // Can this induction produce deletions?
   bool is_differential{false};
 
-  // All of the UNIONs of the induction.
-  std::vector<QueryMerge> merges;
+  // All of the UNIONs, JOINs, and NEGATEs of the induction.
+  std::vector<QueryView> views;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;

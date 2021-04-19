@@ -10,7 +10,7 @@ class ContinueProductWorkItem final : public WorkItem {
   virtual ~ContinueProductWorkItem(void) {}
 
   ContinueProductWorkItem(Context &context, QueryView view_)
-      : WorkItem(context, (view_.Depth() << kOrderShift) + kConitnueJoinOrder),
+      : WorkItem(context, view_.Depth() | kContinueJoinOrder),
         view(view_) {}
 
   // Find the common ancestor of all insert regions.

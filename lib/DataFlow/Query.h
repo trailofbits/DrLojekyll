@@ -251,6 +251,50 @@ class Node<QueryIO> final : public Node<QueryStream>, public User {
 
 using IO = Node<QueryIO>;
 
+// Information about this node as it relates to being inside of an induction.
+// This affects MERGE, JOIN, and NEGATE nodes, as these are the only nodes which
+// can reasonably take more than one predecessor. All cycles in data flow must
+// go through UNIONs, so at first glance they seem to be enough to reign in
+// control over inductions. However, data can flow out of one inductive union
+// and into one side of a JOIN. The JOIN can be on the back-edge of another
+// induction. Ideally, we want to capture the JOIN's pivot vector as being
+// an induction vector, and not repeat JOIN codegen in the init region and the
+// fixpoint cycle region.
+struct InductionInfo {
+ public:
+  explicit InductionInfo(Node<QueryView> *owner);
+
+  std::vector<Node<QueryView> *> predecessors;
+  std::vector<Node<QueryView> *> successors;
+
+  // Initially, when learning about inductions, we use a mask to figure out
+  // which of the predecessors/successors are inductive. This is so that with
+  // JOINs, we can learn that some of the predecessors are inductive for some
+  // UNIONs and possibly not others.
+  std::vector<bool> inductive_predecessors_mask;
+  std::vector<bool> inductive_successors_mask;
+
+  // Can we reach back to ourselves by not flowing through another induction?
+  bool can_reach_self_not_through_another_induction{false};
+
+  // Do all inductive successors of this union lead into one or more other
+  // inductive unions?
+  bool all_inductive_successors_reach_other_inductions{false};
+
+  WeakUseList<Node<QueryView>> inductive_predecessors;
+  WeakUseList<Node<QueryView>> inductive_successors;
+
+  WeakUseList<Node<QueryView>> noninductive_predecessors;
+  WeakUseList<Node<QueryView>> noninductive_successors;
+
+  // List of UNION, JOIN, and NEGATE nodes.
+  std::shared_ptr<WeakUseList<Node<QueryView>>> cyclic_views;
+
+  unsigned merge_set_id{0};
+  unsigned merge_depth{0};
+};
+
+
 // A view "owns" its the columns pointed to by `columns`.
 template <>
 class Node<QueryView> : public Def<Node<QueryView>>, public User {
@@ -275,7 +319,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   virtual const char *KindName(void) const noexcept = 0;
 
   // Returns `true` if this node is inductive. Only MERGEs can be inductive.
-  virtual bool IsInductive(void) const;
+  inline bool IsInductive(void) const {
+    return !!induction_info;
+  }
 
   // Prepare to delete this node. This tries to drop all dependencies and
   // unlink this node from the dataflow graph. It returns `true` if successful
@@ -553,6 +599,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // This breaks abstraction layers, as table IDs come from the control-flow
   // IR, but it's nifty for debugging.
   mutable std::optional<unsigned> table_id;
+
+  // Information about if this is inductive.
+  std::unique_ptr<InductionInfo> induction_info;
 
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
@@ -874,16 +923,9 @@ template <>
 class Node<QueryMerge> : public Node<QueryView> {
  public:
   Node(void)
-      : merged_views(this),
-        inductive_predecessors(this),
-        inductive_successors(this),
-        noninductive_predecessors(this),
-        noninductive_successors(this) {}
+      : merged_views(this) {}
 
   virtual ~Node(void);
-
-  // Returns `true` if this node is inductive. Only MERGEs can be inductive.
-  bool IsInductive(void) const override;
 
   const char *KindName(void) const noexcept override;
   Node<QueryMerge> *AsMerge(void) noexcept override;
@@ -915,24 +957,6 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
-
-  std::shared_ptr<WeakUseList<VIEW>> related_merges;
-
-  WeakUseList<VIEW> inductive_predecessors;
-  WeakUseList<VIEW> inductive_successors;
-
-  WeakUseList<VIEW> noninductive_predecessors;
-  WeakUseList<VIEW> noninductive_successors;
-
-  std::optional<unsigned> merge_set_id;
-  std::optional<unsigned> merge_depth_id;
-
-  // Can we reach back to ourselves by not flowing through another induction?
-  bool can_reach_self_not_through_another_induction{false};
-
-  // Do all inductive successors of this union lead into one or more other
-  // inductive unions?
-  bool all_inductive_successors_reach_other_inductions{false};
 
   // If this is non-zero, then we're not allowed to do sinking. This exists to
   // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
@@ -1341,7 +1365,7 @@ class QueryImpl {
   void ProxyInsertsWithTuples(void);
 
   // Link together views in terms of predecessors and successors.
-  void LinkViews(void);
+  void LinkViews(bool recursive=false);
 
   // Root module associated with this query.
   const ParsedModule module;

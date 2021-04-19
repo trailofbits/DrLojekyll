@@ -495,6 +495,8 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context,
                          Query query) {
 
   assert(context.work_list.empty());
+  assert(context.view_to_join_action.empty());
+  assert(context.view_to_induction_action.empty());
   assert(context.view_to_work_item.empty());
 
   const auto proc = impl->procedure_regions.Create(

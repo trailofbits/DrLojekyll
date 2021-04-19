@@ -33,6 +33,20 @@ QueryImpl::~QueryImpl(void) {
     view->sets_condition.ClearWithoutErasure();
     view->predecessors.ClearWithoutErasure();
     view->successors.ClearWithoutErasure();
+
+    if (auto info = view->induction_info.get()) {
+      if (info->cyclic_views) {
+        if (info->cyclic_views->Owner() == view) {
+          info->cyclic_views->ClearWithoutErasure();
+        }
+        info->cyclic_views.reset();
+      }
+      info->inductive_successors.ClearWithoutErasure();
+      info->inductive_predecessors.ClearWithoutErasure();
+      info->noninductive_successors.ClearWithoutErasure();
+      info->noninductive_predecessors.ClearWithoutErasure();
+      view->induction_info.reset();
+    }
   });
 
   for (auto join : joins) {
@@ -52,16 +66,6 @@ QueryImpl::~QueryImpl(void) {
 
   for (auto merge : merges) {
     merge->merged_views.ClearWithoutErasure();
-    if (merge->related_merges) {
-      if (merge->related_merges->Owner() == merge) {
-        merge->related_merges->ClearWithoutErasure();
-      }
-      merge->related_merges.reset();
-    }
-    merge->inductive_successors.ClearWithoutErasure();
-    merge->inductive_predecessors.ClearWithoutErasure();
-    merge->noninductive_successors.ClearWithoutErasure();
-    merge->noninductive_predecessors.ClearWithoutErasure();
   }
 
   for (auto cond : conditions) {
@@ -1152,51 +1156,78 @@ bool QueryMerge::CanProduceDeletions(void) const {
 }
 
 // A unique integer that labels all UNIONs in the same induction.
-std::optional<unsigned> QueryMerge::InductionGroupId(void) const {
-  return impl->merge_set_id;
+std::optional<unsigned> QueryView::InductionGroupId(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return info->merge_set_id;
+  } else {
+    return std::nullopt;
+  }
 }
 
 // A total ordering on the "depth" of inductions. Two inductions at the same
 // depth can be processed in parallel.
-std::optional<unsigned> QueryMerge::InductionDepthId(void) const {
-  return impl->merge_depth_id;
+std::optional<unsigned> QueryView::InductionDepth(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return info->merge_depth;
+  } else {
+    return std::nullopt;
+  }
 }
 
-UsedNodeRange<QueryView> QueryMerge::InductiveSuccessors(void) const {
-  assert(impl->merge_set_id.has_value());
-  return {UsedNodeIterator<QueryView>(impl->inductive_successors.begin()),
-          UsedNodeIterator<QueryView>(impl->inductive_successors.end())};
+UsedNodeRange<QueryView> QueryView::InductiveSuccessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->inductive_successors.begin()),
+            UsedNodeIterator<QueryView>(info->inductive_successors.end())};
+  } else {
+    return {};
+  }
 }
 
-UsedNodeRange<QueryView> QueryMerge::InductivePredecessors(void) const {
-  assert(impl->merge_set_id.has_value());
-  return {UsedNodeIterator<QueryView>(impl->inductive_predecessors.begin()),
-          UsedNodeIterator<QueryView>(impl->inductive_predecessors.end())};
+UsedNodeRange<QueryView> QueryView::InductivePredecessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->inductive_predecessors.begin()),
+            UsedNodeIterator<QueryView>(info->inductive_predecessors.end())};
+  } else {
+    return {};
+  }
 }
 
-UsedNodeRange<QueryView> QueryMerge::NonInductiveSuccessors(void) const {
-  assert(impl->merge_set_id.has_value());
-  return {UsedNodeIterator<QueryView>(impl->noninductive_successors.begin()),
-          UsedNodeIterator<QueryView>(impl->noninductive_successors.end())};
+UsedNodeRange<QueryView> QueryView::NonInductiveSuccessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->noninductive_successors.begin()),
+            UsedNodeIterator<QueryView>(info->noninductive_successors.end())};
+  } else {
+    return {};
+  }
 }
 
-UsedNodeRange<QueryView> QueryMerge::NonInductivePredecessors(void) const {
-  assert(impl->merge_set_id.has_value());
-  return {UsedNodeIterator<QueryView>(impl->noninductive_predecessors.begin()),
-          UsedNodeIterator<QueryView>(impl->noninductive_predecessors.end())};
+UsedNodeRange<QueryView> QueryView::NonInductivePredecessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->noninductive_predecessors.begin()),
+            UsedNodeIterator<QueryView>(info->noninductive_predecessors.end())};
+  } else {
+    return {};
+  }
 }
 
 // All UNIONs, including this one, in the same inductive set.
-UsedNodeRange<QueryView> QueryMerge::InductiveSet(void) const {
-  assert(impl->merge_set_id.has_value());
-  return {UsedNodeIterator<QueryView>(impl->related_merges->begin()),
-          UsedNodeIterator<QueryView>(impl->related_merges->end())};
+UsedNodeRange<QueryView> QueryView::InductiveSet(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->cyclic_views->begin()),
+            UsedNodeIterator<QueryView>(info->cyclic_views->end())};
+  } else {
+    return {};
+  }
 }
 
 // Can this view reach back to itself without first going through another
 // inductive union?
-bool QueryMerge::IsOwnIndirectInductiveSuccessor(void) const {
-  return impl->can_reach_self_not_through_another_induction;
+bool QueryView::IsOwnIndirectInductiveSuccessor(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return info->can_reach_self_not_through_another_induction;
+  } else {
+    return false;
+  }
 }
 
 ComparisonOperator QueryCompare::Operator(void) const {

@@ -45,14 +45,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   auto do_table = [&](int row_span, QueryView view) {
     std::optional<unsigned> table_id = view.TableId();
-    std::optional<unsigned> induction_id;
-    std::optional<unsigned> induction_depth;
-
-    if (view.IsMerge()) {
-      auto merge = QueryMerge::From(view);
-      merge.InductionGroupId().swap(induction_id);
-      merge.InductionDepthId().swap(induction_depth);
-    }
+    std::optional<unsigned> induction_id = view.InductionGroupId();
+    std::optional<unsigned> induction_depth = view.InductionDepth();
 
     if (table_id || induction_id || induction_depth) {
       os << "<TD rowspan=\"" << row_span << "\">";

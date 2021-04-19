@@ -10,6 +10,13 @@
 #include "Query.h"
 
 namespace hyde {
+
+InductionInfo::InductionInfo(Node<QueryView> *owner)
+    : inductive_predecessors(owner),
+      inductive_successors(owner),
+      noninductive_predecessors(owner),
+      noninductive_successors(owner) {}
+
 namespace {
 
 template <typename T>
@@ -86,6 +93,7 @@ class MergeSet : public DisjointSet {
   using DisjointSet::DisjointSet;
   std::shared_ptr<WeakUseList<VIEW>> related_merges;
   bool is_linearizable{false};
+  unsigned merge_set_id{0u};
 };
 
 }  // namespace
@@ -93,9 +101,15 @@ class MergeSet : public DisjointSet {
 // Identify the inductive unions in the data flow.
 void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
+  if (recursive) {
+    const_cast<const QueryImpl *>(this)->ForEachView([] (VIEW *v) {
+      v->induction_info.reset();
+    });
+  }
+
   // Mapping of inductive MERGEs to their equivalence classes.
-  std::unordered_map<MERGE *, MergeSet> merge_sets;
-  std::set<std::pair<MERGE *, VIEW *>> eventually_noninductive_successors;
+  std::unordered_map<VIEW *, MergeSet> merge_sets;
+  std::set<std::pair<VIEW *, VIEW *>> eventually_noninductive_successors;
 
   // Special "disallowed edges" when following paths that we would otherwise
   // use to merge two UNIONs together. Roughly, what can happen is this:
@@ -127,74 +141,227 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   std::set<VIEW *> seen;
   std::vector<VIEW *> frontier;
 
-  // Start with the basic identification of which merges are inductive, and
-  // which aren't.
-  unsigned merge_id = 0u;
+
   for (MERGE *view : merges) {
+    frontier.push_back(view);
+  }
+  for (JOIN *view : joins) {
+    frontier.push_back(view);
+  }
+  for (NEGATION *view : negations) {
+    frontier.push_back(view);
+  }
+
+  unsigned merge_id = 0u;
+  while (!frontier.empty()) {
+    VIEW * const view = frontier.back();
+    frontier.pop_back();
+
     auto preds = TransitivePredecessorsOf(view);
 
-    // This is not an inductive merge.
+    // This is not an inductive merge/join/negate.
     if (!preds.count(view)) {
       continue;
     }
 
+    InductionInfo * const info = new InductionInfo(view);
+    view->induction_info.reset(info);
     merge_sets.emplace(view, merge_id++);
 
-    // The issue with negations is that they are a sort of hidden successor,
-    // not captured by `view->successors`, and so we don't want to add negations
-    // into the (non)inductive successor lists when they don't appear in the
-    // normal successor lists.
-    assert(!view->is_used_by_negation);
-
-    for (auto succ_view : view->successors) {
+    ForEachSuccessorOf(view, [=] (VIEW *succ_view) {
+      info->successors.push_back(succ_view);
       if (preds.count(succ_view)) {
-        view->inductive_successors.AddUse(succ_view);
+        info->inductive_successors_mask.push_back(true);
 
       } else {
-        view->noninductive_successors.AddUse(succ_view);
+        info->inductive_successors_mask.push_back(false);
       }
-    }
+    });
 
     auto succs = TransitiveSuccessorsOf(view);
-    for (auto pred_view : view->predecessors) {
+    ForEachPredecessorOf(view, [&] (VIEW *pred_view) {
+      info->predecessors.push_back(pred_view);
       if (succs.count(pred_view)) {
-        view->inductive_predecessors.AddUse(pred_view);
+        info->inductive_predecessors_mask.push_back(true);
       } else {
-        view->noninductive_predecessors.AddUse(pred_view);
+        info->inductive_predecessors_mask.push_back(false);
       }
-    }
+    });
+  }
 
-    // We want to go find VIEWs on the "edge" of being inductive and non-
-    // inductive predecessors. That is, they represent something like one side
-    // of a JOIN, where one side flows from outside the induction in, and the
-    // other flows from the induction back to the JOIN, and thus back to
-    // itself.
-//    if (recursive) {
+//  // Start with the basic identification of which merges are inductive, and
+//  // which aren't.
+//  unsigned merge_id = 0u;
+//  for (MERGE *view : merges) {
+//    auto preds = TransitivePredecessorsOf(view);
+//
+//    // This is not an inductive merge.
+//    if (!preds.count(view)) {
 //      continue;
 //    }
-
+//
+//    InductionInfo * const info = new InductionInfo(view);
+//    view->induction_info.reset(info);
+//    merge_sets.emplace(view, merge_id++);
+//
+//    // The issue with negations is that they are a sort of hidden successor,
+//    // not captured by `view->successors`, and so we don't want to add negations
+//    // into the (non)inductive successor lists when they don't appear in the
+//    // normal successor lists.
+//    assert(!view->is_used_by_negation);
+//
+//    for (auto succ_view : view->successors) {
+//      info->successors.push_back(succ_view);
+//
+//      if (preds.count(succ_view)) {
+//        info->inductive_successors_mask.push_back(true);
+//
+//      } else {
+//        info->inductive_successors_mask.push_back(false);
+//      }
+//    }
+//
+//    auto succs = TransitiveSuccessorsOf(view);
+//    for (auto pred_view : view->predecessors) {
+//      info->predecessors.push_back(pred_view);
+//      if (succs.count(pred_view)) {
+//        info->inductive_predecessors_mask.push_back(true);
+//      } else {
+//        info->inductive_predecessors_mask.push_back(false);
+//      }
+//    }
+//
+//    // We want to go find VIEWs on the "edge" of being inductive and non-
+//    // inductive predecessors. That is, they represent something like one side
+//    // of a JOIN, where one side flows from outside the induction in, and the
+//    // other flows from the induction back to the JOIN, and thus back to
+//    // itself.
 //    for (auto pred_view : preds) {
 //      if (succs.count(pred_view)) {
 //        continue;
 //      }
 //
-//      for (auto pred_pred_view : pred_view->predecessors) {
-//        if (!succs.count(pred_pred_view)) {
-////          pred_pred_view->color = 0x00ff00;
-////          pred_view->color = 0xff0000;
-//          disallowed_edges.emplace(pred_pred_view, pred_view);
+//      // If this is a JOIN, then we're looking to identify it as having at least
+//      // one joined view that looks like an input to this induction, and another
+//      // joined view that is reachable from an inductive successor of `view`.
+//      if (JOIN * const join = pred_view->AsJoin()) {
+//        auto seen_inductive = false;
+//        auto seen_non_inductive = false;
+//        for (auto joined_view : join->predecessors) {
+//          if (!succs.count(joined_view)) {
+//            seen_non_inductive = true;
+//          } else {
+//            seen_inductive = true;
+//          }
+//        }
+//
+//        if (seen_inductive && seen_non_inductive) {
+//          InductionInfo *join_info = join->induction_info.get();
+//
+//          // Make an initial join info if we don't have it yet.
+//          if (!join_info) {
+//            join_info = new InductionInfo(join);
+//            join->induction_info.reset(join_info);
+//            merge_sets.emplace(join, merge_id++);
+//
+//            for (VIEW *join_pred : join->predecessors) {
+//              join_info->inductive_predecessors_mask.push_back(false);
+//              join_info->predecessors.push_back(join_pred);
+//            }
+//
+//            // NOTE(pag): We put `true` for the inductive successors, regardless
+//            //            of if that's even true, because we have a UNION-
+//            //            injection stuff that happens below to figure out
+//            //            where those are and recover from those.
+//            for (VIEW *join_succ : join->successors) {
+//              join_info->inductive_successors_mask.push_back(true);
+//              join_info->successors.push_back(join_succ);
+//            }
+//          }
+//
+//          // Mask or re-mask.
+//          auto i = 0u;
+//          for (VIEW *joined_view : join->predecessors) {
+//            if (succs.count(joined_view)) {
+//              join_info->inductive_predecessors_mask[i] = true;
+//            }
+//            ++i;
+//          }
+//        }
+//
+//      // If this is a negation, then we're similarly looking for whether or
+//      // not the "inductiveness" of the predecessors disagrees.
+//      } else if (NEGATION * const negate = pred_view->AsNegate()) {
+//        VIEW * const negated_view = negate->negated_view.get();
+//        VIEW * const incoming_view = negate->predecessors[0];
+//        assert(negated_view != incoming_view);
+//
+//        const bool negated_is_inductive = !!succs.count(negated_view);
+//        const bool incoming_is_inductive = !!succs.count(incoming_view);
+//
+//        if (negated_is_inductive != incoming_is_inductive) {
+//          InductionInfo * neg_info = negate->induction_info.get();
+//          if (!neg_info) {
+//            neg_info = new InductionInfo(negate);
+//            negate->induction_info.reset(neg_info);
+//            merge_sets.emplace(negate, merge_id++);
+//
+//            neg_info->predecessors.push_back(negated_view);
+//            neg_info->predecessors.push_back(incoming_view);
+//
+//            neg_info->inductive_predecessors_mask.push_back(false);
+//            neg_info->inductive_predecessors_mask.push_back(false);
+//
+//            // NOTE(pag): We put `true` for the inductive successors, regardless
+//            //            of if that's even true, because we have a UNION-
+//            //            injection stuff that happens below to figure out
+//            //            where those are and recover from those.
+//            for (VIEW *neg_succ : negate->successors) {
+//              neg_info->inductive_successors_mask.push_back(true);
+//              neg_info->successors.push_back(neg_succ);
+//            }
+//          }
+//
+//          if (negated_is_inductive) {
+//            neg_info->inductive_predecessors_mask[0u] = true;
+//          }
+//          if (incoming_is_inductive) {
+//            neg_info->inductive_predecessors_mask[1u] = true;
+//          }
 //        }
 //      }
 //    }
-  }
+//
+////    if (recursive) {
+////      continue;
+////    }
+//
+////    for (auto pred_view : preds) {
+////      if (succs.count(pred_view)) {
+////        continue;
+////      }
+////
+////      for (auto pred_pred_view : pred_view->predecessors) {
+////        if (!succs.count(pred_pred_view)) {
+//////          pred_pred_view->color = 0x00ff00;
+//////          pred_view->color = 0xff0000;
+////          disallowed_edges.emplace(pred_pred_view, pred_view);
+////        }
+////      }
+////    }
+//  }
 
-  std::set<std::pair<MERGE *, MERGE *>> reached_inductions;
+  // Tracks whether or not `entry.first` reaches `entry.second` along an
+  // inductive output path.
+  std::set<std::pair<VIEW *, VIEW *>> reached_inductions;
+
   std::vector<std::pair<bool, VIEW *>> frontier_through_induction;
   std::set<std::pair<bool, VIEW *>> seen_through_induction;
 
   for (auto &[view_, _] : merge_sets) {
-    MERGE *const view = view_;
-    assert(view->IsInductive());
+    VIEW *const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    assert(info != nullptr);
 
     seen_through_induction.clear();
 
@@ -209,7 +376,12 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
     bool seen_another_induction = false;
 
-    for (auto succ_view : view->inductive_successors) {
+    auto succ_view_i = 0u;
+    for (VIEW *succ_view : info->successors) {
+      if (!info->inductive_successors_mask[succ_view_i++]) {
+        continue;  // Not marked as being an inductive successor.
+      }
+
       frontier_through_induction.clear();
       frontier_through_induction.emplace_back(false, succ_view);
       seen_through_induction.emplace(false, succ_view);
@@ -223,23 +395,23 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         VIEW * const frontier_view = frontier_view_;
 
         // We've cycled back to ourselves. If we get back to ourselves along
-        // some path that doesn't itself go through another inductive merge/cycle,
-        // which would have been caught by the `else if` case below, then it means
-        // that this view isn't subordinate to any other one, and that is actually
-        // does in fact need storage.
+        // some path that doesn't itself go through another inductive merge/
+        // cycle, which would have been caught by the `else if` case below,
+        // then it means that this view isn't subordinate to any other one,
+        // and that is actually does in fact need storage.
         if (frontier_view == view) {
           if (!from_induction) {
-            view->can_reach_self_not_through_another_induction = true;
+            info->can_reach_self_not_through_another_induction = true;
           }
           continue;
         }
 
         // We've cycled to another UNION that is also inductive.
-        if (MERGE * const frontier_merge = frontier_view->AsMerge();
-            frontier_merge && frontier_merge->IsInductive()) {
+        if (InductionInfo * const frontier_info =
+                frontier_view->induction_info.get()) {
           seen_another_induction = true;
           from_induction = true;
-          reached_inductions.emplace(view, frontier_merge);
+          reached_inductions.emplace(view, frontier_view);
 
         // If we've reached an insert with no successors, then this is either
         // a MATERIALIZE or a PUBLISH, and thus we've discovered an inductive
@@ -252,11 +424,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         }
 
         // We need to follow the frontier view's successors.
-
-
         ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
-//          if (!disallowed_edges.count({frontier_view, frontier_succ_view})) {
-//          }
           auto [it, added] = seen_through_induction.emplace(
               from_induction, frontier_succ_view);
           if (added) {
@@ -268,24 +436,14 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
 
     // All inductive paths out of this union lead to another inductive union.
-    if (!view->can_reach_self_not_through_another_induction &&
+    if (!info->can_reach_self_not_through_another_induction &&
         seen_another_induction) {
-      view->all_inductive_successors_reach_other_inductions = true;
+      info->all_inductive_successors_reach_other_inductions = true;
     }
   }
 
   frontier_through_induction.clear();
   seen_through_induction.clear();
-
-  // If an inductive successor of A reaches B, and if and inductive successor
-  // of B reaches A, then A and B are part of the same "co-inductive" set.
-  for (auto [merge_1, merge_2] : reached_inductions) {
-    if (reached_inductions.count({merge_2, merge_1})) {
-      MergeSet &set_1 = merge_sets[merge_1];
-      MergeSet &set_2 = merge_sets[merge_2];
-      DisjointSet::Union(&set_1, &set_2);
-    }
-  }
 
   // Some of the inductive successors of a merge may actually indirectly lead
   // to leaving the induction. We want to find the "injection" sites where we
@@ -305,8 +463,9 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   //     ... ---+-------'                    |       |
   //                                  ... ---+-------'
   //
-  for (auto [merge_, succ_view] : eventually_noninductive_successors) {
-    MERGE * const merge = merge_;
+  for (auto [merge_, succ_view_] : eventually_noninductive_successors) {
+    VIEW * const merge = merge_;
+    VIEW * const succ_view = succ_view_;
     frontier.clear();
     seen.clear();
     seen.insert(merge);
@@ -343,7 +502,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     assert(!view->AsInsert());
 
     MERGE * const new_union = merges.Create();
-//    new_union->color = 0x00ff00u;
+    new_union->color = 0x00ff00u;
 
     auto col_index = 0u;
     for (auto col : view->columns) {
@@ -359,12 +518,21 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
       // If there's a negation of `view`, then we'll leave it there, as it
       // might cycle back to another induction.
+      //
+      // NOTE(pag): Really, this shouldn't return `false`, as `view` will either
+      //            be a MERGE, a JOIN, or a NEGATION, and `negated_view`s are
+      //            always TUPLEs, as enforced by `Link()`.
       if (auto negate = dynamic_cast<NEGATION *>(user)) {
         return negate->negated_view.get() != view;
-      }
+
 
       // We'll let all conditions continue to use `view`.
-      return !dynamic_cast<COND *>(user);
+      //
+      // NOTE(pag): CONDitions are not allowed to be cyclic.
+      // TODO(pag): Make sure CONDitions are never cyclic.
+      } else {
+        return !dynamic_cast<COND *>(user);
+      }
     });
 
     view->CopyDifferentialAndGroupIdsTo(new_union);
@@ -377,18 +545,64 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
   // If we injected any new UNIONs then reset and re-run.
   if (!injection_sites.empty()) {
-    for (MERGE *view : merges) {
-      view->inductive_predecessors.Clear();
-      view->inductive_successors.Clear();
-      view->noninductive_predecessors.Clear();
-      view->noninductive_successors.Clear();
-      view->can_reach_self_not_through_another_induction = false;
-      view->all_inductive_successors_reach_other_inductions = false;
-    }
-
-    LinkViews();
+    LinkViews(true);
     IdentifyInductions(log, true);
     return;
+  }
+
+  // By this point, the non/inductive successors/predecessors have settled.
+  // Either they were all good initially, or we've had to inject some UNIONs
+  // and did re-linking and re-identification. Now we can go through and upgrade
+  // the masked (non-)inductive predecessors/successors into proper use lists.
+  for (auto &[view_, set] : merge_sets) {
+    VIEW * const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    auto i = 0u;
+    for (auto view : info->successors) {
+      if (info->inductive_successors_mask[i]) {
+        info->inductive_successors.AddUse(view);
+      } else {
+        info->noninductive_successors.AddUse(view);
+      }
+      ++i;
+    }
+
+    i = 0u;
+    for (auto view : info->predecessors) {
+      if (info->inductive_predecessors_mask[i]) {
+        info->inductive_predecessors.AddUse(view);
+      } else {
+        info->noninductive_predecessors.AddUse(view);
+      }
+      ++i;
+    }
+
+    // JOINs and NEGATEs who live "fully" inside other inductive back-edges
+    // can be marked as not being actually inductive after all. UNIONs that
+    // have no non-inductive successors and no non-inductive predecessors
+    // are don't really contribute to the induction either can be omitted from
+    // the induction.
+    if (info->noninductive_predecessors.Empty()) {
+      if (view->AsJoin() || view->AsNegate()) {
+        view->induction_info.reset();
+
+      } else if (view->AsMerge() && info->noninductive_successors.Empty() &&
+                 !info->can_reach_self_not_through_another_induction) {
+        view->induction_info.reset();
+      }
+    }
+  }
+
+  // If an inductive successor of A reaches B, and if and inductive successor
+  // of B reaches A, then A and B are part of the same "co-inductive" set.
+  for (auto [merge_1, merge_2] : reached_inductions) {
+    if (merge_1->IsInductive() && merge_2->IsInductive()) {
+      if (reached_inductions.count({merge_2, merge_1})) {
+        MergeSet &set_1 = merge_sets[merge_1];
+        MergeSet &set_2 = merge_sets[merge_2];
+        DisjointSet::Union(&set_1, &set_2);
+      }
+    }
   }
 
   // We didn't inject any new UNIONs :-) Now we can label all the merges
@@ -396,16 +610,22 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // about all the other merges in that set.
   auto group_id = 0u;
 
-  for (auto &[view, set] : merge_sets) {
-    MergeSet *merge_set = set.FindAs<MergeSet>();
-    if (merge_set->related_merges) {
-      auto &merges = *(merge_set->related_merges);
-      view->merge_set_id.emplace(*(merges[0]->AsMerge()->merge_set_id));
-    } else {
-      merge_set->related_merges.reset(new WeakUseList<VIEW>(view));
-      view->merge_set_id.emplace(group_id++);
+  for (auto &[view_, set] : merge_sets) {
+    VIEW * const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    if (!info) {
+      continue;
     }
-    view->related_merges = merge_set->related_merges;
+
+    MergeSet *merge_set = set.FindAs<MergeSet>();
+    if (!merge_set->related_merges) {
+      merge_set->related_merges.reset(new WeakUseList<VIEW>(view));
+      merge_set->merge_set_id = group_id;
+      ++group_id;
+    }
+
+    info->merge_set_id = merge_set->merge_set_id;
+    info->cyclic_views = merge_set->related_merges;
     merge_set->related_merges->AddUse(view);
   }
 
@@ -422,18 +642,20 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // group all inductions that are at the "frontier" of some set of views, e.g.
   // all inductions directly reachable from RECEIVEs. Some of these grouped
   // inductions might actually be reachable from the outputs of others, though.
-  for (MERGE *view : merges) {
-    if (!view->IsInductive()) {
+  for (auto &[view_, set] : merge_sets) {
+    VIEW * const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    if (!info) {
       continue;
     }
 
-    const auto merge_id = view->merge_set_id.value();
+    const auto merge_id = info->merge_set_id;
     auto &reached_ids = directly_reachable_from[merge_id];
 
     seen.clear();
     frontier.clear();
 
-    for (VIEW *succ_view : view->noninductive_successors) {
+    for (VIEW *succ_view : info->noninductive_successors) {
       frontier.push_back(succ_view);
       seen.insert(succ_view);
     }
@@ -448,10 +670,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         assert(false);
 
       // We've cycled to another UNION that is also inductive.
-      } else if (frontier_view->IsInductive()) {
-        MERGE * const frontier_merge = frontier_view->AsMerge();
-        assert(frontier_merge != nullptr);
-        const auto frontier_merge_id = frontier_merge->merge_set_id.value();
+      } else if (auto frontier_info = frontier_view->induction_info.get()) {
+        const auto frontier_merge_id = frontier_info->merge_set_id;
 
         if (merge_id != frontier_merge_id) {
           group_is_reachable[frontier_merge_id] = true;
@@ -497,13 +717,15 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
   }
 
-  for (MERGE *view : merges) {
-    if (!view->IsInductive()) {
+  for (auto &[view_, set] : merge_sets) {
+    VIEW * const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    if (!info) {
       continue;
     }
 
-    const auto merge_id = view->merge_set_id.value();
-    view->merge_depth_id.emplace(group_to_label[merge_id]);
+    const auto merge_id = info->merge_set_id;
+    info->merge_depth = group_to_label[merge_id];
   }
 
   // Now do some error checking on if the inductions are even linearizable.
@@ -512,7 +734,12 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // can't really said to be ordered anywhere.
   std::unordered_map<ParsedClause, std::vector<ParsedVariable>> bad_vars;
 
-  for (auto &[_, set] : merge_sets) {
+  for (auto &[view_, set] : merge_sets) {
+    VIEW * const view = view_;
+    if (!view->IsInductive()) {
+      continue;
+    }
+
     MergeSet *merge_set = set.FindAs<MergeSet>();
     if (merge_set->is_linearizable) {
       continue;
@@ -521,22 +748,25 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
     auto has_inputs = false;
     auto has_outputs = false;
-    for (VIEW *view : *merge_set->related_merges) {
-      MERGE * const merge = view->AsMerge();
-      if (merge->noninductive_predecessors.Size()) {
+
+    for (VIEW *related_view : *merge_set->related_merges) {
+      assert(related_view->IsInductive());
+      InductionInfo * const info = related_view->induction_info.get();
+      if (info->noninductive_predecessors.Size()) {
         has_inputs = true;
       }
-      if (merge->noninductive_successors.Size()) {
+      if (info->noninductive_successors.Size()) {
         has_outputs = true;
       }
     }
 
     if (!has_inputs || !has_outputs) {
-      const auto &merges = *(merge_set->related_merges);
-      VIEW * view = merges[0];
-      for (auto col : view->columns) {
-        auto clause = ParsedClause::Containing(col->var);
-        bad_vars[clause].push_back(col->var);
+      const auto &related_views = *(merge_set->related_merges);
+      for (VIEW * related_view : related_views) {
+        for (auto col : related_view->columns) {
+          auto clause = ParsedClause::Containing(col->var);
+          bad_vars[clause].push_back(col->var);
+        }
       }
     }
   }
@@ -560,41 +790,40 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
 #ifndef NDEBUG
   // Sanity checking.
-  for (MERGE *merge : merges) {
-    if (merge->IsInductive()) {
-
-      const auto merge_id = *(merge->merge_set_id);
-      const auto merge_depth = *(merge->merge_depth_id);
+  const_cast<const QueryImpl *>(this)->ForEachView([] (VIEW *merge) {
+    if (auto info = merge->induction_info.get()) {
+      const auto merge_id = info->merge_set_id;
+      const auto merge_depth = info->merge_depth;
       assert(0u < merge_depth);
 
-      for (auto succ_view : merge->inductive_successors) {
+      for (auto succ_view : info->inductive_successors) {
         auto succs = TransitiveSuccessorsOf(succ_view);
         assert(succs.count(merge));
       }
 
-      for (auto succ_view : merge->noninductive_successors) {
+      for (auto succ_view : info->noninductive_successors) {
         auto succs = TransitiveSuccessorsOf(succ_view);
         assert(!succs.count(merge));
 
         for (auto reached_view : succs) {
-          if (auto reached_merge = reached_view->AsMerge();
-              reached_merge && reached_merge->IsInductive()) {
+          if (auto reached_info = reached_view->induction_info.get()) {
 //            if (merge_id == *(reached_merge->merge_set_id)) {
 //              merge->table_id.emplace(99999);
 //              reached_merge->table_id.emplace(88888);
 //              succ_view->table_id.emplace(77777);
 //              return;
 //            }
-            assert(merge_id != *(reached_merge->merge_set_id));
-            assert(merge_depth < *(reached_merge->merge_depth_id));
+            assert(merge_id != reached_info->merge_set_id);
+            assert(merge_depth < reached_info->merge_depth);
           }
         }
       }
-    } else {
-      auto succs = TransitiveSuccessorsOf(merge);
-      assert(!succs.count(merge));
     }
-  }
+//    else if (merge->AsMerge() || merge->AsJoin() || merge->AsNegate()) {
+//      auto succs = TransitiveSuccessorsOf(merge);
+//      assert(!succs.count(merge));
+//    }
+  });
 #endif
 }
 

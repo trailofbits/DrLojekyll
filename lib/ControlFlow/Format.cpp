@@ -103,11 +103,13 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
     case VectorKind::kParameter: os << "$param"; break;
-    case VectorKind::kInductionAdditions: os << "$induction_add"; break;
-    case VectorKind::kInductionRemovals: os << "$induction_rem"; break;
+    case VectorKind::kInductionInputs: os << "$induction_in"; break;
     case VectorKind::kInductionSwaps: os << "$induction_swap"; break;
     case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
+    case VectorKind::kInductiveJoinPivots: os << "$induction_pivots"; break;
+    case VectorKind::kInductiveJoinPivotSwaps:
+      os << "$induction_pivots_swap"; break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kTableScan: os << "$scan"; break;
     case VectorKind::kMessageOutputs: os << "$publish"; break;
