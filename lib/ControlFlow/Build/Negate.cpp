@@ -1,6 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Build.h"
+#include "Induction.h"
 
 namespace hyde {
 
@@ -19,6 +19,11 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   //            tricky, though, due to cycles in the data flow graph.
   auto [parent, pred_table, last_table] =
       InTryInsert(impl, context, pred_view, parent_, last_table_);
+
+  const QueryView negate_view(negate);
+  if (negate_view.InductionGroupId().has_value()) {
+    (void) GetOrInitInduction(impl, negate_view, context, parent);
+  }
 
   const QueryView negated_view = negate.NegatedView();
   std::vector<QueryColumn> negated_view_cols;
@@ -47,6 +52,38 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   const QueryView view(negate);
   return BuildEagerInsertionRegions(
       impl, view, context, let, view.Successors(), nullptr  /* last_table */);
+}
+
+void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
+                                   QueryView view, OP *parent_,
+                                   TABLE *already_removed_) {
+
+  // NOTE(pag): NEGATEs are like simple JOINs, but instead of matching in
+  //            another table, we don't want to match in another table. Thus,
+  //            data must be present in both sides of the negation, similar to
+  //            what is needed for it being required in both sides of a JOIN.
+  auto pred_view = view.Predecessors()[0];
+  auto [parent, pred_table, already_removed] = InTryMarkUnknown(
+        impl, context, pred_view, parent_, already_removed_);
+
+  // Normally, the above `InTryMarkUnknown` shouldn't do anything, but we have
+  // it there for completeness. The reason why is because the data modelling
+  // requires the predecessor of a negate to have a table, thus it should have
+  // don't the unknown marking. If we have a tower of negations then the above
+  // may be necessary.
+
+  if (view.InductionGroupId().has_value()) {
+    (void) GetOrInitInduction(impl, view, context, parent);
+  }
+
+  // NOTE(pag): We defer to downstream in the data flow to figure out if
+  //            checking the negated view was even necessary.
+  //
+  // NOTE(pag): A negation can never share the same data model as its
+  //            predecessor, as it might not pass through all of its
+  //            predecessor's data.
+  BuildEagerRemovalRegions(impl, view, context, parent,
+                           view.Successors(), nullptr  /* already_removed */);
 }
 
 // Build a top-down checker on a negation.
@@ -174,34 +211,6 @@ REGION *BuildTopDownNegationChecker(
       check_call, BuildStateCheckCaseReturnFalse(impl, check_call));
 
   return check;
-}
-
-void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
-                                   QueryView view, OP *parent_,
-                                   TABLE *already_removed_) {
-
-  // NOTE(pag): NEGATEs are like simple JOINs, but instead of matching in
-  //            another table, we don't want to match in another table. Thus,
-  //            data must be present in both sides of the negation, similar to
-  //            what is needed for it being required in both sides of a JOIN.
-  auto pred_view = view.Predecessors()[0];
-  auto [parent, pred_table, already_removed] = InTryMarkUnknown(
-        impl, context, pred_view, parent_, already_removed_);
-
-  // Normally, the above `InTryMarkUnknown` shouldn't do anything, but we have
-  // it there for completeness. The reason why is because the data modelling
-  // requires the predecessor of a negate to have a table, thus it should have
-  // don't the unknown marking. If we have a tower of negations then the above
-  // may be necessary.
-
-  // NOTE(pag): We defer to downstream in the data flow to figure out if
-  //            checking the negated view was even necessary.
-  //
-  // NOTE(pag): A negation can never share the same data model as its
-  //            predecessor, as it might not pass through all of its
-  //            predecessor's data.
-  BuildEagerRemovalRegions(impl, view, context, parent,
-                           view.Successors(), nullptr  /* already_removed */);
 }
 
 }  // namespace hyde

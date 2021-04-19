@@ -15,7 +15,8 @@ bool NeedsInductionCycleVector(QueryView view) {
     return !view.NonInductivePredecessors().empty();
 
   } else if (view.IsNegate()) {
-    return !view.NonInductivePredecessors().empty();
+    return false;
+    //return !view.NonInductivePredecessors().empty();
 
   } else {
     return false;
@@ -480,6 +481,11 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Now build the inductive cycle regions and add them in. We'll do this
   // before we actually add the successor regions in.
+  //
+  // TODO(pag): A 'more optimal' ordering could likely be achieved. That is,
+  //            if we know that some things are likely to lead into others,
+  //            then we can use a SERIES to order them so that we can observe
+  //            in-loop progress.
   for (QueryView view : induction->views) {
     SERIES * const view_seq = impl->series_regions.Create(cycle_par);
     cycle_par->AddRegion(view_seq);
@@ -759,7 +765,10 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
         }
       }
     } else if (other_view.IsNegate()) {
-      assert(false && "TODO: induction vectors for negation");
+
+      // Won't use any input vectors....
+
+      //assert(false && "TODO: induction vectors for negation");
 
     } else {
       assert(false);

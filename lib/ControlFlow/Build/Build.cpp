@@ -1,6 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Build.h"
+#include "Induction.h"
 
 #include <drlojekyll/Parse/ErrorLog.h>
 
@@ -79,7 +79,10 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   });
 
   for (auto view : query.Inserts()) {
-    (void) TABLE::GetOrCreate(impl, context, view);
+    auto insert = QueryInsert::From(view);
+    if (insert.IsRelation()) {
+      (void) TABLE::GetOrCreate(impl, context, view);
+    }
   }
 
   for (auto view : query.Merges()) {
@@ -101,7 +104,12 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     (void) TABLE::GetOrCreate(impl, context, view.Predecessors()[0]);
   }
 
-
+  for (auto map : query.Maps()) {
+    QueryView view(map);
+    if (view.CanProduceDeletions()) {
+      (void) TABLE::GetOrCreate(impl, context, view);
+    }
+  }
 
 //  // NOTE(pag): TUPLEs are technically the only view types allowed to be used
 //  //            by negations.
@@ -807,7 +815,18 @@ static REGION *MaybeRemoveFromNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
   PARALLEL * const par = impl->parallel_regions.Create(parent);
   view.ForEachNegation([&] (QueryNegate negate) {
-    par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, negate, par));
+
+    OP *local_parent = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(local_parent);
+
+    QueryView negate_view(negate);
+    if (negate_view.InductionGroupId().has_value()) {
+      (void) GetOrInitInduction(impl, negate_view, context, local_parent);
+    }
+
+    local_parent->body.Emplace(
+        local_parent,
+        MaybeRemoveFromNegatedView(impl, context, view, negate, local_parent));
   });
   return par;
 }
@@ -816,7 +835,18 @@ static REGION *MaybeReAddToNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
   PARALLEL * const par = impl->parallel_regions.Create(parent);
   view.ForEachNegation([&] (QueryNegate negate) {
-    par->AddRegion(MaybeReAddToNegatedView(impl, context, view, negate, par));
+
+    OP *local_parent = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(local_parent);
+
+    QueryView negate_view(negate);
+    if (negate_view.InductionGroupId().has_value()) {
+      (void) GetOrInitInduction(impl, negate_view, context, local_parent);
+    }
+
+    local_parent->body.Emplace(
+        local_parent,
+        MaybeReAddToNegatedView(impl, context, view, negate, local_parent));
   });
   return par;
 }
