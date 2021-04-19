@@ -1,6 +1,6 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Induction.h"
+#include "Build.h"
 
 #include <drlojekyll/Parse/ErrorLog.h>
 
@@ -815,18 +815,7 @@ static REGION *MaybeRemoveFromNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
   PARALLEL * const par = impl->parallel_regions.Create(parent);
   view.ForEachNegation([&] (QueryNegate negate) {
-
-    OP *local_parent = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(local_parent);
-
-    QueryView negate_view(negate);
-    if (negate_view.InductionGroupId().has_value()) {
-      (void) GetOrInitInduction(impl, negate_view, context, local_parent);
-    }
-
-    local_parent->body.Emplace(
-        local_parent,
-        MaybeRemoveFromNegatedView(impl, context, view, negate, local_parent));
+    par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, negate, par));
   });
   return par;
 }
@@ -835,18 +824,7 @@ static REGION *MaybeReAddToNegatedView(
     ProgramImpl *impl, Context &context, QueryView view, REGION *parent) {
   PARALLEL * const par = impl->parallel_regions.Create(parent);
   view.ForEachNegation([&] (QueryNegate negate) {
-
-    OP *local_parent = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(local_parent);
-
-    QueryView negate_view(negate);
-    if (negate_view.InductionGroupId().has_value()) {
-      (void) GetOrInitInduction(impl, negate_view, context, local_parent);
-    }
-
-    local_parent->body.Emplace(
-        local_parent,
-        MaybeReAddToNegatedView(impl, context, view, negate, local_parent));
+    par->AddRegion(MaybeReAddToNegatedView(impl, context, view, negate, par));
   });
   return par;
 }
