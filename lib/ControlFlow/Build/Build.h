@@ -73,48 +73,6 @@ class Context {
   std::unordered_map<ParsedMessage, VECTOR *> publish_vecs;
   std::unordered_map<ParsedMessage, QueryView> published_view;
 
-//  // Mapping of `QueryMerge` instances to their equivalence classes.
-//  std::unordered_map<QueryView, InductionSet> merge_sets;
-//
-//  // Merges in this set are inductive, but behave more like non-inductive
-//  // merges because all paths leading out of these views go through a single
-//  // other merge in their inductive set.
-//  //
-//  // Dominance idea: UNON1 and maybe UNION3 are inductive, and UNION2 appears
-//  // inductive but only by virtue of its placement between two other inductive
-//  // unions. The uniqueness of stuff coming out of UNION2 can be enforced via
-//  // UNION1, thus UNION1 dominates UNION2.
-//  //
-//  //         ----UNION1----.
-//  //               |       |
-//  //              ...      |
-//  //               |       |
-//  //             UNION2    |
-//  //            /     \    |
-//  //           ..     ..   |
-//  //            \     /    |
-//  //            UNION3     |
-//  //         ----' '-------'
-//  std::unordered_set<QueryView> dominated_merges;
-//
-//  // Set of successors of a `QueryMerge` that may lead back to the merge
-//  // (inductive) and never lead back to the merge (noninductive), respectively.
-//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-//      inductive_successors;
-//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-//      noninductive_successors;
-//
-//  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
-//  // an inductive
-//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-//      inductive_predecessors;
-//  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-//      noninductive_predecessors;
-
-  // Set of regions that execute eagerly. In practice this means that these
-  // regions are directly needed in order to produce an output message.
-  std::unordered_set<QueryView> eager;
-
   // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
   // the same INDUCTION if they belong to the same "inductive set". This happens
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
