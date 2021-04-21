@@ -277,10 +277,6 @@ struct InductionInfo {
   // Can we reach back to ourselves by not flowing through another induction?
   bool can_reach_self_not_through_another_induction{false};
 
-  // Do all inductive successors of this union lead into one or more other
-  // inductive unions?
-  bool all_inductive_successors_reach_other_inductions{false};
-
   WeakUseList<Node<QueryView>> inductive_predecessors;
   WeakUseList<Node<QueryView>> inductive_successors;
 

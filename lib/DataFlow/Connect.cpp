@@ -5,234 +5,264 @@
 #include "Query.h"
 
 namespace hyde {
+namespace {
+
+VIEW *CreateProxyOfInserts(QueryImpl *impl,
+                           UseList<Node<QueryView>> &inserts) {
+
+  UseList<Node<QueryView>> old_inserts(inserts.Owner());
+  old_inserts.Swap(inserts);
+
+  MERGE *merge = nullptr;
+  const auto has_one_insert = inserts.Size() == 1u;
+
+  // Create a MERGE that takes in TUPLEs that replace each INSERT, except
+  // for the INSERTs representing DELETEs.
+  for (VIEW *insert : old_inserts) {
+    assert(insert->AsInsert());
+
+    // Only proxy an INSERT if it actually inserts data; otherwise it's a
+    // DELETE and we want to maintain that.
+    TUPLE * const proxy = impl->tuples.Create();
+
+#ifndef NDEBUG
+    proxy->producer = "INSERT";
+#endif
+
+    insert->CopyDifferentialAndGroupIdsTo(proxy);
+    insert->TransferSetConditionTo(proxy);
+    insert->CopyTestedConditionsTo(proxy);
+
+    insert->DropSetConditions();
+    insert->DropTestedConditions();
+
+    auto col_index = 0u;
+    for (auto in_col : insert->input_columns) {
+      COL * const proxy_col =
+          proxy->columns.Create(in_col->var, proxy, in_col->id, col_index++);
+      proxy->input_columns.AddUse(in_col);
+      proxy_col->CopyConstantFrom(in_col);
+    }
+
+    insert->PrepareToDelete();
+
+    if (has_one_insert) {
+      return proxy;
+    }
+
+    if (!merge) {
+      merge = impl->merges.Create();
+      col_index = 0u;
+      for (auto col : proxy->columns) {
+        (void) merge->columns.Create(col->var, merge, col->id, col_index++);
+      }
+    }
+
+    merge->merged_views.AddUse(proxy);
+  }
+
+  assert(merge != nullptr);
+  return merge;
+}
+
+static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
+                                         ParsedDeclaration decl) {
+
+  assert(!view->columns.Empty());
+
+  // If the decl has at least one `mutable`-attributed parameter then we
+  // need a KVINDEX.
+  if (!decl.HasMutableParameter()) {
+    return view;
+  }
+
+  KVINDEX * const index = impl->kv_indices.Create();
+  std::unordered_map<COL *, COL *> col_map;
+
+  // Create the key columns.
+  auto i = 0u;
+  auto col_index = 0u;
+  for (ParsedParameter param : decl.Parameters()) {
+    const auto view_col = view->columns[i++];
+    if (param.Binding() != ParameterBinding::kMutable) {
+      const auto key_col = index->columns.Create(
+          view_col->var, index, view_col->id, col_index++);
+      col_map.emplace(view_col, key_col);
+
+      index->input_columns.AddUse(view_col);
+    }
+  }
+
+  // Create the value columns.
+  i = 0u;
+  for (ParsedParameter param : decl.Parameters()) {
+    const auto view_col = view->columns[i++];
+    if (param.Binding() == ParameterBinding::kMutable) {
+      const auto val_col = index->columns.Create(
+          view_col->var, index, view_col->id, col_index++);
+      col_map.emplace(view_col, val_col);
+
+      index->merge_functors.push_back(
+          ParsedFunctor::MergeOperatorOf(param));
+      index->attached_columns.AddUse(view_col);
+    }
+  }
+
+  // We need to return the columns in the expected order.
+  TUPLE * const proxy = impl->tuples.Create();
+  col_index = 0u;
+  for (auto col : view->columns) {
+    (void) proxy->columns.Create(col->var, proxy, col->id, col_index++);
+    proxy->input_columns.AddUse(col_map[col]);
+  }
+
+  return proxy;
+}
+
+static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
+                         VIEW *insert_proxy) {
+  UseList<Node<QueryView>> old_selects(selects.Owner());
+  old_selects.Swap(selects);
+
+  for (VIEW *select : old_selects) {
+    assert(select->AsSelect());
+
+    // Only proxy an INSERT if it actually inserts data; otherwise it's a
+    // DELETE and we want to maintain that.
+    TUPLE * const proxy = impl->tuples.Create();
+
+#ifndef NDEBUG
+    proxy->producer = "SELECT";
+#endif
+
+    select->CopyDifferentialAndGroupIdsTo(proxy);
+    select->TransferSetConditionTo(proxy);
+    select->CopyTestedConditionsTo(proxy);
+
+    select->DropSetConditions();
+    select->DropTestedConditions();
+
+    auto col_index = 0u;
+    for (auto in_col : insert_proxy->columns) {
+      COL * const sel_col = select->columns[col_index];
+      COL * const proxy_col =
+          proxy->columns.Create(sel_col->var, proxy, sel_col->id, col_index++);
+      proxy->input_columns.AddUse(in_col);
+      proxy_col->CopyConstantFrom(in_col);
+    }
+
+    select->ReplaceAllUsesWith(proxy);
+  }
+}
+
+}  // namespace
 
 // Connect INSERT nodes to SELECT nodes when the "full state" of the relation
 // does not need to be visible for point queries.
 bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
-  std::unordered_map<ParsedDeclaration,
-                     std::pair<std::vector<INSERT *>, std::vector<SELECT *>>>
-      decl_to_views;
 
-  auto can_connect = [](ParsedDeclaration decl) {
-    return !decl.IsMessage() && 0u < decl.Arity();  // Not a condition.
-  };
+  // First, deal with all messages.
+  for (IO *io : ios) {
 
-  // Collect a list of declarations mapping to their inserts and selects.
-  for (auto rel : relations) {
-    auto &views = decl_to_views[rel->declaration];
+    io->transmits.Unique();
+    io->receives.Unique();
 
-    for (auto insert : rel->inserts) {
-      views.first.push_back(insert->AsInsert());
-    }
-
-    for (auto select : rel->selects) {
-      views.second.push_back(select->AsSelect());
-    }
-  }
-
-  // Double check that I/Os are sends or receives, but never both.
-  for (auto io : ios) {
-    auto error = false;
-    if (!io->receives.Empty()) {
-      error = !io->transmits.Empty();
-
-    } else if (!io->transmits.Empty()) {
-      error = !io->receives.Empty();
-    }
-
-    if (error) {
+    // Messages should only ever be sent or received, but not both.
+    if (!io->transmits.Empty() && !io->receives.Empty()) {
       log.Append(io->declaration.SpellingRange())
           << "Internal error: cannot have both sends and receives on the "
           << "message '" << io->declaration.Name() << '/'
           << io->declaration.Arity() << "'";
       return false;
     }
+
+    assert(!io->declaration.HasMutableParameter());
+
+    if (auto num_transmits = io->transmits.Size(); num_transmits) {
+
+      if (1u == num_transmits) {
+        continue;
+      }
+
+      // If a message has more than one transmit, then we want to merge all
+      // of those transmits via a single UNION.
+
+      VIEW *const proxy = CreateProxyOfInserts(this, io->transmits);
+
+      INSERT *insert = inserts.Create(io, io->declaration);
+      for (auto col : proxy->columns) {
+        insert->input_columns.AddUse(col);
+      }
+
+      io->transmits.AddUse(insert);
+
+    } else if (auto num_receives = io->receives.Size(); num_receives) {
+
+      if (1u == num_receives) {
+        continue;
+      }
+
+      SELECT * const prev_sel = io->receives[0]->AsSelect();
+
+      SELECT *select = nullptr;
+      if (prev_sel->pred) {
+        select = selects.Create(io, *(prev_sel->pred));
+      } else {
+        select = selects.Create(io, DisplayRange(prev_sel->position, {}));
+      }
+
+      auto col_index = 0u;
+      for (auto col : io->receives[0]->columns) {
+        select->columns.Create(col->var, select, col->id, col_index++);
+      }
+
+      ProxySelects(this, io->receives, select);
+      assert(io->receives.Empty());
+      io->receives.AddUse(select);
+
+    } else {
+      assert(false);
+    }
   }
 
-  for (const auto &[decl, views] : decl_to_views) {
-    const auto can_connect_decl = can_connect(decl);
-    const auto &[insert_views, select_views] = views;
+  // Then, deal with all relations (queries, locals, exports).
+  for (REL *rel : relations) {
 
-    if (insert_views.empty() && select_views.empty()) {
+    rel->inserts.Unique();
+    rel->selects.Unique();
+
+    const ParsedDeclaration decl(rel->declaration);
+
+    // WE don't generate a MERGE in the case of a zero-arity predicate, i.e.
+    // a CONDition variable, because there might be multiple ways of proving
+    // that CONDition that have different arities.
+    if (!decl.Arity()) {
       continue;
     }
 
-    VIEW *view = nullptr;
-    INSERT *single_insert = nullptr;
+    VIEW *const insert_proxy = CreateProxyForMutableParams(
+        this, CreateProxyOfInserts(this, rel->inserts), rel->declaration);
+    rel->inserts.Clear();
 
-    if (!insert_views.empty() && decl.Arity()) {
-      const auto merge = merges.Create();
-      view = merge;
-
-      // Create a MERGE that takes in TUPLEs that replace each INSERT, except
-      // for the INSERTs representing DELETEs.
-      bool is_first_merge = true;
-      for (auto insert : insert_views) {
-        VIEW *ins_proxy = insert;
-
-        // A DELETE feeds into the insert, so mark the merge as taking
-        // differential updates.
-        if (insert->can_receive_deletions) {
-          merge->can_receive_deletions = true;
-        }
-
-        // Only proxy an INSERT if it actually inserts data; otherwise it's a
-        // DELETE and we want to maintain that.
-        ins_proxy = tuples.Create();
-
-#ifndef NDEBUG
-        ins_proxy->producer = "INSERT";
-#endif
-
-        ins_proxy->group_ids.swap(insert->group_ids);
-        ins_proxy->sets_condition.Swap(insert->sets_condition);
-        insert->CopyTestedConditionsTo(ins_proxy);
-
-        for (auto in_col : insert->input_columns) {
-          auto out_col =
-              ins_proxy->columns.Create(in_col->var, ins_proxy, in_col->id);
-          ins_proxy->input_columns.AddUse(in_col);
-          out_col->CopyConstantFrom(in_col);
-        }
-
-        for (auto in_col : ins_proxy->input_columns) {
-          if (is_first_merge) {
-            (void) merge->columns.Create(in_col->var, merge, in_col->id);
-          }
-        }
-
-        is_first_merge = false;
-        merge->merged_views.AddUse(ins_proxy);
-      }
-
-      // If the decl has at least one `mutable`-attributed parameter then we
-      // need a KVINDEX.
-      if (decl.HasMutableParameter()) {
-        assert(!merge->columns.Empty());
-
-        // Create a guard tuple that enforces order of columns, so that we can
-        // make the columns of the KVINDEX in the order of keys followed by
-        // values, which might not match the normal column order.
-        view = view->GuardWithTuple(this, true /* force */);
-
-        const auto index = kv_indices.Create();
-
-        // Create the key columns.
-        auto i = 0u;
-        for (ParsedParameter param : decl.Parameters()) {
-          const auto merge_col = merge->columns[i++];
-          if (param.Binding() != ParameterBinding::kMutable) {
-            const auto key_col =
-                index->columns.Create(merge_col->var, index, merge_col->id);
-            merge_col->ReplaceAllUsesWith(key_col);
-          }
-        }
-
-        // Create the value columns.
-        i = 0u;
-        for (ParsedParameter param : decl.Parameters()) {
-          const auto merge_col = merge->columns[i++];
-          if (param.Binding() == ParameterBinding::kMutable) {
-            const auto val_col =
-                index->columns.Create(merge_col->var, index, merge_col->id);
-            merge_col->ReplaceAllUsesWith(val_col);
-          }
-        }
-
-        // Create the inputs.
-        i = 0u;
-        for (ParsedParameter param : decl.Parameters()) {
-          const auto merge_col = merge->columns[i++];
-          if (param.Binding() == ParameterBinding::kMutable) {
-            index->merge_functors.push_back(
-                ParsedFunctor::MergeOperatorOf(param));
-            index->attached_columns.AddUse(merge_col);
-          } else {
-            index->input_columns.AddUse(merge_col);
-          }
-        }
-      }
-
-      // Create a single outgoing INSERT for the relation. This ensures that
-      // all clause dataflows send their data through a single place, and it
-      // is UNIQUEd ahead-of-time by a UNION or dealt with by a K/V INDEX.
-      // Similarly, any DELETEs are preserved and flow into the UNION.
-      //
-      // In the case of QUERY nodes, we want to MATERIALIZE the data via an
-      // INSERT.
-      if (view && (!can_connect_decl || decl.IsQuery())) {
-
-        if (auto io_it = decl_to_input.find(decl);
-            io_it != decl_to_input.end()) {
-
-          single_insert = inserts.Create(io_it->second, decl);
-          io_it->second->transmits.AddUse(single_insert);
-
-        } else if (auto rel_it = decl_to_relation.find(decl);
-                   rel_it != decl_to_relation.end()) {
-          single_insert = inserts.Create(rel_it->second, decl);
-          rel_it->second->inserts.AddUse(single_insert);
-
-        } else {
-          assert(false);
-        }
-
-        for (auto col : view->columns) {
-          single_insert->input_columns.AddUse(col);
-        }
-      }
-
-      for (auto insert : insert_views) {
-        insert->PrepareToDelete();
-      }
-
-      if (!can_connect_decl) {
-        for (auto select : select_views) {
-          select->inserts.AddUse(single_insert);
-        }
-      }
+    // If there are no SELECTs on this declaration, then any INSERTs are
+    // ineffectual. It's possible that those INSERTs are conditional, though,
+    // and `proxy` will deal with those conditions being linked. Thus, in this
+    // case, we'll just leave `proxy` dangling, to be cleaned up by
+    // canonicalization
+    if (rel->selects.Empty() && !decl.IsQuery()) {
+      continue;
     }
 
-    // Replace all uses of any of the SELECTs with TUPLEs that take the place
-    // of the INSERTs.
-    if (view && can_connect_decl) {
+    ProxySelects(this, rel->selects, insert_proxy);
+    assert(rel->selects.Empty());
 
-      REL *rel = nullptr;
-      IO *io = nullptr;
-
-      for (auto select : select_views) {
-        if (!rel && !io) {
-          rel = select->relation.get();
-          if (auto stream = select->stream.get(); stream) {
-            io = stream->AsIO();
-          }
-        }
-
-        // Create a TUPLE and MERGE that will read in a tuple of all incoming
-        // data to the INSERTs, thus letting us remove the INSERTs.
-        const auto sel_tuple = tuples.Create();
-
-#ifndef NDEBUG
-        sel_tuple->producer = "SELECT";
-#endif
-
-        // Connect the MERGE to the TUPLE.
-        auto i = 0u;
-        for (auto merge_col : view->columns) {
-          const auto sel_col = select->columns[i++];
-          sel_tuple->columns.Create(sel_col->var, sel_tuple, sel_col->id);
-          sel_tuple->input_columns.AddUse(merge_col);
-        }
-
-        select->ReplaceAllUsesWith(sel_tuple);
+    if (decl.IsQuery()) {
+      INSERT *insert = inserts.Create(rel, rel->declaration);
+      for (auto col : insert_proxy->columns) {
+        insert->input_columns.AddUse(col);
       }
 
-      if (rel) {
-        rel->selects.Clear();
-      }
-      if (io) {
-        io->receives.Clear();
-      }
+      rel->inserts.AddUse(insert);
     }
   }
 

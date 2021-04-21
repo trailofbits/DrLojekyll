@@ -203,8 +203,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     // to the same co-inductive set. That is, the outputs of each of the unions
     // somehow cycle into all of the other unions.
 
-    bool seen_another_induction = false;
-
     auto succ_view_i = 0u;
     for (VIEW *succ_view : info->successors) {
       if (!info->inductive_successors_mask[succ_view_i++]) {
@@ -238,8 +236,11 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         // We've cycled to another UNION that is also inductive.
         if (InductionInfo * const frontier_info =
                 frontier_view->induction_info.get()) {
-          seen_another_induction = true;
-          from_induction = true;
+
+          if (frontier_view->AsMerge()) {
+            from_induction = true;
+          }
+
           reached_inductions.emplace(view, frontier_view);
 
         // If we've reached an insert with no successors, then this is either
@@ -262,12 +263,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
           }
         });
       }
-    }
-
-    // All inductive paths out of this union lead to another inductive union.
-    if (!info->can_reach_self_not_through_another_induction &&
-        seen_another_induction) {
-      info->all_inductive_successors_reach_other_inductions = true;
     }
   }
 
@@ -308,6 +303,9 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
         const auto frontier_succs = TransitiveSuccessorsOf(frontier_succ_view);
         if (!frontier_succs.count(merge)) {
+          if (frontier_view->AsMerge()) {
+            frontier_succ_view->color = 0xff;
+          }
           injection_sites.insert(frontier_view);
         } else if (!seen.count(frontier_succ_view)) {
           seen.insert(frontier_succ_view);
@@ -326,7 +324,10 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // edge from `view` to `succ_view` leads out of the UNION.
   for (VIEW *view : injection_sites) {
 
-    assert(!view->AsMerge());
+    if (view->AsMerge()) {
+      view->color = 0xff0000;
+    }
+//    assert(!view->AsMerge());
     assert(!view->AsSelect());
     assert(!view->AsInsert());
 
@@ -406,19 +407,13 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       ++i;
     }
 
-    // JOINs and NEGATEs who live "fully" inside other inductive back-edges
-    // can be marked as not being actually inductive after all. UNIONs that
-    // have no non-inductive successors and no non-inductive predecessors
-    // are don't really contribute to the induction either can be omitted from
-    // the induction.
-    if (info->noninductive_predecessors.Empty()) {
-      if (view->AsJoin() || view->AsNegate()) {
-        view->induction_info.reset();
+    // Views living "fully" inside other inductive back-edges can be marked as
+    // not being actually inductive after all.
+    if (info->noninductive_predecessors.Empty() &&
+        info->noninductive_successors.Empty() &&
+        !info->can_reach_self_not_through_another_induction) {
 
-      } else if (view->AsMerge() && info->noninductive_successors.Empty() &&
-                 !info->can_reach_self_not_through_another_induction) {
-        view->induction_info.reset();
-      }
+      view->induction_info.reset();
     }
   }
 

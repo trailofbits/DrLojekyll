@@ -63,29 +63,33 @@ static int CompileModule(hyde::DisplayManager display_manager,
   if (gIRStream || gCxxCodeStream || gPyCodeStream ||
       gPyInterfaceCodeStream) {
 
-    if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
-      if (gIRStream) {
-        (*gIRStream) << *program_opt;
-        gIRStream->Flush();
-      }
+    try {
+      if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
+        if (gIRStream) {
+          (*gIRStream) << *program_opt;
+          gIRStream->Flush();
+        }
 
-      if (gCxxCodeStream) {
-        gCxxCodeStream->SetIndentSize(2u);
-        hyde::GenerateCxxCode(*program_opt, *gCxxCodeStream);
-      }
+        if (gCxxCodeStream) {
+          gCxxCodeStream->SetIndentSize(2u);
+          hyde::GenerateCxxCode(*program_opt, *gCxxCodeStream);
+        }
 
-      if (gPyCodeStream) {
-        gPyCodeStream->SetIndentSize(4u);
-        hyde::GeneratePythonDatabaseCode(*program_opt, *gPyCodeStream);
-      }
+        if (gPyCodeStream) {
+          gPyCodeStream->SetIndentSize(4u);
+          hyde::GeneratePythonDatabaseCode(*program_opt, *gPyCodeStream);
+        }
 
-      if (gPyInterfaceCodeStream) {
-        gPyInterfaceCodeStream->SetIndentSize(4u);
-        hyde::GeneratePythonInterfaceCode(
-            *program_opt, *gPyInterfaceCodeStream);
+        if (gPyInterfaceCodeStream) {
+          gPyInterfaceCodeStream->SetIndentSize(4u);
+          hyde::GeneratePythonInterfaceCode(
+              *program_opt, *gPyInterfaceCodeStream);
+        }
+      } else {
+        ret = EXIT_FAILURE;
       }
-    } else {
-      ret = EXIT_FAILURE;
+    } catch (...) {
+
     }
   }
 

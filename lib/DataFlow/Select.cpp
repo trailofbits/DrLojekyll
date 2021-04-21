@@ -150,17 +150,17 @@ bool Node<QuerySelect>::Equals(EqualitySet &eq,
     return false;
   }
 
+  if (eq.Contains(this, that)) {
+    return true;
+  }
+
   if (stream) {
     if (stream.get() != that->stream.get()) {
       return false;
     }
 
-    if (stream->AsIO() || stream->AsConstant()) {
+    if (stream->AsConstant()) {
       return true;
-
-    } else {
-      assert(false);
-      return false;
     }
 
   } else if (relation) {
@@ -168,22 +168,14 @@ bool Node<QuerySelect>::Equals(EqualitySet &eq,
         relation->declaration.Id() != that->relation->declaration.Id()) {
       return false;
     }
+  }
 
-    if (eq.Contains(this, that)) {
-      return true;
-    }
-
-    if (InsertSetsOverlap(this, that)) {
-      return false;
-    }
-
-    eq.Insert(this, that);
-    return true;
-
-  } else {
-    assert(is_dead);
+  if (InsertSetsOverlap(this, that)) {
     return false;
   }
+
+  eq.Insert(this, that);
+  return true;
 }
 
 }  // namespace hyde

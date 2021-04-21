@@ -561,11 +561,11 @@ OP *CallTopDownChecker(
   const auto [check, check_call] = CallTopDownChecker(
       impl, context, parent, view, view_cols, pred_view, already_checked);
 
-  if (auto body_if_true = if_true(check_call); body_if_true) {
+  if (REGION *body_if_true = if_true(check_call); body_if_true) {
     check_call->body.Emplace(check_call, body_if_true);
   }
 
-  if (auto body_if_false = if_false(check_call); body_if_false) {
+  if (REGION *body_if_false = if_false(check_call); body_if_false) {
     check_call->false_body.Emplace(check_call, body_if_false);
   }
 
@@ -646,11 +646,6 @@ bool MayNeedToBePersisted(QueryView view);
 // Returns `true` if `view` might need to have its data persisted for the
 // sake of supporting differential updates / verification.
 bool MayNeedToBePersistedDifferential(QueryView view);
-
-//// Decides whether or not `view` can depend on `pred_view` for persistence
-//// of its data.
-//bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
-//                                     QueryView view, QueryView pred_view);
 
 // Build and dispatch to the bottom-up remover regions for `view`. The idea
 // is that we've just removed data from `view`, and now want to tell the

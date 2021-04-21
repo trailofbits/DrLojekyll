@@ -266,7 +266,7 @@ class UseList {
 
   void Clear(void);
 
-  const User *Owner(void) const {
+  User *Owner(void) const {
     return owner;
   }
 

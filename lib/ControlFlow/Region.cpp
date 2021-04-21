@@ -20,11 +20,7 @@ Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
     : Def<Node<ProgramRegion>>(this),
       User(this),
       containing_procedure(parent_->containing_procedure),
-      parent(parent_) {
-  if (parent && parent != parent->parent) {
-    col_id_to_var = parent->col_id_to_var;
-  }
-}
+      parent(parent_) {}
 
 Node<ProgramProcedure> *Node<ProgramRegion>::AsProcedure(void) noexcept {
   return nullptr;
@@ -246,6 +242,7 @@ VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
       var = impl->const_to_var[QueryConstant::From(col)];
     }
   }
+  assert(var != nullptr);
   return var;
 }
 

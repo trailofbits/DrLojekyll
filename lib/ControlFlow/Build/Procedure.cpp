@@ -36,7 +36,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, vec);
 
-    for (auto col : receives[0].Columns()) {
+    for (auto col : receive.Columns()) {
       const auto var = loop->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kVectorVariable);
       var->query_column = col;
@@ -65,7 +65,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, removal_vec);
 
-    for (auto col : receives[0].Columns()) {
+    for (auto col : receive.Columns()) {
       const auto var = loop->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kVectorVariable);
       var->query_column = col;

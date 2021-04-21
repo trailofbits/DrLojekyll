@@ -1,0 +1,24 @@
+
+
+#message input(i32 A, i32 B) @differential.
+
+#local paired(A, C)
+    : input(A, B)
+    , input(B, C).
+
+    
+#local paired2(A, C)
+    : paired2(A, B)
+    , paired2(B, C)
+    
+    : paired(A, C).
+
+#local paired3(A, C)
+    : paired3(A, B)
+    , paired3(B, C)
+    
+    : paired(C, A).
+
+#message output(i32 A) @differential
+    : paired2(A, _)
+    : paired3(_, A).

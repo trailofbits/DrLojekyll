@@ -7,16 +7,9 @@
 namespace hyde {
 
 bool NeedsInductionCycleVector(QueryView view) {
-  if (view.IsMerge()) {
+  if (view.InductionGroupId().has_value()) {
     return !view.NonInductivePredecessors().empty() ||
            view.IsOwnIndirectInductiveSuccessor();
-
-  } else if (view.IsJoin()) {
-    return !view.NonInductivePredecessors().empty();
-
-  } else if (view.IsNegate()) {
-    return !view.NonInductivePredecessors().empty();
-
   } else {
     return false;
   }

@@ -82,6 +82,13 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
       (void) TABLE::GetOrCreate(impl, context, view);
     }
   }
+
+  for (auto map : query.Compares()) {
+    QueryView view(map);
+    if (view.CanProduceDeletions()) {
+      (void) TABLE::GetOrCreate(impl, context, view);
+    }
+  }
 }
 
 // Building the data model means figuring out which `QueryView`s can share the
@@ -1955,15 +1962,23 @@ static void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
 
     } else if (QueryView::Containing(in_col) == pred_view) {
       const auto src_var = parent->VariableFor(impl, in_col);
+      assert(src_var != nullptr);
       parent->col_id_to_var[out_col->Id()] = src_var;
+
+
+    } else if (in_col.IsConstantRef()) {
+      const auto src_var = parent->VariableFor(impl, in_col);
+      assert(src_var != nullptr);
+      parent->col_id_to_var.emplace(out_col->Id(), src_var);
 
     // NOTE(pag): This is subtle. We use `emplace` here instead of `[...] =`
     //            to give preference to the constant matching the incoming view.
     //            The key issue here is when we have a column of a MERGE node
-    //            taking in a lot constants.
-    } else if (in_col.IsConstantOrConstantRef() &&
-               InputColumnRole::kMergedColumn != role) {
+    //            taking in a lot constants, we can't be certain which constant
+    //            we're getting.
+    } else if (in_col.IsConstant() && InputColumnRole::kMergedColumn != role) {
       const auto src_var = parent->VariableFor(impl, in_col);
+      assert(src_var != nullptr);
       parent->col_id_to_var.emplace(out_col->Id(), src_var);
     }
   });
@@ -1973,6 +1988,7 @@ static void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
 void BuildEagerRemovalRegion(ProgramImpl *impl, QueryView from_view,
                              QueryView to_view, Context &context, OP *parent,
                              TABLE *already_checked) {
+
   MapVariablesInEagerRegion(impl, from_view, to_view, parent);
 
   if (to_view.IsTuple()) {

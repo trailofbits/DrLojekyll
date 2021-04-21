@@ -16,10 +16,10 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
 
   auto col_index = 0u;
   for (COL *col : view->input_columns) {
-    COL * const tuple_col = proxy->columns.Create(
+    COL * const proxy_col = proxy->columns.Create(
         col->var, proxy, col->id, col_index++);
     proxy->input_columns.AddUse(col);
-    tuple_col->CopyConstantFrom(col);
+    proxy_col->CopyConstantFrom(col);
   }
 
   view->input_columns.Clear();
@@ -40,18 +40,22 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 
   // Make sure the negated view is a tuple.
   if (!view->negated_view->AsTuple()) {
-    TUPLE * tuple = impl->tuples.Create();
-    tuple->color = view->negated_view->color;
-    tuple->can_receive_deletions = view->negated_view->can_produce_deletions;
+    VIEW * const negated_view = view->negated_view.get();
+    TUPLE * const tuple = impl->tuples.Create();
+    tuple->color = negated_view->color;
+
+    negated_view->CopyDifferentialAndGroupIdsTo(tuple);
+    tuple->can_receive_deletions = negated_view->can_produce_deletions;
     tuple->can_produce_deletions = tuple->can_receive_deletions;
 
     auto col_index = 0u;
-    for (COL *col : view->negated_view->columns) {
+    for (COL *col : negated_view->columns) {
       COL * const tuple_col = tuple->columns.Create(
           col->var, tuple, col->id, col_index++);
       tuple->input_columns.AddUse(col);
       tuple_col->CopyConstantFrom(col);
     }
+
     view->negated_view.Emplace(view, tuple);
   }
 
@@ -61,37 +65,38 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
   if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
       incoming_view && !incoming_view->AsTuple()) {
 
-    TUPLE * tuple = impl->tuples.Create();
+    TUPLE * const proxy = impl->tuples.Create();
 
-    tuple->can_receive_deletions = view->can_produce_deletions;
-    tuple->can_produce_deletions = tuple->can_receive_deletions;
-    tuple->color = incoming_view->color;
+    incoming_view->CopyDifferentialAndGroupIdsTo(proxy);
+    proxy->can_receive_deletions = incoming_view->can_produce_deletions;
+    proxy->can_produce_deletions = proxy->can_receive_deletions;
+    proxy->color = incoming_view->color;
 
     auto col_index = 0u;
-    for (auto col : view->input_columns) {
-      auto tuple_col = tuple->columns.Create(
-          col->var, tuple, col->id, col_index++);
-      tuple_col->CopyConstantFrom(col);
+    for (COL *col : view->input_columns) {
+      COL * const proxy_col = proxy->columns.Create(
+          col->var, proxy, col->id, col_index++);
+      proxy_col->CopyConstantFrom(col);
     }
 
     for (auto col : view->attached_columns) {
-      auto tuple_col = tuple->columns.Create(
-          col->var, tuple, col->id, col_index++);
+      auto tuple_col = proxy->columns.Create(
+          col->var, proxy, col->id, col_index++);
       tuple_col->CopyConstantFrom(col);
     }
 
     UseList<COL> new_in_cols(view);
     col_index = 0u;
     for (auto in_col : view->input_columns) {
-      tuple->input_columns.AddUse(in_col);
-      new_in_cols.AddUse(tuple->columns[col_index++]);
+      proxy->input_columns.AddUse(in_col);
+      new_in_cols.AddUse(proxy->columns[col_index++]);
     }
     view->input_columns.Swap(new_in_cols);
     new_in_cols.Clear();
 
     for (auto in_col : view->attached_columns) {
-      tuple->input_columns.AddUse(in_col);
-      new_in_cols.AddUse(tuple->columns[col_index++]);
+      proxy->input_columns.AddUse(in_col);
+      new_in_cols.AddUse(proxy->columns[col_index++]);
     }
     view->attached_columns.Swap(new_in_cols);
   }
@@ -100,46 +105,49 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 // Proxy each joined view with a tuple. We put the tuples in the order in which
 // their data is accessed by the JOINs.
 static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
+
   WeakUseList<VIEW> new_joined_views(join);
 
   std::unordered_map<COL *, COL *> col_map;
 
-  for (auto view : join->joined_views) {
+  for (VIEW *view : join->joined_views) {
 
     // We don't need to proxy this; it's already a tuple.
     if (view->AsTuple()) {
       new_joined_views.AddUse(view);
-      for (auto col : view->columns) {
-        col_map.emplace(col, col);
+      for (auto view_col : view->columns) {
+        col_map.emplace(view_col, view_col);
       }
       continue;
     }
 
-    const auto tuple = impl->tuples.Create();
-    new_joined_views.AddUse(tuple);
+    TUPLE * const proxy = impl->tuples.Create();
+    new_joined_views.AddUse(proxy);
 
-    tuple->can_receive_deletions = view->can_produce_deletions;
-    tuple->can_produce_deletions = tuple->can_receive_deletions;
-    tuple->color = view->color;
+    view->CopyDifferentialAndGroupIdsTo(proxy);
+    proxy->can_receive_deletions = view->can_produce_deletions;
+    proxy->can_produce_deletions = proxy->can_receive_deletions;
+    proxy->color = view->color;
 
     // Copy the columns in order, so that if the predecessor has a table,
     // then we're more likely to share that table too.
     auto col_index = 0u;
-    for (auto out_col : view->columns) {
-      COL *tuple_col = tuple->columns.Create(
-          out_col->var, tuple, out_col->id, col_index++);
-      tuple_col->CopyConstantFrom(out_col);
-      tuple->input_columns.AddUse(out_col);
-      col_map.emplace(out_col, tuple_col);
+    for (COL *view_col : view->columns) {
+      COL * const proxy_col = proxy->columns.Create(
+          view_col->var, proxy, view_col->id, col_index++);
+      proxy_col->CopyConstantFrom(view_col);
+      proxy->input_columns.AddUse(view_col);
+      auto [it, added] = col_map.emplace(view_col, proxy_col);
+      assert(added);
     }
   }
-
-  join->joined_views.Swap(new_joined_views);
 
   for (auto out_col : join->columns) {
     UseList<COL> new_in_cols(join);
     auto in_cols_it = join->out_to_in.find(out_col);
-    for (auto in_col : in_cols_it->second) {
+    assert(in_cols_it != join->out_to_in.end());
+    assert(1u <= in_cols_it->second.Size());
+    for (COL *in_col : in_cols_it->second) {
       if (in_col->IsConstant()) {
         new_in_cols.AddUse(in_col);
       } else {
@@ -148,11 +156,13 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
     }
     new_in_cols.Swap(in_cols_it->second);
   }
+
+  join->joined_views.Swap(new_joined_views);
 }
 
 static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
   UseList<VIEW> new_merged_views(merge);
-  for (auto view : merge->merged_views) {
+  for (VIEW *view : merge->merged_views) {
 
     // We don't need to proxy this; it's already a tuple.
     if (view->AsTuple()) {
@@ -160,21 +170,22 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
       continue;
     }
 
-    const auto tuple = impl->tuples.Create();
-    new_merged_views.AddUse(tuple);
+    TUPLE * const proxy = impl->tuples.Create();
+    new_merged_views.AddUse(proxy);
 
-    tuple->can_receive_deletions = view->can_produce_deletions;
-    tuple->can_produce_deletions = tuple->can_receive_deletions;
-    tuple->color = view->color;
+    view->CopyDifferentialAndGroupIdsTo(proxy);
+    proxy->can_receive_deletions = view->can_produce_deletions;
+    proxy->can_produce_deletions = proxy->can_receive_deletions;
+    proxy->color = view->color;
 
     // Copy the columns in order, so that if the predecessor has a table,
     // then we're more likely to share that table too.
     auto col_index = 0u;
     for (auto out_col : view->columns) {
-      COL *tuple_col = tuple->columns.Create(
-          out_col->var, tuple, out_col->id, col_index++);
-      tuple_col->CopyConstantFrom(out_col);
-      tuple->input_columns.AddUse(out_col);
+      COL *proxy_col = proxy->columns.Create(
+          out_col->var, proxy, out_col->id, col_index++);
+      proxy_col->CopyConstantFrom(out_col);
+      proxy->input_columns.AddUse(out_col);
     }
   }
 
@@ -203,6 +214,7 @@ void QueryImpl::LinkViews(bool recursive) {
     view->is_used_by_merge = false;
     view->is_used_by_negation = false;
     view->is_used_by_join = false;
+    view->depth = 0;
   });
 
   // NOTE(pag): Process these before `tuples` because it might create tuples.
@@ -241,6 +253,10 @@ void QueryImpl::LinkViews(bool recursive) {
       ProxyInsertWithTuple(this, view, incoming_view);
     }
   }
+
+
+  // Now we start the linking!
+
 
   for (auto view : negations) {
     assert(!view->is_dead);
@@ -351,9 +367,14 @@ void QueryImpl::LinkViews(bool recursive) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
     }
+
+    // Force depth calculation.
+    if (view->successors.Empty()) {
+      (void) view->Depth();
+    }
   }
 
-  ForEachView([=](VIEW *view) {
+  const_cast<const QueryImpl *>(this)->ForEachView([=](VIEW *view) {
     view->predecessors.Unique();
     view->successors.Unique();
   });

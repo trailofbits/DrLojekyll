@@ -1781,6 +1781,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   }
 
   impl->RemoveUnusedViews();
+  impl->TrackDifferentialUpdates(log, true);
   impl->Optimize(log);
 
   if (num_errors != log.Size()) {
@@ -1792,10 +1793,10 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->ExtractConditionsToTuples();
   impl->RemoveUnusedViews();
   impl->ProxyInsertsWithTuples();
-  impl->TrackDifferentialUpdates(log, true);
   impl->LinkViews();
   impl->IdentifyInductions(log);
   impl->FinalizeColumnIDs();
+  impl->TrackDifferentialUpdates(log, true);
 
   return Query(std::move(impl));
 }

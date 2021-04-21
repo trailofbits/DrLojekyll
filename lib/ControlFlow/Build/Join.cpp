@@ -96,6 +96,7 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
     return let;
 
   } else {
+    assert(!inserts.empty());
     PROC *const proc = inserts[0]->containing_procedure;
     REGION *common_ancestor = nullptr;
 
@@ -253,7 +254,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   context.view_to_join_action.erase(view);
 
-  for (auto insert : inserts) {
+  for (OP *insert : inserts) {
     assert(!induction);
 
     const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
@@ -324,6 +325,10 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       // Check to see if the data is present. If it's not (either absent or
       // unknown), then our assumption is that we are in some kind of inductive
       // loop and it will eventually be proven in the forward direction.
+      //
+      // TODO(pag): Consider using a finder function if we're not in an
+      //            induction?
+
 //      const auto [check, parent_out] = CallTopDownChecker(
 //          impl, context, parent, view, view_cols, pred_view, nullptr);
 
@@ -398,9 +403,10 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // NOTE(pag): What's interesting about JOINs is that we force the data of
   //            our *predecessors* into tables, so that we can always complete
   //            the JOINs later and see "the other sides."
-  auto [parent, pred_table, last_table] =
+  auto [insert, pred_table, last_table] =
       InTryInsert(impl, context, pred_view, parent_, last_table_);
 
+  OP * const parent = insert;
   auto &join_action = context.view_to_join_action[view];
 
   // If this join is on the edge of an induction, i.e. one or more of the
@@ -423,15 +429,16 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
 
     AppendToInductionInputVectors(impl, view, context, parent, induction, true);
 
-  // Yay, it's just a "simple" induction, i.e. it's entirely contained outside
+  // Yay, it's just a "simple" join, i.e. it's entirely contained outside
   // of an inductive region, or it's entirely contained inside of an inductive
   // region.
   } else {
-    PROC * const proc = parent_->containing_procedure;
-    VECTOR * const pivot_vec = proc->VectorFor(
-        impl, VectorKind::kJoinPivots, join.PivotColumns());
 
     if (!join_action) {
+      PROC * const proc = parent->containing_procedure;
+      VECTOR * const pivot_vec = proc->VectorFor(
+          impl, VectorKind::kJoinPivots, join.PivotColumns());
+
       join_action = new ContinueJoinWorkItem(context, view, pivot_vec,
                                              pivot_vec, nullptr);
       context.work_list.emplace_back(join_action);
@@ -440,93 +447,6 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     join_action->inserts.push_back(parent);
   }
 }
-//
-//namespace {
-//
-//static void CreateBottomUpInductiveJoinRemover(
-//    ProgramImpl *impl, Context &context, QueryView from_view,
-//    QueryView to_view, OP *parent) {
-//
-//
-//  INDUCTION * const induction = GetOrInitInduction(
-//      impl, to_view, context, parent);
-//
-//  // This is a bit annoying but we need to go and make a custom worker-id
-//  // hash, instead of using `AppendToInductionInputVectors`, because we
-//  // need to hash only the columns that are pivots, and not all of the
-//  // columns.
-//
-//  // NOTE(pag): We are colluding with how `GetOrInitInduction` sets up
-//  //            induction vectors for the predecessors of JOINs that can
-//  //            send through deletions. The data flow `QueryImpl::Link`
-//  //            ensures that all JOINs, NEGATEs, and UNIONs are fed by
-//  //            TUPLEs.
-//  assert(!from_view.IsJoin());
-//  assert(!from_view.IsNegate());
-//  assert(!from_view.IsMerge());
-//  VECTOR * const vec = induction->view_to_add_vec[from_view];
-//  assert(vec != nullptr);
-//
-//  // Hash the variables together to form a worker ID. We only want to hash the
-//  // columns that will end up as pivots for `to_view`.
-//  WORKERID * const hash =
-//      impl->operation_regions.CreateDerived<WORKERID>(parent);
-//  VAR * const worker_id = new VAR(impl->next_id++, VariableRole::kWorkerId);
-//  hash->worker_id.reset(worker_id);
-//  parent->body.Emplace(parent, hash);
-//
-//  // Find the pivots, and map the output pivots to the input pivots.
-//  std::unordered_map<QueryColumn, QueryColumn> out_to_in;
-//  const QueryJoin join = QueryJoin::From(to_view);
-//  join.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-//                      std::optional<QueryColumn> out_col) {
-//    if (InputColumnRole::kJoinPivot == role && out_col &&
-//        QueryView::Containing(in_col) == from_view) {
-//      out_to_in.emplace(*out_col, in_col);
-//    }
-//  });
-//
-//  // Add the pivots in order.
-//  for (auto col : join.PivotColumns()) {
-//    QueryColumn in_col = out_to_in.find(col)->second;
-//    hash->hashed_vars.AddUse(hash->VariableFor(impl, in_col));
-//  }
-//
-//  const auto par = impl->parallel_regions.Create(hash);
-//  hash->body.Emplace(parent, par);
-//
-//  // Add a tuple to the removal vector.
-//  const auto append_to_vec =
-//      impl->operation_regions.CreateDerived<VECTORAPPEND>(
-//          par, ProgramOperation::kAppendToInductionVector);
-//  append_to_vec->vector.Emplace(append_to_vec, vec);
-//  append_to_vec->worker_id.Emplace(append_to_vec, worker_id);
-//
-//  // Add all input `from_view` columns to the versioned vector.
-//  for (auto col : from_view.Columns()) {
-//    const auto var = par->VariableFor(impl, col);
-//    append_to_vec->tuple_vars.AddUse(var);
-//  }
-//
-//  par->AddRegion(append_to_vec);
-//
-//  switch (induction->state) {
-//    case INDUCTION::kAccumulatingInputRegions:
-//      induction->init_appends_remove.push_back(append_to_vec);
-//      break;
-//
-//    case INDUCTION::kAccumulatingCycleRegions:
-//      induction->cycle_appends.push_back(append_to_vec);
-//      break;
-//
-//    default:
-////      view.SetTableId(99999);
-////      break;
-//      assert(false); break;
-//  }
-//}
-//
-//}  // namespace
 
 // Build a bottom-up join remover.
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
