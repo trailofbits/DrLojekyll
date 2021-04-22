@@ -587,7 +587,7 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_added, bool defer_to_inductions=true);
+    TABLE *already_added);
 
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an unknown state. Returns the table of `view`
@@ -598,7 +598,7 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_removed, bool defer_to_inductions=true);
+    TABLE *already_removed);
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).

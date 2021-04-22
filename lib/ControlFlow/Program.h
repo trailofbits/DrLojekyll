@@ -482,6 +482,8 @@ class Node<ProgramLetBindingRegion> final
   // Local variables that are defined/used in the body of this procedure.
   DefList<VAR> defined_vars;
   UseList<VAR> used_vars;
+
+  std::optional<QueryView> view;
 };
 
 using LET = Node<ProgramLetBindingRegion>;

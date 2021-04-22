@@ -41,32 +41,14 @@ static unsigned ContinueJoinOrder(QueryView view) {
 
 }  // namespace
 
-class ContinueJoinWorkItem final : public WorkItem {
- public:
-  virtual ~ContinueJoinWorkItem(void) {}
-
-  ContinueJoinWorkItem(Context &context, QueryView view_,
-                       VECTOR *input_pivot_vec_, VECTOR *swap_pivot_vec_,
-                       INDUCTION *induction_)
-      : WorkItem(context, ContinueJoinOrder(view_)),
-        view(view_),
-        input_pivot_vec(input_pivot_vec_),
-        swap_pivot_vec(swap_pivot_vec_),
-        induction(induction_) {}
-
-  // Find the common ancestor of all insert regions.
-  REGION *FindCommonAncestorOfInsertRegions(void) const;
-
-  void Run(ProgramImpl *program, Context &context) override;
-
-  std::vector<OP *> inserts;
-
- private:
-  const QueryView view;
-  VECTOR * const input_pivot_vec;
-  VECTOR * const swap_pivot_vec;
-  INDUCTION * const induction;
-};
+ContinueJoinWorkItem::ContinueJoinWorkItem(
+    Context &context, QueryView view_, VECTOR *input_pivot_vec_, VECTOR *swap_pivot_vec_,
+    INDUCTION *induction_)
+    : WorkItem(context, ContinueJoinOrder(view_)),
+      view(view_),
+      input_pivot_vec(input_pivot_vec_),
+      swap_pivot_vec(swap_pivot_vec_),
+      induction(induction_) {}
 
 // Find the common ancestor of all insert regions.
 REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
@@ -255,7 +237,6 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto needs_inductive_cycle_vec = NeedsInductionCycleVector(view);
   const auto needs_inductive_output_vec = NeedsInductionOutputVector(view);
 
-  std::cerr << "continuing join " << std::hex << view.UniqueId() << std::dec << '\n';
   context.view_to_join_action.erase(view);
 
   for (OP *insert : inserts) {
@@ -375,6 +356,10 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     par->AddRegion(parent);
   }
 
+  auto [insert_parent, table, last_table] =
+      InTryInsert(impl, context, view, parent, nullptr);
+  parent = insert_parent;
+
   // Collusion with inductions!!!! The `BuildFixpointLoop` function in
   // `Induction.cpp` sets up our ancestor to be this `LET`, and the induction
   // will manually handle calling `BuildEagerInsertionRegions` from inside
@@ -387,9 +372,6 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     let_in_fixpoint_region->parent = parent;
     parent->body.Emplace(parent, let_in_fixpoint_region);
 
-
-    std::cerr << "join " << std::hex << view.UniqueId() << " filling LET " << uintptr_t(let_in_fixpoint_region) << '\n';
-
     // Fill in the assignments!
     assert(let_in_fixpoint_region->defined_vars.Size() == view.Columns().size());
     assert(let_in_fixpoint_region->used_vars.Empty());
@@ -400,7 +382,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   } else {
     BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
-                               nullptr);
+                               last_table);
   }
 }
 
@@ -417,7 +399,6 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
       InTryInsert(impl, context, pred_view, parent_, last_table_);
 
   OP * const parent = insert;
-  auto &join_action = context.view_to_join_action[view];
 
   INDUCTION *induction = nullptr;
   if (view.InductionGroupId().has_value()) {
@@ -433,13 +414,6 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     VECTOR * const pivot_vec = induction->view_to_add_vec[view];
     VECTOR * const swap_vec = induction->view_to_swap_vec[view];
     assert(pivot_vec && swap_vec);
-
-    if (!join_action) {
-      join_action = new ContinueJoinWorkItem(context, view, pivot_vec,
-                                             swap_vec, induction);
-      context.work_list.emplace_back(join_action);
-    }
-
     AppendToInductionInputVectors(
         impl, view, view, context, parent, induction, true);
 
@@ -450,7 +424,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // NOTE(pag): Simple JOINs contained inside of inductions may require output
   //            vectors, so that is why we calculate `induction` above.
   } else {
-
+    auto &join_action = context.view_to_join_action[view];
     if (!join_action) {
       PROC * const proc = parent->containing_procedure;
       VECTOR * const pivot_vec = proc->VectorFor(

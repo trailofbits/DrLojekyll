@@ -298,7 +298,9 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     if (const auto num_pivots = join.NumPivotColumns()) {
       if (for_add) {
 
+
         LET * const let = impl->operation_regions.CreateDerived<LET>(cycle_par);
+        let->view.emplace(view);
         cycle_par->AddRegion(let);
 
         auto i = 0u;
@@ -329,6 +331,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
       if (for_add) {
 
         LET * const let = impl->operation_regions.CreateDerived<LET>(cycle_par);
+        let->view.emplace(view);
         cycle_par->AddRegion(let);
 
         for (auto col : view_cols) {
@@ -533,6 +536,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // reached ones represent a new frontier.
   const auto merge_depth = *(induction->views[0].InductionDepth());
   auto &pending_action = context.pending_induction_action[merge_depth];
+
   assert(pending_action == this);
   pending_action = nullptr;
 
@@ -787,6 +791,8 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
   }
 
   for (auto other_view : view.InductiveSet()) {
+    const auto has_inputs = NeedsInductionCycleVector(other_view);
+    const auto has_outputs = NeedsInductionOutputVector(other_view);
     induction->views.push_back(other_view);
 
     context.view_to_induction_action[other_view] = action;
@@ -810,18 +816,38 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
         auto &add_vec = induction->view_to_add_vec[other_view];
         auto &swap_vec = induction->view_to_swap_vec[other_view];
 
-        if (!add_vec) {
-          add_vec = proc->VectorFor(impl, VectorKind::kInductiveJoinPivots,
-                                    join.PivotColumns());
-          induction->vectors.AddUse(add_vec);
+        // If the join has no inductive inputs, but does have inductive outputs,
+        // the the pivot vector isn't marked as an inductive pivot vector, nor
+        // is it added to the induction's list of tested vectors.
+        if (!has_inputs) {
+          if (!add_vec) {
+            assert(!swap_vec);
+            add_vec = proc->VectorFor(impl, VectorKind::kJoinPivots,
+                                      join.PivotColumns());
+          }
+          swap_vec = add_vec;
+
+        } else {
+          if (!add_vec) {
+            add_vec = proc->VectorFor(impl, VectorKind::kInductiveJoinPivots,
+                                      join.PivotColumns());
+            induction->vectors.AddUse(add_vec);
+          }
+
+          // These are a bunch of swap vectors that we use for the sake of allowing
+          // ourselves to see the results of the prior iteration, while minimizing
+          // the amount of cross-iteration resident data.
+          if (!swap_vec) {
+            swap_vec = proc->VectorFor(impl, VectorKind::kInductiveJoinPivotSwaps,
+                                       join.PivotColumns());
+          }
         }
 
-        // These are a bunch of swap vectors that we use for the sake of allowing
-        // ourselves to see the results of the prior iteration, while minimizing
-        // the amount of cross-iteration resident data.
-        if (!swap_vec) {
-          swap_vec = proc->VectorFor(impl, VectorKind::kInductiveJoinPivotSwaps,
-                                     join.PivotColumns());
+        if (auto &join_action = context.view_to_join_action[other_view];
+            !join_action) {
+          join_action = new ContinueJoinWorkItem(context, other_view, add_vec,
+                                                 swap_vec, induction);
+          context.work_list.emplace_back(join_action);
         }
 
       // This is a cross-product. We need vectors for each predecessor of
@@ -860,11 +886,15 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
             assert(!swap_vec);
             add_vec = proc->VectorFor(impl, VectorKind::kProductInput,
                                       non_inductive_pred.Columns());
-            swap_vec = add_vec;
-
-          } else {
-            assert(swap_vec == add_vec);
           }
+          swap_vec = add_vec;
+        }
+
+        if (auto &product_action = context.view_to_product_action[other_view];
+            !product_action) {
+          product_action = new ContinueProductWorkItem(
+              context, other_view, induction);
+          context.work_list.emplace_back(product_action);
         }
       }
 
@@ -873,7 +903,7 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
     } else if (other_view.IsMerge() || other_view.IsNegate()) {
 
       // Figure out if we need a vector for tracking additions/removals.
-      if (NeedsInductionCycleVector(other_view)) {
+      if (has_inputs) {
         auto &add_vec = induction->view_to_add_vec[other_view];
         if (!add_vec) {
           add_vec = proc->VectorFor(impl, VectorKind::kInductionInputs,
@@ -898,7 +928,7 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
     // Figure out if we need a vector to track outputs. Output vectors always
     // have the same shape, regardless of if they're for UNIONs, JOINs, or
     // NEGATEs.
-    if (NeedsInductionOutputVector(other_view)) {
+    if (has_outputs) {
       auto &output_vec = induction->view_to_output_vec[other_view];
       if (!output_vec) {
         output_vec = proc->VectorFor(impl, VectorKind::kInductionOutputs,

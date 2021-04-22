@@ -41,31 +41,11 @@ static unsigned ContinueProductOrder(QueryView view) {
 
 }  // namespace
 
-class ContinueProductWorkItem final : public WorkItem {
- public:
-  virtual ~ContinueProductWorkItem(void) {}
-
-  ContinueProductWorkItem(Context &context, QueryView view_,
-                          INDUCTION *induction_)
-      : WorkItem(context, ContinueProductOrder(view_)),
-        view(view_),
-        induction(induction_) {}
-
-  // Find the common ancestor of all insert regions.
-  REGION *FindCommonAncestorOfAppendRegions(void) const;
-
-  void Run(ProgramImpl *program, Context &context) override;
-
-  // Maps tables to their product input vectors.
-  std::map<TABLE *, VECTOR *> product_vector;
-
-  std::vector<VECTOR *> vectors;
-  std::vector<OP *> appends;
-
- private:
-  QueryView view;
-  INDUCTION * const induction;
-};
+ContinueProductWorkItem::ContinueProductWorkItem(
+    Context &context, QueryView view_, INDUCTION *induction_)
+    : WorkItem(context, ContinueProductOrder(view_)),
+      view(view_),
+      induction(induction_) {}
 
 // Find the common ancestor of all insert regions.
 REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
@@ -246,6 +226,10 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     par->AddRegion(parent);
   }
 
+  auto [insert_parent, table, last_table] =
+      InTryInsert(impl, context, view, parent, nullptr);
+  parent = insert_parent;
+
   // Collusion with inductions!!!! The `BuildFixpointLoop` function in
   // `Induction.cpp` sets up our ancestor to be this `LET`, and the induction
   // will manually handle calling `BuildEagerInsertionRegions` from inside
@@ -259,8 +243,6 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     parent->body.Emplace(parent, let_in_fixpoint_region);
 
 
-    std::cerr << "product " << std::hex << view.UniqueId() << " filling LET " << uintptr_t(let_in_fixpoint_region) << '\n';
-
     // Fill in the assignments!
     assert(let_in_fixpoint_region->defined_vars.Size() == view.Columns().size());
     assert(let_in_fixpoint_region->used_vars.Empty());
@@ -271,7 +253,7 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   } else {
     BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
-                               nullptr);
+                               last_table);
   }
 }
 
@@ -318,10 +300,6 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   }
 
   auto &product_action = context.view_to_product_action[view];
-  if (!product_action) {
-    product_action = new ContinueProductWorkItem(context, view, induction);
-    context.work_list.emplace_back(product_action);
-  }
 
   auto make_append = [&] (void) {
     PROC * const proc = parent->containing_procedure;
@@ -365,6 +343,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 
     // `pred_view` is a non-inductive predecessor of this PRODUCT.
     if (inductive_vec == swap_vec) {
+      assert(product_action != nullptr);
       product_action->product_vector.emplace(pred_table, inductive_vec);
       make_append();
 
@@ -377,6 +356,10 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // This is a "simple" PRODUCT, i.e. all predecessor views are either all
   // all inside or all outside of an inductive region.
   } else {
+    if (!product_action) {
+      product_action = new ContinueProductWorkItem(context, view, induction);
+      context.work_list.emplace_back(product_action);
+    }
     make_append();
   }
 }

@@ -35,7 +35,11 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   query.ForEachView([&](QueryView view) {
     if (view.CanReceiveDeletions()) {
       for (auto pred : view.Predecessors()) {
-        if (!pred.CanProduceDeletions()) {
+        if (pred.CanProduceDeletions()) {
+          if (view.InductionGroupId().has_value()) {
+            (void) TABLE::GetOrCreate(impl, context, pred);
+          }
+        } else {
           (void) TABLE::GetOrCreate(impl, context, pred);
         }
       }
@@ -1349,18 +1353,6 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   return check;
 }
 
-//// If any of the views associated with this table are associated with an
-//// inductive union, then we will defer the state transitioning to the
-//// inductive union.
-//static bool ShouldDeferStateTransition(Context &context, TABLE *table) {
-//  for (auto view : table->views) {
-//    if (view.InductionGroupId().has_value()) {
-//      return true;
-//    }
-//  }
-//  return false;
-//}
-
 // Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an present state. Returns the table of `view`
 // and the updated `already_removed`.
@@ -1370,16 +1362,12 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_added, bool defer_to_inductions) {
+    TABLE *already_added) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
     if (already_added != table) {
-//      if (defer_to_inductions && ShouldDeferStateTransition(context, table)) {
-//        return {parent, table, nullptr};
-//      }
-
       // Figure out what columns to pass in for marking.
       std::vector<QueryColumn> cols;
       if (view.IsInsert()) {
@@ -1417,16 +1405,12 @@ std::tuple<OP *, TABLE *, TABLE *> InTryInsert(
 //            induction.
 std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
     ProgramImpl *impl, Context &context, QueryView view, OP *parent,
-    TABLE *already_removed, bool defer_to_inductions) {
+    TABLE *already_removed) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE * const table = model->table;
   if (table) {
     if (already_removed != table) {
-
-//      if (defer_to_inductions && ShouldDeferStateTransition(context, table)) {
-//        return {parent, table, nullptr};
-//      }
 
       // Figure out what columns to pass in for marking.
       std::vector<QueryColumn> cols;

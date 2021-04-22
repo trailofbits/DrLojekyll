@@ -49,7 +49,7 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
       InTryInsert(impl, context, negate_view, let, nullptr);
 
   // If this is an inductive negation, then we might defer processing its
-  // outputs until we get into a sucessor.
+  // outputs until we get into a successor.
   if (negate_view.InductionGroupId().has_value()) {
     INDUCTION * const induction = GetOrInitInduction(
         impl, negate_view, context, succ_parent);
