@@ -252,6 +252,8 @@ enum class VectorKind : unsigned {
   kInductiveJoinPivots,
   kInductiveJoinPivotSwaps,
   kProductInput,
+  kInductiveProductInput,
+  kInductiveProductSwaps,
   kTableScan,
 
   // Vector that collects outputs for messages marked with `@differential`.
@@ -747,7 +749,9 @@ class ProgramTableScanRegion
 //        to kick off the inductive cycle.
 //    2)  The cyclic region, which iterates, appending on newly proven tuples
 //        to one or more vectors. Iteration continues until a fixpoint is
-//        reached.
+//        reached. The cyclic region is always entered at least once, and the
+//        condition on the back edge of the loop is that the induction vectors
+//        are non-empty.
 //    2)  The output region, which iterates over all tuples amassed during the
 //        initialization and cyclic regions, and operates on those tuples to
 //        push to the next region of the data flow.
@@ -755,6 +759,9 @@ class ProgramInductionRegion
     : public program::ProgramNode<ProgramInductionRegion> {
  public:
   static ProgramInductionRegion From(ProgramRegion) noexcept;
+
+  // Unique ID for this induction group/region.
+  unsigned Id(void) const;
 
   // Set of induction vectors that are filled with initial data in the
   // `Initializer()` region, then accumulate more data during the

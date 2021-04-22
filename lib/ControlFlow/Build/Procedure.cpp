@@ -302,6 +302,12 @@ static void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
     }
   }
 
+  for (auto vec : written_by_primary) {
+    if (!replacements.count(vec)) {
+      replacements[vec] = primary_proc->vectors.Create(vec);
+    }
+  }
+
   for (auto vec : written_by_entry) {
     if (!replacements.count(vec)) {
       replacements[vec] = primary_proc->vectors.Create(vec);
@@ -496,8 +502,8 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context,
 
   assert(context.work_list.empty());
   assert(context.view_to_join_action.empty());
+  assert(context.view_to_product_action.empty());
   assert(context.view_to_induction_action.empty());
-  assert(context.view_to_work_item.empty());
 
   const auto proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kEntryDataFlowFunc);

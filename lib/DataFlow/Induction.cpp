@@ -184,7 +184,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // inductive output path.
   std::set<std::pair<VIEW *, VIEW *>> reached_inductions;
 
-  std::vector<std::pair<bool, VIEW *>> frontier_through_induction;
+  std::vector<std::tuple<bool, bool, VIEW *>> frontier_through_induction;
   std::set<std::pair<bool, VIEW *>> seen_through_induction;
 
   for (auto &[view_, _] : merge_sets) {
@@ -210,14 +210,15 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       }
 
       frontier_through_induction.clear();
-      frontier_through_induction.emplace_back(false, succ_view);
+      frontier_through_induction.emplace_back(false, false, succ_view);
       seen_through_induction.emplace(false, succ_view);
 
       while (!frontier_through_induction.empty()) {
-        const auto [from_induction_, frontier_view_] =
+        const auto [from_induction_merge_, from_induction_, frontier_view_] =
             frontier_through_induction.back();
         frontier_through_induction.pop_back();
 
+        bool from_induction_merge = from_induction_merge_;
         bool from_induction = from_induction_;
         VIEW * const frontier_view = frontier_view_;
 
@@ -227,7 +228,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         // then it means that this view isn't subordinate to any other one,
         // and that is actually does in fact need storage.
         if (frontier_view == view) {
-          if (!from_induction) {
+          if (!from_induction_merge) {
             info->can_reach_self_not_through_another_induction = true;
           }
           continue;
@@ -237,8 +238,9 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         if (InductionInfo * const frontier_info =
                 frontier_view->induction_info.get()) {
 
+          from_induction = true;
           if (frontier_view->AsMerge()) {
-            from_induction = true;
+            from_induction_merge = true;
           }
 
           reached_inductions.emplace(view, frontier_view);
@@ -259,7 +261,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
               from_induction, frontier_succ_view);
           if (added) {
             frontier_through_induction.emplace_back(
-                from_induction, frontier_succ_view);
+                from_induction_merge, from_induction, frontier_succ_view);
           }
         });
       }
@@ -303,9 +305,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
         const auto frontier_succs = TransitiveSuccessorsOf(frontier_succ_view);
         if (!frontier_succs.count(merge)) {
-          if (frontier_view->AsMerge()) {
-            frontier_succ_view->color = 0xff;
-          }
           injection_sites.insert(frontier_view);
         } else if (!seen.count(frontier_succ_view)) {
           seen.insert(frontier_succ_view);
@@ -324,10 +323,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // edge from `view` to `succ_view` leads out of the UNION.
   for (VIEW *view : injection_sites) {
 
-    if (view->AsMerge()) {
-      view->color = 0xff0000;
-    }
-//    assert(!view->AsMerge());
+    assert(!view->AsMerge());
     assert(!view->AsSelect());
     assert(!view->AsInsert());
 
@@ -407,14 +403,14 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       ++i;
     }
 
-    // Views living "fully" inside other inductive back-edges can be marked as
-    // not being actually inductive after all.
-    if (info->noninductive_predecessors.Empty() &&
-        info->noninductive_successors.Empty() &&
-        !info->can_reach_self_not_through_another_induction) {
-
-      view->induction_info.reset();
-    }
+//    // Views living "fully" inside other inductive back-edges can be marked as
+//    // not being actually inductive after all.
+//    if (info->noninductive_predecessors.Empty() &&
+//        info->noninductive_successors.Empty() &&
+//        !info->can_reach_self_not_through_another_induction) {
+//
+//      view->induction_info.reset();
+//    }
   }
 
   // If an inductive successor of A reaches B, and if and inductive successor

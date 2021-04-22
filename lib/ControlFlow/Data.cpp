@@ -34,9 +34,9 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
     case VariableRole::kInitGuard:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
+    case VariableRole::kWorkerId:
       return TypeKind::kUnsigned64;
 
-    case VariableRole::kWorkerId:
       return TypeKind::kUnsigned16;
 
     case VariableRole::kConstantFalse:

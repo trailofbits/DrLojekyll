@@ -55,7 +55,8 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
         impl, negate_view, context, succ_parent);
     if (NeedsInductionCycleVector(negate_view)) {
       AppendToInductionInputVectors(
-          impl, negate_view, context, succ_parent, induction, true);
+          impl, negate_view, negate_view, context, succ_parent,
+          induction, true);
       return;
     }
   }
@@ -96,7 +97,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
         impl, view, context, succ_parent);
     if (NeedsInductionCycleVector(view)) {
       AppendToInductionInputVectors(
-          impl, view, context, succ_parent, induction, false);
+          impl, view, view, context, succ_parent, induction, false);
       return;
     }
   }

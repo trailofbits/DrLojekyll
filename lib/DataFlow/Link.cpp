@@ -112,8 +112,11 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
 
   for (VIEW *view : join->joined_views) {
 
-    // We don't need to proxy this; it's already a tuple.
-    if (view->AsTuple()) {
+    // We don't need to proxy this; it's already a tuple. If we're dealing
+    // with a PRODUCT, then we're going to unconditionally inject in an
+    // extra TUPLE, so as to avoid accidentally sharing induction vectors
+    // in the control-flow IR.
+    if (view->AsTuple() && join->num_pivots) {
       new_joined_views.AddUse(view);
       for (auto view_col : view->columns) {
         col_map.emplace(view_col, view_col);
@@ -228,9 +231,11 @@ void QueryImpl::LinkViews(bool recursive) {
   // where we want to have an induction pivot vector for JOIN0, but also an
   // induction predecessor (for removals) for JOIN1 representing all columns
   // of JOIN0.
-  for (auto view : joins) {
-    assert(!view->is_dead);
-    ProxyJoinedViews(this, view);
+  if (!recursive) {
+    for (auto view : joins) {
+      assert(!view->is_dead);
+      ProxyJoinedViews(this, view);
+    }
   }
 
   // Similarish reasons for proxying MERGEs.

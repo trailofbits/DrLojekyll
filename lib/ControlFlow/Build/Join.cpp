@@ -84,8 +84,9 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
   // will be until the JOIN itself is created. And so, it fakes this by going
   // and making a `LET` with some defined variables, but deferring their
   // assignment to the JOIN.
-  if (induction) {
+  if (NeedsInductionCycleVector(view)) {
     assert(inserts.empty());
+    assert(induction != nullptr);
     PARALLEL * const par = induction->fixpoint_add_cycles[view];
     LET * const let = par->parent->AsOperation()->AsLetBinding();
     assert(let != nullptr);
@@ -145,7 +146,7 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
   const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
       seq, ProgramOperation::kClearJoinPivotVector);
   clear->vector.Emplace(clear, pivot_vec);
-  clear->ExecuteAfter(impl, seq);
+  seq->AddRegion(clear);
 
   // Fill in the pivot variables/columns.
   for (auto pivot_col : join_view.PivotColumns()) {
@@ -251,11 +252,14 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
 
 void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto join_view = QueryJoin::From(view);
+  const auto needs_inductive_cycle_vec = NeedsInductionCycleVector(view);
+  const auto needs_inductive_output_vec = NeedsInductionOutputVector(view);
 
+  std::cerr << "continuing join " << std::hex << view.UniqueId() << std::dec << '\n';
   context.view_to_join_action.erase(view);
 
   for (OP *insert : inserts) {
-    assert(!induction);
+    assert(!needs_inductive_cycle_vec);
 
     const auto append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
         insert, ProgramOperation::kAppendJoinPivotsToVector);
@@ -278,7 +282,9 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   ancestor->ReplaceAllUsesWith(seq);
 
   // Sort and unique the pivot vector before looping.
-  if (!induction) {
+  if (!needs_inductive_cycle_vec) {
+    assert(!inserts.empty());
+
     ancestor->parent = seq;
     seq->AddRegion(ancestor);
 
@@ -359,10 +365,9 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // Add a tuple to the output vector. We don't need to compute a worker ID
   // because we know we're dealing with only worker-specific data in this
   // cycle.
-  if (NeedsInductionOutputVector(view)) {
+  if (needs_inductive_output_vec) {
     PARALLEL *par = impl->parallel_regions.Create(parent);
     parent->body.Emplace(parent, par);
-
     par->AddRegion(AppendToInductionOutputVectors(
         impl, view, context, induction, par));
 
@@ -376,10 +381,14 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   // this `LET`. It does this *before* this function runs, though, so it has
   // to stub out the output variables of the JOIN, so that we can fill them
   // in here.
-  if (induction) {
+  if (needs_inductive_cycle_vec) {
+    assert(induction != nullptr);
     LET *let_in_fixpoint_region = ancestor->AsOperation()->AsLetBinding();
     let_in_fixpoint_region->parent = parent;
     parent->body.Emplace(parent, let_in_fixpoint_region);
+
+
+    std::cerr << "join " << std::hex << view.UniqueId() << " filling LET " << uintptr_t(let_in_fixpoint_region) << '\n';
 
     // Fill in the assignments!
     assert(let_in_fixpoint_region->defined_vars.Size() == view.Columns().size());
@@ -387,6 +396,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     for (auto col : view.Columns()) {
       let_in_fixpoint_region->used_vars.AddUse(parent->VariableFor(impl, col));
     }
+    assert(!let_in_fixpoint_region->used_vars.Empty());
 
   } else {
     BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
@@ -409,14 +419,17 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   OP * const parent = insert;
   auto &join_action = context.view_to_join_action[view];
 
+  INDUCTION *induction = nullptr;
+  if (view.InductionGroupId().has_value()) {
+    induction = GetOrInitInduction(impl, view, context, parent);
+  }
+
   // If this join is on the edge of an induction, i.e. one or more of the
   // JOIN's input views is a back-edge from and induction, and one or more of
   // the input views is an input source to the induction., then we need to
   // collude with an INDUCTION to make this work. In practice, this turns out
   // to get really crazy.
   if (NeedsInductionCycleVector(view)) {
-    INDUCTION * const induction = GetOrInitInduction(
-        impl, view, context, parent);
     VECTOR * const pivot_vec = induction->view_to_add_vec[view];
     VECTOR * const swap_vec = induction->view_to_swap_vec[view];
     assert(pivot_vec && swap_vec);
@@ -427,11 +440,15 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
       context.work_list.emplace_back(join_action);
     }
 
-    AppendToInductionInputVectors(impl, view, context, parent, induction, true);
+    AppendToInductionInputVectors(
+        impl, view, view, context, parent, induction, true);
 
   // Yay, it's just a "simple" join, i.e. it's entirely contained outside
   // of an inductive region, or it's entirely contained inside of an inductive
   // region.
+  //
+  // NOTE(pag): Simple JOINs contained inside of inductions may require output
+  //            vectors, so that is why we calculate `induction` above.
   } else {
 
     if (!join_action) {
@@ -440,7 +457,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
           impl, VectorKind::kJoinPivots, join.PivotColumns());
 
       join_action = new ContinueJoinWorkItem(context, view, pivot_vec,
-                                             pivot_vec, nullptr);
+                                             pivot_vec, induction);
       context.work_list.emplace_back(join_action);
     }
 

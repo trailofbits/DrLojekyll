@@ -30,11 +30,11 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
                               Context &context, OP *parent);
 
 void AppendToInductionInputVectors(
-    ProgramImpl *impl, QueryView view, Context &context, OP *parent,
-    INDUCTION *induction, bool for_add);
+    ProgramImpl *impl, QueryView vec_view, QueryView inductive_view,
+    Context &context, OP *parent, INDUCTION *induction, bool for_add);
 
 REGION *AppendToInductionOutputVectors(
-    ProgramImpl *impl, QueryView view, Context &context, INDUCTION *induction,
+    ProgramImpl *impl, QueryView vec_view, Context &context, INDUCTION *induction,
     REGION *parent);
 
 }  // namespace hyde

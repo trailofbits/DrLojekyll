@@ -710,6 +710,11 @@ ProgramInductionRegion::From(ProgramRegion region) noexcept {
   return ProgramInductionRegion(derived_impl);
 }
 
+// Unique ID for this induction group/region.
+unsigned ProgramInductionRegion::Id(void) const {
+  return impl->id;
+}
+
 std::optional<ProgramRegion>
 ProgramInductionRegion::Initializer(void) const noexcept {
   if (auto region = impl->init_region.get(); region) {

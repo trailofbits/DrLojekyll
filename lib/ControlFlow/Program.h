@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #define NOTE(msg) std::cerr << msg << "\n"
@@ -1352,6 +1353,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   std::unordered_map<QueryView, PARALLEL *> fixpoint_add_cycles;
   std::unordered_map<QueryView, PARALLEL *> fixpoint_remove_cycles;
+
+  const unsigned id;
 
   enum State {
     kAccumulatingInputRegions,

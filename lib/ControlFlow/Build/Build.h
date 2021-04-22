@@ -51,6 +51,7 @@ using WorkItemPtr = std::unique_ptr<WorkItem>;
 
 class ContinueInductionWorkItem;
 class ContinueJoinWorkItem;
+class ContinueProductWorkItem;
 
 // General wrapper around data used when lifting from the data flow to the
 // control flow representation.
@@ -78,9 +79,6 @@ class Context {
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
   std::unordered_map<QueryView, INDUCTION *> view_to_induction;
 
-  // Maps tables to their product input vectors.
-  std::map<std::pair<PROC *, TABLE *>, VECTOR *> product_vector;
-
   //  // Boolean variable to test if we've ever produced anything for this product,
   //  // and thus should push data through.
   //  std::unordered_map<QueryView, VAR *> product_guard_var;
@@ -104,10 +102,10 @@ class Context {
   std::vector<WorkItemPtr> work_list;
 
   std::unordered_map<QueryView, ContinueJoinWorkItem *> view_to_join_action;
+  std::unordered_map<QueryView, ContinueProductWorkItem *>
+      view_to_product_action;
   std::unordered_map<QueryView, ContinueInductionWorkItem *>
       view_to_induction_action;
-
-  std::map<std::pair<PROC *, uint64_t>, WorkItem *> view_to_work_item;
 
   // Maps views to procedures for top-down execution. The top-down executors
   // exist to determine if a tuple is actually PRESENT (returning false if so),

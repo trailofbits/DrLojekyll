@@ -451,6 +451,8 @@ class Def {
   }
 
   void ReplaceAllUsesWith(T *that) {
+    assert(that != nullptr);
+
     if (self == that->self) {
       return;
     }

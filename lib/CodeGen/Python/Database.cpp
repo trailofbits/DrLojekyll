@@ -439,16 +439,20 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Fixpoint
     os << Comment(os, region, "Induction Fixpoint Loop Region");
-    os << os.Indent() << "while ";
-    auto sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << "len(" << Vector(os, vec) << ")";
-      sep = " or ";
-    }
-    os << ":\n";
+    os << os.Indent() << "changed_" << region.Id() << " = True\n";
+    os << os.Indent() << "while changed_" << region.Id() << ":\n";
 
     os.PushIndent();
     region.FixpointLoop().Accept(*this);
+
+    // Update the entry condition on the back-edge.
+    os << os.Indent() << "changed_" << region.Id() << " = ";
+    auto sep = "";
+    for (auto vec : region.Vectors()) {
+      os << sep << "0 != len(" << Vector(os, vec) << ")";
+      sep = " or ";
+    }
+    os << "\n";
     os.PopIndent();
 
     // Output
