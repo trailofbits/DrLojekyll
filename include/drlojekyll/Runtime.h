@@ -65,6 +65,65 @@ struct filtered_tuple {
   using type = tuple_cat_t<typename filter<F, Ts>::type...>;
 };
 
+// A vector-like object that holds a reference to a serialized view of data and
+// and hands back SerialRefs
+template <typename BackingStore, class T>
+class VectorRef;
+
+// Reference to a BackingStoreT container that holds a contiguous serialized form
+// of type T at an offset. The object T is reified from BackingStoreT using
+// the starting memory address at the offset until the size of the object
+// instance (where the size should be encoded in the serialized form if the type
+// is not a fundamental type).
+template <typename BackingStoreT, typename T>
+struct SerialRef {
+  explicit SerialRef(const BackingStoreT &store_, size_t offset_)
+      : store(store_),
+        offset(offset_) {}
+
+  using Type = T;
+
+  // Size of the element T for its contiguous serialized form
+  size_t ElementSize() const {
+    if constexpr (std::is_fundamental_v<T>) {
+      return sizeof(T);
+    } else {
+      assert(0 && "ElementSize is only supported for fundamental types.");
+    }
+  }
+
+  const T Reify() const {
+    if constexpr (std::is_fundamental_v<T>) {
+      return ReifyFundamental();
+    } else {
+      assert(0 && "Reify is only supported for fundamental types.");
+    }
+  }
+
+  const auto begin() const {
+    return &store[offset];
+  }
+
+  const auto end() const {
+    return &store[ElementSize()];
+  }
+
+ private:
+  // Fundamental types are returned by value
+  const T ReifyFundamental() const {
+    T tmp;
+    memcpy(&tmp, &(store.at(offset)), ElementSize());
+    return tmp;
+  }
+
+  const BackingStoreT &store;
+  const size_t offset;
+};
+
+// A read-only reference to a group of objects at a particular offset within a
+// serialized view (VectorRef)
+template <typename BackingStore, class T>
+class SerializedTupleRef;
 
 // Methods to overload for serializing data
 template <typename Writer, typename DataT>
@@ -74,6 +133,10 @@ struct Serializer {
   static inline void AppendKeyData(Writer &writer, const DataT &data);
   static inline void AppendValue(Writer &writer, const DataT &data);
 };
+
+// An append-only and iterable container for serialized data
+template <typename BackingStore, typename DataT>
+class SerializedVector;
 
 // Writing keys and values with a pack
 template <typename Writer, typename... Columns>

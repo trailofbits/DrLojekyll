@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 #include <functional>
+#include <initializer_list>
 #include <iomanip>
 #include <ios>
 #include <iostream>
@@ -16,6 +17,9 @@
 namespace hyde {
 namespace rt {
 
+// Tag type for usage of standard containers
+struct std_containers {};
+
 // Alias for a serialized buffer type
 using StdSerialBuffer = std::vector<uint8_t>;
 
@@ -27,6 +31,10 @@ struct BufferedWriter {
 
   void AppendI32(int32_t h) {
     AppendU32(static_cast<uint32_t>(h));
+  }
+
+  void AppendI64(int64_t h) {
+    AppendU64(static_cast<uint64_t>(h));
   }
 
   void AppendU64(uint64_t d) {
@@ -68,7 +76,7 @@ struct Serializer<Writer, int32_t> {
   }
   static inline void AppendKeyUnique(Writer &writer, const int32_t &data) {}
   static inline void AppendKeyData(Writer &writer, const int32_t &data) {}
-  static inline void AppendValue(Writer &writer, int32_t data) {
+  static inline void AppendValue(Writer &writer, const int32_t &data) {
     writer.AppendI32(data);
   }
 };
@@ -80,13 +88,25 @@ struct Serializer<Writer, uint64_t> {
   }
   static inline void AppendKeyUnique(Writer &writer, const uint64_t &data) {}
   static inline void AppendKeyData(Writer &writer, const uint64_t &data) {}
-  static inline void AppendValue(Writer &writer, uint64_t data) {
+  static inline void AppendValue(Writer &writer, const uint64_t &data) {
     writer.AppendU64(data);
   }
 };
 
 template <typename Writer>
-struct Serializer<Writer, StdSerialBuffer> {
+struct Serializer<Writer, int64_t> {
+  static inline void AppendKeySort(Writer &writer, const int64_t &data) {
+    writer.AppendI64(data);
+  }
+  static inline void AppendKeyUnique(Writer &writer, const int64_t &data) {}
+  static inline void AppendKeyData(Writer &writer, const int64_t &data) {}
+  static inline void AppendValue(Writer &writer, const int64_t &data) {
+    writer.AppendI64(data);
+  }
+};
+
+template <typename Writer>
+struct Serializer<Writer, std_containers> {
   static inline void AppendKeySort(Writer &writer,
                                    const StdSerialBuffer &data) {
     const auto len = static_cast<uint32_t>(data.size());
@@ -135,98 +155,110 @@ struct Serializer<Writer, StdSerialBuffer> {
   }
 };
 
-// Reference to a BackingStore container that holds a contiguous serialized form
-// of type T at an offset. The object T is reified from BackingStore using
-// the starting memory address at the offset until the size of the object
-// instance (where the size should be encoded in the serialized form if the type
-// is not a fundamental type).
-template <typename BackingStore, typename T>
-struct SerialRef {
-  explicit SerialRef(const BackingStore &store_, size_t offset_)
-      : store(store_),
-        offset(offset_) {}
-
-  using Type = T;
-
-  // Size of the element T for its contiguous serialized form
-  size_t ElementSize() const {
-    if constexpr (std::is_fundamental_v<T>) {
-      return sizeof(T);
-    } else {
-      assert(0 && "ElementSize is only supported for fundamental types.");
-    }
-  }
-
-  const T Reify() const {
-    if constexpr (std::is_fundamental_v<T>) {
-      return ReifyFundamental();
-    } else {
-      assert(0 && "Reify is only supported for fundamental types.");
-    }
-  }
-
- private:
-  // Fundamental types are returned by value
-  const T ReifyFundamental() const {
-    T tmp;
-    memcpy(&tmp, &(store.at(offset)), ElementSize());
-    return tmp;
-  }
-
-  const BackingStore &store;
-  size_t offset;
-};
-
-template <typename BackingStore, class T>
-class SerializedTupleRef;
-
 template <typename... Ts>
-class SerializedTupleRef<StdSerialBuffer, std::tuple<Ts...>> {
+class SerializedTupleRef<std_containers, std::tuple<Ts...>> {
  public:
   explicit SerializedTupleRef(const StdSerialBuffer &backing_store_,
                               size_t start_offset)
       : backing_store(backing_store_),
         orig_offset(start_offset) {}
 
-  const std::tuple<SerialRef<StdSerialBuffer, Ts>..., size_t> Get() {
-    size_t tmp = orig_offset;
-    return _Get<Ts...>(tmp);
+  const std::tuple<SerialRef<StdSerialBuffer, Ts>..., size_t> Get() const {
+    return _Get<Ts...>(orig_offset);
+  }
+
+  std::tuple<Ts..., size_t> GetReified() const {
+    return _GetReified<Ts...>(orig_offset);
   }
 
  private:
   template <typename E>
-  std::tuple<SerialRef<StdSerialBuffer, E>, size_t> _Get(size_t &offset) {
+  const std::tuple<SerialRef<StdSerialBuffer, E>, size_t>
+  _Get(const size_t offset) const {
     assert(offset < backing_store.size() &&
            "Offset is greater than backing store");
     auto ref = SerialRef<StdSerialBuffer, E>(backing_store, offset);
-    offset += ref.ElementSize();
-    return {ref, offset};
+    return {ref, offset + ref.ElementSize()};
   }
 
   template <typename E, typename... Es>
   std::enable_if_t<sizeof...(Es) != 0,
-                   std::tuple<SerialRef<StdSerialBuffer, E>,
-                              SerialRef<StdSerialBuffer, Es>..., size_t>>
-  _Get(size_t &offset) {
-    return std::tuple_cat(_Get<E>(offset), _Get<Es...>(offset));
+                   const std::tuple<SerialRef<StdSerialBuffer, E>,
+                                    SerialRef<StdSerialBuffer, Es>..., size_t>>
+  _Get(const size_t offset) const {
+    const auto [ref, new_offset] = _Get<E>(offset);
+    return std::tuple_cat(std::make_tuple(ref), _Get<Es...>(new_offset));
+  }
+
+  template <typename E>
+  std::tuple<E, size_t> _GetReified(const size_t offset) const {
+    assert(offset < backing_store.size() &&
+           "Offset is greater than backing store");
+    auto ref = SerialRef<StdSerialBuffer, E>(backing_store, offset);
+    return {ref.Reify(), offset + ref.ElementSize()};
+  }
+
+  template <typename E, typename... Es>
+  std::enable_if_t<sizeof...(Es) != 0, std::tuple<E, Es..., size_t>>
+  _GetReified(const size_t offset) const {
+    const auto [ref, new_offset] = _GetReified<E>(offset);
+    return std::tuple_cat(std::make_tuple(ref), _GetReified<Es...>(new_offset));
   }
 
   const StdSerialBuffer &backing_store;
   const size_t orig_offset;
 };
 
-template <typename BackingStore, class T>
-class VectorRef;
+template <typename... Ts>
+StdSerialBuffer SerializeValue(const std::tuple<Ts...> &t) {
+  StdSerialBuffer value_data;
+  BufferedWriter value_writer(value_data);
+
+  std::apply(
+      [&](const Ts &...ts) {
+        KeyValueWriter<BufferedWriter, Value<TypeIdentity<Ts>>...>::WriteValue(
+            value_writer, ts...);
+      },
+      t);
+  return value_data;
+}
 
 template <typename... Ts>
-class VectorRef<StdSerialBuffer, std::tuple<Ts...>> {
+StdSerialBuffer SerializeValues(std::initializer_list<std::tuple<Ts...>> l) {
+  StdSerialBuffer value_data;
+  for (const auto &t : l) {
+    auto value = SerializeValue(t);
+    value_data.reserve(value_data.size() +
+                       std::distance(value.begin(), value.end()));
+    value_data.insert(value_data.end(), value.begin(), value.end());
+  }
+  return value_data;
+}
+
+template <typename... Ts, typename... Tuples>
+StdSerialBuffer SerializeValues(const std::tuple<Ts...> &t,
+                                const Tuples &...tuples) {
+  auto value_data = SerializeValue(t);
+
+  if constexpr (sizeof...(Ts) != 0) {
+    auto value = SerializeValues(tuples...);
+    value_data.reserve(value_data.size() +
+                       std::distance(value.begin(), value.end()));
+    value_data.insert(value_data.end(), value.begin(), value.end());
+  }
+
+  return value_data;
+}
+
+template <typename... Ts>
+class VectorRef<std_containers, std::tuple<Ts...>> {
  public:
   explicit VectorRef(StdSerialBuffer &backing_store_)
       : backing_store(backing_store_) {}
 
   std::tuple<SerialRef<StdSerialBuffer, Ts>..., size_t> Get(size_t offset) {
-    return SerializedTupleRef<StdSerialBuffer, std::tuple<Ts...>>(backing_store,
-                                                                  offset)
+    return SerializedTupleRef<std_containers, std::tuple<Ts...>>(backing_store,
+                                                                 offset)
         .Get();
   }
 
@@ -240,7 +272,7 @@ class VectorRef<StdSerialBuffer, std::tuple<Ts...>> {
     _Add(ts...);
   }
 
-  size_t size() {
+  auto size() {
     return backing_store.size();
   }
 
@@ -263,7 +295,53 @@ class VectorRef<StdSerialBuffer, std::tuple<Ts...>> {
   }
 };
 
-struct std_containers {};
+template <typename... Ts>
+class SerializedVector<std_containers, std::tuple<Ts...>> {
+ public:
+  // Not sure if the following constructors are correct
+  SerializedVector(std::initializer_list<std::tuple<Ts...>> datas)
+      : backing_store(SerializeValues(datas)) {}
+
+  // TODO: Copied from VectorRef
+  auto size() const {
+    return backing_store.size();
+  }
+
+  const std::tuple<Ts..., size_t> Get(size_t offset) const {
+    return SerializedTupleRef<std_containers, std::tuple<Ts...>>(backing_store,
+                                                                 offset)
+        .GetReified();
+  }
+
+  const std::tuple<Ts..., size_t> operator[](size_t offset) const {
+    return Get(offset);
+  }
+
+  // Add a single
+  void Add(const SerialRef<StdSerialBuffer, Ts>... ts) {
+    backing_store.reserve(backing_store.size() + (ts.ElementSize() + ...));
+    (backing_store.insert(backing_store.end(), ts.begin(), ts.end()), ...);
+  }
+
+  void clear() {
+    backing_store.clear();
+  }
+
+  void swap(SerializedVector<std_containers, std::tuple<Ts...>> &store) {
+    backing_store.swap(store.backing_store);
+  }
+
+  const auto begin() const {
+    return backing_store.begin();
+  }
+
+  const auto end() const {
+    return backing_store.end();
+  }
+
+ private:
+  StdSerialBuffer backing_store;
+};
 
 template <typename TableId, unsigned kIndexId, typename... Columns>
 class Index<std_containers, TableId, kIndexId, Columns...> {
@@ -307,7 +385,7 @@ class Index<std_containers, TableId, kIndexId, Columns...> {
   // Checked statically whether the types of params passed are actually same
   // types as Keys
   template <typename... Ts>
-  VectorRef<StdSerialBuffer, values_tuple_t> Get(const Ts &...cols) {
+  VectorRef<std_containers, values_tuple_t> Get(const Ts &...cols) {
     static_assert(std::is_same_v<keys_tuple_t, std::tuple<Ts...>>);
     StdSerialBuffer key_data;
     BufferedWriter key_writer(key_data);
@@ -320,7 +398,7 @@ class Index<std_containers, TableId, kIndexId, Columns...> {
 
     // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
 
-    return VectorRef<StdSerialBuffer, values_tuple_t>(backing_store[key_data]);
+    return VectorRef<std_containers, values_tuple_t>(backing_store[key_data]);
   }
 
   // Get from serialized buffer key form
@@ -340,6 +418,8 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
   Table(std_containers &, Indices &...indices_)
       : backing_store(),
         indices(indices_...) {}
+
+  //uint8_t GetState(SerialRef<StdSerialBuffer, Columns> &...cols) {
 
   uint8_t GetState(const Columns &...cols) {
     StdSerialBuffer key_data;
@@ -433,17 +513,17 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
     return false;
   }
 
-  bool TransitionState(SerialRef<StdSerialBuffer, Columns> &...cols) {
+  bool TransitionState(const SerialRef<StdSerialBuffer, Columns> &...cols) {
     return TransitionState(cols.Reify()...);
   }
 
-  std::vector<SerializedTupleRef<StdSerialBuffer, std::tuple<Columns...>>>
+  std::vector<SerializedTupleRef<std_containers, std::tuple<Columns...>>>
   Keys() {
-    std::vector<SerializedTupleRef<StdSerialBuffer, std::tuple<Columns...>>>
+    std::vector<SerializedTupleRef<std_containers, std::tuple<Columns...>>>
         keys;
     for (auto &[key, _] : backing_store) {
       keys.emplace_back(
-          SerializedTupleRef<StdSerialBuffer, std::tuple<Columns...>>(key, 0));
+          SerializedTupleRef<std_containers, std::tuple<Columns...>>(key, 0));
     }
     return keys;
   }
@@ -470,6 +550,51 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
     }
   }
 };
+
+/* ****************************************** */
+/* START: https://stackoverflow.com/a/7115547 */
+
+template <typename TT>
+struct hash {
+  size_t operator()(TT const &tt) const {
+    return std::hash<TT>()(tt);
+  }
+};
+
+template <class T>
+inline void hash_combine(std::size_t &seed, T const &v) {
+  seed ^= hash<T>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+namespace {
+
+// Recursive template code derived from Matthieu M.
+template <class Tuple, size_t Index = std::tuple_size<Tuple>::value - 1>
+struct HashValueImpl {
+  static void apply(size_t &seed, Tuple const &tuple) {
+    HashValueImpl<Tuple, Index - 1>::apply(seed, tuple);
+    hash_combine(seed, std::get<Index>(tuple));
+  }
+};
+
+template <class Tuple>
+struct HashValueImpl<Tuple, 0> {
+  static void apply(size_t &seed, Tuple const &tuple) {
+    hash_combine(seed, std::get<0>(tuple));
+  }
+};
+}  // namespace
+
+template <typename... TT>
+struct hash<std::tuple<TT...>> {
+  size_t operator()(std::tuple<TT...> const &tt) const {
+    size_t seed = 0;
+    HashValueImpl<std::tuple<TT...>>::apply(seed, tt);
+    return seed;
+  }
+};
+/* END: https://stackoverflow.com/a/7115547 */
+/* **************************************** */
 
 }  // namespace rt
 }  // namespace hyde

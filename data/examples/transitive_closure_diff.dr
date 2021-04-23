@@ -16,18 +16,58 @@ edge(From, To) : add_edge(From, To).
 tc(From, To) : tc(From, X), tc(X, To).
 tc(From, To) : edge(From, To).
 
+#epilogue ```c++
+#include "runtime_std_impl.h"
+#include <cassert>
+#include <algorithm>
+#include <vector>
+#include <tuple>
+#include <iostream>
+#include <unordered_set>
+
+class Log : public DatabaseLog {
+public:
+  std::unordered_set<std::tuple<int64_t, int64_t>, ::hyde::rt::hash<std::tuple<int64_t, int64_t>>> edges;
+  std::unordered_set<std::tuple<int64_t, int64_t>, ::hyde::rt::hash<std::tuple<int64_t, int64_t>>> removed_edges;
+
+  Log() : edges(), removed_edges() {}
+
+  void found_path_2(int64_t From, int64_t To, bool added) override {
+    auto old_size = edges.size();
+    if (added) {
+      edges.insert(std::make_tuple(From, To));
+    } else {
+      edges.erase(std::make_tuple(From, To));
+      removed_edges.insert(std::make_tuple(From, To));
+    }
+    assert(old_size != edges.size());
+  }
+};
+
+int main() {
+  auto functors = DatabaseFunctors();
+  auto log = Log();
+  auto backend = hyde::rt::std_containers();
+  Database db = Database(backend, log, functors);
+
+  db.add_edge_2({{0,1}, {0,2}, {2,0}, {1,2}, {2,3}}, {});
+
+  return 0;
+}
+```
+.
 
 #epilogue ```python
 
 class Functors(DatabaseFunctors):
   pass
-  
+
 
 class Log(DatabaseLog):
   def __init__(self):
     self.edges = set()
     self.removed_edges = set()
-  
+
   def found_path_2(self, From: int, To: int, added: bool):
     old_size = len(self.edges)
     if added:
@@ -49,7 +89,7 @@ if __name__ == "__main__":
   assert 2 in reached_from_zero  # 0 -> 2
   assert 0 in reached_from_zero  # 0 -> 2 -> 0
   assert 3 in reached_from_zero  # 0 -> 2 -> 3
-  
+
   print("Removing (2, 3)")
   db.add_edge_2([], [(2, 3)])
   reached_from_zero = list(db.reachable_from_bf(0))
@@ -58,7 +98,7 @@ if __name__ == "__main__":
   assert 1 in reached_from_zero  # 0 -> 1
   assert 2 in reached_from_zero  # 0 -> 2
   assert 0 in reached_from_zero  # 0 -> 2 -> 0
-  
+
   assert len(messages.removed_edges) == 3
   assert (2, 3) in messages.removed_edges
   assert (0, 3) in messages.removed_edges

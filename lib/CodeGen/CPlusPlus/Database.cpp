@@ -293,7 +293,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
         os << sep << "param_" << region.Id() << '_' << param_index;
       } else {
-        os << sep << Var(os, var);
+        os << sep << Var(os, var) << ReifyVar(os, var);
       }
       sep = ", ";
       ++param_index;
@@ -650,20 +650,14 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       default: break;
     }
 
-    os << os.Indent() << Vector(os, region.Vector()) << ".push_back(";
-    if (tuple_vars.size() == 1u) {
-      os << Var(os, tuple_vars[0]);
-
-    } else {
-      os << "std::make_tuple(";
-      auto sep = "";
-      for (auto var : tuple_vars) {
-        os << sep << Var(os, var) << ReifyVar(os, var);
-        sep = ", ";
-      }
-      os << ')';
+    os << os.Indent() << Vector(os, region.Vector())
+       << ".push_back(std::make_tuple(";
+    auto sep = "";
+    for (auto var : tuple_vars) {
+      os << sep << Var(os, var) << ReifyVar(os, var);
+      sep = ", ";
     }
-    os << ");\n";
+    os << "));\n";
   }
 
   void Visit(ProgramVectorClearRegion region) override {
@@ -690,22 +684,26 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
        << Vector(os, vec) << ".size()) {\n";
     os.PushIndent();
 
-    os << os.Indent() << "auto ";
+    os << os.Indent() << "auto [";
     const auto tuple_vars = region.TupleVariables();
-    if (tuple_vars.size() == 1u) {
-      os << Var(os, tuple_vars[0]);
-
-    } else {
-      auto sep = "[";
-      for (auto var : tuple_vars) {
-        os << sep << Var(os, var);
-        sep = ", ";
-      }
-      os << "]";
+    auto sep = "";
+    for (auto var : tuple_vars) {
+      os << sep << Var(os, var);
+      sep = ", ";
     }
-    os << " = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
+    // Need to differentiate between our SerializedVector and regular
+    bool serial_vec = region.Usage() == VectorUsage::kProcedureInputVector;
+    if (serial_vec) {
+      os << ", tmp_" << region.UniqueId() << "_index";
+    }
+    os << "] = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
 
-    os << os.Indent() << VectorIndex(os, vec) << " += 1;\n";
+    os << os.Indent() << VectorIndex(os, vec);
+    if (serial_vec) {
+      os << " = tmp_" << region.UniqueId() << "_index;\n";
+    } else {
+      os << " += 1;\n";
+    }
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -786,7 +784,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     } else {
       auto sep = "";
       for (auto var : vars) {
-        os << sep << Var(os, var);
+        os << sep << Var(os, var) << ReifyVar(os, var);
         sep = ", ";
       }
     }
@@ -831,11 +829,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     std::vector<std::string> var_names;
-    os << os.Indent() << "auto ";
-    auto out_pivot_size = region.OutputPivotVariables().size();
-    if (out_pivot_size > 1) {
-      os << "[";
-    }
+    os << os.Indent() << "auto [";
     auto sep = "";
     for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
@@ -844,10 +838,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << sep << var_names.back();
       sep = ", ";
     }
-    if (out_pivot_size > 1) {
-      os << "]";
-    }
-    os << " = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
+    os << "] = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
 
     os << os.Indent() << VectorIndex(os, vec) << " += 1;\n";
 
@@ -1054,7 +1045,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       // Collect all product things into a vector.
       os << os.Indent() << "vec_" << region.Id();
-      sep = ".push_back(std::tuple(";
+      sep = ".push_back(std::make_tuple(";
       auto k = 0u;
       for (auto table : region.Tables()) {
         (void) table;
@@ -1127,20 +1118,27 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
          << " < scan_tuple_" << filled_vec.Id() << "_vec.size()) {\n";
       os.PushIndent();
 
-      os << os.Indent() << "auto ";
-
-      // Unpack the always packed tuple if one value
-      if (index.ValueColumns().size() == 1) {
-        os << "[";
+      os << os.Indent() << "auto [";
+      sep = "";
+      for (auto var : index.ValueColumns()) {
+        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
+        sep = ", ";
       }
-      os << "scan_tuple_" << filled_vec.Id();
-
-      if (index.ValueColumns().size() == 1) {
-        os << "]";
-      }
-      os << " = scan_tuple_" << filled_vec.Id() << "_vec["
+      os << ", offset_" << region.UniqueId() << "] = scan_tuple_"
+         << filled_vec.Id() << "_vec["
          << "scan_index_" << filled_vec.Id() << "];\n"
-         << os.Indent() << "scan_index_" << filled_vec.Id() << " += 1;\n";
+         << os.Indent() << "scan_index_" << filled_vec.Id() << " = offset_"
+         << region.UniqueId() << ";\n";
+
+      os << os.Indent() << Vector(os, filled_vec)
+         << ".push_back(std::make_tuple(";
+      sep = "";
+      for (auto var : index.ValueColumns()) {
+        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id()
+           << ".Reify()";
+        sep = ", ";
+      }
+      os << "));\n";
 
     // Full table scan.
     } else {
@@ -1148,10 +1146,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << os.Indent() << "for (scan_tuple_" << filled_vec.Id() << " : "
          << Table(os, region.Table()) << ") {\n";
       os.PushIndent();
+
+      // TODO(ekilmer): This doesn't work
+      os << os.Indent() << Vector(os, filled_vec) << ".push_back(scan_tuple_"
+         << filled_vec.Id() << ");\n";
     }
 
-    os << os.Indent() << Vector(os, filled_vec) << ".push_back(scan_tuple_"
-       << filled_vec.Id() << ");\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
@@ -1163,18 +1163,19 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto rhs_vars = region.RHS();
 
     if (lhs_vars.size() == 1u) {
-      os << os.Indent() << "if (" << Var(os, lhs_vars[0]) << ' '
+      os << os.Indent() << "if (" << Var(os, lhs_vars[0])
+         << ReifyVar(os, lhs_vars[0]) << ' '
          << OperatorString(region.Operator()) << ' ' << Var(os, rhs_vars[0])
-         << ") {\n";
+         << ReifyVar(os, rhs_vars[0]) << ") {\n";
 
     } else {
       os << os.Indent() << "if (";
 
       auto cond = "";
       for (size_t i = 0; i < region.LHS().size(); i++) {
-        os << cond << '(' << Var(os, lhs_vars[i]) << ' '
-           << OperatorString(region.Operator()) << ' ' << Var(os, rhs_vars[i])
-           << ')';
+        os << cond << '(' << Var(os, lhs_vars[i]) << ReifyVar(os, lhs_vars[i])
+           << ' ' << OperatorString(region.Operator()) << ' '
+           << Var(os, rhs_vars[i]) << ReifyVar(os, rhs_vars[i]) << ')';
         cond = " && ";
       }
       os << ") {\n";
@@ -1379,24 +1380,33 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // First, declare all vector parameters.
   auto sep = "";
   for (auto vec : vec_params) {
-    os << sep << "std::vector<";
-    const auto &col_types = vec.ColumnTypes();
-    if (1u < col_types.size()) {
-      os << "std::tuple<";
+    os << sep;
+    auto vec_kind = vec.Kind();
+    if (vec_kind != VectorKind::kInputOutputParameter &&
+        vec_kind != VectorKind::kInductionCycles &&
+        vec_kind != VectorKind::kInductionOutputs &&
+        vec_kind != VectorKind::kJoinPivots &&
+        vec_kind != VectorKind::kProductInput &&
+        vec_kind != VectorKind::kMessageOutputs) {
+      os << "const ";
     }
+    if (proc.Kind() == ProcedureKind::kMessageHandler ||
+        proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
+      os << "::hyde::rt::SerializedVector<StorageT, std::tuple<";
+    } else {
+      os << "std::vector<std::tuple<";
+    }
+    const auto &col_types = vec.ColumnTypes();
     auto type_sep = "";
     for (auto type : col_types) {
       os << type_sep << TypeName(module, type);
       type_sep = ", ";
     }
-    if (1u < col_types.size()) {
-      os << '>';
-    }
-    os << "> ";
+    os << ">> & ";
 
     // Check if by reference
     if (vec.Kind() == VectorKind::kInputOutputParameter) {
-      os << "& param_" << param_index;
+      os << "param_" << param_index;
     } else {
       os << Vector(os, vec);
     }
@@ -1407,7 +1417,8 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // Then, declare all variable parameters.
   for (auto param : var_params) {
     if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-      os << sep << "std::vector<" << TypeName(module, param.Type()) << ">"
+      os << sep << "::hyde::rt::SerializedVector<StorageT, std::tuple<"
+         << TypeName(module, param.Type()) << ">>"
          << "param_" << param_index;
     } else {
       os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
@@ -1451,24 +1462,19 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    os << os.Indent() << "std::vector<";
-
-    const auto &col_types = vec.ColumnTypes();
-    if (1u < col_types.size()) {
-      os << "std::tuple<";
+    if (proc.Kind() == ProcedureKind::kMessageHandler) {
+      os << os.Indent() << "::hyde::rt::SerializedVector<StorageT, std::tuple<";
+    } else {
+      os << os.Indent() << "std::vector<std::tuple<";
     }
 
     auto type_sep = "";
-    for (auto type : col_types) {
+    for (auto type : vec.ColumnTypes()) {
       os << type_sep << TypeName(module, type);
       type_sep = ", ";
     }
 
-    if (1u < col_types.size()) {
-      os << ">";
-    }
-
-    os << "> " << Vector(os, vec) << " = {};\n";
+    os << ">> " << Vector(os, vec) << " = {};\n";
 
     // Tracking variable for the vector.
     os << os.Indent() << "int " << VectorIndex(os, vec) << " = 0;\n";
