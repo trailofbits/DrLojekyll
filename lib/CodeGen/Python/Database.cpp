@@ -422,7 +422,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
 
     if (auto empty_body = region.BodyIfEmpty(); empty_body) {
-      os << os.Indent() << "if not num_results" << id << ":\n";
+      os << os.Indent() << "if not num_results_" << id << ":\n";
       os.PushIndent();
       empty_body->Accept(*this);
       os.PopIndent();
