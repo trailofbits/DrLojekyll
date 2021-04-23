@@ -81,12 +81,16 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
 }  // namespace
 
 // Build an eager region for a `QueryMap`.
-void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap map,
-                              Context &context, OP *parent) {
+void BuildEagerGenerateRegion(ProgramImpl *impl, QueryView pred_view,
+                              QueryMap map, Context &context, OP *parent_,
+                              TABLE *last_table_) {
   const QueryView view(map);
 
   const auto functor = map.Functor();
   assert(functor.IsPure());
+
+  auto [parent, pred_table, _] =
+      InTryInsert(impl, context, pred_view, parent_, last_table_);
 
   // TODO(pag): Think about requiring persistence of the predecessor, so that
   //            we always have the inputs persisted.

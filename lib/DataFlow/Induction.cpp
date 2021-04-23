@@ -133,6 +133,9 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   std::set<VIEW *> seen;
   std::vector<VIEW *> frontier;
 
+  // Tracks whether or not `entry.first` reaches `entry.second` along any path.
+  std::set<std::pair<VIEW *, VIEW *>> reached_inductions;
+
   for (MERGE *view : merges) {
     frontier.push_back(view);
   }
@@ -170,6 +173,16 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     });
 
     auto succs = TransitiveSuccessorsOf(view);
+
+    // Maintain this so that later we can figure out the strongly connected
+    // components via union-find.
+    for (auto succ_view : succs) {
+      if (succ_view->AsMerge() || succ_view->AsJoin() ||
+          succ_view->AsNegate()) {
+        reached_inductions.emplace(view, succ_view);
+      }
+    }
+
     ForEachPredecessorOf(view, [&] (VIEW *pred_view) {
       info->predecessors.push_back(pred_view);
       if (succs.count(pred_view)) {
@@ -180,28 +193,27 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     });
   }
 
-  // Tracks whether or not `entry.first` reaches `entry.second` along an
-  // inductive output path.
-  std::set<std::pair<VIEW *, VIEW *>> reached_inductions;
+  // If an inductive successor of A reaches B, and if and inductive successor
+  // of B reaches A, then A and B are part of the same "co-inductive" set.
+  for (auto [from_view, to_view] : reached_inductions) {
+    if (from_view->IsInductive() && to_view->IsInductive()) {
+      if (reached_inductions.count({to_view, from_view})) {
+        MergeSet &set_1 = merge_sets[from_view];
+        MergeSet &set_2 = merge_sets[to_view];
+        DisjointSet::Union(&set_1, &set_2);
+      }
+    }
+  }
 
-  std::vector<std::tuple<bool, bool, VIEW *>> frontier_through_induction;
-  std::set<std::pair<bool, VIEW *>> seen_through_induction;
-
-  for (auto &[view_, _] : merge_sets) {
+  // Our next goal is to see if, in this inductive successor, whether /any/
+  // path out of an inductive successor leads to an INSERT or to a different
+  // induction. If that happens, then there is a way for this inductive
+  // successor to have info leave.
+  for (auto &[view_, merge_set_] : merge_sets) {
     VIEW *const view = view_;
     InductionInfo * const info = view->induction_info.get();
+    MergeSet * const merge_set = merge_set_.FindAs<MergeSet>();
     assert(info != nullptr);
-
-    seen_through_induction.clear();
-
-    // This is a variant of transitive successors, except that we don't allow
-    // ourselves to walk through non-inductive output paths of merges because
-    // otherwise we would end up merging two unrelated induction sets.
-
-    // We want to express something similar to dominance analysis here.
-    // Specifically, suppose we have a set of UNIONs that all logically belong
-    // to the same co-inductive set. That is, the outputs of each of the unions
-    // somehow cycle into all of the other unions.
 
     auto succ_view_i = 0u;
     for (VIEW *succ_view : info->successors) {
@@ -209,67 +221,49 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         continue;  // Not marked as being an inductive successor.
       }
 
-      frontier_through_induction.clear();
-      frontier_through_induction.emplace_back(false, false, succ_view);
-      seen_through_induction.emplace(false, succ_view);
+      seen.clear();
+      frontier.clear();
+      frontier.push_back(succ_view);
 
-      while (!frontier_through_induction.empty()) {
-        const auto [from_induction_merge_, from_induction_, frontier_view_] =
-            frontier_through_induction.back();
-        frontier_through_induction.pop_back();
+      while (!frontier.empty()) {
+        VIEW * const frontier_view = frontier.back();
+        frontier.pop_back();
 
-        bool from_induction_merge = from_induction_merge_;
-        bool from_induction = from_induction_;
-        VIEW * const frontier_view = frontier_view_;
+        if (auto frontier_merge_set_it = merge_sets.find(frontier_view);
+            frontier_merge_set_it != merge_sets.end()) {
+          MergeSet * const frontier_merge_set =
+              frontier_merge_set_it->second.FindAs<MergeSet>();
 
-        // We've cycled back to ourselves. If we get back to ourselves along
-        // some path that doesn't itself go through another inductive merge/
-        // cycle, which would have been caught by the `else if` case below,
-        // then it means that this view isn't subordinate to any other one,
-        // and that is actually does in fact need storage.
-        if (frontier_view == view) {
-          if (!from_induction_merge) {
-            info->can_reach_self_not_through_another_induction = true;
+          // We've reached back to this induction along this path.
+          if (frontier_merge_set == merge_set) {
+            continue;
+
+          // We've found a way of exiting the induction, to a different
+          // induction.
+          } else {
+            succ_view->color = 0xff0000;
+            eventually_noninductive_successors.emplace(view, succ_view);
+            continue;
           }
-          continue;
         }
 
-        // We've cycled to another UNION that is also inductive.
-        if (InductionInfo * const frontier_info =
-                frontier_view->induction_info.get()) {
-
-          from_induction = true;
-          if (frontier_view->AsMerge()) {
-            from_induction_merge = true;
+        if (INSERT * insert = frontier_view->AsInsert()) {
+          if (insert->successors.Empty()) {
+            succ_view->color = 0xff0000;
+            eventually_noninductive_successors.emplace(view, succ_view);
+            continue;
           }
-
-          reached_inductions.emplace(view, frontier_view);
-
-        // If we've reached an insert with no successors, then this is either
-        // a MATERIALIZE or a PUBLISH, and thus we've discovered an inductive
-        // successor (`succ_view`) that leads out of the induction. Later,
-        // we'll try to narrow down on the specific source of non-induction,
-        // and then
-        } else if (INSERT * const insert = frontier_view->AsInsert();
-                   !from_induction && insert && insert->successors.Empty()) {
-          eventually_noninductive_successors.emplace(view, succ_view);
         }
 
-        // We need to follow the frontier view's successors.
         ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
-          auto [it, added] = seen_through_induction.emplace(
-              from_induction, frontier_succ_view);
+          auto [it, added] = seen.emplace(frontier_succ_view);
           if (added) {
-            frontier_through_induction.emplace_back(
-                from_induction_merge, from_induction, frontier_succ_view);
+            frontier.emplace_back(frontier_succ_view);
           }
         });
       }
     }
   }
-
-  frontier_through_induction.clear();
-  seen_through_induction.clear();
 
   // Some of the inductive successors of a merge may actually indirectly lead
   // to leaving the induction. We want to find the "injection" sites where we
@@ -291,6 +285,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   //
   for (auto [merge_, succ_view_] : eventually_noninductive_successors) {
     VIEW * const merge = merge_;
+    MergeSet * const merge_set = merge_sets[merge].FindAs<MergeSet>();
     VIEW * const succ_view = succ_view_;
     frontier.clear();
     seen.clear();
@@ -302,7 +297,24 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       VIEW * const frontier_view = frontier.back();
       frontier.pop_back();
 
+
+
       ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
+
+        // We've walked into the induction that is ourselves; ignore.
+        if (auto succ_merge_set_it = merge_sets.find(frontier_succ_view);
+            succ_merge_set_it != merge_sets.end()) {
+          MergeSet * const succ_merge_set =
+              succ_merge_set_it->second.FindAs<MergeSet>();
+
+          // Reached a different induction.
+          if (succ_merge_set != merge_set) {
+            injection_sites.insert(frontier_view);
+          }
+
+          return;
+        }
+
         const auto frontier_succs = TransitiveSuccessorsOf(frontier_succ_view);
         if (!frontier_succs.count(merge)) {
           injection_sites.insert(frontier_view);
@@ -314,10 +326,39 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
   }
 
+  // In the case of JOINs and NEGATEs, if they have no non-inductive
+  // predecessors, but have non-inductive successors, then add them to the
+  // injection sites.
+  for (auto &[view_, merge_set_] : merge_sets) {
+    VIEW *const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    if (!info || view->AsMerge()) {
+      continue;
+    }
+
+    bool has_non_inductive_preds = false;
+    for (auto is_inductive : info->inductive_predecessors_mask) {
+      if (!is_inductive) {
+        has_non_inductive_preds = true;
+        break;
+      }
+    }
+
+    bool has_non_inductive_succs = false;
+    for (auto is_inductive : info->inductive_successors_mask) {
+      if (!is_inductive) {
+        has_non_inductive_succs = true;
+        break;
+      }
+    }
+
+    if (!has_non_inductive_preds && has_non_inductive_succs) {
+      injection_sites.insert(view);
+    }
+  }
+
   seen.clear();
   frontier.clear();
-
-  std::set<User *> successor_users;
 
   // There is am inductive successor of `merge` that reaches `view`, and the
   // edge from `view` to `succ_view` leads out of the UNION.
@@ -341,6 +382,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     // We don't want to replace the weak uses of `this` in any condition's
     // `positive_users` or `negative_users`.
     view->VIEW::ReplaceUsesWithIf<User>(new_union, [=] (User *user, VIEW *) {
+      return !dynamic_cast<COND *>(user);
 
       // If there's a negation of `view`, then we'll leave it there, as it
       // might cycle back to another induction.
@@ -384,23 +426,93 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     VIEW * const view = view_;
     InductionInfo * const info = view->induction_info.get();
     auto i = 0u;
-    for (auto view : info->successors) {
+
+    for (VIEW * const succ_view : info->successors) {
       if (info->inductive_successors_mask[i]) {
-        info->inductive_successors.AddUse(view);
+        info->inductive_successors.AddUse(succ_view);
       } else {
-        info->noninductive_successors.AddUse(view);
+        info->noninductive_successors.AddUse(succ_view);
       }
       ++i;
     }
 
     i = 0u;
-    for (auto view : info->predecessors) {
+    for (VIEW * const succ_view : info->predecessors) {
       if (info->inductive_predecessors_mask[i]) {
-        info->inductive_predecessors.AddUse(view);
+        info->inductive_predecessors.AddUse(succ_view);
       } else {
-        info->noninductive_predecessors.AddUse(view);
+        info->noninductive_predecessors.AddUse(succ_view);
       }
       ++i;
+    }
+
+    // Views living "fully" inside other inductive back-edges can be marked as
+    // not being actually inductive after all.
+    if (info->noninductive_predecessors.Empty() &&
+        info->noninductive_successors.Empty()) {
+
+      if (view->AsJoin() || view->AsNegate()) {
+        view->induction_info.reset();
+      }
+    }
+  }
+
+  for (auto &[view_, set] : merge_sets) {
+    VIEW * const view = view_;
+    InductionInfo * const info = view->induction_info.get();
+    if (!info) {
+      continue;
+    }
+
+    seen.clear();
+    frontier.clear();
+
+    for (VIEW *succ_view : info->inductive_successors) {
+      frontier.push_back(succ_view);
+    }
+
+    // Next, we want to know if there's a trivial cycle on `view`. That is,
+    // can `view` cycle back to itself without first going through another
+    // UNION, JOIN, or NEGATE.
+    while (!frontier.empty()) {
+      VIEW * const frontier_view = frontier.back();
+      frontier.pop_back();
+
+      if (frontier_view == view) {
+        info->can_reach_self_not_through_another_induction = true;
+        break;
+      }
+//
+//      // JOINs and NEGATIONs require their predecessors to have tables, so
+//      // there's always something "blocking" us from accidentally doing infinite
+//      // inserts.
+//      } else if (frontier_view->AsJoin() || frontier_view->AsNegate()) {
+//        continue;
+//
+//      } else if (frontier_view->AsMerge()) {
+//
+//      }
+
+      if (InductionInfo * const frontier_info =
+              frontier_view->induction_info.get()) {
+
+        // We've reached another inductive thing, and this thing has non-
+        // inductive predecessors, so it will have a table.
+        if (!frontier_info->noninductive_predecessors.Empty()) {
+          continue;
+
+        // We've reached another inductive thing, and that thing will have
+        // non-inductive successors, so it will have a table.
+        } else if (!frontier_info->noninductive_successors.Empty()) {
+          continue;
+        }
+      }
+
+      ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
+        if (auto [it, added] = seen.insert(frontier_succ_view); added) {
+          frontier.push_back(frontier_succ_view);
+        }
+      });
     }
 
 //    // Views living "fully" inside other inductive back-edges can be marked as
@@ -408,21 +520,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 //    if (info->noninductive_predecessors.Empty() &&
 //        info->noninductive_successors.Empty() &&
 //        !info->can_reach_self_not_through_another_induction) {
-//
 //      view->induction_info.reset();
 //    }
-  }
-
-  // If an inductive successor of A reaches B, and if and inductive successor
-  // of B reaches A, then A and B are part of the same "co-inductive" set.
-  for (auto [merge_1, merge_2] : reached_inductions) {
-    if (merge_1->IsInductive() && merge_2->IsInductive()) {
-      if (reached_inductions.count({merge_2, merge_1})) {
-        MergeSet &set_1 = merge_sets[merge_1];
-        MergeSet &set_2 = merge_sets[merge_2];
-        DisjointSet::Union(&set_1, &set_2);
-      }
-    }
   }
 
   // We didn't inject any new UNIONs :-) Now we can label all the merges

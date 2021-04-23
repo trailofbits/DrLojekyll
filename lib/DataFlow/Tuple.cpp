@@ -192,6 +192,7 @@ bool Node<QueryTuple>::ForwardsAllInputsAsIs(void) const noexcept {
 // outputs, and if so, does it forward all columns of its input?
 bool Node<QueryTuple>::ForwardsAllInputsAsIs(
     VIEW *incoming_view) const noexcept {
+
   if (!incoming_view) {
     return false;
   }

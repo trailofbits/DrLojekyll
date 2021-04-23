@@ -1780,8 +1780,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
-  impl->RemoveUnusedViews();
-  impl->TrackDifferentialUpdates(log, true);
   impl->Optimize(log);
 
   if (num_errors != log.Size()) {

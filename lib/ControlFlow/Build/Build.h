@@ -439,8 +439,9 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
                               Context &context, OP *parent);
 
 // Build an eager region for a `QueryMap`.
-void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
-                              Context &context, OP *parent);
+void BuildEagerGenerateRegion(ProgramImpl *impl, QueryView pred_view,
+                              QueryMap view, Context &context, OP *parent,
+                              TABLE *last_model);
 
 // Build an eager region for tuple. If the tuple can receive differential
 // updates then its data needs to be saved.

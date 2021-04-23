@@ -2070,7 +2070,8 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   } else if (view.IsMap()) {
     auto map = QueryMap::From(view);
     if (map.Functor().IsPure()) {
-      BuildEagerGenerateRegion(impl, map, context, parent);
+      BuildEagerGenerateRegion(impl, pred_view, map, context, parent,
+                               last_table);
 
     } else {
       assert(false && "TODO(pag): Impure functors");

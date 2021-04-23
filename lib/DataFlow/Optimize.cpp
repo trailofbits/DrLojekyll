@@ -6,6 +6,8 @@
 
 #include "Query.h"
 
+#include <iostream>
+
 namespace hyde {
 namespace {
 
@@ -294,11 +296,28 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
        ++iter) {
     non_local_changes = false;
 
+
     // Running hash of which views produced non-local changes.
     uint64_t hash = 0u;
 
     if (opt.bottom_up) {
+      std::cerr << num_views << " views\n";
+      static int x = 0;
       ForEachViewInDepthOrder([&](VIEW *view) {
+        // x > 1231 works
+        // x > 1232 fails
+
+        if (x > 1231) {
+          if (x == 1232) {
+            view->color = 0xff;
+          }
+          ++x;
+          return;
+        }
+        if (x == 1232) {
+          view->color = 0xff;
+        }
+        ++x;
         if (view->Canonicalize(this, opt, log)) {
           hash = RotateRight64(hash, 13) ^ view->Hash();
           non_local_changes = true;
@@ -313,6 +332,8 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
         }
       });
     }
+
+    break;  // REMOVE MEEEEEE
 
     // Store our running hash into our history of hashes.
     const auto prev_hash = hash_history[curr_hash_index];
@@ -453,6 +474,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     for (auto max_cse = views.size(); max_cse-- && CSE(views); ) {
       RemoveUnusedViews();
       RelabelGroupIDs();
+      TrackDifferentialUpdates(log, true);
       views.clear();
       const_cast<const QueryImpl *>(this)->ForEachView(
           [&views](VIEW *view) { views.push_back(view); });
@@ -464,6 +486,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   OptimizationContext opt;
   opt.can_sink_unions = true;
   Canonicalize(opt, log);
+  return;
 
   do_cse();  // Apply CSE to all canonical views.
 
@@ -488,7 +511,6 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     RemoveUnusedViews();
     changed = EliminateDeadFlows();
   }
-
   do_cse();  // Apply CSE to all canonical views.
 
   RemoveUnusedViews();
