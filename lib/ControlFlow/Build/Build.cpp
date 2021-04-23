@@ -33,6 +33,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
                           Context &context) {
 
   query.ForEachView([&](QueryView view) {
+
     if (view.CanReceiveDeletions()) {
       for (auto pred : view.Predecessors()) {
         if (pred.CanProduceDeletions()) {

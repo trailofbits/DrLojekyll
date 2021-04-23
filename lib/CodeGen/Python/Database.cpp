@@ -457,9 +457,6 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Output
     if (auto output = region.Output(); output) {
-      for (auto vec : region.Vectors()) {
-        os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
-      }
       os << Comment(os, region, "Induction Output Region");
       output->Accept(*this);
     }
@@ -588,10 +585,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, region, "Program VectorLoop Region");
     auto vec = region.Vector();
-    if (region.Usage() != VectorUsage::kInductionVector) {
-      os << os.Indent() << VectorIndex(os, vec) << " = 0\n";
-    }
-    os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+    os << os.Indent() << VectorIndex(os, vec) << " = 0\n"
+       << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
        << Vector(os, vec) << "):\n";
     os.PushIndent();
     os << os.Indent();
@@ -863,7 +858,9 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+
+    os << os.Indent() << VectorIndex(os, vec) << " = 0\n"
+       << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
        << Vector(os, vec) << "):\n";
     os.PushIndent();
     os << os.Indent();

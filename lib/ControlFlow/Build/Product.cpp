@@ -357,6 +357,14 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // all inside or all outside of an inductive region.
   } else {
     if (!product_action) {
+
+      // A weird infinite loop situation for inductive PRODUCTs, where a flow
+      // is reaching back to itself not through a MERGE.
+      if (induction) {
+        assert(false);
+        return;
+      }
+
       product_action = new ContinueProductWorkItem(context, view, induction);
       context.work_list.emplace_back(product_action);
     }

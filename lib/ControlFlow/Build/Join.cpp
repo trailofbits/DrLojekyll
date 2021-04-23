@@ -425,6 +425,15 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   //            vectors, so that is why we calculate `induction` above.
   } else {
     auto &join_action = context.view_to_join_action[view];
+
+    // Suggests some kind of infinite loop in how inductive joins are being
+    // (mis-)handled, usually a cycle of join...join, or join..negate..join,
+    // or going through a union that doesn't have an induction vector.
+    if (induction && !join_action) {
+      assert(false);
+      return;
+    }
+
     if (!join_action) {
       PROC * const proc = parent->containing_procedure;
       VECTOR * const pivot_vec = proc->VectorFor(
@@ -566,7 +575,6 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     assert(other_model->table != nullptr);
     (void) BuildMaybeScanPartial(impl, other_view, pivot_cols[other_view],
                                  other_model->table, parent, with_join);
-
   } else {
     assert(false);
   }
