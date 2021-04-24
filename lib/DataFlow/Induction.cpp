@@ -382,25 +382,12 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     // We don't want to replace the weak uses of `this` in any condition's
     // `positive_users` or `negative_users`.
     view->VIEW::ReplaceUsesWithIf<User>(new_union, [=] (User *user, VIEW *) {
-      return !dynamic_cast<COND *>(user);
-
-      // If there's a negation of `view`, then we'll leave it there, as it
-      // might cycle back to another induction.
-      //
-      // NOTE(pag): Really, this shouldn't return `false`, as `view` will either
-      //            be a MERGE, a JOIN, or a NEGATION, and `negated_view`s are
-      //            always TUPLEs, as enforced by `Link()`.
-      if (auto negate = dynamic_cast<NEGATION *>(user)) {
-        return negate->negated_view.get() != view;
-
 
       // We'll let all conditions continue to use `view`.
       //
       // NOTE(pag): CONDitions are not allowed to be cyclic.
       // TODO(pag): Make sure CONDitions are never cyclic.
-      } else {
-        return !dynamic_cast<COND *>(user);
-      }
+      return !dynamic_cast<COND *>(user);
     });
 
     view->CopyDifferentialAndGroupIdsTo(new_union);
@@ -482,7 +469,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         info->can_reach_self_not_through_another_induction = true;
         break;
       }
-//
+
 //      // JOINs and NEGATIONs require their predecessors to have tables, so
 //      // there's always something "blocking" us from accidentally doing infinite
 //      // inserts.

@@ -1780,7 +1780,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
-  impl->Optimize(log);
+  //impl->Optimize(log);
 
   if (num_errors != log.Size()) {
     return std::nullopt;
