@@ -528,16 +528,20 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // maintain which groups a given select is derived from.
   std::vector<unsigned> group_ids;
 
-  // The group ID of this node that it will push forward to its dependencies.
-  unsigned group_id{0u};
-
   // Hash of this node, and its dependencies. A zero value implies that the
   // hash is invalid. We use this for JOIN merging during early dataflow
   // building. This is a good hint for CSE when the data flow is acyclic.
   uint64_t hash{0u};
 
+  // The group ID of this node that it will push forward to its dependencies.
+  unsigned group_id{0u};
+
   // Depth from the input node. A zero value is invalid.
   unsigned depth{0U};
+
+  // If this is non-zero, then we're not allowed to do sinking. This exists to
+  // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
+  unsigned sink_penalty{0u};
 
   // Is this view in a canonical form? Canonical forms help with doing equality
   // checks and replacements. In practice, "canonical form" lost its meaning
@@ -945,6 +949,9 @@ class Node<QueryMerge> : public Node<QueryView> {
   // Similar to above, but for maps.
   bool SinkThroughMaps(QueryImpl *impl, std::vector<VIEW *> &maps);
 
+  // Similar to above, but for negations.
+  bool SinkThroughNegations(QueryImpl *impl, std::vector<VIEW *> &negations);
+
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
@@ -953,10 +960,6 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
-
-  // If this is non-zero, then we're not allowed to do sinking. This exists to
-  // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
-  unsigned sink_penalty{0u};
 };
 
 using MERGE = Node<QueryMerge>;
@@ -1371,6 +1374,10 @@ class QueryImpl {
 
   // The tables available within any query sharing this context.
   std::unordered_map<ParsedDeclaration, Node<QueryRelation> *> decl_to_relation;
+
+//  static constexpr unsigned kMaxDefaultU8s = 64;
+//  Node<QueryConstant> *default_u8_consts[kMaxDefaultU8s];
+//  Node<QueryColumn> *default_u8_const_cols[kMaxDefaultU8s];
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.

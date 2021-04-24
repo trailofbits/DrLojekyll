@@ -128,7 +128,7 @@ bool Node<QueryMerge>::Canonicalize(
     // Try to pull data through tuples. We can do this if the tuple isn't used
     // by anything else, and if it forwards its incoming view perfectly.
     if (auto tuple = view->AsTuple(); tuple && tuple->OnlyUser()) {
-      auto tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+      VIEW *tuple_source = VIEW::GetIncomingView(tuple->input_columns);
 
       // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
@@ -254,21 +254,48 @@ bool Node<QueryMerge>::Canonicalize(
   // superficially similar inputs flowing into a MERGE, and you'd like
   // to instead merge those two inputs together.
   if (opt.can_sink_unions) {
-    if (sink_penalty) {
-      sink_penalty -= 1u;
-      goto done;
-    }
+
+//    // Can't sink yet.
+//    if (sink_penalty) {
+////      --sink_penalty;
+//      goto done;
+//    }
 
     std::unordered_map<const char *, std::vector<VIEW *>> grouped_views;
     bool has_opportunity = false;
+
+    // Wait for all things being merged to not have a sinking penalty.
+    auto is_penalized = false;
+    for (auto merged_view : merged_views) {
+      if (merged_view->sink_penalty) {
+//        --merged_view->sink_penalty;
+        is_penalized = true;
+        break;
+      }
+    }
+
+    if (is_penalized) {
+      goto done;
+    }
 
     for (auto merged_view : merged_views) {
 
       // Don't even try to sink through conditions.
       if (merged_view->positive_conditions.Size() ||
-          merged_view->negative_conditions.Size()) {
+          merged_view->negative_conditions.Size() ||
+          !!merged_view->sets_condition) {
         goto done;
       }
+
+//      while (auto tuple = merged_view->AsTuple()) {
+//        auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
+//        if (tuple->ForwardsAllInputsAsIs(incoming_view)) {
+//          merged_view = incoming_view;
+//          assert(false);
+//        } else {
+//          break;
+//        }
+//      }
 
       auto &similar_views = grouped_views[merged_view->KindName()];
       if (!similar_views.empty()) {
@@ -297,6 +324,10 @@ bool Node<QueryMerge>::Canonicalize(
         if (SinkThroughMaps(query, similar_views)) {
           changed = true;
         }
+      } else if (first_view->AsNegate()) {
+        if (SinkThroughNegations(query, similar_views)) {
+          changed = true;
+        }
       }
 
       // `similar_views` may have been updated in place by a sinking function,
@@ -309,10 +340,11 @@ bool Node<QueryMerge>::Canonicalize(
     }
 
     if (changed) {
-      sink_penalty = Depth() + 1u;
       non_local_changes = true;
       merged_views.Swap(new_merged_views);
     }
+
+//    sink_penalty = Depth() + 1u;
   }
 
 done:
@@ -341,11 +373,11 @@ bool Node<QueryMerge>::SinkThroughTuples(
   unsigned first_tuple_index = 0u;
   unsigned num_cols = 0u;
   unsigned num_pred_cols = 0u;
-  unsigned num_failed = 0u;
-
-  bool changed_rec = false;
 
   for (auto &inout_view : inout_views) {
+    TUPLE *next_tuple = nullptr;
+    VIEW *next_tuple_pred = nullptr;
+
     if (!inout_view) {
       first_tuple_index++;
       continue;
@@ -356,11 +388,11 @@ bool Node<QueryMerge>::SinkThroughTuples(
       first_tuple = inout_view->AsTuple();
       inout_view = nullptr;
 
+
       // `first_tuple` has a constant input, so we can't do anything with it.
       // So we'll proceed on the rest of the list recursively.
       for (auto first_tuple_input_col : first_tuple->input_columns) {
         if (first_tuple_input_col->IsConstant()) {
-          changed_rec = SinkThroughTuples(impl, inout_views);
           goto done;
         } else {
           assert(!first_tuple_pred ||
@@ -369,20 +401,27 @@ bool Node<QueryMerge>::SinkThroughTuples(
         }
       }
 
+      // Tuple taking only constants; can't sink through it.
+      if (!first_tuple_pred) {
+        goto done;
+      }
+
       assert(first_tuple_pred);
       num_cols = first_tuple->columns.Size();
       num_pred_cols = first_tuple_pred->columns.Size();
+      if (num_pred_cols == 5u && first_tuple_pred->AsNegate()) {
+        assert(false);
+      }
       continue;
     }
 
-    auto next_tuple = inout_view->AsTuple();
+    next_tuple = inout_view->AsTuple();
 
     // The next tuple isn't allowed to have any constant inputs because we
     // can't feed those into a merge.
-    VIEW *next_tuple_pred = nullptr;
     for (auto next_tuple_input_col : next_tuple->input_columns) {
       if (next_tuple_input_col->IsConstant()) {
-        goto skip_to_next_tuple;
+        goto skip;
       } else {
         assert(!next_tuple_pred || next_tuple_pred == next_tuple_input_col->view);
         next_tuple_pred = next_tuple_input_col->view;
@@ -391,7 +430,7 @@ bool Node<QueryMerge>::SinkThroughTuples(
 
     // Predecessors have a different shape of their outputs.
     if (num_pred_cols != next_tuple_pred->columns.Size()) {
-      goto count_and_skip_to_next_tuple;
+      goto skip;
     }
 
     // Make sure that all columns of each tuple's predecessor have the same
@@ -400,7 +439,7 @@ bool Node<QueryMerge>::SinkThroughTuples(
       const auto first_pred_tuple_col = first_tuple_pred->columns[j];
       const auto next_pred_tuple_col = next_tuple_pred->columns[j];
       if (first_pred_tuple_col->type != next_pred_tuple_col->type) {
-        goto count_and_skip_to_next_tuple;
+        goto skip;
       }
     }
 
@@ -411,7 +450,7 @@ bool Node<QueryMerge>::SinkThroughTuples(
       COL * const next_tuple_col = next_tuple->input_columns[j];
 
       if (first_tuple_col->Index() != next_tuple_col->Index()) {
-        goto count_and_skip_to_next_tuple;
+        goto skip;
       }
     }
 
@@ -449,20 +488,12 @@ bool Node<QueryMerge>::SinkThroughTuples(
       sunk_merge->merged_views.AddUse(first_tuple_pred);
     }
 
-    inout_view->is_canonical = false;
+    next_tuple->is_canonical = false;
     inout_view = nullptr;
     sunk_merge->merged_views.AddUse(next_tuple_pred);
-    continue;
 
-  count_and_skip_to_next_tuple:
-    ++num_failed;
-  skip_to_next_tuple:
+  skip:
     continue;
-  }
-
-  // It's worth it to try recursion.
-  if (num_failed >= 2u) {
-    changed_rec = SinkThroughTuples(impl, inout_views);
   }
 
 done:
@@ -471,12 +502,16 @@ done:
   // recursively process stuff in the list and there's nothing more to do.
   if (!first_tuple) {
     return false;
+  }
+
+  // It's worth it to try recursion.
+  auto changed_rec = SinkThroughTuples(impl, inout_views);
 
   // We failed to match `first_tuple` against anything else. It could be that
   // `first_tuple` takes some constant inputs, or that its predecessor's
   // shape or its usage of its predecessor doesn't match anything else. We'll
   // assume we did a recursive call and return the result of that.
-  } else if (!merged_tuple) {
+  if (!merged_tuple) {
     inout_views[first_tuple_index] = first_tuple;
     return changed_rec;
 
@@ -485,10 +520,69 @@ done:
   } else {
     assert(merged_tuple != nullptr);
     inout_views[first_tuple_index] = merged_tuple;
-    sunk_merge->sink_penalty = sunk_merge->Depth();
+    merged_tuple->sink_penalty = merged_tuple->Depth() + 1u;
     return true;
   }
 }
+
+namespace {
+
+// Make a tuple that will take the place of a negation that will be merged
+// with other negations.
+static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
+//  const auto input_tuple_for_map = impl->tuples.Create();
+//  input_tuple_for_map->color = color;
+//  auto col_index = 0u;
+//
+//  for (auto j = 0u; j < num_input_cols; ++j) {
+//    const auto orig_input_col = map->input_columns[j];
+//    input_tuple_for_map->columns.Create(
+//        orig_input_col->var, input_tuple_for_map, orig_input_col->id,
+//        col_index++);
+//    input_tuple_for_map->input_columns.AddUse(orig_input_col);
+//  }
+//
+//  for (auto j = 0u; j < num_attached_cols; ++j) {
+//    const auto orig_attached_col = map->attached_columns[j];
+//    input_tuple_for_map->columns.Create(
+//        orig_attached_col->var, input_tuple_for_map, orig_attached_col->id,
+//        col_index++);
+//    input_tuple_for_map->input_columns.AddUse(orig_attached_col);
+//  }
+//
+//  return input_tuple_for_map;
+
+
+  TUPLE *tuple = impl->tuples.Create();
+
+  auto col_index = 0u;
+  for (auto in_col : map->input_columns) {
+    (void) in_col;
+    auto out_col = map->columns[col_index];
+    tuple->columns.Create(out_col->var, tuple, out_col->id, col_index++);
+  }
+  for (auto in_col : map->attached_columns) {
+    (void) in_col;
+    auto out_col = map->columns[col_index];
+    tuple->columns.Create(out_col->var, tuple, out_col->id, col_index++);
+  }
+
+  for (auto col : map->input_columns) {
+    tuple->input_columns.AddUse(col);
+  }
+
+  for (auto col : map->attached_columns) {
+    tuple->input_columns.AddUse(col);
+  }
+
+  map->CopyTestedConditionsTo(tuple);
+  map->CopyDifferentialAndGroupIdsTo(tuple);
+  assert(!map->sets_condition);
+
+  return tuple;
+}
+
+}  // namespace
 
 // Convert two or more MAPs into a single MAP that reads its data from
 // a union, where that union reads its data from the sources of the two
@@ -496,7 +590,6 @@ done:
 bool Node<QueryMerge>::SinkThroughMaps(
     QueryImpl *impl, std::vector<VIEW *> &inout_views) {
 
-  VIEW *first_map_pred = nullptr;
   MAP *first_map = nullptr;
   MAP *merged_map = nullptr;
   MERGE *sunk_merge = nullptr;
@@ -504,35 +597,6 @@ bool Node<QueryMerge>::SinkThroughMaps(
   unsigned num_cols = 0u;
   unsigned num_input_cols = 0u;
   unsigned num_attached_cols = 0u;
-  unsigned num_failed = 0u;
-
-  bool changed_rec = false;
-
-  // Create a TUPLE that will package up the inputs and attached columns to
-  // `map`.
-  auto proxy_inputs = [&] (MAP *map) -> TUPLE * {
-    const auto input_tuple_for_map = impl->tuples.Create();
-    input_tuple_for_map->color = color;
-    auto col_index = 0u;
-
-    for (auto j = 0u; j < num_input_cols; ++j) {
-      const auto orig_input_col = map->input_columns[j];
-      input_tuple_for_map->columns.Create(
-          orig_input_col->var, input_tuple_for_map, orig_input_col->id,
-          col_index++);
-      input_tuple_for_map->input_columns.AddUse(orig_input_col);
-    }
-
-    for (auto j = 0u; j < num_attached_cols; ++j) {
-      const auto orig_attached_col = map->attached_columns[j];
-      input_tuple_for_map->columns.Create(
-          orig_attached_col->var, input_tuple_for_map, orig_attached_col->id,
-          col_index++);
-      input_tuple_for_map->input_columns.AddUse(orig_attached_col);
-    }
-
-    return input_tuple_for_map;
-  };
 
   for (auto &inout_view : inout_views) {
     if (!inout_view) {
@@ -544,11 +608,9 @@ bool Node<QueryMerge>::SinkThroughMaps(
     } else if (!first_map) {
       first_map = inout_view->AsMap();
       inout_view = nullptr;
-      first_map_pred = VIEW::GetIncomingView(first_map->input_columns,
-                                             first_map->attached_columns);
       num_cols = first_map->columns.Size();
-      num_input_cols = first_map_pred->input_columns.Size();
-      num_attached_cols = first_map_pred->attached_columns.Size();
+      num_input_cols = first_map->input_columns.Size();
+      num_attached_cols = first_map->attached_columns.Size();
       continue;
     }
 
@@ -561,10 +623,26 @@ bool Node<QueryMerge>::SinkThroughMaps(
     if (first_map->functor != next_map->functor ||
         first_map->is_positive != next_map->is_positive ||
         first_map->num_free_params != next_map->num_free_params ||
+        num_cols != next_map->columns.Size() ||
         num_input_cols != next_map->input_columns.Size() ||
         num_attached_cols != next_map->attached_columns.Size()) {
-      ++num_failed;
       continue;
+    }
+
+    // Make sure the types of input columns match.
+    for (auto j = 0u; j < num_input_cols; ++j) {
+      if (first_map->input_columns[j]->type !=
+          next_map->input_columns[j]->type) {
+        continue;
+      }
+    }
+
+    // Make sure the types of attached columns match.
+    for (auto j = 0u; j < num_attached_cols; ++j) {
+      if (first_map->attached_columns[j]->type !=
+          next_map->attached_columns[j]->type) {
+        continue;
+      }
     }
 
     assert(ParsedDeclaration(first_map->functor).BindingPattern() ==
@@ -572,7 +650,7 @@ bool Node<QueryMerge>::SinkThroughMaps(
 
     if (!merged_map) {
       first_map->is_canonical = false;
-      const auto first_map_input_tuple = proxy_inputs(first_map);
+      const auto first_map_input_tuple = MakeSameShapedTuple(impl, first_map);
 
       // Create the sunken merge.
       sunk_merge = impl->merges.Create();
@@ -609,26 +687,25 @@ bool Node<QueryMerge>::SinkThroughMaps(
       sunk_merge->merged_views.AddUse(first_map_input_tuple);
     }
 
-    inout_view->is_canonical = false;
+    next_map->is_canonical = false;
     inout_view = nullptr;
-    sunk_merge->merged_views.AddUse(proxy_inputs(next_map));
-  }
-
-  // It's worth it to try recursion.
-  if (num_failed >= 2u) {
-    changed_rec = SinkThroughMaps(impl, inout_views);
+    sunk_merge->merged_views.AddUse(MakeSameShapedTuple(impl, next_map));
   }
 
   // We've bottomed out with a list of `nullptr` tuples, i.e. we've tried to
   // recursively process stuff in the list and there's nothing more to do.
   if (!first_map) {
     return false;
+  }
+
+  // It's worth it to try recursion.
+  auto changed_rec = SinkThroughMaps(impl, inout_views);
 
   // We failed to match `first_tuple` against anything else. It could be that
   // `first_tuple` takes some constant inputs, or that its predecessor's
   // shape or its usage of its predecessor doesn't match anything else. We'll
   // assume we did a recursive call and return the result of that.
-  } else if (!merged_map) {
+  if (!merged_map) {
     inout_views[first_map_index] = first_map;
     return changed_rec;
 
@@ -637,8 +714,164 @@ bool Node<QueryMerge>::SinkThroughMaps(
   } else {
     assert(merged_map != nullptr);
     inout_views[first_map_index] = merged_map;
-    sunk_merge->sink_penalty = sunk_merge->Depth();
+    merged_map->sink_penalty = merged_map->Depth() + 1u;
     return true;
+  }
+}
+
+namespace {
+
+static MERGE *MakeSameShapedMerge(QueryImpl *impl, NEGATION *negation) {
+  MERGE *merge = impl->merges.Create();
+  auto col_index = 0u;
+  for (auto col : negation->columns) {
+    merge->columns.Create(col->var, merge, col->id, col_index++);
+  }
+  return merge;
+}
+
+// Make a tuple that will take the place of a negation that will be merged
+// with other negations.
+static TUPLE *MakeSameShapedTuple(QueryImpl *impl, NEGATION *negation) {
+  TUPLE *tuple = impl->tuples.Create();
+  auto col_index = 0u;
+  for (auto col : negation->columns) {
+    tuple->columns.Create(col->var, tuple, col->id, col_index++);
+  }
+
+  for (auto col : negation->input_columns) {
+    tuple->input_columns.AddUse(col);
+  }
+
+  for (auto col : negation->attached_columns) {
+    tuple->input_columns.AddUse(col);
+  }
+
+  negation->CopyTestedConditionsTo(tuple);
+  negation->CopyDifferentialAndGroupIdsTo(tuple);
+  assert(!negation->sets_condition);
+
+  return tuple;
+}
+
+}  // namespace
+
+bool Node<QueryMerge>::SinkThroughNegations(
+    QueryImpl *impl, std::vector<VIEW *> &inout_views) {
+  auto first_negate_index = 0u;
+  NEGATION *first_negate = nullptr;
+  NEGATION *merged_negation = nullptr;
+  MERGE *input_merge = nullptr;
+  unsigned num_cols = 0u;
+  unsigned num_input_cols = 0u;
+  unsigned num_attached_cols = 0u;
+  VIEW *negated_view = nullptr;
+
+  EqualitySet eq;
+  for (auto &inout_view : inout_views) {
+    if (!inout_view) {
+      first_negate_index++;
+      continue;
+
+    } else if (!first_negate) {
+      first_negate = inout_view->AsNegate();
+      num_cols = first_negate->columns.Size();
+      num_input_cols = first_negate->input_columns.Size();
+      num_attached_cols = first_negate->attached_columns.Size();
+      negated_view = first_negate->negated_view.get();
+      inout_view = nullptr;
+      continue;
+    }
+
+    NEGATION * const next_negate = inout_view->AsNegate();
+    assert(next_negate != first_negate);
+
+    if(next_negate->columns.Size() != num_cols ||
+       next_negate->input_columns.Size() != num_input_cols ||
+       next_negate->attached_columns.Size() != num_attached_cols) {
+      continue;
+    }
+
+    // Make sure the types of input columns match.
+    for (auto j = 0u; j < num_input_cols; ++j) {
+      if (first_negate->input_columns[j]->type !=
+          next_negate->input_columns[j]->type) {
+        continue;
+      }
+    }
+
+    // Make sure the types of attached columns match.
+    for (auto j = 0u; j < num_attached_cols; ++j) {
+      if (first_negate->attached_columns[j]->type !=
+          next_negate->attached_columns[j]->type) {
+        continue;
+      }
+    }
+
+    eq.Clear();
+    if (!negated_view->Equals(eq, next_negate->negated_view.get())) {
+      // TODO(pag): Find a way to invent tag values.
+//      assert(false && "TODO: Tag invention for enabling more negation sinking?");
+      continue;
+    }
+
+    // Mark this view as no longer available because we'll be merging it.
+    inout_view = nullptr;
+    next_negate->is_canonical = false;
+
+    if (!merged_negation) {
+      first_negate->is_canonical = false;
+
+      input_merge = MakeSameShapedMerge(impl, first_negate);
+      input_merge->color = 0xff0000;
+      input_merge->merged_views.AddUse(MakeSameShapedTuple(impl, first_negate));
+
+      // Make the new negation.
+      merged_negation = impl->negations.Create();
+
+      // NOTE(pag): This code is not tested, so whatever triggers this can
+      //            act as a test :-)
+      merged_negation->color = 0xff;
+
+      merged_negation->negated_view.Emplace(merged_negation, negated_view);
+
+      auto col_index = 0u;
+      for (auto col : first_negate->columns) {
+        merged_negation->columns.Create(
+            col->var, merged_negation, col->id, col_index++);
+      }
+      col_index = 0u;
+      for (auto col : first_negate->input_columns) {
+        (void) col;
+        merged_negation->input_columns.AddUse(
+            input_merge->columns[col_index++]);
+      }
+      for (auto col : first_negate->attached_columns) {
+        (void) col;
+        merged_negation->attached_columns.AddUse(
+            input_merge->columns[col_index++]);
+      }
+    }
+
+    // Add the mergable negation into `input_merge`.
+    input_merge->merged_views.AddUse(MakeSameShapedTuple(impl, next_negate));
+  }
+
+  if (!first_negate) {
+    return false;
+  }
+
+  // Remove this view from availability.
+  auto changed_rec = SinkThroughNegations(impl, inout_views);
+
+  if (merged_negation) {
+    inout_views[first_negate_index] = merged_negation;
+    merged_negation->sink_penalty = merged_negation->Depth() + 1u;
+    return true;
+
+  } else {
+    inout_views[first_negate_index] = first_negate;
+    return changed_rec;
   }
 }
 

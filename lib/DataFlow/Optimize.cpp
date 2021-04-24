@@ -6,8 +6,6 @@
 
 #include "Query.h"
 
-#include <iostream>
-
 namespace hyde {
 namespace {
 
@@ -296,7 +294,6 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
        ++iter) {
     non_local_changes = false;
 
-
     // Running hash of which views produced non-local changes.
     uint64_t hash = 0u;
 
@@ -485,6 +482,14 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     opt.bottom_up = false;
     Canonicalize(opt, log);
 
+    for (auto merge : merges) {
+      if (!merge->is_dead) {
+        opt.can_sink_unions = true;
+        opt.can_remove_unused_columns = false;
+        merge->Canonicalize(this, opt, log);
+      }
+    }
+
     if (ShrinkConditions()) {
       Canonicalize(opt, log);
     }
@@ -492,6 +497,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     RemoveUnusedViews();
     changed = EliminateDeadFlows();
   }
+
   do_cse();  // Apply CSE to all canonical views.
 
   RemoveUnusedViews();

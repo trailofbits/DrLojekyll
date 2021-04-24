@@ -74,7 +74,7 @@ struct ClauseContext {
 
   // Spelling of a literal to its associated column.
   //
-  // NOTE(pag): This persists beyond the liftime of a clause.
+  // NOTE(pag): This persists beyond the lifetime of a clause.
   std::unordered_map<std::string, COL *> spelling_to_col;
 
   // Mapping of constants to its var column. E.g. if we have `A=1, B=1`, then
@@ -1350,6 +1350,21 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   }
 
+//  // Create a bunch of dummy constants, which are helpful for sinking MERGE
+//  // nodes through NEGATIONs.
+//  for (auto i = 0u; i < query->kMaxDefaultU8s; ++i) {
+//    std::stringstream ss;
+//    ss << "u8:" << i;
+//    const auto key = ss.str();
+//    auto &const_col = context.spelling_to_col[key];
+//    if (const_col) {
+//      query->default_u8_const_cols[i] = const_col;
+//      continue;
+//    }
+//
+//
+//  }
+
   for (auto assign : clause.Assignments()) {
     const auto var = assign.LHS();
     const auto literal = assign.RHS();
@@ -1780,7 +1795,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
-  //impl->Optimize(log);
+  impl->Optimize(log);
 
   if (num_errors != log.Size()) {
     return std::nullopt;
