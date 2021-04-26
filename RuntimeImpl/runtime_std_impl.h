@@ -250,6 +250,7 @@ StdSerialBuffer SerializeValues(const std::tuple<Ts...> &t,
   return value_data;
 }
 
+// A VectorRef is a vector that holds a collection of references to a tuple of types that can be Reified
 template <typename... Ts>
 class VectorRef<std_containers, std::tuple<Ts...>> {
  public:
@@ -298,11 +299,10 @@ class VectorRef<std_containers, std::tuple<Ts...>> {
 template <typename... Ts>
 class SerializedVector<std_containers, std::tuple<Ts...>> {
  public:
-  // Not sure if the following constructors are correct
+  // TODO(ekilmer): Not sure if the following constructor is correct
   SerializedVector(std::initializer_list<std::tuple<Ts...>> datas)
       : backing_store(SerializeValues(datas)) {}
 
-  // TODO: Copied from VectorRef
   auto size() const {
     return backing_store.size();
   }

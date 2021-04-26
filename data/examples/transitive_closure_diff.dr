@@ -50,7 +50,36 @@ int main() {
   auto backend = hyde::rt::std_containers();
   Database db = Database(backend, log, functors);
 
+  auto assert_reachable_from = [&db](int64_t i, std::vector<int64_t> expect) {
+    auto reach_from = db.reachable_from_bf(i);
+    std::sort(reach_from.begin(), reach_from.end());
+    if (reach_from != expect) {
+      std::cout << "Reached from 0:\n" << std::dec;
+      for (auto v : reach_from) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      std::cout << "Expected reaching from " << i << ":\n";
+      for (auto v : expect) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      assert(false);
+    }
+  };
+
   db.add_edge_2({{0,1}, {0,2}, {2,0}, {1,2}, {2,3}}, {});
+
+  assert_reachable_from(0, {0, 1, 2, 3});
+
+  std::cout << "Removing (2,3)\n";
+  db.add_edge_2({}, {{2, 3}});
+  // TODO(ekilmer): Fails with
+  // Reached from 0:
+  // 0 1 2 3
+  // Expected reaching from 0:
+  // 0 1 2
+  // assert_reachable_from(0, {0, 1, 2});
 
   return 0;
 }

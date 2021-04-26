@@ -1645,7 +1645,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
     auto sep = "";
     for (auto param : params) {
-      os << sep << "param_" << param.Index();
+      bool reify_param = param.Binding() == ParameterBinding::kFree;
+      os << sep << "param_" << param.Index() << (reify_param ? ".Reify()" : "");
       sep = ", ";
     }
     os << ")) {\n";
