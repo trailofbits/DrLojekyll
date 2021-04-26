@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <cassert>
+#include <cstring>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -112,7 +114,7 @@ struct SerialRef {
   // Fundamental types are returned by value
   const T ReifyFundamental() const {
     T tmp;
-    memcpy(&tmp, &(store.at(offset)), ElementSize());
+    std::memcpy(&tmp, &(store.at(offset)), ElementSize());
     return tmp;
   }
 
