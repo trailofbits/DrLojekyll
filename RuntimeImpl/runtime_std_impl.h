@@ -17,6 +17,9 @@
 namespace hyde {
 namespace rt {
 
+// DrLojekyll supported types
+using Bytes = std::vector<std::uint8_t>;
+
 // Tag type for usage of standard containers
 struct std_containers {};
 

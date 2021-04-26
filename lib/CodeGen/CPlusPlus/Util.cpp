@@ -54,7 +54,7 @@ const std::string_view TypeName(ParsedForeignType type) {
     return *code;
   }
   assert(false);
-  return "::hyde::r::Any";
+  return "::hyde::rt::Any";
 }
 
 // CPlusPlus representation of TypeKind

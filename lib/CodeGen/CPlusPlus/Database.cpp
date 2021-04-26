@@ -724,7 +724,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       if (var.DefiningRegion()) {
         if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
           os << os.Indent() << "auto reified_" << Var(os, var) << " = _resolve<"
-             << foreign_type->Name() << ">(" << Var(os, var) << ");\n";
+             << TypeName(*foreign_type) << ">(" << Var(os, var) << ");\n";
         }
       } else {
         switch (var.DefiningRole()) {
