@@ -650,14 +650,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       default: break;
     }
 
-    os << os.Indent() << Vector(os, region.Vector())
-       << ".push_back(std::make_tuple(";
+    os << os.Indent() << Vector(os, region.Vector()) << ".emplace_back(";
     auto sep = "";
     for (auto var : tuple_vars) {
       os << sep << Var(os, var) << ReifyVar(os, var);
       sep = ", ";
     }
-    os << "));\n";
+    os << ");\n";
   }
 
   void Visit(ProgramVectorClearRegion region) override {
@@ -1058,7 +1057,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       // Collect all product things into a vector.
       os << os.Indent() << "vec_" << region.Id();
-      sep = ".push_back(std::make_tuple(";
+      sep = ".emplace_back(";
       auto k = 0u;
       for (auto table : region.Tables()) {
         (void) table;
@@ -1067,7 +1066,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           sep = ", ";
         }
       }
-      os << "));\n";
+      os << ");\n";
 
       // De-dent everything.
       for (auto outer_vec : region.Tables()) {
@@ -1143,15 +1142,14 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
          << os.Indent() << "scan_index_" << filled_vec.Id() << " = offset_"
          << region.UniqueId() << ";\n";
 
-      os << os.Indent() << Vector(os, filled_vec)
-         << ".push_back(std::make_tuple(";
+      os << os.Indent() << Vector(os, filled_vec) << ".emplace_back(";
       sep = "";
       for (auto var : index.ValueColumns()) {
         os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id()
            << ".Reify()";
         sep = ", ";
       }
-      os << "));\n";
+      os << ");\n";
 
     // Full table scan.
     } else {
