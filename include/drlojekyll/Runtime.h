@@ -11,6 +11,17 @@
 namespace hyde {
 namespace rt {
 
+// Keep updated with TupleState in drlojekyll/ControlFlow/Program.h
+enum class TupleState : unsigned {
+  kPresent,
+  kAbsent,
+  kUnknown,
+  kAbsentOrUnknown
+};
+static constexpr auto kStateAbsent = 0u;
+static constexpr auto kStatePresent = 1u;
+static constexpr auto kStateUnknown = 2u;
+
 template <class T>
 struct TypeIdentity {
   using type = T;

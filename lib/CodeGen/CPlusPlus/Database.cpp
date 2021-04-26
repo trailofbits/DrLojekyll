@@ -754,12 +754,25 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     // Make sure to resolve to the correct reference of the foreign object.
     ResolveReferences(tuple_vars);
 
+    auto print_state_enum = [&](TupleState state) {
+      switch (state) {
+        case TupleState::kAbsent: os << "TupleState::kAbsent"; break;
+        case TupleState::kPresent: os << "TupleState::kPresent"; break;
+        case TupleState::kUnknown: os << "TupleState::kUnknown"; break;
+        case TupleState::kAbsentOrUnknown:
+          os << "TupleState::kAbsentOrUnknown";
+          break;
+      }
+    };
+
     os << os.Indent() << "bool did_transition_" << region.UniqueId() << " = "
-       << Table(os, region.Table()) << ".TransitionState(";
-    auto sep = "";
+       << Table(os, region.Table()) << ".TransitionState(::hyde::rt::";
+    print_state_enum(region.FromState());
+    os << ", ::hyde::rt::";
+    print_state_enum(region.ToState());
+    auto sep = ", ";
     for (auto var : tuple_vars) {
       os << sep << Var(os, var);
-      sep = ", ";
     }
     os << ");\n";
 

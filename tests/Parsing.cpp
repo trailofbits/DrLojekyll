@@ -77,8 +77,8 @@ static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
 
 // Set of examples that have a "main" and asserts that can be run for correctness checks
 static const std::unordered_set<std::string> kFunctionalCxxExample{
-    "transitive_closure.dr", "transitive_closure2.dr",
-    "transitive_closure3.dr"};
+    "transitive_closure.dr", "transitive_closure2.dr", "transitive_closure3.dr",
+    "transitive_closure_diff.dr"};
 
 // Test that the well-formed example files parse and build.
 TEST_P(PassingExamplesParsingSuite, Examples) {

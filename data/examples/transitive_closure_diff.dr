@@ -25,10 +25,12 @@ tc(From, To) : edge(From, To).
 #include <iostream>
 #include <unordered_set>
 
+using edge_set = std::unordered_set<std::tuple<int64_t, int64_t>, ::hyde::rt::hash<std::tuple<int64_t, int64_t>>>;
+
 class Log : public DatabaseLog {
 public:
-  std::unordered_set<std::tuple<int64_t, int64_t>, ::hyde::rt::hash<std::tuple<int64_t, int64_t>>> edges;
-  std::unordered_set<std::tuple<int64_t, int64_t>, ::hyde::rt::hash<std::tuple<int64_t, int64_t>>> removed_edges;
+  edge_set edges;
+  edge_set removed_edges;
 
   Log() : edges(), removed_edges() {}
 
@@ -46,9 +48,9 @@ public:
 
 int main() {
   auto functors = DatabaseFunctors();
-  auto log = Log();
+  auto messages = Log();
   auto backend = hyde::rt::std_containers();
-  Database db = Database(backend, log, functors);
+  Database db = Database(backend, messages, functors);
 
   auto assert_reachable_from = [&db](int64_t i, std::vector<int64_t> expect) {
     auto reach_from = db.reachable_from_bf(i);
@@ -74,12 +76,14 @@ int main() {
 
   std::cout << "Removing (2,3)\n";
   db.add_edge_2({}, {{2, 3}});
-  // TODO(ekilmer): Fails with
-  // Reached from 0:
-  // 0 1 2 3
-  // Expected reaching from 0:
-  // 0 1 2
-  // assert_reachable_from(0, {0, 1, 2});
+  assert_reachable_from(0, {0, 1, 2});
+
+  assert(messages.removed_edges.size() == 3);
+  assert(edge_set({{2,3}, {0,3}, {1,3}}) == messages.removed_edges);
+
+  std::cout << "Adding (2,3) again\n";
+  db.add_edge_2({{2, 3}}, {});
+  assert_reachable_from(0, {0, 1, 2, 3});
 
   return 0;
 }

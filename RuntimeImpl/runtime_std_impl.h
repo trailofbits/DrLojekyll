@@ -485,7 +485,8 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
     backing_store[key_data] = val;
   }
 
-  bool TransitionState(const Columns &...cols) {
+  bool TransitionState(TupleState from_state, TupleState to_state,
+                       const Columns &...cols) {
     StdSerialBuffer key_data;
     BufferedWriter key_writer(key_data);
 
@@ -502,19 +503,55 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
     auto state = prev_state & 3;
     auto present_bit = prev_state & 4;
 
-    if (state == 0 || state == 2) {
-      backing_store[key_data] = 1 | 4;
+    bool matches_from_state = false;
+    switch (from_state) {
+      case TupleState::kAbsent:
+        matches_from_state = state == kStateAbsent;
+        break;
+      case TupleState::kPresent:
+        matches_from_state = state == kStatePresent;
+        break;
+      case TupleState::kUnknown:
+        matches_from_state = state == kStateUnknown;
+        break;
+      case TupleState::kAbsentOrUnknown:
+        matches_from_state =
+            (state == kStateAbsent) || (state == kStateUnknown);
+    }
+
+    if (matches_from_state) {
+
+      // 4 is kPresentBit value
+      // See Python CodeGen for ProgramTransitionStateRegion
+      switch (to_state) {
+        case TupleState::kAbsent:
+          backing_store[key_data] = kStateAbsent | 4;
+          break;
+        case TupleState::kPresent:
+          backing_store[key_data] = kStatePresent | 4;
+          break;
+        case TupleState::kUnknown:
+          backing_store[key_data] = kStateUnknown | 4;
+          break;
+        case TupleState::kAbsentOrUnknown:
+          backing_store[key_data] = kStateUnknown | 4;
+          assert(false);  // Shouldn't be created.
+          break;
+      }
+
       if (!present_bit) {
         UpdateIndices(cols...);
       }
+
       return true;
     }
 
     return false;
   }
 
-  bool TransitionState(const SerialRef<StdSerialBuffer, Columns> &...cols) {
-    return TransitionState(cols.Reify()...);
+  bool TransitionState(TupleState from_state, TupleState to_state,
+                       const SerialRef<StdSerialBuffer, Columns> &...cols) {
+    return TransitionState(from_state, to_state, cols.Reify()...);
   }
 
   std::vector<SerializedTupleRef<std_containers, std::tuple<Columns...>>>
