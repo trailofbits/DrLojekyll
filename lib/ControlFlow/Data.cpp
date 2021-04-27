@@ -31,18 +31,24 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 TypeLoc Node<DataVariable>::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kConditionRefCount:
+    case VariableRole::kInitGuard:
     case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne: return TypeKind::kUnsigned64;
+    case VariableRole::kConstantOne:
+    case VariableRole::kWorkerId: return TypeKind::kUnsigned64;
+
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return TypeKind::kBoolean;
+
+    case VariableRole::kConstantTag: return TypeKind::kUnsigned16;
+
     case VariableRole::kConstant:
       if (query_const) {
-        return query_const->Literal().Type().Kind();
+        return query_const->Type();
       }
       [[clang::fallthrough]];
     default:
       if (query_column) {
-        return query_column->Type().Kind();
+        return query_column->Type();
       }
   }
   assert(false);
@@ -72,8 +78,7 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
       table(this, table_) {}
 
 // Get or create a table in the program.
-Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
-                                              Context &context,
+Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
                                               QueryView view) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -142,21 +147,39 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
   // without consulting whether or not the other sources feeding the union
   // might have provided the data.
   std::sort(model->table->views.begin(), model->table->views.end(),
-            [&context](QueryView a, QueryView b) -> bool {
+            [](QueryView a, QueryView b) -> bool {
+              if (!a.IsMerge() && !b.IsMerge()) {
+                return a.Depth() > b.Depth();
+
               // Order merges first.
-              if (a.IsMerge() && !b.IsMerge()) {
+              } else if (a.IsMerge() && !b.IsMerge()) {
                 return true;
 
               } else if (!a.IsMerge() && b.IsMerge()) {
                 return false;
+              }
+
+              auto a_inductive = a.InductionGroupId().has_value();
+              auto b_inductive = b.InductionGroupId().has_value();
+
+              // If both are inductive, then order by the deepest.
+              if (a_inductive && b_inductive) {
+                auto a_order = *(a.InductionDepth());
+                auto b_order = *(a.InductionDepth());
+
+                if (a_order != b_order) {
+                  assert(false);  // Shouldn't be possible.
+                  return a_order > b_order;
+
+                } else {
+                  return a.Depth() > b.Depth();
+                }
 
               // Order inductive merges first.
-              } else if (context.inductive_successors.count(a) &&
-                         !context.inductive_successors.count(b)) {
+              } else if (a_inductive && !b_inductive) {
                 return true;
 
-              } else if (!context.inductive_successors.count(a) &&
-                         context.inductive_successors.count(b)) {
+              } else if (!a_inductive && b_inductive) {
                 return false;
 
               // Order deepest first.
@@ -178,23 +201,25 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
     unsigned i = 0u;
     for (auto col : cols) {
       auto table_col = model->table->columns[i++];
-      auto name = col.Variable().Name();
-      switch (name.Lexeme()) {
-        case Lexeme::kIdentifierVariable:
-        case Lexeme::kIdentifierAtom: {
-          table_col->names.push_back(name);
-          std::sort(table_col->names.begin(), table_col->names.end(),
-                    [](Token a, Token b) {
-                      return a.IdentifierId() < b.IdentifierId();
-                    });
-          auto it = std::unique(table_col->names.begin(),
-                                table_col->names.end(), [](Token a, Token b) {
-                                  return a.IdentifierId() == b.IdentifierId();
-                                });
-          table_col->names.erase(it, table_col->names.end());
-          break;
+      if (auto var = col.Variable(); var.has_value()) {
+        auto name = var->Name();
+        switch (name.Lexeme()) {
+          case Lexeme::kIdentifierVariable:
+          case Lexeme::kIdentifierAtom: {
+            table_col->names.push_back(name);
+            std::sort(table_col->names.begin(), table_col->names.end(),
+                      [](Token a, Token b) {
+                        return a.IdentifierId() < b.IdentifierId();
+                      });
+            auto it = std::unique(table_col->names.begin(),
+                                  table_col->names.end(), [](Token a, Token b) {
+                                    return a.IdentifierId() == b.IdentifierId();
+                                  });
+            table_col->names.erase(it, table_col->names.end());
+            break;
+          }
+          default: break;
         }
-        default: break;
       }
     }
   }

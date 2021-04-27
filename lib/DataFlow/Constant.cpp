@@ -14,6 +14,16 @@ const char *Node<QueryConstant>::KindName(void) const noexcept {
   return "CONST";
 }
 
+Node<QueryTag>::~Node(void) {}
+
+Node<QueryTag> *Node<QueryTag>::AsTag(void) noexcept {
+  return this;
+}
+
+const char *Node<QueryTag>::KindName(void) const noexcept {
+  return "TAG";
+}
+
 // Convert all views having constant inputs to depend upon tuple nodes, so
 // that we have the invariant that the only type of view that can take all
 // constants is a tuple. This simplifies lots of stuff later.

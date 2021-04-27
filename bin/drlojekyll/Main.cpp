@@ -53,44 +53,50 @@ std::optional<fs::path> gMSGDir = std::nullopt;
 
 static int CompileModule(hyde::DisplayManager display_manager,
                          hyde::ErrorLog error_log, hyde::ParsedModule module) {
+  auto query_opt = Query::Build(module, error_log);
+  if (!query_opt) {
+    return EXIT_FAILURE;
+  }
+
   auto ret = EXIT_SUCCESS;
-  if (auto query_opt = Query::Build(module, error_log)) {
 
-    if (auto program_opt =
-            Program::Build(*query_opt, IRFormat::kIterative, error_log)) {
-      if (gIRStream) {
-        (*gIRStream) << *program_opt;
-        gIRStream->Flush();
-      }
+  if (gIRStream || gCxxCodeStream || gPyCodeStream || gPyInterfaceCodeStream) {
 
-      if (gCxxCodeStream) {
-        gCxxCodeStream->SetIndentSize(2u);
-        hyde::GenerateCxxDatabaseCode(*program_opt, *gCxxCodeStream);
-      }
+    try {
+      if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
+        if (gIRStream) {
+          (*gIRStream) << *program_opt;
+          gIRStream->Flush();
+        }
 
-      if (gPyCodeStream) {
-        gPyCodeStream->SetIndentSize(4u);
-        hyde::GeneratePythonDatabaseCode(*program_opt, *gPyCodeStream);
-      }
+        if (gCxxCodeStream) {
+          gCxxCodeStream->SetIndentSize(2u);
+          hyde::GenerateCxxDatabaseCode(*program_opt, *gCxxCodeStream);
+        }
 
-      if (gPyInterfaceCodeStream) {
-        gPyInterfaceCodeStream->SetIndentSize(4u);
-        hyde::GeneratePythonInterfaceCode(*program_opt,
-                                          *gPyInterfaceCodeStream);
+        if (gPyCodeStream) {
+          gPyCodeStream->SetIndentSize(4u);
+          hyde::GeneratePythonDatabaseCode(*program_opt, *gPyCodeStream);
+        }
+
+        if (gPyInterfaceCodeStream) {
+          gPyInterfaceCodeStream->SetIndentSize(4u);
+          hyde::GeneratePythonInterfaceCode(*program_opt,
+                                            *gPyInterfaceCodeStream);
+        }
+      } else {
+        ret = EXIT_FAILURE;
       }
-    } else {
-      ret = EXIT_FAILURE;
+    } catch (...) {
     }
+  }
 
-    // NOTE(pag): We do this later because if we produce the control-flow IR
-    //            then we break abstraction layers in order to annotate the
-    //            data flow IR with table IDs.
-    if (gDOTStream) {
-      (*gDOTStream) << *query_opt;
-      gDOTStream->Flush();
-    }
-  } else {
-    ret = EXIT_FAILURE;
+  // NOTE(pag): We do this later because if we produce the control-flow IR
+  //            then we break abstraction layers in order to annotate the
+  //            data flow IR with table IDs.
+  if (gDOTStream) {
+    (*gDOTStream) << *query_opt;
+    gDOTStream->Flush();
   }
 
   return ret;

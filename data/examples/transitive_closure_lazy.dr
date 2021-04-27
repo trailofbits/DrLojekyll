@@ -70,7 +70,6 @@ if __name__ == "__main__":
   print("Reaching to 4:", list(sorted(set(db.reaching_to_fb(4)))))
   print("Reaching to 8:", list(sorted(set(db.reaching_to_fb(8)))))
   print("Reaching to 9:", list(sorted(set(db.reaching_to_fb(9)))))
-  print("table_7", db.table_7)
   
   print()
   print("Unlocking reaching_to 2")

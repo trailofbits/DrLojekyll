@@ -1,8 +1,10 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
+#pragma once
+
 #include <drlojekyll/Parse/Parse.h>
 
-#pragma once
+#include <optional>
 
 namespace hyde {
 
@@ -13,6 +15,8 @@ OutputStream &operator<<(OutputStream &os, TypeLoc type);
 OutputStream &operator<<(OutputStream &os, ParsedLiteral val);
 OutputStream &operator<<(OutputStream &os, ParsedParameter var);
 OutputStream &operator<<(OutputStream &os, ParsedVariable var);
+OutputStream &operator<<(OutputStream &os,
+                         const std::optional<ParsedVariable> &var);
 OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl);
 OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl);
 OutputStream &operator<<(OutputStream &os, ParsedPredicate pred);

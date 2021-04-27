@@ -204,13 +204,17 @@ if __name__ == "__main__":
     # appear.
 
     passed = True
+    num_parsed = 0
     for t in db.type_name_f():
+        num_parsed += 1
+        print(t)
         if t not in good:
-            print(t)
+            print("Should not have found", t)
             passed = False
         else:
           good.remove(t)
 
+    assert 2 == num_parsed
     assert 0 == len(good)
     assert passed
 ```.

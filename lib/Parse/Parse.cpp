@@ -836,12 +836,14 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 }
 
 // Create a new variable in this context of this clause.
-ParsedVariable ParsedClause::CreateVariable(TypeLoc type) {
+ParsedVariable ParsedClause::CreateVariable(Token name, TypeLoc type) {
   assert(type.UnderlyingKind() != TypeKind::kInvalid);
   auto var = new Node<ParsedVariable>;
   var->type = type;
-  var->name =
-      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, SpellingRange());
+  var->name = name.IsValid()
+                  ? name
+                  : Token::Synthetic(Lexeme::kIdentifierUnnamedVariable,
+                                     SpellingRange());
   var->context = std::make_shared<parse::VariableContext>(impl, nullptr);
   impl->body_variables.emplace_back(var);
   return ParsedVariable(var);

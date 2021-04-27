@@ -36,7 +36,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, vec);
 
-    for (auto col : receives[0].Columns()) {
+    for (auto col : receive.Columns()) {
       const auto var = loop->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kVectorVariable);
       var->query_column = col;
@@ -65,7 +65,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, removal_vec);
 
-    for (auto col : receives[0].Columns()) {
+    for (auto col : receive.Columns()) {
       const auto var = loop->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kVectorVariable);
       var->query_column = col;
@@ -301,6 +301,12 @@ static void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
     }
   }
 
+  for (auto vec : written_by_primary) {
+    if (!replacements.count(vec)) {
+      replacements[vec] = primary_proc->vectors.Create(vec);
+    }
+  }
+
   for (auto vec : written_by_entry) {
     if (!replacements.count(vec)) {
       replacements[vec] = primary_proc->vectors.Create(vec);
@@ -400,7 +406,7 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
     iter->vector.Emplace(iter, vec);
 
     // Add in variable bindings.
-    std::vector<QueryColumn> available_cols;
+    std::vector<std::pair<QueryColumn, QueryColumn>> available_cols;
     for (auto col : insert.InputColumns()) {
       const auto var = iter->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kMessageOutput);
@@ -411,7 +417,7 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
       }
 
       iter->col_id_to_var[col.Id()] = var;
-      available_cols.push_back(col);
+      available_cols.emplace_back(col, col);
     }
 
     const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -492,11 +498,14 @@ static void FixupContainingProcedure(ProgramImpl *impl) {
 void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query) {
 
   assert(context.work_list.empty());
-  assert(context.view_to_work_item.empty());
+  assert(context.view_to_join_action.empty());
+  assert(context.view_to_product_action.empty());
+  assert(context.view_to_induction_action.empty());
 
   const auto proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kEntryDataFlowFunc);
 
+  context.entry_proc = proc;
   context.work_list.clear();
 
   //  context.view_to_work_item.clear();
@@ -506,6 +515,58 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query) {
   const auto proc_par = impl->parallel_regions.Create(proc);
 
   CreateDifferentialMessageVectors(impl, context, query, proc);
+
+  // First, build up the initialization code for all constants.
+  {
+    const auto uncond_inserts_var =
+        impl->global_vars.Create(impl->next_id++, VariableRole::kInitGuard);
+
+    // Test that we haven't yet done an initialization.
+    const auto test_and_set = impl->operation_regions.CreateDerived<TESTANDSET>(
+        proc_par, ProgramOperation::kTestAndAdd);
+    proc_par->AddRegion(test_and_set);
+
+    // `(cond += 1) == 1`.
+    test_and_set->accumulator.Emplace(test_and_set, uncond_inserts_var);
+    test_and_set->displacement.Emplace(test_and_set, impl->one);
+    test_and_set->comparator.Emplace(test_and_set, impl->one);
+
+    const auto cond_par = impl->parallel_regions.Create(test_and_set);
+    test_and_set->body.Emplace(test_and_set, cond_par);
+
+    // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
+    // as those are dataflow dependent.
+    //
+    // NOTE(pag): The dataflow builder ensures that TUPLEs are the only node types
+    //            that can take all constants.
+    for (auto tuple : impl->query.Tuples()) {
+      const QueryView view(tuple);
+      bool all_const = true;
+      for (auto in_col : tuple.InputColumns()) {
+        if (!in_col.IsConstant()) {
+          all_const = false;
+        }
+      }
+
+      if (!all_const) {
+        continue;
+      }
+
+      const auto let = impl->operation_regions.CreateDerived<LET>(cond_par);
+      cond_par->AddRegion(let);
+
+      // Add variable mappings.
+      view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
+                          std::optional<QueryColumn> out_col) {
+        const auto const_var = let->VariableFor(impl, in_col);
+        if (out_col) {
+          let->col_id_to_var[out_col->Id()] = const_var;
+        }
+      });
+
+      BuildEagerRegion(impl, view, view, context, let, nullptr);
+    }
+  }
 
   for (auto io : query.IOs()) {
     const auto par = impl->parallel_regions.Create(proc);

@@ -33,6 +33,20 @@ QueryImpl::~QueryImpl(void) {
     view->sets_condition.ClearWithoutErasure();
     view->predecessors.ClearWithoutErasure();
     view->successors.ClearWithoutErasure();
+
+    if (auto info = view->induction_info.get()) {
+      if (info->cyclic_views) {
+        if (info->cyclic_views->Owner() == view) {
+          info->cyclic_views->ClearWithoutErasure();
+        }
+        info->cyclic_views.reset();
+      }
+      info->inductive_successors.ClearWithoutErasure();
+      info->inductive_predecessors.ClearWithoutErasure();
+      info->noninductive_successors.ClearWithoutErasure();
+      info->noninductive_predecessors.ClearWithoutErasure();
+      view->induction_info.reset();
+    }
   });
 
   for (auto join : joins) {
@@ -96,6 +110,10 @@ bool QueryStream::IsConstant(void) const noexcept {
   return impl->AsConstant() != nullptr;
 }
 
+bool QueryStream::IsTag(void) const noexcept {
+  return impl->AsTag() != nullptr;
+}
+
 bool QueryStream::IsIO(void) const noexcept {
   return impl->AsIO() != nullptr;
 }
@@ -123,6 +141,13 @@ QueryView::QueryView(const QueryNegate &view) : QueryView(view.impl) {}
 QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
+
+
+// Returns the `nth` output column.
+QueryColumn QueryView::NthColumn(unsigned n) const noexcept {
+  assert(n < impl->columns.Size());
+  return QueryColumn(impl->columns[n]);
+}
 
 QueryView QueryView::From(const QuerySelect &view) noexcept {
   return reinterpret_cast<const QueryView &>(view);
@@ -239,9 +264,19 @@ bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
 }
 
-// Returns `true` if this node is used by a negation.
+// Returns `true` if this node is used by a `QueryNegate`.
 bool QueryView::IsUsedByNegation(void) const noexcept {
   return impl->is_used_by_negation;
+}
+
+// Returns `true` if this node is used by a `QueryJoin`.
+bool QueryView::IsUsedByJoin(void) const noexcept {
+  return impl->is_used_by_join;
+}
+
+// Returns `true` if this node is used by a `QueryMerge`.
+bool QueryView::IsUsedByMerge(void) const noexcept {
+  return impl->is_used_by_merge;
 }
 
 // Apply a callback `on_negate` to each negation using this view.
@@ -489,19 +524,6 @@ unsigned QueryColumn::NumUses(void) const noexcept {
   return impl->NumUses();
 }
 
-// Replace all uses of one column with another column.
-bool QueryColumn::ReplaceAllUsesWith(QueryColumn that) const noexcept {
-  if (impl == that.impl) {
-    return true;
-
-  } else if (impl->var.Type().Kind() != that.impl->var.Type().Kind()) {
-    return false;
-  }
-
-  impl->ReplaceAllUsesWith(that.impl);
-  return true;
-}
-
 // Apply a function to each user.
 void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
   impl->view->ForEachUse<VIEW>(
@@ -511,7 +533,7 @@ void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
       [&user_cb](VIEW *view, COL *) { user_cb(QueryView(view)); });
 }
 
-const ParsedVariable &QueryColumn::Variable(void) const noexcept {
+std::optional<ParsedVariable> QueryColumn::Variable(void) const noexcept {
   return impl->var;
 }
 
@@ -583,9 +605,35 @@ unsigned QueryCondition::Depth(void) const noexcept {
   return depth + 1u;
 }
 
-const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
-  return impl->literal;
+std::optional<ParsedLiteral> QueryConstant::Literal(void) const noexcept {
+  if (impl->AsTag()) {
+    return std::nullopt;
+  } else {
+    return impl->literal;
+  }
 }
+
+// What is the type of this constant?
+TypeLoc QueryConstant::Type(void) const noexcept {
+
+  // Tags are all 16 bit integers, as we usually don't need that many of
+  // them, but it's nice to be able to invent unique ones on-the-fly on
+  // an as-needed basis.
+  if (impl->AsTag()) {
+    return TypeKind::kUnsigned16;
+
+  } else {
+    assert(impl->literal.has_value());
+    return impl->literal->Type();
+  }
+}
+
+// Returns `true` if this is a tag value.
+bool QueryConstant::IsTag(void) const {
+  return impl->AsTag() != nullptr;
+}
+
+QueryConstant::QueryConstant(const QueryTag &tag) : QueryConstant(tag.impl) {}
 
 QueryConstant QueryConstant::From(const QueryStream &stream) {
   assert(stream.IsConstant());
@@ -596,6 +644,22 @@ QueryConstant QueryConstant::From(QueryColumn col) {
   assert(col.IsConstantOrConstantRef());
   return QueryConstant(
       col.impl->AsConstant()->view->AsSelect()->stream->AsConstant());
+}
+
+QueryTag QueryTag::From(const QueryConstant &const_val) {
+  assert(const_val.IsTag());
+  return QueryTag(const_val.impl->AsTag());
+}
+
+// What is the type of this constant? Tags are always unsigned, 16-bit
+// integers.
+TypeLoc QueryTag::Type(void) const noexcept {
+  return TypeKind::kUnsigned16;
+}
+
+// The value of this tag.
+uint16_t QueryTag::Value(void) const {
+  return impl->val;
 }
 
 QueryIO QueryIO::From(const QueryStream &stream) {
@@ -1118,6 +1182,90 @@ void QueryMerge::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   }
 }
 
+bool QueryMerge::CanReceiveDeletions(void) const {
+  return impl->can_receive_deletions;
+}
+
+bool QueryMerge::CanProduceDeletions(void) const {
+  return impl->can_produce_deletions;
+}
+
+// A unique integer that labels all UNIONs in the same induction.
+std::optional<unsigned> QueryView::InductionGroupId(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return info->merge_set_id;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// A total ordering on the "depth" of inductions. Two inductions at the same
+// depth can be processed in parallel.
+std::optional<unsigned> QueryView::InductionDepth(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return info->merge_depth;
+  } else {
+    return std::nullopt;
+  }
+}
+
+UsedNodeRange<QueryView> QueryView::InductiveSuccessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->inductive_successors.begin()),
+            UsedNodeIterator<QueryView>(info->inductive_successors.end())};
+  } else {
+    return {};
+  }
+}
+
+UsedNodeRange<QueryView> QueryView::InductivePredecessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->inductive_predecessors.begin()),
+            UsedNodeIterator<QueryView>(info->inductive_predecessors.end())};
+  } else {
+    return {};
+  }
+}
+
+UsedNodeRange<QueryView> QueryView::NonInductiveSuccessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->noninductive_successors.begin()),
+            UsedNodeIterator<QueryView>(info->noninductive_successors.end())};
+  } else {
+    return {};
+  }
+}
+
+UsedNodeRange<QueryView> QueryView::NonInductivePredecessors(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {
+        UsedNodeIterator<QueryView>(info->noninductive_predecessors.begin()),
+        UsedNodeIterator<QueryView>(info->noninductive_predecessors.end())};
+  } else {
+    return {};
+  }
+}
+
+// All UNIONs, including this one, in the same inductive set.
+UsedNodeRange<QueryView> QueryView::InductiveSet(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->cyclic_views->begin()),
+            UsedNodeIterator<QueryView>(info->cyclic_views->end())};
+  } else {
+    return {};
+  }
+}
+
+// Can this view reach back to itself without first going through another
+// inductive union?
+bool QueryView::IsOwnIndirectInductiveSuccessor(void) const {
+  if (auto info = impl->induction_info.get()) {
+    return info->can_reach_self_not_through_another_induction;
+  } else {
+    return false;
+  }
+}
+
 ComparisonOperator QueryCompare::Operator(void) const {
   return impl->op;
 }
@@ -1264,8 +1412,8 @@ QueryNegate::InputCopiedColumns(void) const noexcept {
 
 // Incoming view that represents a flow of data between the relation and
 // the negation.
-QueryTuple QueryNegate::NegatedView(void) const noexcept {
-  return QueryTuple(impl->negated_view->AsTuple());
+QueryView QueryNegate::NegatedView(void) const noexcept {
+  return QueryView(impl->negated_view.get());
 }
 
 OutputStream &QueryNegate::DebugString(OutputStream &os) const noexcept {
@@ -1551,6 +1699,11 @@ DefinedNodeRange<QueryRelation> Query::Relations(void) const {
 DefinedNodeRange<QueryConstant> Query::Constants(void) const {
   return {DefinedNodeIterator<QueryConstant>(impl->constants.begin()),
           DefinedNodeIterator<QueryConstant>(impl->constants.end())};
+}
+
+DefinedNodeRange<QueryTag> Query::Tags(void) const {
+  return {DefinedNodeIterator<QueryTag>(impl->tags.begin()),
+          DefinedNodeIterator<QueryTag>(impl->tags.end())};
 }
 
 DefinedNodeRange<QueryIO> Query::IOs(void) const {

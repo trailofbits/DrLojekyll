@@ -239,89 +239,28 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "ProgramCallRegion");
 
-    auto param_index = 0u;
     const auto id = region.Id();
 
     const auto called_proc = region.CalledProcedure();
-    const auto vec_params = called_proc.VectorParameters();
-    const auto var_params = called_proc.VariableParameters();
-
-    // Create the by-reference vector parameters, if any.
-    for (auto vec : region.VectorArguments()) {
-      const auto param = vec_params[param_index];
-      if (param.Kind() == VectorKind::kInputOutputParameter) {
-        os << os.Indent() << "auto &param_" << region.Id() << '_' << param_index
-           << " = " << Vector(os, vec) << ";\n";
-      }
-      ++param_index;
-    }
-
-    const auto num_vec_params = param_index;
-
-    // Create the by-reference variable parameters, if any.
-    for (auto var : region.VariableArguments()) {
-      const auto param = var_params[param_index - num_vec_params];
-      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << os.Indent() << "auto &param_" << region.Id() << '_' << param_index
-           << " = " << Var(os, var) << ";\n";
-      }
-      ++param_index;
-    }
 
     os << os.Indent() << "auto ret_" << id << " = "
        << Procedure(os, called_proc) << "(";
 
     auto sep = "";
-    param_index = 0u;
 
     // Pass in the vector parameters, or the references to the vectors.
     for (auto vec : region.VectorArguments()) {
-      const auto param = vec_params[param_index];
-      if (param.Kind() == VectorKind::kInputOutputParameter) {
-        os << sep << "param_" << region.Id() << '_' << param_index;
-      } else {
-        os << sep << Vector(os, vec);
-      }
-
+      os << sep << Vector(os, vec);
       sep = ", ";
-      ++param_index;
     }
 
     // Pass in the variable parameters, or the references to the variables.
     for (auto var : region.VariableArguments()) {
-      const auto param = var_params[param_index - num_vec_params];
-      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << sep << "param_" << region.Id() << '_' << param_index;
-      } else {
-        os << sep << Var(os, var) << ReifyVar(os, var);
-      }
+      os << sep << Var(os, var) << ReifyVar(os, var);
       sep = ", ";
-      ++param_index;
     }
 
     os << ");\n";
-
-    param_index = 0u;
-
-    // Pull out the updated version of the referenced vectors.
-    for (auto vec : region.VectorArguments()) {
-      const auto param = vec_params[param_index];
-      if (param.Kind() == VectorKind::kInputOutputParameter) {
-        os << os.Indent() << Vector(os, vec) << " = param_" << region.Id()
-           << '_' << param_index << ";\n";
-      }
-      ++param_index;
-    }
-
-    // Pull out the updated version of the referenced variables.
-    for (auto var : region.VariableArguments()) {
-      const auto param = var_params[param_index - num_vec_params];
-      if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-        os << os.Indent() << Var(os, var) << " = param_" << region.Id() << '_'
-           << param_index << ";\n";
-      }
-      ++param_index;
-    }
 
     if (auto true_body = region.BodyIfTrue(); true_body) {
       os << os.Indent() << "if (ret_" << id << ") {\n";
@@ -522,7 +461,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
 
     if (auto empty_body = region.BodyIfEmpty(); empty_body) {
-      os << os.Indent() << "if (!num_results" << id << ") {\n";
+      os << os.Indent() << "if (!num_results_" << id << ") {\n";
       os.PushIndent();
       empty_body->Accept(*this);
       os.PopIndent();
@@ -540,24 +479,26 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Fixpoint
     os << Comment(os, region, "Induction Fixpoint Loop Region");
-    os << os.Indent() << "while (";
-    auto sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".size()";
-      sep = " || ";
-    }
-    os << ") {\n";
+    os << os.Indent() << "bool changed_" << region.Id() << " = true;\n";
+    os << os.Indent() << "while (changed_" << region.Id() << ") {\n";
 
     os.PushIndent();
     region.FixpointLoop().Accept(*this);
+
+    // Update the entry condition on the back-edge.
+    os << os.Indent() << "changed_" << region.Id() << " = ";
+    auto sep = "";
+    for (auto vec : region.Vectors()) {
+      os << sep << Vector(os, vec) << ".size() != 0";
+      sep = " || ";
+    }
+    os << ";\n";
+
     os.PopIndent();
     os << os.Indent() << "}\n";
 
     // Output
     if (auto output = region.Output(); output) {
-      for (auto vec : region.Vectors()) {
-        os << os.Indent() << VectorIndex(os, vec) << " = 0;\n";
-      }
       os << Comment(os, region, "Induction Output Region");
       output->Accept(*this);
     }
@@ -676,10 +617,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, region, "ProgramVectorLoopRegion");
     auto vec = region.Vector();
-    if (region.Usage() != VectorUsage::kInductionVector) {
-      os << os.Indent() << VectorIndex(os, vec) << " = 0;\n";
-    }
-    os << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
+    os << os.Indent() << VectorIndex(os, vec) << " = 0;\n"
+       << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
        << Vector(os, vec) << ".size()) {\n";
     os.PushIndent();
 
@@ -729,11 +668,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       } else {
         switch (var.DefiningRole()) {
           case VariableRole::kConditionRefCount:
+          case VariableRole::kInitGuard:
           case VariableRole::kConstantZero:
           case VariableRole::kConstantOne:
           case VariableRole::kConstantFalse:
           case VariableRole::kConstantTrue: assert(false); break;
           case VariableRole::kConstant:
+          case VariableRole::kConstantTag:
           default: break;
         }
       }
@@ -778,8 +719,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "if (did_transition_" << region.UniqueId() << ") {\n";
     os.PushIndent();
 
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
+    if (auto succeeded_body = region.BodyIfSucceeded(); succeeded_body) {
+      succeeded_body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}\n";
     }
 
     os.PopIndent();
@@ -836,7 +779,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
+    os << os.Indent() << VectorIndex(os, vec) << " = 0;\n"
+       << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
        << Vector(os, vec) << ".size()) {\n";
     os.PushIndent();
 
@@ -1154,11 +1098,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     // Full table scan.
     } else {
       assert(input_vars.empty());
-      os << os.Indent() << "for (scan_tuple_" << filled_vec.Id() << " : "
+      os << os.Indent() << "for (auto scan_tuple_" << filled_vec.Id() << " : "
          << Table(os, region.Table()) << ") {\n";
       os.PushIndent();
 
-      // TODO(ekilmer): This doesn't work
+      // TODO(ekilmer): This probably doesn't work
       os << os.Indent() << Vector(os, filled_vec) << ".push_back(scan_tuple_"
          << filled_vec.Id() << ");\n";
     }
@@ -1193,13 +1137,30 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
 
     os.PushIndent();
+    if (auto true_body = region.BodyIfTrue(); true_body) {
+      true_body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}\n";
+    }
+    os.PopIndent();
+    os << os.Indent() << "} else {\n";
+    os.PushIndent();
+    if (auto false_body = region.BodyIfFalse(); false_body) {
+      false_body->Accept(*this);
+    } else {
+      os << os.Indent() << "{}\n";
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+  }
+
+  void Visit(ProgramWorkerIdRegion region) override {
+    os << Comment(os, region, "Program WorkerId Region");
     if (auto body = region.Body(); body) {
       body->Accept(*this);
     } else {
       os << os.Indent() << "{}";
     }
-    os.PopIndent();
-    os << os.Indent() << "}\n";
   }
 
  private:
@@ -1386,19 +1347,13 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   const auto vec_params = proc.VectorParameters();
   const auto var_params = proc.VariableParameters();
-  auto param_index = 0u;
 
   // First, declare all vector parameters.
   auto sep = "";
   for (auto vec : vec_params) {
     os << sep;
     auto vec_kind = vec.Kind();
-    if (vec_kind != VectorKind::kInputOutputParameter &&
-        vec_kind != VectorKind::kInductionCycles &&
-        vec_kind != VectorKind::kInductionOutputs &&
-        vec_kind != VectorKind::kJoinPivots &&
-        vec_kind != VectorKind::kProductInput &&
-        vec_kind != VectorKind::kMessageOutputs) {
+    if (vec_kind == VectorKind::kParameter) {
       os << "const ";
     }
     if (proc.Kind() == ProcedureKind::kMessageHandler ||
@@ -1415,26 +1370,13 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     }
     os << ">> & ";
 
-    // Check if by reference
-    if (vec.Kind() == VectorKind::kInputOutputParameter) {
-      os << "param_" << param_index;
-    } else {
-      os << Vector(os, vec);
-    }
-    ++param_index;
+    os << Vector(os, vec);
     sep = ", ";
   }
 
   // Then, declare all variable parameters.
   for (auto param : var_params) {
-    if (param.DefiningRole() == VariableRole::kInputOutputParameter) {
-      os << sep << "::hyde::rt::SerializedVector<StorageT, std::tuple<"
-         << TypeName(module, param.Type()) << ">>"
-         << "param_" << param_index;
-    } else {
-      os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
-    }
-    ++param_index;
+    os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
     sep = ", ";
   }
 
@@ -1445,17 +1387,6 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
      << os.Indent() << "int present_bit = 0;\n"
      << os.Indent() << "bool ret = false;\n"
      << os.Indent() << "bool found = false;\n";
-
-  param_index = 0u;
-
-  // Set up the referenced vectors.
-  for (auto vec : vec_params) {
-    if (vec.Kind() == VectorKind::kInputOutputParameter) {
-      os << os.Indent() << "auto &" << Vector(os, vec) << " = param_"
-         << param_index << ";\n";
-    }
-    ++param_index;
-  }
 
   // Every vector, including parameter vectors, has a variable tracking the
   // current index into that vector.
@@ -1473,7 +1404,8 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    if (proc.Kind() == ProcedureKind::kMessageHandler) {
+    if (proc.Kind() == ProcedureKind::kMessageHandler ||
+        proc.Kind() == ProcedureKind::kInitializer) {
       os << os.Indent() << "::hyde::rt::SerializedVector<StorageT, std::tuple<";
     } else {
       os << os.Indent() << "std::vector<std::tuple<";
@@ -1495,6 +1427,12 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // most trivial procedure body contains a `return False`.
   CPPCodeGenVisitor visitor(os, module);
   proc.Body().Accept(visitor);
+
+  // From a codegen perspective, we guarantee that all paths through all
+  // functions return, but mypy isn't always smart enough, mostly because we
+  // have our returns inside of conditionals that mypy doesn't know are
+  // complete.
+  os << os.Indent() << "assert(false);\n" << os.Indent() << "return false;\n";
 
   os.PopIndent();
   os << os.Indent() << "}\n\n";

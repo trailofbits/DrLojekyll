@@ -20,6 +20,15 @@ OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os,
+                         const std::optional<ParsedVariable> &var) {
+  if (var.has_value()) {
+    return os << *var;
+  } else {
+    return os << "_MissingVar";
+  }
+}
+
 OutputStream &operator<<(OutputStream &os, TypeKind type) {
   os << Spelling(type);
   return os;

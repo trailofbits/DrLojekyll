@@ -63,11 +63,17 @@ def lexeme_of_token_bf(tok: Tuple[str, int]):
 
 def build_sized_array_type_bbbbf(base_type, lsquare, size, rsquare):
     print("build_sized_array_type_bbbbf({}, {}, {}, {})".format(base_type, lsquare, size, rsquare))
-    return (base_type, lsquare, size, rsquare)
+    x = list(base_type)
+    x.append(lsquare)
+    x.extend(size)
+    x.append(rsquare)
+    return tuple(x)
 
 def build_empty_array_type_bbbf(base_type, lsquare, rsquare):
     print("build_empty_array_type_bbbf({}, {}, {})".format(base_type, lsquare, rsquare))
-    return (base_type, lsquare, rsquare)
+    x = list(base_type)
+    x.extend([lsquare, rsquare])
+    return tuple(x)
 
 if __name__ == "__main__":
     functors = DatabaseFunctors()
@@ -78,6 +84,16 @@ if __name__ == "__main__":
         db.next_token_2([(tokens[i-1], tokens[i])])
     db.expression_starting_at_2([(tokens[5], (tokens[5],))])
     db.other_type_1([(tokens[0],), (tokens[3],)])
-    for t in db.type_name_f():
-        print(t)
+    
+    found_types = []
+    for tuples in db.type_name_f():
+        found_type = "".join(s for s, i in tuples)
+        print(found_type)
+        found_types.append(found_type)
+
+    assert "bool" in found_types
+    assert "uint" in found_types
+    assert "bool[]" in found_types
+    assert "uint[10]" in found_types
+    assert len(found_types) == 4
 ```.

@@ -739,22 +739,22 @@ void ParserImpl::ParseLocalExport(
         }
       case 8:
         if (Lexeme::kPragmaPerfInline == lexeme) {
-          if (local->inline_attribute.IsValid()) {
 
-            // Found more than one @inline attributes
+          // Found more than one @inline attributes
+          if (local->inline_attribute.IsValid()) {
             context->error_log.Append(scope_range, tok_range)
                 << "Unexpected second '@inline' pragma on " << introducer_tok
                 << " '" << local->name << "'";
             state = 10;  // Ignore further errors, but add the local in.
             continue;
 
+          // Found an @inline attribute.
           } else {
-
-            // Found an @inline attribute
             local->inline_attribute = tok;
             state = 8;
             continue;
           }
+
         } else if (Lexeme::kPuncPeriod == lexeme) {
           local->last_tok = tok;
           state = 9;

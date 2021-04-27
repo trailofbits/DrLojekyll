@@ -5,139 +5,81 @@
 namespace hyde {
 
 // Build a top-down checker on a select.
-void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                               QuerySelect select,
-                               std::vector<QueryColumn> &view_cols,
-                               TABLE *already_checked) {
+REGION *BuildTopDownSelectChecker(ProgramImpl *impl, Context &context,
+                                  REGION *proc, QuerySelect select,
+                                  std::vector<QueryColumn> &view_cols,
+                                  TABLE *already_checked) {
 
   const QueryView view(select);
-  const auto pred_views = view.Predecessors();
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
 
-  // The base case is that we get to a SELECT from a stream. We treat
-  // data received as ephemeral, and so there is no way to actually check
-  // if the tuple exists, and so we treat it as not existing.
-  if (!model->table) {
-    assert(select.IsStream());
-    proc->body.Emplace(proc, BuildStateCheckCaseReturnFalse(impl, proc));
-    return;
-  }
+  // Organize the checking so that we check the non-differential predecessors
+  // first, then the differential predecessors.
+  const auto seq = impl->series_regions.Create(proc);
+  const auto par_normal = impl->parallel_regions.Create(seq);
+  const auto par_diff = impl->parallel_regions.Create(seq);
+  seq->AddRegion(par_normal);
+  seq->AddRegion(par_diff);
 
-  TABLE *table_to_update = model->table;
+  // The base case is that we get to a SELECT from a stream. In this case,
+  // there are no predecessors, and so we'll fall through to this
+  // `return-false`. We treat data received as ephemeral, and so there is no
+  // way to actually check if the tuple exists, and so we treat it as not
+  // existing. If this is a differential stream, then we will have removed
+  // the data from the corresponding table, and so we must be in a situation
+  // where we've already checked in the table and the data is gone, hence we
+  // can only return false.
+  seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
+
+  auto do_rec_check = [&](QueryView pred_view, PARALLEL *parent) -> REGION * {
+    return CallTopDownChecker(
+        impl, context, parent, view, view_cols, pred_view, already_checked,
+        [=](REGION *parent_if_true) -> REGION * {
+          return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
+        },
+        [](REGION *) -> REGION * { return nullptr; });
+  };
 
   // The predecessors of a `SELECT` are inserts. `SELECT`s don't have input
-  // nodes, and `INSERT`s don't have output nodes. The top-down checkers for
-  auto call_pred = [&](REGION *parent) -> REGION * {
-    assert(pred_views.size() == 1u);
-    assert(pred_views[0].IsInsert());
-
-    const auto insert = QueryInsert::From(pred_views[0]);
+  // nodes, and `INSERT`s don't have output nodes. The data flow guarantees
+  // that every `INSERT` is preceded by a `TUPLE` with matching columns. So
+  // to check a `SELECT`, we go and find these preceding `TUPLE`s and check
+  // them.
+  for (auto pred_view : view.Predecessors()) {
+    assert(pred_view.IsInsert());
+    const auto insert = QueryInsert::From(pred_view);
+    const auto insert_pred = pred_view.Predecessors()[0];
+    assert(insert_pred.IsTuple());
 
     std::vector<QueryColumn> insert_cols;
 
     for (auto col : select.Columns()) {
       const QueryColumn in_col = insert.InputColumns()[*(col.Index())];
+      assert(QueryView::Containing(in_col) == insert_pred);
+      assert(*(in_col.Index()) == *(col.Index()));
       insert_cols.push_back(in_col);
-      parent->col_id_to_var[in_col.Id()] = parent->VariableFor(impl, col);
+      proc->col_id_to_var[in_col.Id()] = proc->VariableFor(impl, col);
     }
 
-    const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-        impl, context, parent, insert, insert_cols, table_to_update, insert,
-        already_checked);
+    // If the predecessor can produce deletions, then check it in `par_diff`.
+    if (insert_pred.CanReceiveDeletions()) {
+      const auto rec_check = do_rec_check(pred_view, par_diff);
+      par_diff->AddRegion(rec_check);
 
-    COMMENT(check->comment = __FILE__ ": BuildTopDownSelectChecker::call_pred";)
+      COMMENT(rec_check->comment = __FILE__
+              ": BuildTopDownSelectChecker call differential pred";)
 
-    return check;
-  };
+    // If the predecessor can't produce deletions, then check it in
+    // `par_normal`.
+    } else {
+      const auto rec_check = do_rec_check(pred_view, par_normal);
+      par_normal->AddRegion(rec_check);
 
-  // Mark the tuple as absent and return false.
-  auto remove = [&](REGION *parent) -> REGION * {
-    const auto seq = impl->series_regions.Create(parent);
-    seq->AddRegion(BuildChangeState(impl, model->table, seq, view.Columns(),
-                                    TupleState::kUnknown, TupleState::kAbsent));
-    seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
-    return seq;
-  };
+      COMMENT(rec_check->comment =
+                  __FILE__ ": BuildTopDownSelectChecker call normal pred";)
+    }
+  }
 
-  const auto region = BuildMaybeScanPartial(
-      impl, view, view_cols, model->table, proc,
-      [&](REGION *parent, bool in_loop) -> REGION * {
-        if (already_checked != model->table) {
-          already_checked = model->table;
-
-          auto continue_or_return = in_loop ? BuildStateCheckCaseNothing
-                                            : BuildStateCheckCaseReturnFalse;
-
-          if (view.CanProduceDeletions()) {
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue, continue_or_return,
-                [&](ProgramImpl *, REGION *parent) -> REGION * {
-                  // No predecessors, and the tuple is marked as unknown, so
-                  // change it to absent and return `false` to our caller.
-                  if (pred_views.empty()) {
-                    return remove(parent);
-
-                  // Predecessors, so mark the tuple as absent, then try to
-                  // prove it in terms of its own absence.
-                  } else {
-                    return BuildTopDownTryMarkAbsent(
-                        impl, model->table, parent, view.Columns(),
-                        [&](PARALLEL *par) {
-                          call_pred(par)->ExecuteAlongside(impl, par);
-                        });
-                  }
-                });
-          } else {
-            return BuildTopDownCheckerStateCheck(
-                impl, parent, model->table, view.Columns(),
-                BuildStateCheckCaseReturnTrue, continue_or_return,
-                continue_or_return);
-          }
-
-        // No predecessors, not our job to change states; return true to the
-        // caller so they can change states.
-        } else if (pred_views.empty()) {
-
-          // We're in a scan, i.e. we've gone and selected a tuple and found it.
-          //
-          // TODO(pag): This should imply that `already_checked` doesn't match
-          //            the parent...
-          if (in_loop) {
-
-            // TODO(pag): Finding it in a scan with no predecessors ought to
-            //            mean that there is no way for that data to be deleted.
-            //            However, it could be that the SELECT has some
-            //            conditions which would make it behave differentially,
-            //            so complain if we see that.
-            assert(view.PositiveConditions().empty());
-            assert(view.NegativeConditions().empty());
-
-            return BuildStateCheckCaseReturnTrue(impl, parent);
-
-          // We aren't actually in a scan, thus we were called with all the
-          // data we need. The predecessor did the check, and presumably called
-          // us because the data wasn't available, and our model is the same
-          // as the predecessor's, so we have nothing to add, so return false.
-          //
-          // NOTE(pag): This generally comes up for `select.IsStream()`, i.e.
-          //            a RECEIVE of a message.
-          } else {
-            auto ret = BuildStateCheckCaseReturnFalse(impl, parent);
-            COMMENT(
-                ret->comment = __FILE__
-                ": BuildTopDownSelectChecker, not in scan, no preds, already checked";)
-            return ret;
-          }
-
-        // There's a predecessor, and it will do the state changing
-        } else {
-          table_to_update = nullptr;
-          return call_pred(parent);
-        }
-      });
-
-  proc->body.Emplace(proc, region);
+  return seq;
 }
 
 }  // namespace hyde

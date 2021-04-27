@@ -6,78 +6,39 @@ namespace hyde {
 
 // Builds an initialization function which does any work that depends purely
 // on constants.
-void BuildInitProcedure(ProgramImpl *impl, Context &context) {
+void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query) {
 
   // Make sure that the first procedure is the init procedure.
-  assert(impl->procedure_regions.Empty());
-  const auto init_proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kInitializer);
+  const auto init_proc = context.init_proc;
+  assert(init_proc != nullptr);
+  assert(!init_proc->body.get());
+
+  const auto entry_proc = context.entry_proc;
+  assert(entry_proc != nullptr);
 
   const auto seq = impl->series_regions.Create(init_proc);
   init_proc->body.Emplace(init_proc, seq);
 
-  const auto uncond_inserts_var = impl->global_vars.Create(
-      impl->next_id++, VariableRole::kConditionRefCount);
+  auto call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, init_proc, entry_proc);
+  init_proc->body.Emplace(init_proc, call);
 
-  // Test that we haven't yet done an initialization.
-  const auto test_and_set = impl->operation_regions.CreateDerived<ASSERT>(
-      seq, ProgramOperation::kTestAndAdd);
-  seq->regions.AddUse(test_and_set);
-
-  // `(cond += 1) == 1`.
-  test_and_set->accumulator.Emplace(test_and_set, uncond_inserts_var);
-  test_and_set->displacement.Emplace(test_and_set, impl->one);
-  test_and_set->comparator.Emplace(test_and_set, impl->one);
-
-  const auto cond_par = impl->parallel_regions.Create(test_and_set);
-  test_and_set->body.Emplace(test_and_set, cond_par);
-
-  // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
-  // as those are dataflow dependent.
-  //
-  // NOTE(pag): The dataflow builder ensures that TUPLEs are the only node types
-  //            that can take all constants.
-  for (auto tuple : impl->query.Tuples()) {
-    const QueryView view(tuple);
-    bool all_const = true;
-    for (auto in_col : tuple.InputColumns()) {
-      if (!in_col.IsConstant()) {
-        all_const = false;
-      }
-    }
-
-    if (!all_const) {
+  for (auto other_io : query.IOs()) {
+    const auto receives = other_io.Receives();
+    if (receives.empty()) {
       continue;
     }
 
-    const auto let = impl->operation_regions.CreateDerived<LET>(cond_par);
-    cond_par->AddRegion(let);
-
-    // Add variable mappings.
-    view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
-                        std::optional<QueryColumn> out_col) {
-      const auto const_var = let->VariableFor(impl, in_col);
-      if (out_col) {
-        let->col_id_to_var[out_col->Id()] = const_var;
-      }
-    });
-
-    BuildEagerRegion(impl, view, view, context, let, nullptr);
+    // Pass in the empty vector once or twice for other messages.
+    const auto empty_vec =
+        init_proc->VectorFor(impl, VectorKind::kEmpty, receives[0].Columns());
+    call->arg_vecs.AddUse(empty_vec);
+    if (receives[0].CanReceiveDeletions()) {
+      call->arg_vecs.AddUse(empty_vec);
+    }
   }
 
-  // Okay, now that we've processed all constant tuples, we want to look through
-  // all views, and if any of them are conditional, then we want to go and
-  // do any processing to insert their data, or possibly remove their data.
-
-  // TODO(pag): For each condition, create two boolean flags:
-  //              1) cross from 0 to 1+
-  //              2) crossed from 1 to 0
-  //
-  //            - Have a mapping of all VIEWs which depend on the boolean flag
-  //            - For each such view, re-evaluate the condition, and if it fails
-
-  // TODO(pag): For each unique string of (+conds, -conds), create a twoboolean
-  //            variable that tells us if we've crossed a threshold.
+  assert(call->arg_vecs.Size() == entry_proc->input_vecs.Size());
 
   CompleteProcedure(impl, init_proc, context);
 }

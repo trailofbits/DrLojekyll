@@ -1,50 +1,33 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Build.h"
+#include "Induction.h"
 
-// TODO(pag):
-//
-//    Think about identifying if the output of a JOIN is part of the output
-//    of a union or not. That is, classify all pairs of views in terms of
-//
-//      1) if pred is in an induction, is successor in an induction?
-//      2) ...?
+#include <sstream>
 
 namespace hyde {
-namespace {
 
-static unsigned MaxDepth(InductionSet *induction_set) {
-  unsigned max_depth = 0u;
-  for (auto merge : induction_set->all_merges) {
-    if (auto depth = merge.Depth(); depth > max_depth) {
-      max_depth = depth;
+bool NeedsInductionCycleVector(QueryView view) {
+  if (view.InductionGroupId().has_value()) {
+    if (view.IsMerge()) {
+      return true;  // TODO(pag): Needed to avoid stack overflow?! :O
+    } else {
+      return !view.NonInductivePredecessors().empty() ||
+             view.IsOwnIndirectInductiveSuccessor();
     }
+  } else {
+    return false;
   }
-  return max_depth;
 }
 
-// A work item whose `Run` method is invoked after all initialization paths
-// into an inductive region have been covered.
-class ContinueInductionWorkItem final : public WorkItem {
- public:
-  virtual ~ContinueInductionWorkItem(void) {}
+bool NeedsInductionOutputVector(QueryView view) {
+  return !view.NonInductiveSuccessors().empty();
+}
 
-  ContinueInductionWorkItem(Context &context, INDUCTION *induction_,
-                            InductionSet *induction_set_)
-      : WorkItem(context, (MaxDepth(induction_set_) << kOrderShift) +
-                              kContinueInductionOrder),
-        induction(induction_),
-        induction_set(induction_set_) {}
-
-  // Find the common ancestor of all initialization regions.
-  REGION *FindCommonAncestorOfInitRegions(void) const;
-
-  void Run(ProgramImpl *impl, Context &context) override;
-
- private:
-  INDUCTION *const induction;
-  InductionSet *const induction_set;
-};
+ContinueInductionWorkItem::ContinueInductionWorkItem(Context &context,
+                                                     QueryView merge,
+                                                     INDUCTION *induction_)
+    : WorkItem(context, (kContinueInductionOrder | *(merge.InductionDepth()))),
+      induction(induction_) {}
 
 // A work item whose `Run` method is invoked after all initialization and
 // cyclic paths into an inductive region have been covered.
@@ -52,26 +35,27 @@ class FinalizeInductionWorkItem final : public WorkItem {
  public:
   virtual ~FinalizeInductionWorkItem(void) {}
 
-  FinalizeInductionWorkItem(Context &context, INDUCTION *induction_,
-                            InductionSet *induction_set_)
-      : WorkItem(context, (MaxDepth(induction_set_) << kOrderShift) +
-                              kFinalizeInductionOrder),
-        induction(induction_),
-        induction_set(induction_set_) {}
+  FinalizeInductionWorkItem(Context &context, QueryView merge,
+                            INDUCTION *induction_)
+      : WorkItem(context,
+                 (kFinalizeInductionOrder | *(merge.InductionDepth()))),
+        induction(induction_) {}
 
   void Run(ProgramImpl *impl, Context &context) override;
 
- private:
+  // NOTE(pag): Multiple `ContinueInductionWorkItem` workers might share
+  //            the same `induction`.
   INDUCTION *const induction;
-  InductionSet *const induction_set;
 };
 
 // Find the common ancestor of all initialization regions.
-REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
+REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(
+    const std::vector<REGION *> &regions) const {
+
   PROC *const proc = induction->containing_procedure;
   REGION *common_ancestor = nullptr;
 
-  for (const auto init_append : induction->init_appends) {
+  for (const auto init_append : regions) {
     if (!common_ancestor) {
       common_ancestor = init_append;
     } else {
@@ -79,7 +63,7 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
     }
   }
 
-  if (1u >= induction->init_appends.size()) {
+  if (1u >= regions.size()) {
     common_ancestor = proc;
   }
 
@@ -96,28 +80,42 @@ REGION *ContinueInductionWorkItem::FindCommonAncestorOfInitRegions(void) const {
   return common_ancestor;
 }
 
+namespace {
+
 static void BuildInductiveSwaps(ProgramImpl *impl, Context &context,
-                                INDUCTION *induction, QueryView merge,
-                                PARALLEL *clear_par, PARALLEL *swap_par) {
+                                INDUCTION *induction, QueryView vec_view,
+                                QueryView inductive_view, SERIES *view_seq) {
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
   //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR *const vec = induction->view_to_cycle_vec[merge];
-  VECTOR *const swap_vec = induction->view_to_swap_vec[merge];
+  VECTOR *const vec = induction->view_to_add_vec[vec_view];
+  VECTOR *const swap_vec = induction->view_to_swap_vec[vec_view];
 
   assert(vec && swap_vec);
 
-  const auto proc = induction->containing_procedure;
-  assert(clear_par->containing_procedure == proc);
-  assert(swap_par->containing_procedure == proc);
-  (void) proc;
+  // In the case of a PRODUCT that straddles the border of an inductive region,
+  // we need to make sure that the vectors associated with the non-inductive
+  // predecessors are not cleared out.
+  if (swap_vec == vec) {
+    assert(inductive_view.IsJoin());
+    assert(!QueryJoin::From(inductive_view).NumPivotColumns());
+  }
 
   // We start by clearing the swap vector, which may contain results from the
   // prior fixpoint iteration.
   const auto clear = impl->operation_regions.CreateDerived<VECTORCLEAR>(
-      clear_par, ProgramOperation::kClearInductionVector);
+      view_seq, ProgramOperation::kClearInductionVector);
   clear->vector.Emplace(clear, swap_vec);
-  clear_par->AddRegion(clear);
+  view_seq->AddRegion(clear);
+
+  // Next, we'll unique the vector on which we want to operate so that we don't
+  // process (too much) redundant stuff, which happens as a result of our
+  // opportunistic append /then/ check approach (needed for parallelizing
+  // computations).
+  const auto unique = impl->operation_regions.CreateDerived<VECTORUNIQUE>(
+      view_seq, ProgramOperation::kSortAndUniqueInductionVector);
+  unique->vector.Emplace(unique, vec);
+  view_seq->AddRegion(unique);
 
   // NOTE(pag): We need to be careful about the usage of induction and swap
   //            vectors, because the removal process may fill up an insertion
@@ -129,119 +127,282 @@ static void BuildInductiveSwaps(ProgramImpl *impl, Context &context,
   // `vec` is now empty (due to it being cleared above), and `swap_vec` has the
   // prior contents of `vec`.
   const auto swap = impl->operation_regions.CreateDerived<VECTORSWAP>(
-      swap_par, ProgramOperation::kSwapInductionVector);
+      view_seq, ProgramOperation::kSwapInductionVector);
   swap->lhs.Emplace(swap, vec);
   swap->rhs.Emplace(swap, swap_vec);
-  swap_par->AddRegion(swap);
+  view_seq->AddRegion(swap);
 }
 
 static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
-                              INDUCTION *induction, QueryView merge,
+                              INDUCTION *induction, QueryView view,
                               PARALLEL *cycle_par, bool for_add) {
 
-  // NOTE(pag): We can use the same vector for insertion and removal, because
-  //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR *const swap_vec = induction->view_to_swap_vec[merge];
-  assert(swap_vec);
 
-  const auto proc = induction->containing_procedure;
-  assert(cycle_par->containing_procedure == proc);
-  (void) proc;
+  OP *cycle = nullptr;
+  PARALLEL *cycle_body_par = nullptr;
 
-  // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
-  // the last fixpoint iteration.
-  const auto inductive_cycle =
-      impl->operation_regions.CreateDerived<VECTORLOOP>(
-          impl->next_id++, cycle_par,
-          ProgramOperation::kLoopOverInductionVector);
-  inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
-  cycle_par->AddRegion(inductive_cycle);
-  OP *cycle = inductive_cycle;
 
   // Fill in the variables of the output and inductive cycle loops.
-  for (auto col : merge.Columns()) {
-
-    // Add the variables to the fixpoint loop.
-    const auto cycle_var = inductive_cycle->defined_vars.Create(
-        impl->next_id++, VariableRole::kVectorVariable);
-    cycle_var->query_column = col;
-    cycle->col_id_to_var[col.Id()] = cycle_var;
+  std::vector<QueryColumn> view_cols;
+  for (auto col : view.Columns()) {
+    view_cols.push_back(col);
   }
 
-  DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
-  TABLE *const table = model->table;
+  if (view.IsMerge()) {
 
-  // If this merge can produce deletions, then it's possible that something
-  // which was added to an induction vector has since been removed, and so we
-  // can't count on pushing it forward until it is double checked.
-  if (induction->is_differential && table) {
+    // NOTE(pag): We can use the same vector for insertion and removal, because
+    //            we use `CHECKSTATE` to figure out what to do!
+    VECTOR *const swap_vec = induction->view_to_swap_vec[view];
+    assert(swap_vec);
 
-    std::vector<QueryColumn> available_cols;
-    for (auto col : merge.Columns()) {
-      available_cols.push_back(col);
+    // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
+    // the last fixpoint iteration.
+    const auto inductive_cycle =
+        impl->operation_regions.CreateDerived<VECTORLOOP>(
+            impl->next_id++, cycle_par,
+            ProgramOperation::kLoopOverInductionVector);
+    inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
+    cycle_par->AddRegion(inductive_cycle);
+    cycle = inductive_cycle;
+
+    DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+    TABLE *const table = model->table;
+    assert(table != nullptr);
+
+    // Fill in the variables of the output and inductive cycle loops.
+    for (auto col : view_cols) {
+      const auto cycle_var = inductive_cycle->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      cycle_var->query_column = col;
+      cycle->col_id_to_var[col.Id()] = cycle_var;
     }
 
-    // We *don't* call a top-down checker function here, and instead do a
-    // simple state check. Consider the following:
-    //
-    //            .--- TUPLE1 ---.
-    // -- UNION --+              +--- JOIN ---.
-    //      |     '--- TUPLE2 ---'            |
-    //      '---------------------------------'
-    //
-    // This roughly models transitive closure. If UNION, TUPLE1, and TUPLE2
-    // have different tables / data models, then a deletion flowing into the
-    // UNION needs can't be "double checked" via a finder function, otherwise
-    // the finder function may be able to too-eagerly prove the presence of the
-    // tuple in terms of tables for TUPLE1 and TUPLE2. Thus, in differential
-    // updates, we want
+    // If this merge can produce deletions, then it's possible that something
+    // which was added to an induction vector has since been removed, and so we
+    // can't count on pushing it forward until it is double checked.
+    if (view.CanProduceDeletions()) {
 
-    const auto cycle_check =
-        impl->operation_regions.CreateDerived<CHECKSTATE>(cycle);
-    cycle_check->table.Emplace(cycle_check, table);
+      // We *don't* call a top-down checker function here, and instead do a
+      // simple state transition check. Consider the following:
+      //
+      //            .--- TUPLE1 ---.
+      // -- UNION --+              +--- JOIN ---.
+      //      |     '--- TUPLE2 ---'            |
+      //      '---------------------------------'
+      //
+      // This roughly models transitive closure. If UNION, TUPLE1, and TUPLE2
+      // have different tables / data models, then a deletion flowing into the
+      // UNION can't be "double checked" via a finder function, otherwise
+      // the finder function may be able to too-eagerly prove the presence of the
+      // tuple in terms of tables for TUPLE1 and TUPLE2. Thus, in differential
+      // updates, we want to make sure that we push the deletions through as far
+      // as possible.
+      OP *parent_out = nullptr;
+      CHECKSTATE *const check = BuildTopDownCheckerStateCheck(
+          impl, cycle, table, view_cols,
+          [&](ProgramImpl *impl_, REGION *in_check) -> OP * {
+            if (for_add) {
+              parent_out =
+                  impl_->operation_regions.CreateDerived<LET>(in_check);
+              return parent_out;
+            } else {
+              return nullptr;
+            }
+          },
+          BuildStateCheckCaseNothing,
+          [&](ProgramImpl *impl_, REGION *in_check) -> OP * {
+            if (!for_add) {
+              parent_out =
+                  impl_->operation_regions.CreateDerived<LET>(in_check);
+              return parent_out;
+            } else {
+              return nullptr;
+            }
+          });
+      cycle->body.Emplace(cycle, check);
 
-    for (auto col : merge.Columns()) {
-      const auto cycle_var = cycle->VariableFor(impl, col);
-      assert(cycle_var != nullptr);
-      cycle_check->col_values.AddUse(cycle_var);
+      // Make everything depending on the output/inductive loop go inside of
+      // the context of the checker.
+      cycle = parent_out;
     }
 
-    // Make everything depending on the output/inductive loop go inside of
-    // the context of the checker.
-    cycle->body.Emplace(cycle, cycle_check);
+    cycle_body_par = impl->parallel_regions.Create(cycle);
+    cycle->body.Emplace(cycle, cycle_body_par);
 
-    // If we're adding, then we want the check to pass (tuple is present),
-    // which is covered by `OP::body`.
+  // Negation fixpoint loops are similar but different than merge fixpoint
+  // loops. With inductive unions, we can't call a top-down checker because
+  // we need to "removal" status pushed around the loop. E.g. in the case of
+  // transitive closure, of the form `tc(F, T) : tc(F, X), tc(X, T).`, the join
+  // is entirely contained in the inductive cycle, and the base case, and thus
+  // removal of the base case comes from a non-inductive predecessor. If an
+  // edge was provable by the join, but was ultimately derived via the edge
+  // itself, then the removal of the edge might be ignored if we did a top-down
+  // check, as the check would find the data in the join itself. We don't have
+  // this issue with inductive negations because we know that inductive
+  // necessarily straddle the inside and outside of an inductive cycle. Unlike
+  // inductive MERGEs, we can't depend on the presence of a TABLE, so we'll
+  // invoke the top-down checker and let it figure out how to verify if the
+  // data is present or absent.
+  } else if (view.IsNegate()) {
+    assert(view.InductivePredecessors().size() == 1u);
+    assert(view.NonInductivePredecessors().size() == 1u);
+
+    // NOTE(pag): We can use the same vector for insertion and removal, because
+    //            we use a call to a top-down checker to decide if we're adding
+    //            or removing.
+    VECTOR *const swap_vec = induction->view_to_swap_vec[view];
+    assert(swap_vec);
+
+    // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
+    // the last fixpoint iteration.
+    const auto inductive_cycle =
+        impl->operation_regions.CreateDerived<VECTORLOOP>(
+            impl->next_id++, cycle_par,
+            ProgramOperation::kLoopOverInductionVector);
+    inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
+    cycle_par->AddRegion(inductive_cycle);
+    cycle = inductive_cycle;
+
+    // Fill in the variables of the output and inductive cycle loops.
+    for (auto col : view_cols) {
+      const auto cycle_var = inductive_cycle->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      cycle_var->query_column = col;
+      cycle->col_id_to_var[col.Id()] = cycle_var;
+    }
+
+    const auto [check, check_call] = CallTopDownChecker(
+        impl, context, cycle, view, view_cols, view, nullptr);
+    cycle->body.Emplace(cycle, check);
+
+    cycle_body_par = impl->parallel_regions.Create(check_call);
+
     if (for_add) {
-      cycle = cycle_check;
-
-    // If we're removing, then we want the check to fail, which is covered by
-    // `output_check->unknown_body`.
+      check_call->body.Emplace(check_call, cycle_body_par);
     } else {
-      auto cycle_let = impl->operation_regions.CreateDerived<LET>(cycle_check);
-      cycle_check->unknown_body.Emplace(cycle_check, cycle_let);
-      cycle = cycle_let;
+      check_call->false_body.Emplace(check_call, cycle_body_par);
     }
+
+  // We don't need to loop over the join here. This is EVIL!!!
+  //
+  // So, the induction's `ContinueInductionWorker::Run` is going to execute
+  // first, *before* any induction JOINs have had their corresponding
+  // `ContinueJoinWoker::Run` methods run. Yet, for the inductive edes to work,
+  // we need to have variables against which we can bind. What we do is create
+  // a LET that defines some variables, and the its the responsibility of the
+  // `ContinueJoinWoker::Run` to fill in values. Suuuuper evil.
+  } else if (view.IsJoin()) {
+    assert(0u < view.InductivePredecessors().size());
+    assert(0u < view.NonInductivePredecessors().size());
+
+    const QueryJoin join = QueryJoin::From(view);
+    if (const auto num_pivots = join.NumPivotColumns()) {
+      if (for_add) {
+
+
+        LET *const let = impl->operation_regions.CreateDerived<LET>(cycle_par);
+        let->view.emplace(view);
+        cycle_par->AddRegion(let);
+
+        auto i = 0u;
+        for (auto col : view_cols) {
+          auto role = i < num_pivots ? VariableRole::kJoinPivot
+                                     : VariableRole::kJoinNonPivot;
+
+          ++i;
+          VAR *const var = let->defined_vars.Create(impl->next_id++, role);
+          var->query_column.emplace(col);
+          let->col_id_to_var[col.Id()] = var;
+        }
+
+        cycle_body_par = impl->parallel_regions.Create(let);
+        let->body.Emplace(let, cycle_body_par);
+
+      // With removals, we just make a dummy parallel region; we never actually
+      // use it. Inductive joins will be reached in the course of processing the
+      // inductive successors of UNIONs, and so we handle those without the use
+      // of induction vectors.
+      } else {
+        cycle_body_par = impl->parallel_regions.Create(cycle_par);
+        cycle_par->AddRegion(cycle_body_par);
+      }
+
+    // This is a cross-product.
+    } else {
+      if (for_add) {
+
+        LET *const let = impl->operation_regions.CreateDerived<LET>(cycle_par);
+        let->view.emplace(view);
+        cycle_par->AddRegion(let);
+
+        for (auto col : view_cols) {
+          VAR *const var = let->defined_vars.Create(
+              impl->next_id++, VariableRole::kProductOutput);
+          var->query_column.emplace(col);
+          let->col_id_to_var[col.Id()] = var;
+        }
+
+        cycle_body_par = impl->parallel_regions.Create(let);
+        let->body.Emplace(let, cycle_body_par);
+
+      // With removals, we just make a dummy parallel region; we never actually
+      // use it. Inductive joins will be reached in the course of processing the
+      // inductive successors of UNIONs, and so we handle those without the use
+      // of induction vectors.
+      } else {
+        cycle_body_par = impl->parallel_regions.Create(cycle_par);
+        cycle_par->AddRegion(cycle_body_par);
+      }
+    }
+
+    //      // Here  we'll loop over `swap_vec`, which holds the inputs, or outputs from
+    //      // the last fixpoint iteration.
+    //      const auto inductive_cycle =
+    //          impl->operation_regions.CreateDerived<VECTORLOOP>(
+    //              impl->next_id++, cycle_par,
+    //              ProgramOperation::kLoopOverInductionVector);
+    //      inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
+    //      cycle_par->AddRegion(inductive_cycle);
+    //      cycle = inductive_cycle;
+    //
+    //      DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
+    //      TABLE * const table = model->table;
+    //      assert(table != nullptr);
+    //
+    //      // Fill in the variables of the output and inductive cycle loops.
+    //      for (auto col : view.Columns()) {
+    //
+    //        // Add the variables to the fixpoint loop.
+    //        const auto cycle_var = inductive_cycle->defined_vars.Create(
+    //            impl->next_id++, VariableRole::kVectorVariable);
+    //        cycle_var->query_column = col;
+    //        cycle->col_id_to_var[col.Id()] = cycle_var;
+    //      }
+    //
+    //    }
+
+  } else {
+    assert(false);
   }
 
-  auto cycle_body_par = impl->parallel_regions.Create(cycle);
-  cycle->body.Emplace(cycle, cycle_body_par);
+  // Add a tuple to the output vector. We don't need to compute a worker ID
+  // because we know we're dealing with only worker-specific data in this
+  // cycle.
+  if (NeedsInductionOutputVector(view)) {
+    cycle_body_par->AddRegion(AppendToInductionOutputVectors(
+        impl, view, context, induction, cycle_body_par));
+  }
 
   if (for_add) {
-    induction->fixpoint_cycles.push_back(cycle_body_par);
+    induction->fixpoint_add_cycles[view] = cycle_body_par;
   } else {
-    induction->fixpoint_remove_cycles.push_back(cycle_body_par);
+    induction->fixpoint_remove_cycles[view] = cycle_body_par;
   }
 }
 
 static void BuildOutputLoop(ProgramImpl *impl, Context &context,
-                            INDUCTION *induction, QueryView merge,
+                            INDUCTION *induction, QueryView view,
                             PARALLEL *output_par) {
-
-  // NOTE(pag): We can use the same vector for insertion and removal, because
-  //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR *const output_vec = induction->view_to_output_vec[merge];
-  assert(output_vec);
 
   const auto proc = induction->containing_procedure;
   assert(output_par->containing_procedure == proc);
@@ -249,6 +410,13 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
 
   const auto output_seq = impl->series_regions.Create(output_par);
   output_par->AddRegion(output_seq);
+
+  // In the output region we'll clear out the vectors that we've used.
+  VECTOR *const output_vec = induction->view_to_output_vec[view];
+  assert(output_vec != nullptr);
+
+  // NOTE(pag): We can use the same vector for insertion and removal, because
+  //            we use `CHECKSTATE` to figure out what to do!
 
   // We sort & unique the `output_vec`, so that we don't send extraneous
   // stuff forward.
@@ -268,7 +436,7 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   OP *output = output_cycle;
 
   // Fill in the variables of the output and inductive cycle loops.
-  for (auto col : merge.Columns()) {
+  for (auto col : view.Columns()) {
 
     // Add the variables to the output loop.
     const auto output_var = output_cycle->defined_vars.Create(
@@ -280,22 +448,17 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   // If this merge can produce deletions, then it's possible that something
   // which was added to an induction vector has since been removed, and so we
   // can't count on pushing it forward until it is double checked.
-  if (induction->is_differential) {
-
-    std::vector<QueryColumn> available_cols;
-    for (auto col : merge.Columns()) {
-      available_cols.push_back(col);
-    }
-
-    const auto checker_proc = GetOrCreateTopDownChecker(
-        impl, context, merge, available_cols, nullptr);
+  if (view.CanProduceDeletions()) {
+    const auto available_cols = ComputeAvailableColumns(view, view.Columns());
+    const auto checker_proc =
+        GetOrCreateTopDownChecker(impl, context, view, available_cols, nullptr);
 
     // Call the checker procedure in the output cycle.
     const auto output_check = impl->operation_regions.CreateDerived<CALL>(
         impl->next_id++, output, checker_proc);
 
-    for (auto col : merge.Columns()) {
-      const auto output_var = output->VariableFor(impl, col);
+    for (auto [merge_col, avail_col] : available_cols) {
+      const auto output_var = output->VariableFor(impl, avail_col);
       assert(output_var != nullptr);
       output_check->arg_vars.AddUse(output_var);
     }
@@ -310,14 +473,13 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
     auto output_removed_par = impl->parallel_regions.Create(output_check);
     output_check->false_body.Emplace(output, output_removed_par);
 
-    induction->output_cycles.push_back(output_added_par);
-    induction->output_remove_cycles.push_back(output_removed_par);
+    induction->output_add_cycles[view] = output_added_par;
+    induction->output_remove_cycles[view] = output_removed_par;
 
   } else {
     auto output_added_par = impl->parallel_regions.Create(output);
     output->body.Emplace(output, output_added_par);
-    induction->output_cycles.push_back(output_added_par);
-    induction->output_remove_cycles.push_back(nullptr);
+    induction->output_add_cycles[view] = output_added_par;
   }
 }
 
@@ -325,51 +487,78 @@ static void BuildInductiveClear(ProgramImpl *impl, Context &context,
                                 INDUCTION *induction, QueryView merge,
                                 PARALLEL *done_par) {
 
-  // NOTE(pag): We can use the same vector for insertion and removal, because
-  //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR *const vec = induction->view_to_cycle_vec[merge];
-  VECTOR *const swap_vec = induction->view_to_swap_vec[merge];
-  VECTOR *const output_vec = induction->view_to_output_vec[merge];
-
-  assert(vec && swap_vec && output_vec);
-
-  const auto proc = induction->containing_procedure;
-  assert(done_par->containing_procedure == proc);
-  (void) proc;
-
-  // NOTE(pag): At this point, we're done filling up the basics of the
-  //            `induction->cyclic_region` and now move on to filling up
-  //            `induction->output_region`.
-
   // In the output region we'll clear out the vectors that we've used.
-  const auto done_clear_vec =
-      impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          done_par, ProgramOperation::kClearInductionVector);
-  done_clear_vec->vector.Emplace(done_clear_vec, vec);
-  done_par->AddRegion(done_clear_vec);
+  auto add_vec_it = induction->view_to_add_vec.find(merge);
 
-  const auto done_clear_swap_vec =
-      impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          done_par, ProgramOperation::kClearInductionVector);
-  done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, swap_vec);
-  done_par->AddRegion(done_clear_swap_vec);
+  //  auto remove_vec_it = induction->view_to_remove_vec.find(merge);
+  auto swap_vec_it = induction->view_to_swap_vec.find(merge);
 
-  const auto done_clear_output_vec =
-      impl->operation_regions.CreateDerived<VECTORCLEAR>(
-          done_par, ProgramOperation::kClearInductionVector);
-  done_clear_output_vec->vector.Emplace(done_clear_output_vec, output_vec);
-  done_par->AddRegion(done_clear_output_vec);
+  VECTOR *add_vec = nullptr;
+
+  if (add_vec_it != induction->view_to_add_vec.end() && add_vec_it->second) {
+    add_vec = add_vec_it->second;
+    const auto done_clear_add_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            done_par, ProgramOperation::kClearInductionVector);
+    done_clear_add_vec->vector.Emplace(done_clear_add_vec, add_vec);
+    done_par->AddRegion(done_clear_add_vec);
+  }
+  //
+  //  if (remove_vec_it != induction->view_to_remove_vec.end() &&
+  //      remove_vec_it->second && remove_vec_it->second != add_vec) {
+  //    VECTOR * const remove_vec = remove_vec_it->second;
+  //    const auto done_clear_remove_vec =
+  //        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+  //            done_par, ProgramOperation::kClearInductionVector);
+  //    done_clear_remove_vec->vector.Emplace(done_clear_remove_vec, remove_vec);
+  //    done_par->AddRegion(done_clear_remove_vec);
+  //  }
+
+  if (swap_vec_it != induction->view_to_swap_vec.end() && swap_vec_it->second) {
+    VECTOR *const swap_vec = swap_vec_it->second;
+
+    // NOTE(pag): The add and swap vectors are identical for non-inductive
+    //            predecessors of PRODUCT regions that straddle an inductive
+    //            region.
+    if (add_vec != swap_vec) {
+      const auto done_clear_swap_vec =
+          impl->operation_regions.CreateDerived<VECTORCLEAR>(
+              done_par, ProgramOperation::kClearInductionVector);
+      done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, swap_vec);
+      done_par->AddRegion(done_clear_swap_vec);
+    }
+  }
 }
+
+}  // namespace
 
 // Build the cyclic regions of this INDUCTION.
 void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
+
+  // Once we run the first continue worker, it means we've reached all inductive
+  // unions on the previous frontier, and so we can reset this, so any new
+  // reached ones represent a new frontier.
+  const auto merge_depth = *(induction->views[0].InductionDepth());
+  auto &pending_action = context.pending_induction_action[merge_depth];
+
+  assert(pending_action == this);
+  pending_action = nullptr;
 
   assert(induction->state == INDUCTION::kAccumulatingInputRegions);
   induction->state = INDUCTION::kAccumulatingCycleRegions;
 
   // Replace the common ancestor with the INDUCTION, and move that common
   // ancestor to be the init region of this induction.
-  const auto ancestor_of_inits = FindCommonAncestorOfInitRegions();
+  std::vector<REGION *> regions;
+  if (auto r1 = FindCommonAncestorOfInitRegions(induction->init_appends_add)) {
+    regions.push_back(r1);
+  }
+  if (auto r2 =
+          FindCommonAncestorOfInitRegions(induction->init_appends_remove)) {
+    regions.push_back(r2);
+  }
+
+  auto ancestor_of_inits = FindCommonAncestorOfInitRegions(regions);
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
   induction->init_region.Emplace(induction, ancestor_of_inits);
@@ -377,91 +566,135 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // Make sure that we only enter into the cycle accumulation process once.
   assert(!induction->cyclic_region);
-  const auto seq = impl->series_regions.Create(induction);
-  induction->cyclic_region.Emplace(induction, seq);
+  PARALLEL *const cycle_par = impl->parallel_regions.Create(induction);
+  induction->cyclic_region.Emplace(induction, cycle_par);
 
   assert(!induction->output_region);
-  const auto done_seq = impl->series_regions.Create(induction);
+  SERIES *const done_seq = impl->series_regions.Create(induction);
   induction->output_region.Emplace(induction, done_seq);
 
-  const auto output_par = impl->parallel_regions.Create(done_seq);
-  const auto done_par = impl->parallel_regions.Create(done_seq);
+  PARALLEL *const output_par = impl->parallel_regions.Create(done_seq);
+  PARALLEL *const done_par = impl->parallel_regions.Create(done_seq);
   done_seq->AddRegion(output_par);
   done_seq->AddRegion(done_par);
 
-  // Build the primary structure of the inductive region, which goes through
-  // the following phases:
-  //    - send current accumulated results in `vec` to the regions that process
-  //      the non-inductive output views.
-  //    - swap `vec` with `swap_vec`, so that the fixpoint loop can re-fill
-  //      `vec`, based off of visiting everything in `swap_vec`.
-  //    - clear out `vec` so that we can re-fill it.
-  //    - loop over `swap_vec`, passing its data down to the regions associated
-  //      with the inductive successor views, thereby leading to us re-filling
-  //      `vec`.
-  //
-  // TODO(pag): Consider adding a sort stage `vec` here?
-  const auto swap_par = impl->parallel_regions.Create(seq);
-  const auto clear_par = impl->parallel_regions.Create(seq);
-  const auto cycle_par = impl->parallel_regions.Create(seq);
-
-  // NOTE(pag): We need to be careful about the usage of induction and swap
-  //            vectors, because the removal process may fill up an insertion
-  //            vector, or vice-versa, and we don't want to accidentally lose
-  //            data!
-  seq->AddRegion(clear_par);
-  seq->AddRegion(swap_par);
-  seq->AddRegion(cycle_par);
-
   // Now build the inductive cycle regions and add them in. We'll do this
   // before we actually add the successor regions in.
-  auto merge_index = 0u;
-  for (auto merge : induction_set->merges) {
-    BuildInductiveSwaps(impl, context, induction, merge, clear_par, swap_par);
+  //
+  // TODO(pag): A 'more optimal' ordering could likely be achieved. That is,
+  //            if we know that some things are likely to lead into others,
+  //            then we can use a SERIES to order them so that we can observe
+  //            in-loop progress.
+  for (QueryView view : induction->views) {
+    SERIES *const view_seq = impl->series_regions.Create(cycle_par);
+    cycle_par->AddRegion(view_seq);
 
-    // In differential cases, the output and cycle regions also match, but come
-    // before the insertion ones. The differential case for removes behaves
-    // slightly differently for adds.
-    if (induction->is_differential) {
-      BuildFixpointLoop(impl, context, induction, merge, cycle_par, false);
+    const auto has_inputs = NeedsInductionCycleVector(view);
+    const auto has_outputs = NeedsInductionOutputVector(view);
+
+    if (has_inputs) {
+      if (!view.IsJoin() || QueryJoin::From(view).NumPivotColumns()) {
+        BuildInductiveSwaps(impl, context, induction, view, view, view_seq);
+
+      // Cross-products have vectors for their predecessor views.
+      } else {
+        assert(!view.NonInductivePredecessors().empty());
+        for (auto pred_view : view.InductivePredecessors()) {
+          BuildInductiveSwaps(impl, context, induction, pred_view, view,
+                              view_seq);
+        }
+      }
+
+      PARALLEL *const view_cycle_par = impl->parallel_regions.Create(view_seq);
+      view_seq->AddRegion(view_cycle_par);
+
+      // If we have to support removals, then do the removals first. We use the
+      // same swap vector for insertions/removals.
+      if (view.CanProduceDeletions()) {
+        BuildFixpointLoop(impl, context, induction, view, view_cycle_par,
+                          false);
+      }
+
+      // Build the main loops. The output and cycle regions match.
+      BuildFixpointLoop(impl, context, induction, view, view_cycle_par, true);
+      BuildInductiveClear(impl, context, induction, view, output_par);
     }
 
-    // Build the main loops. The output and cycle regions match.
-    BuildFixpointLoop(impl, context, induction, merge, cycle_par, true);
+    if (has_outputs) {
+      BuildOutputLoop(impl, context, induction, view, output_par);
+    }
+  }
 
-    BuildOutputLoop(impl, context, induction, merge, output_par);
+  // Clear the add and swap vectors.
+  for (auto [view, vec] : induction->view_to_add_vec) {
+    const auto done_clear_add_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            output_par, ProgramOperation::kClearInductionVector);
+    done_clear_add_vec->vector.Emplace(done_clear_add_vec, vec);
+    output_par->AddRegion(done_clear_add_vec);
+  }
 
-    BuildInductiveClear(impl, context, induction, merge, done_par);
+  for (auto [view, vec] : induction->view_to_swap_vec) {
+    const auto done_clear_swap_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            output_par, ProgramOperation::kClearInductionVector);
+    done_clear_swap_vec->vector.Emplace(done_clear_swap_vec, vec);
+    output_par->AddRegion(done_clear_swap_vec);
+  }
+
+  // Clear the output vectors
+  for (auto [view, vec] : induction->view_to_output_vec) {
+    const auto done_clear_output_vec =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            done_par, ProgramOperation::kClearInductionVector);
+    done_clear_output_vec->vector.Emplace(done_clear_output_vec, vec);
+    done_par->AddRegion(done_clear_output_vec);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // inductive successors.
-  merge_index = 0u;
-  for (auto merge : induction_set->merges) {
-    PARALLEL *const cycle_par = induction->fixpoint_cycles[merge_index++];
+  for (auto merge : induction->views) {
+    if (!NeedsInductionCycleVector(merge)) {
+      continue;
+    }
+
+    PARALLEL *const cycle_par = induction->fixpoint_add_cycles[merge];
     LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
     cycle_par->AddRegion(cycle);
 
     DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE *const table = model->table;
     BuildEagerInsertionRegions(impl, merge, context, cycle,
-                               context.inductive_successors[merge], table);
+                               merge.InductiveSuccessors(), table);
   }
 
-  if (induction->is_differential) {
-    merge_index = 0u;
-    for (auto merge : induction_set->merges) {
-      PARALLEL *const cycle_par =
-          induction->fixpoint_remove_cycles[merge_index++];
-      LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
-      cycle_par->AddRegion(cycle);
-
-      DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
-      TABLE *const table = model->table;
-
-      BuildEagerRemovalRegions(impl, merge, context, cycle,
-                               context.inductive_successors[merge], table);
+  for (auto view : induction->views) {
+    if (!view.CanProduceDeletions() || !NeedsInductionCycleVector(view)) {
+      continue;
     }
+
+    // Join cycle vectors are really pivot vectors, which is the only way to
+    // unify the columns of the non-uniform joined views; however, in the
+    // case of deletions, we don't use pivot vectors, as deletions are actually
+    // record-specific. Thus, for inductive removals, we ignore joins and let
+    // the bottom-up join removers handle them in their own way when they are
+    // eventually reached via visiting the inductive successors of the one or
+    // more UNIONs that must necessarily be part of `induction->views`.
+    if (view.IsJoin()) {
+      assert(QueryJoin::From(view).NumPivotColumns() && "TODO: Cross-products");
+      continue;
+    }
+
+    PARALLEL *const cycle_par = induction->fixpoint_remove_cycles[view];
+
+    LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+    cycle_par->AddRegion(cycle);
+
+    DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+    TABLE *const table = model->table;
+
+    BuildEagerRemovalRegions(impl, view, context, cycle,
+                             view.InductiveSuccessors(), table);
   }
 
   // Finally, add in an action to finish off this induction by processing
@@ -469,7 +702,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   // the INDUCTION's cycles, even after the above, due to WorkItems being
   // added by other nodes.
   const auto action =
-      new FinalizeInductionWorkItem(context, induction, induction_set);
+      new FinalizeInductionWorkItem(context, induction->views[0], induction);
   context.work_list.emplace_back(action);
 }
 
@@ -477,262 +710,454 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
 //
 // NOTE(pag): This is basically the same as above with some minor differences.
 void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
-  const auto proc = induction->containing_procedure;
-
   assert(induction->state == INDUCTION::kAccumulatingCycleRegions);
   induction->state = INDUCTION::kBuildingOutputRegions;
 
   // Pass in the induction vectors to the handlers.
-  for (auto merge : induction_set->all_merges) {
-    context.view_to_work_item.erase({proc, merge.UniqueId()});
+  for (auto view : induction->views) {
+    context.view_to_induction_action.erase(view);
   }
 
   // Now that we have all of the regions arranged and the loops, add in the
   // non-inductive successors.
-  auto merge_index = 0u;
-  for (auto merge : induction_set->merges) {
-    PARALLEL *const cycle_par = induction->output_cycles[merge_index++];
+  for (auto merge : induction->views) {
+    if (!NeedsInductionOutputVector(merge)) {
+      continue;
+    }
+    PARALLEL *const cycle_par = induction->output_add_cycles[merge];
     LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
     cycle_par->AddRegion(cycle);
 
     DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE *const table = model->table;
     BuildEagerInsertionRegions(impl, merge, context, cycle,
-                               context.noninductive_successors[merge], table);
+                               merge.NonInductiveSuccessors(), table);
   }
 
-  if (induction->is_differential) {
-    merge_index = 0u;
-    for (auto merge : induction_set->merges) {
-      PARALLEL *const cycle_par =
-          induction->output_remove_cycles[merge_index++];
-      LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
-      cycle_par->AddRegion(cycle);
-
-      DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
-      TABLE *const table = model->table;
-
-      BuildEagerRemovalRegions(impl, merge, context, cycle,
-                               context.noninductive_successors[merge], table);
+  for (auto merge : induction->views) {
+    if (!merge.CanReceiveDeletions() || !NeedsInductionOutputVector(merge)) {
+      continue;
     }
+    PARALLEL *const cycle_par = induction->output_remove_cycles[merge];
+    LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+    cycle_par->AddRegion(cycle);
+
+    DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
+    TABLE *const table = model->table;
+
+    BuildEagerRemovalRegions(impl, merge, context, cycle,
+                             merge.NonInductiveSuccessors(), table);
   }
 
   // NOTE(pag): We can't add a `return-false` here because an induction
   //            may come along and fill up this procedure with something else.
 }
 
-static std::tuple<PROC *, INDUCTION *, bool>
-GetOrInitInduction(ProgramImpl *impl, QueryView view, Context &context,
-                   OP *parent) {
+INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
+                              Context &context, OP *parent) {
   PROC *const proc = parent->containing_procedure;
-  INDUCTION *&induction = context.view_to_induction[{proc, view.UniqueId()}];
-  auto added = false;
+  INDUCTION *&induction = context.view_to_induction[view];
+
+  if (induction) {
+    return induction;
+  }
+
+  const auto merge_depth = *(view.InductionDepth());
 
   // This is the first time seeing any MERGE associated with this induction.
   // We'll make an INDUCTION, and a work item that will let us explore the
   // cycle of this induction.
-  if (!induction) {
+
+  // The current "pending" induction. Consider the following:
+  //
+  //        UNION0        UNION1
+  //           \            /
+  //            '-- JOIN --'
+  //                  |
+  //
+  // In this case, we don't want UNION0 to be nest inside UNION1 or vice
+  // versa, they should both "activate" at the same time. The work list
+  // operates in such a way that we exhaust all JOINs before any UNIONs,
+  // so in this process, we want to discover the frontiers to as many
+  // inductive UNIONs as possible, so that they can all share the same
+  // INDUCTION.
+  ContinueInductionWorkItem *action = nullptr;
+  auto &pending_action = context.pending_induction_action[merge_depth];
+  if (pending_action) {
+    action = pending_action;
+    induction = pending_action->induction;
+  } else {
     induction = impl->induction_regions.Create(impl, parent);
-
-    const auto induction_set = context.merge_sets[view].FindAs<InductionSet>();
-
-    const auto action =
-        new ContinueInductionWorkItem(context, induction, induction_set);
+    action = new ContinueInductionWorkItem(context, view, induction);
+    pending_action = action;
     context.work_list.emplace_back(action);
-
-    for (auto other_view : induction_set->all_merges) {
-      context.view_to_induction[{proc, other_view.UniqueId()}] = induction;
-
-      // Figure out if the induction can produce deletions. This could feasibly
-      // be an over-approximation, i.e. on of the inductions is non-
-      // differential, but feeds another induction that is differential. For
-      // simplicity we'll assume if one is differential then all are
-      // differential.
-      if (other_view.CanProduceDeletions()) {
-        induction->is_differential = true;
-      }
-    }
-
-    // Add an induction vector for each `QueryMerge` node in this induction
-    // set.
-    for (auto other_view : induction_set->merges) {
-      auto &vec = induction->view_to_cycle_vec[other_view];
-      auto &swap_vec = induction->view_to_swap_vec[other_view];
-      auto &output_vec = induction->view_to_output_vec[other_view];
-      assert(!vec && !swap_vec && !output_vec);
-      vec = proc->VectorFor(impl, VectorKind::kInductionCycles,
-                            other_view.Columns());
-
-      // These are a bunch of swap vectors that we use for the sake of allowing
-      // ourselves to see the results of the prior iteration, while minimizing
-      // the amount of cross-iteration resident data.
-      swap_vec = proc->VectorFor(impl, VectorKind::kInductionCycles,
-                                 other_view.Columns());
-
-      output_vec = proc->VectorFor(impl, VectorKind::kInductionOutputs,
-                                   other_view.Columns());
-      induction->vectors.AddUse(vec);
-    }
-
-    for (auto other_view : induction_set->all_merges) {
-      context.view_to_work_item[{proc, other_view.UniqueId()}] = action;
-    }
-
-    added = true;
   }
 
-  return {proc, induction, added};
+  for (auto other_view : view.InductiveSet()) {
+    const auto has_inputs = NeedsInductionCycleVector(other_view);
+    const auto has_outputs = NeedsInductionOutputVector(other_view);
+    induction->views.push_back(other_view);
+
+    context.view_to_induction_action[other_view] = action;
+    context.view_to_induction[other_view] = induction;
+
+    // Figure out if the induction can produce deletions. This could feasibly
+    // be an over-approximation, i.e. on of the inductions is non-
+    // differential, but feeds another induction that is differential. For
+    // simplicity we'll assume if one is differential then all are
+    // differential.
+    if (other_view.CanProduceDeletions()) {
+      induction->is_differential = true;
+    }
+
+    // If we're dealing with an inductive join, then our induction vector is
+    // the vector of join pivots.
+    if (other_view.IsJoin()) {
+      const QueryJoin join = QueryJoin::From(other_view);
+
+      if (join.NumPivotColumns()) {
+        auto &add_vec = induction->view_to_add_vec[other_view];
+        auto &swap_vec = induction->view_to_swap_vec[other_view];
+
+        // If the join has no inductive inputs, but does have inductive outputs,
+        // the the pivot vector isn't marked as an inductive pivot vector, nor
+        // is it added to the induction's list of tested vectors.
+        if (!has_inputs) {
+          if (!add_vec) {
+            assert(!swap_vec);
+            add_vec = proc->VectorFor(impl, VectorKind::kJoinPivots,
+                                      join.PivotColumns());
+          }
+          swap_vec = add_vec;
+
+        } else {
+          if (!add_vec) {
+            add_vec = proc->VectorFor(impl, VectorKind::kInductiveJoinPivots,
+                                      join.PivotColumns());
+            induction->vectors.AddUse(add_vec);
+          }
+
+          // These are a bunch of swap vectors that we use for the sake of allowing
+          // ourselves to see the results of the prior iteration, while minimizing
+          // the amount of cross-iteration resident data.
+          if (!swap_vec) {
+            swap_vec =
+                proc->VectorFor(impl, VectorKind::kInductiveJoinPivotSwaps,
+                                join.PivotColumns());
+          }
+        }
+
+        if (auto &join_action = context.view_to_join_action[other_view];
+            !join_action) {
+          join_action = new ContinueJoinWorkItem(context, other_view, add_vec,
+                                                 swap_vec, induction);
+          context.work_list.emplace_back(join_action);
+        }
+
+      // This is a cross-product. We need vectors for each predecessor of
+      // a PRODUCT, but we don't want swap vectors for the non-inductive
+      // predecessors of a PRODUCT, because those vectors need to stay around
+      // over the course of all of the iterations, so that we can cross
+      // against them (the inductive predecessor vectors will be cleared).
+      } else {
+
+        for (auto inductive_pred : other_view.InductivePredecessors()) {
+          auto &add_vec = induction->view_to_add_vec[inductive_pred];
+          auto &swap_vec = induction->view_to_swap_vec[inductive_pred];
+
+          if (!add_vec) {
+            add_vec = proc->VectorFor(impl, VectorKind::kInductiveProductInput,
+                                      inductive_pred.Columns());
+            induction->vectors.AddUse(add_vec);
+          }
+
+          // These are a bunch of swap vectors that we use for the sake of allowing
+          // ourselves to see the results of the prior iteration, while minimizing
+          // the amount of cross-iteration resident data.
+          if (!swap_vec) {
+            swap_vec = proc->VectorFor(impl, VectorKind::kInductiveProductSwaps,
+                                       inductive_pred.Columns());
+          }
+        }
+
+        // NOTE(pag): We *don't* add to the induction vectors, otherwise we'd
+        //            have an infinite loop.
+        for (auto non_inductive_pred : other_view.NonInductivePredecessors()) {
+          auto &add_vec = induction->view_to_add_vec[non_inductive_pred];
+          auto &swap_vec = induction->view_to_swap_vec[non_inductive_pred];
+
+          if (!add_vec) {
+            assert(!swap_vec);
+            add_vec = proc->VectorFor(impl, VectorKind::kProductInput,
+                                      non_inductive_pred.Columns());
+          }
+          swap_vec = add_vec;
+        }
+
+        if (auto &product_action = context.view_to_product_action[other_view];
+            !product_action) {
+          product_action =
+              new ContinueProductWorkItem(context, other_view, induction);
+          context.work_list.emplace_back(product_action);
+        }
+      }
+
+    // If we're dealing with an inductive merge, then our induction vector
+    // is the join pivots themselves.
+    } else if (other_view.IsMerge() || other_view.IsNegate()) {
+
+      // Figure out if we need a vector for tracking additions/removals.
+      if (has_inputs) {
+        auto &add_vec = induction->view_to_add_vec[other_view];
+        if (!add_vec) {
+          add_vec = proc->VectorFor(impl, VectorKind::kInductionInputs,
+                                    other_view.Columns());
+          induction->vectors.AddUse(add_vec);
+        }
+
+        // These are a bunch of swap vectors that we use for the sake of allowing
+        // ourselves to see the results of the prior iteration, while minimizing
+        // the amount of cross-iteration resident data.
+        auto &swap_vec = induction->view_to_swap_vec[other_view];
+        if (!swap_vec) {
+          swap_vec = proc->VectorFor(impl, VectorKind::kInductionSwaps,
+                                     other_view.Columns());
+        }
+      }
+
+    } else {
+      assert(false);
+    }
+
+    // Figure out if we need a vector to track outputs. Output vectors always
+    // have the same shape, regardless of if they're for UNIONs, JOINs, or
+    // NEGATEs.
+    if (has_outputs) {
+      auto &output_vec = induction->view_to_output_vec[other_view];
+      if (!output_vec) {
+        output_vec = proc->VectorFor(impl, VectorKind::kInductionOutputs,
+                                     other_view.Columns());
+      }
+    }
+  }
+
+  return induction;
 }
 
-static void AppendToInductionVectors(ProgramImpl *impl, QueryView view,
-                                     Context &context, OP *parent,
-                                     TABLE *last_table) {
+REGION *AppendToInductionOutputVectors(ProgramImpl *impl, QueryView view,
+                                       Context &context, INDUCTION *induction,
+                                       REGION *parent) {
+  VECTOR *output_vec = induction->view_to_output_vec[view];
+  assert(output_vec != nullptr);
 
-  auto [proc, induction, added] =
-      GetOrInitInduction(impl, view, context, parent);
+  const auto append_to_output_vec =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          parent, ProgramOperation::kAppendToInductionVector);
+  append_to_output_vec->vector.Emplace(append_to_output_vec, output_vec);
+  for (auto col : view.Columns()) {
+    append_to_output_vec->tuple_vars.AddUse(parent->VariableFor(impl, col));
+  }
+
+  return append_to_output_vec;
+}
+
+void AppendToInductionInputVectors(ProgramImpl *impl, QueryView vec_view,
+                                   QueryView inductive_view, Context &context,
+                                   OP *parent, INDUCTION *induction,
+                                   bool for_add) {
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
   //            we use `CHECKSTATE` to figure out what to do!
-  VECTOR *vec = induction->view_to_cycle_vec[view];
-  VECTOR *output_vec = induction->view_to_output_vec[view];
+  VECTOR *const vec = induction->view_to_add_vec[vec_view];
   assert(vec != nullptr);
-  assert(output_vec != nullptr);
 
-  const auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
+  WORKERID *hash = nullptr;
+  VAR *worker_id = nullptr;
+  PARALLEL *par = nullptr;
+  VECTORAPPEND *append_to_vec = nullptr;
 
-  // Add a tuple to the removal vector.
-  const auto append_to_vec =
-      impl->operation_regions.CreateDerived<VECTORAPPEND>(
-          par, ProgramOperation::kAppendToInductionVector);
-  append_to_vec->vector.Emplace(append_to_vec, vec);
+  // Add a tuple to the vector.
+  auto add_append_to_vec = [&](void) {
+    append_to_vec = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+        par, ProgramOperation::kAppendToInductionVector);
+    append_to_vec->vector.Emplace(append_to_vec, vec);
+    append_to_vec->worker_id.Emplace(append_to_vec, worker_id);
+  };
 
-  // Add a tuple to the output vector.
-  const auto append_to_output_vec =
-      impl->operation_regions.CreateDerived<VECTORAPPEND>(
-          par, ProgramOperation::kAppendToInductionVector);
-  append_to_output_vec->vector.Emplace(append_to_vec, output_vec);
+  auto add_hash_and_par = [&](void) {
+    // Hash the variables together to form a worker ID.
+    hash = impl->operation_regions.CreateDerived<WORKERID>(parent);
+    worker_id = new VAR(impl->next_id++, VariableRole::kWorkerId);
+    hash->worker_id.reset(worker_id);
+    parent->body.Emplace(parent, hash);
 
-  for (auto col : view.Columns()) {
-    const auto var = par->VariableFor(impl, col);
-    append_to_vec->tuple_vars.AddUse(var);
-    append_to_output_vec->tuple_vars.AddUse(var);
+    par = impl->parallel_regions.Create(hash);
+    hash->body.Emplace(hash, par);
+    add_append_to_vec();
+  };
+
+  auto add_par = [&](void) {
+    worker_id = impl->zero;
+    par = impl->parallel_regions.Create(parent);
+    parent->body.Emplace(parent, par);
+    add_append_to_vec();
+  };
+
+  if (inductive_view.IsMerge()) {
+    add_hash_and_par();
+
+    for (auto col : vec_view.Columns()) {
+      const auto var = par->VariableFor(impl, col);
+      hash->hashed_vars.AddUse(var);
+      append_to_vec->tuple_vars.AddUse(var);
+    }
+
+  // Negations differ from merges only in that they hash just the negated
+  // columns, and not all of the columns of the negation. It's similar to how
+  // joins hash the pivot columns.
+  } else if (inductive_view.IsNegate()) {
+    add_hash_and_par();
+
+    QueryNegate negate = QueryNegate::From(inductive_view);
+    for (auto col : negate.NegatedColumns()) {
+      const auto var = par->VariableFor(impl, col);
+      hash->hashed_vars.AddUse(var);
+    }
+
+    for (auto col : vec_view.Columns()) {
+      const auto var = par->VariableFor(impl, col);
+      append_to_vec->tuple_vars.AddUse(var);
+    }
+
+  // Joins hash and append just the pivot columns.
+  } else if (inductive_view.IsJoin()) {
+    QueryJoin join = QueryJoin::From(inductive_view);
+    if (join.NumPivotColumns()) {
+      add_hash_and_par();
+
+      for (auto col : join.PivotColumns()) {
+        const auto var = par->VariableFor(impl, col);
+        hash->hashed_vars.AddUse(var);
+        append_to_vec->tuple_vars.AddUse(var);
+      }
+
+    } else {
+      add_par();
+
+      for (auto col : vec_view.Columns()) {
+        const auto var = par->VariableFor(impl, col);
+        append_to_vec->tuple_vars.AddUse(var);
+      }
+    }
+
+  } else {
+    assert(false);
+    return;
   }
 
   par->AddRegion(append_to_vec);
-  par->AddRegion(append_to_output_vec);
 
   switch (induction->state) {
     case INDUCTION::kAccumulatingInputRegions:
-      assert(proc == induction->containing_procedure);
-      induction->init_appends.push_back(append_to_vec);
+      if (for_add) {
+        induction->init_appends_add.push_back(append_to_vec);
+      } else {
+        induction->init_appends_remove.push_back(append_to_vec);
+      }
       break;
 
     case INDUCTION::kAccumulatingCycleRegions:
-      assert(proc == induction->containing_procedure);
       induction->cycle_appends.push_back(append_to_vec);
       break;
-    default:
-      assert(proc == induction->containing_procedure);
-      assert(false);
-      break;
+
+    default: assert(false); break;
   }
 }
-
-}  // namespace
 
 // Build an eager region for a `QueryMerge` that is part of an inductive
 // loop. This is interesting because we use a WorkItem as a kind of "barrier"
 // to accumulate everything leading into the inductions before proceeding.
 void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
-                               QueryMerge view, Context &context, OP *parent,
-                               TABLE *last_table) {
+                               QueryMerge view, Context &context, OP *parent_,
+                               TABLE *already_added_) {
+  auto [parent, table, already_added] =
+      InTryInsert(impl, context, view, parent_, already_added_);
 
-  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE *const table = model->table;
-  assert(table != nullptr);
+  INDUCTION *const induction = GetOrInitInduction(impl, view, context, parent);
+  if (NeedsInductionCycleVector(view)) {
+    AppendToInductionInputVectors(impl, view, view, context, parent, induction,
+                                  true);
 
-  // First, check if we should add this tuple to the induction.
-  if (last_table != table) {
-    parent =
-        BuildInsertCheck(impl, view, context, parent, table,
-                         QueryView(view).CanReceiveDeletions(), view.Columns());
-    last_table = table;
+  } else {
+    BuildEagerUnionRegion(impl, pred_view, view, context, parent,
+                          already_added);
   }
-
-  AppendToInductionVectors(impl, view, context, parent, last_table);
 }
 
 void CreateBottomUpInductionRemover(ProgramImpl *impl, Context &context,
                                     QueryView view, OP *parent_,
                                     TABLE *already_removed_) {
   auto [parent, table, already_removed] =
-      InTryMarkUnknown(impl, view, parent_, already_removed_);
-  AppendToInductionVectors(impl, view, context, parent, already_removed);
+      InTryMarkUnknown(impl, context, view, parent_, already_removed_);
+
+  auto merge = QueryMerge::From(view);
+  INDUCTION *const induction = GetOrInitInduction(impl, merge, context, parent);
+  if (NeedsInductionCycleVector(view)) {
+    AppendToInductionInputVectors(impl, view, view, context, parent, induction,
+                                  false);
+
+  } else {
+    CreateBottomUpUnionRemover(impl, context, view, parent, already_removed);
+  }
 }
 
 // Build a top-down checker on an induction.
-void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMerge merge,
-                                  std::vector<QueryColumn> &view_cols,
-                                  TABLE *already_checked) {
+REGION *BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
+                                     REGION *proc, QueryMerge merge,
+                                     std::vector<QueryColumn> &view_cols,
+                                     TABLE *already_checked) {
+
   const QueryView view(merge);
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-  const auto table = model->table;
-  assert(table != nullptr);
 
-  TABLE *table_to_update = table;
+  // Organize the checking so that we check the non-inductive predecessors
+  // first, then the inductive predecessors.
+  //
+  // TODO(pag): Break it down further by differential and non-differential?
+  const auto seq = impl->series_regions.Create(proc);
+  const auto par_init = impl->parallel_regions.Create(seq);
+  const auto par_cyclic = impl->parallel_regions.Create(seq);
+  seq->AddRegion(par_init);
+  seq->AddRegion(par_cyclic);
+  seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
 
-  auto build_rule_checks = [&](PARALLEL *par) {
-    for (auto pred_view : merge.MergedViews()) {
-      const auto rec_check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, par, view, view_cols, table_to_update, pred_view,
-          table);
-      COMMENT(rec_check->comment =
-                  __FILE__ ": BuildTopDownInductionChecker::build_rule_checks";)
-      par->AddRegion(rec_check);
-    }
+  auto do_rec_check = [&](QueryView pred_view, PARALLEL *parent) -> REGION * {
+    return CallTopDownChecker(
+        impl, context, parent, view, view_cols, pred_view, already_checked,
+        [=](REGION *parent_if_true) -> REGION * {
+          return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
+        },
+        [](REGION *) -> REGION * { return nullptr; });
   };
 
-  auto build_unknown = [&](ProgramImpl *, REGION *parent) -> REGION * {
-    return BuildTopDownTryMarkAbsent(impl, table, parent, view.Columns(),
-                                     build_rule_checks);
-  };
+  // If it's not an inductive predecessor, then check it in `par_init`.
+  for (auto pred_view : view.NonInductivePredecessors()) {
+    const auto rec_check = do_rec_check(pred_view, par_init);
+    par_init->AddRegion(rec_check);
 
-  proc->body.Emplace(
-      proc, BuildMaybeScanPartial(
-                impl, view, view_cols, table, proc,
-                [&](REGION *parent, bool in_loop) -> REGION * {
-                  if (already_checked != table) {
-                    already_checked = table;
+    COMMENT(rec_check->comment = __FILE__
+            ": BuildTopDownInductionChecker call init predecessor";)
+  }
 
-                    auto continue_or_return =
-                        in_loop ? BuildStateCheckCaseNothing
-                                : BuildStateCheckCaseReturnFalse;
+  // If it's an inductive predecessor, then check it in `par_cyclic`.
+  for (auto pred_view : view.InductivePredecessors()) {
+    const auto rec_check = do_rec_check(pred_view, par_cyclic);
+    par_cyclic->AddRegion(rec_check);
 
-                    if (view.CanProduceDeletions()) {
-                      return BuildTopDownCheckerStateCheck(
-                          impl, parent, table, view.Columns(),
-                          BuildStateCheckCaseReturnTrue, continue_or_return,
-                          build_unknown);
-                    } else {
-                      return BuildTopDownCheckerStateCheck(
-                          impl, parent, table, view.Columns(),
-                          BuildStateCheckCaseReturnTrue, continue_or_return,
-                          continue_or_return);
-                    }
+    COMMENT(rec_check->comment = __FILE__
+            ": BuildTopDownInductionChecker call inductive predecessor";)
+  }
 
-                  } else if (view.CanProduceDeletions()) {
-                    table_to_update = nullptr;  // The caller will update.
-                    return build_unknown(impl, parent);
-
-                  // If this induction can't produce deletions, then there's nothing
-                  // else to do because if it's not present here, then it won't be
-                  // present in any of the children.
-                  } else {
-                    return BuildStateCheckCaseReturnFalse(impl, parent);
-                  }
-                }));
+  return seq;
 }
 
 }  // namespace hyde

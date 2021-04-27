@@ -1046,7 +1046,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
     sub_tokens.swap(clause_toks);
     next_sub_tok_index = 0;
-    ParseClause(module);
+    ParseClause(module, decl);
 
     // NOTE(sonya): restore previous token list and index for debugging in
     // ParseAllTokens()

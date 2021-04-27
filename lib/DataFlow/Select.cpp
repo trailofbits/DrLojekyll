@@ -26,13 +26,16 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
     hash ^= hash_ror * relation->declaration.Id();
 
   } else if (stream) {
-    if (auto const_stream = stream->AsConstant()) {
-      if (const_stream->literal.IsConstant()) {
-        hash ^= hash_ror * const_stream->literal.Literal().IdentifierId();
+    if (auto const_tag = stream->AsTag()) {
+      hash ^= hash_ror * (const_tag->val + 1ull);
+
+    } else if (auto const_stream = stream->AsConstant()) {
+      if (const_stream->literal->IsConstant()) {
+        hash ^= hash_ror * const_stream->literal->Literal().IdentifierId();
       } else {
         hash ^= hash_ror *
-            std::hash<std::string_view>()(
-                *const_stream->literal.Spelling(Language::kUnknown));
+                std::hash<std::string_view>()(
+                    *const_stream->literal->Spelling(Language::kUnknown));
       }
 
     } else if (auto input_stream = stream->AsIO()) {
@@ -92,8 +95,9 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 //            then there's an orphaned SELECT in `average_weight.dr`. This
 //            is because the RELation or IO holds onto a use of the SELECT
 //            and so the SELECT always looks used.
-bool Node<QuerySelect>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &err) {
+bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
+                                     const OptimizationContext &opt,
+                                     const ErrorLog &err) {
 
   if (is_dead || sets_condition) {
     return false;
@@ -150,17 +154,17 @@ bool Node<QuerySelect>::Equals(EqualitySet &eq,
     return false;
   }
 
+  if (eq.Contains(this, that)) {
+    return true;
+  }
+
   if (stream) {
     if (stream.get() != that->stream.get()) {
       return false;
     }
 
-    if (stream->AsIO() || stream->AsConstant()) {
+    if (stream->AsConstant()) {
       return true;
-
-    } else {
-      assert(false);
-      return false;
     }
 
   } else if (relation) {
@@ -168,22 +172,14 @@ bool Node<QuerySelect>::Equals(EqualitySet &eq,
         relation->declaration.Id() != that->relation->declaration.Id()) {
       return false;
     }
+  }
 
-    if (eq.Contains(this, that)) {
-      return true;
-    }
-
-    if (InsertSetsOverlap(this, that)) {
-      return false;
-    }
-
-    eq.Insert(this, that);
-    return true;
-
-  } else {
-    assert(is_dead);
+  if (InsertSetsOverlap(this, that)) {
     return false;
   }
+
+  eq.Insert(this, that);
+  return true;
 }
 
 }  // namespace hyde
