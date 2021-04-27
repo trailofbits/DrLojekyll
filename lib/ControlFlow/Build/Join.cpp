@@ -414,6 +414,8 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     VECTOR * const pivot_vec = induction->view_to_add_vec[view];
     VECTOR * const swap_vec = induction->view_to_swap_vec[view];
     assert(pivot_vec && swap_vec);
+    (void) pivot_vec;
+    (void) swap_vec;
     AppendToInductionInputVectors(
         impl, view, view, context, parent, induction, true);
 
