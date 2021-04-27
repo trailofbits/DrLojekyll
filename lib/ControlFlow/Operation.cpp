@@ -318,6 +318,7 @@ const bool Node<ProgramWorkerIdRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
 
   const auto num_hashed_vars = hashed_vars.Size();
+  (void) num_hashed_vars;
 
   auto par = prog->parallel_regions.Create(this);
   if (auto curr_body = body.get(); curr_body) {
