@@ -89,7 +89,7 @@ bool Node<QueryTuple>::Canonicalize(
     const auto old_col = columns[i];
     if (old_col->IsUsed()) {
       const auto new_col = new_columns.Create(
-          old_col->var, this, old_col->id, i);
+          old_col->var, old_col->type, this, old_col->id, i);
       old_col->ReplaceAllUsesWith(new_col);
       new_input_columns.AddUse(input_columns[i]->TryResolveToConstant());
     } else {
@@ -192,6 +192,7 @@ bool Node<QueryTuple>::ForwardsAllInputsAsIs(void) const noexcept {
 // outputs, and if so, does it forward all columns of its input?
 bool Node<QueryTuple>::ForwardsAllInputsAsIs(
     VIEW *incoming_view) const noexcept {
+
   if (!incoming_view) {
     return false;
   }

@@ -4,6 +4,7 @@
 
 #include <drlojekyll/Display/DisplayPosition.h>
 #include <drlojekyll/Lex/Token.h>
+#include <drlojekyll/Parse/Parse.h>
 
 #include <cassert>
 #include <iomanip>
@@ -98,7 +99,6 @@ const ErrorColorScheme Error::kDefaultColorScheme = {
     Color::kWhite  // `text_color`.
 };
 
-
 const ErrorStream &ErrorStream::operator<<(const DisplayRange &range) const {
   std::string_view data;
   if (dm.TryReadData(range, &data)) {
@@ -114,6 +114,16 @@ const ErrorStream &ErrorStream::operator<<(const Token &token) const {
     (*os) << token_data;
   }
   return *this;
+}
+
+const ErrorStream &ErrorStream::operator<<(
+      const std::optional<ParsedVariable> &maybe_var) const {
+  if (maybe_var.has_value()) {
+    return (*this) << *maybe_var;
+  } else {
+    (*os) << "_MissingVar";
+    return *this;
+  }
 }
 
 // An error with no position information.

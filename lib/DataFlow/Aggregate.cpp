@@ -152,7 +152,8 @@ bool Node<QueryAggregate>::Canonicalize(
     if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
       new_group_by_columns.AddUse(in_col);
       const auto new_out_col =
-          new_columns.Create(old_out_col->var, this, old_out_col->id);
+          new_columns.Create(old_out_col->var, old_out_col->type,
+                             this, old_out_col->id);
       old_out_col->ReplaceAllUsesWith(new_out_col);
       new_out_col->CopyConstantFrom(old_out_col);
     }
@@ -163,7 +164,8 @@ bool Node<QueryAggregate>::Canonicalize(
   for (auto j = i; j < num_cols; ++j) {
     const auto old_out_col = columns[j];
     const auto new_out_col =
-        new_columns.Create(old_out_col->var, this, old_out_col->id);
+        new_columns.Create(old_out_col->var, old_out_col->type,
+                           this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
     new_out_col->CopyConstantFrom(old_out_col);
   }

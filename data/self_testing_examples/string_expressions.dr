@@ -74,6 +74,7 @@ if __name__ == "__main__":
     db.next_token_2([(B, STR1), (STR1, STR2), (STR2, E)])
 
     found = list(db.strings_f())
+    print(found)
     assert len(found) == 1
     assert found[0] == "Hello World!"
 ```.

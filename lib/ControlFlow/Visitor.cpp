@@ -39,6 +39,7 @@ MAKE_VISITOR(ProgramTableJoinRegion)
 MAKE_VISITOR(ProgramTableProductRegion)
 MAKE_VISITOR(ProgramTableScanRegion)
 MAKE_VISITOR(ProgramTupleCompareRegion)
+MAKE_VISITOR(ProgramWorkerIdRegion)
 
 #undef MAKE_VISITOR
 

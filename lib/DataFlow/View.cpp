@@ -500,6 +500,19 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 void Node<QueryView>::DropTestedConditions(void) {
   const auto is_this_view = [this](VIEW *v) { return v == this; };
 
+#ifndef NDEBUG
+  std::vector<COND *> conds_seen;
+  for (auto cond : positive_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : negative_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
+
   for (auto cond : positive_conditions) {
     cond->positive_users.RemoveIf(is_this_view);
   }
@@ -509,6 +522,12 @@ void Node<QueryView>::DropTestedConditions(void) {
 
   positive_conditions.Clear();
   negative_conditions.Clear();
+
+#ifndef NDEBUG
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 }
 
 // Converts this node to not set any conditions.
@@ -609,6 +628,18 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
 // Copy all positive and negative conditions from `this` into `that`.
 void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
+#ifndef NDEBUG
+  std::vector<COND *> conds_seen;
+  for (auto cond : positive_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : negative_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 
   for (auto cond : positive_conditions) {
     assert(cond);
@@ -625,6 +656,12 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
   }
 
   that->OrderConditions();
+
+#ifndef NDEBUG
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 }
 
 // If `sets_condition` is non-null, then transfer the setter to `that`.
@@ -722,16 +759,40 @@ void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
 void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   if (is_used_by_negation) {
     that->is_used_by_negation = true;
+    is_used_by_negation = false;
   }
+
+#ifndef NDEBUG
+  std::vector<COND *> conds_seen;
+  for (auto cond : positive_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : negative_conditions) {
+    conds_seen.push_back(cond);
+  }
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 
   unsigned i = 0u;
   for (auto col : columns) {
     col->ReplaceAllUsesWith(that->columns[i++]);
   }
-  this->Def<Node<QueryView>>::ReplaceAllUsesWith(that);
+
+  // We don't want to replace the weak uses of `this` in any condition's
+  // `positive_users` or `negative_users`.
+  this->Def<Node<QueryView>>::ReplaceUsesWithIf<User>(
+      that, [=] (User *user, VIEW *) { return !dynamic_cast<COND *>(user); });
 
   CopyDifferentialAndGroupIdsTo(that);
   TransferSetConditionTo(that);
+
+#ifndef NDEBUG
+  for (auto cond : conds_seen) {
+    assert(cond->UsersAreConsistent());
+  }
+#endif
 
   if (color && that->color) {
     if (color != that->color) {
@@ -791,9 +852,12 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
   const auto tuple = query->tuples.Create();
   tuple->color = color;
 
+  assert(!AsInsert());  // INSERTs don't have output columns.
+
   auto col_index = 0u;
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(col->var, tuple, col->id, col_index++);
+    auto out_col = tuple->columns.Create(
+        col->var, col->type, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 
@@ -850,7 +914,8 @@ Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
   const auto num_cols = columns.Size();
   for (auto i = 0u; i < num_cols; ++i) {
     const auto col = columns[i];
-    const auto new_col = tuple->columns.Create(col->var, tuple, col->id, i);
+    const auto new_col = tuple->columns.Create(
+        col->var, col->type, tuple, col->id, i);
     new_col->CopyConstantFrom(col);
   }
 
@@ -940,8 +1005,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   cmp->color = color;
 
   cmp->input_columns.AddUse(lhs_col);
-  auto lhs_out_col =
-      cmp->columns.Create(lhs_col->var, cmp, lhs_col->id, col_index++);
+  auto lhs_out_col = cmp->columns.Create(
+      lhs_col->var, lhs_col->type, cmp, lhs_col->id, col_index++);
 
   lhs_out_col->CopyConstantFrom(lhs_col);
   in_to_out.emplace(lhs_col, lhs_out_col);
@@ -952,8 +1017,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
-    auto rhs_out_col =
-        cmp->columns.Create(rhs_col->var, cmp, rhs_col->id, col_index++);
+    auto rhs_out_col = cmp->columns.Create(
+        rhs_col->var, rhs_col->type, cmp, rhs_col->id, col_index++);
     rhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
   }
@@ -964,8 +1029,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   for (auto col : columns) {
     if (col != lhs_col && col != rhs_col) {
       cmp->attached_columns.AddUse(col);
-      const auto attached_col =
-          cmp->columns.Create(col->var, cmp, col->id, col_index++);
+      const auto attached_col = cmp->columns.Create(
+          col->var, col->type, cmp, col->id, col_index++);
       attached_col->CopyConstantFrom(col);
       in_to_out.emplace(col, attached_col);
     }
@@ -978,8 +1043,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   col_index = 0u;
   for (auto orig_col : columns) {
     const auto in_col = in_to_out[orig_col];
-    auto out_col =
-        tuple->columns.Create(orig_col->var, tuple, orig_col->id, col_index++);
+    auto out_col = tuple->columns.Create(
+        orig_col->var, orig_col->type, tuple, orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
     out_col->CopyConstantFrom(in_col);
   }
@@ -1241,6 +1306,7 @@ void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
   if (!condition->IsTrivial()) {
     positive_conditions.AddUse(condition);
     condition->positive_users.AddUse(this);
+    assert(condition->UsersAreConsistent());
   }
 }
 

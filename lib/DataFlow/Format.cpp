@@ -44,8 +44,22 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   };
 
   auto do_table = [&](int row_span, QueryView view) {
-    if (auto table_id = view.TableId(); table_id) {
-      os << "<TD rowspan=\"" << row_span << "\">TABLE " << *table_id << "</TD>";
+    std::optional<unsigned> table_id = view.TableId();
+    std::optional<unsigned> induction_id = view.InductionGroupId();
+    std::optional<unsigned> induction_depth = view.InductionDepth();
+
+    if (table_id || induction_id || induction_depth) {
+      os << "<TD rowspan=\"" << row_span << "\">";
+      auto sep = "";
+      if (table_id) {
+        os << sep << "TABLE " << *table_id;
+        sep = "<BR />";
+      }
+      if (induction_id && induction_depth) {
+        os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
+        sep = "<BR />";
+      }
+      os << "</TD>";
     }
   };
 
@@ -78,11 +92,18 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   };
 
+  auto do_const = [&](QueryConstant const_col) {
+    if (const_col.IsTag()) {
+      os << "<B>TAG-" << QueryTag::From(const_col).Value() << "</B>";
+    } else {
+      os << "<B>" << *(const_col.Literal()) << "</B>";
+    }
+  };
+
   auto do_col = [&](QueryColumn col) -> OutputStream & {
-    if (col.IsConstant()) {
-      os << "<B>" << QueryConstant::From(col).Literal() << "</B>";
-    } else if (col.IsConstantRef()) {
-      os << QueryConstant::From(col).Literal();
+    if (col.IsConstantOrConstantRef()) {
+      do_const(QueryConstant::From(col));
+
     } else {
       os << col.Variable();
     }
@@ -168,8 +189,16 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   for (auto constant : query.Constants()) {
     os << "t" << constant.UniqueId() << " [label=<" << kBeginTable
-       << "<TD port=\"p0\">" << constant.Literal() << "</TD>" << kEndTable
-       << ">];\n";
+       << "<TD port=\"p0\">";
+    do_const(constant);
+    os << "</TD>" << kEndTable << ">];\n";
+  }
+
+  for (auto tag : query.Tags()) {
+    os << "t" << tag.UniqueId() << " [label=<" << kBeginTable
+       << "<TD port=\"p0\">";
+    do_const(tag);
+    os << "</TD>" << kEndTable << ">];\n";
   }
 
   for (auto cond : query.Conditions()) {

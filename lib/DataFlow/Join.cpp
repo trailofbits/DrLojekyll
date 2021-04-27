@@ -98,8 +98,8 @@ void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
 
   auto col_index = 0u;
   for (auto out_col : columns) {
-    const auto new_out_col =
-        tuple->columns.Create(out_col->var, tuple, out_col->id, col_index++);
+    const auto new_out_col = tuple->columns.Create(
+        out_col->var, out_col->type, tuple, out_col->id, col_index++);
     new_out_col->CopyConstantFrom(out_col);
   }
 
@@ -206,8 +206,8 @@ bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
     auto col_index = 0u;
     for (auto in_col : joined_view->columns) {
       if (needed_cols[in_col]) {
-        auto new_in_col =
-            tuple->columns.Create(in_col->var, tuple, in_col->id, col_index++);
+        auto new_in_col = tuple->columns.Create(
+            in_col->var, in_col->type, tuple, in_col->id, col_index++);
         new_in_col->CopyConstantFrom(in_col);
         tuple->input_columns.AddUse(in_col);
         col_map[in_col] = new_in_col;
@@ -230,14 +230,14 @@ bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
       for (auto in_col : in_cols) {
         new_in_cols.AddUse(col_map[in_col]);
       }
-      auto new_out_col =
-          new_columns.Create(out_col->var, this, out_col->id, col_index++);
+      auto new_out_col = new_columns.Create(
+          out_col->var, out_col->type, this, out_col->id, col_index++);
       new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
       out_col->ReplaceAllUsesWith(new_out_col);
 
     } else if (out_col->IsUsedIgnoreMerges()) {
-      auto new_out_col =
-          new_columns.Create(out_col->var, this, out_col->id, col_index++);
+      auto new_out_col = new_columns.Create(
+          out_col->var, out_col->type, this, out_col->id, col_index++);
       new_in_cols.AddUse(col_map[in_cols[0]]);
       new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
       out_col->ReplaceAllUsesWith(new_out_col);
@@ -294,7 +294,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
         CMP *const cmp = impl->compares.Create(ComparisonOperator::kEqual);
         cmp->color = color;
-        COL *const new_col = cmp->columns.Create(col->var, cmp, col->id, 0u);
+        COL *const new_col = cmp->columns.Create(
+            col->var, col->type, cmp, col->id, 0u);
 
         view_to_process->CopyDifferentialAndGroupIdsTo(cmp);
 
@@ -313,7 +314,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
           }
 
           const auto new_other_col = cmp->columns.Create(
-              other_col->var, cmp, other_col->id, col_index++);
+              other_col->var, other_col->type, cmp, other_col->id, col_index++);
 
           new_other_col->CopyConstantFrom(other_col);
           cmp->attached_columns.AddUse(other_col);
@@ -353,8 +354,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
     }
 
     ++new_num_pivots;
-    const auto new_out_col =
-        new_columns.Create(out_col->var, this, out_col->id, col_index++);
+    const auto new_out_col = new_columns.Create(
+        out_col->var, out_col->type, this, out_col->id, col_index++);
 
     new_to_old_col_map.emplace(new_out_col, out_col);
     old_to_new_col_map[out_col] = new_out_col;
@@ -395,8 +396,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
     }
 
     ++new_num_non_pivots;
-    const auto new_out_col =
-        new_columns.Create(out_col->var, this, out_col->id, col_index++);
+    const auto new_out_col = new_columns.Create(
+        out_col->var, out_col->type, this, out_col->id, col_index++);
 
     new_to_old_col_map.emplace(new_out_col, out_col);
     old_to_new_col_map[out_col] = new_out_col;
@@ -431,8 +432,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   tuple->color = color;
   col_index = 0u;
   for (auto out_col : columns) {
-    COL *const new_out_col =
-        tuple->columns.Create(out_col->var, tuple, out_col->id, col_index++);
+    COL *const new_out_col = tuple->columns.Create(
+        out_col->var, out_col->type, tuple, out_col->id, col_index++);
 
     if (auto const_col = out_col->AsConstant(); const_col) {
       tuple->input_columns.AddUse(const_col);
@@ -471,6 +472,8 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
       tuple->positive_conditions.AddUse(cond);
       cond->positive_users.AddUse(tuple);
+
+      assert(cond->UsersAreConsistent());
     }
   }
 

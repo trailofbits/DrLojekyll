@@ -398,7 +398,7 @@ class ParsedClauseBody;
 class ParsedClause : public parse::ParsedNode<ParsedClause> {
  public:
   // Create a new variable in this context of this clause.
-  ParsedVariable CreateVariable(TypeLoc type);
+  ParsedVariable CreateVariable(Token name, TypeLoc type);
 
   // Traverse upward in the AST.
   static ParsedClause Containing(ParsedVariable var) noexcept;

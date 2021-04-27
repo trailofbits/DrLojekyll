@@ -58,6 +58,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto view_insert = op->AsTransitionState(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
+      view_insert->failed_body.ClearWithoutErasure();
 
     } else if (auto view_join = op->AsTableJoin(); view_join) {
       view_join->tables.ClearWithoutErasure();
@@ -90,6 +91,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
       cmp->rhs_vars.ClearWithoutErasure();
+      cmp->false_body.ClearWithoutErasure();
 
     } else if (auto gen = op->AsGenerate(); gen) {
       gen->used_vars.ClearWithoutErasure();
@@ -109,6 +111,9 @@ ProgramImpl::~ProgramImpl(void) {
 
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
+
+    } else if (auto wid = op->AsWorkerId(); wid) {
+      wid->hashed_vars.ClearWithoutErasure();
     }
   }
 
@@ -197,6 +202,7 @@ IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TableScan)
 IS_OP(TupleCompare)
+IS_OP(WorkerId)
 IS_OP(VectorLoop)
 IS_OP(VectorAppend)
 IS_OP(VectorClear)
@@ -257,10 +263,13 @@ OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
 OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
 OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
 OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
-OPTIONAL_BODY(Body, ProgramTransitionStateRegion, body)
+OPTIONAL_BODY(BodyIfSucceeded, ProgramTransitionStateRegion, body)
+OPTIONAL_BODY(BodyIfFailed, ProgramTransitionStateRegion, failed_body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
 OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
-OPTIONAL_BODY(Body, ProgramTupleCompareRegion, body)
+OPTIONAL_BODY(BodyIfTrue, ProgramTupleCompareRegion, body)
+OPTIONAL_BODY(BodyIfFalse, ProgramTupleCompareRegion, false_body)
+OPTIONAL_BODY(Body, ProgramWorkerIdRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramCallRegion, body)
 OPTIONAL_BODY(BodyIfFalse, ProgramCallRegion, false_body)
 
@@ -291,6 +300,7 @@ FROM_OP(ProgramVectorAppendRegion, AsVectorAppend)
 FROM_OP(ProgramVectorClearRegion, AsVectorClear)
 FROM_OP(ProgramVectorSwapRegion, AsVectorSwap)
 FROM_OP(ProgramVectorUniqueRegion, AsVectorUnique)
+FROM_OP(ProgramWorkerIdRegion, AsWorkerId)
 
 #undef FROM_OP
 
@@ -342,6 +352,7 @@ USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vecs)
 USED_RANGE(ProgramTableScanRegion, IndexedColumns, DataColumn, in_cols)
 USED_RANGE(ProgramTableScanRegion, SelectedColumns, DataColumn, out_cols)
 USED_RANGE(ProgramTableScanRegion, InputVariables, DataVariable, in_vars)
+USED_RANGE(ProgramWorkerIdRegion, HashedVariables, DataVariable, hashed_vars)
 
 // clang-format on
 
@@ -396,6 +407,13 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
   } \
   DataVector name::Vector(void) const noexcept { \
     return DataVector(impl->Node<name>::vector.get()); \
+  } \
+  std::optional<DataVariable> name::WorkerId(void) const { \
+    if (impl->worker_id) { \
+      return DataVariable(impl->worker_id.get()); \
+    } else { \
+      return std::nullopt; \
+    } \
   }
 
 VECTOR_OPS(ProgramVectorLoopRegion)
@@ -415,6 +433,10 @@ DataVector ProgramVectorSwapRegion::RHS(void) const noexcept {
 
 unsigned ProgramGenerateRegion::Id(void) const noexcept {
   return impl->id;
+}
+
+DataVariable ProgramWorkerIdRegion::WorkerId(void) const {
+  return DataVariable(impl->worker_id.get());
 }
 
 // Does this functor application behave like a filter function?
@@ -510,8 +532,15 @@ unsigned DataVariable::Id(void) const noexcept {
 
 // Name of this variable, if any. There might not be a name.
 Token DataVariable::Name(void) const noexcept {
+  if (impl->query_const) {
+    if (auto lit = impl->query_const->Literal()) {
+      return lit->Literal();
+    }
+  }
   if (impl->query_column) {
-    return impl->query_column->Variable().Name();
+    if (auto var = impl->query_column->Variable(); var.has_value()) {
+      return var->Name();
+    }
 
   } else if (impl->query_cond) {
     if (auto pred = impl->query_cond->Predicate(); pred) {
@@ -522,14 +551,15 @@ Token DataVariable::Name(void) const noexcept {
 }
 
 // The literal, constant value of this variable.
-std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
-  if (impl->query_const) {
-    return impl->query_const->Literal();
+std::optional<QueryConstant> DataVariable::Value(void) const noexcept {
+  if (impl->query_const.has_value()) {
+    return impl->query_const;
+  } else if (impl->query_column.has_value() &&
+             impl->query_column->IsConstantOrConstantRef()) {
+    return QueryConstant::From(*(impl->query_column));
+  } else {
+    return std::nullopt;
   }
-  if (impl->query_column && impl->query_column->IsConstantOrConstantRef()) {
-    return QueryConstant::From(*impl->query_column).Literal();
-  }
-  return std::nullopt;
 }
 
 // Type of this variable.
@@ -541,7 +571,9 @@ TypeLoc DataVariable::Type(void) const noexcept {
 bool DataVariable::IsGlobal(void) const noexcept {
   switch (DefiningRole()) {
     case VariableRole::kConditionRefCount:
+    case VariableRole::kInitGuard:
     case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
@@ -556,6 +588,7 @@ bool DataVariable::IsGlobal(void) const noexcept {
 bool DataVariable::IsConstant(void) const noexcept {
   switch (DefiningRole()) {
     case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
@@ -628,8 +661,9 @@ unsigned DataVector::Id(void) const noexcept {
   return impl->id;
 }
 
-bool DataVector::IsInputVector(void) const noexcept {
-  return impl->id == VECTOR::kInputVectorId;
+// Do we need to shard this vector across workers?
+bool DataVector::IsSharded(void) const noexcept {
+  return impl->is_sharded;
 }
 
 const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
@@ -684,6 +718,11 @@ ProgramInductionRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = region.impl->AsInduction();
   assert(derived_impl != nullptr);
   return ProgramInductionRegion(derived_impl);
+}
+
+// Unique ID for this induction group/region.
+unsigned ProgramInductionRegion::Id(void) const {
+  return impl->id;
 }
 
 std::optional<ProgramRegion>

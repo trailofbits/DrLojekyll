@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #define NOTE(msg) std::cerr << msg << "\n"
@@ -129,8 +130,6 @@ struct DataModel : public DisjointSet {
 template <>
 class Node<DataVector> final : public Def<Node<DataVector>> {
  public:
-  static constexpr unsigned kInputVectorId = 0u;
-
   template <typename ColList>
   Node(unsigned id_, VectorKind kind_, ColList &&cols)
       : Def<Node<DataVector>>(this),
@@ -155,6 +154,9 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
   const unsigned id;
   const VectorKind kind;
   std::vector<TypeKind> col_types;
+
+  // `true` if this vector must have variants of itself sharded across workers.
+  bool is_sharded{false};
 };
 
 using VECTOR = Node<DataVector>;
@@ -187,7 +189,9 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
   inline bool IsGlobal(void) const noexcept {
     switch (role) {
       case VariableRole::kConditionRefCount:
+      case VariableRole::kInitGuard:
       case VariableRole::kConstant:
+      case VariableRole::kConstantTag:
       case VariableRole::kConstantZero:
       case VariableRole::kConstantOne:
       case VariableRole::kConstantFalse:
@@ -381,6 +385,9 @@ enum class ProgramOperation {
   // of optimization.
   kLetBinding,
 
+  // Computes a worker ID by hashing a bunch of variables.
+  kWorkerId,
+
   // Used to test reference count variables associated with `QueryCondition`
   // nodes in the data flow.
   kTestAndAdd,
@@ -430,6 +437,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
   virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
   virtual Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept;
   virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
+  virtual Node<ProgramWorkerIdRegion> *AsWorkerId(void) noexcept;
 
   Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
 
@@ -475,9 +483,44 @@ class Node<ProgramLetBindingRegion> final
   // Local variables that are defined/used in the body of this procedure.
   DefList<VAR> defined_vars;
   UseList<VAR> used_vars;
+
+  std::optional<QueryView> view;
 };
 
 using LET = Node<ProgramLetBindingRegion>;
+
+// Computes a worker ID by hashing one or more variables.
+template <>
+class Node<ProgramWorkerIdRegion> final : public Node<ProgramOperationRegion> {
+ public:
+  virtual ~Node(void);
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<Node<ProgramRegion> *> &merges) override;
+
+  inline Node(REGION *parent_)
+      : Node<ProgramOperationRegion>(parent_, ProgramOperation::kWorkerId),
+        hashed_vars(this) {}
+
+  Node<ProgramWorkerIdRegion> *AsWorkerId(void) noexcept override;
+
+  // Local variables that are hashed together to compute `worker_id`.
+  UseList<VAR> hashed_vars;
+
+  // Variable storing the hashed result.
+  std::unique_ptr<VAR> worker_id;
+};
+
+using WORKERID = Node<ProgramWorkerIdRegion>;
 
 // Loop over the vector `vector` and bind the extracted tuple elements into
 // the variables specified in `defined_vars`.
@@ -515,6 +558,9 @@ class Node<ProgramVectorLoopRegion> final
 
   // Vector being looped.
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORLOOP = Node<ProgramVectorLoopRegion>;
@@ -547,6 +593,9 @@ class Node<ProgramVectorAppendRegion> final
 
   UseList<VAR> tuple_vars;
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORAPPEND = Node<ProgramVectorAppendRegion>;
@@ -574,6 +623,9 @@ class Node<ProgramVectorClearRegion> final
   Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept override;
 
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORCLEAR = Node<ProgramVectorClearRegion>;
@@ -628,6 +680,9 @@ class Node<ProgramVectorUniqueRegion> final
   Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept override;
 
   UseRef<VECTOR> vector;
+
+  // Optional ID of the target worker thread.
+  UseRef<VAR> worker_id;
 };
 
 using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
@@ -668,11 +723,17 @@ class Node<ProgramTransitionStateRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
   // View into which the tuple is being inserted.
   UseRef<TABLE> table;
+
+  // If we failed to change the state, then execute this body.
+  UseRef<REGION> failed_body;
 
   const TupleState from_state;
   const TupleState to_state;
@@ -755,6 +816,9 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramCallRegion> *AsCall(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   // Procedure being called.
   UseRef<Node<ProgramProcedure>, REGION> called_proc;
@@ -866,7 +930,7 @@ class Node<ProgramTestAndSetRegion> final
   UseRef<VAR> comparator;
 };
 
-using ASSERT = Node<ProgramTestAndSetRegion>;
+using TESTANDSET = Node<ProgramTestAndSetRegion>;
 
 // An equi-join between two or more tables.
 template <>
@@ -1017,6 +1081,12 @@ class Node<ProgramTupleCompareRegion> final
 
   Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
 
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
+
+  // Optional body executed if the comparison fails.
+  UseRef<REGION> false_body;
+
   const ComparisonOperator cmp_op;
   UseList<VAR> lhs_vars;
   UseList<VAR> rhs_vars;
@@ -1052,6 +1122,9 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
   Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
+
+  // Returns `true` if all paths through `this` ends with a `return` region.
+  bool EndsWithReturn(void) const noexcept override;
 
   const ParsedFunctor functor;
 
@@ -1257,7 +1330,8 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // This is the cycle vector, i.e. each iteration of the induction's fixpoint
   // loop operates on this vector. The init region of an induction fills this
   // vector.
-  std::unordered_map<QueryView, VECTOR *> view_to_cycle_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_add_vec;
+  std::unordered_map<QueryView, VECTOR *> view_to_remove_vec;
 
   // This is the swap vector. Inside of a fixpoint loop, we swap this with the
   // normal vector, so that the current iteration of the loop can append to
@@ -1265,19 +1339,25 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   // from the prior iteration of the fixpoint loop.
   std::unordered_map<QueryView, VECTOR *> view_to_swap_vec;
 
+  // We try to share swap vectors as much as possible.
+  std::unordered_map<std::string, VECTOR *> col_types_to_swap_vec;
+
   // This is the output vector; it accumulates everything from all iterations
   // of the fixpoint loop.
   std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
-  std::vector<OP *> init_appends;
+  std::vector<REGION *> init_appends_add;
+  std::vector<REGION *> init_appends_remove;
   std::vector<OP *> cycle_appends;
 
-  std::vector<PARALLEL *> output_cycles;
-  std::vector<PARALLEL *> output_remove_cycles;
+  std::unordered_map<QueryView, PARALLEL *> output_add_cycles;
+  std::unordered_map<QueryView, PARALLEL *> output_remove_cycles;
 
-  std::vector<PARALLEL *> fixpoint_cycles;
-  std::vector<PARALLEL *> fixpoint_remove_cycles;
+  std::unordered_map<QueryView, PARALLEL *> fixpoint_add_cycles;
+  std::unordered_map<QueryView, PARALLEL *> fixpoint_remove_cycles;
+
+  const unsigned id;
 
   enum State {
     kAccumulatingInputRegions,
@@ -1287,6 +1367,9 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
 
   // Can this induction produce deletions?
   bool is_differential{false};
+
+  // All of the UNIONs, JOINs, and NEGATEs of the induction.
+  std::vector<QueryView> views;
 };
 
 using INDUCTION = Node<ProgramInductionRegion>;

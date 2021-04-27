@@ -81,10 +81,12 @@ bool Node<QueryCompare>::Canonicalize(
 #ifndef NDEBUG
       tuple->producer = "TRIVIAL-CMP";
 #endif
-      tuple->columns.Create(columns[0]->var, tuple, columns[0]->id, 0u);
+      (void) tuple->columns.Create(
+          columns[0]->var, columns[0]->type, tuple, columns[0]->id, 0u);
       tuple->input_columns.AddUse(input_columns[0]);
       for (auto i = 1u; i < num_cols; ++i) {
-        tuple->columns.Create(columns[i]->var, tuple, columns[i]->id, i);
+        (void) tuple->columns.Create(
+            columns[i]->var, columns[i]->type, tuple, columns[i]->id, i);
         tuple->input_columns.AddUse(attached_columns[i - 1u]);
       }
 
@@ -106,13 +108,17 @@ bool Node<QueryCompare>::Canonicalize(
           << "' and '" << columns[1]->var
           << "' ends up comparing the same values";
 
-      err.Note(input_columns[0]->var.SpellingRange(),
-               input_columns[0]->var.SpellingRange())
-          << "Left-hand side value comes from here";
+      if (input_columns[0]->var.has_value()) {
+        err.Note(input_columns[0]->var->SpellingRange(),
+                 input_columns[0]->var->SpellingRange())
+            << "Left-hand side value comes from here";
+      }
 
-      err.Note(input_columns[1]->var.SpellingRange(),
-               input_columns[1]->var.SpellingRange())
-          << "Right-hand side value comes from here";
+      if (input_columns[1]->var.has_value()) {
+        err.Note(input_columns[1]->var->SpellingRange(),
+                 input_columns[1]->var->SpellingRange())
+            << "Right-hand side value comes from here";
+      }
 
       valid = VIEW::kInvalidBeforeCanonicalize;
       invalid_var = input_columns[0]->var;
@@ -150,13 +156,16 @@ bool Node<QueryCompare>::Canonicalize(
 
   // Create and keep the new versions of the output columns.
   if (op == ComparisonOperator::kEqual) {
-    new_lhs_out = new_columns.Create(columns[0]->var, this, columns[0]->id, 0u);
+    new_lhs_out = new_columns.Create(
+        columns[0]->var, columns[0]->type, this, columns[0]->id, 0u);
     new_rhs_out = new_lhs_out;
 
     columns[0]->ReplaceAllUsesWith(new_lhs_out);
   } else {
-    new_lhs_out = new_columns.Create(columns[0]->var, this, columns[0]->id, 0u);
-    new_rhs_out = new_columns.Create(columns[1]->var, this, columns[1]->id, 1u);
+    new_lhs_out = new_columns.Create(
+        columns[0]->var, columns[0]->type, this, columns[0]->id, 0u);
+    new_rhs_out = new_columns.Create(
+        columns[1]->var, columns[1]->type, this, columns[1]->id, 1u);
 
     columns[0]->ReplaceAllUsesWith(new_lhs_out);
     columns[1]->ReplaceAllUsesWith(new_rhs_out);
@@ -170,7 +179,7 @@ bool Node<QueryCompare>::Canonicalize(
     const auto col = columns[j];
     if (col->IsUsed()) {
       const auto new_col = new_columns.Create(
-          col->var, this, col->id, new_columns.Size());
+          col->var, col->type, this, col->id, new_columns.Size());
       col->ReplaceAllUsesWith(new_col);
       new_attached_columns.AddUse(attached_columns[i]->TryResolveToConstant());
 

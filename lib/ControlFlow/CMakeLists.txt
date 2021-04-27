@@ -13,6 +13,7 @@ set(ControlFlow_SRCS
     "Build/Compare.cpp"
     "Build/Generate.cpp"
     "Build/Induction.cpp"
+    "Build/Induction.h"
     "Build/Init.cpp"
     "Build/Insert.cpp"
     "Build/Join.cpp"

@@ -128,7 +128,8 @@ bool Node<QueryMap>::Canonicalize(
   i = 0u;
   for (auto j = 0u; i < arity; ++i) {
     const auto old_col = columns[i];
-    const auto new_col = new_columns.Create(old_col->var, this, old_col->id, i);
+    const auto new_col = new_columns.Create(
+        old_col->var, old_col->type, this, old_col->id, i);
     old_col->ReplaceAllUsesWith(new_col);
 
     // It's an input column.
@@ -141,8 +142,8 @@ bool Node<QueryMap>::Canonicalize(
   for (auto j = 0u; i < num_cols; ++i, ++j) {
     const auto old_col = columns[i];
     if (old_col->IsUsed()) {
-      const auto new_col = new_columns.Create(old_col->var, this, old_col->id,
-                                              new_columns.Size());
+      const auto new_col = new_columns.Create(
+          old_col->var, old_col->type, this, old_col->id, new_columns.Size());
       old_col->ReplaceAllUsesWith(new_col);
       new_attached_columns.AddUse(attached_columns[j]->TryResolveToConstant());
     } else {

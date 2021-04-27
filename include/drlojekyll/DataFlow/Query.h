@@ -68,6 +68,7 @@ class QueryNegate;
 class QueryRelation;
 class QuerySelect;
 class QueryStream;
+class QueryTag;
 class QueryView;
 
 // A column. Columns may be derived from selections or from joins.
@@ -89,7 +90,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsConstantOrConstantRef(void) const noexcept;
   bool IsNegate(void) const noexcept;
 
-  const ParsedVariable &Variable(void) const noexcept;
+  std::optional<ParsedVariable> Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
 
   bool operator==(QueryColumn that) const noexcept;
@@ -97,11 +98,6 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
   // Number of uses of this column.
   unsigned NumUses(void) const noexcept;
-
-  // Replace all uses of one column with another column. Returns `false` if
-  // type column types don't match, or if the columns are from different
-  // queries.
-  bool ReplaceAllUsesWith(QueryColumn that) const noexcept;
 
   // Apply a function to each user.
   void ForEachUser(std::function<void(QueryView)> user_cb) const;
@@ -190,6 +186,10 @@ class QueryStream : public query::QueryNode<QueryStream> {
   const char *KindName(void) const noexcept;
 
   bool IsConstant(void) const noexcept;
+
+  // A special form of constant, auto-generated as a result of optimization.
+  bool IsTag(void) const noexcept;
+
   bool IsIO(void) const noexcept;
 
  private:
@@ -202,17 +202,44 @@ class QueryStream : public query::QueryNode<QueryStream> {
 // A literal in the Datalog code. A literal is a form of non-blocking stream.
 class QueryConstant : public query::QueryNode<QueryConstant> {
  public:
-  const ParsedLiteral &Literal(void) const noexcept;
+  QueryConstant(const QueryTag &tag);
+
+  std::optional<ParsedLiteral> Literal(void) const noexcept;
 
   static QueryConstant From(const QueryStream &table);
   static QueryConstant From(QueryColumn col);
+
+  // What is the type of this constant?
+  TypeLoc Type(void) const noexcept;
+
+  // Returns `true` if this is a tag value.
+  bool IsTag(void) const;
 
  private:
   using query::QueryNode<QueryConstant>::QueryNode;
 
   friend class QuerySelect;
   friend class QueryStream;
+  friend class QueryTag;
   friend class QueryView;
+};
+
+// An auto-generate "tag" constant value. These are created during optimization.
+class QueryTag : public query::QueryNode<QueryTag> {
+ public:
+  static QueryTag From(const QueryConstant &const_val);
+
+  // What is the type of this constant? Tags are always unsigned, 16-bit
+  // integers.
+  TypeLoc Type(void) const noexcept;
+
+  // The value of this tag.
+  uint16_t Value(void) const;
+
+ private:
+  using query::QueryNode<QueryTag>::QueryNode;
+
+  friend class QueryConstant;
 };
 
 // A set of concrete inputs to a query.
@@ -301,9 +328,6 @@ enum class InputColumnRole {
 
   // The input column is published into a message.
   kPublished,
-
-  // The input column is deleted from the relation containing the output column.
-  kDeleted
 };
 
 // A view into a collection of rows. The rows may be derived from a selection
@@ -335,6 +359,9 @@ class QueryView : public query::QueryNode<QueryView> {
     return view;
   }
 
+  // Returns the `nth` output column.
+  QueryColumn NthColumn(unsigned n) const noexcept;
+
   static QueryView From(const QuerySelect &view) noexcept;
   static QueryView From(const QueryTuple &view) noexcept;
   static QueryView From(const QueryKVIndex &view) noexcept;
@@ -364,16 +391,29 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
 
-  // Returns `true` if this node is used by a negation.
+  // Returns `true` if this node is used by a `QueryNegate`.
   bool IsUsedByNegation(void) const noexcept;
+
+  // Returns `true` if this node is used by a `QueryJoin`.
+  bool IsUsedByJoin(void) const noexcept;
+
+  // Returns `true` if this node is used by a `QueryMerge`.
+  bool IsUsedByMerge(void) const noexcept;
 
   // Apply a callback `on_negate` to each negation using this view.
   void ForEachNegation(std::function<void(QueryNegate)> on_negate) const;
 
   // Can this view receive inputs that should logically "delete" entries?
+  //
+  // NOTE(pag): Not being able to receive deletions does not imply that a
+  //            view can't produce deletions.
   bool CanReceiveDeletions(void) const noexcept;
 
   // Can this view produce outputs that should logically "delete" entries?
+  //
+  // NOTE(pag): Some views can produce deletions without receiving them. These
+  //            include aggregates, key/value indices, and any view that tests
+  //            condition variables.
   bool CanProduceDeletions(void) const noexcept;
 
   // Returns `true` if all users of this view use all the columns of this
@@ -429,6 +469,26 @@ class QueryView : public query::QueryNode<QueryView> {
   void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;
+
+  // A unique integer that labels all UNIONs in the same induction.
+  std::optional<unsigned> InductionGroupId(void) const;
+
+  // A total ordering on the "depth" of inductions. Two inductions at the same
+  // depth can be processed in parallel.
+  std::optional<unsigned> InductionDepth(void) const;
+
+  UsedNodeRange<QueryView> InductiveSuccessors(void) const;
+  UsedNodeRange<QueryView> InductivePredecessors(void) const;
+
+  UsedNodeRange<QueryView> NonInductiveSuccessors(void) const;
+  UsedNodeRange<QueryView> NonInductivePredecessors(void) const;
+
+  // All UNIONs, including this one, in the same inductive set.
+  UsedNodeRange<QueryView> InductiveSet(void) const;
+
+  // Can this view reach back to itself without first going through another
+  // inductive union?
+  bool IsOwnIndirectInductiveSuccessor(void) const;
 
  private:
   using query::QueryNode<QueryView>::QueryNode;
@@ -681,6 +741,9 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;
 
+  bool CanReceiveDeletions(void) const;
+  bool CanProduceDeletions(void) const;
+
  private:
   using query::QueryNode<QueryMerge>::QueryNode;
 
@@ -746,7 +809,7 @@ class QueryNegate : public query::QueryNode<QueryNegate> {
 
   // Incoming view that represents a flow of data between the relation and
   // the negation.
-  QueryTuple NegatedView(void) const noexcept;
+  QueryView NegatedView(void) const noexcept;
 
   OutputStream &DebugString(OutputStream &) const noexcept;
 
@@ -887,6 +950,7 @@ class Query {
   DefinedNodeRange<QueryCompare> Compares(void) const;
   DefinedNodeRange<QueryIO> IOs(void) const;
   DefinedNodeRange<QueryConstant> Constants(void) const;
+  DefinedNodeRange<QueryTag> Tags(void) const;
 
   template <typename T>
   void ForEachView(T cb) const {

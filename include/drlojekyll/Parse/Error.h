@@ -3,8 +3,10 @@
 #pragma once
 
 #include <drlojekyll/Display/DisplayPosition.h>
+#include <drlojekyll/Parse/Parse.h>
 
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <type_traits>
 #include <utility>
@@ -16,6 +18,7 @@ template <typename>
 class ParsedNode;
 }  // namespace parse
 
+class ParsedVariable;
 class DisplayManager;
 
 enum class Color : unsigned char {
@@ -99,6 +102,9 @@ class ErrorStream {
     (*os) << data;
     return *this;
   }
+
+  const ErrorStream &operator<<(
+      const std::optional<ParsedVariable> &maybe_var) const;
 
  private:
   friend class Error;

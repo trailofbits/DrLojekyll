@@ -21,6 +21,7 @@ OutputStream &operator<<(OutputStream &os,
                          ProgramTestAndSetRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region);
+OutputStream &operator<<(OutputStream &os, ProgramWorkerIdRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramVectorAppendRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region);

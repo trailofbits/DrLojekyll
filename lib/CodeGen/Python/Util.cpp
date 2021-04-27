@@ -33,17 +33,17 @@ OutputStream &Comment(OutputStream &os, ProgramRegion region,
 
 OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
   switch (proc.Kind()) {
-    case ProcedureKind::kInitializer: return os << "init_" << proc.Id() << "_";
+    case ProcedureKind::kInitializer: return os << "init_" << proc.Id() << '_';
     case ProcedureKind::kPrimaryDataFlowFunc:
-      return os << "flow_" << proc.Id() << "_";
+      return os << "flow_" << proc.Id() << '_';
     case ProcedureKind::kMessageHandler:
-      return os << proc.Message()->Name() << "_"
-                << proc.Message()->Arity();
-    case ProcedureKind::kTupleFinder: return os << "find_" << proc.Id() << "_";
-    case ProcedureKind::kTupleRemover: return os << "remove_" << proc.Id() << "_";
-    case ProcedureKind::kInductionCycleHandler:
-    case ProcedureKind::kInductionOutputHandler:
-    default: return os << "proc_" << proc.Id() << "_";
+      return os << proc.Message()->Name() << '_' << proc.Message()->Arity();
+    case ProcedureKind::kTupleFinder: return os << "find_" << proc.Id() << '_';
+    case ProcedureKind::kTupleRemover:
+      return os << "remove_" << proc.Id() << '_';
+    case ProcedureKind::kConditionTester:
+      return os << "test_" << proc.Id() << '_';
+    default: return os << "proc_" << proc.Id() << '_';
   }
 }
 
@@ -98,6 +98,12 @@ const char *OperatorString(ComparisonOperator op) {
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var) {
   auto val = var.Value();
+  if (val && val->IsTag()) {
+    std::stringstream ss;
+    ss << QueryTag::From(*val).Value();
+    return ss.str();
+  }
+
   std::string_view prefix = "";
   std::string_view suffix = "";
 
@@ -154,8 +160,10 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   std::stringstream value;
   value << prefix;
   if (val) {
-    if (auto spelling = val->Spelling(Language::kPython); spelling) {
-      value << *spelling;
+    if (auto lit = val->Literal()) {
+      if (auto spelling = lit->Spelling(Language::kPython); spelling) {
+        value << *spelling;
+      }
     }
   }
   value << suffix;

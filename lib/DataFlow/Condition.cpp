@@ -68,74 +68,123 @@ done:
   return is_trivial;
 }
 
+// Are the `positive_users` and `negative_users` lists consistent?
+bool Node<QueryCondition>::UsersAreConsistent(void) const {
+  auto consistent = true;
+  for (auto view : positive_users) {
+    if (view) {
+      auto found = false;
+      for (auto cond : view->positive_conditions) {
+        if (cond == this) {
+          found = true;
+          break;
+        }
+      }
+      consistent = consistent && found;
+    }
+  }
+
+  for (auto view : negative_users) {
+    if (view) {
+      auto found = false;
+      for (auto cond : view->negative_conditions) {
+        if (cond == this) {
+          found = true;
+          break;
+        }
+      }
+      consistent = consistent && found;
+    }
+  }
+
+  return consistent;
+}
+
 // Extract conditions from regular nodes and force them to belong to only
 // tuple nodes. This simplifies things substantially for downstream users.
 void QueryImpl::ExtractConditionsToTuples(void) {
-  for (auto changed = true; changed;) {
-    changed = false;
+  std::vector<VIEW *> conditional_views;
 
-    ForEachView([&](VIEW *view) {
-      if (view->AsInsert()) {
-        return;
-      } else if (auto user = view->OnlyUser();
-                 user && !user->AsMerge() && !user->AsJoin()) {
-        if (view->sets_condition) {
-          if (user->sets_condition) {
-            user = view->GuardWithTuple(this, true);
-            changed = true;
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
+    if (view->sets_condition ||
+        !view->positive_conditions.Empty() ||
+        !view->negative_conditions.Empty()) {
+      conditional_views.push_back(view);
+    }
+  });
 
-          } else {
-            view->TransferSetConditionTo(user);
-            changed = true;
-          }
-        } else if (!view->positive_conditions.Empty() ||
-                   !view->negative_conditions.Empty()) {
-          changed = true;
-        }
-        view->CopyTestedConditionsTo(user);
-        view->DropTestedConditions();
+  for (auto view : conditional_views) {
 
-      } else if (view->AsTuple()) {
-        return;
+    // Proxy the insert with a tuple that does the conditional stuff.
+    if (auto insert = view->AsInsert(); insert) {
+      TUPLE *pre_tuple = this->tuples.Create();
 
-      } else if (!view->positive_conditions.Empty() ||
-                 !view->negative_conditions.Empty()) {
-        auto user = view->GuardWithTuple(this, true);
-        view->CopyTestedConditionsTo(user);
-        view->DropTestedConditions();
-        changed = true;
-
-      } else if (view->sets_condition) {
-        view->GuardWithTuple(this, true);
-        changed = true;
+      auto col_index = 0u;
+      for (auto in_col : insert->input_columns) {
+        (void) pre_tuple->columns.Create(
+            in_col->var, in_col->type, pre_tuple, in_col->id, col_index++);
+        pre_tuple->input_columns.AddUse(in_col);
       }
-    });
 
-    // If any of the data leading into a join is conditional, then that makes
-    // the join conditional, so try to move the conditions on a joined view
-    // into the join itself.
-    //
-    // NOTE(pag): In practice, we want to lift conditions are far up the data
-    //            flow itself (closer to message publications) so that not so
-    //            much downstream stuff is conditional.
-    for (auto join : joins) {
-      for (auto joined_view : join->joined_views) {
-        if (!joined_view->sets_condition &&
-            (!joined_view->positive_conditions.Empty() ||
-             !joined_view->negative_conditions.Empty()) &&
-            joined_view->OnlyUser() == join) {
-
-          joined_view->CopyTestedConditionsTo(join);
-          joined_view->DropTestedConditions();
-          changed = true;
-        }
+      insert->input_columns.Clear();
+      for (auto col : pre_tuple->columns) {
+        insert->input_columns.AddUse(col);
       }
+
+      insert->CopyDifferentialAndGroupIdsTo(pre_tuple);
+      insert->TransferSetConditionTo(pre_tuple);
+      insert->CopyTestedConditionsTo(pre_tuple);
+      insert->DropTestedConditions();
+
+      assert(!insert->sets_condition);
+      assert(insert->positive_conditions.Empty());
+      assert(insert->negative_conditions.Empty());
+
+      // Force kill it.
+      if (insert->relation && !insert->relation->declaration.Arity()) {
+        insert->PrepareToDelete();
+      }
+
+      if (pre_tuple->positive_conditions.Empty() &&
+          pre_tuple->negative_conditions.Empty()) {
+        continue;
+      }
+
+      view = pre_tuple;
+    }
+
+    // Given a view `cond V`, create `V -> cond TUPLE_b -> TUPLE_a`, such that
+    // if `V` set any conditions, then `TUPLE_a` sets those conditions, and
+    // the conditions tested in `V` are not tested in `TUPLE_b`.
+
+    // Will take the set condition, if any.
+    const auto had_condition = !!view->sets_condition;
+    TUPLE * const tuple_a = view->GuardWithTuple(this, true);
+    assert(tuple_a->positive_conditions.Empty());
+    assert(tuple_a->negative_conditions.Empty());
+    assert(!view->sets_condition);
+    assert(!had_condition || tuple_a->sets_condition);
+    (void) tuple_a;
+    (void) had_condition;
+
+    // Will take the tested conditions.
+    if (!view->positive_conditions.Empty() ||
+        !view->negative_conditions.Empty()) {
+      TUPLE * const tuple_b = view->GuardWithTuple(this, true);
+      assert(tuple_b->positive_conditions.Empty());
+      assert(tuple_b->negative_conditions.Empty());
+      view->CopyTestedConditionsTo(tuple_b);
+      view->DropTestedConditions();
+      assert(view->positive_conditions.Empty());
+      assert(view->negative_conditions.Empty());
+      assert(!tuple_b->positive_conditions.Empty() ||
+             !tuple_b->negative_conditions.Empty());
     }
   }
 
 #ifndef NDEBUG
-  ForEachView([&](VIEW *view) {
-    if (view->AsTuple() || view->AsInsert()) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
+    if (view->AsTuple()) {
       return;
     } else {
       assert(!view->sets_condition);

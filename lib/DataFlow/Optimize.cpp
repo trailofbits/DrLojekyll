@@ -453,19 +453,35 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     for (auto max_cse = views.size(); max_cse-- && CSE(views); ) {
       RemoveUnusedViews();
       RelabelGroupIDs();
+      TrackDifferentialUpdates(log, true);
       views.clear();
       const_cast<const QueryImpl *>(this)->ForEachView(
           [&views](VIEW *view) { views.push_back(view); });
     }
   };
 
+  auto do_sink = [&](void) {
+    OptimizationContext opt;
+    opt.can_sink_unions = true;
+    for (auto i = 0u; i < merges.Size(); ++i) {
+      MERGE * const merge = merges[i];
+      if (!merge->is_dead) {
+        opt.can_sink_unions = true;
+        opt.can_remove_unused_columns = false;
+        merge->Canonicalize(this, opt, log);
+      }
+    }
+  };
+
+  do_sink();
   do_cse();  // Apply CSE to all views before most canonicalization.
 
   OptimizationContext opt;
-  opt.can_sink_unions = true;
   Canonicalize(opt, log);
 
+  do_sink();
   do_cse();  // Apply CSE to all canonical views.
+  do_sink();
 
   auto max_depth = 1u;
   for (auto view : this->inserts) {
@@ -480,6 +496,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     opt.can_sink_unions = false;
     opt.bottom_up = false;
     Canonicalize(opt, log);
+    do_sink();
 
     if (ShrinkConditions()) {
       Canonicalize(opt, log);

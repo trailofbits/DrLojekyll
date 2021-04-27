@@ -1,0 +1,40 @@
+; This example shows boolean predicates, i.e. predicates that don't have any parameters.
+
+#message log_in(i32 UserId) @differential.
+#local user(i32 UserID).
+#local maybe_logged_in(i32 UserId).
+#message add_user(i32 UserID).
+#query user_is_logged_in(bound i32 UserId).
+
+user(ID) : add_user(ID).
+
+maybe_logged_in(ID) : log_in(ID).
+
+is_logged_in : maybe_logged_in(ID), user(ID).
+
+user_is_logged_in(ID) : is_logged_in, user(ID).
+
+#epilogue ```python
+class Functors(DatabaseFunctors):
+  pass
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), Functors())
+  
+  db.log_in_1([1], [])
+  assert not db.user_is_logged_in_b(1)
+  
+  db.add_user_1([2])
+  assert not db.user_is_logged_in_b(1)
+  assert not db.user_is_logged_in_b(2)
+  
+  
+  db.add_user_1([1])
+  assert db.user_is_logged_in_b(1)
+  assert db.user_is_logged_in_b(2)
+
+  db.log_in_1([], [1])  # un-login the user
+  assert not db.user_is_logged_in_b(1)
+  assert not db.user_is_logged_in_b(2)
+
+```.

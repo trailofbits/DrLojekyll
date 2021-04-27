@@ -94,6 +94,7 @@ class Use {
 template <typename T>
 class UseListIterator {
  public:
+  inline UseListIterator(void) noexcept : it(nullptr) {}
   inline UseListIterator(const Use<T> *const *it_) noexcept : it(it_) {}
 
   inline UseListIterator<T> &operator++(void) noexcept {
@@ -264,6 +265,10 @@ class UseList {
   }
 
   void Clear(void);
+
+  User *Owner(void) const {
+    return owner;
+  }
 
  private:
   void DeleteUse(Use<T> *use) {
@@ -446,6 +451,8 @@ class Def {
   }
 
   void ReplaceAllUsesWith(T *that) {
+    assert(that != nullptr);
+
     if (self == that->self) {
       return;
     }
@@ -930,6 +937,7 @@ class Node;
 template <typename T>
 class UsedNodeIterator {
  public:
+  inline UsedNodeIterator(void) : it(nullptr) {}
   inline UsedNodeIterator(UseListIterator<Node<T>> it_) : it(it_) {}
 
   inline UsedNodeIterator<T> &operator++(void) noexcept {
