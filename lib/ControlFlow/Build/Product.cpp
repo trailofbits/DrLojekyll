@@ -41,14 +41,16 @@ static unsigned ContinueProductOrder(QueryView view) {
 
 }  // namespace
 
-ContinueProductWorkItem::ContinueProductWorkItem(
-    Context &context, QueryView view_, INDUCTION *induction_)
+ContinueProductWorkItem::ContinueProductWorkItem(Context &context,
+                                                 QueryView view_,
+                                                 INDUCTION *induction_)
     : WorkItem(context, ContinueProductOrder(view_)),
       view(view_),
       induction(induction_) {}
 
 // Find the common ancestor of all insert regions.
 REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
+
   // This is quite subtle and there is a ton of collusion with induction
   // creation going on here. Basically, if we have a PRODUCT that "straddles"
   // an inductive back-edge, i.e. some of its predecessors are on that back-
@@ -64,8 +66,8 @@ REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
   // assignment to the PRODUCT.
   if (NeedsInductionCycleVector(view)) {
     assert(induction != nullptr);
-    PARALLEL * const par = induction->fixpoint_add_cycles[view];
-    LET * const let = par->parent->AsOperation()->AsLetBinding();
+    PARALLEL *const par = induction->fixpoint_add_cycles[view];
+    LET *const let = par->parent->AsOperation()->AsLetBinding();
     assert(let != nullptr);
 
     // This is the trick!
@@ -141,9 +143,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  const auto product =
-      impl->operation_regions.CreateDerived<TABLEPRODUCT>(
-          seq, join_view, impl->next_id++);
+  const auto product = impl->operation_regions.CreateDerived<TABLEPRODUCT>(
+      seq, join_view, impl->next_id++);
   seq->AddRegion(product);
 
   // Clear out the input vectors that might have been filled up before the
@@ -156,9 +157,9 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   }
 
   for (auto pred_view : view.Predecessors()) {
-    DataModel * const pred_model = \
+    DataModel *const pred_model =
         impl->view_to_model[pred_view]->FindAs<DataModel>();
-    TABLE * const pred_table = pred_model->table;
+    TABLE *const pred_table = pred_model->table;
 
     auto &vec = product_vector[pred_table];
     if (!vec) {
@@ -205,8 +206,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
       const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
           impl, context, parent, view, view_cols, pred_view, nullptr);
 
-      COMMENT( index_is_good_call->comment =
-          __FILE__ ": ContinueProductWorkItem::Run"; )
+      COMMENT(index_is_good_call->comment =
+                  __FILE__ ": ContinueProductWorkItem::Run";)
 
       parent->body.Emplace(parent, index_is_good);
       parent = index_is_good_call;
@@ -219,8 +220,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   if (needs_inductive_output_vec) {
     PARALLEL *par = impl->parallel_regions.Create(parent);
     parent->body.Emplace(parent, par);
-    par->AddRegion(AppendToInductionOutputVectors(
-        impl, view, context, induction, par));
+    par->AddRegion(
+        AppendToInductionOutputVectors(impl, view, context, induction, par));
 
     parent = impl->operation_regions.CreateDerived<LET>(par);
     par->AddRegion(parent);
@@ -244,7 +245,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
 
     // Fill in the assignments!
-    assert(let_in_fixpoint_region->defined_vars.Size() == view.Columns().size());
+    assert(let_in_fixpoint_region->defined_vars.Size() ==
+           view.Columns().size());
     assert(let_in_fixpoint_region->used_vars.Empty());
     for (auto col : view.Columns()) {
       let_in_fixpoint_region->used_vars.AddUse(parent->VariableFor(impl, col));
@@ -259,8 +261,8 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
 // Build an eager cross-product for a join.
 void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
-                             QueryJoin product_view, Context &context,
-                             OP *root, TABLE *last_table_) {
+                             QueryJoin product_view, Context &context, OP *root,
+                             TABLE *last_table_) {
   const QueryView view(product_view);
 
   // First, check if we should push this tuple through the PRODUCT. If it's
@@ -274,7 +276,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
       InTryInsert(impl, context, pred_view, root, last_table_);
 
   OP *parent = parent_;
-  TABLE * const pred_table = pred_table_;
+  TABLE *const pred_table = pred_table_;
   INDUCTION *induction = nullptr;
   if (view.InductionGroupId().has_value()) {
     induction = GetOrInitInduction(impl, view, context, parent);
@@ -301,13 +303,14 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 
   auto &product_action = context.view_to_product_action[view];
 
-  auto make_append = [&] (void) {
-    PROC * const proc = parent->containing_procedure;
+  auto make_append = [&](void) {
+    PROC *const proc = parent->containing_procedure;
     VECTOR *&vec = product_action->product_vector[pred_table];
     bool is_new_vec = false;
     if (!vec) {
       is_new_vec = true;
-      vec = proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
+      vec =
+          proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
     }
 
     // Append this tuple to the product input vector.
@@ -338,8 +341,8 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
   // collude with an INDUCTION to make this work. In practice, this turns out
   // to get really crazy.
   if (NeedsInductionCycleVector(view)) {
-    VECTOR * const inductive_vec = induction->view_to_add_vec[pred_view];
-    VECTOR * const swap_vec = induction->view_to_swap_vec[pred_view];
+    VECTOR *const inductive_vec = induction->view_to_add_vec[pred_view];
+    VECTOR *const swap_vec = induction->view_to_swap_vec[pred_view];
 
     // `pred_view` is a non-inductive predecessor of this PRODUCT.
     if (inductive_vec == swap_vec) {
@@ -349,8 +352,8 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
 
     // `pred_view` is an inductive predecessor of this PRODUCT.
     } else {
-      AppendToInductionInputVectors(
-          impl, pred_view, view, context, parent, induction, true);
+      AppendToInductionInputVectors(impl, pred_view, view, context, parent,
+                                    induction, true);
     }
 
   // This is a "simple" PRODUCT, i.e. all predecessor views are either all

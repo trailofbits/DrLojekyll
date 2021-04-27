@@ -11,8 +11,7 @@ TypeLoc::TypeLoc(const Token &tok)
     : kind(tok.TypeKind()),
       range(tok.SpellingRange()) {}
 
-TypeLoc::TypeLoc(TypeKind kind_)
-    : kind(kind_) {}
+TypeLoc::TypeLoc(TypeKind kind_) : kind(kind_) {}
 
 TypeLoc::TypeLoc(TypeKind kind_, const DisplayRange &range_)
     : kind(kind_),

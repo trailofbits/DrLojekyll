@@ -1,5 +1,7 @@
 // Copyright 2021, Trail of Bits. All rights reserved.
 
+#include "Util.h"
+
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/ControlFlow/Program.h>
@@ -12,8 +14,6 @@
 #include <sstream>
 #include <unordered_set>
 #include <vector>
-
-#include "Util.h"
 
 namespace hyde {
 
@@ -137,13 +137,10 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
       prefix = "float(";
       suffix = ")";
       break;
-    case TypeKind::kBytes:
-      prefix = "b";
-      break;
+    case TypeKind::kBytes: prefix = "b"; break;
     case TypeKind::kASCII:
     case TypeKind::kUTF8:
-    case TypeKind::kUUID:
-      break;
+    case TypeKind::kUUID: break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
         if (auto constructor = type->Constructor(Language::kPython);

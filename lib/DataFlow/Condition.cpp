@@ -19,7 +19,7 @@ Node<QueryCondition>::~Node(void) {
         // Disconnect the insert from its relation, making it look unused, and
         // thus subject to elimination.
         insert->relation->inserts.RemoveIf(
-            [=] (VIEW *v) { return v == insert;});
+            [=](VIEW *v) { return v == insert; });
         insert->relation.Clear();
       }
     }
@@ -106,8 +106,7 @@ void QueryImpl::ExtractConditionsToTuples(void) {
   std::vector<VIEW *> conditional_views;
 
   const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
-    if (view->sets_condition ||
-        !view->positive_conditions.Empty() ||
+    if (view->sets_condition || !view->positive_conditions.Empty() ||
         !view->negative_conditions.Empty()) {
       conditional_views.push_back(view);
     }
@@ -121,8 +120,8 @@ void QueryImpl::ExtractConditionsToTuples(void) {
 
       auto col_index = 0u;
       for (auto in_col : insert->input_columns) {
-        (void) pre_tuple->columns.Create(
-            in_col->var, in_col->type, pre_tuple, in_col->id, col_index++);
+        (void) pre_tuple->columns.Create(in_col->var, in_col->type, pre_tuple,
+                                         in_col->id, col_index++);
         pre_tuple->input_columns.AddUse(in_col);
       }
 
@@ -159,7 +158,7 @@ void QueryImpl::ExtractConditionsToTuples(void) {
 
     // Will take the set condition, if any.
     const auto had_condition = !!view->sets_condition;
-    TUPLE * const tuple_a = view->GuardWithTuple(this, true);
+    TUPLE *const tuple_a = view->GuardWithTuple(this, true);
     assert(tuple_a->positive_conditions.Empty());
     assert(tuple_a->negative_conditions.Empty());
     assert(!view->sets_condition);
@@ -170,7 +169,7 @@ void QueryImpl::ExtractConditionsToTuples(void) {
     // Will take the tested conditions.
     if (!view->positive_conditions.Empty() ||
         !view->negative_conditions.Empty()) {
-      TUPLE * const tuple_b = view->GuardWithTuple(this, true);
+      TUPLE *const tuple_b = view->GuardWithTuple(this, true);
       assert(tuple_b->positive_conditions.Empty());
       assert(tuple_b->negative_conditions.Empty());
       view->CopyTestedConditionsTo(tuple_b);

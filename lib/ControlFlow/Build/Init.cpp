@@ -30,8 +30,8 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query) {
     }
 
     // Pass in the empty vector once or twice for other messages.
-    const auto empty_vec = init_proc->VectorFor(
-        impl, VectorKind::kEmpty, receives[0].Columns());
+    const auto empty_vec =
+        init_proc->VectorFor(impl, VectorKind::kEmpty, receives[0].Columns());
     call->arg_vecs.AddUse(empty_vec);
     if (receives[0].CanReceiveDeletions()) {
       call->arg_vecs.AddUse(empty_vec);

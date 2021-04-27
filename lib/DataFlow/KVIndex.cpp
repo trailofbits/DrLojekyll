@@ -89,8 +89,9 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
 // Put the KV index into a canonical form. The only real internal optimization
 // that will happen is constant propagation of keys, but NOT values (as we can't
 // predict how the merge functors will affect them).
-bool Node<QueryKVIndex>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
+                                      const OptimizationContext &opt,
+                                      const ErrorLog &) {
 
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;

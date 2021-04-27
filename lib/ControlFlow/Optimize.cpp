@@ -154,6 +154,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   }
 
   if (changed) {
+
     // Remove any redundant or strip-minded regions in bulk.
     const auto old_num_children = par->regions.Size();
     par->regions.RemoveIf([=](REGION *r) { return !r->parent; });
@@ -194,84 +195,85 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
   }
 
   return changed;
-//
-//  auto parent_region = induction->parent;
-//  if (!parent_region) {
-//    return changed;
-//  }
-//
-//  auto parent_induction = parent_region->AsInduction();
-//  if (!parent_induction) {
-//    return changed;
-//  }
-//
-//  // Optimize nested inductions.
-//
-//  // Form like
-//  // induction
-//  //   init
-//  //    induction
-//  if (induction == parent_induction->init_region.get()) {
-//
-//    // Fixup vectors
-//    for (auto def : induction->vectors) {
-//      changed = true;
-//      parent_induction->vectors.AddUse(def);
-//    }
-//    induction->vectors.Clear();
-//
-//    // Fixup output region
-//    if (auto output_region = induction->output_region.get(); output_region) {
-//      assert(!output_region->IsNoOp());  // Handled above.
-//      induction->output_region.Clear();
-//      output_region->parent = parent_induction;
-//      if (auto parent_output_region = parent_induction->output_region.get();
-//          parent_output_region) {
-//        output_region->ExecuteBefore(prog, parent_output_region);
-//      } else {
-//        parent_induction->output_region.Emplace(parent_induction,
-//                                                output_region);
-//      }
-//    }
-//
-//    // Fixup init region
-//    auto init_region = induction->init_region.get();
-//    induction->init_region.Clear();
-//    init_region->parent = parent_induction;
-//    parent_induction->init_region.Emplace(parent_induction, init_region);
-//
-//    // Fixup cyclic region
-//    auto cyclic_region = induction->cyclic_region.get();
-//    induction->cyclic_region.Clear();
-//    cyclic_region->parent = parent_induction;
-//    if (auto parent_cyclic_region = parent_induction->cyclic_region.get();
-//        parent_cyclic_region) {
-//      cyclic_region->ExecuteBefore(prog, parent_cyclic_region);
-//    } else {
-//      parent_induction->cyclic_region.Emplace(parent_induction, cyclic_region);
-//    }
-//
-//    induction->parent = nullptr;
-//
-//    changed = true;
-//
-//  // Form like
-//  // induction:
-//  // init:
-//  //   init-code-0
-//  // fixpoint-loop:
-//  //   induction:
-//  //     init:
-//  //       init-code-1
-//  //     fixpoint-loop:
-//  //       code-2
-//  //   code-3
-//  } else if (induction == parent_induction->cyclic_region.get()) {
-//
-//    // TODO(ekilmer)
-//  }
-//
-//  return changed;
+
+  //
+  //  auto parent_region = induction->parent;
+  //  if (!parent_region) {
+  //    return changed;
+  //  }
+  //
+  //  auto parent_induction = parent_region->AsInduction();
+  //  if (!parent_induction) {
+  //    return changed;
+  //  }
+  //
+  //  // Optimize nested inductions.
+  //
+  //  // Form like
+  //  // induction
+  //  //   init
+  //  //    induction
+  //  if (induction == parent_induction->init_region.get()) {
+  //
+  //    // Fixup vectors
+  //    for (auto def : induction->vectors) {
+  //      changed = true;
+  //      parent_induction->vectors.AddUse(def);
+  //    }
+  //    induction->vectors.Clear();
+  //
+  //    // Fixup output region
+  //    if (auto output_region = induction->output_region.get(); output_region) {
+  //      assert(!output_region->IsNoOp());  // Handled above.
+  //      induction->output_region.Clear();
+  //      output_region->parent = parent_induction;
+  //      if (auto parent_output_region = parent_induction->output_region.get();
+  //          parent_output_region) {
+  //        output_region->ExecuteBefore(prog, parent_output_region);
+  //      } else {
+  //        parent_induction->output_region.Emplace(parent_induction,
+  //                                                output_region);
+  //      }
+  //    }
+  //
+  //    // Fixup init region
+  //    auto init_region = induction->init_region.get();
+  //    induction->init_region.Clear();
+  //    init_region->parent = parent_induction;
+  //    parent_induction->init_region.Emplace(parent_induction, init_region);
+  //
+  //    // Fixup cyclic region
+  //    auto cyclic_region = induction->cyclic_region.get();
+  //    induction->cyclic_region.Clear();
+  //    cyclic_region->parent = parent_induction;
+  //    if (auto parent_cyclic_region = parent_induction->cyclic_region.get();
+  //        parent_cyclic_region) {
+  //      cyclic_region->ExecuteBefore(prog, parent_cyclic_region);
+  //    } else {
+  //      parent_induction->cyclic_region.Emplace(parent_induction, cyclic_region);
+  //    }
+  //
+  //    induction->parent = nullptr;
+  //
+  //    changed = true;
+  //
+  //  // Form like
+  //  // induction:
+  //  // init:
+  //  //   init-code-0
+  //  // fixpoint-loop:
+  //  //   induction:
+  //  //     init:
+  //  //       init-code-1
+  //  //     fixpoint-loop:
+  //  //       code-2
+  //  //   code-3
+  //  } else if (induction == parent_induction->cyclic_region.get()) {
+  //
+  //    // TODO(ekilmer)
+  //  }
+  //
+  //  return changed;
 }
 
 static bool OptimizeImpl(SERIES *series) {
@@ -629,7 +631,7 @@ void ProgramImpl::Optimize(void) {
       +[](REGION *a, REGION *b) { return a->CachedDepth() > b->CachedDepth(); };
 
   // Iteratively remove unused regions.
-  auto remove_unused = [this] (void) {
+  auto remove_unused = [this](void) {
     for (size_t changed = 1; changed;) {
       changed = 0;
       changed |= parallel_regions.RemoveUnused();
@@ -640,10 +642,8 @@ void ProgramImpl::Optimize(void) {
           case ProcedureKind::kInitializer:
           case ProcedureKind::kEntryDataFlowFunc:
           case ProcedureKind::kPrimaryDataFlowFunc:
-          case ProcedureKind::kMessageHandler:
-            return false;
-          default:
-            return !proc->has_raw_use && !proc->IsUsed();
+          case ProcedureKind::kMessageHandler: return false;
+          default: return !proc->has_raw_use && !proc->IsUsed();
         }
       });
     }
@@ -733,8 +733,7 @@ void ProgramImpl::Optimize(void) {
       case ProcedureKind::kInitializer:
       case ProcedureKind::kEntryDataFlowFunc:
       case ProcedureKind::kPrimaryDataFlowFunc:
-      case ProcedureKind::kMessageHandler:
-        continue;
+      case ProcedureKind::kMessageHandler: continue;
       default:
         if (proc->IsUsed() || proc->has_raw_use) {
           const auto hash = proc->Hash(UINT32_MAX);

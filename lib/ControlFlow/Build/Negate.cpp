@@ -26,16 +26,16 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   for (QueryColumn out_col : negate.NegatedColumns()) {
     const auto i = *(out_col.Index());
     const auto neg_col = negated_view.NthColumn(i);
-    VAR * out_col_var = parent->VariableFor(impl, out_col);
+    VAR *out_col_var = parent->VariableFor(impl, out_col);
     assert(out_col_var != nullptr);
     parent->col_id_to_var[neg_col.Id()] = out_col_var;
     negated_view_cols.push_back(neg_col);
   }
 
   // Call the top-down checker for the negated view.
-  const auto [neg_check, neg_check_call] = CallTopDownChecker(
-      impl, context, parent, negated_view, negated_view_cols,
-      negated_view, nullptr);
+  const auto [neg_check, neg_check_call] =
+      CallTopDownChecker(impl, context, parent, negated_view, negated_view_cols,
+                         negated_view, nullptr);
   parent->body.Emplace(parent, neg_check);
 
   // If the data isn't there, then keep going.
@@ -51,19 +51,17 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   // If this is an inductive negation, then we might defer processing its
   // outputs until we get into a successor.
   if (negate_view.InductionGroupId().has_value()) {
-    INDUCTION * const induction = GetOrInitInduction(
-        impl, negate_view, context, succ_parent);
+    INDUCTION *const induction =
+        GetOrInitInduction(impl, negate_view, context, succ_parent);
     if (NeedsInductionCycleVector(negate_view)) {
-      AppendToInductionInputVectors(
-          impl, negate_view, negate_view, context, succ_parent,
-          induction, true);
+      AppendToInductionInputVectors(impl, negate_view, negate_view, context,
+                                    succ_parent, induction, true);
       return;
     }
   }
 
-  BuildEagerInsertionRegions(
-      impl, negate_view, context, succ_parent, negate_view.Successors(),
-      last_table);
+  BuildEagerInsertionRegions(impl, negate_view, context, succ_parent,
+                             negate_view.Successors(), last_table);
 }
 
 void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
@@ -75,14 +73,14 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   //            data must be present in both sides of the negation, similar to
   //            what is needed for it being required in both sides of a JOIN.
   auto pred_view = view.Predecessors()[0];
-  auto [parent, pred_table_, _] = InTryMarkUnknown(
-        impl, context, pred_view, parent_, already_removed_);
+  auto [parent, pred_table_, _] =
+      InTryMarkUnknown(impl, context, pred_view, parent_, already_removed_);
 
   // NOTE(pag): A negation can never share the same data model as its
   //            predecessor, as it might not pass through all of its
   //            predecessor's data.
-  auto [succ_parent, table, already_removed] = InTryMarkUnknown(
-      impl, context, view, parent, nullptr);
+  auto [succ_parent, table, already_removed] =
+      InTryMarkUnknown(impl, context, view, parent, nullptr);
 
   // Normally, the above `InTryMarkUnknown` shouldn't do anything, but we have
   // it there for completeness. The reason why is because the data modelling
@@ -93,11 +91,11 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   // If this is an inductive negation, then we might defer processing its
   // outputs until we get into a sucessor.
   if (view.InductionGroupId().has_value()) {
-    INDUCTION * const induction = GetOrInitInduction(
-        impl, view, context, succ_parent);
+    INDUCTION *const induction =
+        GetOrInitInduction(impl, view, context, succ_parent);
     if (NeedsInductionCycleVector(view)) {
-      AppendToInductionInputVectors(
-          impl, view, view, context, succ_parent, induction, false);
+      AppendToInductionInputVectors(impl, view, view, context, succ_parent,
+                                    induction, false);
       return;
     }
   }
@@ -106,14 +104,15 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   //            checking the negated view was even necessary.
   //
 
-  BuildEagerRemovalRegions(impl, view, context, succ_parent,
-                           view.Successors(), already_removed);
+  BuildEagerRemovalRegions(impl, view, context, succ_parent, view.Successors(),
+                           already_removed);
 }
 
 // Build a top-down checker on a negation.
-REGION *BuildTopDownNegationChecker(
-    ProgramImpl *impl, Context &context, REGION *proc, QueryNegate negate,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+REGION *BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
+                                    REGION *proc, QueryNegate negate,
+                                    std::vector<QueryColumn> &view_cols,
+                                    TABLE *already_checked) {
 
   const QueryView view(negate);
   const QueryView negated_view = negate.NegatedView();
@@ -134,12 +133,12 @@ REGION *BuildTopDownNegationChecker(
     // Map outputs to the inputs we have, and build up a list of inputs we
     // have in `pred_view_cols` so that we can do a table scan of `pred_view`.
     std::vector<QueryColumn> pred_view_cols;
-    negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                           std::optional<QueryColumn> out_col) {
+    negate.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                          std::optional<QueryColumn> out_col) {
       if (out_col && InputColumnRole::kCopied == role &&
           std::find(view_cols.begin(), view_cols.end(), *out_col) !=
               view_cols.end()) {
-        VAR * const out_var = proc->VariableFor(impl, *out_col);
+        VAR *const out_var = proc->VariableFor(impl, *out_col);
         assert(out_var != nullptr);
 
         proc->col_id_to_var[in_col.Id()] = out_var;
@@ -159,19 +158,18 @@ REGION *BuildTopDownNegationChecker(
       view_cols.push_back(col);
     }
 
-    SERIES * const seq = impl->series_regions.Create(proc);
+    SERIES *const seq = impl->series_regions.Create(proc);
     BuildMaybeScanPartial(
         impl, pred_view, pred_view_cols, pred_table, seq,
         [&](REGION *in_scan, bool in_loop) -> REGION * {
-
           assert(in_loop);
 
           // Make sure to make the variables for the negation's output columns
           // available to our recursive call.
-          negate.ForEachUse([&] (QueryColumn in_col, InputColumnRole role,
-                                 std::optional<QueryColumn> out_col) {
+          negate.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                                std::optional<QueryColumn> out_col) {
             if (out_col && InputColumnRole::kCopied == role) {
-              VAR * const in_var = in_scan->VariableFor(impl, in_col);
+              VAR *const in_var = in_scan->VariableFor(impl, in_col);
               in_scan->col_id_to_var[out_col->Id()] = in_var;
             }
           });
@@ -203,7 +201,7 @@ REGION *BuildTopDownNegationChecker(
     const auto i = *(out_col.Index());
     const auto in_col = negate.NthInputColumn(i);
     const auto neg_col = negated_view.NthColumn(i);
-    VAR * out_col_var = check_call->VariableFor(impl, out_col);
+    VAR *out_col_var = check_call->VariableFor(impl, out_col);
     assert(out_col_var != nullptr);
     check_call->col_id_to_var[in_col.Id()] = out_col_var;
     check_call->col_id_to_var[neg_col.Id()] = out_col_var;
@@ -212,21 +210,19 @@ REGION *BuildTopDownNegationChecker(
   }
 
   // If it's there, then we need to make sure it's not in the negated view.
-  const auto [neg_check, neg_check_call] = CallTopDownChecker(
-      impl, context, check_call, negated_view, negated_view_cols,
-      negated_view, nullptr);
+  const auto [neg_check, neg_check_call] =
+      CallTopDownChecker(impl, context, check_call, negated_view,
+                         negated_view_cols, negated_view, nullptr);
 
   check_call->body.Emplace(check_call, neg_check);
 
   // If it's in `view` and in `negated_view`, then return false.
   neg_check_call->body.Emplace(
-      neg_check_call,
-      BuildStateCheckCaseReturnFalse(impl, neg_check_call));
+      neg_check_call, BuildStateCheckCaseReturnFalse(impl, neg_check_call));
 
   // If it's in `view` but not in `negated_view`, then return true.
   neg_check_call->false_body.Emplace(
-      neg_check_call,
-      BuildStateCheckCaseReturnTrue(impl, neg_check_call));
+      neg_check_call, BuildStateCheckCaseReturnTrue(impl, neg_check_call));
 
   // If it's not in `view`, then it doesn't matter if it is or isn't in
   // `negated_view`, because we only care about stuff that has previously

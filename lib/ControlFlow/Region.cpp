@@ -84,8 +84,7 @@ Node<ProgramRegion>::MergeEqual(ProgramImpl *prog,
 
 // Return the farthest ancestor of this region, in terms of linkage. Often this
 // just returns a `PROC *` if this region is linked in to its procedure.
-Node<ProgramRegion> *
-Node<ProgramRegion>::Ancestor(void) noexcept {
+Node<ProgramRegion> *Node<ProgramRegion>::Ancestor(void) noexcept {
   auto ret_region = this;
   for (auto region = this; region; region = region->parent) {
     ret_region = region;

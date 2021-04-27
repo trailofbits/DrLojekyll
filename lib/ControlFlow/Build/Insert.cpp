@@ -25,7 +25,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
   const auto cols = insert.InputColumns();
 
   DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
+  TABLE *const table = model->table;
 
   if (table) {
     if (table != last_table) {
@@ -66,8 +66,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
     // No accumulation vector, publish right now.
     } else {
-      const auto message_publish = impl->operation_regions.CreateDerived<PUBLISH>(
-          parent, message);
+      const auto message_publish =
+          impl->operation_regions.CreateDerived<PUBLISH>(parent, message);
       parent->body.Emplace(parent, message_publish);
 
       for (auto col : cols) {
@@ -92,8 +92,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent_,
                                  TABLE *already_removed_) {
-  auto [parent, table, already_removed] = InTryMarkUnknown(
-        impl, context, view, parent_, already_removed_);
+  auto [parent, table, already_removed] =
+      InTryMarkUnknown(impl, context, view, parent_, already_removed_);
 
   const auto insert = QueryInsert::From(view);
   const auto insert_cols = insert.InputColumns();

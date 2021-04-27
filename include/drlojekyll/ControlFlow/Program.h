@@ -83,7 +83,6 @@ class ProgramWorkerIdRegion;
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  public:
-
   // Return the region containing `child`, or `std::nullopt` if this is the
   // topmost region in a procedure.
   static std::optional<ProgramRegion> Containing(ProgramRegion &child) noexcept;
@@ -518,6 +517,7 @@ class ProgramVectorAppendRegion
     VectorUsage Usage(void) const noexcept; \
     DataVector Vector(void) const noexcept; \
     std::optional<DataVariable> WorkerId(void) const; \
+\
    private: \
     friend class ProgramRegion; \
     using program::ProgramNode<name>::ProgramNode; \
@@ -987,8 +987,7 @@ class ProgramQuery {
   std::optional<ProgramProcedure> forcing_function;
 
   inline explicit ProgramQuery(
-      ParsedQuery query_, DataTable table_,
-      std::optional<DataIndex> index_,
+      ParsedQuery query_, DataTable table_, std::optional<DataIndex> index_,
       std::optional<ProgramProcedure> tuple_checker_,
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),

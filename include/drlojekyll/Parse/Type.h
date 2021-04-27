@@ -78,10 +78,8 @@ class TypeLoc {
   inline bool IsBuiltIn(void) const noexcept {
     switch (UnderlyingKind()) {
       case TypeKind::kInvalid:
-      case TypeKind::kForeignType:
-        return false;
-      default:
-        return true;
+      case TypeKind::kForeignType: return false;
+      default: return true;
     }
   }
 

@@ -32,7 +32,8 @@ static OutputStream &Type(OutputStream &os, ParsedModule module,
   return Type(os, module, var.Type().Kind());
 }
 
-static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) {
+static void DefineTable(OutputStream &os, ParsedModule module,
+                        DataTable table) {
   os << os.Indent() << "create " << table;
   os.PushIndent();
   for (auto col : table.Columns()) {
@@ -109,11 +110,13 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kInductiveJoinPivots: os << "$induction_pivots"; break;
     case VectorKind::kInductiveJoinPivotSwaps:
-      os << "$induction_pivots_swap"; break;
+      os << "$induction_pivots_swap";
+      break;
     case VectorKind::kProductInput: os << "$product"; break;
     case VectorKind::kInductiveProductInput: os << "$induction_product"; break;
     case VectorKind::kInductiveProductSwaps:
-      os << "$induction_product_swap"; break;
+      os << "$induction_product_swap";
+      break;
     case VectorKind::kTableScan: os << "$scan"; break;
     case VectorKind::kMessageOutputs: os << "$publish"; break;
     case VectorKind::kEmpty: os << "$empty"; break;
@@ -791,8 +794,7 @@ OutputStream &operator<<(OutputStream &os, Program program) {
 
   const auto module = program.ParsedModule();
   for (auto var : program.Constants()) {
-    os << sep << os.Indent() << "const " << Type(os, module, var) << ' '
-       << var;
+    os << sep << os.Indent() << "const " << Type(os, module, var) << ' ' << var;
     switch (var.DefiningRole()) {
       case VariableRole::kConstantZero: os << " = 0"; break;
       case VariableRole::kConstantOne: os << " = 1"; break;

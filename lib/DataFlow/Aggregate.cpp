@@ -67,8 +67,9 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
+                                        const OptimizationContext &opt,
+                                        const ErrorLog &) {
   if (is_canonical) {
     return false;
   }
@@ -151,9 +152,8 @@ bool Node<QueryAggregate>::Canonicalize(
     const auto in_col = group_by_columns[j];
     if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
       new_group_by_columns.AddUse(in_col);
-      const auto new_out_col =
-          new_columns.Create(old_out_col->var, old_out_col->type,
-                             this, old_out_col->id);
+      const auto new_out_col = new_columns.Create(
+          old_out_col->var, old_out_col->type, this, old_out_col->id);
       old_out_col->ReplaceAllUsesWith(new_out_col);
       new_out_col->CopyConstantFrom(old_out_col);
     }
@@ -163,9 +163,8 @@ bool Node<QueryAggregate>::Canonicalize(
   const auto num_cols = columns.Size();
   for (auto j = i; j < num_cols; ++j) {
     const auto old_out_col = columns[j];
-    const auto new_out_col =
-        new_columns.Create(old_out_col->var, old_out_col->type,
-                           this, old_out_col->id);
+    const auto new_out_col = new_columns.Create(
+        old_out_col->var, old_out_col->type, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
     new_out_col->CopyConstantFrom(old_out_col);
   }

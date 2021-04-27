@@ -1,20 +1,20 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Parse/ErrorLog.h>
+
+#include "Query.h"
 
 namespace hyde {
 
 // Identify which data flows can receive and produce deletions.
-void QueryImpl::TrackDifferentialUpdates(
-    const ErrorLog &log, bool check_conds) const {
+void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
+                                         bool check_conds) const {
 
   std::unordered_map<ParsedDeclaration, std::vector<SELECT *>> decl_to_selects;
 
   std::unordered_map<INSERT *, std::vector<SELECT *>> insert_to_selects;
 
-  const_cast<const QueryImpl *>(this)->ForEachView([] (VIEW *v) {
+  const_cast<const QueryImpl *>(this)->ForEachView([](VIEW *v) {
     v->can_receive_deletions = false;
     v->can_produce_deletions = false;
   });
@@ -110,10 +110,11 @@ void QueryImpl::TrackDifferentialUpdates(
     if (message.IsDifferential()) {
       if (!view->can_produce_deletions) {
         assert(!view->can_receive_deletions);
-//        log.Append(range, message.Differential().SpellingRange())
-//            << "Message '" << message.Name() << '/' << message.Arity()
-//            << "' is marked with the '@differential' attribute but cannot "
-//            << "produce deletions";
+
+        //        log.Append(range, message.Differential().SpellingRange())
+        //            << "Message '" << message.Name() << '/' << message.Arity()
+        //            << "' is marked with the '@differential' attribute but cannot "
+        //            << "produce deletions";
       }
 
     } else if (view->can_produce_deletions) {

@@ -60,8 +60,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
   auto ret = EXIT_SUCCESS;
 
-  if (gIRStream || gCxxCodeStream || gPyCodeStream ||
-      gPyInterfaceCodeStream) {
+  if (gIRStream || gCxxCodeStream || gPyCodeStream || gPyInterfaceCodeStream) {
 
     try {
       if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
@@ -82,14 +81,13 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
         if (gPyInterfaceCodeStream) {
           gPyInterfaceCodeStream->SetIndentSize(4u);
-          hyde::GeneratePythonInterfaceCode(
-              *program_opt, *gPyInterfaceCodeStream);
+          hyde::GeneratePythonInterfaceCode(*program_opt,
+                                            *gPyInterfaceCodeStream);
         }
       } else {
         ret = EXIT_FAILURE;
       }
     } catch (...) {
-
     }
   }
 

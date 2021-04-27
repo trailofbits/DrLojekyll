@@ -577,10 +577,8 @@ bool DataVariable::IsGlobal(void) const noexcept {
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
-    case VariableRole::kConstantTrue:
-      return true;
-    default:
-      return false;
+    case VariableRole::kConstantTrue: return true;
+    default: return false;
   }
 }
 
@@ -592,10 +590,8 @@ bool DataVariable::IsConstant(void) const noexcept {
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
-    case VariableRole::kConstantTrue:
-      return true;
-    default:
-      return false;
+    case VariableRole::kConstantTrue: return true;
+    default: return false;
   }
 }
 
@@ -809,7 +805,8 @@ unsigned ProgramTableProductRegion::Id(void) const noexcept {
 }
 
 // The table used by the Nth table scan.
-DataTable ProgramTableProductRegion::Table(unsigned table_index) const noexcept {
+DataTable
+ProgramTableProductRegion::Table(unsigned table_index) const noexcept {
   assert(table_index < impl->tables.Size());
   return DataTable(impl->tables[table_index]);
 }

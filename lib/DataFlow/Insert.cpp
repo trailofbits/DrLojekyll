@@ -32,8 +32,8 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryInsert>::Canonicalize(
-    QueryImpl *, const OptimizationContext &, const ErrorLog &) {
+bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &,
+                                     const ErrorLog &) {
   is_canonical = true;
   if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
     valid = VIEW::kInvalidBeforeCanonicalize;
@@ -43,8 +43,8 @@ bool Node<QueryInsert>::Canonicalize(
   assert(attached_columns.Empty());
 
   // NOTE(pag): This may update `is_canonical`.
-  (void) PullDataFromBeyondTrivialTuples(
-      GetIncomingView(input_columns), input_columns, attached_columns);
+  (void) PullDataFromBeyondTrivialTuples(GetIncomingView(input_columns),
+                                         input_columns, attached_columns);
 
   if (!is_canonical) {
     is_canonical = true;

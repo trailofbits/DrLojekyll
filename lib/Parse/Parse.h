@@ -481,7 +481,6 @@ class Node<ParsedImport> {
 template <>
 class Node<ParsedForeignConstant> {
  public:
-
   // The next foreign constant defined on this type for a particular language.
   Node<ParsedForeignConstant> *next{nullptr};
   Node<ParsedForeignConstant> *next_with_same_name{nullptr};
@@ -498,7 +497,6 @@ class Node<ParsedForeignConstant> {
 template <>
 class Node<ParsedForeignType> {
  public:
-
   // The next foreign type anywhere in the parse.
   Node<ParsedForeignType> *next{nullptr};
 

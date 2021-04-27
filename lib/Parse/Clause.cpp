@@ -246,7 +246,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         }
 
       case 1:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
           continue;
@@ -274,7 +274,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       // a parameter and have seen a comma, it's now time to try to parse
       // another clause head parameter.
       case 2:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kIdentifierVariable == lexeme) {
           auto param_var = CreateVariable(clause.get(), tok, true, false);
           auto param_use = new Node<ParsedUse<ParsedClause>>(
@@ -307,12 +307,12 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // Kick-start type inference when using a named constant.
         } else if (Lexeme::kIdentifierConstant == lexeme) {
-          auto unnamed_var = CreateLiteralVariable(
-              clause.get(), tok, true, false);
+          auto unnamed_var =
+              CreateLiteralVariable(clause.get(), tok, true, false);
           const TypeLoc type_loc(tok.TypeKind());
           unnamed_var->type = type_loc;
-          auto foreign_const_it = context->foreign_constants.find(
-              tok.IdentifierId());
+          auto foreign_const_it =
+              context->foreign_constants.find(tok.IdentifierId());
           if (foreign_const_it != context->foreign_constants.end()) {
             unnamed_var->type = foreign_const_it->second->type;
           }
@@ -330,7 +330,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       // We've read a variable/literal/constant, now we expect a comma and more
       // clause head parameters, or a closing paren to end the clause head.
       case 3:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kPuncComma == lexeme) {
           state = 2;
           continue;
@@ -369,7 +369,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
       // Time to see if we have a clause body to parse or not.
       case 4:
-        clause_toks.push_back(tok); // add token even if we error
+        clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kPuncColon == lexeme) {
           state = 5;
           continue;
@@ -511,6 +511,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         }
 
       case 6:
+
         // We've just seen a variable, literal, or constant; try to combine it
         // with a binary operator.
         if (Lexeme::kPuncEqual == lexeme || Lexeme::kPuncNotEqual == lexeme ||
@@ -534,12 +535,12 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           }
 
           const auto assign = new Node<ParsedAssignment>(lhs);
-          assign->rhs.literal = Token::Synthetic(Lexeme::kLiteralTrue,
-                                                 DisplayRange());
+          assign->rhs.literal =
+              Token::Synthetic(Lexeme::kLiteralTrue, DisplayRange());
           assign->rhs.assigned_to = lhs;
           assign->rhs.data = "true";
-          assign->rhs.type = TypeLoc(TypeKind::kBoolean,
-                                     lhs->name.SpellingRange());
+          assign->rhs.type =
+              TypeLoc(TypeKind::kBoolean, lhs->name.SpellingRange());
 
           // Add to the clause's assignment list.
           if (!clause->assignments.empty()) {
@@ -562,8 +563,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             continue;
 
           } else if (Lexeme::kPuncColon == lexeme) {
+
             // let the "dot" be the colon token
             clause->dot = tok;
+
             // there's another clause let's go accumulate the remaining tokens
             state = 16;
             multi_clause = true;
@@ -699,8 +702,10 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           continue;
 
         } else if (Lexeme::kPuncColon == lexeme) {
+
           // let the "dot" be the colon token
           clause->dot = tok;
+
           // there's another clause let's go accumulate the remaining tokens
           state = 16;
           multi_clause = true;
@@ -725,6 +730,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       case 10: continue;
 
       case 11:
+
         // We think we're parsing a negated predicate, i.e. `!pred(...)`.
         if (Lexeme::kIdentifierAtom == lexeme) {
           pred.reset(new Node<ParsedPredicate>(module, clause.get()));
@@ -738,13 +744,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         } else if (Lexeme::kIdentifierVariable == lexeme) {
           lhs = CreateVariable(clause.get(), tok, false, false);
           const auto assign = new Node<ParsedAssignment>(lhs);
-          assign->rhs.literal = Token::Synthetic(Lexeme::kLiteralFalse,
-                                                 DisplayRange());
+          assign->rhs.literal =
+              Token::Synthetic(Lexeme::kLiteralFalse, DisplayRange());
           assign->rhs.assigned_to = lhs;
           assign->rhs.data = "false";
-          assign->rhs.type = TypeLoc(
-              TypeKind::kBoolean,
-              DisplayRange(negation_pos, tok.NextPosition()));
+          assign->rhs.type =
+              TypeLoc(TypeKind::kBoolean,
+                      DisplayRange(negation_pos, tok.NextPosition()));
 
           // Add to the clause's assignment list.
           if (!clause->assignments.empty()) {
@@ -858,8 +864,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             return;
           }
 
-          const auto pred_range =
-              ParsedPredicate(pred.get()).SpellingRange();
+          const auto pred_range = ParsedPredicate(pred.get()).SpellingRange();
 
           // Not allowed to negate inline declarations, as they might not be
           // backed by actual relations.
@@ -895,18 +900,18 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
             const auto kind = pred->declaration->context->kind;
 
-//            // We don't allow negations of messages because we think of them
-//            // as ephemeral, i.e. not even part of the database. They come in
-//            // to trigger some action, and leave.
-//            //
-//            // We *do* allow negation of queries because we proxy them
-//            // externally via later source-to-source transforms.
-//            if (kind == DeclarationKind::kMessage) {
-//              context->error_log.Append(scope_range, pred_range)
-//                  << "Cannot negate message '" << pred->name
-//                  << "'; if you want to test that a message has never been "
-//                  << "received then proxy it with a `#local` or `#export`";
-//              return;
+            //            // We don't allow negations of messages because we think of them
+            //            // as ephemeral, i.e. not even part of the database. They come in
+            //            // to trigger some action, and leave.
+            //            //
+            //            // We *do* allow negation of queries because we proxy them
+            //            // externally via later source-to-source transforms.
+            //            if (kind == DeclarationKind::kMessage) {
+            //              context->error_log.Append(scope_range, pred_range)
+            //                  << "Cannot negate message '" << pred->name
+            //                  << "'; if you want to test that a message has never been "
+            //                  << "received then proxy it with a `#local` or `#export`";
+            //              return;
 
             // A functor with a range of one-to-one or one-or-more is guaranteed
             // to produce at least one output, and so negating it would yield
@@ -960,6 +965,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           return;
         }
       case 16:
+
         // Accumulate multi-clause tokens
         assert(multi_clause);
         clause_toks.push_back(tok);
@@ -1047,7 +1053,6 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     sub_tokens.swap(clause_toks);
     next_sub_tok_index = end_index;
   }
-
 }
 
 }  // namespace hyde

@@ -452,8 +452,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     // Pragmas.
     case '@': {
-      accumulate_if(
-          [](char next_ch) { return kStopChars.find(next_ch) == std::string::npos; });
+      accumulate_if([](char next_ch) {
+        return kStopChars.find(next_ch) == std::string::npos;
+      });
       if (impl->data == "@highlight") {
         auto &basic = ret.As<lex::BasicToken>();
         basic.Store<Lexeme>(Lexeme::kPragmaDebugHighlight);
@@ -492,7 +493,8 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);
-        error.Store<char>(impl->data.size() == 1u ? impl->data[1] : impl->data[0]);
+        error.Store<char>(impl->data.size() == 1u ? impl->data[1]
+                                                  : impl->data[0]);
         error.Store<lex::ErrorIndexDisp>(1u);
         error.Store<lex::ErrorLineDisp>(0);
         error.Store<lex::ErrorColumn>(ret.position.Column() + 1u);
@@ -582,8 +584,7 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       }
 
       switch (impl->data.size()) {
-        case 1:
-          break;
+        case 1: break;
 
         case 2:
           if (impl->data == "i8") {
@@ -846,8 +847,10 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           auto &error = ret.As<lex::ErrorToken>();
           const auto error_pos = impl->reader.CurrentPosition();
           error.Store<Lexeme>(Lexeme::kInvalidNumber);
-          error.Store<lex::ErrorIndexDisp>(error_pos.Index() - ret.position.Index());
-          error.Store<lex::ErrorLineDisp>(error_pos.Line() - ret.position.Line());
+          error.Store<lex::ErrorIndexDisp>(error_pos.Index() -
+                                           ret.position.Index());
+          error.Store<lex::ErrorLineDisp>(error_pos.Line() -
+                                          ret.position.Line());
           error.Store<lex::ErrorColumn>(error_pos.Column());
 
           accumulate_if([](char next_ch) {

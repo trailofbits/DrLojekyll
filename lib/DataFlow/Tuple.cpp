@@ -36,8 +36,9 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 // replacements easier. Because comparisons are mostly pointer-based, the
 // canonical form of this tuple is one where all input columns are sorted,
 // deduplicated, and where all output columns are guaranteed to be used.
-bool Node<QueryTuple>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
+                                    const OptimizationContext &opt,
+                                    const ErrorLog &) {
 
   if (is_locked || is_dead || valid != VIEW::kValid) {
     is_canonical = true;
@@ -88,8 +89,8 @@ bool Node<QueryTuple>::Canonicalize(
   for (i = 0; i < num_cols; ++i) {
     const auto old_col = columns[i];
     if (old_col->IsUsed()) {
-      const auto new_col = new_columns.Create(
-          old_col->var, old_col->type, this, old_col->id, i);
+      const auto new_col =
+          new_columns.Create(old_col->var, old_col->type, this, old_col->id, i);
       old_col->ReplaceAllUsesWith(new_col);
       new_input_columns.AddUse(input_columns[i]->TryResolveToConstant());
     } else {
@@ -202,9 +203,7 @@ bool Node<QueryTuple>::ForwardsAllInputsAsIs(
   // Check to see if we can use `incoming_view` in place of `this`. We need
   // to be extra careful about whether or not `this` and `incoming_view` are
   // directly used by the same join.
-  if (incoming_view &&
-      !sets_condition &&
-      positive_conditions.Empty() &&
+  if (incoming_view && !sets_condition && positive_conditions.Empty() &&
       negative_conditions.Empty() &&
       incoming_view->columns.Size() == num_cols) {
 

@@ -103,8 +103,8 @@ class ErrorStream {
     return *this;
   }
 
-  const ErrorStream &operator<<(
-      const std::optional<ParsedVariable> &maybe_var) const;
+  const ErrorStream &
+  operator<<(const std::optional<ParsedVariable> &maybe_var) const;
 
  private:
   friend class Error;

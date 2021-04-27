@@ -41,9 +41,10 @@ static unsigned ContinueJoinOrder(QueryView view) {
 
 }  // namespace
 
-ContinueJoinWorkItem::ContinueJoinWorkItem(
-    Context &context, QueryView view_, VECTOR *input_pivot_vec_, VECTOR *swap_pivot_vec_,
-    INDUCTION *induction_)
+ContinueJoinWorkItem::ContinueJoinWorkItem(Context &context, QueryView view_,
+                                           VECTOR *input_pivot_vec_,
+                                           VECTOR *swap_pivot_vec_,
+                                           INDUCTION *induction_)
     : WorkItem(context, ContinueJoinOrder(view_)),
       view(view_),
       input_pivot_vec(input_pivot_vec_),
@@ -69,8 +70,8 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
   if (NeedsInductionCycleVector(view)) {
     assert(inserts.empty());
     assert(induction != nullptr);
-    PARALLEL * const par = induction->fixpoint_add_cycles[view];
-    LET * const let = par->parent->AsOperation()->AsLetBinding();
+    PARALLEL *const par = induction->fixpoint_add_cycles[view];
+    LET *const let = par->parent->AsOperation()->AsLetBinding();
     assert(let != nullptr);
 
     // This is the trick!
@@ -165,10 +166,10 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
       }
     }
 
-    DataModel * const pred_model = \
+    DataModel *const pred_model =
         impl->view_to_model[pred_view]->FindAs<DataModel>();
-    TABLE * const pred_table = pred_model->table;
-    TABLEINDEX * const pred_index =
+    TABLE *const pred_table = pred_model->table;
+    TABLEINDEX *const pred_index =
         pred_table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
     join->tables.AddUse(pred_table);
     join->indices.AddUse(pred_index);
@@ -304,9 +305,9 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       }
 
       // NOTE(pag): All views leading into a JOIN are always backed by a table.
-      DataModel * const pred_model =
+      DataModel *const pred_model =
           impl->view_to_model[pred_view]->FindAs<DataModel>();
-      TABLE * const pred_table = pred_model->table;
+      TABLE *const pred_table = pred_model->table;
       assert(pred_table != nullptr);
 
       // Check to see if the data is present. If it's not (either absent or
@@ -316,30 +317,29 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       // TODO(pag): Consider using a finder function if we're not in an
       //            induction?
 
-//      const auto [check, parent_out] = CallTopDownChecker(
-//          impl, context, parent, view, view_cols, pred_view, nullptr);
+      //      const auto [check, parent_out] = CallTopDownChecker(
+      //          impl, context, parent, view, view_cols, pred_view, nullptr);
 
       OP *parent_out = nullptr;
-      CHECKSTATE * const check = BuildTopDownCheckerStateCheck(
+      CHECKSTATE *const check = BuildTopDownCheckerStateCheck(
           impl, parent, pred_table, pred_view.Columns(),
-          [&parent_out] (ProgramImpl *impl_, REGION *in_check) {
+          [&parent_out](ProgramImpl *impl_, REGION *in_check) {
             parent_out = impl_->operation_regions.CreateDerived<LET>(in_check);
             return parent_out;
           },
-          BuildStateCheckCaseNothing,
-          BuildStateCheckCaseNothing);
+          BuildStateCheckCaseNothing, BuildStateCheckCaseNothing);
 
       parent->body.Emplace(parent, check);
       parent = parent_out;
 
-//      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
-//          impl, context, parent, view, view_cols, pred_view, nullptr);
-//
-//      COMMENT( index_is_good_call->comment =
-//          __FILE__ ": ContinueJoinWorkItem::Run"; )
-//
-//      parent->body.Emplace(parent, index_is_good);
-//      parent = index_is_good_call;
+      //      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
+      //          impl, context, parent, view, view_cols, pred_view, nullptr);
+      //
+      //      COMMENT( index_is_good_call->comment =
+      //          __FILE__ ": ContinueJoinWorkItem::Run"; )
+      //
+      //      parent->body.Emplace(parent, index_is_good);
+      //      parent = index_is_good_call;
     }
   }
 
@@ -349,8 +349,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   if (needs_inductive_output_vec) {
     PARALLEL *par = impl->parallel_regions.Create(parent);
     parent->body.Emplace(parent, par);
-    par->AddRegion(AppendToInductionOutputVectors(
-        impl, view, context, induction, par));
+    par->AddRegion(
+        AppendToInductionOutputVectors(impl, view, context, induction, par));
 
     parent = impl->operation_regions.CreateDerived<LET>(par);
     par->AddRegion(parent);
@@ -373,7 +373,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     parent->body.Emplace(parent, let_in_fixpoint_region);
 
     // Fill in the assignments!
-    assert(let_in_fixpoint_region->defined_vars.Size() == view.Columns().size());
+    assert(let_in_fixpoint_region->defined_vars.Size() ==
+           view.Columns().size());
     assert(let_in_fixpoint_region->used_vars.Empty());
     for (auto col : view.Columns()) {
       let_in_fixpoint_region->used_vars.AddUse(parent->VariableFor(impl, col));
@@ -398,7 +399,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   auto [insert, pred_table, last_table] =
       InTryInsert(impl, context, pred_view, parent_, last_table_);
 
-  OP * const parent = insert;
+  OP *const parent = insert;
 
   INDUCTION *induction = nullptr;
   if (view.InductionGroupId().has_value()) {
@@ -411,13 +412,13 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // collude with an INDUCTION to make this work. In practice, this turns out
   // to get really crazy.
   if (NeedsInductionCycleVector(view)) {
-    VECTOR * const pivot_vec = induction->view_to_add_vec[view];
-    VECTOR * const swap_vec = induction->view_to_swap_vec[view];
+    VECTOR *const pivot_vec = induction->view_to_add_vec[view];
+    VECTOR *const swap_vec = induction->view_to_swap_vec[view];
     assert(pivot_vec && swap_vec);
     (void) pivot_vec;
     (void) swap_vec;
-    AppendToInductionInputVectors(
-        impl, view, view, context, parent, induction, true);
+    AppendToInductionInputVectors(impl, view, view, context, parent, induction,
+                                  true);
 
   // Yay, it's just a "simple" join, i.e. it's entirely contained outside
   // of an inductive region, or it's entirely contained inside of an inductive
@@ -437,9 +438,9 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
     }
 
     if (!join_action) {
-      PROC * const proc = parent->containing_procedure;
-      VECTOR * const pivot_vec = proc->VectorFor(
-          impl, VectorKind::kJoinPivots, join.PivotColumns());
+      PROC *const proc = parent->containing_procedure;
+      VECTOR *const pivot_vec =
+          proc->VectorFor(impl, VectorKind::kJoinPivots, join.PivotColumns());
 
       join_action = new ContinueJoinWorkItem(context, view, pivot_vec,
                                              pivot_vec, induction);
@@ -469,6 +470,7 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
   // induction, and some are out of the induction.
   if (view.InductionGroupId().has_value()) {
     (void) GetOrInitInduction(impl, view, context, marked);
+
     //CreateBottomUpInductiveJoinRemover(impl, context, from_view, view, marked);
     //return;
   }
@@ -583,9 +585,10 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
 }
 
 // Build a top-down checker on a join.
-REGION *BuildTopDownJoinChecker(
-    ProgramImpl *impl, Context &context, REGION *proc, QueryJoin join_view,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
+                                REGION *proc, QueryJoin join_view,
+                                std::vector<QueryColumn> &view_cols,
+                                TABLE *already_checked) {
 
   QueryView view(join_view);
 
@@ -599,7 +602,8 @@ REGION *BuildTopDownJoinChecker(
   std::unordered_map<QueryView, std::vector<std::pair<QueryColumn, VAR *>>>
       pred_col_vars;
 
-  std::unordered_map<QueryView, std::vector<std::pair<QueryColumn, QueryColumn>>>
+  std::unordered_map<QueryView,
+                     std::vector<std::pair<QueryColumn, QueryColumn>>>
       pivot_map;
 
   join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
@@ -644,7 +648,7 @@ REGION *BuildTopDownJoinChecker(
     pred_vars.emplace_back(in_col, out_col_var);
   });
 
-  SERIES * const seq = impl->series_regions.Create(proc);
+  SERIES *const seq = impl->series_regions.Create(proc);
 
   // Map in the variables.
   for (const auto &[pred_view, col_vars] : pred_col_vars) {
@@ -657,7 +661,7 @@ REGION *BuildTopDownJoinChecker(
   // case, what we can do is call down to each of our predecessors, and if any
   // of them return false, then we bail out, otherwise we return true.
   if (num_found_cols == out_vars.size()) {
-    PARALLEL * const par = impl->parallel_regions.Create(seq);
+    PARALLEL *const par = impl->parallel_regions.Create(seq);
     seq->AddRegion(par);
 
     // Call each predecessor in parallel. If any of them return `false`, then
@@ -665,8 +669,8 @@ REGION *BuildTopDownJoinChecker(
     for (auto pred_view : join_view.JoinedViews()) {
       par->AddRegion(CallTopDownChecker(
           impl, context, par, view, view_cols, pred_view, already_checked,
-          [] (REGION *) -> REGION * { return nullptr; },
-          [=] (REGION *parent_if_false) -> REGION * {
+          [](REGION *) -> REGION * { return nullptr; },
+          [=](REGION *parent_if_false) -> REGION * {
             return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
           }));
     }
@@ -679,7 +683,7 @@ REGION *BuildTopDownJoinChecker(
 
   // We're going to replay this join top-down. That means building up a
   // pivot vector.
-  VECTOR * const pivot_vec = proc->containing_procedure->VectorFor(
+  VECTOR *const pivot_vec = proc->containing_procedure->VectorFor(
       impl, VectorKind::kJoinPivots, join_view.PivotColumns());
 
   // Make sure all the pivots in our pivot map are sorted in terms of the
@@ -687,8 +691,8 @@ REGION *BuildTopDownJoinChecker(
   // whatever the order is that we get from `ForEachUse` above.
   for (auto &[pred_view, pivot_out_in] : pivot_map) {
     std::sort(pivot_out_in.begin(), pivot_out_in.end(),
-              [] (std::pair<QueryColumn, QueryColumn> a,
-                  std::pair<QueryColumn, QueryColumn> b) {
+              [](std::pair<QueryColumn, QueryColumn> a,
+                 std::pair<QueryColumn, QueryColumn> b) {
                 return *(a.first.Index()) < *(b.first.Index());
               });
   }
@@ -727,10 +731,8 @@ REGION *BuildTopDownJoinChecker(
 
     // Sort the scores so that it's easy to pull out the best scoring view.
     std::sort(pred_view_scores.begin(), pred_view_scores.end(),
-              [] (std::pair<double, QueryView> a,
-                  std::pair<double, QueryView> b) {
-                return a.first < b.first;
-              });
+              [](std::pair<double, QueryView> a,
+                 std::pair<double, QueryView> b) { return a.first < b.first; });
 
     // Make sure we event have a best scoring view.
     assert(!pred_view_scores.empty());
@@ -751,7 +753,6 @@ REGION *BuildTopDownJoinChecker(
     const auto built_scan = BuildMaybeScanPartial(
         impl, best_pred_view, pred_cols, pred_table, seq,
         [&](REGION *parent, bool) -> REGION * {
-
           const auto append =
               impl->operation_regions.CreateDerived<VECTORAPPEND>(
                   parent, ProgramOperation::kAppendJoinPivotsToVector);
@@ -772,7 +773,7 @@ REGION *BuildTopDownJoinChecker(
   // join.
 
   // Sort and unique the pivot vector before doing our JOIN.
-  VECTORUNIQUE * const unique =
+  VECTORUNIQUE *const unique =
       impl->operation_regions.CreateDerived<VECTORUNIQUE>(
           seq, ProgramOperation::kSortAndUniquePivotVector);
   seq->AddRegion(unique);
@@ -780,11 +781,11 @@ REGION *BuildTopDownJoinChecker(
 
   // TODO(pag): Only do the join if we *don't* have all columns available.
   //            Otherwise we can just loop over the vector.
-  TABLEJOIN * const join = BuildJoin(impl, join_view, pivot_vec, seq);
+  TABLEJOIN *const join = BuildJoin(impl, join_view, pivot_vec, seq);
 
   // Make sure all inputs are checked for equality. This is basically to
   // make sure that we're in the right tuple.
-  TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+  TUPLECMP *const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
       join, ComparisonOperator::kEqual);
   join->body.Emplace(join, cmp);
   for (const auto &[pred_view, col_vars] : pred_col_vars) {
@@ -803,12 +804,13 @@ REGION *BuildTopDownJoinChecker(
 
   // If the recursive call returns true, then return true, otherwise, go to
   // the next iteration of the join.
-  cmp->body.Emplace(cmp, CallTopDownChecker(
-      impl, context, cmp, view, all_cols, view, already_checked,
-      [=] (REGION *parent_if_true) -> REGION * {
-        return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
-      },
-      [] (REGION *parent_if_false) -> REGION * { return nullptr; }));
+  cmp->body.Emplace(
+      cmp, CallTopDownChecker(
+               impl, context, cmp, view, all_cols, view, already_checked,
+               [=](REGION *parent_if_true) -> REGION * {
+                 return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
+               },
+               [](REGION *parent_if_false) -> REGION * { return nullptr; }));
 
 
   // If we fell through to the end, then none of the iterations of the join

@@ -33,11 +33,11 @@ bool QueryImpl::EliminateDeadFlows(void) {
 
   auto changed = true;
 
-  auto should_check_view = [&] (VIEW *view) {
+  auto should_check_view = [&](VIEW *view) {
     return !view->is_dead && !derived_from_input.count(view);
   };
 
-  auto check_incoming_view = [&] (VIEW *view, VIEW *incoming_view) {
+  auto check_incoming_view = [&](VIEW *view, VIEW *incoming_view) {
     if (derived_from_input.count(incoming_view)) {
       changed = true;
       derived_from_input.insert(view);
@@ -49,8 +49,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
 
     for (SELECT *view : selects) {
       for (auto insert : view->inserts) {
-        if (insert && !insert->is_dead &&
-            derived_from_input.count(insert)) {
+        if (insert && !insert->is_dead && derived_from_input.count(insert)) {
           derived_from_input.insert(view);
           changed = true;
           break;
@@ -73,32 +72,32 @@ bool QueryImpl::EliminateDeadFlows(void) {
     for (CMP *view : compares) {
       if (should_check_view(view)) {
         check_incoming_view(
-            view, VIEW::GetIncomingView(view->input_columns,
-                                        view->attached_columns));
+            view,
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns));
       }
     }
 
     for (MAP *view : maps) {
       if (should_check_view(view)) {
-          check_incoming_view(
-              view, VIEW::GetIncomingView(view->input_columns,
-                                          view->attached_columns));
-        }
+        check_incoming_view(
+            view,
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns));
+      }
     }
 
     for (KVINDEX *view : kv_indices) {
       if (should_check_view(view)) {
-          check_incoming_view(
-              view, VIEW::GetIncomingView(view->input_columns,
-                                          view->attached_columns));
-        }
+        check_incoming_view(
+            view,
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns));
+      }
     }
 
     for (AGG *view : aggregates) {
       if (should_check_view(view)) {
         auto iview0 = VIEW::GetIncomingView(view->aggregated_columns);
-        auto iview1 = VIEW::GetIncomingView(view->group_by_columns,
-                                            view->config_columns);
+        auto iview1 =
+            VIEW::GetIncomingView(view->group_by_columns, view->config_columns);
 
         if (iview0) {
           check_incoming_view(view, iview0);
@@ -129,8 +128,8 @@ bool QueryImpl::EliminateDeadFlows(void) {
 
     for (NEGATION *view : negations) {
       if (should_check_view(view)) {
-        auto pred_view = VIEW::GetIncomingView(
-            view->input_columns, view->attached_columns);
+        auto pred_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         if (derived_from_input.count(view->negated_view.get()) &&
             derived_from_input.count(pred_view)) {
           changed = true;
@@ -143,8 +142,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
       if (should_check_view(view)) {
         auto all_tainted = true;
         for (auto joined_view : view->joined_views) {
-          if (joined_view->is_dead ||
-              !derived_from_input.count(joined_view)) {
+          if (joined_view->is_dead || !derived_from_input.count(joined_view)) {
             all_tainted = false;
             break;
           }

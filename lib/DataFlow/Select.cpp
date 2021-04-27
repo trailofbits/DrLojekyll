@@ -34,8 +34,8 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
         hash ^= hash_ror * const_stream->literal->Literal().IdentifierId();
       } else {
         hash ^= hash_ror *
-            std::hash<std::string_view>()(
-                *const_stream->literal->Spelling(Language::kUnknown));
+                std::hash<std::string_view>()(
+                    *const_stream->literal->Spelling(Language::kUnknown));
       }
 
     } else if (auto input_stream = stream->AsIO()) {
@@ -95,8 +95,9 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 //            then there's an orphaned SELECT in `average_weight.dr`. This
 //            is because the RELation or IO holds onto a use of the SELECT
 //            and so the SELECT always looks used.
-bool Node<QuerySelect>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &err) {
+bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
+                                     const OptimizationContext &opt,
+                                     const ErrorLog &err) {
 
   if (is_dead || sets_condition) {
     return false;
