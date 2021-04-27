@@ -771,7 +771,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     print_state_enum(region.ToState());
     auto sep = ", ";
     for (auto var : tuple_vars) {
-      os << sep << Var(os, var);
+      os << sep << Var(os, var) << ReifyVar(os, var);
     }
     os << ");\n";
 
