@@ -45,14 +45,19 @@ static size_t NumMessages(const hyde::ParsedModule &module) {
   return num_messages;
 }
 
-// Return a vector of all *.dr files immediately under `dir`
-static std::vector<fs::path> DrFilesInDir(const fs::path &dir) {
+// Return a vector of all *.dr files immediately under the directories
+template <typename... Path>
+static std::vector<fs::path> DrFilesInDir(const Path &...dirs) {
   std::vector<fs::path> all_entries;
-  for (const auto &entry : fs::directory_iterator(dir)) {
-    if (entry.path().extension() == ".dr" && fs::is_regular_file(entry)) {
-      all_entries.emplace_back(entry.path());
+
+  for (const auto &dir : {dirs...}) {
+    for (const auto &entry : fs::directory_iterator(dir)) {
+      if (entry.path().extension() == ".dr" && fs::is_regular_file(entry)) {
+        all_entries.emplace_back(entry.path());
+      }
     }
   }
+
   return all_entries;
 }
 
@@ -166,8 +171,9 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 #endif  // MYPY_PATH
 }
 
-INSTANTIATE_TEST_SUITE_P(ValidExampleParsing, PassingExamplesParsingSuite,
-                         testing::ValuesIn(DrFilesInDir(kExamplesDir)));
+INSTANTIATE_TEST_SUITE_P(
+    ValidExampleParsing, PassingExamplesParsingSuite,
+    testing::ValuesIn(DrFilesInDir(kExamplesDir, kSelfTestingExamplesDir)));
 
 class FailingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
 
