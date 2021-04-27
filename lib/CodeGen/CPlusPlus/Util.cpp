@@ -130,22 +130,12 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     case TypeKind::kUnsigned64:
     case TypeKind::kFloat:
     case TypeKind::kDouble: default_val = "0"; break;
+
+    // Default constructors
     case TypeKind::kBytes:
-      prefix = "::hyde::rt::Bytes{";
-      suffix = "}";
-      break;
     case TypeKind::kASCII:
-      prefix = "::hyde::rt::ASCII{";
-      suffix = "}";
-      break;
     case TypeKind::kUTF8:
-      prefix = "::hyde::rt::UTF8{";
-      suffix = "}";
-      break;
-    case TypeKind::kUUID:
-      prefix = "::hyde::rt::UUID{";
-      suffix = "}";
-      break;
+    case TypeKind::kUUID: break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
         if (auto constructor = type->Constructor(Language::kCxx); constructor) {
@@ -162,7 +152,7 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   value << prefix;
   if (val) {
     if (auto lit = val->Literal()) {
-      if (auto spelling = lit->Spelling(Language::kPython); spelling) {
+      if (auto spelling = lit->Spelling(Language::kCxx); spelling) {
         value << *spelling;
       }
     }

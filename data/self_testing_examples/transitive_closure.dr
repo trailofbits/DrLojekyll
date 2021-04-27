@@ -14,6 +14,96 @@ tc(From, To) : add_edge(From, To).
 is_node(Node) : tc(Node, _).
 is_node(Node) : tc(_, Node).
 
+#epilogue ```c++
+#include "runtime_std_impl.h"
+#include <algorithm>
+#include <vector>
+#include <iostream>
+
+
+int main() {
+  auto functors = DatabaseFunctors();
+  auto log = DatabaseLog();
+  auto backend = hyde::rt::std_containers();
+  Database db = Database(backend, log, functors);
+
+  auto assert_reachable_from = [&db](uint64_t i, std::vector<uint64_t> expect) {
+    auto reach_from = db.reachable_from_bf(i);
+    std::sort(reach_from.begin(), reach_from.end());
+    if (reach_from != expect) {
+      std::cout << "Reached from 0:\n" << std::dec;
+      for (auto v : reach_from) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      std::cout << "Expected reaching from " << i << ":\n";
+      for (auto v : expect) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      assert(false);
+    }
+  };
+
+  auto assert_reaching_to = [&db](uint64_t i, std::vector<uint64_t> expect) {
+    auto reach_to = db.reaching_to_fb(i);
+    std::sort(reach_to.begin(), reach_to.end());
+    assert(reach_to == expect);
+  };
+
+  // start with a simple graph
+  db.add_edge_2({{0,1}, {0,2}, {2,0}, {1,2}, {2,3}});
+
+  assert_reachable_from(0, {0, 1, 2, 3});
+  assert_reachable_from(1, {0, 1, 2, 3});
+  assert_reachable_from(2, {0, 1, 2, 3});
+  assert_reachable_from(3, {});
+  assert_reachable_from(4, {});
+
+  // Reaching to
+  assert_reaching_to(0, {0, 1, 2});
+  assert_reaching_to(1, {0, 1, 2});
+  assert_reaching_to(2, {0, 1, 2});
+  assert_reaching_to(3, {0, 1, 2});
+  assert_reaching_to(4, {});
+
+  // Nodes
+  {
+    auto is_node = db.is_node_f();
+    std::sort(is_node.begin(), is_node.end());
+    std::vector<uint64_t> expected_nodes = {0,1,2,3};
+    assert(is_node == expected_nodes);
+  }
+
+
+  // now add more to the graph
+  db.add_edge_2({{4,3}});
+
+  assert_reachable_from(0, {0, 1, 2, 3});
+  assert_reachable_from(1, {0, 1, 2, 3});
+  assert_reachable_from(2, {0, 1, 2, 3});
+  assert_reachable_from(3, {});
+  assert_reachable_from(4, {3});
+
+  assert_reaching_to(0, {0, 1, 2});
+  assert_reaching_to(1, {0, 1, 2});
+  assert_reaching_to(2, {0, 1, 2});
+  assert_reaching_to(3, {0, 1, 2, 4});
+  assert_reaching_to(4, {});
+
+  // Nodes
+  {
+    auto is_node = db.is_node_f();
+    std::sort(is_node.begin(), is_node.end());
+    std::vector<uint64_t> expected_nodes = {0,1,2,3,4};
+    assert(is_node == expected_nodes);
+  }
+
+  return 0;
+}
+```
+.
+
 #epilogue ```python
 class Functors(DatabaseFunctors):
   pass
@@ -54,3 +144,4 @@ if __name__ == "__main__":
 
   assert sorted(db.is_node_f()) == [0, 1, 2, 3, 4]
 ```
+.
