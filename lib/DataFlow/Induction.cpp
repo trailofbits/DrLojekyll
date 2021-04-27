@@ -117,14 +117,14 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // successor of UNION0, but UNION0 and UNION1 are not in the same strongly
   // connected component.
   //                         ___
-  //                     \  /   \
+  //                     \  /   \             .
   //                    UNION1  |
   //                      |     |
   //                    JOIN    |
   //                    /   \   |
   //                   /     '--'
   //               TUPLE
-  //          \    /   \
+  //          \    /   \                      .
   //          UNION0   |
   //              \    |
   //               '--...
