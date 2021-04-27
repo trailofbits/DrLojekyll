@@ -110,6 +110,10 @@ bool QueryStream::IsConstant(void) const noexcept {
   return impl->AsConstant() != nullptr;
 }
 
+bool QueryStream::IsTag(void) const noexcept {
+  return impl->AsTag() != nullptr;
+}
+
 bool QueryStream::IsIO(void) const noexcept {
   return impl->AsIO() != nullptr;
 }
@@ -518,19 +522,6 @@ unsigned QueryColumn::NumUses(void) const noexcept {
   return impl->NumUses();
 }
 
-// Replace all uses of one column with another column.
-bool QueryColumn::ReplaceAllUsesWith(QueryColumn that) const noexcept {
-  if (impl == that.impl) {
-    return true;
-
-  } else if (impl->var.Type().Kind() != that.impl->var.Type().Kind()) {
-    return false;
-  }
-
-  impl->ReplaceAllUsesWith(that.impl);
-  return true;
-}
-
 // Apply a function to each user.
 void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
   impl->view->ForEachUse<VIEW>(
@@ -540,7 +531,7 @@ void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
       [&user_cb](VIEW *view, COL *) { user_cb(QueryView(view)); });
 }
 
-const ParsedVariable &QueryColumn::Variable(void) const noexcept {
+std::optional<ParsedVariable> QueryColumn::Variable(void) const noexcept {
   return impl->var;
 }
 
@@ -612,9 +603,36 @@ unsigned QueryCondition::Depth(void) const noexcept {
   return depth + 1u;
 }
 
-const ParsedLiteral &QueryConstant::Literal(void) const noexcept {
-  return impl->literal;
+std::optional<ParsedLiteral> QueryConstant::Literal(void) const noexcept {
+  if (impl->AsTag()) {
+    return std::nullopt;
+  } else {
+    return impl->literal;
+  }
 }
+
+// What is the type of this constant?
+TypeLoc QueryConstant::Type(void) const noexcept {
+
+  // Tags are all 16 bit integers, as we usually don't need that many of
+  // them, but it's nice to be able to invent unique ones on-the-fly on
+  // an as-needed basis.
+  if (impl->AsTag()) {
+    return TypeKind::kUnsigned16;
+
+  } else {
+    assert(impl->literal.has_value());
+    return impl->literal->Type();
+  }
+}
+
+// Returns `true` if this is a tag value.
+bool QueryConstant::IsTag(void) const {
+  return impl->AsTag() != nullptr;
+}
+
+QueryConstant::QueryConstant(const QueryTag &tag)
+    : QueryConstant(tag.impl) {}
 
 QueryConstant QueryConstant::From(const QueryStream &stream) {
   assert(stream.IsConstant());
@@ -625,6 +643,22 @@ QueryConstant QueryConstant::From(QueryColumn col) {
   assert(col.IsConstantOrConstantRef());
   return QueryConstant(
       col.impl->AsConstant()->view->AsSelect()->stream->AsConstant());
+}
+
+QueryTag QueryTag::From(const QueryConstant &const_val) {
+  assert(const_val.IsTag());
+  return QueryTag(const_val.impl->AsTag());
+}
+
+// What is the type of this constant? Tags are always unsigned, 16-bit
+// integers.
+TypeLoc QueryTag::Type(void) const noexcept {
+  return TypeKind::kUnsigned16;
+}
+
+// The value of this tag.
+uint16_t QueryTag::Value(void) const {
+  return impl->val;
 }
 
 QueryIO QueryIO::From(const QueryStream &stream) {
@@ -1662,6 +1696,11 @@ DefinedNodeRange<QueryRelation> Query::Relations(void) const {
 DefinedNodeRange<QueryConstant> Query::Constants(void) const {
   return {DefinedNodeIterator<QueryConstant>(impl->constants.begin()),
           DefinedNodeIterator<QueryConstant>(impl->constants.end())};
+}
+
+DefinedNodeRange<QueryTag> Query::Tags(void) const {
+  return {DefinedNodeIterator<QueryTag>(impl->tags.begin()),
+          DefinedNodeIterator<QueryTag>(impl->tags.end())};
 }
 
 DefinedNodeRange<QueryIO> Query::IOs(void) const {

@@ -857,7 +857,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
   auto col_index = 0u;
   for (auto col : columns) {
     auto out_col = tuple->columns.Create(
-        col->var, tuple, col->id, col_index++);
+        col->var, col->type, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 
@@ -914,7 +914,8 @@ Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
   const auto num_cols = columns.Size();
   for (auto i = 0u; i < num_cols; ++i) {
     const auto col = columns[i];
-    const auto new_col = tuple->columns.Create(col->var, tuple, col->id, i);
+    const auto new_col = tuple->columns.Create(
+        col->var, col->type, tuple, col->id, i);
     new_col->CopyConstantFrom(col);
   }
 
@@ -1004,8 +1005,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   cmp->color = color;
 
   cmp->input_columns.AddUse(lhs_col);
-  auto lhs_out_col =
-      cmp->columns.Create(lhs_col->var, cmp, lhs_col->id, col_index++);
+  auto lhs_out_col = cmp->columns.Create(
+      lhs_col->var, lhs_col->type, cmp, lhs_col->id, col_index++);
 
   lhs_out_col->CopyConstantFrom(lhs_col);
   in_to_out.emplace(lhs_col, lhs_out_col);
@@ -1016,8 +1017,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
-    auto rhs_out_col =
-        cmp->columns.Create(rhs_col->var, cmp, rhs_col->id, col_index++);
+    auto rhs_out_col = cmp->columns.Create(
+        rhs_col->var, rhs_col->type, cmp, rhs_col->id, col_index++);
     rhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
   }
@@ -1028,8 +1029,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   for (auto col : columns) {
     if (col != lhs_col && col != rhs_col) {
       cmp->attached_columns.AddUse(col);
-      const auto attached_col =
-          cmp->columns.Create(col->var, cmp, col->id, col_index++);
+      const auto attached_col = cmp->columns.Create(
+          col->var, col->type, cmp, col->id, col_index++);
       attached_col->CopyConstantFrom(col);
       in_to_out.emplace(col, attached_col);
     }
@@ -1042,8 +1043,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   col_index = 0u;
   for (auto orig_col : columns) {
     const auto in_col = in_to_out[orig_col];
-    auto out_col =
-        tuple->columns.Create(orig_col->var, tuple, orig_col->id, col_index++);
+    auto out_col = tuple->columns.Create(
+        orig_col->var, orig_col->type, tuple, orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
     out_col->CopyConstantFrom(in_col);
   }

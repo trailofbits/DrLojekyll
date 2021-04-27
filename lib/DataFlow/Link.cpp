@@ -17,7 +17,7 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
   auto col_index = 0u;
   for (COL *col : view->input_columns) {
     COL * const proxy_col = proxy->columns.Create(
-        col->var, proxy, col->id, col_index++);
+        col->var, col->type, proxy, col->id, col_index++);
     proxy->input_columns.AddUse(col);
     proxy_col->CopyConstantFrom(col);
   }
@@ -51,7 +51,7 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
     auto col_index = 0u;
     for (COL *col : negated_view->columns) {
       COL * const tuple_col = tuple->columns.Create(
-          col->var, tuple, col->id, col_index++);
+          col->var, col->type, tuple, col->id, col_index++);
       tuple->input_columns.AddUse(col);
       tuple_col->CopyConstantFrom(col);
     }
@@ -75,13 +75,13 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
     auto col_index = 0u;
     for (COL *col : view->input_columns) {
       COL * const proxy_col = proxy->columns.Create(
-          col->var, proxy, col->id, col_index++);
+          col->var, col->type, proxy, col->id, col_index++);
       proxy_col->CopyConstantFrom(col);
     }
 
     for (auto col : view->attached_columns) {
       auto tuple_col = proxy->columns.Create(
-          col->var, proxy, col->id, col_index++);
+          col->var, col->type, proxy, col->id, col_index++);
       tuple_col->CopyConstantFrom(col);
     }
 
@@ -137,7 +137,7 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
     auto col_index = 0u;
     for (COL *view_col : view->columns) {
       COL * const proxy_col = proxy->columns.Create(
-          view_col->var, proxy, view_col->id, col_index++);
+          view_col->var, view_col->type, proxy, view_col->id, col_index++);
       proxy_col->CopyConstantFrom(view_col);
       proxy->input_columns.AddUse(view_col);
       auto [it, added] = col_map.emplace(view_col, proxy_col);
@@ -186,7 +186,7 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
     auto col_index = 0u;
     for (auto out_col : view->columns) {
       COL *proxy_col = proxy->columns.Create(
-          out_col->var, proxy, out_col->id, col_index++);
+          out_col->var, out_col->type, proxy, out_col->id, col_index++);
       proxy_col->CopyConstantFrom(out_col);
       proxy->input_columns.AddUse(out_col);
     }

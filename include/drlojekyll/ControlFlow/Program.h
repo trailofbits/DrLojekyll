@@ -196,6 +196,7 @@ enum class VariableRole : int {
   kConditionRefCount,
   kInitGuard,
   kConstant,
+  kConstantTag,
   kConstantZero,
   kConstantOne,
   kConstantFalse,
@@ -228,7 +229,7 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   Token Name(void) const noexcept;
 
   // The literal, constant value of this variable.
-  std::optional<ParsedLiteral> Value(void) const noexcept;
+  std::optional<QueryConstant> Value(void) const noexcept;
 
   // Type of this variable.
   TypeLoc Type(void) const noexcept;

@@ -26,13 +26,16 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
     hash ^= hash_ror * relation->declaration.Id();
 
   } else if (stream) {
-    if (auto const_stream = stream->AsConstant()) {
-      if (const_stream->literal.IsConstant()) {
-        hash ^= hash_ror * const_stream->literal.Literal().IdentifierId();
+    if (auto const_tag = stream->AsTag()) {
+      hash ^= hash_ror * (const_tag->val + 1ull);
+
+    } else if (auto const_stream = stream->AsConstant()) {
+      if (const_stream->literal->IsConstant()) {
+        hash ^= hash_ror * const_stream->literal->Literal().IdentifierId();
       } else {
         hash ^= hash_ror *
             std::hash<std::string_view>()(
-                *const_stream->literal.Spelling(Language::kUnknown));
+                *const_stream->literal->Spelling(Language::kUnknown));
       }
 
     } else if (auto input_stream = stream->AsIO()) {

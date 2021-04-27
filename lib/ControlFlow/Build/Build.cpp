@@ -2128,6 +2128,14 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     impl->const_to_var.emplace(const_val, var);
   }
 
+  // Create tag variables.
+  for (auto const_val : query.Tags()) {
+    const auto var =
+        impl->const_vars.Create(impl->next_id++, VariableRole::kConstantTag);
+    var->query_const = QueryConstant(const_val);
+    impl->const_to_var.emplace(const_val, var);
+  }
+
 //  // Go figure out which merges are inductive, and then classify their
 //  // predecessors and successors in terms of which ones are inductive and
 //  // which aren't.

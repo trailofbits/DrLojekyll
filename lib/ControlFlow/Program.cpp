@@ -532,8 +532,15 @@ unsigned DataVariable::Id(void) const noexcept {
 
 // Name of this variable, if any. There might not be a name.
 Token DataVariable::Name(void) const noexcept {
+  if (impl->query_const) {
+    if (auto lit = impl->query_const->Literal()) {
+      return lit->Literal();
+    }
+  }
   if (impl->query_column) {
-    return impl->query_column->Variable().Name();
+    if (auto var = impl->query_column->Variable(); var.has_value()) {
+      return var->Name();
+    }
 
   } else if (impl->query_cond) {
     if (auto pred = impl->query_cond->Predicate(); pred) {
@@ -544,14 +551,15 @@ Token DataVariable::Name(void) const noexcept {
 }
 
 // The literal, constant value of this variable.
-std::optional<ParsedLiteral> DataVariable::Value(void) const noexcept {
-  if (impl->query_const) {
-    return impl->query_const->Literal();
+std::optional<QueryConstant> DataVariable::Value(void) const noexcept {
+  if (impl->query_const.has_value()) {
+    return impl->query_const;
+  } else if (impl->query_column.has_value() &&
+             impl->query_column->IsConstantOrConstantRef()) {
+    return QueryConstant::From(*(impl->query_column));
+  } else {
+    return std::nullopt;
   }
-  if (impl->query_column && impl->query_column->IsConstantOrConstantRef()) {
-    return QueryConstant::From(*impl->query_column).Literal();
-  }
-  return std::nullopt;
 }
 
 // Type of this variable.
@@ -565,6 +573,7 @@ bool DataVariable::IsGlobal(void) const noexcept {
     case VariableRole::kConditionRefCount:
     case VariableRole::kInitGuard:
     case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
@@ -579,6 +588,7 @@ bool DataVariable::IsGlobal(void) const noexcept {
 bool DataVariable::IsConstant(void) const noexcept {
   switch (DefiningRole()) {
     case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:

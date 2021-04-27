@@ -27,14 +27,40 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   static constexpr unsigned kInvalidIndex = ~0u;
 
+  inline explicit Node(std::optional<ParsedVariable> var_, TypeLoc type_,
+                       Node<QueryView> *view_, unsigned id_,
+                       unsigned index_ = kInvalidIndex)
+      : Def<Node<QueryColumn>>(this),
+        var(var_),
+        type(type_),
+        view(view_),
+        id(id_),
+        index(index_) {
+    assert(view != nullptr);
+    assert(type.UnderlyingKind() != TypeKind::kInvalid);
+  }
+
   inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
                        unsigned id_, unsigned index_ = kInvalidIndex)
       : Def<Node<QueryColumn>>(this),
         var(var_),
-        type(var.Type()),
+        type(var_.Type()),
         view(view_),
         id(id_),
         index(index_) {
+    assert(view != nullptr);
+    assert(type.UnderlyingKind() != TypeKind::kInvalid);
+  }
+
+  inline explicit Node(TypeLoc type_, Node<QueryView> *view_, unsigned id_,
+                       unsigned index_ = kInvalidIndex)
+      : Def<Node<QueryColumn>>(this),
+        var(std::nullopt),
+        type(type_),
+        view(view_),
+        id(id_),
+        index(index_) {
+    assert(view != nullptr);
     assert(type.UnderlyingKind() != TypeKind::kInvalid);
   }
 
@@ -83,7 +109,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   }
 
   // Parsed variable associated with this column.
-  ParsedVariable var;
+  std::optional<ParsedVariable> var;
 
   // Type of the variable; convenient for returning by reference.
   const TypeLoc type;
@@ -203,6 +229,7 @@ class Node<QueryStream> : public Def<Node<QueryStream>> {
   Node(void) : Def<Node<QueryStream>>(this) {}
 
   virtual Node<QueryConstant> *AsConstant(void) noexcept;
+  virtual Node<QueryTag> *AsTag(void) noexcept;
   virtual Node<QueryIO> *AsIO(void) noexcept;
   virtual const char *KindName(void) const noexcept = 0;
 };
@@ -211,7 +238,7 @@ using STREAM = Node<QueryStream>;
 
 // Use of a constant.
 template <>
-class Node<QueryConstant> final : public Node<QueryStream> {
+class Node<QueryConstant> : public Node<QueryStream> {
  public:
   virtual ~Node(void);
 
@@ -220,10 +247,29 @@ class Node<QueryConstant> final : public Node<QueryStream> {
   Node<QueryConstant> *AsConstant(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
-  const ParsedLiteral literal;
+  const std::optional<ParsedLiteral> literal;
+
+ protected:
+  inline Node(void) {}
 };
 
 using CONST = Node<QueryConstant>;
+
+// Use of a constant.
+template <>
+class Node<QueryTag> final : public Node<QueryConstant> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(uint16_t val_) : val(val_) {}
+
+  Node<QueryTag> *AsTag(void) noexcept override;
+  const char *KindName(void) const noexcept override;
+
+  const uint16_t val;
+};
+
+using TAG = Node<QueryTag>;
 
 // Input, i.e. a messsage.
 template <>
@@ -1370,14 +1416,10 @@ class QueryImpl {
   const ParsedModule module;
 
   // The streams associated with input relations to queries.
-  std::unordered_map<ParsedDeclaration, Node<QueryIO> *> decl_to_input;
+  std::unordered_map<ParsedDeclaration, IO *> decl_to_input;
 
   // The tables available within any query sharing this context.
-  std::unordered_map<ParsedDeclaration, Node<QueryRelation> *> decl_to_relation;
-
-//  static constexpr unsigned kMaxDefaultU8s = 64;
-//  Node<QueryConstant> *default_u8_consts[kMaxDefaultU8s];
-//  Node<QueryColumn> *default_u8_const_cols[kMaxDefaultU8s];
+  std::unordered_map<ParsedDeclaration, REL *> decl_to_relation;
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.
@@ -1386,13 +1428,15 @@ class QueryImpl {
   // Mapping between export conditions and actual condition nodes.
   std::unordered_map<ParsedExport, Node<QueryCondition> *> decl_to_condition;
 
+  std::vector<COL *> tag_columns;
+
   // The streams associated with messages and other concrete inputs.
   DefList<Node<QueryIO>> ios;
 
-  DefList<Node<QueryRelation>> relations;
-  DefList<Node<QueryConstant>> constants;
-  DefList<Node<QueryCondition>> conditions;
-
+  DefList<REL> relations;
+  DefList<CONST> constants;
+  DefList<TAG> tags;
+  DefList<COND> conditions;
   DefList<SELECT> selects;
   DefList<TUPLE> tuples;
   DefList<KVINDEX> kv_indices;

@@ -135,8 +135,13 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
                               name.Lexeme() == Lexeme::kIdentifierVariable ||
                               name.Lexeme() == Lexeme::kIdentifierConstant) {
     os << name << ':';
-  } else if (auto val = var.Value(); val && val->IsConstant()) {
-    os << *val << ':';
+  } else if (auto const_val = var.Value()) {
+    if (const_val->IsTag()) {
+      auto tag = QueryTag::From(*const_val);
+      os << "TAG:" << tag.Value() << ':';
+    } else if (auto lit = const_val->Literal(); lit && lit->IsConstant()) {
+      os << *lit << ':';
+    }
   }
   os << var.Id();
   return os;
@@ -794,8 +799,13 @@ OutputStream &operator<<(OutputStream &os, Program program) {
       case VariableRole::kConstantFalse: os << " = false"; break;
       case VariableRole::kConstantTrue: os << " = true"; break;
       default:
-        if (auto val = var.Value(); val) {
-          os << " = " << *val;
+        if (auto const_val = var.Value()) {
+          if (const_val->IsTag()) {
+            os << " = " << QueryTag::From(*const_val).Value();
+
+          } else if (auto lit = const_val->Literal(); lit) {
+            os << " = " << *lit;
+          }
         }
         break;
     }

@@ -37,20 +37,21 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
     case VariableRole::kWorkerId:
       return TypeKind::kUnsigned64;
 
-      return TypeKind::kUnsigned16;
-
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue:
       return TypeKind::kBoolean;
 
+    case VariableRole::kConstantTag:
+      return TypeKind::kUnsigned16;
+
     case VariableRole::kConstant:
       if (query_const) {
-        return query_const->Literal().Type().Kind();
+        return query_const->Type();
       }
       [[clang::fallthrough]];
     default:
       if (query_column) {
-        return query_column->Type().Kind();
+        return query_column->Type();
       }
   }
   assert(false);
@@ -205,24 +206,27 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
     unsigned i = 0u;
     for (auto col : cols) {
       auto table_col = model->table->columns[i++];
-      auto name = col.Variable().Name();
-      switch (name.Lexeme()) {
-        case Lexeme::kIdentifierVariable:
-        case Lexeme::kIdentifierAtom: {
-          table_col->names.push_back(name);
-          std::sort(table_col->names.begin(), table_col->names.end(),
-                    [](Token a, Token b) {
-                      return a.IdentifierId() < b.IdentifierId();
-                    });
-          auto it = std::unique(table_col->names.begin(), table_col->names.end(),
-                                [](Token a, Token b) {
-                                  return a.IdentifierId() == b.IdentifierId();
-                                });
-          table_col->names.erase(it, table_col->names.end());
-          break;
+      if (auto var = col.Variable(); var.has_value()) {
+        auto name = var->Name();
+        switch (name.Lexeme()) {
+          case Lexeme::kIdentifierVariable:
+          case Lexeme::kIdentifierAtom: {
+            table_col->names.push_back(name);
+            std::sort(table_col->names.begin(), table_col->names.end(),
+                      [](Token a, Token b) {
+                        return a.IdentifierId() < b.IdentifierId();
+                      });
+            auto it = std::unique(table_col->names.begin(), table_col->names.end(),
+                                  [](Token a, Token b) {
+                                    return a.IdentifierId() == b.IdentifierId();
+                                  });
+            table_col->names.erase(it, table_col->names.end());
+            break;
+          }
+          default: break;
         }
-        default: break;
       }
+
     }
   }
 

@@ -191,6 +191,7 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
       case VariableRole::kConditionRefCount:
       case VariableRole::kInitGuard:
       case VariableRole::kConstant:
+      case VariableRole::kConstantTag:
       case VariableRole::kConstantZero:
       case VariableRole::kConstantOne:
       case VariableRole::kConstantFalse:

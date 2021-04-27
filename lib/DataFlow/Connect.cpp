@@ -38,8 +38,8 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl,
 
     auto col_index = 0u;
     for (auto in_col : insert->input_columns) {
-      COL * const proxy_col =
-          proxy->columns.Create(in_col->var, proxy, in_col->id, col_index++);
+      COL * const proxy_col = proxy->columns.Create(
+          in_col->var, in_col->type, proxy, in_col->id, col_index++);
       proxy->input_columns.AddUse(in_col);
       proxy_col->CopyConstantFrom(in_col);
     }
@@ -54,7 +54,8 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl,
       merge = impl->merges.Create();
       col_index = 0u;
       for (auto col : proxy->columns) {
-        (void) merge->columns.Create(col->var, merge, col->id, col_index++);
+        (void) merge->columns.Create(
+            col->var, col->type, merge, col->id, col_index++);
       }
     }
 
@@ -86,7 +87,7 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
     const auto view_col = view->columns[i++];
     if (param.Binding() != ParameterBinding::kMutable) {
       const auto key_col = index->columns.Create(
-          view_col->var, index, view_col->id, col_index++);
+          view_col->var, view_col->type, index, view_col->id, col_index++);
       col_map.emplace(view_col, key_col);
 
       index->input_columns.AddUse(view_col);
@@ -99,7 +100,7 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
     const auto view_col = view->columns[i++];
     if (param.Binding() == ParameterBinding::kMutable) {
       const auto val_col = index->columns.Create(
-          view_col->var, index, view_col->id, col_index++);
+          view_col->var, view_col->type, index, view_col->id, col_index++);
       col_map.emplace(view_col, val_col);
 
       index->merge_functors.push_back(
@@ -112,7 +113,8 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
   TUPLE * const proxy = impl->tuples.Create();
   col_index = 0u;
   for (auto col : view->columns) {
-    (void) proxy->columns.Create(col->var, proxy, col->id, col_index++);
+    (void) proxy->columns.Create(
+        col->var, col->type, proxy, col->id, col_index++);
     proxy->input_columns.AddUse(col_map[col]);
   }
 
@@ -145,8 +147,8 @@ static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
     auto col_index = 0u;
     for (auto in_col : insert_proxy->columns) {
       COL * const sel_col = select->columns[col_index];
-      COL * const proxy_col =
-          proxy->columns.Create(sel_col->var, proxy, sel_col->id, col_index++);
+      COL * const proxy_col = proxy->columns.Create(
+          sel_col->var, sel_col->type, proxy, sel_col->id, col_index++);
       proxy->input_columns.AddUse(in_col);
       proxy_col->CopyConstantFrom(in_col);
     }
@@ -213,7 +215,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
       auto col_index = 0u;
       for (auto col : io->receives[0]->columns) {
-        select->columns.Create(col->var, select, col->id, col_index++);
+        (void) select->columns.Create(
+            col->var, col->type, select, col->id, col_index++);
       }
 
       ProxySelects(this, io->receives, select);

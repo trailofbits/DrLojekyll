@@ -98,6 +98,12 @@ const char *OperatorString(ComparisonOperator op) {
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var) {
   auto val = var.Value();
+  if (val && val->IsTag()) {
+    std::stringstream ss;
+    ss << QueryTag::From(*val).Value();
+    return ss.str();
+  }
+
   std::string_view prefix = "";
   std::string_view suffix = "";
 
@@ -154,8 +160,10 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   std::stringstream value;
   value << prefix;
   if (val) {
-    if (auto spelling = val->Spelling(Language::kPython); spelling) {
-      value << *spelling;
+    if (auto lit = val->Literal()) {
+      if (auto spelling = lit->Spelling(Language::kPython); spelling) {
+        value << *spelling;
+      }
     }
   }
   value << suffix;

@@ -374,7 +374,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     auto col_index = 0u;
     for (auto col : view->columns) {
       const auto union_col = new_union->columns.Create(
-          col->var, new_union, col->id, col_index++);
+          col->var, col->type, new_union, col->id, col_index++);
 
       col->ReplaceAllUsesWith(union_col);
     }
@@ -670,8 +670,10 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       const auto &related_views = *(merge_set->related_merges);
       for (VIEW * related_view : related_views) {
         for (auto col : related_view->columns) {
-          auto clause = ParsedClause::Containing(col->var);
-          bad_vars[clause].push_back(col->var);
+          if (col->var.has_value()) {
+            auto clause = ParsedClause::Containing(*(col->var));
+            bad_vars[clause].push_back(*(col->var));
+          }
         }
       }
     }

@@ -637,6 +637,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
             assert(false);
             break;
           case VariableRole::kConstant:
+          case VariableRole::kConstantTag:
           default:
             break;
         }
