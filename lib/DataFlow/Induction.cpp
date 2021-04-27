@@ -1,11 +1,11 @@
 // Copyright 2021, Trail of Bits. All rights reserved.
 
+#include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Util/DisjointSet.h>
+
 #include <algorithm>
 #include <set>
 #include <vector>
-
-#include <drlojekyll/Parse/ErrorLog.h>
-#include <drlojekyll/Util/DisjointSet.h>
 
 #include "Query.h"
 
@@ -37,7 +37,7 @@ static void ForEachSuccessorOf(VIEW *view, T cb) {
   }
 
   auto found = false;
-  view->ForEachUse<NEGATION>([&] (NEGATION *negate, VIEW *) {
+  view->ForEachUse<NEGATION>([&](NEGATION *negate, VIEW *) {
     cb(negate);
     found = true;
   });
@@ -58,7 +58,7 @@ static std::set<VIEW *> TransitivePredecessorsOf(VIEW *output) {
   while (!frontier.empty()) {
     const auto view = frontier.back();
     frontier.pop_back();
-    ForEachPredecessorOf(view, [&] (VIEW *pred_view) {
+    ForEachPredecessorOf(view, [&](VIEW *pred_view) {
       if (auto [it, added] = dependencies.insert(pred_view); added) {
         frontier.push_back(pred_view);
       }
@@ -78,7 +78,7 @@ static std::set<VIEW *> TransitiveSuccessorsOf(VIEW *input) {
     const auto view = frontier.back();
     frontier.pop_back();
 
-    ForEachSuccessorOf(view, [&] (VIEW *succ_view) {
+    ForEachSuccessorOf(view, [&](VIEW *succ_view) {
       if (auto [it, added] = dependents.insert(succ_view); added) {
         frontier.push_back(succ_view);
       }
@@ -102,9 +102,8 @@ class MergeSet : public DisjointSet {
 void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
   if (recursive) {
-    const_cast<const QueryImpl *>(this)->ForEachView([] (VIEW *v) {
-      v->induction_info.reset();
-    });
+    const_cast<const QueryImpl *>(this)->ForEachView(
+        [](VIEW *v) { v->induction_info.reset(); });
   }
 
   // Mapping of inductive MERGEs to their equivalence classes.
@@ -148,7 +147,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
   unsigned merge_id = 0u;
   while (!frontier.empty()) {
-    VIEW * const view = frontier.back();
+    VIEW *const view = frontier.back();
     frontier.pop_back();
 
     auto preds = TransitivePredecessorsOf(view);
@@ -158,11 +157,11 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       continue;
     }
 
-    InductionInfo * const info = new InductionInfo(view);
+    InductionInfo *const info = new InductionInfo(view);
     view->induction_info.reset(info);
     merge_sets.emplace(view, merge_id++);
 
-    ForEachSuccessorOf(view, [=] (VIEW *succ_view) {
+    ForEachSuccessorOf(view, [=](VIEW *succ_view) {
       info->successors.push_back(succ_view);
       if (preds.count(succ_view)) {
         info->inductive_successors_mask.push_back(true);
@@ -183,7 +182,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       }
     }
 
-    ForEachPredecessorOf(view, [&] (VIEW *pred_view) {
+    ForEachPredecessorOf(view, [&](VIEW *pred_view) {
       info->predecessors.push_back(pred_view);
       if (succs.count(pred_view)) {
         info->inductive_predecessors_mask.push_back(true);
@@ -211,8 +210,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // successor to have info leave.
   for (auto &[view_, merge_set_] : merge_sets) {
     VIEW *const view = view_;
-    InductionInfo * const info = view->induction_info.get();
-    MergeSet * const merge_set = merge_set_.FindAs<MergeSet>();
+    InductionInfo *const info = view->induction_info.get();
+    MergeSet *const merge_set = merge_set_.FindAs<MergeSet>();
     assert(info != nullptr);
 
     auto succ_view_i = 0u;
@@ -226,12 +225,12 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       frontier.push_back(succ_view);
 
       while (!frontier.empty()) {
-        VIEW * const frontier_view = frontier.back();
+        VIEW *const frontier_view = frontier.back();
         frontier.pop_back();
 
         if (auto frontier_merge_set_it = merge_sets.find(frontier_view);
             frontier_merge_set_it != merge_sets.end()) {
-          MergeSet * const frontier_merge_set =
+          MergeSet *const frontier_merge_set =
               frontier_merge_set_it->second.FindAs<MergeSet>();
 
           // We've reached back to this induction along this path.
@@ -247,7 +246,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
           }
         }
 
-        if (INSERT * insert = frontier_view->AsInsert()) {
+        if (INSERT *insert = frontier_view->AsInsert()) {
           if (insert->successors.Empty()) {
             succ_view->color = 0xff0000;
             eventually_noninductive_successors.emplace(view, succ_view);
@@ -255,7 +254,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
           }
         }
 
-        ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
+        ForEachSuccessorOf(frontier_view, [&](VIEW *frontier_succ_view) {
           auto [it, added] = seen.emplace(frontier_succ_view);
           if (added) {
             frontier.emplace_back(frontier_succ_view);
@@ -284,9 +283,9 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   //                                  ... ---+-------'
   //
   for (auto [merge_, succ_view_] : eventually_noninductive_successors) {
-    VIEW * const merge = merge_;
-    MergeSet * const merge_set = merge_sets[merge].FindAs<MergeSet>();
-    VIEW * const succ_view = succ_view_;
+    VIEW *const merge = merge_;
+    MergeSet *const merge_set = merge_sets[merge].FindAs<MergeSet>();
+    VIEW *const succ_view = succ_view_;
     frontier.clear();
     seen.clear();
     seen.insert(merge);
@@ -294,17 +293,15 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     frontier.push_back(succ_view);
 
     while (!frontier.empty()) {
-      VIEW * const frontier_view = frontier.back();
+      VIEW *const frontier_view = frontier.back();
       frontier.pop_back();
 
 
-
-      ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
-
+      ForEachSuccessorOf(frontier_view, [&](VIEW *frontier_succ_view) {
         // We've walked into the induction that is ourselves; ignore.
         if (auto succ_merge_set_it = merge_sets.find(frontier_succ_view);
             succ_merge_set_it != merge_sets.end()) {
-          MergeSet * const succ_merge_set =
+          MergeSet *const succ_merge_set =
               succ_merge_set_it->second.FindAs<MergeSet>();
 
           // Reached a different induction.
@@ -331,7 +328,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // injection sites.
   for (auto &[view_, merge_set_] : merge_sets) {
     VIEW *const view = view_;
-    InductionInfo * const info = view->induction_info.get();
+    InductionInfo *const info = view->induction_info.get();
     if (!info || view->AsMerge()) {
       continue;
     }
@@ -368,7 +365,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     assert(!view->AsSelect());
     assert(!view->AsInsert());
 
-    MERGE * const new_union = merges.Create();
+    MERGE *const new_union = merges.Create();
     new_union->color = 0x00ff00u;
 
     auto col_index = 0u;
@@ -381,8 +378,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
     // We don't want to replace the weak uses of `this` in any condition's
     // `positive_users` or `negative_users`.
-    view->VIEW::ReplaceUsesWithIf<User>(new_union, [=] (User *user, VIEW *) {
-
+    view->VIEW::ReplaceUsesWithIf<User>(new_union, [=](User *user, VIEW *) {
       // We'll let all conditions continue to use `view`.
       //
       // NOTE(pag): CONDitions are not allowed to be cyclic.
@@ -410,11 +406,11 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // and did re-linking and re-identification. Now we can go through and upgrade
   // the masked (non-)inductive predecessors/successors into proper use lists.
   for (auto &[view_, set] : merge_sets) {
-    VIEW * const view = view_;
-    InductionInfo * const info = view->induction_info.get();
+    VIEW *const view = view_;
+    InductionInfo *const info = view->induction_info.get();
     auto i = 0u;
 
-    for (VIEW * const succ_view : info->successors) {
+    for (VIEW *const succ_view : info->successors) {
       if (info->inductive_successors_mask[i]) {
         info->inductive_successors.AddUse(succ_view);
       } else {
@@ -424,7 +420,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
 
     i = 0u;
-    for (VIEW * const succ_view : info->predecessors) {
+    for (VIEW *const succ_view : info->predecessors) {
       if (info->inductive_predecessors_mask[i]) {
         info->inductive_predecessors.AddUse(succ_view);
       } else {
@@ -445,8 +441,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   }
 
   for (auto &[view_, set] : merge_sets) {
-    VIEW * const view = view_;
-    InductionInfo * const info = view->induction_info.get();
+    VIEW *const view = view_;
+    InductionInfo *const info = view->induction_info.get();
     if (!info) {
       continue;
     }
@@ -462,7 +458,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     // can `view` cycle back to itself without first going through another
     // UNION, JOIN, or NEGATE.
     while (!frontier.empty()) {
-      VIEW * const frontier_view = frontier.back();
+      VIEW *const frontier_view = frontier.back();
       frontier.pop_back();
 
       if (frontier_view == view) {
@@ -470,17 +466,17 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         break;
       }
 
-//      // JOINs and NEGATIONs require their predecessors to have tables, so
-//      // there's always something "blocking" us from accidentally doing infinite
-//      // inserts.
-//      } else if (frontier_view->AsJoin() || frontier_view->AsNegate()) {
-//        continue;
-//
-//      } else if (frontier_view->AsMerge()) {
-//
-//      }
+      //      // JOINs and NEGATIONs require their predecessors to have tables, so
+      //      // there's always something "blocking" us from accidentally doing infinite
+      //      // inserts.
+      //      } else if (frontier_view->AsJoin() || frontier_view->AsNegate()) {
+      //        continue;
+      //
+      //      } else if (frontier_view->AsMerge()) {
+      //
+      //      }
 
-      if (InductionInfo * const frontier_info =
+      if (InductionInfo *const frontier_info =
               frontier_view->induction_info.get()) {
 
         // We've reached another inductive thing, and this thing has non-
@@ -495,20 +491,20 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
         }
       }
 
-      ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
+      ForEachSuccessorOf(frontier_view, [&](VIEW *frontier_succ_view) {
         if (auto [it, added] = seen.insert(frontier_succ_view); added) {
           frontier.push_back(frontier_succ_view);
         }
       });
     }
 
-//    // Views living "fully" inside other inductive back-edges can be marked as
-//    // not being actually inductive after all.
-//    if (info->noninductive_predecessors.Empty() &&
-//        info->noninductive_successors.Empty() &&
-//        !info->can_reach_self_not_through_another_induction) {
-//      view->induction_info.reset();
-//    }
+    //    // Views living "fully" inside other inductive back-edges can be marked as
+    //    // not being actually inductive after all.
+    //    if (info->noninductive_predecessors.Empty() &&
+    //        info->noninductive_successors.Empty() &&
+    //        !info->can_reach_self_not_through_another_induction) {
+    //      view->induction_info.reset();
+    //    }
   }
 
   // We didn't inject any new UNIONs :-) Now we can label all the merges
@@ -517,8 +513,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   auto group_id = 0u;
 
   for (auto &[view_, set] : merge_sets) {
-    VIEW * const view = view_;
-    InductionInfo * const info = view->induction_info.get();
+    VIEW *const view = view_;
+    InductionInfo *const info = view->induction_info.get();
     if (!info) {
       continue;
     }
@@ -537,7 +533,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
   const auto num_induction_groups = group_id;
 
-  std::vector<std::vector<unsigned>> directly_reachable_from(num_induction_groups);
+  std::vector<std::vector<unsigned>> directly_reachable_from(
+      num_induction_groups);
   std::vector<bool> group_is_reachable(num_induction_groups);
   std::vector<unsigned> group_to_label(num_induction_groups);
 
@@ -549,8 +546,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // all inductions directly reachable from RECEIVEs. Some of these grouped
   // inductions might actually be reachable from the outputs of others, though.
   for (auto &[view_, set] : merge_sets) {
-    VIEW * const view = view_;
-    InductionInfo * const info = view->induction_info.get();
+    VIEW *const view = view_;
+    InductionInfo *const info = view->induction_info.get();
     if (!info) {
       continue;
     }
@@ -586,7 +583,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
       // We need to follow the frontier view's successors.
       } else {
-        ForEachSuccessorOf(frontier_view, [&] (VIEW *frontier_succ_view) {
+        ForEachSuccessorOf(frontier_view, [&](VIEW *frontier_succ_view) {
           if (auto [it, added] = seen.insert(frontier_succ_view); added) {
             frontier.push_back(frontier_succ_view);
           }
@@ -624,8 +621,8 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   }
 
   for (auto &[view_, set] : merge_sets) {
-    VIEW * const view = view_;
-    InductionInfo * const info = view->induction_info.get();
+    VIEW *const view = view_;
+    InductionInfo *const info = view->induction_info.get();
     if (!info) {
       continue;
     }
@@ -641,7 +638,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   std::unordered_map<ParsedClause, std::vector<ParsedVariable>> bad_vars;
 
   for (auto &[view_, set] : merge_sets) {
-    VIEW * const view = view_;
+    VIEW *const view = view_;
     if (!view->IsInductive()) {
       continue;
     }
@@ -657,7 +654,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
     for (VIEW *related_view : *merge_set->related_merges) {
       assert(related_view->IsInductive());
-      InductionInfo * const info = related_view->induction_info.get();
+      InductionInfo *const info = related_view->induction_info.get();
       if (info->noninductive_predecessors.Size()) {
         has_inputs = true;
       }
@@ -668,7 +665,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
     if (!has_inputs || !has_outputs) {
       const auto &related_views = *(merge_set->related_merges);
-      for (VIEW * related_view : related_views) {
+      for (VIEW *related_view : related_views) {
         for (auto col : related_view->columns) {
           if (col->var.has_value()) {
             auto clause = ParsedClause::Containing(*(col->var));
@@ -697,8 +694,9 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   }
 
 #ifndef NDEBUG
+
   // Sanity checking.
-  const_cast<const QueryImpl *>(this)->ForEachView([] (VIEW *merge) {
+  const_cast<const QueryImpl *>(this)->ForEachView([](VIEW *merge) {
     if (auto info = merge->induction_info.get()) {
       const auto merge_id = info->merge_set_id;
       const auto merge_depth = info->merge_depth;

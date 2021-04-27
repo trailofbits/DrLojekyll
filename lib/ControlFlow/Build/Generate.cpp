@@ -11,8 +11,8 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
-  auto gen = impl->operation_regions.CreateDerived<GENERATOR>(
-      parent, functor, impl->next_id++);
+  auto gen = impl->operation_regions.CreateDerived<GENERATOR>(parent, functor,
+                                                              impl->next_id++);
   auto i = 0u;
 
   // Deal with the functor inputs and outputs.
@@ -95,8 +95,8 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryView pred_view,
   // TODO(pag): Think about requiring persistence of the predecessor, so that
   //            we always have the inputs persisted.
 
-  const auto gen = CreateGeneratorCall(
-      impl, map, functor, context, parent, true);
+  const auto gen =
+      CreateGeneratorCall(impl, map, functor, context, parent, true);
   parent->body.Emplace(parent, gen);
 
   // If we're dealing with a negated generator, then make sure that children
@@ -112,8 +112,8 @@ void BuildEagerGenerateRegion(ProgramImpl *impl, QueryView pred_view,
 
   // NOTE(pag): A generator will never share the data model of its predecessor,
   //            otherwise it would be too accepting.
-  BuildEagerInsertionRegions(
-      impl, view, context, parent, view.Successors(), nullptr);
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
+                             nullptr);
 }
 
 // Build a bottom-up remover for generator calls.
@@ -142,12 +142,12 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
     std::vector<QueryColumn> view_cols;
     map.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
                        std::optional<QueryColumn> out_col) {
-                     if (InputColumnRole::kFunctorInput == role) {
-                       const auto in_var = parent->VariableFor(impl, in_col);
-                       parent->col_id_to_var[out_col->Id()] = in_var;
-                       view_cols.push_back(*out_col);
-                     }
-                   });
+      if (InputColumnRole::kFunctorInput == role) {
+        const auto in_var = parent->VariableFor(impl, in_col);
+        parent->col_id_to_var[out_col->Id()] = in_var;
+        view_cols.push_back(*out_col);
+      }
+    });
 
     // Scan over the index.
     (void) BuildMaybeScanPartial(
@@ -160,8 +160,8 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
 
   // If we don't have a data model then repeat the call to the generator.
   } else {
-    const auto gen = CreateGeneratorCall(
-        impl, map, functor, context, parent, true);
+    const auto gen =
+        CreateGeneratorCall(impl, map, functor, context, parent, true);
     parent->body.Emplace(parent, gen);
 
     // If this is a positive use then children go on the positive side;
@@ -177,7 +177,7 @@ void CreateBottomUpGenerateRemover(ProgramImpl *impl, Context &context,
   // NOTE(pag): We'll let `BuildEagerRemovalRegions` mark the removal
   //            for us.
   BuildEagerRemovalRegions(impl, view, context, let, view.Successors(),
-                           nullptr  /* already_removed */);
+                           nullptr /* already_removed */);
 }
 
 // Build a top-down checker on a map / generator.
@@ -209,8 +209,8 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
     view_vars.push_back(proc->VariableFor(impl, col));
   }
 
-  const auto gen = CreateGeneratorCall(
-      impl, map, functor, context, proc, false  /* bottom_up */);
+  const auto gen = CreateGeneratorCall(impl, map, functor, context, proc,
+                                       false /* bottom_up */);
 
   // If nothing is generated, then it wasn't plausible!
   gen->empty_body.Emplace(gen, BuildStateCheckCaseReturnFalse(impl, gen));
@@ -232,8 +232,7 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       // until we fall through the procedure. Higher level code will inject
       // a terminating `return-false` for us.
       case FunctorRange::kOneOrMore:
-      case FunctorRange::kZeroOrMore:
-        break;
+      case FunctorRange::kZeroOrMore: break;
 
       // Emit a `return-false` if the comparison failed and we can never get
       // more than one set of outputs from this generator.
@@ -263,10 +262,10 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       parent,
       CallTopDownChecker(
           impl, context, parent, view, view_cols, pred_view, already_checked,
-          [=] (REGION *parent_if_true) -> REGION * {
+          [=](REGION *parent_if_true) -> REGION * {
             return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
           },
-          [=] (REGION *parent_if_false) -> REGION * {
+          [=](REGION *parent_if_false) -> REGION * {
             return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
           }));
 

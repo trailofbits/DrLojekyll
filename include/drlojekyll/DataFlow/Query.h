@@ -334,7 +334,6 @@ enum class InputColumnRole {
 // or a join.
 class QueryView : public query::QueryNode<QueryView> {
  public:
-
   static QueryView Containing(QueryColumn col);
 
   DefinedNodeRange<QueryColumn> Columns(void) const;

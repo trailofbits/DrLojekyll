@@ -630,12 +630,15 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
   // we are doing code gen, the that likely means one region is serialized
   // before the other, and so there is a kind of race condition, where only
   // one of them is likely to execute and the other will never execute.
-  comment = "!!! STRIP MINING " + std::to_string(reinterpret_cast<uintptr_t>(this));
+  comment =
+      "!!! STRIP MINING " + std::to_string(reinterpret_cast<uintptr_t>(this));
   for (auto region : merges) {
-    region->comment = "??? STRIP MINING WITH " + std::to_string(reinterpret_cast<uintptr_t>(this));
+    region->comment = "??? STRIP MINING WITH " +
+                      std::to_string(reinterpret_cast<uintptr_t>(this));
   }
 
-  assert(false && "Probable error when trying to strip mine program state transitions");
+  assert(false &&
+         "Probable error when trying to strip mine program state transitions");
 
   // New parallel region for merged bodies into 'this'
   auto new_par = prog->parallel_regions.Create(this);
@@ -681,17 +684,23 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
 
 uint64_t Node<ProgramTestAndSetRegion>::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= RotateRight64(hash, 13) *
+  hash ^=
+      RotateRight64(hash, 13) *
       ((static_cast<unsigned>(accumulator->role) + 7u) *
-       (static_cast<unsigned>(DataVariable(accumulator.get()).Type().Kind()) + 11u));
+       (static_cast<unsigned>(DataVariable(accumulator.get()).Type().Kind()) +
+        11u));
 
-  hash ^= RotateRight64(hash, 12) *
+  hash ^=
+      RotateRight64(hash, 12) *
       ((static_cast<unsigned>(displacement->role) + 7u) *
-       (static_cast<unsigned>(DataVariable(displacement.get()).Type().Kind()) + 12u));
+       (static_cast<unsigned>(DataVariable(displacement.get()).Type().Kind()) +
+        12u));
 
-  hash ^= RotateRight64(hash, 11) *
+  hash ^=
+      RotateRight64(hash, 11) *
       ((static_cast<unsigned>(comparator->role) + 7u) *
-       (static_cast<unsigned>(DataVariable(comparator.get()).Type().Kind()) + 13u));
+       (static_cast<unsigned>(DataVariable(comparator.get()).Type().Kind()) +
+        13u));
 
   if (depth == 0) {
     return hash;
@@ -707,9 +716,9 @@ bool Node<ProgramTestAndSetRegion>::IsNoOp(void) const noexcept {
   return false;
 }
 
-bool Node<ProgramTestAndSetRegion>::Equals(
-    EqualitySet &eq, Node<ProgramRegion> *that_,
-    uint32_t depth) const noexcept {
+bool Node<ProgramTestAndSetRegion>::Equals(EqualitySet &eq,
+                                           Node<ProgramRegion> *that_,
+                                           uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op || this->OP::op != that_op->OP::op) {
     FAILED_EQ(that_);
@@ -746,8 +755,7 @@ bool Node<ProgramTestAndSetRegion>::Equals(
 
 const bool Node<ProgramTestAndSetRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE(
-      "TODO(ekilmer): Unimplemented merging of TestAndSetRegion");
+  NOTE("TODO(ekilmer): Unimplemented merging of TestAndSetRegion");
   assert(false);
   return false;
 }
@@ -1601,7 +1609,8 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
     }
 
     // This function tests the false return value of the called procedure.
-    if (false_body && !false_body->Equals(eq, that->false_body.get(), depth - 1)) {
+    if (false_body &&
+        !false_body->Equals(eq, that->false_body.get(), depth - 1)) {
       FAILED_EQ(that_);
       return false;
     }
@@ -1780,8 +1789,7 @@ Node<ProgramCheckStateRegion>::AsCheckState(void) noexcept {
 // Returns `true` if all paths through `this` ends with a `return` region.
 bool Node<ProgramCheckStateRegion>::EndsWithReturn(void) const noexcept {
   if (body && absent_body && unknown_body) {
-    return body->EndsWithReturn() &&
-           absent_body->EndsWithReturn() &&
+    return body->EndsWithReturn() && absent_body->EndsWithReturn() &&
            unknown_body->EndsWithReturn();
   } else {
     return false;
@@ -1885,6 +1893,7 @@ bool Node<ProgramCheckStateRegion>::Equals(EqualitySet &eq,
 
 const bool Node<ProgramCheckStateRegion>::MergeEqual(
     ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+
   // New parallel region for merged `body` into 'this'
   auto new_par = prog->parallel_regions.Create(this);
   if (auto body_ptr = body.get(); body_ptr) {

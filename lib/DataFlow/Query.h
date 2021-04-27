@@ -115,7 +115,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   const TypeLoc type;
 
   // View to which this column belongs.
-  Node<QueryView> * const view;
+  Node<QueryView> *const view;
 
   // Reference to a use of a real constant. We need this indirection because
   // we depend on dataflow to sometimes encode control dependencies, but if we
@@ -414,9 +414,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   //            in `this` for `incoming_view`, to force a non-NULL.
   //
   // NOTE(pag): This assumes `in_to_out` is filled up!!
-  Node<QueryTuple> *GuardWithOptimizedTuple(
-      QueryImpl *query, unsigned first_attached_col,
-      Node<QueryView> *incoming_view);
+  Node<QueryTuple> *GuardWithOptimizedTuple(QueryImpl *query,
+                                            unsigned first_attached_col,
+                                            Node<QueryView> *incoming_view);
 
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
@@ -450,12 +450,12 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
                             const ErrorLog &);
 
   struct Discoveries {
-    bool constant_inputs:1;
-    bool non_local_changes:1;
-    bool guardable_constant_output:1;
-    bool duplicated_input_column:1;
-    bool directly_used_column:1;
-    bool unused_column:1;
+    bool constant_inputs : 1;
+    bool non_local_changes : 1;
+    bool guardable_constant_output : 1;
+    bool duplicated_input_column : 1;
+    bool directly_used_column : 1;
+    bool unused_column : 1;
   };
 
   // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
@@ -627,6 +627,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   unsigned color{0};
 
 #ifndef NDEBUG
+
   // Debug string roughly tracking how or why this node was created.
   std::string producer;
 #endif
@@ -666,17 +667,17 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // updated `incoming_view`.
   //
   // NOTE(pag): This updates `is_canonical = false` if it changes anything.
-  Node<QueryView> *PullDataFromBeyondTrivialTuples(
-      Node<QueryView> *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2);
+  Node<QueryView> *
+  PullDataFromBeyondTrivialTuples(Node<QueryView> *incoming_view,
+                                  UseList<COL> &cols1, UseList<COL> &cols2);
 
  private:
-
   // Similar to, and called by, `PullDataFromBeyondTrivialTuples`.
-  Node<QueryView> *PullDataFromBeyondTrivialUnions(
-      Node<QueryView> *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2);
+  Node<QueryView> *
+  PullDataFromBeyondTrivialUnions(Node<QueryView> *incoming_view,
+                                  UseList<COL> &cols1, UseList<COL> &cols2);
 
  public:
-
   // Figure out what the incoming view to `cols1` is.
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
@@ -721,8 +722,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions = ParsedMessage::From(
-          input_stream->declaration).IsDifferential();
+      this->can_receive_deletions =
+          ParsedMessage::From(input_stream->declaration).IsDifferential();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -733,8 +734,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions = ParsedMessage::From(
-          input_stream->declaration).IsDifferential();
+      this->can_receive_deletions =
+          ParsedMessage::From(input_stream->declaration).IsDifferential();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -968,8 +969,7 @@ using AGG = Node<QueryAggregate>;
 template <>
 class Node<QueryMerge> : public Node<QueryView> {
  public:
-  Node(void)
-      : merged_views(this) {}
+  Node(void) : merged_views(this) {}
 
   virtual ~Node(void);
 
@@ -1043,8 +1043,7 @@ class Node<QueryNegate> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  inline Node(void)
-      : Node<QueryView>() {
+  inline Node(void) : Node<QueryView>() {
     can_receive_deletions = true;
   }
 
@@ -1388,7 +1387,7 @@ class QueryImpl {
   void ConvertConstantInputsToTuples(void);
 
   // Identify the inductive unions in the data flow.
-  void IdentifyInductions(const ErrorLog &log, bool recursive=false);
+  void IdentifyInductions(const ErrorLog &log, bool recursive = false);
 
   // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(const ErrorLog &log,
@@ -1410,7 +1409,7 @@ class QueryImpl {
   void ProxyInsertsWithTuples(void);
 
   // Link together views in terms of predecessors and successors.
-  void LinkViews(bool recursive=false);
+  void LinkViews(bool recursive = false);
 
   // Root module associated with this query.
   const ParsedModule module;

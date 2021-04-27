@@ -16,8 +16,8 @@ class ContinueInductionWorkItem final : public WorkItem {
                             INDUCTION *induction_);
 
   // Find the common ancestor of all initialization regions.
-  REGION *FindCommonAncestorOfInitRegions(
-      const std::vector<REGION *> &regions) const;
+  REGION *
+  FindCommonAncestorOfInitRegions(const std::vector<REGION *> &regions) const;
 
   void Run(ProgramImpl *impl, Context &context) override;
 
@@ -43,9 +43,9 @@ class ContinueJoinWorkItem final : public WorkItem {
 
  private:
   const QueryView view;
-  VECTOR * const input_pivot_vec;
-  VECTOR * const swap_pivot_vec;
-  INDUCTION * const induction;
+  VECTOR *const input_pivot_vec;
+  VECTOR *const swap_pivot_vec;
+  INDUCTION *const induction;
 };
 
 class ContinueProductWorkItem final : public WorkItem {
@@ -68,18 +68,19 @@ class ContinueProductWorkItem final : public WorkItem {
 
  private:
   QueryView view;
-  INDUCTION * const induction;
+  INDUCTION *const induction;
 };
 
 INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
                               Context &context, OP *parent);
 
-void AppendToInductionInputVectors(
-    ProgramImpl *impl, QueryView vec_view, QueryView inductive_view,
-    Context &context, OP *parent, INDUCTION *induction, bool for_add);
+void AppendToInductionInputVectors(ProgramImpl *impl, QueryView vec_view,
+                                   QueryView inductive_view, Context &context,
+                                   OP *parent, INDUCTION *induction,
+                                   bool for_add);
 
-REGION *AppendToInductionOutputVectors(
-    ProgramImpl *impl, QueryView vec_view, Context &context, INDUCTION *induction,
-    REGION *parent);
+REGION *AppendToInductionOutputVectors(ProgramImpl *impl, QueryView vec_view,
+                                       Context &context, INDUCTION *induction,
+                                       REGION *parent);
 
 }  // namespace hyde

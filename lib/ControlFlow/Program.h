@@ -921,8 +921,7 @@ class Node<ProgramTestAndSetRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<Node<ProgramRegion> *> &merges) override;
 
-  Node<ProgramTestAndSetRegion> *
-  AsTestAndSet(void) noexcept override;
+  Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept override;
 
   // The variables are used as `(src_dest OP= update_val) == comapre_val`.
   UseRef<VAR> accumulator;
@@ -1424,10 +1423,10 @@ class ProgramImpl : public User {
   // List of variables associated with constants.
   DefList<VAR> const_vars;
 
-  VAR * const zero;
-  VAR * const one;
-  VAR * const false_;
-  VAR * const true_;
+  VAR *const zero;
+  VAR *const one;
+  VAR *const false_;
+  VAR *const true_;
 
   // Maps constants to their global variables.
   std::unordered_map<QueryConstant, VAR *> const_to_var;

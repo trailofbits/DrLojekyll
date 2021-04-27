@@ -26,15 +26,16 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
   }
 #endif
 
-  BuildEagerInsertionRegions(impl, view, context, parent,
-                             view.Successors(), last_table);
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
+                             last_table);
 }
 
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
-REGION *BuildTopDownUnionChecker(
-    ProgramImpl *impl, Context &context, REGION *proc, QueryMerge merge,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+REGION *BuildTopDownUnionChecker(ProgramImpl *impl, Context &context,
+                                 REGION *proc, QueryMerge merge,
+                                 std::vector<QueryColumn> &view_cols,
+                                 TABLE *already_checked) {
   const QueryView view(merge);
 
   // Organize the checking so that we check the non-differential predecessors
@@ -46,13 +47,13 @@ REGION *BuildTopDownUnionChecker(
   seq->AddRegion(par_diff);
   seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
 
-  auto do_rec_check = [&] (QueryView pred_view, PARALLEL *parent) -> REGION * {
+  auto do_rec_check = [&](QueryView pred_view, PARALLEL *parent) -> REGION * {
     return CallTopDownChecker(
         impl, context, parent, view, view_cols, pred_view, already_checked,
-        [=] (REGION *parent_if_true) -> REGION * {
+        [=](REGION *parent_if_true) -> REGION * {
           return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
         },
-        [] (REGION *) -> REGION * { return nullptr; });
+        [](REGION *) -> REGION * { return nullptr; });
   };
 
   for (auto pred_view : merge.MergedViews()) {
@@ -62,8 +63,8 @@ REGION *BuildTopDownUnionChecker(
       const auto rec_check = do_rec_check(pred_view, par_diff);
       par_diff->AddRegion(rec_check);
 
-      COMMENT( rec_check->comment =
-          __FILE__ ": BuildTopDownUnionChecker call differential predecessor"; )
+      COMMENT(rec_check->comment = __FILE__
+              ": BuildTopDownUnionChecker call differential predecessor";)
 
     // If the predecessor can't produce deletions, then check it in
     // `par_normal`.
@@ -71,8 +72,8 @@ REGION *BuildTopDownUnionChecker(
       const auto rec_check = do_rec_check(pred_view, par_normal);
       par_normal->AddRegion(rec_check);
 
-      COMMENT( rec_check->comment =
-          __FILE__ ": BuildTopDownUnionChecker call normal predecessor"; )
+      COMMENT(rec_check->comment = __FILE__
+              ": BuildTopDownUnionChecker call normal predecessor";)
     }
   }
 
@@ -82,8 +83,8 @@ REGION *BuildTopDownUnionChecker(
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, OP *parent,
                                 TABLE *already_removed) {
-  BuildEagerRemovalRegions(impl, view, context, parent,
-                           view.Successors(), already_removed);
+  BuildEagerRemovalRegions(impl, view, context, parent, view.Successors(),
+                           already_removed);
 }
 
 }  // namespace hyde

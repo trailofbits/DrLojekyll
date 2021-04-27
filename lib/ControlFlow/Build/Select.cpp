@@ -5,9 +5,10 @@
 namespace hyde {
 
 // Build a top-down checker on a select.
-REGION *BuildTopDownSelectChecker(
-    ProgramImpl *impl, Context &context, REGION *proc, QuerySelect select,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+REGION *BuildTopDownSelectChecker(ProgramImpl *impl, Context &context,
+                                  REGION *proc, QuerySelect select,
+                                  std::vector<QueryColumn> &view_cols,
+                                  TABLE *already_checked) {
 
   const QueryView view(select);
 
@@ -29,13 +30,13 @@ REGION *BuildTopDownSelectChecker(
   // can only return false.
   seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
 
-  auto do_rec_check = [&] (QueryView pred_view, PARALLEL *parent) -> REGION * {
+  auto do_rec_check = [&](QueryView pred_view, PARALLEL *parent) -> REGION * {
     return CallTopDownChecker(
         impl, context, parent, view, view_cols, pred_view, already_checked,
-        [=] (REGION *parent_if_true) -> REGION * {
+        [=](REGION *parent_if_true) -> REGION * {
           return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
         },
-        [] (REGION *) -> REGION * { return nullptr; });
+        [](REGION *) -> REGION * { return nullptr; });
   };
 
   // The predecessors of a `SELECT` are inserts. `SELECT`s don't have input
@@ -64,8 +65,8 @@ REGION *BuildTopDownSelectChecker(
       const auto rec_check = do_rec_check(pred_view, par_diff);
       par_diff->AddRegion(rec_check);
 
-      COMMENT( rec_check->comment =
-          __FILE__ ": BuildTopDownSelectChecker call differential pred"; )
+      COMMENT(rec_check->comment = __FILE__
+              ": BuildTopDownSelectChecker call differential pred";)
 
     // If the predecessor can't produce deletions, then check it in
     // `par_normal`.
@@ -73,8 +74,8 @@ REGION *BuildTopDownSelectChecker(
       const auto rec_check = do_rec_check(pred_view, par_normal);
       par_normal->AddRegion(rec_check);
 
-      COMMENT( rec_check->comment =
-          __FILE__ ": BuildTopDownSelectChecker call normal pred"; )
+      COMMENT(rec_check->comment =
+                  __FILE__ ": BuildTopDownSelectChecker call normal pred";)
     }
   }
 

@@ -44,12 +44,10 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
     return;
 
   } else if (tok.Lexeme() != Lexeme::kPuncPeriod) {
-    auto err = context->error_log.Append(scope_range,
-                                         imp->path.NextPosition());
+    auto err = context->error_log.Append(scope_range, imp->path.NextPosition());
     err << "Expected period here to end the import statement";
 
-    err.Note(scope_range, tok.SpellingRange())
-        << "Got '" << tok << "' instead";
+    err.Note(scope_range, tok.SpellingRange()) << "Got '" << tok << "' instead";
     return;
   }
 
@@ -58,7 +56,7 @@ void ParserImpl::ParseImport(Node<ParsedModule> *module) {
   // This should work...
   std::string_view path_str;
   if (!context->string_pool.TryReadString(
-      imp->path.StringId(), imp->path.StringLength(), &path_str) ||
+          imp->path.StringId(), imp->path.StringLength(), &path_str) ||
       path_str.empty()) {
     context->error_log.Append(scope_range, path_range)
         << "Unknown error when trying to read data associated with import "

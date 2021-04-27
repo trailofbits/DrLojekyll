@@ -55,8 +55,9 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 // means that they can be re-ordered during canonicalization for the sake of
 // helping deduplicate common subexpressions. We also need to put the "attached"
 // outputs into the proper order.
-bool Node<QueryMap>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+bool Node<QueryMap>::Canonicalize(QueryImpl *query,
+                                  const OptimizationContext &opt,
+                                  const ErrorLog &) {
 
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
@@ -81,8 +82,8 @@ bool Node<QueryMap>::Canonicalize(
 
   // NOTE(pag): This may update `is_canonical`.
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
-      GetIncomingView(input_columns, attached_columns),
-      input_columns, attached_columns);
+      GetIncomingView(input_columns, attached_columns), input_columns,
+      attached_columns);
 
   auto i = 0u;
   for (auto j = 0u; i < arity; ++i) {
@@ -114,8 +115,7 @@ bool Node<QueryMap>::Canonicalize(
   // can be guarded, or one duplicated column. Go create a tuple that will
   // only propagate forward the needed data.
   if (has.guardable_constant_output || has.duplicated_input_column) {
-    if (!IsUsedDirectly() &&
-        !(OnlyUser() && has.directly_used_column)) {
+    if (!IsUsedDirectly() && !(OnlyUser() && has.directly_used_column)) {
       GuardWithOptimizedTuple(query, first_attached_col, incoming_view);
       has.non_local_changes = true;
     }
@@ -128,8 +128,8 @@ bool Node<QueryMap>::Canonicalize(
   i = 0u;
   for (auto j = 0u; i < arity; ++i) {
     const auto old_col = columns[i];
-    const auto new_col = new_columns.Create(
-        old_col->var, old_col->type, this, old_col->id, i);
+    const auto new_col =
+        new_columns.Create(old_col->var, old_col->type, this, old_col->id, i);
     old_col->ReplaceAllUsesWith(new_col);
 
     // It's an input column.
@@ -142,8 +142,8 @@ bool Node<QueryMap>::Canonicalize(
   for (auto j = 0u; i < num_cols; ++i, ++j) {
     const auto old_col = columns[i];
     if (old_col->IsUsed()) {
-      const auto new_col = new_columns.Create(
-          old_col->var, old_col->type, this, old_col->id, new_columns.Size());
+      const auto new_col = new_columns.Create(old_col->var, old_col->type, this,
+                                              old_col->id, new_columns.Size());
       old_col->ReplaceAllUsesWith(new_col);
       new_attached_columns.AddUse(attached_columns[j]->TryResolveToConstant());
     } else {
@@ -152,8 +152,8 @@ bool Node<QueryMap>::Canonicalize(
   }
 
   // We dropped a reference to our predecessor; maintain it via a condition.
-  const auto new_incoming_view = GetIncomingView(new_input_columns,
-                                                 new_attached_columns);
+  const auto new_incoming_view =
+      GetIncomingView(new_input_columns, new_attached_columns);
   if (incoming_view != new_incoming_view) {
     CreateDependencyOnView(query, incoming_view);
     has.non_local_changes = true;
@@ -180,8 +180,7 @@ bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
   }
 
   const auto that = that_->AsMap();
-  if (!that ||
-      is_positive != that->is_positive ||
+  if (!that || is_positive != that->is_positive ||
       num_free_params != that->num_free_params ||
       columns.Size() != that->columns.Size() ||
       attached_columns.Size() != that->attached_columns.Size() ||

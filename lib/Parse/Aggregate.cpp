@@ -295,8 +295,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         // Convert literals into variables, just-in-time.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme ||
-            Lexeme::kLiteralTrue == lexeme ||
-            Lexeme::kLiteralFalse == lexeme ||
+            Lexeme::kLiteralTrue == lexeme || Lexeme::kLiteralFalse == lexeme ||
             Lexeme::kIdentifierConstant == lexeme) {
           arg = CreateLiteralVariable(clause, tok, false, true);
 

@@ -7,8 +7,7 @@
 namespace hyde {
 namespace {
 
-VIEW *CreateProxyOfInserts(QueryImpl *impl,
-                           UseList<Node<QueryView>> &inserts) {
+VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<Node<QueryView>> &inserts) {
 
   UseList<Node<QueryView>> old_inserts(inserts.Owner());
   old_inserts.Swap(inserts);
@@ -23,7 +22,7 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl,
 
     // Only proxy an INSERT if it actually inserts data; otherwise it's a
     // DELETE and we want to maintain that.
-    TUPLE * const proxy = impl->tuples.Create();
+    TUPLE *const proxy = impl->tuples.Create();
 
 #ifndef NDEBUG
     proxy->producer = "INSERT";
@@ -38,7 +37,7 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl,
 
     auto col_index = 0u;
     for (auto in_col : insert->input_columns) {
-      COL * const proxy_col = proxy->columns.Create(
+      COL *const proxy_col = proxy->columns.Create(
           in_col->var, in_col->type, proxy, in_col->id, col_index++);
       proxy->input_columns.AddUse(in_col);
       proxy_col->CopyConstantFrom(in_col);
@@ -54,8 +53,8 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl,
       merge = impl->merges.Create();
       col_index = 0u;
       for (auto col : proxy->columns) {
-        (void) merge->columns.Create(
-            col->var, col->type, merge, col->id, col_index++);
+        (void) merge->columns.Create(col->var, col->type, merge, col->id,
+                                     col_index++);
       }
     }
 
@@ -77,7 +76,7 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
     return view;
   }
 
-  KVINDEX * const index = impl->kv_indices.Create();
+  KVINDEX *const index = impl->kv_indices.Create();
   std::unordered_map<COL *, COL *> col_map;
 
   // Create the key columns.
@@ -103,18 +102,17 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
           view_col->var, view_col->type, index, view_col->id, col_index++);
       col_map.emplace(view_col, val_col);
 
-      index->merge_functors.push_back(
-          ParsedFunctor::MergeOperatorOf(param));
+      index->merge_functors.push_back(ParsedFunctor::MergeOperatorOf(param));
       index->attached_columns.AddUse(view_col);
     }
   }
 
   // We need to return the columns in the expected order.
-  TUPLE * const proxy = impl->tuples.Create();
+  TUPLE *const proxy = impl->tuples.Create();
   col_index = 0u;
   for (auto col : view->columns) {
-    (void) proxy->columns.Create(
-        col->var, col->type, proxy, col->id, col_index++);
+    (void) proxy->columns.Create(col->var, col->type, proxy, col->id,
+                                 col_index++);
     proxy->input_columns.AddUse(col_map[col]);
   }
 
@@ -131,7 +129,7 @@ static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
 
     // Only proxy an INSERT if it actually inserts data; otherwise it's a
     // DELETE and we want to maintain that.
-    TUPLE * const proxy = impl->tuples.Create();
+    TUPLE *const proxy = impl->tuples.Create();
 
 #ifndef NDEBUG
     proxy->producer = "SELECT";
@@ -146,8 +144,8 @@ static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
 
     auto col_index = 0u;
     for (auto in_col : insert_proxy->columns) {
-      COL * const sel_col = select->columns[col_index];
-      COL * const proxy_col = proxy->columns.Create(
+      COL *const sel_col = select->columns[col_index];
+      COL *const proxy_col = proxy->columns.Create(
           sel_col->var, sel_col->type, proxy, sel_col->id, col_index++);
       proxy->input_columns.AddUse(in_col);
       proxy_col->CopyConstantFrom(in_col);
@@ -204,7 +202,7 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
         continue;
       }
 
-      SELECT * const prev_sel = io->receives[0]->AsSelect();
+      SELECT *const prev_sel = io->receives[0]->AsSelect();
 
       SELECT *select = nullptr;
       if (prev_sel->pred) {
@@ -215,8 +213,8 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
       auto col_index = 0u;
       for (auto col : io->receives[0]->columns) {
-        (void) select->columns.Create(
-            col->var, col->type, select, col->id, col_index++);
+        (void) select->columns.Create(col->var, col->type, select, col->id,
+                                      col_index++);
       }
 
       ProxySelects(this, io->receives, select);

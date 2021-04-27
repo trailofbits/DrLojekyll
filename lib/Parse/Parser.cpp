@@ -265,8 +265,7 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalidUnterminatedCxxCode:
       case Lexeme::kInvalidUnterminatedPythonCode:
       case Lexeme::kInvalidPragma:
-      case Lexeme::kComment:
-        continue;
+      case Lexeme::kComment: continue;
 
       // Adjust for foreign types.
       case Lexeme::kIdentifierAtom:
@@ -279,7 +278,7 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
               context->foreign_constants[id]->type.Kind());
         }
       }
-      [[clang::fallthrough]];
+        [[clang::fallthrough]];
 
       // We pass these through so that we can report more meaningful
       // errors in locations relevant to specific parses.
@@ -351,8 +350,7 @@ bool ParserImpl::ReadStatement(void) {
           opening_parens.pop_back();
         }
         continue;
-      case Lexeme::kWhitespace:
-        continue;
+      case Lexeme::kWhitespace: continue;
       case Lexeme::kComment: continue;
       default: sub_tokens.push_back(tok); continue;
     }
@@ -799,14 +797,13 @@ void ParserImpl::ParseLocalExport(
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '"
-            << local->name << "' " << introducer_tok;
+            << "Unexpected tokens following declaration of the '" << local->name
+            << "' " << introducer_tok;
         state = 10;  // Ignore further errors, but add the local in.
         continue;
       }
 
       case 10: continue;
-
     }
   }
 
@@ -1351,18 +1348,20 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
         } else if (assign->rhs.type.Kind() != lhs_type.Kind()) {
           auto lhs_var = ParsedVariable(assign->lhs.used_var);
           auto rhs_const = ParsedLiteral(&(assign->rhs));
-          auto err = context->error_log.Append(ParsedClause(clause).SpellingRange(),
-                                               lhs_var.SpellingRange());
-          err << "Type mismatch between variable '" << lhs_var.Name() << "' (type '"
-              << lhs_var.Type().SpellingRange() << "') and constant '"
-              << rhs_const.Literal() << "' (type '"
+          auto err = context->error_log.Append(
+              ParsedClause(clause).SpellingRange(), lhs_var.SpellingRange());
+          err << "Type mismatch between variable '" << lhs_var.Name()
+              << "' (type '" << lhs_var.Type().SpellingRange()
+              << "') and constant '" << rhs_const.Literal() << "' (type '"
               << rhs_const.Type().SpellingRange() << "')";
 
-          err.Note(lhs_var.Type().SpellingRange(), lhs_var.Type().SpellingRange())
+          err.Note(lhs_var.Type().SpellingRange(),
+                   lhs_var.Type().SpellingRange())
               << "Variable '" << lhs_var.Name() << "' with type '"
               << lhs_var.Type().SpellingRange() << "' is from here";
 
-          err.Note(rhs_const.Type().SpellingRange(), rhs_const.Type().SpellingRange())
+          err.Note(rhs_const.Type().SpellingRange(),
+                   rhs_const.Type().SpellingRange())
               << "Constant '" << rhs_const.Literal() << "' with type '"
               << rhs_const.Type().SpellingRange() << "' is from here";
           return false;

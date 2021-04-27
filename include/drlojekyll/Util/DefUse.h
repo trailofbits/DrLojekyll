@@ -536,7 +536,6 @@ class Def {
       } else {
         new_uses.emplace_back(std::move(use));
       }
-
     }
 
     new_uses.swap(uses);

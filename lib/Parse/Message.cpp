@@ -159,7 +159,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
             auto err = context->error_log.Append(scope_range, tok_range);
             err << "Unexpected repeat of the '@differential' pragma here";
 
-            err.Note(scope_range, message->differential_attribute.SpellingRange())
+            err.Note(scope_range,
+                     message->differential_attribute.SpellingRange())
                 << "Previous use was here";
 
           } else {
@@ -195,8 +196,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         }
         [[clang::fallthrough]];
 
-      case 6:
-      {
+      case 6: {
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
@@ -211,8 +211,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
   if (state != 6) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete message declaration; the declaration '"
-        << name << "' must end with a period";
+        << "Incomplete message declaration; the declaration '" << name
+        << "' must end with a period";
 
     RemoveDecl<ParsedMessage>(std::move(message));
 

@@ -281,9 +281,8 @@ void Node<QueryView>::OrderConditions(void) {
 // do constant propagation, and possibly to replacements. Sets
 // `is_canonical = false;` if anything is changed or should be changed.
 Node<QueryView>::Discoveries
-Node<QueryView>::CanonicalizeColumn(const OptimizationContext &,
-                                    COL *in_col, COL *out_col,
-                                    bool is_attached,
+Node<QueryView>::CanonicalizeColumn(const OptimizationContext &, COL *in_col,
+                                    COL *out_col, bool is_attached,
                                     Node<QueryView>::Discoveries has) {
   auto [it, added] = in_to_out.emplace(in_col, out_col);
 
@@ -334,7 +333,8 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
     COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept {
 
   const auto out_col_is_constref = out_col->IsConstantRef();
-//  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
+
+  //  const auto out_col_is_directly_used = out_col->IsUsedIgnoreMerges();
   auto non_local_changes = false;
 
   if (in_col->IsConstant()) {
@@ -674,6 +674,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
   auto is_this_or_that = [=](VIEW *v) { return v == this || v == that; };
 
 #ifndef NDEBUG
+
   // Don't introduce cycles?
   for (auto tested_cond : that->positive_conditions) {
     assert(tested_cond != cond);
@@ -783,7 +784,7 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   // We don't want to replace the weak uses of `this` in any condition's
   // `positive_users` or `negative_users`.
   this->Def<Node<QueryView>>::ReplaceUsesWithIf<User>(
-      that, [=] (User *user, VIEW *) { return !dynamic_cast<COND *>(user); });
+      that, [=](User *user, VIEW *) { return !dynamic_cast<COND *>(user); });
 
   CopyDifferentialAndGroupIdsTo(that);
   TransferSetConditionTo(that);
@@ -856,8 +857,8 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 
   auto col_index = 0u;
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(
-        col->var, col->type, tuple, col->id, col_index++);
+    auto out_col =
+        tuple->columns.Create(col->var, col->type, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 
@@ -894,9 +895,10 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 // NOTE(pag): This assumes `in_to_out` is filled up, and operates on
 //            `input_columns` and `attached_columns` to find the best version
 //            of a column from `in_to_out`.
-Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
-    QueryImpl *query, unsigned first_attached_col,
-    Node<QueryView> *incoming_view) {
+Node<QueryTuple> *
+Node<QueryView>::GuardWithOptimizedTuple(QueryImpl *query,
+                                         unsigned first_attached_col,
+                                         Node<QueryView> *incoming_view) {
 
   auto tuple = query->tuples.Create();
   tuple->color = color;
@@ -914,8 +916,8 @@ Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
   const auto num_cols = columns.Size();
   for (auto i = 0u; i < num_cols; ++i) {
     const auto col = columns[i];
-    const auto new_col = tuple->columns.Create(
-        col->var, col->type, tuple, col->id, i);
+    const auto new_col =
+        tuple->columns.Create(col->var, col->type, tuple, col->id, i);
     new_col->CopyConstantFrom(col);
   }
 
@@ -940,8 +942,7 @@ Node<QueryTuple> *Node<QueryView>::GuardWithOptimizedTuple(
         tuple->input_columns.AddUse(col);
 
       } else {
-        tuple->input_columns.AddUse(
-            in_to_out[input_columns[i]]);
+        tuple->input_columns.AddUse(in_to_out[input_columns[i]]);
       }
 
     // Drop duplicates if we have them.
@@ -1005,8 +1006,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   cmp->color = color;
 
   cmp->input_columns.AddUse(lhs_col);
-  auto lhs_out_col = cmp->columns.Create(
-      lhs_col->var, lhs_col->type, cmp, lhs_col->id, col_index++);
+  auto lhs_out_col = cmp->columns.Create(lhs_col->var, lhs_col->type, cmp,
+                                         lhs_col->id, col_index++);
 
   lhs_out_col->CopyConstantFrom(lhs_col);
   in_to_out.emplace(lhs_col, lhs_out_col);
@@ -1017,8 +1018,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
-    auto rhs_out_col = cmp->columns.Create(
-        rhs_col->var, rhs_col->type, cmp, rhs_col->id, col_index++);
+    auto rhs_out_col = cmp->columns.Create(rhs_col->var, rhs_col->type, cmp,
+                                           rhs_col->id, col_index++);
     rhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
   }
@@ -1029,8 +1030,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   for (auto col : columns) {
     if (col != lhs_col && col != rhs_col) {
       cmp->attached_columns.AddUse(col);
-      const auto attached_col = cmp->columns.Create(
-          col->var, col->type, cmp, col->id, col_index++);
+      const auto attached_col =
+          cmp->columns.Create(col->var, col->type, cmp, col->id, col_index++);
       attached_col->CopyConstantFrom(col);
       in_to_out.emplace(col, attached_col);
     }
@@ -1043,8 +1044,8 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   col_index = 0u;
   for (auto orig_col : columns) {
     const auto in_col = in_to_out[orig_col];
-    auto out_col = tuple->columns.Create(
-        orig_col->var, orig_col->type, tuple, orig_col->id, col_index++);
+    auto out_col = tuple->columns.Create(orig_col->var, orig_col->type, tuple,
+                                         orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
     out_col->CopyConstantFrom(in_col);
   }
@@ -1079,8 +1080,7 @@ bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
       return false;
 
     } else if (a->type.Kind() != b->type.Kind() ||
-               !a->view->Equals(eq, b->view) ||
-               a->Index() != b->Index()) {
+               !a->view->Equals(eq, b->view) || a->Index() != b->Index()) {
       return false;
     }
   }
@@ -1183,8 +1183,7 @@ Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialUnions(
   VIEW *incoming_view = nullptr;
   for (auto merged_view : merge->merged_views) {
 
-    if (merged_view == this ||
-        merged_view == merge ||
+    if (merged_view == this || merged_view == merge ||
         merged_view == incoming_view) {
       continue;
 
@@ -1409,18 +1408,18 @@ bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
 
   return false;
 
-//double_check:
-//  auto a_used_by_join = false;
-//  a->ForEachUse<JOIN>([&a_used_by_join] (JOIN *, VIEW *) {
-//    a_used_by_join = true;
-//  });
-//
-//  auto b_used_by_join = false;
-//  b->ForEachUse<JOIN>([&b_used_by_join] (JOIN *, VIEW *) {
-//    b_used_by_join = true;
-//  });
-//
-//  return a_used_by_join || b_used_by_join;
+  //double_check:
+  //  auto a_used_by_join = false;
+  //  a->ForEachUse<JOIN>([&a_used_by_join] (JOIN *, VIEW *) {
+  //    a_used_by_join = true;
+  //  });
+  //
+  //  auto b_used_by_join = false;
+  //  b->ForEachUse<JOIN>([&b_used_by_join] (JOIN *, VIEW *) {
+  //    b_used_by_join = true;
+  //  });
+  //
+  //  return a_used_by_join || b_used_by_join;
 }
 
 }  // namespace hyde

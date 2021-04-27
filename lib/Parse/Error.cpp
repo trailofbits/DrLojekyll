@@ -116,8 +116,8 @@ const ErrorStream &ErrorStream::operator<<(const Token &token) const {
   return *this;
 }
 
-const ErrorStream &ErrorStream::operator<<(
-      const std::optional<ParsedVariable> &maybe_var) const {
+const ErrorStream &
+ErrorStream::operator<<(const std::optional<ParsedVariable> &maybe_var) const {
   if (maybe_var.has_value()) {
     return (*this) << *maybe_var;
   } else {

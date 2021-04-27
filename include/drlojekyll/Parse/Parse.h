@@ -417,7 +417,7 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
   // Returns `true` if this clause body is disabled. A disabled clause body
   // is one that contains a free `false` or `!true` predicate.
-  bool IsDisabled(DisplayRange *disabled_by=nullptr) const noexcept;
+  bool IsDisabled(DisplayRange *disabled_by = nullptr) const noexcept;
 
   // Are cross-products permitted when building the data flow representation
   // for this clause?

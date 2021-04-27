@@ -17,9 +17,10 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
 // recovering "lost" columns, and possibly re-orders arguments before calling
 // down to the tuple's predecessor's checker.
-REGION *BuildTopDownTupleChecker(
-    ProgramImpl *impl, Context &context, REGION *proc, QueryTuple tuple,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+REGION *BuildTopDownTupleChecker(ProgramImpl *impl, Context &context,
+                                 REGION *proc, QueryTuple tuple,
+                                 std::vector<QueryColumn> &view_cols,
+                                 TABLE *already_checked) {
 
   const QueryView view(tuple);
   const auto pred_views = view.Predecessors();
@@ -39,10 +40,10 @@ REGION *BuildTopDownTupleChecker(
   // Dispatch to the tuple's predecessor.
   return CallTopDownChecker(
       impl, context, proc, view, view_cols, pred_views[0], already_checked,
-      [=] (REGION *parent_if_true) -> REGION * {
+      [=](REGION *parent_if_true) -> REGION * {
         return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
       },
-      [=] (REGION *parent_if_false) -> REGION * {
+      [=](REGION *parent_if_false) -> REGION * {
         return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
       });
 }
@@ -51,54 +52,54 @@ void CreateBottomUpTupleRemover(ProgramImpl *impl, Context &context,
                                 QueryView view, OP *root_,
                                 TABLE *already_removed_) {
 
-  auto [root, table, already_removed] = InTryMarkUnknown(
-      impl, context, view, root_, already_removed_);
+  auto [root, table, already_removed] =
+      InTryMarkUnknown(impl, context, view, root_, already_removed_);
 
   PARALLEL *parent = impl->parallel_regions.Create(root);
   root->body.Emplace(root, parent);
 
-//  // If this view is used by a negation then we need to go and see if we should
-//  // do a delete in the negation. This means first double-checking that this is
-//  // a true delete and not just a speculative one.
-//  //
-//  // TODO(pag): Consider deferring the processing of the deletion? Is there a
-//  //            way to treat it like an induction?
-//  if (view.IsUsedByNegation()) {
-//    const auto available_cols = ComputeAvailableColumns(view, view.Columns());
-//    const auto checker_proc = GetOrCreateTopDownChecker(
-//        impl, context, view, available_cols, already_removed);
-//
-//    const auto check = impl->operation_regions.CreateDerived<CALL>(
-//        impl->next_id++, parent, checker_proc);
-//
-//    COMMENT( check->comment = __FILE__ ": CreateBottomUpTupleRemover"; )
-//
-//    auto i = 0u;
-//    for (auto [wanted_col, avail_col] : available_cols) {
-//      const auto var = parent->VariableFor(impl, avail_col);
-//      assert(var != nullptr);
-//      check->arg_vars.AddUse(var);
-//
-//      const auto param = checker_proc->input_vars[i++];
-//      assert(var->Type() == param->Type());
-//      (void) param;
-//    }
-//
-//    parent->AddRegion(check);
-//
-//    // The checker function returned `false`, so we know the tuple is definitely
-//    // gone, and we want to re-add to the negated view.
-//    auto tuple_is_gone = impl->parallel_regions.Create(check);
-//    check->false_body.Emplace(check, tuple_is_gone);
-//
-//    // By this point, we know the tuple is gone, and so now we need to tell
-//    // the negation about the deleted tuple.
-//    ReAddToNegatedViews(impl, context, tuple_is_gone, view);
-//
-//    // Re-parent to here; if we did the top-down check then we should benefit
-//    // from it.
-//    parent = tuple_is_gone;
-//  }
+  //  // If this view is used by a negation then we need to go and see if we should
+  //  // do a delete in the negation. This means first double-checking that this is
+  //  // a true delete and not just a speculative one.
+  //  //
+  //  // TODO(pag): Consider deferring the processing of the deletion? Is there a
+  //  //            way to treat it like an induction?
+  //  if (view.IsUsedByNegation()) {
+  //    const auto available_cols = ComputeAvailableColumns(view, view.Columns());
+  //    const auto checker_proc = GetOrCreateTopDownChecker(
+  //        impl, context, view, available_cols, already_removed);
+  //
+  //    const auto check = impl->operation_regions.CreateDerived<CALL>(
+  //        impl->next_id++, parent, checker_proc);
+  //
+  //    COMMENT( check->comment = __FILE__ ": CreateBottomUpTupleRemover"; )
+  //
+  //    auto i = 0u;
+  //    for (auto [wanted_col, avail_col] : available_cols) {
+  //      const auto var = parent->VariableFor(impl, avail_col);
+  //      assert(var != nullptr);
+  //      check->arg_vars.AddUse(var);
+  //
+  //      const auto param = checker_proc->input_vars[i++];
+  //      assert(var->Type() == param->Type());
+  //      (void) param;
+  //    }
+  //
+  //    parent->AddRegion(check);
+  //
+  //    // The checker function returned `false`, so we know the tuple is definitely
+  //    // gone, and we want to re-add to the negated view.
+  //    auto tuple_is_gone = impl->parallel_regions.Create(check);
+  //    check->false_body.Emplace(check, tuple_is_gone);
+  //
+  //    // By this point, we know the tuple is gone, and so now we need to tell
+  //    // the negation about the deleted tuple.
+  //    ReAddToNegatedViews(impl, context, tuple_is_gone, view);
+  //
+  //    // Re-parent to here; if we did the top-down check then we should benefit
+  //    // from it.
+  //    parent = tuple_is_gone;
+  //  }
 
   auto let = impl->operation_regions.CreateDerived<LET>(parent);
   parent->AddRegion(let);

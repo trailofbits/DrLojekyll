@@ -280,12 +280,14 @@ bool QueryView::IsUsedByMerge(void) const noexcept {
 }
 
 // Apply a callback `on_negate` to each negation using this view.
-void QueryView::ForEachNegation(std::function<void(QueryNegate)> on_negate) const {
+void QueryView::ForEachNegation(
+    std::function<void(QueryNegate)> on_negate) const {
   auto found_any = false;
-  impl->ForEachUse<NEGATION>([&on_negate, &found_any] (NEGATION *negate, VIEW *) {
-    on_negate(QueryNegate(negate));
-    found_any = true;
-  });
+  impl->ForEachUse<NEGATION>(
+      [&on_negate, &found_any](NEGATION *negate, VIEW *) {
+        on_negate(QueryNegate(negate));
+        found_any = true;
+      });
   assert(found_any == impl->is_used_by_negation);
   (void) found_any;
 }
@@ -631,8 +633,7 @@ bool QueryConstant::IsTag(void) const {
   return impl->AsTag() != nullptr;
 }
 
-QueryConstant::QueryConstant(const QueryTag &tag)
-    : QueryConstant(tag.impl) {}
+QueryConstant::QueryConstant(const QueryTag &tag) : QueryConstant(tag.impl) {}
 
 QueryConstant QueryConstant::From(const QueryStream &stream) {
   assert(stream.IsConstant());
@@ -923,9 +924,9 @@ OutputStream &QueryMap::DebugString(OutputStream &os) const noexcept {
 }
 
 // Apply a callback `with_col` to each input column of this view.
-void QueryMap::ForEachUse(
-    std::function<void(QueryColumn, InputColumnRole,
-                       std::optional<QueryColumn>)> with_col) const {
+void QueryMap::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                             std::optional<QueryColumn>)>
+                              with_col) const {
   auto i = 0u;
   auto j = 0u;
   auto max_i = impl->functor.Arity();
@@ -1237,8 +1238,9 @@ UsedNodeRange<QueryView> QueryView::NonInductiveSuccessors(void) const {
 
 UsedNodeRange<QueryView> QueryView::NonInductivePredecessors(void) const {
   if (auto info = impl->induction_info.get()) {
-    return {UsedNodeIterator<QueryView>(info->noninductive_predecessors.begin()),
-            UsedNodeIterator<QueryView>(info->noninductive_predecessors.end())};
+    return {
+        UsedNodeIterator<QueryView>(info->noninductive_predecessors.begin()),
+        UsedNodeIterator<QueryView>(info->noninductive_predecessors.end())};
   } else {
     return {};
   }
@@ -1402,7 +1404,8 @@ UsedNodeRange<QueryColumn> QueryNegate::InputColumns(void) const noexcept {
           UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
 }
 
-UsedNodeRange<QueryColumn> QueryNegate::InputCopiedColumns(void) const noexcept {
+UsedNodeRange<QueryColumn>
+QueryNegate::InputCopiedColumns(void) const noexcept {
   return {UsedNodeIterator<QueryColumn>(impl->attached_columns.begin()),
           UsedNodeIterator<QueryColumn>(impl->attached_columns.end())};
 }

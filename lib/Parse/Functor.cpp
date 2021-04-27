@@ -294,9 +294,7 @@ void ParserImpl::ParseFunctor(Node<ParsedModule> *module) {
           RemoveDecl<ParsedFunctor>(std::move(functor));
           return;
         }
-      case 10:
-        state = 11;
-        break;
+      case 10: state = 11; break;
     }
   }
 

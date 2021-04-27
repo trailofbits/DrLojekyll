@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <sstream>
 
-#include "Program.h"
 #include "Build/Build.h"
+#include "Program.h"
 
 namespace hyde {
 namespace {
@@ -34,15 +34,12 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
     case VariableRole::kInitGuard:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
-    case VariableRole::kWorkerId:
-      return TypeKind::kUnsigned64;
+    case VariableRole::kWorkerId: return TypeKind::kUnsigned64;
 
     case VariableRole::kConstantFalse:
-    case VariableRole::kConstantTrue:
-      return TypeKind::kBoolean;
+    case VariableRole::kConstantTrue: return TypeKind::kBoolean;
 
-    case VariableRole::kConstantTag:
-      return TypeKind::kUnsigned16;
+    case VariableRole::kConstantTag: return TypeKind::kUnsigned16;
 
     case VariableRole::kConstant:
       if (query_const) {
@@ -81,8 +78,7 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
       table(this, table_) {}
 
 // Get or create a table in the program.
-Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
-                                              Context &,
+Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
                                               QueryView view) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
@@ -96,32 +92,32 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
     // TODO(pag): Eventually revisit this idea. It needs corresponding support
     //            in Build.cpp, `BuildDataModel::is_diff_map`.
     //
-//  // This is a bit hidden away here, but in general, we want to avoid trying
-//  // to save too much stuff in output tables produced from maps, because we
-//  // can recompute that data. That has the effect of possibly pessimizing
-//  // our data modeling, though.
-//  } else if (view.IsMap() && (view.CanReceiveDeletions() ||
-//                              !!view.SetCondition())) {
-//    const auto map = QueryMap::From(view);
-//    const auto functor = map.Functor();
-//
-//    // If a functor is pure, then we won't store the outputs for the output
-//    // data because we can re-compute it.
-//    if (functor.IsPure()) {
-//      for (auto col : map.MappedBoundColumns()) {
-//        cols.push_back(col);
-//      }
-//      for (auto col : map.CopiedColumns()) {
-//        cols.push_back(col);
-//      }
-//
-//    // It's an impure functor, so we need to be able to observe the old and
-//    // new outputs, so we store all data.
-//    } else {
-//      for (auto col : map.Columns()) {
-//        cols.push_back(col);
-//      }
-//    }
+    //  // This is a bit hidden away here, but in general, we want to avoid trying
+    //  // to save too much stuff in output tables produced from maps, because we
+    //  // can recompute that data. That has the effect of possibly pessimizing
+    //  // our data modeling, though.
+    //  } else if (view.IsMap() && (view.CanReceiveDeletions() ||
+    //                              !!view.SetCondition())) {
+    //    const auto map = QueryMap::From(view);
+    //    const auto functor = map.Functor();
+    //
+    //    // If a functor is pure, then we won't store the outputs for the output
+    //    // data because we can re-compute it.
+    //    if (functor.IsPure()) {
+    //      for (auto col : map.MappedBoundColumns()) {
+    //        cols.push_back(col);
+    //      }
+    //      for (auto col : map.CopiedColumns()) {
+    //        cols.push_back(col);
+    //      }
+    //
+    //    // It's an impure functor, so we need to be able to observe the old and
+    //    // new outputs, so we store all data.
+    //    } else {
+    //      for (auto col : map.Columns()) {
+    //        cols.push_back(col);
+    //      }
+    //    }
 
   } else {
     for (auto col : view.Columns()) {
@@ -151,8 +147,7 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
   // without consulting whether or not the other sources feeding the union
   // might have provided the data.
   std::sort(model->table->views.begin(), model->table->views.end(),
-            [] (QueryView a, QueryView b) -> bool {
-
+            [](QueryView a, QueryView b) -> bool {
               if (!a.IsMerge() && !b.IsMerge()) {
                 return a.Depth() > b.Depth();
 
@@ -188,7 +183,7 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
                 return false;
 
               // Order deepest first.
-              } else  {
+              } else {
                 return a.Depth() > b.Depth();
               }
             });
@@ -216,8 +211,8 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
                       [](Token a, Token b) {
                         return a.IdentifierId() < b.IdentifierId();
                       });
-            auto it = std::unique(table_col->names.begin(), table_col->names.end(),
-                                  [](Token a, Token b) {
+            auto it = std::unique(table_col->names.begin(),
+                                  table_col->names.end(), [](Token a, Token b) {
                                     return a.IdentifierId() == b.IdentifierId();
                                   });
             table_col->names.erase(it, table_col->names.end());
@@ -226,7 +221,6 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl,
           default: break;
         }
       }
-
     }
   }
 

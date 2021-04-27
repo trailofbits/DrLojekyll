@@ -8,16 +8,16 @@ namespace hyde {
 namespace {
 
 static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
-                                 VIEW *incoming_view) {
-  TUPLE * proxy = impl->tuples.Create();
+                                  VIEW *incoming_view) {
+  TUPLE *proxy = impl->tuples.Create();
   proxy->color = incoming_view->color;
   proxy->can_receive_deletions = incoming_view->can_produce_deletions;
   proxy->can_produce_deletions = proxy->can_receive_deletions;
 
   auto col_index = 0u;
   for (COL *col : view->input_columns) {
-    COL * const proxy_col = proxy->columns.Create(
-        col->var, col->type, proxy, col->id, col_index++);
+    COL *const proxy_col =
+        proxy->columns.Create(col->var, col->type, proxy, col->id, col_index++);
     proxy->input_columns.AddUse(col);
     proxy_col->CopyConstantFrom(col);
   }
@@ -40,8 +40,8 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 
   // Make sure the negated view is a tuple.
   if (!view->negated_view->AsTuple()) {
-    VIEW * const negated_view = view->negated_view.get();
-    TUPLE * const tuple = impl->tuples.Create();
+    VIEW *const negated_view = view->negated_view.get();
+    TUPLE *const tuple = impl->tuples.Create();
     tuple->color = negated_view->color;
 
     negated_view->CopyDifferentialAndGroupIdsTo(tuple);
@@ -50,8 +50,8 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 
     auto col_index = 0u;
     for (COL *col : negated_view->columns) {
-      COL * const tuple_col = tuple->columns.Create(
-          col->var, col->type, tuple, col->id, col_index++);
+      COL *const tuple_col = tuple->columns.Create(col->var, col->type, tuple,
+                                                   col->id, col_index++);
       tuple->input_columns.AddUse(col);
       tuple_col->CopyConstantFrom(col);
     }
@@ -65,7 +65,7 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
   if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
       incoming_view && !incoming_view->AsTuple()) {
 
-    TUPLE * const proxy = impl->tuples.Create();
+    TUPLE *const proxy = impl->tuples.Create();
 
     incoming_view->CopyDifferentialAndGroupIdsTo(proxy);
     proxy->can_receive_deletions = incoming_view->can_produce_deletions;
@@ -74,14 +74,14 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 
     auto col_index = 0u;
     for (COL *col : view->input_columns) {
-      COL * const proxy_col = proxy->columns.Create(
-          col->var, col->type, proxy, col->id, col_index++);
+      COL *const proxy_col = proxy->columns.Create(col->var, col->type, proxy,
+                                                   col->id, col_index++);
       proxy_col->CopyConstantFrom(col);
     }
 
     for (auto col : view->attached_columns) {
-      auto tuple_col = proxy->columns.Create(
-          col->var, col->type, proxy, col->id, col_index++);
+      auto tuple_col = proxy->columns.Create(col->var, col->type, proxy,
+                                             col->id, col_index++);
       tuple_col->CopyConstantFrom(col);
     }
 
@@ -124,7 +124,7 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
       continue;
     }
 
-    TUPLE * const proxy = impl->tuples.Create();
+    TUPLE *const proxy = impl->tuples.Create();
     new_joined_views.AddUse(proxy);
 
     view->CopyDifferentialAndGroupIdsTo(proxy);
@@ -136,12 +136,13 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
     // then we're more likely to share that table too.
     auto col_index = 0u;
     for (COL *view_col : view->columns) {
-      COL * const proxy_col = proxy->columns.Create(
+      COL *const proxy_col = proxy->columns.Create(
           view_col->var, view_col->type, proxy, view_col->id, col_index++);
       proxy_col->CopyConstantFrom(view_col);
       proxy->input_columns.AddUse(view_col);
       auto [it, added] = col_map.emplace(view_col, proxy_col);
-      (void) it; (void) added;
+      (void) it;
+      (void) added;
       assert(added);
     }
   }
@@ -174,7 +175,7 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
       continue;
     }
 
-    TUPLE * const proxy = impl->tuples.Create();
+    TUPLE *const proxy = impl->tuples.Create();
     new_merged_views.AddUse(proxy);
 
     view->CopyDifferentialAndGroupIdsTo(proxy);
@@ -186,8 +187,8 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
     // then we're more likely to share that table too.
     auto col_index = 0u;
     for (auto out_col : view->columns) {
-      COL *proxy_col = proxy->columns.Create(
-          out_col->var, out_col->type, proxy, out_col->id, col_index++);
+      COL *proxy_col = proxy->columns.Create(out_col->var, out_col->type, proxy,
+                                             out_col->id, col_index++);
       proxy_col->CopyConstantFrom(out_col);
       proxy->input_columns.AddUse(out_col);
     }
@@ -212,7 +213,7 @@ void QueryImpl::ProxyInsertsWithTuples(void) {
 // Link together views in terms of predecessors and successors.
 void QueryImpl::LinkViews(bool recursive) {
 
-  const_cast<const QueryImpl *>(this)->ForEachView([&] (VIEW *view) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
     view->successors.Clear();
     view->predecessors.Clear();
     view->is_used_by_merge = false;
@@ -266,8 +267,8 @@ void QueryImpl::LinkViews(bool recursive) {
 
   for (auto view : negations) {
     assert(!view->is_dead);
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                   view->attached_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);

@@ -41,8 +41,9 @@ uint64_t Node<QueryCompare>::Hash(void) noexcept {
 // replacements easier. If this constraint's operator is unordered, then we
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
-bool Node<QueryCompare>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &log) {
+bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
+                                      const OptimizationContext &opt,
+                                      const ErrorLog &log) {
 
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
@@ -64,8 +65,8 @@ bool Node<QueryCompare>::Canonicalize(
 
   // NOTE(pag): This may update `is_canonical`.
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
-      GetIncomingView(input_columns, attached_columns),
-      input_columns, attached_columns);
+      GetIncomingView(input_columns, attached_columns), input_columns,
+      attached_columns);
 
   // Equality comparisons are merged into a single output.
   if (op == ComparisonOperator::kEqual) {
@@ -81,12 +82,12 @@ bool Node<QueryCompare>::Canonicalize(
 #ifndef NDEBUG
       tuple->producer = "TRIVIAL-CMP";
 #endif
-      (void) tuple->columns.Create(
-          columns[0]->var, columns[0]->type, tuple, columns[0]->id, 0u);
+      (void) tuple->columns.Create(columns[0]->var, columns[0]->type, tuple,
+                                   columns[0]->id, 0u);
       tuple->input_columns.AddUse(input_columns[0]);
       for (auto i = 1u; i < num_cols; ++i) {
-        (void) tuple->columns.Create(
-            columns[i]->var, columns[i]->type, tuple, columns[i]->id, i);
+        (void) tuple->columns.Create(columns[i]->var, columns[i]->type, tuple,
+                                     columns[i]->id, i);
         tuple->input_columns.AddUse(attached_columns[i - 1u]);
       }
 
@@ -140,8 +141,7 @@ bool Node<QueryCompare>::Canonicalize(
   // can be guarded, or one duplicated column. Go create a tuple that will
   // only propagate forward the needed data.
   if (has.guardable_constant_output || has.duplicated_input_column) {
-    if (!IsUsedDirectly() &&
-        !(OnlyUser() && has.directly_used_column)) {
+    if (!IsUsedDirectly() && !(OnlyUser() && has.directly_used_column)) {
       GuardWithOptimizedTuple(query, first_attached_col, incoming_view);
       has.non_local_changes = true;
     }
@@ -156,16 +156,16 @@ bool Node<QueryCompare>::Canonicalize(
 
   // Create and keep the new versions of the output columns.
   if (op == ComparisonOperator::kEqual) {
-    new_lhs_out = new_columns.Create(
-        columns[0]->var, columns[0]->type, this, columns[0]->id, 0u);
+    new_lhs_out = new_columns.Create(columns[0]->var, columns[0]->type, this,
+                                     columns[0]->id, 0u);
     new_rhs_out = new_lhs_out;
 
     columns[0]->ReplaceAllUsesWith(new_lhs_out);
   } else {
-    new_lhs_out = new_columns.Create(
-        columns[0]->var, columns[0]->type, this, columns[0]->id, 0u);
-    new_rhs_out = new_columns.Create(
-        columns[1]->var, columns[1]->type, this, columns[1]->id, 1u);
+    new_lhs_out = new_columns.Create(columns[0]->var, columns[0]->type, this,
+                                     columns[0]->id, 0u);
+    new_rhs_out = new_columns.Create(columns[1]->var, columns[1]->type, this,
+                                     columns[1]->id, 1u);
 
     columns[0]->ReplaceAllUsesWith(new_lhs_out);
     columns[1]->ReplaceAllUsesWith(new_rhs_out);
@@ -178,8 +178,8 @@ bool Node<QueryCompare>::Canonicalize(
   for (auto j = first_attached_col, i = 0u; j < num_cols; ++j, ++i) {
     const auto col = columns[j];
     if (col->IsUsed()) {
-      const auto new_col = new_columns.Create(
-          col->var, col->type, this, col->id, new_columns.Size());
+      const auto new_col = new_columns.Create(col->var, col->type, this,
+                                              col->id, new_columns.Size());
       col->ReplaceAllUsesWith(new_col);
       new_attached_columns.AddUse(attached_columns[i]->TryResolveToConstant());
 
@@ -189,8 +189,8 @@ bool Node<QueryCompare>::Canonicalize(
   }
 
   // We dropped a reference to our predecessor; maintain it via a condition.
-  const auto new_incoming_view = GetIncomingView(new_input_columns,
-                                                 new_attached_columns);
+  const auto new_incoming_view =
+      GetIncomingView(new_input_columns, new_attached_columns);
   if (incoming_view != new_incoming_view) {
     CreateDependencyOnView(query, incoming_view);
     has.non_local_changes = true;

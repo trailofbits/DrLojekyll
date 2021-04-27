@@ -51,15 +51,16 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,
 }
 
 // Build a top-down checker on a compare.
-REGION *BuildTopDownCompareChecker(
-    ProgramImpl *impl, Context &context, REGION *parent, QueryCompare cmp,
-    std::vector<QueryColumn> &view_cols, TABLE *already_checked) {
+REGION *BuildTopDownCompareChecker(ProgramImpl *impl, Context &context,
+                                   REGION *parent, QueryCompare cmp,
+                                   std::vector<QueryColumn> &view_cols,
+                                   TABLE *already_checked) {
 
   const QueryView view(cmp);
 
-  TUPLECMP * check = impl->operation_regions.CreateDerived<TUPLECMP>(
-      parent, cmp.Operator());
-  REGION * const ret = check;
+  TUPLECMP *check =
+      impl->operation_regions.CreateDerived<TUPLECMP>(parent, cmp.Operator());
+  REGION *const ret = check;
 
   // If the comparison failed then return false.
   check->false_body.Emplace(check, BuildStateCheckCaseReturnFalse(impl, check));
@@ -87,7 +88,7 @@ REGION *BuildTopDownCompareChecker(
   if (cmp.InputLHS().IsConstantOrConstantRef() ||
       cmp.InputRHS().IsConstantOrConstantRef()) {
 
-    TUPLECMP * const inner_check =
+    TUPLECMP *const inner_check =
         impl->operation_regions.CreateDerived<TUPLECMP>(
             check, ComparisonOperator::kEqual);
 
@@ -117,10 +118,10 @@ REGION *BuildTopDownCompareChecker(
       check,
       CallTopDownChecker(
           impl, context, check, view, view_cols, pred_view, already_checked,
-          [=] (REGION *parent_if_true) -> REGION * {
+          [=](REGION *parent_if_true) -> REGION * {
             return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
           },
-          [=] (REGION *parent_if_false) -> REGION * {
+          [=](REGION *parent_if_false) -> REGION * {
             return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
           }));
 
