@@ -1695,19 +1695,13 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   }
 
   if (num_free_params) {
-    os << os.Indent() << "ret.push_back(";
+    os << os.Indent() << "ret.emplace_back(";
     auto sep = "";
-    if (1 < num_free_params) {
-      sep = "std::make_tuple(";
-    }
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
         os << sep << "param_" << param.Index() << ".Reify()";
         sep = ", ";
       }
-    }
-    if (1 < num_free_params) {
-      os << ")";
     }
     os << ");\n";
 
