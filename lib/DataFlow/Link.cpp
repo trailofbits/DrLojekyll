@@ -141,6 +141,7 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
       proxy_col->CopyConstantFrom(view_col);
       proxy->input_columns.AddUse(view_col);
       auto [it, added] = col_map.emplace(view_col, proxy_col);
+      (void) it; (void) added;
       assert(added);
     }
   }
