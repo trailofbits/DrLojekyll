@@ -11,13 +11,17 @@
 namespace hyde {
 namespace rt {
 
-// Keep updated with TupleState in drlojekyll/ControlFlow/Program.h
+// Used in Tabe::TransitionState to determine how to check and modify an entry's state value
 enum class TupleState : unsigned {
   kPresent,
   kAbsent,
   kUnknown,
   kAbsentOrUnknown
 };
+
+// Constants for the different state values
+static constexpr auto kStateMask = 0x3u;
+static constexpr auto kStatePresentBit = 0x4u;
 static constexpr auto kStateAbsent = 0u;
 static constexpr auto kStatePresent = 1u;
 static constexpr auto kStateUnknown = 2u;

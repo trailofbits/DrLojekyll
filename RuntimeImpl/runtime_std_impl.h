@@ -85,6 +85,18 @@ struct Serializer<Writer, int32_t> {
 };
 
 template <typename Writer>
+struct Serializer<Writer, uint8_t> {
+  static inline void AppendKeySort(Writer &writer, const uint8_t &data) {
+    writer.AppendU8(data);
+  }
+  static inline void AppendKeyUnique(Writer &writer, const uint8_t &data) {}
+  static inline void AppendKeyData(Writer &writer, const uint8_t &data) {}
+  static inline void AppendValue(Writer &writer, const uint8_t &data) {
+    writer.AppendU8(data);
+  }
+};
+
+template <typename Writer>
 struct Serializer<Writer, uint64_t> {
   static inline void AppendKeySort(Writer &writer, const uint64_t &data) {
     writer.AppendU64(data);
@@ -424,87 +436,40 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
 
   //uint8_t GetState(SerialRef<StdSerialBuffer, Columns> &...cols) {
 
-  uint8_t GetState(const Columns &...cols) {
-    StdSerialBuffer key_data;
-    BufferedWriter key_writer(key_data);
+  // Get the state of the specified columns (key)
+  uint8_t GetState(const Columns &...cols) const {
+    StdSerialBuffer key_data = SerializeKey(cols...);
 
-    // BufferedWriter data_writer(value_data);
-    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter,
-                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
-                                                                  cols...);
-
-    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
-
-    return backing_store[key_data];
+    // Don't insert if it's not already present
+    if (KeyExists(key_data)) {
+      return backing_store.at(key_data);
+    } else {
+      return kStateAbsent;
+    }
   }
 
+  // For use when indices are aliased to the Table. Gets the state
   bool Get(const Columns &...cols) const {
-    StdSerialBuffer key_data;
-    BufferedWriter key_writer(key_data);
-
-    // BufferedWriter data_writer(value_data);
-    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter,
-                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
-                                                                  cols...);
-
-    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
-
-    return backing_store.count(key_data);
+    return GetState(cols...);
   }
 
   bool KeyExists(const Columns &...cols) {
-    StdSerialBuffer key_data;
-    BufferedWriter key_writer(key_data);
-
-    // BufferedWriter data_writer(value_data);
-    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter,
-                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
-                                                                  cols...);
-
-    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
-
-    return backing_store.count(key_data);
+    return KeyExists(SerializeKey(cols...));
   }
 
   void SetState(const Columns &...cols, uint8_t val) {
-    StdSerialBuffer key_data;
-    BufferedWriter key_writer(key_data);
-
-    // BufferedWriter data_writer(value_data);
-    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter,
-                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
-                                                                  cols...);
-
-    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
-
-    backing_store[key_data] = val;
+    backing_store[SerializeKey(cols...)] = val;
   }
 
   bool TransitionState(TupleState from_state, TupleState to_state,
                        const Columns &...cols) {
-    StdSerialBuffer key_data;
-    BufferedWriter key_writer(key_data);
+    StdSerialBuffer key_data = SerializeKey(cols...);
 
-    // BufferedWriter data_writer(value_data);
-    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter,
-                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
-                                                                  cols...);
-
-    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
-
+    static_assert(kStateAbsent == 0,
+                  "Default initialized state should be 0 (kStateAbsent)");
     auto prev_state = backing_store[key_data];
-    auto state = prev_state & 3;
-    auto present_bit = prev_state & 4;
+    auto state = prev_state & kStateMask;
+    auto present_bit = prev_state & kStatePresentBit;
 
     bool matches_from_state = false;
     switch (from_state) {
@@ -520,6 +485,8 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
       case TupleState::kAbsentOrUnknown:
         matches_from_state =
             (state == kStateAbsent) || (state == kStateUnknown);
+        break;
+      default: assert(false && "Unknown FromState TupleState");
     }
 
     if (matches_from_state) {
@@ -528,18 +495,19 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
       // See Python CodeGen for ProgramTransitionStateRegion
       switch (to_state) {
         case TupleState::kAbsent:
-          backing_store[key_data] = kStateAbsent | 4;
+          backing_store[key_data] = kStateAbsent | kStatePresentBit;
           break;
         case TupleState::kPresent:
-          backing_store[key_data] = kStatePresent | 4;
+          backing_store[key_data] = kStatePresent | kStatePresentBit;
           break;
         case TupleState::kUnknown:
-          backing_store[key_data] = kStateUnknown | 4;
+          backing_store[key_data] = kStateUnknown | kStatePresentBit;
           break;
         case TupleState::kAbsentOrUnknown:
-          backing_store[key_data] = kStateUnknown | 4;
-          assert(false);  // Shouldn't be created.
+          backing_store[key_data] = kStateUnknown | kStatePresentBit;
+          assert(false && "Invalid ToState TupleState");
           break;
+        default: assert(false && "Unknown ToState TupleState");
       }
 
       if (!present_bit) {
@@ -571,6 +539,27 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
  private:
   std::map<StdSerialBuffer, uint8_t> backing_store;
   std::tuple<std::reference_wrapper<Indices>...> indices;
+
+  bool KeyExists(const StdSerialBuffer key_data) const {
+    return (backing_store.count(key_data) != 0);
+  }
+
+  // Serialize columns into a Key that can be used to look up the value in our backing_store
+  StdSerialBuffer SerializeKey(const Columns &...cols) const {
+    StdSerialBuffer key_data;
+    BufferedWriter key_writer(key_data);
+
+    // BufferedWriter data_writer(value_data);
+    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
+        key_writer, cols...);
+    KeyValueWriter<BufferedWriter,
+                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
+                                                                  cols...);
+
+    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
+
+    return key_data;
+  }
 
   template <size_t I = 0>
   void UpdateIndices(const Columns &...cols) {
