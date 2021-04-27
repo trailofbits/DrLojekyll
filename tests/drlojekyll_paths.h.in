@@ -1,7 +1,10 @@
 #pragma once
 
-// An absolute path to the Dr. Lojekyll `data/examples` directory
+// An absolute path to the Dr. Lojekyll datalog examples directory
 static constexpr auto kExamplesDir = "@DrLojekyll_SOURCE_DIR@/data/examples";
+
+// An absolute path to the Dr. Lojekyll self testing directory
+static constexpr auto kSelfTestingExamplesDir = "@DrLojekyll_SOURCE_DIR@/data/self_testing_examples";
 
 // An absolute path to the Dr. Lojekyll `data/invalid_syntax_examples` directory
 static constexpr auto kInvalidSyntaxExamplesDir = "@DrLojekyll_SOURCE_DIR@/data/invalid_syntax_examples";
