@@ -257,28 +257,8 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
   // to instead merge those two inputs together.
   if (opt.can_sink_unions) {
 
-    //    // Can't sink yet.
-    //    if (sink_penalty) {
-    ////      --sink_penalty;
-    //      goto done;
-    //    }
-
     std::unordered_map<const char *, std::vector<VIEW *>> grouped_views;
     bool has_opportunity = false;
-
-    //    // Wait for all things being merged to not have a sinking penalty.
-    //    auto is_penalized = false;
-    //    for (auto merged_view : merged_views) {
-    //      if (merged_view->sink_penalty) {
-    ////        --merged_view->sink_penalty;
-    //        is_penalized = true;
-    //        break;
-    //      }
-    //    }
-    //
-    //    if (is_penalized) {
-    //      goto done;
-    //    }
 
     for (auto merged_view : merged_views) {
 
@@ -288,16 +268,6 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
           !!merged_view->sets_condition) {
         goto done;
       }
-
-      //      while (auto tuple = merged_view->AsTuple()) {
-      //        auto incoming_view = VIEW::GetIncomingView(tuple->input_columns);
-      //        if (tuple->ForwardsAllInputsAsIs(incoming_view)) {
-      //          merged_view = incoming_view;
-      //          assert(false);
-      //        } else {
-      //          break;
-      //        }
-      //      }
 
       auto &similar_views = grouped_views[merged_view->KindName()];
       if (!similar_views.empty()) {
@@ -521,7 +491,6 @@ done:
   } else {
     assert(merged_tuple != nullptr);
     inout_views[first_tuple_index] = merged_tuple;
-    merged_tuple->sink_penalty = merged_tuple->Depth() + 1u;
     return true;
   }
 }
@@ -720,7 +689,6 @@ bool Node<QueryMerge>::SinkThroughMaps(QueryImpl *impl,
   } else {
     assert(merged_map != nullptr);
     inout_views[first_map_index] = merged_map;
-    merged_map->sink_penalty = merged_map->Depth() + 1u;
     return true;
   }
 }
@@ -740,22 +708,36 @@ static MERGE *MakeSameShapedMerge(QueryImpl *impl, NEGATION *negation) {
 // with other negations.
 static TUPLE *MakeSameShapedTuple(QueryImpl *impl, NEGATION *negation) {
   TUPLE *tuple = impl->tuples.Create();
+  VIEW *pred_view = nullptr;
   auto col_index = 0u;
   for (auto col : negation->columns) {
     tuple->columns.Create(col->var, col->type, tuple, col->id, col_index++);
   }
 
-  for (auto col : negation->input_columns) {
-    tuple->input_columns.AddUse(col);
+  for (auto in_col : negation->input_columns) {
+    tuple->input_columns.AddUse(in_col);
+
+    if (!pred_view && !in_col->IsConstant()) {
+      pred_view = in_col->view;
+    }
   }
 
-  for (auto col : negation->attached_columns) {
-    tuple->input_columns.AddUse(col);
+  for (auto in_col : negation->attached_columns) {
+    tuple->input_columns.AddUse(in_col);
+
+    if (!pred_view && !in_col->IsConstant()) {
+      pred_view = in_col->view;
+    }
   }
 
-  negation->CopyTestedConditionsTo(tuple);
-  negation->CopyDifferentialAndGroupIdsTo(tuple);
   assert(!negation->sets_condition);
+  assert(negation->positive_conditions.Empty());
+  assert(negation->negative_conditions.Empty());
+
+  if (pred_view) {
+    pred_view->CopyDifferentialAndGroupIdsTo(tuple);
+    tuple->color = pred_view->color;
+  }
 
   return tuple;
 }
@@ -775,11 +757,15 @@ static TUPLE *TagProxy(QueryImpl *impl, VIEW *view, COL *tag_in_col) {
     tuple->input_columns.AddUse(in_col);
   }
 
+  tuple->color = view->color;
+  view->CopyDifferentialAndGroupIdsTo(tuple);
+
   return tuple;
 }
 
 static TUPLE *TagPredecessor(QueryImpl *impl, NEGATION *view, COL *tag_in_col) {
   TUPLE *const tuple = impl->tuples.Create();
+  VIEW *pred_view = nullptr;
   COL *tag_out_col = tuple->columns.Create(tag_in_col->var, tag_in_col->type,
                                            tuple, tag_in_col->id, 0u);
   tag_out_col->CopyConstantFrom(tag_in_col);
@@ -791,12 +777,25 @@ static TUPLE *TagPredecessor(QueryImpl *impl, NEGATION *view, COL *tag_in_col) {
     (void) tuple->columns.Create(in_col->var, in_col->type, tuple, in_col->id,
                                  col_index++);
     tuple->input_columns.AddUse(in_col);
+
+    if (!pred_view && !in_col->IsConstant()) {
+      pred_view = in_col->view;
+    }
   }
 
   for (COL *in_col : view->attached_columns) {
     (void) tuple->columns.Create(in_col->var, in_col->type, tuple, in_col->id,
                                  col_index++);
     tuple->input_columns.AddUse(in_col);
+
+    if (!pred_view && !in_col->IsConstant()) {
+      pred_view = in_col->view;
+    }
+  }
+
+  if (pred_view) {
+    pred_view->CopyDifferentialAndGroupIdsTo(tuple);
+    tuple->color = pred_view->color;
   }
 
   return tuple;
@@ -907,7 +906,6 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
     if (using_tags) {
 
       if (!output) {
-        first_negate->color = 0xff00;
 
         COL *const first_tag_col = CreateTag(impl, num_used_tags);
 
@@ -936,8 +934,9 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
         }
 
         // Add the first negation's predecessor to `input_merge`.
-        input_merge->merged_views.AddUse(
-            TagPredecessor(impl, first_negate, first_tag_col));
+        VIEW *pred_view = TagPredecessor(impl, first_negate, first_tag_col);
+        input_merge->merged_views.AddUse(pred_view);
+        input_merge->color = pred_view->color;
 
         // Make a new, tag column-aware negation that operates on `input_merge`.
         merged_negation = impl->negations.Create();
@@ -977,22 +976,25 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
                                         i);
           output->input_columns.AddUse(col);
         }
-
-        // NOTE(pag): This code is not tested, so whatever triggers this can
-        //            act as a test :-)
-        output->color = 0xff;
       }
 
       COL *const next_tag_col = CreateTag(impl, num_used_tags);
-
-      next_negate->color = 0xff00;
 
       // Create a tag for the Nth negated view.
       negated_view_merge->merged_views.AddUse(
           TagProxy(impl, next_negate->negated_view.get(), next_tag_col));
 
-      input_merge->merged_views.AddUse(
-          TagPredecessor(impl, next_negate, next_tag_col));
+      VIEW *next_pred_view = TagPredecessor(impl, next_negate, next_tag_col);
+      input_merge->merged_views.AddUse(next_pred_view);
+      if (input_merge->color) {
+        if (next_pred_view->color) {
+          input_merge->color ^= next_pred_view->color;
+        }
+      } else {
+        input_merge->color = next_pred_view->color;
+      }
+
+      output->color = input_merge->color;
 
     // Not using tags, we've found some negations that use equivalent negated
     // views.
@@ -1001,9 +1003,9 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
         first_negate->is_canonical = false;
 
         input_merge = MakeSameShapedMerge(impl, first_negate);
-        input_merge->color = 0xff0000;
-        input_merge->merged_views.AddUse(
-            MakeSameShapedTuple(impl, first_negate));
+        VIEW *pred_view = MakeSameShapedTuple(impl, first_negate);
+        input_merge->merged_views.AddUse(pred_view);
+        input_merge->color = pred_view->color;
 
         // Make the new negation.
         merged_negation = impl->negations.Create();
@@ -1030,7 +1032,18 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
       }
 
       // Add the mergable negation into `input_merge`.
-      input_merge->merged_views.AddUse(MakeSameShapedTuple(impl, next_negate));
+      VIEW *next_pred_view = MakeSameShapedTuple(impl, next_negate);
+      input_merge->merged_views.AddUse(next_pred_view);
+
+      if (input_merge->color) {
+        if (next_pred_view->color) {
+          input_merge->color ^= next_pred_view->color;
+        }
+      } else {
+        input_merge->color = next_pred_view->color;
+      }
+
+      output->color = input_merge->color;
     }
   }
 
@@ -1043,7 +1056,6 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
   if (output) {
     inout_views[first_negate_index] = output;
-    output->sink_penalty = output->Depth() + 1u;
     return true;
 
   } else {

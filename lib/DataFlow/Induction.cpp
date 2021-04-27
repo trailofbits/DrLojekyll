@@ -240,7 +240,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
           // We've found a way of exiting the induction, to a different
           // induction.
           } else {
-            succ_view->color = 0xff0000;
             eventually_noninductive_successors.emplace(view, succ_view);
             continue;
           }
@@ -248,7 +247,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
         if (INSERT *insert = frontier_view->AsInsert()) {
           if (insert->successors.Empty()) {
-            succ_view->color = 0xff0000;
             eventually_noninductive_successors.emplace(view, succ_view);
             continue;
           }
@@ -366,7 +364,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     assert(!view->AsInsert());
 
     MERGE *const new_union = merges.Create();
-    new_union->color = 0x00ff00u;
 
     auto col_index = 0u;
     for (auto col : view->columns) {
