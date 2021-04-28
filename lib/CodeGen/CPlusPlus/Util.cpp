@@ -99,14 +99,15 @@ const char *OperatorString(ComparisonOperator op) {
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var) {
   auto val = var.Value();
+  std::string_view prefix = "(";
+  std::string_view suffix = ")";
+
   if (val && val->IsTag()) {
     std::stringstream ss;
-    ss << QueryTag::From(*val).Value();
+    ss << prefix << QueryTag::From(*val).Value() << suffix;
     return ss.str();
   }
 
-  std::string_view prefix = "(";
-  std::string_view suffix = ")";
   std::string_view default_val = "";
 
   switch (var.DefiningRole()) {
@@ -118,6 +119,7 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   }
 
   // Default value
+  // TODO(ekilmer): default_val isn't being used anywhere....
   switch (loc.UnderlyingKind()) {
     case TypeKind::kBoolean: default_val = "false"; break;
     case TypeKind::kSigned8:
