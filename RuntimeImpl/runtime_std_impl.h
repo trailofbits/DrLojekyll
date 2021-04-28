@@ -170,6 +170,9 @@ struct Serializer<Writer, std_containers> {
   }
 };
 
+// Holds a reference to the first element in a grouping of data elements.
+// Can be used for creating a std:: container of serialized groupings or for referencing a specific grouping
+// of elements.
 template <typename... Ts>
 class SerializedTupleRef<std_containers, std::tuple<Ts...>> {
  public:
@@ -187,6 +190,7 @@ class SerializedTupleRef<std_containers, std::tuple<Ts...>> {
   }
 
  private:
+  // TODO(ekilmer): This code below is duplicated between _Get and _GetReified for the most part, but I'm not sure the most elegant way to combine it.
   template <typename E>
   const std::tuple<SerialRef<StdSerialBuffer, E>, size_t>
   _Get(const size_t offset) const {
@@ -224,6 +228,7 @@ class SerializedTupleRef<std_containers, std::tuple<Ts...>> {
   const size_t orig_offset;
 };
 
+// Serialize a tuple of values
 template <typename... Ts>
 StdSerialBuffer SerializeValue(const std::tuple<Ts...> &t) {
   StdSerialBuffer value_data;
@@ -311,6 +316,8 @@ class VectorRef<std_containers, std::tuple<Ts...>> {
   }
 };
 
+// A SerializedVector owns its own backing store, unlike a VectorRef that only references another backing store. Both hold serialized data.
+// TODO(ekilmer): There should be some way to reduce this duplication
 template <typename... Ts>
 class SerializedVector<std_containers, std::tuple<Ts...>> {
  public:
@@ -332,7 +339,7 @@ class SerializedVector<std_containers, std::tuple<Ts...>> {
     return Get(offset);
   }
 
-  // Add a single
+  // Add a single serialized element
   void Add(const SerialRef<StdSerialBuffer, Ts>... ts) {
     backing_store.reserve(backing_store.size() + (ts.ElementSize() + ...));
     (backing_store.insert(backing_store.end(), ts.begin(), ts.end()), ...);
@@ -358,6 +365,7 @@ class SerializedVector<std_containers, std::tuple<Ts...>> {
   StdSerialBuffer backing_store;
 };
 
+// Database index class using standard containers
 template <typename TableId, unsigned kIndexId, typename... Columns>
 class Index<std_containers, TableId, kIndexId, Columns...> {
  public:
@@ -369,18 +377,8 @@ class Index<std_containers, TableId, kIndexId, Columns...> {
   void Add(const typename ValueType<Columns>::type &...cols) {
 
     // First, write/serialize all keys/values
-    StdSerialBuffer key_data;
-    StdSerialBuffer value_data;
-    BufferedWriter key_writer(key_data);
-    BufferedWriter data_writer(value_data);
-    KeyValueWriter<BufferedWriter, Columns...>::WriteKeySort(key_writer,
-                                                             cols...);
-    KeyValueWriter<BufferedWriter, Columns...>::WriteKeyUnique(key_writer,
-                                                               cols...);
-
-    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
-    KeyValueWriter<BufferedWriter, Columns...>::WriteValue(data_writer,
-                                                           cols...);
+    StdSerialBuffer key_data = SerializeKey(cols...);
+    StdSerialBuffer value_data = SerializeValue(cols...);
 
     // Second, look up whether the key is already present
     auto search = backing_store.find(key_data);
@@ -401,7 +399,6 @@ class Index<std_containers, TableId, kIndexId, Columns...> {
   // types as Keys
   template <typename... Ts>
   VectorRef<std_containers, values_tuple_t> Get(const Ts &...cols) {
-    static_assert(std::is_same_v<keys_tuple_t, std::tuple<Ts...>>);
     StdSerialBuffer key_data;
     BufferedWriter key_writer(key_data);
 
@@ -416,12 +413,50 @@ class Index<std_containers, TableId, kIndexId, Columns...> {
     return VectorRef<std_containers, values_tuple_t>(backing_store[key_data]);
   }
 
-  // Get from serialized buffer key form
-  // VectorRef<values_tuple> Get(const StdSerialBuffer &key_data) {
-  //   return VectorRef(backing_store[key_data]);
-  // }
-
  private:
+  // TODO(ekilmer): These serialization methods would be useful as standalones as well...
+
+  template <typename... Ts>
+  StdSerialBuffer SerializeKey(const Ts &...cols) const {
+    static_assert(std::is_same_v<keys_tuple_t, std::tuple<Ts...>>);
+    StdSerialBuffer key_data;
+    BufferedWriter key_writer(key_data);
+
+    // BufferedWriter data_writer(value_data);
+    KeyValueWriter<BufferedWriter, Key<TypeIdentity<Columns>>...>::WriteKeySort(
+        key_writer, cols...);
+    KeyValueWriter<BufferedWriter,
+                   Key<TypeIdentity<Columns>>...>::WriteKeyUnique(key_writer,
+                                                                  cols...);
+
+    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
+
+    return key_data;
+  }
+
+  StdSerialBuffer
+  SerializeKey(const typename ValueType<Columns>::type &...cols) {
+    StdSerialBuffer key_data;
+    BufferedWriter key_writer(key_data);
+    KeyValueWriter<BufferedWriter, Columns...>::WriteKeySort(key_writer,
+                                                             cols...);
+    KeyValueWriter<BufferedWriter, Columns...>::WriteKeyUnique(key_writer,
+                                                               cols...);
+
+    // KeyValueWriter<BufferedWriter, Columns...>::WriteKeyData(data_writer, cols...);
+    return key_data;
+  }
+
+  StdSerialBuffer
+  SerializeValue(const typename ValueType<Columns>::type &...cols) {
+
+    StdSerialBuffer value_data;
+    BufferedWriter data_writer(value_data);
+    KeyValueWriter<BufferedWriter, Columns...>::WriteValue(data_writer,
+                                                           cols...);
+    return value_data;
+  }
+
   // stores serialized Key/Value objects
   std::map<StdSerialBuffer, StdSerialBuffer> backing_store;
 };
@@ -461,6 +496,8 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
     backing_store[SerializeKey(cols...)] = val;
   }
 
+  // Transition from_state to to_state and return whether this actually happened.
+  // Inserts column values if not already present
   bool TransitionState(TupleState from_state, TupleState to_state,
                        const Columns &...cols) {
     StdSerialBuffer key_data = SerializeKey(cols...);
@@ -582,6 +619,7 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
 
 /* ****************************************** */
 /* START: https://stackoverflow.com/a/7115547 */
+/* Hashing for std::tuple                     */
 
 template <typename TT>
 struct hash {
