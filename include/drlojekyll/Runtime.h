@@ -10,6 +10,7 @@
 #include <vector>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace hyde {
 namespace rt {
@@ -155,6 +156,124 @@ struct Serializer {
   static inline void AppendValue(Writer &writer, const DataT &data) = delete;
 };
 
+#define DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN
+#define DRLOJEKYLL_HYDE_RT_NAMESPACE_END
+#define DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(type, cast_type, method_suffix) \
+    DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN \
+    template <typename Writer> \
+    struct Serializer<Writer, type> { \
+      static inline void AppendKeySort(Writer &writer, type data) { \
+        writer.Append ## method_suffix (static_cast<cast_type>(data)); \
+      } \
+      static inline void AppendKeyUnique(Writer &writer, type data) {} \
+      static inline void AppendKeyData(Writer &writer, type data) {} \
+      static inline void AppendValue(Writer &writer, type data) { \
+        writer.Append ## method_suffix(static_cast<cast_type>(data)); \
+      } \
+    }; \
+    DRLOJEKYLL_HYDE_RT_NAMESPACE_END
+
+
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(char, uint8_t, U8)
+
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint8_t, uint8_t, U8)
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int8_t, uint8_t, U8)
+
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint16_t, uint16_t, U16)
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int16_t, uint16_t, U16)
+
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint32_t, uint32_t, U32)
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int32_t, uint32_t, U32)
+
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint64_t, uint64_t, U64)
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int64_t, uint64_t, U64)
+
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(float, float, F32)
+DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(double, double, F64)
+
+#undef DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN
+#undef DRLOJEKYLL_HYDE_RT_NAMESPACE_END
+
+template <typename Writer, typename ContainerType, typename ElementType>
+struct LinearContainerSerializer {
+
+  static inline void AppendKeySort(Writer &writer,
+                                   const ContainerType &data) {
+    const auto len = static_cast<uint32_t>(data.size());
+    writer.AppendU32(len);
+  }
+
+  static inline void AppendKeyUnique(Writer &writer,
+                                     const ContainerType &data) {
+    for (const ElementType &val : data) {
+      Serializer<Writer, ElementType>::AppendValue(writer, val);
+    }
+  }
+
+  static inline void AppendKeyData(Writer &writer,
+                                   const ContainerType &data) {}
+
+  static inline void AppendValue(Writer &writer, const ContainerType &data) {
+    const auto len = static_cast<uint32_t>(data.size());
+    writer.AppendU32(len);
+    for (const ElementType &val : data) {
+      Serializer<Writer, ElementType>::AppendValue(writer, val);
+    }
+  }
+};
+
+template <typename Writer, typename T>
+struct Serializer<Writer, std::vector<T>>
+    : public LinearContainerSerializer<Writer, std::vector<T>, T> {};
+
+template <typename Writer>
+struct Serializer<Writer, std::string>
+    : public LinearContainerSerializer<Writer, std::string, char> {};
+
+template <typename Writer>
+struct Serializer<Writer, std::string_view>
+    : public LinearContainerSerializer<Writer, std::string_view, char> {};
+
+template <typename Writer, typename Val, size_t i, typename First, typename... Rest>
+struct IndexedSerializer {
+  static inline void AppendKeySort(Writer &writer, const Val &data) {
+    Serializer<Writer, First>::AppendKeySort(writer, std::get<i>(data));
+    if constexpr (sizeof...(Rest)) {
+      IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendKeySort(writer, data);
+    }
+  }
+
+  static inline void AppendKeyUnique(Writer &writer, const Val &data) {
+    Serializer<Writer, First>::AppendKeyUnique(writer, std::get<i>(data));
+    if constexpr (sizeof...(Rest)) {
+      IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendKeyUnique(writer, data);
+    }
+  }
+
+  static inline void AppendKeyData(Writer &writer, const Val &data) {
+    Serializer<Writer, First>::AppendKeyData(writer, std::get<i>(data));
+    if constexpr (sizeof...(Rest)) {
+      IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendKeyData(writer, data);
+    }
+  }
+
+  static inline void AppendValue(Writer &writer, const Val &data) {
+    Serializer<Writer, First>::AppendValue(writer, std::get<i>(data));
+    if constexpr (sizeof...(Rest)) {
+      IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendValue(writer, data);
+    }
+  }
+};
+
+template <typename Writer, typename A, typename B>
+struct Serializer<Writer, std::pair<A, B>>
+    : public IndexedSerializer<Writer, std::tuple<A, B>, 0, A, B> {};
+
+template <typename Writer, typename... Elems>
+struct Serializer<Writer, std::tuple<Elems...>>
+    : public IndexedSerializer<Writer, std::tuple<Elems...>, 0, Elems...> {};
+
+
 // An append-only and iterable container for serialized data
 template <typename BackingStore, typename DataT>
 class SerializedVector;
@@ -245,6 +364,9 @@ class Index;
 using UTF8 = std::string_view;
 using Any = void;
 
+// DrLojekyll supported types
+using Bytes = std::vector<std::uint8_t>;
+
 /* **************************************** */
 /* START https://stackoverflow.com/a/264088 */
 
@@ -280,3 +402,7 @@ HAS_MEMBER_FUNC(merge_into, has_merge_into);
 
 }  // namespace rt
 }  // namespace hyde
+
+#define DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN namespace hyde::rt {
+#define DRLOJEKYLL_HYDE_RT_NAMESPACE_END }
+

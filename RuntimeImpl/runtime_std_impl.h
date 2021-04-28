@@ -17,9 +17,6 @@
 namespace hyde {
 namespace rt {
 
-// DrLojekyll supported types
-using Bytes = std::vector<std::uint8_t>;
-
 // Tag type for usage of standard containers
 struct std_containers {};
 
@@ -32,12 +29,12 @@ struct BufferedWriter {
   explicit BufferedWriter(StdSerialBuffer &key_storage_)
       : key_storage(key_storage_) {}
 
-  void AppendI32(int32_t h) {
-    AppendU32(static_cast<uint32_t>(h));
+  void AppendF64(double d) {
+    return AppendU64(reinterpret_cast<const uint64_t &>(d));
   }
 
-  void AppendI64(int64_t h) {
-    AppendU64(static_cast<uint64_t>(h));
+  void AppendF32(float d) {
+    return AppendU32(reinterpret_cast<const uint32_t &>(d));
   }
 
   void AppendU64(uint64_t d) {
@@ -72,103 +69,6 @@ struct BufferedWriter {
   StdSerialBuffer &key_storage;
 };
 
-template <typename Writer>
-struct Serializer<Writer, int32_t> {
-  static inline void AppendKeySort(Writer &writer, const int32_t &data) {
-    writer.AppendI32(data);
-  }
-  static inline void AppendKeyUnique(Writer &writer, const int32_t &data) {}
-  static inline void AppendKeyData(Writer &writer, const int32_t &data) {}
-  static inline void AppendValue(Writer &writer, const int32_t &data) {
-    writer.AppendI32(data);
-  }
-};
-
-template <typename Writer>
-struct Serializer<Writer, uint8_t> {
-  static inline void AppendKeySort(Writer &writer, const uint8_t &data) {
-    writer.AppendU8(data);
-  }
-  static inline void AppendKeyUnique(Writer &writer, const uint8_t &data) {}
-  static inline void AppendKeyData(Writer &writer, const uint8_t &data) {}
-  static inline void AppendValue(Writer &writer, const uint8_t &data) {
-    writer.AppendU8(data);
-  }
-};
-
-template <typename Writer>
-struct Serializer<Writer, uint64_t> {
-  static inline void AppendKeySort(Writer &writer, const uint64_t &data) {
-    writer.AppendU64(data);
-  }
-  static inline void AppendKeyUnique(Writer &writer, const uint64_t &data) {}
-  static inline void AppendKeyData(Writer &writer, const uint64_t &data) {}
-  static inline void AppendValue(Writer &writer, const uint64_t &data) {
-    writer.AppendU64(data);
-  }
-};
-
-template <typename Writer>
-struct Serializer<Writer, int64_t> {
-  static inline void AppendKeySort(Writer &writer, const int64_t &data) {
-    writer.AppendI64(data);
-  }
-  static inline void AppendKeyUnique(Writer &writer, const int64_t &data) {}
-  static inline void AppendKeyData(Writer &writer, const int64_t &data) {}
-  static inline void AppendValue(Writer &writer, const int64_t &data) {
-    writer.AppendI64(data);
-  }
-};
-
-template <typename Writer>
-struct Serializer<Writer, std_containers> {
-  static inline void AppendKeySort(Writer &writer,
-                                   const StdSerialBuffer &data) {
-    const auto len = static_cast<uint32_t>(data.size());
-    if (!len) {
-      writer.AppendU8(0);
-
-    } else {
-      if (len >= 0xFFu) {
-        writer.AppendU8(static_cast<uint8_t>(0xFF));
-      } else {
-        writer.AppendU8(static_cast<uint8_t>(len));
-      }
-
-      writer.AppendU8(static_cast<uint8_t>(32 - __builtin_clz(len)));
-
-      const auto bytes = reinterpret_cast<const uint8_t *>(data.data());
-      for (auto i = 0u; i < 6u; ++i) {
-        const auto in_range =
-            static_cast<uint8_t>(static_cast<int8_t>((i < len) << 7) >> 7);
-        writer.AppendU8(bytes[i & in_range] & in_range);
-      }
-    }
-  }
-
-  static inline void AppendKeyUnique(Writer &writer,
-                                     const StdSerialBuffer &data) {
-    const auto len = static_cast<uint32_t>(data.size());
-    const auto bytes = reinterpret_cast<const uint8_t *>(data.data());
-    for (auto i = 6u; i < len; ++i) {
-      writer.AppendU8(bytes[i]);
-    }
-  }
-
-  static inline void AppendKeyData(Writer &writer,
-                                   const StdSerialBuffer &data) {
-    const auto len = static_cast<uint32_t>(data.size());
-    writer.AppendU32(len);
-  }
-
-  static inline void AppendValue(Writer &writer, const StdSerialBuffer &data) {
-    const auto len = static_cast<uint32_t>(data.size());
-    const auto bytes = reinterpret_cast<const uint8_t *>(data.data());
-    for (auto i = 0u; i < len; ++i) {
-      writer.AppendU8(bytes[i]);
-    }
-  }
-};
 
 // Holds a reference to the first element in a grouping of data elements.
 // Can be used for creating a std:: container of serialized groupings or for referencing a specific grouping
