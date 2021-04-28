@@ -216,7 +216,8 @@ class VectorRef<std_containers, std::tuple<Ts...>> {
   }
 };
 
-// A SerializedVector owns its own backing store, unlike a VectorRef that only references another backing store. Both hold serialized data.
+// A SerializedVector owns its own backing store, unlike a VectorRef that only
+// references another backing store. Both hold serialized data.
 // TODO(ekilmer): There should be some way to reduce this duplication
 template <typename... Ts>
 class SerializedVector<std_containers, Ts...> {
@@ -237,9 +238,10 @@ class SerializedVector<std_containers, Ts...> {
   }
 
   // Add a single serialized element
-  void Add(const SerialRef<StdSerialBuffer, Ts>... ts) {
-    backing_store.reserve(backing_store.size() + (ts.ElementSize() + ...));
-    (backing_store.insert(backing_store.end(), ts.begin(), ts.end()), ...);
+  void Add(Ts... ts) {
+    BufferedWriter writer(backing_store);
+    Serializer<BufferedWriter, std::tuple<Ts...>>::AppendValue(
+        writer, std::make_tuple<Ts...>(std::move(ts)...));
   }
 
   void clear() {
@@ -259,6 +261,7 @@ class SerializedVector<std_containers, Ts...> {
   }
 
  private:
+
   StdSerialBuffer backing_store;
 };
 

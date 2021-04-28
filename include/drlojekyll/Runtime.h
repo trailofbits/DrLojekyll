@@ -146,15 +146,37 @@ struct SerialRef {
 template <typename BackingStore, class T>
 class SerializedTupleRef;
 
+struct ByteCountingWriter {
+  void AppendF64(double d) {
+    count += 8;
+  }
+
+  void AppendF32(float d) {
+    count += 4;
+  }
+
+  void AppendU64(uint64_t d) {
+    count += 8;
+  }
+
+  void AppendU32(uint32_t d) {
+    count += 4;
+  }
+
+  void AppendU16(uint16_t h) {
+    count += 2;
+  }
+
+  void AppendU8(uint8_t b) {
+    count += 1;
+  }
+
+  size_t count{0};
+};
+
 // Methods to overload for serializing data
 template <typename Writer, typename DataT>
-struct Serializer {
-  static inline void AppendKeySort(Writer &writer, const DataT &data) = delete;
-  static inline void AppendKeyUnique(Writer &writer,
-                                     const DataT &data) = delete;
-  static inline void AppendKeyData(Writer &writer, const DataT &data) = delete;
-  static inline void AppendValue(Writer &writer, const DataT &data) = delete;
-};
+struct Serializer;
 
 #define DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN
 #define DRLOJEKYLL_HYDE_RT_NAMESPACE_END
@@ -205,8 +227,14 @@ struct LinearContainerSerializer {
 
   static inline void AppendKeyUnique(Writer &writer,
                                      const ContainerType &data) {
-    for (const ElementType &val : data) {
-      Serializer<Writer, ElementType>::AppendValue(writer, val);
+    if constexpr (std::is_fundamental_v<ElementType>) {
+      for (ElementType val : data) {
+        Serializer<Writer, ElementType>::AppendValue(writer, val);
+      }
+    } else {
+      for (const ElementType &val : data) {
+        Serializer<Writer, ElementType>::AppendValue(writer, val);
+      }
     }
   }
 
@@ -214,11 +242,8 @@ struct LinearContainerSerializer {
                                    const ContainerType &data) {}
 
   static inline void AppendValue(Writer &writer, const ContainerType &data) {
-    const auto len = static_cast<uint32_t>(data.size());
-    writer.AppendU32(len);
-    for (const ElementType &val : data) {
-      Serializer<Writer, ElementType>::AppendValue(writer, val);
-    }
+    AppendKeySort(writer, data);
+    AppendKeyUnique(writer, data);
   }
 };
 
@@ -238,28 +263,28 @@ template <typename Writer, typename Val, size_t i, typename First, typename... R
 struct IndexedSerializer {
   static inline void AppendKeySort(Writer &writer, const Val &data) {
     Serializer<Writer, First>::AppendKeySort(writer, std::get<i>(data));
-    if constexpr (sizeof...(Rest)) {
+    if constexpr (0u < sizeof...(Rest)) {
       IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendKeySort(writer, data);
     }
   }
 
   static inline void AppendKeyUnique(Writer &writer, const Val &data) {
     Serializer<Writer, First>::AppendKeyUnique(writer, std::get<i>(data));
-    if constexpr (sizeof...(Rest)) {
+    if constexpr (0u < sizeof...(Rest)) {
       IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendKeyUnique(writer, data);
     }
   }
 
   static inline void AppendKeyData(Writer &writer, const Val &data) {
     Serializer<Writer, First>::AppendKeyData(writer, std::get<i>(data));
-    if constexpr (sizeof...(Rest)) {
+    if constexpr (0u < sizeof...(Rest)) {
       IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendKeyData(writer, data);
     }
   }
 
   static inline void AppendValue(Writer &writer, const Val &data) {
     Serializer<Writer, First>::AppendValue(writer, std::get<i>(data));
-    if constexpr (sizeof...(Rest)) {
+    if constexpr (0u < sizeof...(Rest)) {
       IndexedSerializer<Writer, Val, i + 1u, Rest...>::AppendValue(writer, data);
     }
   }
@@ -364,11 +389,38 @@ template <typename StorageT, typename TableId, const unsigned kIndexId,
           typename... Columns>
 class Index;
 
+// DrLojekyll supported types
 using UTF8 = std::string_view;
 using Any = void;
+struct Bytes : public std::vector<uint8_t> {
+ public:
+  inline Bytes(void) {}
 
-// DrLojekyll supported types
-using Bytes = std::vector<std::uint8_t>;
+  inline Bytes(const uint8_t *begin_, const uint8_t *end_)
+      : std::vector<uint8_t>(begin_, end_) {}
+
+  inline Bytes(const std::vector<uint8_t> &that)
+      : std::vector<uint8_t>(that) {}
+
+
+  inline Bytes(std::vector<uint8_t> &&that) noexcept
+      : std::vector<uint8_t>(that) {}
+
+  Bytes(std::string_view that)
+      : Bytes(
+            reinterpret_cast<const uint8_t *>(that.data()),
+            reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
+
+  Bytes(const std::string &that)
+      : Bytes(
+            reinterpret_cast<const uint8_t *>(that.data()),
+            reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
+};
+
+
+template <typename Writer>
+struct Serializer<Writer, Bytes>
+    : public LinearContainerSerializer<Writer, Bytes, uint8_t> {};
 
 /* **************************************** */
 /* START https://stackoverflow.com/a/264088 */
