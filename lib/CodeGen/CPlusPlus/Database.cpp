@@ -1102,13 +1102,27 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     // Full table scan.
     } else {
       assert(input_vars.empty());
-      os << os.Indent() << "for (auto scan_tuple_" << filled_vec.Id() << " : "
-         << Table(os, region.Table()) << ") {\n";
+      os << os.Indent() << "for (auto ";
+      os << "scan_tuple_" << filled_vec.Id() << " : "
+         << Table(os, region.Table()) << ".Keys()) {\n";
       os.PushIndent();
 
-      // TODO(ekilmer): This probably doesn't work
-      os << os.Indent() << Vector(os, filled_vec) << ".push_back(scan_tuple_"
-         << filled_vec.Id() << ");\n";
+      os << os.Indent() << "auto [";
+      auto table = region.Table();
+      auto sep = "";
+      for (auto i = 0; i < table.Columns().size(); i++) {
+        os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
+        sep = ", ";
+      }
+      os << ", _] = scan_tuple_" << filled_vec.Id() << ".GetReified();\n";
+
+      os << os.Indent() << Vector(os, filled_vec) << ".emplace_back(";
+      sep = "";
+      for (auto i = 0; i < table.Columns().size(); i++) {
+        os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
+        sep = ", ";
+      }
+      os << ");\n";
     }
 
     os.PopIndent();
