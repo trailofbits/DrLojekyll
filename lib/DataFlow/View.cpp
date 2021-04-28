@@ -1279,6 +1279,7 @@ void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
   assert(this != view);
   COND *condition = nullptr;
   if (auto incoming_cond = view->sets_condition.get(); incoming_cond) {
+
     // It's safe to inherit the condition of `view`.
     if (incoming_cond->setters.Size() == 1u) {
       condition = incoming_cond;

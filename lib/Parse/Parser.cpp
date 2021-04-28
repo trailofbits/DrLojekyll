@@ -847,8 +847,8 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
   } else if (auto decl_it = context->declarations.find(id);
              decl_it != context->declarations.end()) {
     decl = decl_it->second;
-    directive_range = DisplayRange(
-        decl->directive_pos, decl->rparen.NextPosition());
+    directive_range =
+        DisplayRange(decl->directive_pos, decl->rparen.NextPosition());
 
   // There are no forward declarations associated with this ID.
   // We'll report an error, then invent one.
@@ -878,8 +878,8 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
     context->declarations.emplace(id, local_decl);
     decl = local_decl;
 
-    directive_range = DisplayRange(
-        decl->directive_pos, decl->rparen.NextPosition());
+    directive_range =
+        DisplayRange(decl->directive_pos, decl->rparen.NextPosition());
   }
 
   assert(decl != nullptr);

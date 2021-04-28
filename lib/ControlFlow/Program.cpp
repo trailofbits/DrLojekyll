@@ -542,7 +542,6 @@ Token DataVariable::Name(void) const noexcept {
     if (auto var = impl->query_column->Variable(); var.has_value()) {
       ret = var->Name();
     }
-
   }
 
   if (ret.IsInvalid() && impl->query_cond) {
