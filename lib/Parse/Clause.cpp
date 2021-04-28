@@ -253,11 +253,15 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // Zero-argument predicate, e.g. `foo : ...`.
         } else if (Lexeme::kPuncColon == lexeme) {
-          if (!TryMatchClauseWithDecl(module, clause.get())) {
+          if (decl) {
+            clause->declaration = decl;
+            state = 5;
+            continue;
+
+          } else if (!TryMatchClauseWithDecl(module, clause.get())) {
             return;
 
           } else {
-            decl = clause->declaration;
             state = 5;
             continue;
           }
@@ -485,7 +489,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         // The `1` in `1 = ...`.
         } else if (Lexeme::kLiteralString == lexeme ||
                    Lexeme::kLiteralNumber == lexeme ||
-                   Lexeme::kIdentifierConstant == lexeme) {
+                   Lexeme::kIdentifierConstant == lexeme ||
+                   Lexeme::kLiteralTrue == lexeme ||
+                   Lexeme::kLiteralFalse == lexeme) {
           lhs = CreateLiteralVariable(clause.get(), tok, false, false);
           state = 6;
           continue;
@@ -528,7 +534,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           assert(lhs);
 
           // Likely a constant/literal; we'll keep parsing anyway.
-          if (lhs->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
+          if (lhs->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable &&
+              lhs->type.Kind() != TypeKind::kBoolean) {
             context->error_log.Append(scope_range, tok_range)
                 << "Expected variable here but got '"
                 << lhs->name.SpellingRange() << "' instead";

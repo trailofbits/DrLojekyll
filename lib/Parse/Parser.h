@@ -238,25 +238,26 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
     auto decl = new Node<T>(module, kind);
     context->declarations.emplace(id, decl);
     return decl;
-  }
 
   // We've seen this declaration before.
-  const auto first_decl = first_decl_it->second;
-
-  const auto &decl_context = first_decl->context;
-  if (decl_context->kind != kind) {
-    auto err = context->error_log.Append(scope_range, name.SpellingRange());
-    err << "Cannot re-declare '" << first_decl->name << "' as a "
-        << first_decl->KindName();
-
-    DisplayRange first_decl_range(
-        ParsedDeclaration(first_decl).SpellingRange());
-    err.Note(first_decl_range) << "Original declaration is here";
-
-    return nullptr;
-
   } else {
-    return new Node<T>(module, decl_context);
+    const auto first_decl = first_decl_it->second;
+
+    const auto &decl_context = first_decl->context;
+    if (decl_context->kind != kind) {
+      auto err = context->error_log.Append(scope_range, name.SpellingRange());
+      err << "Cannot re-declare '" << first_decl->name << "' as a "
+          << first_decl->KindName();
+
+      DisplayRange first_decl_range(
+          ParsedDeclaration(first_decl).SpellingRange());
+      err.Note(first_decl_range) << "Original declaration is here";
+
+      return nullptr;
+
+    } else {
+      return new Node<T>(module, decl_context);
+    }
   }
 }
 

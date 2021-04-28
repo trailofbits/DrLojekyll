@@ -585,10 +585,6 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Depth from the input node. A zero value is invalid.
   unsigned depth{0U};
 
-  // If this is non-zero, then we're not allowed to do sinking. This exists to
-  // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
-  unsigned sink_penalty{0u};
-
   // Is this view in a canonical form? Canonical forms help with doing equality
   // checks and replacements. In practice, "canonical form" lost its meaning
   // over time as it used to be based on pointer ordering of columns, which
