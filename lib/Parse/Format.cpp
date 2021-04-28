@@ -140,7 +140,23 @@ OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedAssignment assign) {
-  os << assign.LHS() << " = " << assign.RHS().SpellingRange();
+  os << assign.LHS() << " = ";
+  if (auto rhs_range = assign.RHS().SpellingRange(); rhs_range.IsValid()) {
+    os << rhs_range;
+  } else {
+    switch (auto tok = assign.RHS().Literal(); tok.Lexeme()) {
+      case Lexeme::kLiteralTrue: os << "true"; break;
+      case Lexeme::kLiteralFalse: os << "false"; break;
+      default:
+        if (auto spelling = assign.RHS().Spelling(Language::kUnknown);
+            spelling.has_value()) {
+          os << (*spelling);
+        } else {
+          assert(false);
+        }
+        break;
+    }
+  }
   return os;
 }
 

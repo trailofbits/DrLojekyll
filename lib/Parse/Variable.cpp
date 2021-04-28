@@ -69,13 +69,16 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
     auto const_ptr = context->foreign_constants[tok.IdentifierId()];
     assert(const_ptr != nullptr);
     assert(const_ptr->parent != nullptr);
+
+    lhs->type = const_ptr->type;
     assign->rhs.type = const_ptr->type;
     assign->rhs.foreign_type = const_ptr->parent;
 
   // Boolean constants bring along their types as well.
   } else if (Lexeme::kLiteralTrue == tok_lexeme ||
              Lexeme::kLiteralFalse == tok_lexeme) {
-    assign->rhs.type = TypeLoc(TypeKind::kBoolean, tok.SpellingRange());
+    lhs->type = TypeLoc(TypeKind::kBoolean, tok.SpellingRange());
+    assign->rhs.type = lhs->type;
   }
 
   std::string_view data;
@@ -124,6 +127,7 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
   var->context = lhs->context;
   var->is_parameter = is_param;
   var->is_argument = is_arg;
+  var->type = lhs->type;
   lhs->next_use = var;  // Link it in.
 
   return var;

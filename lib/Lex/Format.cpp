@@ -6,7 +6,11 @@
 namespace hyde {
 
 OutputStream &operator<<(OutputStream &os, Token tok) {
-  os << tok.SpellingRange();
+  switch (tok.Lexeme()) {
+    case Lexeme::kLiteralTrue: os << "true"; break;
+    case Lexeme::kLiteralFalse: os << "false"; break;
+    default: os << tok.SpellingRange(); break;
+  }
   return os;
 }
 

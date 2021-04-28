@@ -532,22 +532,25 @@ unsigned DataVariable::Id(void) const noexcept {
 
 // Name of this variable, if any. There might not be a name.
 Token DataVariable::Name(void) const noexcept {
+  Token ret;
   if (impl->query_const) {
     if (auto lit = impl->query_const->Literal()) {
-      return lit->Literal();
+      ret = lit->Literal();
     }
   }
-  if (impl->query_column) {
+  if (ret.IsInvalid() && impl->query_column) {
     if (auto var = impl->query_column->Variable(); var.has_value()) {
-      return var->Name();
+      ret = var->Name();
     }
 
-  } else if (impl->query_cond) {
+  }
+
+  if (ret.IsInvalid() && impl->query_cond) {
     if (auto pred = impl->query_cond->Predicate(); pred) {
-      return pred->Name();
+      ret = pred->Name();
     }
   }
-  return Token();
+  return ret;
 }
 
 // The literal, constant value of this variable.
