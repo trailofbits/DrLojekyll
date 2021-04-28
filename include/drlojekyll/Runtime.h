@@ -148,10 +148,11 @@ class SerializedTupleRef;
 // Methods to overload for serializing data
 template <typename Writer, typename DataT>
 struct Serializer {
-  static inline void AppendKeySort(Writer &writer, const DataT &data);
-  static inline void AppendKeyUnique(Writer &writer, const DataT &data);
-  static inline void AppendKeyData(Writer &writer, const DataT &data);
-  static inline void AppendValue(Writer &writer, const DataT &data);
+  static inline void AppendKeySort(Writer &writer, const DataT &data) = delete;
+  static inline void AppendKeyUnique(Writer &writer,
+                                     const DataT &data) = delete;
+  static inline void AppendKeyData(Writer &writer, const DataT &data) = delete;
+  static inline void AppendValue(Writer &writer, const DataT &data) = delete;
 };
 
 // An append-only and iterable container for serialized data
