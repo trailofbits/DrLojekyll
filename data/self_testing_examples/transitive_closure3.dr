@@ -30,10 +30,11 @@ is_node(Node) : tc2(_, Node).
 
 
 int main() {
-  auto functors = DatabaseFunctors();
-  auto log = DatabaseLog();
+  DatabaseFunctors functors;
+  DatabaseLog log;
   auto backend = hyde::rt::std_containers();
-  Database db = Database(backend, log, functors);
+  Database<hyde::rt::std_containers, DatabaseLog, DatabaseFunctors> db(
+      backend, log, functors);
 
   auto assert_reachable_from = [&db](int64_t i, std::vector<int64_t> expect) {
     auto reach_from = db.reachable_from_bf(i);

@@ -1297,9 +1297,6 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
                                  ParsedMessage message, const char *impl,
                                  bool interface = false) {
   os << os.Indent();
-  if (interface) {
-    os << "virtual ";
-  }
   os << "void " << message.Name() << "_" << message.Arity() << "(";
 
   auto sep = "";
@@ -1310,9 +1307,9 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
 
   os << ", bool added) ";
   if (interface) {
-    os << "= 0;\n\n";
+    os << " {}\n\n";
   } else {
-    os << "override {\n";
+    os << " {\n";
     os.PushIndent();
     os << os.Indent() << impl << "\n";
     os.PopIndent();
@@ -1322,34 +1319,17 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
 
 static void DeclareMessageLog(OutputStream &os, Program program,
                               ParsedModule root_module) {
-  os << os.Indent() << "class " << gClassName << "LogInterface {\n";
+  os << os.Indent() << "class " << gClassName << "Log {\n";
   os.PushIndent();
   os << os.Indent() << "public:\n";
   os.PushIndent();
 
-  const auto messages = Messages(root_module);
-
-  if (!messages.empty()) {
-    for (auto message : messages) {
-      DeclareMessageLogger(os, root_module, message, "", true);
-    }
-  }
-  os.PopIndent();
-  os.PopIndent();
-  os << os.Indent() << "};\n\n";
-
-  os << '\n';
-  os << os.Indent() << "class " << gClassName << "Log : public " << gClassName
-     << "LogInterface {\n";
-  os.PushIndent();
-  os << os.Indent() << "public:\n";
-  os.PushIndent();
-
-  if (!messages.empty()) {
-    for (auto message : messages) {
+  for (auto message : Messages(root_module)) {
+    if (message.IsPublished()) {
       DeclareMessageLogger(os, root_module, message, "{}");
     }
   }
+
   os.PopIndent();
   os.PopIndent();
   os << os.Indent() << "};\n\n";
@@ -1732,23 +1712,23 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   DeclareMessageLog(os, program, module);
 
   // A program gets its own class
-  os << "template <typename StorageT>\n";
+  os << "template <typename StorageT, typename LogT, typename FunctorsT>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
   os << os.Indent() << "public:\n";
   os.PushIndent();  // public:
 
-  os << os.Indent() << gClassName << "LogInterface &log;\n";
-  os << os.Indent() << gClassName << "Functors &functors;\n";
+  os << os.Indent() << "LogT &log;\n";
+  os << os.Indent() << "FunctorsT &functors;\n";
 
   os << os.Indent()
      << "std::unordered_map<std::size_t, std::vector<::hyde::rt::Any*>> _refs;\n";
 
   os << "\n";
 
-  os << os.Indent() << "explicit " << gClassName << "(StorageT &storage, "
-     << gClassName << "LogInterface &l, " << gClassName << "Functors &f)\n";
+  os << os.Indent() << "explicit " << gClassName
+     << "(StorageT &storage, LogT &l, FunctorsT &f)\n";
   os.PushIndent();  // constructor
   os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
 

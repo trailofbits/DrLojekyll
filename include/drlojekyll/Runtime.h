@@ -4,7 +4,10 @@
 
 #include <cassert>
 #include <cstring>
+#include <cstdint>
 #include <string>
+#include <string_view>
+#include <vector>
 #include <tuple>
 #include <type_traits>
 
