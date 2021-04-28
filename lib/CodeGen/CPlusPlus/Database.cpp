@@ -220,10 +220,13 @@ static void DefineTypeRefResolver(OutputStream &os) {
 
   // Does not have merge_into
   os << os.Indent() << "template<typename T>\n"
-     << os.Indent()
-     << "typename ::hyde::rt::enable_if<!::hyde::rt::has_merge_into<T,\n"
-     << os.Indent() << "         void(T::*)(T &)>::value, T>::type\n"
-     << os.Indent() << "_resolve(T &obj) {\n";
+     << os.Indent() << os.Indent() << "auto _resolve(T &&obj) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return obj;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";
+  os << os.Indent() << "template<typename T>\n"
+     << os.Indent() << os.Indent() << "auto _resolve(T &obj) {\n";
   os.PushIndent();
   os << os.Indent() << "return obj;\n";
   os.PopIndent();
@@ -663,7 +666,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       if (var.DefiningRegion()) {
         if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
           os << os.Indent() << "auto reified_" << Var(os, var) << " = _resolve<"
-             << TypeName(*foreign_type) << ">(" << Var(os, var) << ");\n";
+             << TypeName(*foreign_type) << ">(" << Var(os, var)
+             << ReifyVar(os, var) << ");\n";
         }
       } else {
         switch (var.DefiningRole()) {
