@@ -1068,7 +1068,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
          << "_vec = " << TableIndex(os, index) << ".Get(";
       auto sep = "";
       for (auto var : input_vars) {
-        os << sep << Var(os, var);
+        os << sep << Var(os, var) << ReifyVar(os, var);
         sep = ", ";
       }
       os << ");\n";
@@ -1546,16 +1546,9 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   if (num_bound_params && num_bound_params < num_params) {
     assert(spec.index.has_value());
     const auto index = *(spec.index);
-    auto key_prefix = "std::make_tuple(";
-    auto key_suffix = ")";
 
-    if (num_free_params == 1u) {
-      key_prefix = "";
-      key_suffix = "";
-    }
-
-    os << os.Indent() << "auto tuple_vec = " << TableIndex(os, index) << ".Get("
-       << key_prefix;
+    os << os.Indent() << "auto tuple_vec = " << TableIndex(os, index)
+       << ".Get(";
 
     sep = "";
     for (auto param : decl.Parameters()) {
@@ -1565,7 +1558,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
 
-    os << key_suffix << ");\n";
+    os << ");\n";
 
     os << os.Indent() << "while (tuple_index < tuple_vec.size()) {\n";
     os.PushIndent();
