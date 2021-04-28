@@ -90,6 +90,12 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
     INSTALL_DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
+# Runtime header
+install(
+  FILES
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime.h"
+  DESTINATION "include/drlojekyll"
+  )
 install(
     FILES
         "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
