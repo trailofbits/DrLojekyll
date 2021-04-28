@@ -1782,9 +1782,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->RelabelGroupIDs();
   impl->TrackDifferentialUpdates(log);
 
-  // TODO(pag): The join canonicalization done in the simplifier introduces
-  //            a bug in Solypsis if the dataflow builder builds functors
-  //            before joins. I'm not sure why and this is probably serious.
   impl->Simplify(log);
   if (num_errors != log.Size()) {
     return std::nullopt;

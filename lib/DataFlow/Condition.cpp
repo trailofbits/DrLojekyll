@@ -120,9 +120,10 @@ void QueryImpl::ExtractConditionsToTuples(void) {
 
       auto col_index = 0u;
       for (auto in_col : insert->input_columns) {
-        (void) pre_tuple->columns.Create(in_col->var, in_col->type, pre_tuple,
-                                         in_col->id, col_index++);
+        auto out_col = pre_tuple->columns.Create(
+            in_col->var, in_col->type, pre_tuple, in_col->id, col_index++);
         pre_tuple->input_columns.AddUse(in_col);
+        out_col->CopyConstantFrom(in_col);
       }
 
       insert->input_columns.Clear();

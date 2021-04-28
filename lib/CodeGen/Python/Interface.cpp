@@ -74,7 +74,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       sep = ", ";
     }
 
-    if (1u < message.Arity() || message.IsDifferential()) {
+    if (1u < message.Arity()) {
       os << "]";
     }
 
