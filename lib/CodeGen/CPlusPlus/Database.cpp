@@ -1118,7 +1118,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       os << os.Indent() << Vector(os, filled_vec) << ".emplace_back(";
       sep = "";
-      for (auto i = 0; i < table.Columns().size(); i++) {
+      for (unsigned int i = 0; i < table.Columns().size(); i++) {
         os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
         sep = ", ";
       }
