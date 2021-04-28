@@ -7,27 +7,133 @@
 #message raw_transfer(u64 FromEA, u64 ToEA, u8 TransferKind).
 
 #local function(ToEA)
-    
+
     ; The target of a function call is an instruction.
     : raw_transfer(FromEA, ToEA, CALL)
     , instruction(FromEA)
     , instruction(ToEA)
-    
+
     ; Any instruction without a predecessor is a function.
     : !raw_transfer(_, ToEA, _)
     , instruction(ToEA).
 
 #query function_instructions(bound u64 FuncEA, free u64 InstEA)
-    
+
     ; The first instruction of a function is a function instruction.
     : function(FuncEA)
     , FuncEA = InstEA
-    
+
     ; The fall-through of one function instruction is also a function
     ; instruction, assuming it's not a function head.
     : function_instructions(FuncEA, PredEA)
     , raw_transfer(PredEA, InstEA, FALL_THROUGH)
     , !function(InstEA).
+
+#epilogue ```c++
+#include "runtime_std_impl.h"
+#include <algorithm>
+#include <vector>
+#include <iomanip>
+#include <iostream>
+#include <set>
+
+template<typename T>
+void dump(Database<T> &db) {
+  std::cout << "Dump:\n";
+  for (auto i = 0; i < 50; i++) {
+    for (auto ea : db.function_instructions_bf(i)) {
+      std::cout << "  FuncEA=" << i
+        << " InstEA=" << ea << "\n";
+    }
+  }
+  std::cout << "\n";
+}
+
+
+int main() {
+  auto functors = DatabaseFunctors();
+  auto log = DatabaseLog();
+  auto backend = hyde::rt::std_containers();
+  Database db = Database(backend, log, functors);
+
+  constexpr uint8_t FALL_THROUGH = 0;
+  constexpr uint8_t CALL = 1;
+
+  // Start with a few instructions. Initially `10` should show up as a function.
+  db.instruction_1({10, 11, 12, 13, 14, 15});
+  dump(db);
+
+  auto unique_vector_size = [](auto vec) {
+    auto set = std::set(vec.begin(), vec.end());
+    return set.size();
+  };
+
+  assert(unique_vector_size(db.function_instructions_bf(9)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(10)) == 1);
+  assert(unique_vector_size(db.function_instructions_bf(11)) == 1);
+  assert(unique_vector_size(db.function_instructions_bf(12)) == 1);
+  assert(unique_vector_size(db.function_instructions_bf(13)) == 1);
+  assert(unique_vector_size(db.function_instructions_bf(14)) == 1);
+  assert(unique_vector_size(db.function_instructions_bf(15)) == 1);
+
+  // Now we add the fall-through edges, and 10 is the only instruction with
+  // no predecessor, so its the function head.
+
+
+  db.raw_transfer_3({{10, 11, FALL_THROUGH},
+                     {11, 12, FALL_THROUGH},
+                     {12, 13, FALL_THROUGH},
+                     {13, 14, FALL_THROUGH},
+                     {14, 15, FALL_THROUGH}});
+  dump(db);
+
+
+  assert(unique_vector_size(db.function_instructions_bf(9)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(10)) == 6);
+  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(14)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+
+  db.instruction_1({9});
+  dump(db);
+
+  assert(unique_vector_size(db.function_instructions_bf(9)) == 1);
+  assert(unique_vector_size(db.function_instructions_bf(10)) == 6);
+  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(14)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+
+
+  db.raw_transfer_3({{9, 10, FALL_THROUGH}});
+  dump(db);
+
+  assert(unique_vector_size(db.function_instructions_bf(9)) == 7);
+  assert(unique_vector_size(db.function_instructions_bf(10)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(14)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+
+
+  db.raw_transfer_3({{10, 14, CALL}});
+  dump(db);
+
+  assert(unique_vector_size(db.function_instructions_bf(9)) == 5);
+  assert(unique_vector_size(db.function_instructions_bf(10)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
+  assert(unique_vector_size(db.function_instructions_bf(14)) == 2);
+  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+
+  return 0;
+}
+```.
 
 #epilogue ```python
 
@@ -43,15 +149,15 @@ CALL = 1
 
 if __name__ == "__main__":
   db = Database(DatabaseLog(), DatabaseFunctors())
-  
+
   # Start with a few instructions. Initially `10` should show up as a function.
   db.instruction_1([10, 11, 12, 13, 14, 15])
   dump(db)
-  
-  
+
+
   # At first, every instruction looks like a function head, because we have no
   # transfers. Note: instruction 9 doesn't exist yet.
-  
+
   assert len(set(db.function_instructions_bf(9))) == 0
   assert len(set(db.function_instructions_bf(10))) == 1
   assert len(set(db.function_instructions_bf(11))) == 1
@@ -59,21 +165,21 @@ if __name__ == "__main__":
   assert len(set(db.function_instructions_bf(13))) == 1
   assert len(set(db.function_instructions_bf(14))) == 1
   assert len(set(db.function_instructions_bf(15))) == 1
-  
-  
-  
+
+
+
   # Now we add the fall-through edges, and 10 is the only instruction with
   # no predecessor, so its the function head.
-  
-  
+
+
   db.raw_transfer_3([(10, 11, FALL_THROUGH),
                      (11, 12, FALL_THROUGH),
                      (12, 13, FALL_THROUGH),
                      (13, 14, FALL_THROUGH),
                      (14, 15, FALL_THROUGH)])
   dump(db)
-  
-    
+
+
   assert len(set(db.function_instructions_bf(9))) == 0
   assert len(set(db.function_instructions_bf(10))) == 6
   assert len(set(db.function_instructions_bf(11))) == 0
@@ -81,11 +187,11 @@ if __name__ == "__main__":
   assert len(set(db.function_instructions_bf(13))) == 0
   assert len(set(db.function_instructions_bf(14))) == 0
   assert len(set(db.function_instructions_bf(15))) == 0
-  
-  
+
+
   db.instruction_1([9])
   dump(db)
-    
+
   assert len(set(db.function_instructions_bf(9))) == 1
   assert len(set(db.function_instructions_bf(10))) == 6
   assert len(set(db.function_instructions_bf(11))) == 0
@@ -93,8 +199,8 @@ if __name__ == "__main__":
   assert len(set(db.function_instructions_bf(13))) == 0
   assert len(set(db.function_instructions_bf(14))) == 0
   assert len(set(db.function_instructions_bf(15))) == 0
-  
-  
+
+
   db.raw_transfer_3([(9, 10, FALL_THROUGH)])
   dump(db)
 
@@ -105,8 +211,8 @@ if __name__ == "__main__":
   assert len(set(db.function_instructions_bf(13))) == 0
   assert len(set(db.function_instructions_bf(14))) == 0
   assert len(set(db.function_instructions_bf(15))) == 0
-  
-  
+
+
   db.raw_transfer_3([(10, 14, CALL)])
   dump(db)
 

@@ -166,6 +166,7 @@ install(
 # --------------------------------------------
 add_subdirectory(lib)
 add_subdirectory(bin)
+add_subdirectory(RuntimeImpl)
 
 if(ENABLE_LIBFUZZER)
   add_subdirectory(fuzz)

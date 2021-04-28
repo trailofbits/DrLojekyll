@@ -80,6 +80,11 @@ static const std::unordered_set<std::string> kBuildReleaseFailExamples{
 static const std::unordered_set<std::string> kBuildIRReleaseFailExamples{
     "average_weight.dr", "pairwise_average_weight.dr"};
 
+// Set of examples that have a "main" and asserts that can be run for correctness checks
+static const std::unordered_set<std::string> kFunctionalCxxExample{
+    "transitive_closure.dr", "transitive_closure2.dr", "transitive_closure3.dr",
+    "transitive_closure_diff.dr"};
+
 // Test that the well-formed example files parse and build.
 TEST_P(PassingExamplesParsingSuite, Examples) {
   fs::path path = GetParam();
@@ -149,7 +154,52 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     hyde::GeneratePythonDatabaseCode(*program_opt, py_out_fs);
   }
 
-  // Type-check the generated Python code with mypy, and try to run it
+  // Generate C++ code
+  auto cxx_gen_path = generated_file_base.string() + ".cpp";
+  {
+    std::ofstream os(cxx_gen_path);
+    hyde::OutputStream cxx_out_fs(display_mgr, os);
+    hyde::GenerateCxxDatabaseCode(*program_opt, cxx_out_fs);
+  }
+
+  // Whether or not to compile to object file or main executable for correctness testing
+  const bool cxx_full_test = kFunctionalCxxExample.count(path_filename_str);
+  auto cxx_out_path = generated_file_base.string() + ".out";
+
+  // Try to compile generated C++ code
+  // FIXME: possible command injection here!
+  std::string compile_cmd =
+      "\"" + std::string(kCxxCompilerPath) + "\"" +
+#ifdef _WIN32
+      " /std:c++17 " + (cxx_full_test ? "/o " + cxx_out_path : "/c") + " /I\"" +
+      kDrlogPublicHeaders + "\" /I\"" + kDrlogRuntimeImplHeaders
+#else
+      " -std=c++17 " + (cxx_full_test ? "-o " + cxx_out_path : "-c") + " -I\"" +
+      kDrlogPublicHeaders + "\" -I\"" + kDrlogRuntimeImplHeaders
+#endif
+      + "\" " + kCxxFlags + " \"" + cxx_gen_path + "\"";
+#ifdef _WIN32
+  int compile_ret_code = std::system(("\"" + compile_cmd + "\"").c_str());
+#else
+  int compile_ret_code = std::system(compile_cmd.c_str());
+#endif
+  EXPECT_TRUE(compile_ret_code == 0)
+      << "C++ compilation failed with command:\n\t\"" << compile_cmd
+      << "\"\n\tSaved generated code at: \"" << cxx_gen_path << "\"\n";
+
+  // Check if we get a 0 output when trying to run it!
+  if (cxx_full_test) {
+#ifdef _WIN32
+    int run_ret_code = std::system(("\"" + cxx_out_path + "\"").c_str());
+#else
+    int run_ret_code = std::system(cxx_out_path.c_str());
+#endif
+    EXPECT_TRUE(run_ret_code == 0)
+        << "Running the compiled binary failed!\n\t\"" << compile_cmd
+        << "\"\n\tSaved binary at: \"" << cxx_out_path << "\"\n";
+  }
+
+  // Type-check the generated Python code with mypy, if available
 #ifdef MYPY_PATH
 
   // Note, mypy can take input from a command line string via '-c STRING'

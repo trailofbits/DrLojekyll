@@ -9,7 +9,7 @@
 #include <unordered_set>
 
 namespace hyde {
-namespace python {
+namespace cxx {
 
 static constexpr auto kStateAbsent = 0u;
 static constexpr auto kStatePresent = 1u;
@@ -35,22 +35,38 @@ static Stream &Var(Stream &os, const DataVariable var) {
   switch (var.DefiningRole()) {
     case VariableRole::kConstantZero: os << "0"; break;
     case VariableRole::kConstantOne: os << "1"; break;
-    case VariableRole::kConstantFalse: os << "False"; break;
-    case VariableRole::kConstantTrue: os << "True"; break;
-    default:
-      if (var.IsGlobal()) {
-        os << "self.";
-      }
-      os << "var_" << var.Id();
-      break;
+    case VariableRole::kConstantFalse: os << "true"; break;
+    case VariableRole::kConstantTrue: os << "false"; break;
+    default: os << "var_" << var.Id(); break;
   }
   return os;
 }
 
-// Python representation of TypeKind
+
+template <typename Stream>
+static Stream &ReifyVar(Stream &os, const DataVariable var) {
+  switch (var.DefiningRole()) {
+    case VariableRole::kVectorVariable:
+    case VariableRole::kConstant:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue:
+    case VariableRole::kConditionRefCount:
+    case VariableRole::kJoinPivot:
+    case VariableRole::kProductOutput:
+    case VariableRole::kFunctorOutput:
+    case VariableRole::kParameter:
+    case VariableRole::kMessageOutput:
+    case VariableRole::kScanOutput: return os;
+    default: return os << ".Reify()";
+  }
+}
+
+// CPlusPlus representation of TypeKind
 const std::string_view TypeName(ParsedForeignType type);
 
-// Python representation of TypeKind
+// CPlusPlus representation of TypeKind
 std::string_view TypeName(ParsedModule module, TypeLoc kind);
 
 const char *OperatorString(ComparisonOperator op);
@@ -61,5 +77,5 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
 // Return all messages.
 std::unordered_set<ParsedMessage> Messages(ParsedModule module);
 
-}  // namespace python
+}  // namespace cxx
 }  // namespace hyde

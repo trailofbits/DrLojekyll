@@ -3,8 +3,13 @@
 from typing import Iterable
 OffsetList = Tuple[int, ...]
 ```.
+#prologue ```c++
+#include <vector>
+using OffsetList = std::vector<int>;
+```.
 
 #foreign OffsetList ```python OffsetList``` @transparent.
+#foreign OffsetList ```c++ OffsetList``` @transparent.
 #functor make_offset_list(bound u32 LhsOffset, bound u32 RhsOffset,
                           free OffsetList Offsets) @range(.).
 #functor append_offset_list(bound OffsetList LhsList, bound u32 RhsOffset,

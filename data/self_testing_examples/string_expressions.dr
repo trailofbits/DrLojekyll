@@ -5,9 +5,22 @@ Node = Tuple[Token, ...]
 StringExpr = str
 ```.
 
+#prologue ```c++
+#include <string>
+#include <tuple>
+#include <vector>
+
+using Token = std::tuple<std::string, std::string>;
+using Node = std::vector<Token>;
+using StringExpr = std::string;
+```.
+
 #foreign Token ```python Token``` @transparent.
+#foreign Token ```c++ Token``` @transparent.
 #foreign Node ```python Node``` @transparent.
+#foreign Node ```c++ Node``` @transparent.
 #foreign StringExpr ```python StringExpr``` @transparent.
+#foreign StringExpr ```c++ StringExpr``` @transparent.
 
 #message next_token(Token A, Token B).
 
