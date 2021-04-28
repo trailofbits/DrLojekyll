@@ -219,11 +219,8 @@ class VectorRef<std_containers, std::tuple<Ts...>> {
 // A SerializedVector owns its own backing store, unlike a VectorRef that only references another backing store. Both hold serialized data.
 // TODO(ekilmer): There should be some way to reduce this duplication
 template <typename... Ts>
-class SerializedVector<std_containers, std::tuple<Ts...>> {
+class SerializedVector<std_containers, Ts...> {
  public:
-  // TODO(ekilmer): Not sure if the following constructor is correct
-  SerializedVector(std::initializer_list<std::tuple<Ts...>> datas)
-      : backing_store(SerializeValues(datas)) {}
 
   auto size() const {
     return backing_store.size();

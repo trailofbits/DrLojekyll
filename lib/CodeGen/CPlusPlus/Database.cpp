@@ -935,17 +935,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent();
 
     auto i = 0u;
-    auto sep = "std::vector<std::tuple<";
+    os << "::hyde::rt::Vector<StorageT";
     for (auto table : region.Tables()) {
       (void) table;
       for (auto var : region.OutputVariables(i++)) {
-        os << sep << TypeName(module, var.Type());
-        sep = ", ";
+        os << ", " << TypeName(module, var.Type());
       }
     }
 
-    os << ">> "
-       << "vec_" << region.Id() << " = {};\n";
+    os << "> "
+       << "vec_" << region.Id() << ";\n";
 
     i = 0u;
 
@@ -962,7 +961,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       if (outer_vars_size > 1) {
         os << "[";
       }
-      sep = "";
+      auto sep = "";
       for (auto var : outer_vars) {
         os << sep << Var(os, var);
         sep = ", ";
@@ -1027,7 +1026,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
 
     os << os.Indent();
-    sep = "for (auto [";
+    auto sep = "for (auto [";
     auto k = 0u;
     for (auto table : region.Tables()) {
       (void) table;
@@ -1356,17 +1355,15 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     }
     if (proc.Kind() == ProcedureKind::kMessageHandler ||
         proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
-      os << "::hyde::rt::SerializedVector<StorageT, std::tuple<";
+      os << "::hyde::rt::SerializedVector<StorageT";
     } else {
-      os << "std::vector<std::tuple<";
+      os << "::hyde::rt::Vector<StorageT";
     }
     const auto &col_types = vec.ColumnTypes();
-    auto type_sep = "";
     for (auto type : col_types) {
-      os << type_sep << TypeName(module, type);
-      type_sep = ", ";
+      os << ", " << TypeName(module, type);
     }
-    os << ">> & ";
+    os << "> & ";
 
     os << Vector(os, vec);
     sep = ", ";
@@ -1404,18 +1401,16 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   for (auto vec : proc.DefinedVectors()) {
     if (proc.Kind() == ProcedureKind::kMessageHandler ||
         proc.Kind() == ProcedureKind::kInitializer) {
-      os << os.Indent() << "::hyde::rt::SerializedVector<StorageT, std::tuple<";
+      os << os.Indent() << "::hyde::rt::SerializedVector<StorageT";
     } else {
-      os << os.Indent() << "std::vector<std::tuple<";
+      os << os.Indent() << "::hyde::rt::Vector<StorageT";
     }
 
-    auto type_sep = "";
     for (auto type : vec.ColumnTypes()) {
-      os << type_sep << TypeName(module, type);
-      type_sep = ", ";
+      os << ", " << TypeName(module, type);
     }
 
-    os << ">> " << Vector(os, vec) << " = {};\n";
+    os << "> " << Vector(os, vec) << ";\n";
 
     // Tracking variable for the vector.
     os << os.Indent() << "int " << VectorIndex(os, vec) << " = 0;\n";

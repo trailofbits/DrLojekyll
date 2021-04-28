@@ -275,8 +275,11 @@ struct Serializer<Writer, std::tuple<Elems...>>
 
 
 // An append-only and iterable container for serialized data
-template <typename BackingStore, typename DataT>
+template <typename BackingStore, typename... Columns>
 class SerializedVector;
+
+template <typename BackingStore, typename... Columns>
+using Vector = std::vector<std::tuple<Columns...>>;
 
 // Writing keys and values with a pack
 template <typename Writer, typename... Columns>
