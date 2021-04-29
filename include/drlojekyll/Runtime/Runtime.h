@@ -17,6 +17,11 @@ namespace rt {
 
 using index_t = size_t;
 
+struct absent {};
+struct present {};
+struct unknown {};
+struct absent_or_unknown {};
+
 // DrLojekyll supported types
 using UTF8 = std::string_view;
 using Any = void;
@@ -45,20 +50,11 @@ struct Bytes : public std::vector<uint8_t> {
             reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
 };
 
-// Used in Tabe::TransitionState to determine how to check and modify an entry's state value
-enum class TupleState : unsigned {
-  kPresent,
+enum class TupleState : uint8_t {
   kAbsent,
+  kPresent,
   kUnknown,
-  kAbsentOrUnknown
 };
-
-// Constants for the different state values
-static constexpr auto kStateMask = 0x3u;
-static constexpr auto kStatePresentBit = 0x4u;
-static constexpr auto kStateAbsent = 0u;
-static constexpr auto kStatePresent = 1u;
-static constexpr auto kStateUnknown = 2u;
 
 template <class T>
 struct TypeIdentity {
@@ -180,7 +176,8 @@ DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(double, double, F64)
 #undef DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN
 #undef DRLOJEKYLL_HYDE_RT_NAMESPACE_END
 
-template <typename Reader, typename Writer, typename ContainerType, typename ElementType>
+template <typename Reader, typename Writer, typename ContainerType,
+          typename ElementType>
 struct LinearContainerSerializer {
 
   static inline void WriteKeySort(Writer &writer,
@@ -262,7 +259,7 @@ struct IndexedSerializer {
 
 template <typename Reader, typename Writer, typename A, typename B>
 struct Serializer<Reader, Writer, std::pair<A, B>>
-    : public IndexedSerializer<Reader, Writer, std::tuple<A, B>, 0, A, B> {};
+    : public IndexedSerializer<Reader, Writer, std::pair<A, B>, 0, A, B> {};
 
 template <typename Reader, typename Writer, typename... Elems>
 struct Serializer<Reader, Writer, std::tuple<Elems...>>
@@ -392,7 +389,7 @@ class Index;
 // A vector-like object that holds a reference to a serialized view of data and
 // and hands back SerialRefs
 template <typename BackingStore, typename... Ts>
-class VectorRef;
+class ReadOnlySerializedVector;
 
 // Reference to a BackingStoreT container that holds a contiguous serialized form
 // of type T at an offset. The object T is reified from BackingStoreT using

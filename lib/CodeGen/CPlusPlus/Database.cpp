@@ -36,10 +36,6 @@ static OutputStream &Vector(OutputStream &os, const DataVector vec) {
   return os << "vec_" << vec.Id();
 }
 
-static OutputStream &VectorIndex(OutputStream &os, const DataVector vec) {
-  return os << "vec_index" << vec.Id();
-}
-
 // Declare Table Descriptors that contain additional metadata about
 static void DeclareDescriptors(OutputStream &os, Program program,
                                ParsedModule module) {
@@ -149,14 +145,9 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
 
   // Then column types
   sep = ">, hyde::rt::TypeList<";
-  if (cols.size() == 1u) {
-    os << sep << TypeName(module, cols[0].Type());
-
-  } else {
-    for (auto col : cols) {
-      os << sep << TypeName(module, col.Type());
-      sep = ", ";
-    }
+  for (auto col : cols) {
+    os << sep << "column_desc_" << table.Id() << '_' << col.Index();
+    sep = ", ";
   }
   os << ">> " << Table(os, table) << ";\n";
 
@@ -537,21 +528,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramParallelRegion region) override {
     os << Comment(os, region, "ProgramParallelRegion");
-
-    auto any = false;
     for (auto sub_region : region.Regions()) {
-
-      // Create new scope since there could be multiply defined variable names in the regions
-      os << os.Indent() << "{\n";
-      os.PushIndent();
       sub_region.Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-      any = true;
-    }
-
-    if (!any) {
-      os << os.Indent() << "{}\n";
     }
   }
 
@@ -583,14 +561,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramSeriesRegion region) override {
     os << Comment(os, region, "ProgramSeriesRegion");
 
-    auto any = false;
     for (auto sub_region : region.Regions()) {
       sub_region.Accept(*this);
-      any = true;
-    }
-
-    if (!any) {
-      os << os.Indent() << "{}\n";
     }
   }
 
@@ -618,26 +590,21 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramVectorClearRegion region) override {
     os << Comment(os, region, "ProgramVectorClearRegion");
 
-    os << os.Indent() << Vector(os, region.Vector()) << ".clear();\n";
-    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
+    os << os.Indent() << Vector(os, region.Vector()) << ".Clear();\n";
   }
 
   void Visit(ProgramVectorSwapRegion region) override {
     os << Comment(os, region, "Program VectorSwap Region");
 
-    os << os.Indent() << Vector(os, region.LHS()) << ".swap("
+    os << os.Indent() << Vector(os, region.LHS()) << ".Swap("
        << Vector(os, region.RHS()) << ");\n";
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
     os << Comment(os, region, "ProgramVectorLoopRegion");
     auto vec = region.Vector();
-    os << os.Indent() << VectorIndex(os, vec) << " = 0;\n"
-       << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
-       << Vector(os, vec) << ".size()) {\n";
-    os.PushIndent();
+    os << os.Indent() << "for (auto [";
 
-    os << os.Indent() << "auto [";
     const auto tuple_vars = region.TupleVariables();
     auto sep = "";
     for (auto var : tuple_vars) {
@@ -645,11 +612,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
     // Need to differentiate between our SerializedVector and regular
-    os << ", tmp_" << region.UniqueId() << "_index] = " << Vector(os, vec)
-       << ".Get(" << VectorIndex(os, vec) << ");\n";
+    os << "] : " << Vector(os, vec)
+       << ") {\n";
 
-    os << os.Indent() << VectorIndex(os, vec)
-       << " = tmp_" << region.UniqueId() << "_index;\n";
+    os.PushIndent();
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -662,8 +628,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramVectorUniqueRegion");
 
     os << os.Indent() << Vector(os, region.Vector())
-       << ".SortAndUnique();\n"
-       << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
+       << ".SortAndUnique();\n";
   }
 
   void ResolveReference(DataVariable var) {
@@ -705,24 +670,29 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto print_state_enum = [&](TupleState state) {
       switch (state) {
-        case TupleState::kAbsent: os << "TupleState::kAbsent"; break;
-        case TupleState::kPresent: os << "TupleState::kPresent"; break;
-        case TupleState::kUnknown: os << "TupleState::kUnknown"; break;
+        case TupleState::kAbsent: os << "::hyde::rt::absent{}"; break;
+        case TupleState::kPresent: os << "::hyde::rt::present{}"; break;
+        case TupleState::kUnknown: os << "::hyde::rt::unknown{}"; break;
         case TupleState::kAbsentOrUnknown:
-          os << "TupleState::kAbsentOrUnknown";
+          os << "::hyde::rt::absent_or_unknown{}";
           break;
       }
     };
 
     os << os.Indent() << "bool did_transition_" << region.UniqueId() << " = "
-       << Table(os, region.Table()) << ".TransitionState(::hyde::rt::";
-    print_state_enum(region.FromState());
-    os << ", ::hyde::rt::";
-    print_state_enum(region.ToState());
-    auto sep = ", ";
+       << Table(os, region.Table()) << ".TransitionState(";
+
+    auto sep = "";
     for (auto var : tuple_vars) {
       os << sep << Var(os, var) << ReifyVar(os, var);
+      sep = ", ";
     }
+
+    os << sep;
+    print_state_enum(region.FromState());
+    os << ", ";
+    print_state_enum(region.ToState());
+
     os << ");\n";
 
     os << os.Indent() << "if (did_transition_" << region.UniqueId() << ") {\n";
@@ -752,35 +722,48 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         sep = ", ";
       }
     }
-    os << ") & " << kStateMask << ";\n";
+    os << ");\n";
 
-    auto sep = "if (";
+    os << os.Indent() << "switch (state) {\n";
+    os.PushIndent();
 
+    auto num = 0u;
     if (auto absent_body = region.IfAbsent(); absent_body) {
-      os << os.Indent() << sep << "state == " << kStateAbsent << ") {\n";
+      os << os.Indent() << "case ::hyde::rt::TupleState::kAbsent: {\n";
       os.PushIndent();
       absent_body->Accept(*this);
+      os << os.Indent() << "break;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
-      sep = "else if (";
+      ++num;
     }
 
     if (auto present_body = region.IfPresent(); present_body) {
-      os << os.Indent() << sep << "state == " << kStatePresent << ") {\n";
+      os << os.Indent() << "case ::hyde::rt::TupleState::kPresent: {\n";
       os.PushIndent();
       present_body->Accept(*this);
+      os << os.Indent() << "break;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
-      sep = "else if (";
+      ++num;
     }
 
     if (auto unknown_body = region.IfUnknown(); unknown_body) {
-      os << os.Indent() << sep << "state == " << kStateUnknown << ") {\n";
+      os << os.Indent() << "case ::hyde::rt::TupleState::kUnknown: {\n";
       os.PushIndent();
       unknown_body->Accept(*this);
+      os << os.Indent() << "break;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
+      ++num;
     }
+
+    if (num != 3u) {
+      os << os.Indent() << "default: break;\n";
+    }
+
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramTableJoinRegion region) override {
@@ -788,13 +771,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << VectorIndex(os, vec) << " = 0;\n"
-       << os.Indent() << "while (" << VectorIndex(os, vec) << " < "
-       << Vector(os, vec) << ".size()) {\n";
-    os.PushIndent();
+    os << os.Indent() << "for (auto [";
 
     std::vector<std::string> var_names;
-    os << os.Indent() << "auto [";
     auto sep = "";
     for (auto var : region.OutputPivotVariables()) {
       std::stringstream var_name;
@@ -803,11 +782,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << sep << var_names.back();
       sep = ", ";
     }
-    os << sep << "next_" << VectorIndex(os, vec)
-       << "] = " << Vector(os, vec) << ".Get(" << VectorIndex(os, vec) << ");\n";
-
-    os << os.Indent() << VectorIndex(os, vec)
-       << " = next_" << VectorIndex(os, vec) << ";\n";
+    os << "] : " << Vector(os, vec) << ") {\n";
+    os.PushIndent();
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
@@ -820,7 +796,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       // The index is a set of key column values/tuples.
       if (index_vals.empty()) {
-        os << os.Indent() << "if (" << TableIndex(os, index) << ".KeyExists(";
+        os << os.Indent() << "if (" << TableIndex(os, index) << ".Contains(";
 
         // Print out key columns
         auto key_columns = [&]() {
@@ -884,30 +860,21 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
         os << ");\n";
 
-        os << os.Indent() << "while (tuple_" << region.Id() << "_" << i
-           << "_index < tuple_" << region.Id() << "_" << i
-           << "_vec.size()) {\n";
-
-        // We increase indentation here, and the corresponding `PopIndent()`
-        // only comes *after* visiting the `region.Body()`.
-        os.PushIndent();
-
         auto out_vars = region.OutputVariables(i);
         assert(out_vars.size() == region.SelectedColumns(i).size());
-
-        os << os.Indent() << "auto [";
+        os << os.Indent() << "for (auto [";
         sep = "";
         for (auto var : out_vars) {
           os << sep << Var(os, var);
           sep = ", ";
         }
 
-        os << ", tmp_" << region.Id() << "_" << i << "_index] = tuple_"
-           << region.Id() << "_" << i << "_vec.Get(tuple_" << region.Id() << "_"
-           << i << "_index);\n";
+        os << "] : tuple_"
+           << region.Id() << "_" << i << "_vec) {\n";
 
-        os << os.Indent() << "tuple_" << region.Id() << "_" << i
-           << "_index = tmp_" << region.Id() << "_" << i << "_index;\n";
+        // We increase indentation here, and the corresponding `PopIndent()`
+        // only comes *after* visiting the `region.Body()`.
+        os.PushIndent();
       }
     }
 
@@ -1072,28 +1039,18 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       }
       os << ");\n";
 
-      os << os.Indent() << "::hyde::rt::index_t scan_index_" << filled_vec.Id() << " = 0;\n";
-      os << os.Indent() << "while (scan_index_" << filled_vec.Id()
-         << " < scan_tuple_" << filled_vec.Id() << "_vec.size()) {\n";
-      os.PushIndent();
-
-      os << os.Indent() << "auto [";
+      os << os.Indent() << "for (auto [";
       sep = "";
       for (auto var : index.ValueColumns()) {
         os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
         sep = ", ";
       }
-      os << ", offset_" << region.UniqueId() << "] = scan_tuple_"
-         << filled_vec.Id() << "_vec.Get("
-         << "scan_index_" << filled_vec.Id() << ");\n"
-         << os.Indent() << "scan_index_" << filled_vec.Id() << " = offset_"
-         << region.UniqueId() << ";\n";
-
+      os << "] : scan_tuple_" << filled_vec.Id() << "_vec) {\n";
+      os.PushIndent();
       os << os.Indent() << Vector(os, filled_vec) << ".Add(";
       sep = "";
       for (auto var : index.ValueColumns()) {
         os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
-//           << ".Reify()";
         sep = ", ";
       }
       os << ");\n";
@@ -1101,20 +1058,17 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     // Full table scan.
     } else {
       assert(input_vars.empty());
-      os << os.Indent() << "for (auto ";
-      os << "scan_tuple_" << filled_vec.Id() << " : "
-         << Table(os, region.Table()) << ".Keys()) {\n";
-      os.PushIndent();
-
-      os << os.Indent() << "auto [";
-      auto table = region.Table();
+      os << os.Indent() << "for (auto [";
       auto sep = "";
+
+      auto table = region.Table();
       for (auto i = 0; i < table.Columns().size(); i++) {
         os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
         sep = ", ";
       }
-      os << ", _] = scan_tuple_" << filled_vec.Id() << ".GetReified();\n";
 
+      os << "] : " << Table(os, region.Table()) << ".Keys()) {\n";
+      os.PushIndent();
       os << os.Indent() << Vector(os, filled_vec) << ".Add(";
       sep = "";
       for (unsigned int i = 0; i < table.Columns().size(); i++) {
@@ -1377,24 +1331,10 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   os << ") {\n";
   os.PushIndent();
-  os << os.Indent() << "int state = " << kStateUnknown << ";\n"
-     << os.Indent() << "int prev_state = " << kStateUnknown << ";\n"
-     << os.Indent() << "int present_bit = 0;\n"
+  os << os.Indent() << "auto state = ::hyde::rt::TupleState::kAbsent;\n"
+     << os.Indent() << "auto prev_state = ::hyde::rt::TupleState::kUnknown;\n"
      << os.Indent() << "bool ret = false;\n"
      << os.Indent() << "bool found = false;\n";
-
-  // Every vector, including parameter vectors, has a variable tracking the
-  // current index into that vector.
-  //
-  // TODO(pag, ekilmer): Consider passing these as arguments... hrmm. This may
-  //                     be relevant if we factor out common sub-regions into
-  //                     procedures. Then there would need to be implied return
-  //                     values of all of the updated index positions that would
-  //                     turn the return value of the procedures from a `bool`
-  //                     to a `tuple`. :-/
-  for (auto vec : proc.VectorParameters()) {
-    os << os.Indent() << "::hyde::rt::index_t " << VectorIndex(os, vec) << " = 0;\n";
-  }
 
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
@@ -1411,9 +1351,6 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     }
 
     os << "> " << Vector(os, vec) << ";\n";
-
-    // Tracking variable for the vector.
-    os << os.Indent() << "::hyde::rt::index_t " << VectorIndex(os, vec) << " = 0;\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -1447,38 +1384,12 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       ++num_free_params;
     }
   }
-
-  if (!num_bound_params) {
-    os << os.Indent() << "// TODO: full table scans\n";
-    return;
-  }
-
   if (num_free_params) {
     os << os.Indent() << "template <typename _Generator>\n";
   }
 
   os << os.Indent() << "::hyde::rt::index_t "
      << decl.Name() << '_' << decl.BindingPattern() << "(";
-//  if (num_free_params) {
-//    os << "std::vector<";
-//    if (1u < num_free_params) {
-//      os << "std::tuple<";
-//    }
-//    auto sep = "";
-//    for (auto param : params) {
-//      if (param.Binding() != ParameterBinding::kBound) {
-//        os << sep << TypeName(module, param.Type());
-//        sep = ", ";
-//      }
-//    }
-//    if (1u < num_free_params) {
-//      os << '>';
-//    }
-//    os << "> ";
-//  } else {
-//    os << "bool ";
-//  }
-//  os
 
   auto sep = "";
   for (auto param : params) {
@@ -1499,25 +1410,6 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   os << os.Indent() << "int state = 0;\n"
      << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n"
      << os.Indent() << "::hyde::rt::index_t tuple_index = 0;\n";
-
-//  // Return vector
-//  if (num_free_params) {
-//    os << os.Indent() << "std::vector<";
-//    if (1u < num_free_params) {
-//      os << "std::tuple<";
-//    }
-//    auto sep = "";
-//    for (auto param : params) {
-//      if (param.Binding() != ParameterBinding::kBound) {
-//        os << sep << TypeName(module, param.Type());
-//        sep = ", ";
-//      }
-//    }
-//    if (1u < num_free_params) {
-//      os << '>';
-//    }
-//    os << "> ret;\n";
-//  }
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
@@ -1549,9 +1441,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
     os << ");\n";
 
-    os << os.Indent() << "while (tuple_index < tuple_vec.size()) {\n";
-    os.PushIndent();
-    os << os.Indent() << "auto [";
+    os << os.Indent() << "for (auto [";
     sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
@@ -1560,39 +1450,30 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
 
-    os << ", offset] = tuple_vec.Get(tuple_index);\n"
-       << os.Indent() << "tuple_index = offset;\n";
+    os << "] : tuple_vec) {\n";
 
   // This is a full table scan.
   } else if (!num_bound_params) {
     assert(0u < num_free_params);
 
-    os << "while (true) {\n";
-    os.PushIndent();
-    os << os.Indent() << "assert(false && \"TODO: full table scans\");\n";
-//
-//    os << os.Indent() << "for (auto &tuple : " << Table(os, spec.table)
-//       << ".Keys()"
-//       << ") {\n";
-//    os.PushIndent();
-//
-//    os << os.Indent() << "auto [";
-//    sep = "";
-//    for (auto param : params) {
-//      if (param.Binding() != ParameterBinding::kBound) {
-//        os << sep << "param_" << param.Index();
-//        sep = ", ";
-//      }
-//    }
-//    os << ", _] = tuple.Get();\n";
+    os << os.Indent() << "for (auto [";
+    sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+
+    os << "] : " << Table(os, spec.table) << ".Keys()) {\n";
 
   // Either the tuple checker will figure out of the tuple is present, or our
   // state check on the full tuple will figure it out.
   } else {
     os << os.Indent() << "if (true) {\n";
-    os.PushIndent();
   }
 
+  os.PushIndent();
 
   if (spec.tuple_checker) {
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
@@ -1624,8 +1505,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 //      }
       sep = ", ";
     }
-    os << ") & " << kStateMask << ";\n"
-       << os.Indent() << "if (state != " << kStatePresent << ") {\n";
+    os << ");\n"
+       << os.Indent() << "if (state != ::hyde::rt::TupleState::kPresent) {\n";
     os.PushIndent();
     if (num_free_params) {
       os << os.Indent() << "continue;\n";
@@ -1673,7 +1554,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
-     << "#include <drlojekyll/Runtime.h>\n\n"
+     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "\n";
 
   const auto module = program.ParsedModule();

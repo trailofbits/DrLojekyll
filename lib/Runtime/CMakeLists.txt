@@ -1,11 +1,14 @@
+# Copyright 2021, Trail of Bits, Inc. All rights reserved.
+
 # Need a cpp file to support IDE include paths when parsing compile_commands.json...
-add_library(RuntimeStdImpl STATIC
-  "runtime_std_impl.cpp"
-  "runtime_std_impl.h"
+add_library(StdRuntime STATIC
+  "StdRuntime.cpp"
   )
-add_library(${PROJECT_NAME}::RuntimeStdImpl ALIAS RuntimeStdImpl)
-set_target_properties(RuntimeStdImpl PROPERTIES PUBLIC_HEADER "runtime_std_impl.h")
-target_include_directories(RuntimeStdImpl PUBLIC
+
+add_library(${PROJECT_NAME}::StdRuntime ALIAS StdRuntime)
+set_target_properties(StdRuntime PROPERTIES
+  PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdRuntime.h")
+target_include_directories(StdRuntime PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -13,7 +16,7 @@ target_include_directories(RuntimeStdImpl PUBLIC
 
 string(TOLOWER ${PROJECT_NAME} lower_project_name)
 install(
-  TARGETS RuntimeStdImpl
+  TARGETS StdRuntime
   EXPORT "${PROJECT_NAME}Targets"
   RUNTIME
     DESTINATION "bin"
@@ -22,5 +25,5 @@ install(
   ARCHIVE
     DESTINATION "lib/${lower_project_name}"
   PUBLIC_HEADER
-    DESTINATION "include/${lower_project_name}/RuntimeImpl"
+    DESTINATION "include/${lower_project_name}/Runtime"
 )

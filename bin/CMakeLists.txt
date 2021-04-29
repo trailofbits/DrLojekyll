@@ -19,4 +19,9 @@ target_link_libraries(drlojekyll PRIVATE
     Util
     Version
 )
-install(TARGETS drlojekyll)
+
+add_executable(${PROJECT_NAME}::drlojekyll ALIAS drlojekyll)
+
+install(
+  TARGETS drlojekyll
+  EXPORT "${PROJECT_NAME}Targets")

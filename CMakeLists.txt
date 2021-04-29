@@ -93,8 +93,9 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
 # Runtime header
 install(
   FILES
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime.h"
-  DESTINATION "include/drlojekyll"
+    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+  DESTINATION
+    "include/drlojekyll/Runtime"
   )
 install(
     FILES
@@ -172,7 +173,6 @@ install(
 # --------------------------------------------
 add_subdirectory(lib)
 add_subdirectory(bin)
-add_subdirectory(RuntimeImpl)
 
 if(ENABLE_LIBFUZZER)
   add_subdirectory(fuzz)
