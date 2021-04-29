@@ -60,8 +60,8 @@ DisplayPosition Token::ErrorPosition(void) const {
     assert(error_line < next_line);
   }
 #endif
-  return DisplayPosition(position.DisplayId(), error_index,
-                         error_line, error_col);
+  return DisplayPosition(position.DisplayId(), error_index, error_line,
+                         error_col);
 }
 
 // Return the range of characters covered by this token. This is an open range
@@ -257,14 +257,10 @@ unsigned Token::IdentifierLength(void) const {
 // for foreign constants.
 ::hyde::TypeKind Token::TypeKind(void) const {
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kTypeASCII:
-      return ::hyde::TypeKind::kASCII;
-    case ::hyde::Lexeme::kTypeUTF8:
-      return ::hyde::TypeKind::kUTF8;
-    case ::hyde::Lexeme::kTypeBytes:
-      return ::hyde::TypeKind::kBytes;
-    case ::hyde::Lexeme::kTypeUUID:
-      return ::hyde::TypeKind::kUUID;
+    case ::hyde::Lexeme::kTypeASCII: return ::hyde::TypeKind::kASCII;
+    case ::hyde::Lexeme::kTypeUTF8: return ::hyde::TypeKind::kUTF8;
+    case ::hyde::Lexeme::kTypeBytes: return ::hyde::TypeKind::kBytes;
+    case ::hyde::Lexeme::kTypeUUID: return ::hyde::TypeKind::kUUID;
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
     case ::hyde::Lexeme::kTypeFn:
@@ -274,8 +270,7 @@ unsigned Token::IdentifierLength(void) const {
       return As<lex::IdentifierToken>().Load<::hyde::TypeKind>();
     case ::hyde::Lexeme::kTypeBoolean:
     case ::hyde::Lexeme::kLiteralTrue:
-    case ::hyde::Lexeme::kLiteralFalse:
-      return ::hyde::TypeKind::kBoolean;
+    case ::hyde::Lexeme::kLiteralFalse: return ::hyde::TypeKind::kBoolean;
     default: return ::hyde::TypeKind::kInvalid;
   }
 }
@@ -293,8 +288,7 @@ char Token::InvalidChar(void) const {
 Token Token::AsForeignType(void) const {
   Token ret;
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kIdentifierType:
-      return *this;
+    case ::hyde::Lexeme::kIdentifierType: return *this;
     case ::hyde::Lexeme::kIdentifierAtom:
     case ::hyde::Lexeme::kIdentifierVariable: {
       ret = *this;
@@ -316,8 +310,7 @@ Token Token::AsForeignType(void) const {
 Token Token::AsForeignConstant(::hyde::TypeKind kind) const {
   Token ret;
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kIdentifierConstant:
-      return *this;
+    case ::hyde::Lexeme::kIdentifierConstant: return *this;
     case ::hyde::Lexeme::kIdentifierAtom:
     case ::hyde::Lexeme::kIdentifierVariable: {
       ret = *this;

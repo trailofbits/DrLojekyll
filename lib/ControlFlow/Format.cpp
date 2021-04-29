@@ -32,7 +32,8 @@ static OutputStream &Type(OutputStream &os, ParsedModule module,
   return Type(os, module, var.Type().Kind());
 }
 
-static void DefineTable(OutputStream &os, ParsedModule module, DataTable table) {
+static void DefineTable(OutputStream &os, ParsedModule module,
+                        DataTable table) {
   os << os.Indent() << "create " << table;
   os.PushIndent();
   for (auto col : table.Columns()) {
@@ -102,12 +103,20 @@ OutputStream &operator<<(OutputStream &os, DataTable table) {
 OutputStream &operator<<(OutputStream &os, DataVector vec) {
 
   switch (vec.Kind()) {
-    case VectorKind::kParameter: os << "$input"; break;
-    case VectorKind::kInputOutputParameter: os << "$inout"; break;
-    case VectorKind::kInductionCycles: os << "$induction_cycle"; break;
+    case VectorKind::kParameter: os << "$param"; break;
+    case VectorKind::kInductionInputs: os << "$induction_in"; break;
+    case VectorKind::kInductionSwaps: os << "$induction_swap"; break;
     case VectorKind::kInductionOutputs: os << "$induction_out"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
+    case VectorKind::kInductiveJoinPivots: os << "$induction_pivots"; break;
+    case VectorKind::kInductiveJoinPivotSwaps:
+      os << "$induction_pivots_swap";
+      break;
     case VectorKind::kProductInput: os << "$product"; break;
+    case VectorKind::kInductiveProductInput: os << "$induction_product"; break;
+    case VectorKind::kInductiveProductSwaps:
+      os << "$induction_product_swap";
+      break;
     case VectorKind::kTableScan: os << "$scan"; break;
     case VectorKind::kMessageOutputs: os << "$publish"; break;
     case VectorKind::kEmpty: os << "$empty"; break;
@@ -129,8 +138,13 @@ OutputStream &operator<<(OutputStream &os, DataVariable var) {
                               name.Lexeme() == Lexeme::kIdentifierVariable ||
                               name.Lexeme() == Lexeme::kIdentifierConstant) {
     os << name << ':';
-  } else if (auto val = var.Value(); val && val->IsConstant()) {
-    os << *val << ':';
+  } else if (auto const_val = var.Value()) {
+    if (const_val->IsTag()) {
+      auto tag = QueryTag::From(*const_val);
+      os << "TAG:" << tag.Value() << ':';
+    } else if (auto lit = const_val->Literal(); lit && lit->IsConstant()) {
+      os << *lit << ':';
+    }
   }
   os << var.Id();
   return os;
@@ -209,28 +223,47 @@ OutputStream &operator<<(OutputStream &os, ProgramReturnRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
-  if (auto maybe_body = region.Body(); maybe_body) {
-    os << os.Indent();
-    auto sep = "if-compare {";
-    for (auto var : region.LHS()) {
-      os << sep << var;
-      sep = ", ";
-    }
+  os << os.Indent();
+  auto sep = "if-compare {";
+  for (auto var : region.LHS()) {
+    os << sep << var;
+    sep = ", ";
+  }
 
-    os << "} " << region.Operator();
+  os << "} " << region.Operator();
 
-    sep = " {";
-    for (auto var : region.RHS()) {
-      os << sep << var;
-      sep = ", ";
-    }
-    os << "}\n";
+  sep = " {";
+  for (auto var : region.RHS()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "}";
+  auto has_body = false;
 
+  if (auto maybe_true_body = region.BodyIfTrue(); maybe_true_body) {
+    os << '\n';
     os.PushIndent();
-    os << (*maybe_body);
+    os << os.Indent() << "if-true\n";
+    os.PushIndent();
+    os << (*maybe_true_body);
     os.PopIndent();
-  } else {
-    os << os.Indent() << "empty";
+    os.PopIndent();
+    has_body = true;
+  }
+
+  if (auto maybe_false_body = region.BodyIfFalse(); maybe_false_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-false\n";
+    os.PushIndent();
+    os << (*maybe_false_body);
+    os.PopIndent();
+    os.PopIndent();
+    has_body = true;
+  }
+
+  if (!has_body) {
+    os << '\n' << os.Indent() << "empty-compare";
   }
   return os;
 }
@@ -248,6 +281,9 @@ OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
 
     } else if (region.IsSubtract()) {
       os << "if (" << acc << " -= " << disp << ") == " << cmp << '\n';
+
+    } else {
+      assert(false);
     }
     os.PushIndent();
     os << (*maybe_body);
@@ -255,10 +291,13 @@ OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
 
   } else {
     if (region.IsAdd()) {
-      os << acc << " += " << disp << '\n';
+      os << acc << " += " << disp;
 
     } else if (region.IsSubtract()) {
-      os << acc << " -= " << disp << '\n';
+      os << acc << " -= " << disp;
+
+    } else {
+      assert(false);
     }
   }
 
@@ -363,7 +402,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty-vector-loop";
   }
   return os;
 }
@@ -376,16 +415,43 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorAppendRegion region) {
     sep = ", ";
   }
   os << "} into " << region.Vector();
+  if (auto worker_id = region.WorkerId(); worker_id) {
+    os << " of-worker " << *worker_id;
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramWorkerIdRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os << os.Indent() << "hash {";
+    auto sep = "";
+    for (auto var : region.HashedVariables()) {
+      os << sep << var;
+      sep = ", ";
+    }
+    os << "} into " << region.WorkerId() << '\n';
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-hash";
+  }
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorClearRegion region) {
   os << os.Indent() << "vector-clear " << region.Vector();
+  if (auto worker_id = region.WorkerId(); worker_id) {
+    os << " of-worker " << *worker_id;
+  }
   return os;
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramVectorUniqueRegion region) {
   os << os.Indent() << "vector-unique " << region.Vector();
+  if (auto worker_id = region.WorkerId(); worker_id) {
+    os << " of-worker " << *worker_id;
+  }
   return os;
 }
 
@@ -397,12 +463,7 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorSwapRegion region) {
 OutputStream &operator<<(OutputStream &os,
                          ProgramTransitionStateRegion region) {
 
-  os << os.Indent();
-  if (region.Body()) {
-    os << "if-";
-  }
-
-  os << "transition-state {";
+  os << os.Indent() << "transition-state {";
 
   auto sep = "";
   for (auto var : region.TupleVariables()) {
@@ -425,10 +486,23 @@ OutputStream &operator<<(OutputStream &os,
     case TupleState::kAbsentOrUnknown: os << "unknown"; break;
   }
 
-  if (auto maybe_body = region.Body(); maybe_body) {
+  if (auto maybe_body = region.BodyIfSucceeded(); maybe_body) {
     os << '\n';
     os.PushIndent();
+    os << os.Indent() << "if-transitioned\n";
+    os.PushIndent();
     os << (*maybe_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+
+  if (auto maybe_failed_body = region.BodyIfFailed(); maybe_failed_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-failed\n";
+    os.PushIndent();
+    os << (*maybe_failed_body);
+    os.PopIndent();
     os.PopIndent();
   }
   return os;
@@ -678,6 +752,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramTableProductRegion)
   MAKE_VISITOR(ProgramTableScanRegion)
   MAKE_VISITOR(ProgramTupleCompareRegion)
+  MAKE_VISITOR(ProgramWorkerIdRegion)
 
  private:
   OutputStream &os;
@@ -707,9 +782,7 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
       break;
     case ProcedureKind::kTupleFinder: os << "^find:"; break;
     case ProcedureKind::kTupleRemover: os << "^remove:"; break;
-    case ProcedureKind::kInductionCycleHandler:
-      os << "^induction_cycle:"; break;
-    case ProcedureKind::kInductionOutputHandler: os << "^induction_out:"; break;
+    case ProcedureKind::kConditionTester: os << "^test:"; break;
   }
   os << proc.Id();
 
@@ -721,16 +794,20 @@ OutputStream &operator<<(OutputStream &os, Program program) {
 
   const auto module = program.ParsedModule();
   for (auto var : program.Constants()) {
-    os << sep << os.Indent() << "const " << Type(os, module, var) << ' '
-       << var;
+    os << sep << os.Indent() << "const " << Type(os, module, var) << ' ' << var;
     switch (var.DefiningRole()) {
       case VariableRole::kConstantZero: os << " = 0"; break;
       case VariableRole::kConstantOne: os << " = 1"; break;
       case VariableRole::kConstantFalse: os << " = false"; break;
       case VariableRole::kConstantTrue: os << " = true"; break;
       default:
-        if (auto val = var.Value(); val) {
-          os << " = " << *val;
+        if (auto const_val = var.Value()) {
+          if (const_val->IsTag()) {
+            os << " = " << QueryTag::From(*const_val).Value();
+
+          } else if (auto lit = const_val->Literal(); lit) {
+            os << " = " << *lit;
+          }
         }
         break;
     }

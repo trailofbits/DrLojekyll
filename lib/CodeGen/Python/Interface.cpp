@@ -26,7 +26,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
   os << "except ImportError:\n";
   os.PushIndent();
-  os << os.Indent() << "from typing_extensions import Protocol  # type: ignore\n\n\n";
+  os << os.Indent()
+     << "from typing_extensions import Protocol  # type: ignore\n\n\n";
   os.PopIndent();
 
   const auto module = program.ParsedModule();
@@ -41,8 +42,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
             os << code.CodeToInline() << "\n\n\n";
           }
           break;
-        default:
-          break;
+        default: break;
       }
     }
   }
@@ -73,7 +73,7 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       sep = ", ";
     }
 
-    if (1u < message.Arity() || message.IsDifferential()) {
+    if (1u < message.Arity()) {
       os << "]";
     }
 
@@ -155,8 +155,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "if self._add_" << message.Name() << '_'
        << message.Arity() << " is not None:\n";
     os.PushIndent();
-    os << os.Indent() << "num_messages += len(self._add_" << message.Name() << '_'
-       << message.Arity() << ")\n"
+    os << os.Indent() << "num_messages += len(self._add_" << message.Name()
+       << '_' << message.Arity() << ")\n"
        << os.Indent() << "db." << message.Name() << '_' << message.Arity()
        << "(self._add_" << message.Name() << '_' << message.Arity();
     if (message.IsDifferential()) {
@@ -172,10 +172,11 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "if self._rem_" << message.Name() << '_'
        << message.Arity() << " is not None:\n";
     os.PushIndent();
-    os << os.Indent() << "num_messages += len(self._rem_" << message.Name() << '_'
-       << message.Arity() << ")\n"
+    os << os.Indent() << "num_messages += len(self._rem_" << message.Name()
+       << '_' << message.Arity() << ")\n"
        << os.Indent() << "db." << message.Name() << '_' << message.Arity()
-       << "(self._rem_" << message.Name() << '_' << message.Arity() << ", False)\n";
+       << "(self._rem_" << message.Name() << '_' << message.Arity()
+       << ", False)\n";
     os.PopIndent();
   }
   os << os.Indent() << "return num_messages\n";
@@ -188,8 +189,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os.PushIndent();
   os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
-  os << os.Indent() << "self._msg: " << gClassName << "InputMessage = "
-     << gClassName << "InputMessage()\n"
+  os << os.Indent() << "self._msg: " << gClassName
+     << "InputMessage = " << gClassName << "InputMessage()\n"
      << os.Indent() << "self._num_msgs: int = 0\n\n";
   os.PopIndent();
   for (auto message : messages) {
@@ -381,8 +382,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << os.Indent() << "if self._add_" << message.Name() << '_'
          << message.Arity() << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for _row" << r << " in self._add_"
-         << message.Name() << '_' << message.Arity() << ":\n";
+      os << os.Indent() << "for _row" << r << " in self._add_" << message.Name()
+         << '_' << message.Arity() << ":\n";
       os.PushIndent();
       os << os.Indent() << "yield _row" << r << "\n";
       os.PopIndent();
@@ -395,8 +396,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << os.Indent() << "if self._rem_" << message.Name() << '_'
          << message.Arity() << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for _row" << r << " in self._rem_"
-         << message.Name() << '_' << message.Arity() << ":\n";
+      os << os.Indent() << "for _row" << r << " in self._rem_" << message.Name()
+         << '_' << message.Arity() << ":\n";
       os.PushIndent();
       os << os.Indent() << "yield _row" << r << "\n";
       os.PopIndent();
@@ -432,8 +433,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       os << os.Indent() << "if self._add_" << message.Name() << '_'
          << message.Arity() << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for _row" << r << " in self._add_"
-         << message.Name() << '_' << message.Arity() << ":\n";
+      os << os.Indent() << "for _row" << r << " in self._add_" << message.Name()
+         << '_' << message.Arity() << ":\n";
       os.PushIndent();
       os << os.Indent() << "yield _row" << r << "\n";
       os.PopIndent();
@@ -459,8 +460,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "def __init__(self):\n";
   os.PushIndent();
   os << os.Indent() << "self._num_msgs: int = 0\n"
-     << os.Indent() << "self._msg: " << gClassName << "OutputMessage = "
-     << gClassName << "OutputMessage()\n\n";
+     << os.Indent() << "self._msg: " << gClassName
+     << "OutputMessage = " << gClassName << "OutputMessage()\n\n";
   os.PopIndent();
 
   // Emit one method per published message that adds the message data into
@@ -563,8 +564,8 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
     if (!message.IsPublished()) {
       continue;
     }
-    os << os.Indent() << "if msg._add_" << message.Name() << '_' << message.Arity()
-       << " is not None:\n";
+    os << os.Indent() << "if msg._add_" << message.Name() << '_'
+       << message.Arity() << " is not None:\n";
     os.PushIndent();
     os << os.Indent() << "for _row" << r << " in msg._add_" << message.Name()
        << '_' << message.Arity() << ":\n";
@@ -596,11 +597,11 @@ void GeneratePythonInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
-    os << os.Indent() << "if msg._rem_" << message.Name() << '_' << message.Arity()
-       << " is not None:\n";
+    os << os.Indent() << "if msg._rem_" << message.Name() << '_'
+       << message.Arity() << " is not None:\n";
     os.PushIndent();
-    os << os.Indent() << "for _row" << r << " in msg._rem_"
-       << message.Name() << '_' << message.Arity() << ":\n";
+    os << os.Indent() << "for _row" << r << " in msg._rem_" << message.Name()
+       << '_' << message.Arity() << ":\n";
     os.PushIndent();
     os << os.Indent() << "self.consume_" << message.Name() << '_'
        << message.Arity() << "(";

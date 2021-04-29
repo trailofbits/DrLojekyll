@@ -1,24 +1,33 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
-#include "Query.h"
-
 #include <drlojekyll/Parse/ErrorLog.h>
+
+#include "Query.h"
 
 namespace hyde {
 
 // Identify which data flows can receive and produce deletions.
-void QueryImpl::TrackDifferentialUpdates(
-    const ErrorLog &log, bool check_conds) const {
+void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
+                                         bool check_conds) const {
 
   std::unordered_map<ParsedDeclaration, std::vector<SELECT *>> decl_to_selects;
 
   std::unordered_map<INSERT *, std::vector<SELECT *>> insert_to_selects;
+
+  const_cast<const QueryImpl *>(this)->ForEachView([](VIEW *v) {
+    v->can_receive_deletions = false;
+    v->can_produce_deletions = false;
+  });
 
   for (auto select : selects) {
     if (auto rel = select->relation.get(); rel) {
       decl_to_selects[rel->declaration].push_back(select);
     } else if (auto stream = select->stream.get(); stream) {
       if (auto input = stream->AsIO(); input) {
+        if (ParsedMessage::From(input->declaration).IsDifferential()) {
+          select->can_receive_deletions = true;
+          select->can_produce_deletions = true;
+        }
         decl_to_selects[input->declaration].push_back(select);
       }
     }
@@ -41,13 +50,18 @@ void QueryImpl::TrackDifferentialUpdates(
         changed = true;
       }
 
+      if (!view->can_produce_deletions && view->AsNegate()) {
+        view->can_produce_deletions = true;
+        changed = true;
+      }
+
       if (view->can_receive_deletions && !view->can_produce_deletions) {
         view->can_produce_deletions = true;
         changed = true;
       }
 
       if (auto insert = view->AsInsert();
-          insert && insert->can_receive_deletions) {
+          insert && insert->can_produce_deletions) {
         for (auto select : insert_to_selects[insert]) {
           if (!select->can_receive_deletions) {
             changed = true;
@@ -96,10 +110,11 @@ void QueryImpl::TrackDifferentialUpdates(
     if (message.IsDifferential()) {
       if (!view->can_produce_deletions) {
         assert(!view->can_receive_deletions);
-//        log.Append(range, message.Differential().SpellingRange())
-//            << "Message '" << message.Name() << '/' << message.Arity()
-//            << "' is marked with the '@differential' attribute but cannot "
-//            << "produce deletions";
+
+        //        log.Append(range, message.Differential().SpellingRange())
+        //            << "Message '" << message.Name() << '/' << message.Arity()
+        //            << "' is marked with the '@differential' attribute but cannot "
+        //            << "produce deletions";
       }
 
     } else if (view->can_produce_deletions) {

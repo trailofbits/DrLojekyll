@@ -20,6 +20,15 @@ OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os,
+                         const std::optional<ParsedVariable> &var) {
+  if (var.has_value()) {
+    return os << *var;
+  } else {
+    return os << "_MissingVar";
+  }
+}
+
 OutputStream &operator<<(OutputStream &os, TypeKind type) {
   os << Spelling(type);
   return os;
@@ -131,7 +140,23 @@ OutputStream &operator<<(OutputStream &os, ParsedAggregate aggregate) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedAssignment assign) {
-  os << assign.LHS() << " = " << assign.RHS().SpellingRange();
+  os << assign.LHS() << " = ";
+  if (auto rhs_range = assign.RHS().SpellingRange(); rhs_range.IsValid()) {
+    os << rhs_range;
+  } else {
+    switch (auto tok = assign.RHS().Literal(); tok.Lexeme()) {
+      case Lexeme::kLiteralTrue: os << "true"; break;
+      case Lexeme::kLiteralFalse: os << "false"; break;
+      default:
+        if (auto spelling = assign.RHS().Spelling(Language::kUnknown);
+            spelling.has_value()) {
+          os << (*spelling);
+        } else {
+          assert(false);
+        }
+        break;
+    }
+  }
   return os;
 }
 
@@ -225,15 +250,9 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   }
 
   switch (code_.Language()) {
-    case Language::kUnknown:
-      os << '\n';
-      break;
-    case Language::kCxx:
-      os << "c++\n";
-      break;
-    case Language::kPython:
-      os << "python\n";
-      break;
+    case Language::kUnknown: os << '\n'; break;
+    case Language::kCxx: os << "c++\n"; break;
+    case Language::kPython: os << "python\n"; break;
   }
 
   os << code << "\n```.";
@@ -260,21 +279,16 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       os << "\n#foreign " << type.Name() << " ```";
 
       switch (lang) {
-        case Language::kUnknown:
-          break;
-        case Language::kCxx:
-          os << "c++ ";
-          break;
-        case Language::kPython:
-          os << "python ";
-          break;
+        case Language::kUnknown: break;
+        case Language::kCxx: os << "c++ "; break;
+        case Language::kPython: os << "python "; break;
       }
 
       os << code << "```";
 
       if (auto constructor = type.Constructor(lang); constructor) {
-        os << " ```" << constructor->first << '$'
-           << constructor->second << "```";
+        os << " ```" << constructor->first << '$' << constructor->second
+           << "```";
       }
 
       if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
@@ -293,14 +307,9 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
   os << "#constant " << constant.Type() << ' ' << constant.Name() << " ```";
   switch (constant.Language()) {
-    case Language::kUnknown:
-      break;
-    case Language::kCxx:
-      os << "c++ ";
-      break;
-    case Language::kPython:
-      os << "python ";
-      break;
+    case Language::kUnknown: break;
+    case Language::kCxx: os << "c++ "; break;
+    case Language::kPython: os << "python "; break;
   }
 
   os << constant.Constructor() << "```";

@@ -28,14 +28,40 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   static constexpr unsigned kInvalidIndex = ~0u;
 
+  inline explicit Node(std::optional<ParsedVariable> var_, TypeLoc type_,
+                       Node<QueryView> *view_, unsigned id_,
+                       unsigned index_ = kInvalidIndex)
+      : Def<Node<QueryColumn>>(this),
+        var(var_),
+        type(type_),
+        view(view_),
+        id(id_),
+        index(index_) {
+    assert(view != nullptr);
+    assert(type.UnderlyingKind() != TypeKind::kInvalid);
+  }
+
   inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
                        unsigned id_, unsigned index_ = kInvalidIndex)
       : Def<Node<QueryColumn>>(this),
         var(var_),
-        type(var.Type()),
+        type(var_.Type()),
         view(view_),
         id(id_),
         index(index_) {
+    assert(view != nullptr);
+    assert(type.UnderlyingKind() != TypeKind::kInvalid);
+  }
+
+  inline explicit Node(TypeLoc type_, Node<QueryView> *view_, unsigned id_,
+                       unsigned index_ = kInvalidIndex)
+      : Def<Node<QueryColumn>>(this),
+        var(std::nullopt),
+        type(type_),
+        view(view_),
+        id(id_),
+        index(index_) {
+    assert(view != nullptr);
     assert(type.UnderlyingKind() != TypeKind::kInvalid);
   }
 
@@ -84,7 +110,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   }
 
   // Parsed variable associated with this column.
-  ParsedVariable var;
+  std::optional<ParsedVariable> var;
 
   // Type of the variable; convenient for returning by reference.
   const TypeLoc type;
@@ -154,6 +180,9 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   // Is this a trivial condition?
   bool IsTrivial(void);
 
+  // Are the `positive_users` and `negative_users` lists consistent?
+  bool UsersAreConsistent(void) const;
+
   // The declaration of the `ParsedExport` that is associated with this
   // zero-argument predicate.
   const std::optional<ParsedDeclaration> declaration;
@@ -205,6 +234,7 @@ class Node<QueryStream> : public Def<Node<QueryStream>> {
   Node(void) : Def<Node<QueryStream>>(this) {}
 
   virtual Node<QueryConstant> *AsConstant(void) noexcept;
+  virtual Node<QueryTag> *AsTag(void) noexcept;
   virtual Node<QueryIO> *AsIO(void) noexcept;
   virtual const char *KindName(void) const noexcept = 0;
 };
@@ -213,7 +243,7 @@ using STREAM = Node<QueryStream>;
 
 // Use of a constant.
 template <>
-class Node<QueryConstant> final : public Node<QueryStream> {
+class Node<QueryConstant> : public Node<QueryStream> {
  public:
   virtual ~Node(void);
 
@@ -222,10 +252,29 @@ class Node<QueryConstant> final : public Node<QueryStream> {
   Node<QueryConstant> *AsConstant(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
-  const ParsedLiteral literal;
+  const std::optional<ParsedLiteral> literal;
+
+ protected:
+  inline Node(void) {}
 };
 
 using CONST = Node<QueryConstant>;
+
+// Use of a constant.
+template <>
+class Node<QueryTag> final : public Node<QueryConstant> {
+ public:
+  virtual ~Node(void);
+
+  inline Node(uint16_t val_) : val(val_) {}
+
+  Node<QueryTag> *AsTag(void) noexcept override;
+  const char *KindName(void) const noexcept override;
+
+  const uint16_t val;
+};
+
+using TAG = Node<QueryTag>;
 
 // Input, i.e. a messsage.
 template <>
@@ -253,6 +302,46 @@ class Node<QueryIO> final : public Node<QueryStream>, public User {
 
 using IO = Node<QueryIO>;
 
+// Information about this node as it relates to being inside of an induction.
+// This affects MERGE, JOIN, and NEGATE nodes, as these are the only nodes which
+// can reasonably take more than one predecessor. All cycles in data flow must
+// go through UNIONs, so at first glance they seem to be enough to reign in
+// control over inductions. However, data can flow out of one inductive union
+// and into one side of a JOIN. The JOIN can be on the back-edge of another
+// induction. Ideally, we want to capture the JOIN's pivot vector as being
+// an induction vector, and not repeat JOIN codegen in the init region and the
+// fixpoint cycle region.
+struct InductionInfo {
+ public:
+  explicit InductionInfo(Node<QueryView> *owner);
+
+  std::vector<Node<QueryView> *> predecessors;
+  std::vector<Node<QueryView> *> successors;
+
+  // Initially, when learning about inductions, we use a mask to figure out
+  // which of the predecessors/successors are inductive. This is so that with
+  // JOINs, we can learn that some of the predecessors are inductive for some
+  // UNIONs and possibly not others.
+  std::vector<bool> inductive_predecessors_mask;
+  std::vector<bool> inductive_successors_mask;
+
+  // Can we reach back to ourselves by not flowing through another induction?
+  bool can_reach_self_not_through_another_induction{false};
+
+  WeakUseList<Node<QueryView>> inductive_predecessors;
+  WeakUseList<Node<QueryView>> inductive_successors;
+
+  WeakUseList<Node<QueryView>> noninductive_predecessors;
+  WeakUseList<Node<QueryView>> noninductive_successors;
+
+  // List of UNION, JOIN, and NEGATE nodes.
+  std::shared_ptr<WeakUseList<Node<QueryView>>> cyclic_views;
+
+  unsigned merge_set_id{0};
+  unsigned merge_depth{0};
+};
+
+
 // A view "owns" its the columns pointed to by `columns`.
 template <>
 class Node<QueryView> : public Def<Node<QueryView>>, public User {
@@ -275,6 +364,11 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
+
+  // Returns `true` if this node is inductive. Only MERGEs can be inductive.
+  inline bool IsInductive(void) const {
+    return !!induction_info;
+  }
 
   // Prepare to delete this node. This tries to drop all dependencies and
   // unlink this node from the dataflow graph. It returns `true` if successful
@@ -325,9 +419,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   //            in `this` for `incoming_view`, to force a non-NULL.
   //
   // NOTE(pag): This assumes `in_to_out` is filled up!!
-  Node<QueryTuple> *GuardWithOptimizedTuple(
-      QueryImpl *query, unsigned first_attached_col,
-      Node<QueryView> *incoming_view);
+  Node<QueryTuple> *GuardWithOptimizedTuple(QueryImpl *query,
+                                            unsigned first_attached_col,
+                                            Node<QueryView> *incoming_view);
 
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
@@ -361,12 +455,12 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
                             const ErrorLog &);
 
   struct Discoveries {
-    bool constant_inputs:1;
-    bool non_local_changes:1;
-    bool guardable_constant_output:1;
-    bool duplicated_input_column:1;
-    bool directly_used_column:1;
-    bool unused_column:1;
+    bool constant_inputs : 1;
+    bool non_local_changes : 1;
+    bool guardable_constant_output : 1;
+    bool duplicated_input_column : 1;
+    bool directly_used_column : 1;
+    bool unused_column : 1;
   };
 
   // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
@@ -485,13 +579,13 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // maintain which groups a given select is derived from.
   std::vector<unsigned> group_ids;
 
-  // The group ID of this node that it will push forward to its dependencies.
-  unsigned group_id{0u};
-
   // Hash of this node, and its dependencies. A zero value implies that the
   // hash is invalid. We use this for JOIN merging during early dataflow
   // building. This is a good hint for CSE when the data flow is acyclic.
   uint64_t hash{0u};
+
+  // The group ID of this node that it will push forward to its dependencies.
+  unsigned group_id{0u};
 
   // Depth from the input node. A zero value is invalid.
   unsigned depth{0U};
@@ -522,12 +616,19 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Is this view used by a negation?
   bool is_used_by_negation{false};
 
+  // Is this view used by a join?
+  bool is_used_by_join{false};
+
+  // Is this view used by a merge?
+  bool is_used_by_merge{false};
+
   // Color to use in the eventual data flow output. Default is black. This
   // is influenced by `ParsedClause::IsHighlighted`, which in turn is enabled
   // by using the `@highlight` pragma after a clause head.
   unsigned color{0};
 
 #ifndef NDEBUG
+
   // Debug string roughly tracking how or why this node was created.
   std::string producer;
 #endif
@@ -547,6 +648,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // IR, but it's nifty for debugging.
   mutable std::optional<unsigned> table_id;
 
+  // Information about if this is inductive.
+  std::unique_ptr<InductionInfo> induction_info;
+
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
@@ -564,17 +668,17 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // updated `incoming_view`.
   //
   // NOTE(pag): This updates `is_canonical = false` if it changes anything.
-  Node<QueryView> *PullDataFromBeyondTrivialTuples(
-      Node<QueryView> *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2);
+  Node<QueryView> *
+  PullDataFromBeyondTrivialTuples(Node<QueryView> *incoming_view,
+                                  UseList<COL> &cols1, UseList<COL> &cols2);
 
  private:
-
   // Similar to, and called by, `PullDataFromBeyondTrivialTuples`.
-  Node<QueryView> *PullDataFromBeyondTrivialUnions(
-      Node<QueryView> *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2);
+  Node<QueryView> *
+  PullDataFromBeyondTrivialUnions(Node<QueryView> *incoming_view,
+                                  UseList<COL> &cols1, UseList<COL> &cols2);
 
  public:
-
   // Figure out what the incoming view to `cols1` is.
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
@@ -619,8 +723,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions = ParsedMessage::From(
-          input_stream->declaration).IsDifferential();
+      this->can_receive_deletions =
+          ParsedMessage::From(input_stream->declaration).IsDifferential();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -631,8 +735,8 @@ class Node<QuerySelect> final : public Node<QueryView> {
         stream(this, stream_),
         inserts(this) {
     if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions = ParsedMessage::From(
-          input_stream->declaration).IsDifferential();
+      this->can_receive_deletions =
+          ParsedMessage::From(input_stream->declaration).IsDifferential();
       this->can_produce_deletions = this->can_receive_deletions;
     }
   }
@@ -892,6 +996,9 @@ class Node<QueryMerge> : public Node<QueryView> {
   // Similar to above, but for maps.
   bool SinkThroughMaps(QueryImpl *impl, std::vector<VIEW *> &maps);
 
+  // Similar to above, but for negations.
+  bool SinkThroughNegations(QueryImpl *impl, std::vector<VIEW *> &negations);
+
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
@@ -900,10 +1007,6 @@ class Node<QueryMerge> : public Node<QueryView> {
 
   // The views that are being merged together.
   UseList<VIEW> merged_views;
-
-  // If this is non-zero, then we're not allowed to do sinking. This exists to
-  // prevent infinite cycles in the canonicalizer where it sinks then unsinks.
-  unsigned sink_penalty{0u};
 };
 
 using MERGE = Node<QueryMerge>;
@@ -941,8 +1044,7 @@ class Node<QueryNegate> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
-  inline Node(void)
-      : Node<QueryView>() {
+  inline Node(void) : Node<QueryView>() {
     can_receive_deletions = true;
   }
 
@@ -1285,6 +1387,9 @@ class QueryImpl {
   // constants is a tuple. This simplifies lots of stuff later.
   void ConvertConstantInputsToTuples(void);
 
+  // Identify the inductive unions in the data flow.
+  void IdentifyInductions(const ErrorLog &log, bool recursive = false);
+
   // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(const ErrorLog &log,
                                 bool check_conds = false) const;
@@ -1305,16 +1410,16 @@ class QueryImpl {
   void ProxyInsertsWithTuples(void);
 
   // Link together views in terms of predecessors and successors.
-  void LinkViews(void);
+  void LinkViews(bool recursive = false);
 
   // Root module associated with this query.
   const ParsedModule module;
 
   // The streams associated with input relations to queries.
-  std::unordered_map<ParsedDeclaration, Node<QueryIO> *> decl_to_input;
+  std::unordered_map<ParsedDeclaration, IO *> decl_to_input;
 
   // The tables available within any query sharing this context.
-  std::unordered_map<ParsedDeclaration, Node<QueryRelation> *> decl_to_relation;
+  std::unordered_map<ParsedDeclaration, REL *> decl_to_relation;
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.
@@ -1323,13 +1428,15 @@ class QueryImpl {
   // Mapping between export conditions and actual condition nodes.
   std::unordered_map<ParsedExport, Node<QueryCondition> *> decl_to_condition;
 
+  std::vector<COL *> tag_columns;
+
   // The streams associated with messages and other concrete inputs.
   DefList<Node<QueryIO>> ios;
 
-  DefList<Node<QueryRelation>> relations;
-  DefList<Node<QueryConstant>> constants;
-  DefList<Node<QueryCondition>> conditions;
-
+  DefList<REL> relations;
+  DefList<CONST> constants;
+  DefList<TAG> tags;
+  DefList<COND> conditions;
   DefList<SELECT> selects;
   DefList<TUPLE> tuples;
   DefList<KVINDEX> kv_indices;

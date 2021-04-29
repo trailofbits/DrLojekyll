@@ -147,8 +147,7 @@ bool Node<ProgramProcedure>::EndsWithReturn(void) const noexcept {
 VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl, VectorKind kind,
                                           DefinedNodeRange<QueryColumn> cols) {
   const auto next_id = impl->next_id++;
-  if (VectorKind::kParameter == kind ||
-      VectorKind::kInputOutputParameter == kind) {
+  if (VectorKind::kParameter == kind) {
     return input_vecs.Create(next_id, kind, cols);
   } else {
     return vectors.Create(next_id, kind, cols);

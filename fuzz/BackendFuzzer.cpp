@@ -58,8 +58,7 @@ struct FuzzerStats {
     assert(num_attempts >= num_parsed);
     assert(num_parsed >= num_compiled);
     assert(num_custom_calls == (num_custom_generated_asts +
-                                num_custom_parsed_asts +
-                                num_custom_fallbacks));
+                                num_custom_parsed_asts + num_custom_fallbacks));
 
     // Figure out how wide to make the numeric column in the first section
     int col_width = 1;
@@ -531,8 +530,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   assert_error_log_empty("successful query compilation");
 
-  const auto program_opt = hyde::Program::Build(
-      *query_opt, hyde::IRFormat::kIterative, cxt.error_log);
+  const auto program_opt =
+      hyde::Program::Build(*query_opt, hyde::IRFormat::kIterative);
   if (!program_opt) {
 
     // Bail out early if program compilation failed.  Expected to be rare!

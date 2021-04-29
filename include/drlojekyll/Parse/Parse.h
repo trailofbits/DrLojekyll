@@ -398,7 +398,7 @@ class ParsedClauseBody;
 class ParsedClause : public parse::ParsedNode<ParsedClause> {
  public:
   // Create a new variable in this context of this clause.
-  ParsedVariable CreateVariable(TypeLoc type);
+  ParsedVariable CreateVariable(Token name, TypeLoc type);
 
   // Traverse upward in the AST.
   static ParsedClause Containing(ParsedVariable var) noexcept;
@@ -417,7 +417,7 @@ class ParsedClause : public parse::ParsedNode<ParsedClause> {
 
   // Returns `true` if this clause body is disabled. A disabled clause body
   // is one that contains a free `false` or `!true` predicate.
-  bool IsDisabled(DisplayRange *disabled_by=nullptr) const noexcept;
+  bool IsDisabled(DisplayRange *disabled_by = nullptr) const noexcept;
 
   // Are cross-products permitted when building the data flow representation
   // for this clause?

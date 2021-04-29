@@ -559,7 +559,7 @@ ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
     : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedPredicate &pred)
-: parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
+    : parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->rparen.IsValid()) {
@@ -779,11 +779,13 @@ unsigned ParsedDeclaration::NumClauses(void) const noexcept {
 }
 
 bool ParsedDeclaration::IsInline(void) const noexcept {
-  return IsQuery() || impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
+  return IsQuery() ||
+         impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
 }
 
 // Is this declaration marked with the `@divergent` pragma?
 bool ParsedDeclaration::IsDivergent(void) const noexcept {
+
   // TODO(pag): Implement me.
   return true;
 }
@@ -834,12 +836,14 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 }
 
 // Create a new variable in this context of this clause.
-ParsedVariable ParsedClause::CreateVariable(TypeLoc type) {
+ParsedVariable ParsedClause::CreateVariable(Token name, TypeLoc type) {
   assert(type.UnderlyingKind() != TypeKind::kInvalid);
   auto var = new Node<ParsedVariable>;
   var->type = type;
-  var->name =
-      Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, SpellingRange());
+  var->name = name.IsValid()
+                  ? name
+                  : Token::Synthetic(Lexeme::kIdentifierUnnamedVariable,
+                                     SpellingRange());
   var->context = std::make_shared<parse::VariableContext>(impl, nullptr);
   impl->body_variables.emplace_back(var);
   return ParsedVariable(var);
@@ -878,8 +882,7 @@ unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
-  auto last_tok =
-      impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
+  auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
                       last_tok.NextPosition());
@@ -1438,9 +1441,10 @@ bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
 // Returns `true` if the representation of this foreign type in the target
 // language `lang` is referentially transparent, i.e. if equality implies
 // identity. This is the case for trivial types, e.g. integers.
-bool ParsedForeignType::IsReferentiallyTransparent(Language lang_) const noexcept {
+bool ParsedForeignType::IsReferentiallyTransparent(
+    Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);
-    return impl->is_built_in || impl->info[lang].is_transparent;
+  return impl->is_built_in || impl->info[lang].is_transparent;
 }
 
 // Return the prefix and suffix for construction for this language.
@@ -1451,16 +1455,15 @@ ParsedForeignType::Constructor(Language lang_) const noexcept {
   if (lang_ != Language::kUnknown && info.is_present &&
       (!info.constructor_prefix.empty() || !info.constructor_suffix.empty())) {
     return std::make_pair<std::string_view, std::string_view>(
-        info.constructor_prefix,
-        info.constructor_suffix);
+        info.constructor_prefix, info.constructor_suffix);
   } else {
     return std::nullopt;
   }
 }
 
 // List of constants defined on this type for a particular language.
-NodeRange<ParsedForeignConstant> ParsedForeignType::Constants(
-    Language lang_) const noexcept {
+NodeRange<ParsedForeignConstant>
+ParsedForeignType::Constants(Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);
   const auto &info = impl->info[lang];
   if (info.constants.empty()) {

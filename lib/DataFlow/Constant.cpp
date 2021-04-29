@@ -14,6 +14,16 @@ const char *Node<QueryConstant>::KindName(void) const noexcept {
   return "CONST";
 }
 
+Node<QueryTag>::~Node(void) {}
+
+Node<QueryTag> *Node<QueryTag>::AsTag(void) noexcept {
+  return this;
+}
+
+const char *Node<QueryTag>::KindName(void) const noexcept {
+  return "TAG";
+}
+
 // Convert all views having constant inputs to depend upon tuple nodes, so
 // that we have the invariant that the only type of view that can take all
 // constants is a tuple. This simplifies lots of stuff later.
@@ -37,14 +47,14 @@ void QueryImpl::ConvertConstantInputsToTuples(void) {
   }
 
   for (auto view : negations) {
-      const auto incoming_view = VIEW::GetIncomingView(view->input_columns,
-                                                       view->attached_columns);
-      if (incoming_view) {
-        continue;
-      }
-      ReplaceInputsWithTuple(this, view, &(view->input_columns),
-                             &(view->attached_columns));
+    const auto incoming_view =
+        VIEW::GetIncomingView(view->input_columns, view->attached_columns);
+    if (incoming_view) {
+      continue;
     }
+    ReplaceInputsWithTuple(this, view, &(view->input_columns),
+                           &(view->attached_columns));
+  }
 
   for (auto view : maps) {
     const auto incoming_view =

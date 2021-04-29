@@ -35,10 +35,9 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
-  static constexpr unsigned kOrderShift = 0u;
-  static constexpr unsigned kConitnueJoinOrder = 0u;
-  static constexpr unsigned kContinueInductionOrder = 1u << 30; // (~0u) >> 2u;
-  static constexpr unsigned kFinalizeInductionOrder = 2u << 30; // (~0u) >> 1u;
+  static constexpr unsigned kContinueJoinOrder = 0u;
+  static constexpr unsigned kContinueInductionOrder = 1u << 30;  // (~0u) >> 2u;
+  static constexpr unsigned kFinalizeInductionOrder = 2u << 30;  // (~0u) >> 1u;
 
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
@@ -50,13 +49,24 @@ class WorkItem {
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
 
+class ContinueInductionWorkItem;
+class ContinueJoinWorkItem;
+class ContinueProductWorkItem;
+
 // General wrapper around data used when lifting from the data flow to the
 // control flow representation.
 class Context {
  public:
+  PROC *init_proc{nullptr};
+  PROC *entry_proc{nullptr};
+
+  // Maps views to the functions that check if their conditions are satisfied
+  // or not.
+  std::unordered_map<QueryView, PROC *> cond_checker_procs;
+
   // Maps negations to the checker procedure that tries to figure out if the
   // negated view has some data or not.
-//  std::unordered_map<QueryView, PROC *> negation_checker_procs;
+  //  std::unordered_map<QueryView, PROC *> negation_checker_procs;
 
   // Vectors that are associated with differential messages that we will
   // publish. We unique the contents of these at the end of the data flow
@@ -64,63 +74,38 @@ class Context {
   std::unordered_map<ParsedMessage, VECTOR *> publish_vecs;
   std::unordered_map<ParsedMessage, QueryView> published_view;
 
-  // Mapping of `QueryMerge` instances to their equivalence classes.
-  std::unordered_map<QueryView, InductionSet> merge_sets;
-
-  // Merges in this set are inductive, but behave more like non-inductive
-  // merges because all paths leading out of these views go through a single
-  // other merge in their inductive set.
-  //
-  // Dominance idea: UNON1 and maybe UNION3 are inductive, and UNION2 appears
-  // inductive but only by virtue of its placement between two other inductive
-  // unions. The uniqueness of stuff coming out of UNION2 can be enforced via
-  // UNION1, thus UNION1 dominates UNION2.
-  //
-  //         ----UNION1----.
-  //               |       |
-  //              ...      |
-  //               |       |
-  //             UNION2    |
-  //            /     \    |
-  //           ..     ..   |
-  //            \     /    |
-  //            UNION3     |
-  //         ----' '-------'
-  std::unordered_set<QueryView> dominated_merges;
-
-  // Set of successors of a `QueryMerge` that may lead back to the merge
-  // (inductive) and never lead back to the merge (noninductive), respectively.
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      inductive_successors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      noninductive_successors;
-
-  // Set of predecessors of a `QueryMerge` whose data transitively depends upon
-  // an inductive
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      inductive_predecessors;
-  std::unordered_map<QueryView, std::unordered_set<QueryView>>
-      noninductive_predecessors;
-
-  // Set of regions that execute eagerly. In practice this means that these
-  // regions are directly needed in order to produce an output message.
-  std::unordered_set<QueryView> eager;
-
   // Map `QueryMerge`s to INDUCTIONs. One or more `QueryMerge`s might map to
   // the same INDUCTION if they belong to the same "inductive set". This happens
   // when two or more `QueryMerge`s are cyclic, and their cycles intersect.
-  std::map<std::pair<PROC *, uint64_t>, INDUCTION *> view_to_induction;
-
-  // Maps tables to their product input vectors.
-  std::map<std::pair<PROC *, TABLE *>, VECTOR *> product_vector;
+  std::unordered_map<QueryView, INDUCTION *> view_to_induction;
 
   //  // Boolean variable to test if we've ever produced anything for this product,
   //  // and thus should push data through.
   //  std::unordered_map<QueryView, VAR *> product_guard_var;
 
+  // The current "pending" induction. Consider the following:
+  //
+  //        UNION0        UNION1
+  //           \            /
+  //            '-- JOIN --'
+  //                  |
+  //
+  // In this case, we don't want UNION0 to be nest inside UNION1 or vice
+  // versa, they should both "activate" at the same time. The work list
+  // operates in such a way that we exhaust all JOINs before any UNIONs, so in
+  // this process, we want to discover the frontiers to as many inductive UNIONs
+  // as possible, so that they can all share the same INDUCTION.
+  std::unordered_map<unsigned, ContinueInductionWorkItem *>
+      pending_induction_action;
+
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
-  std::map<std::pair<PROC *, uint64_t>, WorkItem *> view_to_work_item;
+
+  std::unordered_map<QueryView, ContinueJoinWorkItem *> view_to_join_action;
+  std::unordered_map<QueryView, ContinueProductWorkItem *>
+      view_to_product_action;
+  std::unordered_map<QueryView, ContinueInductionWorkItem *>
+      view_to_induction_action;
 
   // Maps views to procedures for top-down execution. The top-down executors
   // exist to determine if a tuple is actually PRESENT (returning false if so),
@@ -153,6 +138,9 @@ class Context {
 OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseNothing(ProgramImpl *impl, REGION *parent);
+
+bool NeedsInductionCycleVector(QueryView view);
+bool NeedsInductionOutputVector(QueryView view);
 
 template <typename Cols, typename IfPresent, typename IfAbsent,
           typename IfUnknown>
@@ -267,15 +255,18 @@ BuildBottomUpTryMarkUnknown(ProgramImpl *impl, TABLE *table, REGION *parent,
 // NOTE(pag): This mutates `available_cols` in place, so that by the time that
 //            `cb` is called, `available_cols` contains all columns.
 template <typename ForEachTuple>
-static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
-                                     std::vector<QueryColumn> &view_cols,
-                                     TABLE *table, REGION *parent,
-                                     ForEachTuple cb) {
+static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
+                                  std::vector<QueryColumn> &view_cols,
+                                  TABLE *table, SERIES *seq, ForEachTuple cb) {
 
   // Sort and unique out the relevant columns.
-  std::sort(
-      view_cols.begin(), view_cols.end(),
-      [](QueryColumn a, QueryColumn b) { return *(a.Index()) < *(b.Index()); });
+  std::sort(view_cols.begin(), view_cols.end(),
+            [](QueryColumn a, QueryColumn b) {
+              assert(!a.IsConstant());
+              assert(!b.IsConstant());
+              assert(QueryView::Containing(a) == QueryView::Containing(b));
+              return *(a.Index()) < *(b.Index());
+            });
 
   auto it = std::unique(view_cols.begin(), view_cols.end());
   view_cols.erase(it, view_cols.end());
@@ -284,11 +275,12 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   // then we can just use `cb`, which assumes the availability of all columns.
   const auto num_cols = view.Columns().size();
   if (view_cols.size() == num_cols) {
-    const auto ret = cb(parent, false);
+    const auto ret = cb(seq, false);
     if (ret) {
-      assert(ret->parent == parent);
+      assert(ret->parent == seq);
+      seq->AddRegion(ret);
     }
-    return ret;
+    return false;
   }
 
   std::vector<unsigned> in_col_indices;
@@ -309,8 +301,10 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
 
   assert(0u < selected_cols.size());
 
-  const auto index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
-  const auto seq = impl->series_regions.Create(parent);
+  TABLEINDEX *index = nullptr;
+  if (!in_col_indices.empty()) {
+    index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
+  }
   const auto proc = seq->containing_procedure;
   const auto vec = proc->vectors.Create(impl->next_id++, VectorKind::kTableScan,
                                         selected_cols);
@@ -320,16 +314,19 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
   seq->AddRegion(scan);
   scan->table.Emplace(scan, table);
-  scan->index.Emplace(scan, index);
+  if (index) {
+    scan->index.Emplace(scan, index);
+  }
   scan->output_vector.Emplace(scan, vec);
 
   for (auto view_col : view_cols) {
-    const auto in_var = parent->VariableFor(impl, view_col);
+    const auto in_var = seq->VariableFor(impl, view_col);
     scan->in_vars.AddUse(in_var);
   }
 
   for (auto table_col : table->columns) {
     if (indexed_cols[table_col->index]) {
+      assert(index != nullptr);
       scan->in_cols.AddUse(table_col);
 
     } else {
@@ -367,8 +364,7 @@ static REGION *BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   assert(!loop->body);
   assert(in_loop->parent == loop);
   loop->body.Emplace(loop, in_loop);
-
-  return seq;
+  return true;
 }
 
 
@@ -390,10 +386,10 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on an induction. This applies to inductions as
 // well as differential unions.
-void BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMerge view,
-                                  std::vector<QueryColumn> &available_cols,
-                                  TABLE *already_checked);
+REGION *BuildTopDownInductionChecker(ProgramImpl *impl, Context &context,
+                                     REGION *proc, QueryMerge view,
+                                     std::vector<QueryColumn> &available_cols,
+                                     TABLE *already_checked);
 
 // Build an eager region for a `QueryMerge` that is NOT part of an inductive
 // loop, and thus passes on its data to the next thing down as long as that
@@ -404,16 +400,16 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
-void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                              QueryMerge view,
-                              std::vector<QueryColumn> &available_cols,
-                              TABLE *already_checked);
+REGION *BuildTopDownUnionChecker(ProgramImpl *impl, Context &context,
+                                 REGION *parent, QueryMerge view,
+                                 std::vector<QueryColumn> &available_cols,
+                                 TABLE *already_checked);
 
 // Build a top-down checker on a join.
-void BuildTopDownJoinChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                             QueryJoin view,
-                             std::vector<QueryColumn> &available_cols,
-                             TABLE *already_checked);
+REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
+                                REGION *parent, QueryJoin view,
+                                std::vector<QueryColumn> &available_cols,
+                                TABLE *already_checked);
 
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
@@ -423,7 +419,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
 // Build an eager region for testing the absence of some data in another view.
 void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
-                            QueryNegate negate, Context &context, OP *parent);
+                            QueryNegate negate, Context &context, OP *parent_,
+                            TABLE *last_table_);
 
 // Build an eager region for a join.
 void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
@@ -440,8 +437,9 @@ void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare view,
                               Context &context, OP *parent);
 
 // Build an eager region for a `QueryMap`.
-void BuildEagerGenerateRegion(ProgramImpl *impl, QueryMap view,
-                              Context &context, OP *parent);
+void BuildEagerGenerateRegion(ProgramImpl *impl, QueryView pred_view,
+                              QueryMap view, Context &context, OP *parent,
+                              TABLE *last_model);
 
 // Build an eager region for tuple. If the tuple can receive differential
 // updates then its data needs to be saved.
@@ -452,55 +450,45 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
 // recovering "lost" columns, and possibly re-orders arguments before calling
 // down to the tuple's predecessor's checker.
-void BuildTopDownTupleChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                              QueryTuple tuple,
-                              std::vector<QueryColumn> &available_cols,
-                              TABLE *already_checked);
-
-// Build a top-down checker on a negation.
-void BuildTopDownNegationChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                                 QueryNegate negate,
+REGION *BuildTopDownTupleChecker(ProgramImpl *impl, Context &context,
+                                 REGION *proc, QueryTuple tuple,
                                  std::vector<QueryColumn> &available_cols,
                                  TABLE *already_checked);
 
-// Build a top-down checker for a relational insert.
-//
-// NOTE(pag): `available_cols` is always some subset of the input columns read
-//            by the insert.
-void BuildTopDownInsertChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                               QueryInsert insert,
-                               std::vector<QueryColumn> &available_cols,
-                               TABLE *already_checked);
+// Build a top-down checker on a negation.
+REGION *BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
+                                    REGION *proc, QueryNegate negate,
+                                    std::vector<QueryColumn> &available_cols,
+                                    TABLE *already_checked);
 
 // Build a top-down checker on a select.
-void BuildTopDownSelectChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                               QuerySelect select,
-                               std::vector<QueryColumn> &available_cols,
-                               TABLE *already_checked);
+REGION *BuildTopDownSelectChecker(ProgramImpl *impl, Context &context,
+                                  REGION *proc, QuerySelect select,
+                                  std::vector<QueryColumn> &available_cols,
+                                  TABLE *already_checked);
 
 // Build a top-down checker on a compare.
-void BuildTopDownCompareChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                                QueryCompare cmp,
-                                std::vector<QueryColumn> &available_cols,
-                                TABLE *already_checked);
+REGION *BuildTopDownCompareChecker(ProgramImpl *impl, Context &context,
+                                   REGION *proc, QueryCompare cmp,
+                                   std::vector<QueryColumn> &available_cols,
+                                   TABLE *already_checked);
 
 // Build a top-down checker on a map / generator.
-void BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
-                                  PROC *proc, QueryMap gen,
-                                  std::vector<QueryColumn> &view_cols,
-                                  TABLE *already_checked);
+REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
+                                     REGION *proc, QueryMap gen,
+                                     std::vector<QueryColumn> &view_cols,
+                                     TABLE *already_checked);
 
 // Builds an initialization function which does any work that depends purely
 // on constants.
-void BuildInitProcedure(ProgramImpl *impl, Context &context);
+void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query);
 
 // Build the primary and entry data flow procedures.
-void BuildEagerProcedure(ProgramImpl *impl, Context &context,
-                         Query query);
+void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query);
 
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,
-                       bool add_return=true);
+                       bool add_return = true);
 
 // Returns `true` if all paths through `region` ends with a `return` region.
 inline bool EndsWithReturn(REGION *region) {
@@ -514,17 +502,72 @@ inline bool EndsWithReturn(REGION *region) {
 // Returns a global reference count variable associated with a query condition.
 VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 
+// Expand the set of available columns.
+void ExpandAvailableColumns(
+    QueryView view, std::unordered_map<unsigned, QueryColumn> &wanted_to_avail);
+
+// Filter out only the available columns that are part of the view we care
+// about.
+std::vector<std::pair<QueryColumn, QueryColumn>> FilterAvailableColumns(
+    QueryView view,
+    const std::unordered_map<unsigned, QueryColumn> &wanted_to_avail);
+
+// Computes the actual set of available columns.
+template <typename Cols>
+static std::vector<std::pair<QueryColumn, QueryColumn>>
+ComputeAvailableColumns(QueryView view, Cols &&available_cols) {
+
+  std::unordered_map<unsigned, QueryColumn> wanted_to_avail;
+
+  for (QueryColumn param_col : available_cols) {
+    if (QueryView::Containing(param_col) == view) {
+      wanted_to_avail.emplace(param_col.Id(), param_col);
+    } else {
+      assert(false);
+    }
+  }
+
+  ExpandAvailableColumns(view, wanted_to_avail);
+  return FilterAvailableColumns(view, wanted_to_avail);
+}
+
 // Gets or creates a top down checker function.
 PROC *GetOrCreateTopDownChecker(
     ProgramImpl *impl, Context &context, QueryView view,
-    const std::vector<QueryColumn> &available_cols, TABLE *already_checked);
+    const std::vector<std::pair<QueryColumn, QueryColumn>> &wanted_to_avail,
+    TABLE *already_checked);
 
 // We want to call the checker for `view`, but we only have the columns
 // `succ_cols` available for use.
-std::pair<OP *, CALL *> CallTopDownChecker(
-    ProgramImpl *impl, Context &context, REGION *parent, QueryView succ_view,
-    const std::vector<QueryColumn> &succ_cols,
-    QueryView view, TABLE *already_checked = nullptr);
+std::pair<OP *, CALL *>
+CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
+                   QueryView succ_view,
+                   const std::vector<QueryColumn> &succ_cols, QueryView view,
+                   TABLE *already_checked = nullptr);
+
+// Call the predecessor view's checker function, and if it succeeds, return
+// `true`. If we have a persistent table then update the tuple's state in that
+// table.
+template <typename CB1, typename CB2>
+OP *CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
+                       QueryView view,
+                       const std::vector<QueryColumn> &view_cols,
+                       QueryView pred_view, TABLE *already_checked, CB1 if_true,
+                       CB2 if_false) {
+
+  const auto [check, check_call] = CallTopDownChecker(
+      impl, context, parent, view, view_cols, pred_view, already_checked);
+
+  if (REGION *body_if_true = if_true(check_call); body_if_true) {
+    check_call->body.Emplace(check_call, body_if_true);
+  }
+
+  if (REGION *body_if_false = if_false(check_call); body_if_false) {
+    check_call->false_body.Emplace(check_call, body_if_false);
+  }
+
+  return check;
+}
 
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
@@ -535,10 +578,26 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     QueryView pred_view, TABLE *already_checked = nullptr);
 
 // Possibly add a check to into `parent` to transition the tuple with the table
+// associated with `view` to be in an present state. Returns the table of `view`
+// and the updated `already_removed`.
+//
+// NOTE(pag): If the table associated with `view` is also associated with an
+//            induction, then we defer insertion until we get into that
+//            induction.
+std::tuple<OP *, TABLE *, TABLE *>
+InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
+            TABLE *already_added);
+
+// Possibly add a check to into `parent` to transition the tuple with the table
 // associated with `view` to be in an unknown state. Returns the table of `view`
 // and the updated `already_removed`.
-std::tuple<OP *, TABLE *, TABLE *> InTryMarkUnknown(
-    ProgramImpl *impl, QueryView view, OP *parent, TABLE *already_removed);
+//
+// NOTE(pag): If the table associated with `view` is also associated with an
+//            induction, then we defer removal until we get into that
+//            induction.
+std::tuple<OP *, TABLE *, TABLE *>
+InTryMarkUnknown(ProgramImpl *impl, Context &context, QueryView view,
+                 OP *parent, TABLE *already_removed);
 
 // Build a bottom-up tuple remover, which marks tuples as being in the
 // UNKNOWN state (for later top-down checking).
@@ -585,257 +644,52 @@ bool MayNeedToBePersisted(QueryView view);
 // sake of supporting differential updates / verification.
 bool MayNeedToBePersistedDifferential(QueryView view);
 
-// Decides whether or not `view` can depend on `pred_view` for persistence
-// of its data.
-bool CanDeferPersistingToPredecessor(ProgramImpl *impl, Context &context,
-                                     QueryView view, QueryView pred_view);
-
-// Build a check for inserting into a view.
-template <typename Columns>
-OP *BuildInsertCheck(ProgramImpl *impl, QueryView view, Context &context,
-                     OP *parent, TABLE *table, bool differential,
-                     Columns &&columns) {
-
-//  // If we can receive deletions, then we need to call a functor that will
-//  // tell us if this tuple doesn't actually exist.
-//  if (differential) {
-//    const auto [check, check_call] = CallTopDownChecker(
-//        impl, context, parent, view, view);
-//    COMMENT( check_call->comment = __FILE__ ": BuildInsertCheck"; )
-//    parent->body.Emplace(parent, check);
-//    parent = check_call;
-//    parent_body_ref = &(check_call->false_body);
-//  }
-
-  // If we succeed at this transition, then the tuple was not previously
-  // present. This is the case regardless of if we're in a normal or
-  // differential context. This condition is what decides "should we add more".
-  const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
-      parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
-  insert->table.Emplace(insert, table);
-
-  for (auto col : columns) {
-    const auto var = parent->VariableFor(impl, col);
-    insert->col_values.AddUse(var);
-  }
-
-  parent->body.Emplace(parent, insert);
-
-  return insert;
-//  // In a differential case, we want to go and actually "tell" the predecessors
-//  // about this, and make sure the thing was found.
-//  if (differential) {
-//
-//    std::vector<QueryColumn> view_cols;
-//    for (auto succ_view_col : view.Columns()) {
-//      view_cols.push_back(succ_view_col);
-//    }
-//
-//    // Nest our children within the `true` body of the finder function.
-//    const auto [check, call] = CallTopDownChecker(
-//        impl, context, insert, view, view_cols, view, table);
-//    insert->body.Emplace(insert, check);
-//    return call;
-//
-//  } else {
-//    return insert;
-//  }
-}
-
+// Build and dispatch to the bottom-up remover regions for `view`. The idea
+// is that we've just removed data from `view`, and now want to tell the
+// successors of this.
+void BuildEagerRemovalRegionsImpl(ProgramImpl *impl, QueryView view,
+                                  Context &context, OP *parent_,
+                                  const std::vector<QueryView> &successors,
+                                  TABLE *already_removed_);
 
 // Build and dispatch to the bottom-up remover regions for `view`. The idea
 // is that we've just removed data from `view`, and now want to tell the
 // successors of this.
 template <typename List>
-void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
-                              Context &context, OP *parent_, List &&successors,
-                              TABLE *already_removed_) {
+static void BuildEagerRemovalRegions(ProgramImpl *impl, QueryView view,
+                                     Context &context, OP *parent,
+                                     List &&successors_,
+                                     TABLE *already_removed) {
 
-  // The caller didn't already do a state transition, so we can do it. We might
-  // have a situation like this:
-  //
-  //               JOIN
-  //              /    \         .
-  //        TUPLE1      TUPLE2
-  //              \    /
-  //              TUPLE3
-  //
-  // Where TUPLE1 and TUPLE2 take their data from the TUPLE3, then feed into
-  // the JOIN. In this case, the JOIN requires that TUPLE1 and TUPLE2 be
-  // persisted. If they use all of the columns of TUPLE3, then TUPLE1 and TUPLE2
-  // will share the same model as TUPLE3. When we remove from TUPLE3, we don't
-  // want to do separate `TryMarkUnknown` steps for each of TUPLE1 and TUPLE2
-  // because otherwise whichever executed first would prevent the other from
-  // actually doing the marking.
-  auto [parent, table, already_removed] = InTryMarkUnknown(
-      impl, view, parent_, already_removed_);
-
-  // All successors execute in parallel.
-  const auto par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (auto succ_view : successors) {
-
-    // New style: use iterative method for removal.
-    if (IRFormat::kIterative == impl->format) {
-      const auto let = impl->operation_regions.CreateDerived<LET>(par);
-      par->AddRegion(let);
-
-      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
-                              already_removed);
-
-    // Old style: Use recursive push method for removal. This creates lots of
-    // tuple remover procedures.
-    } else {
-      const auto remover_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, already_removed);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, remover_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = parent->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = remover_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
+  std::vector<QueryView> successors;
+  for (auto succ_view : successors_) {
+    successors.push_back(succ_view);
   }
+
+  BuildEagerRemovalRegionsImpl(impl, view, context, parent, successors,
+                               already_removed);
 }
 
 // Add in all of the successors of a view inside of `parent`, which is
 // usually some kind of loop. The successors execute in parallel.
+void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
+                                    Context &context, OP *parent_,
+                                    const std::vector<QueryView> &successors,
+                                    TABLE *last_table_);
+
+// Add in all of the successors of a view inside of `parent`, which is
+// usually some kind of loop. The successors execute in parallel.
 template <typename List>
-void BuildEagerInsertionRegions(ProgramImpl *impl, QueryView view,
-                                Context &context, OP *parent, List &&successors,
-                                TABLE *last_table) {
-  for (auto col : view.Columns()) {
-    (void) parent->VariableFor(impl, col);
+static void BuildEagerInsertionRegions(ProgramImpl *impl, QueryView view,
+                                       Context &context, OP *parent_,
+                                       List &&successors_, TABLE *last_table) {
+  std::vector<QueryView> successors;
+  for (auto succ_view : successors_) {
+    successors.push_back(succ_view);
   }
 
-  DataModel * const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
-
-  if (table) {
-    if (last_table != table) {
-
-      // NOTE(pag): Negations "pre-insert" their data into their tables, so
-      //            we don't want to double-insert here. Similar happens for
-      //            maps.
-      assert(!view.IsNegate());
-      assert(!view.IsMap());
-
-      const auto insert = impl->operation_regions.CreateDerived<CHANGESTATE>(
-          parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
-
-      COMMENT( insert->comment = __FILE__ ": BuildEagerInsertionRegions"; )
-
-      for (auto col : view.Columns()) {
-        const auto var = parent->VariableFor(impl, col);
-        insert->col_values.AddUse(var);
-      }
-
-      insert->table.Emplace(insert, table);
-      parent->body.Emplace(parent, insert);
-      parent = insert;
-      last_table = table;
-    }
-  } else {
-    last_table = nullptr;
-  }
-
-  // NOTE(pag): At this point, we know that if `view`s data needed to be
-  //            persisted then it has been. If `view` tests any conditions, then
-  //            we evaluate those *after* persisting its data, so that if the
-  //            state of the conditions changes, then we can send through the
-  //            data that wasn't sent through (if the condition wasn't
-  //            previously satisfied), or delete the data that no longer
-  //            satisfies the condition.
-
-  const auto pos_conds = view.PositiveConditions();
-  const auto neg_conds = view.NegativeConditions();
-
-  // Innermost test for negative conditions.
-  if (!neg_conds.empty()) {
-    assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-        parent, ComparisonOperator::kEqual);
-
-    for (auto cond : neg_conds) {
-      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-      test->rhs_vars.AddUse(impl->zero);
-    }
-
-    parent->body.Emplace(parent, test);
-    parent = test;
-    last_table = nullptr;
-  }
-
-  // Outermost test for positive conditions.
-  if (!pos_conds.empty()) {
-    assert(table != nullptr);
-    const auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-        parent, ComparisonOperator::kNotEqual);
-
-    for (auto cond : pos_conds) {
-      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-      test->rhs_vars.AddUse(impl->zero);
-    }
-
-    parent->body.Emplace(parent, test);
-    parent = test;
-    last_table = nullptr;
-  }
-
-  // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
-  if (auto set_cond = view.SetCondition(); set_cond) {
-    assert(table != nullptr);
-
-    const auto seq = impl->series_regions.Create(parent);
-    parent->body.Emplace(parent, seq);
-
-    // Now that we know that the data has been dealt with, we increment the
-    // condition variable.
-    const auto set = impl->operation_regions.CreateDerived<ASSERT>(
-        seq, ProgramOperation::kTestAndAdd);
-    set->accumulator.Emplace(set, ConditionVariable(impl, *set_cond));
-    set->displacement.Emplace(set, impl->one);
-    set->comparator.Emplace(set, impl->one);
-    set->ExecuteAfter(impl, seq);
-
-    // Call the initialization procedure. The initialization procedure is
-    // responsible for initializing data flow from constant tuples that
-    // may be condition-variable dependent.
-    const auto call = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, set, impl->procedure_regions[0]);
-    set->body.Emplace(set, call);
-
-    // Create a dummy/empty LET binding so that we have an `OP *` as a parent
-    // going forward.
-    parent = impl->operation_regions.CreateDerived<LET>(seq);
-    parent->ExecuteAfter(impl, seq);
-  }
-
-  // All successors execute in a PARALLEL region, even if there are zero or
-  // one successors. Empty and trivial PARALLEL regions are optimized out later.
-  //
-  // A key benefit of PARALLEL regions is that within them, CSE can be performed
-  // to identify and eliminate repeated branches.
-  PARALLEL *par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-
-  for (QueryView succ_view : successors) {
-    const auto let = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(let);
-    BuildEagerRegion(impl, view, succ_view, context, let, last_table);
-  }
+  BuildEagerInsertionRegionsImpl(impl, view, context, parent_, successors,
+                                 last_table);
 }
 
 }  // namespace hyde

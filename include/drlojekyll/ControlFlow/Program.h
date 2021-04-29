@@ -78,11 +78,11 @@ class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTableScanRegion;
 class ProgramTupleCompareRegion;
+class ProgramWorkerIdRegion;
 
 // A generic region of code nested inside of a procedure.
 class ProgramRegion : public program::ProgramNode<ProgramRegion> {
  public:
-
   // Return the region containing `child`, or `std::nullopt` if this is the
   // topmost region in a procedure.
   static std::optional<ProgramRegion> Containing(ProgramRegion &child) noexcept;
@@ -107,6 +107,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramTableProductRegion &);
   ProgramRegion(const ProgramTableScanRegion &);
   ProgramRegion(const ProgramTupleCompareRegion &);
+  ProgramRegion(const ProgramWorkerIdRegion &);
 
   void Accept(ProgramVisitor &visitor) const;
 
@@ -130,6 +131,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsParallel(void) const noexcept;
   bool IsPublish(void) const noexcept;
   bool IsTupleCompare(void) const noexcept;
+  bool IsWorkerId(void) const noexcept;
 
   std::string_view Comment(void) const noexcept;
 
@@ -155,6 +157,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramTableProductRegion;
   friend class ProgramTableScanRegion;
   friend class ProgramTupleCompareRegion;
+  friend class ProgramWorkerIdRegion;
 
   using program::ProgramNode<ProgramRegion>::ProgramNode;
 };
@@ -190,7 +193,9 @@ class ProgramParallelRegion
 
 enum class VariableRole : int {
   kConditionRefCount,
+  kInitGuard,
   kConstant,
+  kConstantTag,
   kConstantZero,
   kConstantOne,
   kConstantFalse,
@@ -204,7 +209,7 @@ enum class VariableRole : int {
   kFunctorOutput,
   kMessageOutput,
   kParameter,
-  kInputOutputParameter,
+  kWorkerId
 };
 
 // A variable in the program.
@@ -223,7 +228,7 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   Token Name(void) const noexcept;
 
   // The literal, constant value of this variable.
-  std::optional<ParsedLiteral> Value(void) const noexcept;
+  std::optional<QueryConstant> Value(void) const noexcept;
 
   // Type of this variable.
   TypeLoc Type(void) const noexcept;
@@ -240,11 +245,15 @@ class DataVariable : public program::ProgramNode<DataVariable> {
 
 enum class VectorKind : unsigned {
   kParameter,
-  kInputOutputParameter,
-  kInductionCycles,
+  kInductionInputs,
+  kInductionSwaps,
   kInductionOutputs,
   kJoinPivots,
+  kInductiveJoinPivots,
+  kInductiveJoinPivotSwaps,
   kProductInput,
+  kInductiveProductInput,
+  kInductiveProductSwaps,
   kTableScan,
 
   // Vector that collects outputs for messages marked with `@differential`.
@@ -329,8 +338,10 @@ class DataVector : public program::ProgramNode<DataVector> {
 
   unsigned Id(void) const noexcept;
 
-  bool IsInputVector(void) const noexcept;
+  // Do we need to shard this vector across workers?
+  bool IsSharded(void) const noexcept;
 
+  // Types of the variables/columns stored in this vector.
   const std::vector<TypeKind> ColumnTypes(void) const noexcept;
 
   // Visit the users of this vector.
@@ -471,6 +482,9 @@ class ProgramVectorLoopRegion
   // Variables extracted from the vector during each iteration of the loop
   DefinedNodeRange<DataVariable> TupleVariables(void) const;
 
+  // Optional worker ID variable.
+  std::optional<DataVariable> WorkerId(void) const;
+
  private:
   friend class ProgramRegion;
 
@@ -487,6 +501,9 @@ class ProgramVectorAppendRegion
   DataVector Vector(void) const noexcept;
   UsedNodeRange<DataVariable> TupleVariables(void) const;
 
+  // Optional worker ID variable.
+  std::optional<DataVariable> WorkerId(void) const;
+
  private:
   friend class ProgramRegion;
 
@@ -499,6 +516,8 @@ class ProgramVectorAppendRegion
     static name From(ProgramRegion) noexcept; \
     VectorUsage Usage(void) const noexcept; \
     DataVector Vector(void) const noexcept; \
+    std::optional<DataVariable> WorkerId(void) const; \
+\
    private: \
     friend class ProgramRegion; \
     using program::ProgramNode<name>::ProgramNode; \
@@ -544,8 +563,11 @@ class ProgramTransitionStateRegion
  public:
   static ProgramTransitionStateRegion From(ProgramRegion) noexcept;
 
-  // The body that conditionally executes if the insert succeeds.
-  std::optional<ProgramRegion> Body(void) const noexcept;
+  // The body that conditionally executes if the state transition succeeds.
+  std::optional<ProgramRegion> BodyIfSucceeded(void) const noexcept;
+
+  // The body that conditionally executes if the state transition fails.
+  std::optional<ProgramRegion> BodyIfFailed(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
 
@@ -728,7 +750,9 @@ class ProgramTableScanRegion
 //        to kick off the inductive cycle.
 //    2)  The cyclic region, which iterates, appending on newly proven tuples
 //        to one or more vectors. Iteration continues until a fixpoint is
-//        reached.
+//        reached. The cyclic region is always entered at least once, and the
+//        condition on the back edge of the loop is that the induction vectors
+//        are non-empty.
 //    2)  The output region, which iterates over all tuples amassed during the
 //        initialization and cyclic regions, and operates on those tuples to
 //        push to the next region of the data flow.
@@ -736,6 +760,9 @@ class ProgramInductionRegion
     : public program::ProgramNode<ProgramInductionRegion> {
  public:
   static ProgramInductionRegion From(ProgramRegion) noexcept;
+
+  // Unique ID for this induction group/region.
+  unsigned Id(void) const;
 
   // Set of induction vectors that are filled with initial data in the
   // `Initializer()` region, then accumulate more data during the
@@ -768,7 +795,10 @@ class ProgramTupleCompareRegion
   UsedNodeRange<DataVariable> RHS(void) const;
 
   // Code conditionally executed if the comparison is true.
-  std::optional<ProgramRegion> Body(void) const noexcept;
+  std::optional<ProgramRegion> BodyIfTrue(void) const noexcept;
+
+  // Code conditionally executed if the comparison is false.
+  std::optional<ProgramRegion> BodyIfFalse(void) const noexcept;
 
  private:
   friend class ProgramRegion;
@@ -826,11 +856,9 @@ enum class ProcedureKind : unsigned {
   // tuples as being in an unknown state.
   kTupleRemover,
 
-  // Handles the cycle of an induction.
-  kInductionCycleHandler,
-
-  // Handles the outputs of an induction.
-  kInductionOutputHandler
+  // Tests condition variables, returning `true` or `false` if the conditions
+  // are all satisfied or if at least one fails, respectively.
+  kConditionTester,
 };
 
 // A procedure in the program. All procedures return either `true` or `false`.
@@ -911,6 +939,28 @@ class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
   using program::ProgramNode<ProgramReturnRegion>::ProgramNode;
 };
 
+// Computes a worker ID from a set of variables.
+class ProgramWorkerIdRegion
+    : public program::ProgramNode<ProgramWorkerIdRegion> {
+ public:
+  static ProgramWorkerIdRegion From(ProgramRegion) noexcept;
+
+  // Body, executed in a context where the worker ID has been computed.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+  // List of variables that will be mixed and hashed together to compute
+  // the worker id.
+  UsedNodeRange<DataVariable> HashedVariables(void) const;
+
+  // Computed output that is a worker ID. These are 16 bit integers.
+  DataVariable WorkerId(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using program::ProgramNode<ProgramWorkerIdRegion>::ProgramNode;
+};
+
 // Specifies a relationship between a `#query` declaration, backing storage and
 // various procedures needed to fill or check that storage. This information is
 // sufficient for code generators to implement a notion of queries without
@@ -937,8 +987,7 @@ class ProgramQuery {
   std::optional<ProgramProcedure> forcing_function;
 
   inline explicit ProgramQuery(
-      ParsedQuery query_, DataTable table_,
-      std::optional<DataIndex> index_,
+      ParsedQuery query_, DataTable table_, std::optional<DataIndex> index_,
       std::optional<ProgramProcedure> tuple_checker_,
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),
@@ -966,9 +1015,7 @@ enum IRFormat {
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query,
-                                      IRFormat format_,
-                                      const ErrorLog &log);
+  static std::optional<Program> Build(const Query &query, IRFormat format_);
 
   // The format of the code in this program.
   IRFormat Format(void) const;
@@ -1040,6 +1087,7 @@ class ProgramVisitor {
   virtual void Visit(ProgramTableProductRegion val);
   virtual void Visit(ProgramTableScanRegion val);
   virtual void Visit(ProgramTupleCompareRegion val);
+  virtual void Visit(ProgramWorkerIdRegion val);
 };
 
 }  // namespace hyde

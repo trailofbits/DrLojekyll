@@ -4,8 +4,7 @@
 # Dr. Lojekyll
 
 Dr. Lojekyll, pronounced Dr. Logical, is a Datalog compiler and execution
-engine. It is designed around a publish/subscribe model, as well as Dr. Stefan
-Brass's "push method" of pipelined bottom-up Datalog execution. It operates
+engine. It is designed around a publish/subscribe model and operates
 somewhere between full materialization and vectorized execution with respect
 to operating on tuples.
 

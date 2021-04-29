@@ -207,8 +207,7 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
         continue;
       }
 
-      case 8:
-        continue; // absorb excess tokens
+      case 8: continue;  // absorb excess tokens
     }
   }
 

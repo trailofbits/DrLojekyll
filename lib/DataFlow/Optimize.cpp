@@ -109,7 +109,7 @@ static void FillViews(T &def_list, CandidateList &views_out) {
     }
   }
   std::sort(views_out.begin(), views_out.end(),
-            [] (VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
+            [](VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
 }
 
 }  // namespace
@@ -200,8 +200,7 @@ bool QueryImpl::RemoveUnusedViews(void) {
   std::vector<VIEW *> views;
 
   conditions.RemoveIf([](COND *cond) {
-    return cond->positive_users.Empty() &&
-           cond->negative_users.Empty();
+    return cond->positive_users.Empty() && cond->negative_users.Empty();
   });
 
   ForEachViewInReverseDepthOrder([&](VIEW *view) { views.push_back(view); });
@@ -450,29 +449,45 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
 
-    for (auto max_cse = views.size(); max_cse-- && CSE(views); ) {
+    for (auto max_cse = views.size(); max_cse-- && CSE(views);) {
       RemoveUnusedViews();
       RelabelGroupIDs();
+      TrackDifferentialUpdates(log, true);
       views.clear();
       const_cast<const QueryImpl *>(this)->ForEachView(
           [&views](VIEW *view) { views.push_back(view); });
     }
   };
 
+  auto do_sink = [&](void) {
+    OptimizationContext opt;
+    opt.can_sink_unions = true;
+    for (auto i = 0u; i < merges.Size(); ++i) {
+      MERGE *const merge = merges[i];
+      if (!merge->is_dead) {
+        opt.can_sink_unions = true;
+        opt.can_remove_unused_columns = false;
+        merge->Canonicalize(this, opt, log);
+      }
+    }
+  };
+
+  do_sink();
   do_cse();  // Apply CSE to all views before most canonicalization.
 
   OptimizationContext opt;
-  opt.can_sink_unions = true;
   Canonicalize(opt, log);
 
+  do_sink();
   do_cse();  // Apply CSE to all canonical views.
+  do_sink();
 
   auto max_depth = 1u;
   for (auto view : this->inserts) {
     max_depth = std::max(view->Depth(), max_depth);
   }
 
-  for (auto changed = true; changed && max_depth--; ) {
+  for (auto changed = true; changed && max_depth--;) {
 
     // Now do a stronger form of canonicalization.
     opt.can_remove_unused_columns = true;
@@ -480,6 +495,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     opt.can_sink_unions = false;
     opt.bottom_up = false;
     Canonicalize(opt, log);
+    do_sink();
 
     if (ShrinkConditions()) {
       Canonicalize(opt, log);

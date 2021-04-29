@@ -31,7 +31,7 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
   const auto tok_range = tok.SpellingRange();
 
   // Strip out leading newlines, as well as trailing newlines and spaces.
-  auto fixup_code = [&code] (void) -> bool {
+  auto fixup_code = [&code](void) -> bool {
     while (!code.empty() && code.front() == '\n') {
       code = code.substr(1u);
     }

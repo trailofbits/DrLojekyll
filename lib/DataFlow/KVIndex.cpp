@@ -89,8 +89,9 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
 // Put the KV index into a canonical form. The only real internal optimization
 // that will happen is constant propagation of keys, but NOT values (as we can't
 // predict how the merge functors will affect them).
-bool Node<QueryKVIndex>::Canonicalize(
-    QueryImpl *query, const OptimizationContext &opt, const ErrorLog &) {
+bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
+                                      const OptimizationContext &opt,
+                                      const ErrorLog &) {
 
   if (is_dead || valid != VIEW::kValid) {
     is_canonical = true;
@@ -164,7 +165,7 @@ bool Node<QueryKVIndex>::Canonicalize(
 #endif
 
     for (auto col : columns) {
-      tuple->columns.Create(col->var, tuple, col->id);
+      (void) tuple->columns.Create(col->var, col->type, tuple, col->id);
     }
 
     auto j = 0u;
@@ -220,8 +221,8 @@ bool Node<QueryKVIndex>::Canonicalize(
       continue;  // Remove the column.
     }
 
-    const auto new_out_col =
-        new_output_columns.Create(out_col->var, this, out_col->id);
+    const auto new_out_col = new_output_columns.Create(
+        out_col->var, out_col->type, this, out_col->id);
     new_out_col->CopyConstantFrom(out_col);
     out_col->ReplaceAllUsesWith(new_out_col);
 
@@ -240,8 +241,8 @@ bool Node<QueryKVIndex>::Canonicalize(
   for (auto in_col : attached_columns) {
     (void) in_col;
     const auto old_out_col = columns[i++];
-    const auto new_out_col =
-        new_output_columns.Create(old_out_col->var, this, old_out_col->id);
+    const auto new_out_col = new_output_columns.Create(
+        old_out_col->var, old_out_col->type, this, old_out_col->id);
     assert(!old_out_col->IsConstantRef());
     old_out_col->ReplaceAllUsesWith(new_out_col);
   }

@@ -23,6 +23,7 @@ set(DataFlow_SRCS
     "Differential.cpp"
     "Format.cpp"
     "IO.cpp"
+    "Induction.cpp"
     "Insert.cpp"
     "Join.cpp"
     "KVIndex.cpp"

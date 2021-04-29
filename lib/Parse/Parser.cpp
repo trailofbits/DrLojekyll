@@ -2,51 +2,6 @@
 
 #include "Parser.h"
 
-// TODO(pag):
-//  - Add syntax like:
-//
-//        foo(A, B)
-//          : a(...),
-//            b(...)
-//          : c(...).
-//
-//    As a variant form of
-//
-//        foo(A, B)
-//          : a(...),
-//            b(...).
-//        foo(A, B)
-//          : c(...).
-//
-//  - Add an ordered choice operator :-. This would only be allowed for #local
-//    definitions, because otherwise you could define clauses in other modules
-//    and not guarantee an order.
-//        foo(A, B)
-//          :- x(Y, Y, Z),
-//             ....
-//
-//    Independent of cut, the semantics of ordered sequencing doesn't actually
-//    matter, and so really, it's all about ordering and the CUT operator.
-//    One possibility is that if one case is proven, then all others are somehow
-//    double checked. If any fail, the tuple is not sent forward. The mechanics
-//    of that double checking isn't super idea.
-//
-//        not_x(A) :- x(A), !, fail.
-//        not_x(A).
-//
-//    What might that look like as a data flow? On its own, perhaps nothing,
-//    but we could require, in the sips visior, that any variable appearing
-//    before a CUT is bound, and thus the usage with the argument A is bound.
-//
-//        foo(A) : bar(A), not_x(A).
-//
-//        [bar A] -+----------------------------------.
-//                 +-> [ANTI-JOIN (A,A)] -> not_x(A) --+--> [JOIN (A,A)] -->
-//          [x A] -'
-//
-//    Maybe an ANTI-JOIN is actually what is needed to support !x(A), and
-//    CUTs and ordered choice should be ignored!
-
 namespace hyde {
 
 // Lex all the tokens from a display. This fills up `tokens` with the tokens.
@@ -265,8 +220,7 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kInvalidUnterminatedCxxCode:
       case Lexeme::kInvalidUnterminatedPythonCode:
       case Lexeme::kInvalidPragma:
-      case Lexeme::kComment:
-        continue;
+      case Lexeme::kComment: continue;
 
       // Adjust for foreign types.
       case Lexeme::kIdentifierAtom:
@@ -279,7 +233,7 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
               context->foreign_constants[id]->type.Kind());
         }
       }
-      [[clang::fallthrough]];
+        [[clang::fallthrough]];
 
       // We pass these through so that we can report more meaningful
       // errors in locations relevant to specific parses.
@@ -351,8 +305,7 @@ bool ParserImpl::ReadStatement(void) {
           opening_parens.pop_back();
         }
         continue;
-      case Lexeme::kWhitespace:
-        continue;
+      case Lexeme::kWhitespace: continue;
       case Lexeme::kComment: continue;
       default: sub_tokens.push_back(tok); continue;
     }
@@ -741,20 +694,22 @@ void ParserImpl::ParseLocalExport(
         }
       case 8:
         if (Lexeme::kPragmaPerfInline == lexeme) {
+
+          // Found more than one @inline attributes
           if (local->inline_attribute.IsValid()) {
-            // Found more than one @inline attributes
             context->error_log.Append(scope_range, tok_range)
                 << "Unexpected second '@inline' pragma on " << introducer_tok
                 << " '" << local->name << "'";
             state = 10;  // Ignore further errors, but add the local in.
             continue;
 
+          // Found an @inline attribute.
           } else {
-            // Found an @inline attribute
             local->inline_attribute = tok;
             state = 8;
             continue;
           }
+
         } else if (Lexeme::kPuncPeriod == lexeme) {
           local->last_tok = tok;
           state = 9;
@@ -797,14 +752,13 @@ void ParserImpl::ParseLocalExport(
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '"
-            << local->name << "' " << introducer_tok;
+            << "Unexpected tokens following declaration of the '" << local->name
+            << "' " << introducer_tok;
         state = 10;  // Ignore further errors, but add the local in.
         continue;
       }
 
       case 10: continue;
-
     }
   }
 
@@ -862,27 +816,45 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
 #endif
 
   const auto id = interpreter.flat;
+  assert(!!id);
 
   DisplayRange directive_range;
+  Node<ParsedDeclaration> *decl = nullptr;
 
   // If it's a zero-arity clause head then it's treated by default as an
   // `#export`.
   if (clause->head_variables.empty()) {
-    if (!context->declarations.count(id)) {
+    if (auto decl_it = context->declarations.find(id);
+        decl_it != context->declarations.end()) {
+      decl = decl_it->second;
+      assert(decl->context->kind == DeclarationKind::kExport);
+
+    } else {
       auto export_decl =
           new Node<ParsedExport>(module, DeclarationKind::kExport);
       export_decl->name = clause->name;
+      if (!module->exports.empty()) {
+        module->exports.back()->next = export_decl;
+      }
       module->exports.emplace_back(export_decl);
       context->declarations.emplace(id, export_decl);
+      decl = export_decl;
     }
 
     directive_range = clause->name.SpellingRange();
 
+  // There is a forward declaration associated with this clause head; use it.
+  } else if (auto decl_it = context->declarations.find(id);
+             decl_it != context->declarations.end()) {
+    decl = decl_it->second;
+    directive_range =
+        DisplayRange(decl->directive_pos, decl->rparen.NextPosition());
+
   // There are no forward declarations associated with this ID.
   // We'll report an error, then invent one.
-  } else if (!context->declarations.count(id)) {
+  } else {
     context->error_log.Append(scope_range, clause_head_range)
-        << "Missing declaration for '" << clause->name << "/"
+        << "Missing declaration for clause head '" << clause->name << "/"
         << clause->head_variables.size() << "'";
 
     // Recover by adding a local_decl declaration; this will let us keep
@@ -904,14 +876,17 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
 
     module->locals.emplace_back(local_decl);
     context->declarations.emplace(id, local_decl);
+    decl = local_decl;
+
+    directive_range =
+        DisplayRange(decl->directive_pos, decl->rparen.NextPosition());
   }
 
-  clause->declaration = context->declarations[id];
+  assert(decl != nullptr);
+  assert(!clause->declaration);
+  clause->declaration = decl;
 
-  directive_range = DisplayRange(clause->declaration->directive_pos,
-                                 clause->declaration->rparen.NextPosition());
-
-  const auto &decl_context = clause->declaration->context;
+  const auto &decl_context = decl->context;
 
   // Don't allow us to define clauses for functors.
   if (decl_context->kind == DeclarationKind ::kFunctor) {
@@ -929,10 +904,10 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
   // within our current module that matches this declaration. That is, we can't
   // just declare a clause without first declaring
   } else if (decl_context->kind == DeclarationKind ::kExport &&
-             module != clause->declaration->module) {
+             module != decl->module) {
     auto found_redecl_in_module = false;
     for (auto redecl : decl_context->redeclarations) {
-      if (redecl->module == clause->declaration->module) {
+      if (redecl->module == decl->module) {
         found_redecl_in_module = true;
         break;
       }
@@ -997,7 +972,7 @@ bool ParserImpl::TryMatchPredicateWithDecl(Node<ParsedModule> *module,
   // We'll report an error and invent one.
   } else if (!context->declarations.count(id)) {
     context->error_log.Append(scope_range, pred_head_range)
-        << "Missing declaration for '" << pred->name << "/"
+        << "Missing declaration for predicate '" << pred->name << "/"
         << pred->argument_uses.size() << "'";
 
     // Recover by adding a local declaration; this will let us keep
@@ -1349,18 +1324,20 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
         } else if (assign->rhs.type.Kind() != lhs_type.Kind()) {
           auto lhs_var = ParsedVariable(assign->lhs.used_var);
           auto rhs_const = ParsedLiteral(&(assign->rhs));
-          auto err = context->error_log.Append(ParsedClause(clause).SpellingRange(),
-                                               lhs_var.SpellingRange());
-          err << "Type mismatch between variable '" << lhs_var.Name() << "' (type '"
-              << lhs_var.Type().SpellingRange() << "') and constant '"
-              << rhs_const.Literal() << "' (type '"
+          auto err = context->error_log.Append(
+              ParsedClause(clause).SpellingRange(), lhs_var.SpellingRange());
+          err << "Type mismatch between variable '" << lhs_var.Name()
+              << "' (type '" << lhs_var.Type().SpellingRange()
+              << "') and constant '" << rhs_const.Literal() << "' (type '"
               << rhs_const.Type().SpellingRange() << "')";
 
-          err.Note(lhs_var.Type().SpellingRange(), lhs_var.Type().SpellingRange())
+          err.Note(lhs_var.Type().SpellingRange(),
+                   lhs_var.Type().SpellingRange())
               << "Variable '" << lhs_var.Name() << "' with type '"
               << lhs_var.Type().SpellingRange() << "' is from here";
 
-          err.Note(rhs_const.Type().SpellingRange(), rhs_const.Type().SpellingRange())
+          err.Note(rhs_const.Type().SpellingRange(),
+                   rhs_const.Type().SpellingRange())
               << "Constant '" << rhs_const.Literal() << "' with type '"
               << rhs_const.Type().SpellingRange() << "' is from here";
           return false;

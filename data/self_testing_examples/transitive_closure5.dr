@@ -1,25 +1,27 @@
-#message add_edge(i64 From, i64 To).
-#query reachable_from(bound i64 From, free i64 To).
-#query reaching_to(free i64 From, bound i64 To).
-#local tc1(From, To).
-#local tc2(From, To).
+#message add_edge(u64 From, u64 To).
+#local tc(From, To).
 
-reachable_from(From, To) : tc1(From, To).
-reaching_to(From, To) : tc2(From, To).
+#local tc_indirect(From, To)
+    : tc(From, X), tc(X, To).
 
-tc1(From, To) : tc1(From, X), tc2(X, To).
-tc1(From, To) : add_edge(From, To).
+#message tc_message(u64 From, u64 To)
+    : tc_indirect(From, To).
 
-tc2(From, To) : tc2(From, X), tc1(X, To).
-tc2(From, To) : add_edge(From, To).
+tc(From, To)
+  : tc_indirect(From, To), add_edge(From, _)
+  : tc_indirect(From, To), add_edge(_, To)
+  : add_edge(From, To).
 
+#query is_node(free u64 Node).
 
-#query is_node(free i64 Node).
+is_node(Node) : tc(Node, _).
+is_node(Node) : tc(_, Node).
 
-is_node(Node) : tc1(Node, _).
-is_node(Node) : tc1(_, Node).
-is_node(Node) : tc2(Node, _).
-is_node(Node) : tc2(_, Node).
+#query reachable_from(bound u64 From, free u64 To)
+    : tc(From, To).
+
+#query reaching_to(free u64 From, bound u64 To)
+    : tc(From, To).
 
 #epilogue ```python
 class Functors(DatabaseFunctors):

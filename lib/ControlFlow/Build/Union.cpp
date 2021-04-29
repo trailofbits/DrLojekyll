@@ -12,26 +12,11 @@ namespace hyde {
 //            really the induction loop belongs to another merge which dominates
 //            this merge.
 void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
-                           QueryMerge merge, Context &context, OP *parent,
-                           TABLE *last_table) {
+                           QueryMerge merge, Context &context, OP *parent_,
+                           TABLE *last_table_) {
   const QueryView view(merge);
-  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE * const table = model->table;
-
-  // If we can receive deletions, and if we're in a path where we haven't
-  // actually inserted into a view, then we need to go and do a differential
-  // insert/update/check.
-  if (table) {
-    if (table != last_table) {
-      parent = BuildInsertCheck(impl, view, context, parent, table,
-                                view.CanReceiveDeletions(), view.Columns());
-      last_table = table;
-    }
-
-  // We can't pass the table through.
-  } else {
-    last_table = nullptr;
-  }
+  auto [parent, table, last_table] =
+      InTryInsert(impl, context, view, parent_, last_table_);
 
 #ifndef NDEBUG
   if (1u < view.Predecessors().size()) {
@@ -41,103 +26,65 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
   }
 #endif
 
-  BuildEagerInsertionRegions(impl, view, context, parent,
-                             view.Successors(), last_table);
+  BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
+                             last_table);
 }
 
 // Build a top-down checker on a union. This applies to non-differential
 // unions.
-void BuildTopDownUnionChecker(ProgramImpl *impl, Context &context, PROC *proc,
-                              QueryMerge merge,
-                              std::vector<QueryColumn> &view_cols,
-                              TABLE *already_checked) {
+REGION *BuildTopDownUnionChecker(ProgramImpl *impl, Context &context,
+                                 REGION *proc, QueryMerge merge,
+                                 std::vector<QueryColumn> &view_cols,
+                                 TABLE *already_checked) {
+  const QueryView view(merge);
 
-  QueryView view(merge);
-  const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+  // Organize the checking so that we check the non-differential predecessors
+  // first, then the differential predecessors.
+  const auto seq = impl->series_regions.Create(proc);
+  const auto par_normal = impl->parallel_regions.Create(seq);
+  const auto par_diff = impl->parallel_regions.Create(seq);
+  seq->AddRegion(par_normal);
+  seq->AddRegion(par_diff);
+  seq->AddRegion(BuildStateCheckCaseReturnFalse(impl, seq));
 
-  // This union has persistent backing; go check it, and then check the
-  // predecessors.
-  if (model->table) {
+  auto do_rec_check = [&](QueryView pred_view, PARALLEL *parent) -> REGION * {
+    return CallTopDownChecker(
+        impl, context, parent, view, view_cols, pred_view, already_checked,
+        [=](REGION *parent_if_true) -> REGION * {
+          return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
+        },
+        [](REGION *) -> REGION * { return nullptr; });
+  };
 
-    TABLE *table_to_update = model->table;
+  for (auto pred_view : merge.MergedViews()) {
 
-    // Call all of the predecessors.
-    auto call_preds = [&](PARALLEL *par) {
+    // If the predecessor can produce deletions, then check it in `par_diff`.
+    if (pred_view.CanProduceDeletions()) {
+      const auto rec_check = do_rec_check(pred_view, par_diff);
+      par_diff->AddRegion(rec_check);
 
-      // TODO(pag): Find a way to not bother re-appearing non-inductive
-      //            successors?
-      for (QueryView pred_view : view.Predecessors()) {
-        const auto check = ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-            impl, context, par, view, view_cols, table_to_update, pred_view,
-            already_checked);
-        COMMENT( check->comment = __FILE__ ": BuildTopDownUnionChecker::call_preds"; )
-        par->AddRegion(check);
-      }
-    };
+      COMMENT(rec_check->comment = __FILE__
+              ": BuildTopDownUnionChecker call differential predecessor";)
 
-    const auto region = BuildMaybeScanPartial(
-        impl, view, view_cols, model->table, proc,
-        [&](REGION *parent, bool in_loop) -> REGION * {
-          if (already_checked != model->table) {
-            already_checked = model->table;
+    // If the predecessor can't produce deletions, then check it in
+    // `par_normal`.
+    } else {
+      const auto rec_check = do_rec_check(pred_view, par_normal);
+      par_normal->AddRegion(rec_check);
 
-            // TODO(pag): We should be able to optimize
-            //            `BuildTopDownTryMarkAbsent` to not actually
-            //            have to check during its state change, but oh well.
-
-            auto continue_or_return = in_loop ? BuildStateCheckCaseNothing :
-                                      BuildStateCheckCaseReturnFalse;
-
-            if (view.CanProduceDeletions()) {
-              return BuildTopDownCheckerStateCheck(
-                   impl, parent, model->table, view.Columns(),
-                   BuildStateCheckCaseReturnTrue, continue_or_return,
-                   [&](ProgramImpl *, REGION *parent) -> REGION * {
-                     return BuildTopDownTryMarkAbsent(
-                         impl, model->table, parent, view.Columns(),
-                         [&](PARALLEL *par) { call_preds(par); });
-                   });
-            } else {
-              return BuildTopDownCheckerStateCheck(
-                  impl, parent, model->table, view.Columns(),
-                  BuildStateCheckCaseReturnTrue,
-                  continue_or_return,
-                  continue_or_return);
-            }
-
-          } else {
-            table_to_update = nullptr;
-            const auto par = impl->parallel_regions.Create(parent);
-            if (view.CanProduceDeletions()) {
-              call_preds(par);
-            }
-            return par;
-          }
-        });
-
-    assert(region != proc);
-    proc->body.Emplace(proc, region);
-
-  // This union doesn't have persistent backing, so we have to call down to
-  // each predecessor. If any of them returns true then we can return true.
-  } else {
-    auto par = impl->parallel_regions.Create(proc);
-    proc->body.Emplace(proc, par);
-
-    for (QueryView pred_view : view.Predecessors()) {
-      par->AddRegion(ReturnTrueWithUpdateIfPredecessorCallSucceeds(
-          impl, context, par, view, view_cols, nullptr, pred_view, nullptr));
+      COMMENT(rec_check->comment = __FILE__
+              ": BuildTopDownUnionChecker call normal predecessor";)
     }
   }
+
+  return seq;
 }
 
 void CreateBottomUpUnionRemover(ProgramImpl *impl, Context &context,
-                                QueryView view, OP *parent_,
-                                TABLE *already_removed_) {
-  auto [parent, table, already_removed] = InTryMarkUnknown(
-      impl, view, parent_, already_removed_);
-  BuildEagerRemovalRegions(impl, view, context, parent,
-                           view.Successors(), already_removed);
+                                QueryView view, OP *parent,
+                                TABLE *already_removed) {
+  BuildEagerRemovalRegions(impl, view, context, parent, view.Successors(),
+                           already_removed);
 }
 
 }  // namespace hyde
