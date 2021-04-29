@@ -141,14 +141,10 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
   // List index types first
   auto sep = "";
   for (auto index : table.Indices()) {
-    const auto key_cols = index.KeyColumns();
-
     // The index can be implemented with the keys in the Table.
     // In this case, the index lookup will be like an `if ... in ...`.
-    if (key_cols.size() != cols.size()) {
-      os << sep << "Index" << index.Id();
-      sep = ", ";
-    }
+    os << sep << "Index" << index.Id();
+    sep = ", ";
   }
 
   // Then column types
@@ -1759,11 +1755,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
     os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
     for (auto index : table.Indices()) {
-
-      // NOTE(ekilmer): If value columns are empty, then we don't need to let the table know about it (...probably) because it's already a reference to the table itself
-      if (!index.ValueColumns().empty()) {
-        os << ", " << TableIndex(os, index);
-      }
+      os << ", " << TableIndex(os, index);
     }
     os << ")";
   }
