@@ -37,31 +37,55 @@
 #include <iostream>
 #include <set>
 
-template<typename T>
-void dump(Database<T> &db) {
+template <typename DB>
+void dump(DB &db) {
   std::cout << "Dump:\n";
-  for (auto i = 0; i < 50; i++) {
-    for (auto ea : db.function_instructions_bf(i)) {
-      std::cout << "  FuncEA=" << i
-        << " InstEA=" << ea << "\n";
-    }
+  
+  for (auto func_ea = 0; func_ea < 50; func_ea++) {
+    db.function_instructions_bf(func_ea, [=] (uint64_t inst_ea) {
+      std::cout << "  FuncEA=" << func_ea
+          << " InstEA=" << inst_ea << "\n";
+      return true;
+    });
   }
   std::cout << "\n";
 }
 
+template <typename DB>
+size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
+  std::vector<uint64_t> eas;
+  db.function_instructions_bf(func_ea, [&] (uint64_t inst_ea) {
+    eas.push_back(inst_ea);
+    return true;
+  });
+  std::sort(eas.begin(), eas.end());
+  auto it = std::unique(eas.begin(), eas.end());
+  eas.erase(it, eas.end());
+  return eas.size();
+}
+
+using DatabaseStorage = hyde::rt::std_containers;
 
 int main() {
   DatabaseFunctors functors;
   DatabaseLog log;
-  auto backend = hyde::rt::std_containers();
-  Database<hyde::rt::std_containers, DatabaseLog, DatabaseFunctors> db(
-      backend, log, functors);
+  DatabaseStorage storage;
+  Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
+      storage, log, functors);
 
   constexpr uint8_t FALL_THROUGH = 0;
   constexpr uint8_t CALL = 1;
-
+  
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions;
+  instructions.Add(10);
+  instructions.Add(11);
+  instructions.Add(12);
+  instructions.Add(13);
+  instructions.Add(14);
+  instructions.Add(15);
+  
   // Start with a few instructions. Initially `10` should show up as a function.
-  db.instruction_1({10, 11, 12, 13, 14, 15});
+  db.instruction_1(instructions);
   dump(db);
 
   auto unique_vector_size = [](auto vec) {
@@ -69,68 +93,83 @@ int main() {
     return set.size();
   };
 
-  assert(unique_vector_size(db.function_instructions_bf(9)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(10)) == 1);
-  assert(unique_vector_size(db.function_instructions_bf(11)) == 1);
-  assert(unique_vector_size(db.function_instructions_bf(12)) == 1);
-  assert(unique_vector_size(db.function_instructions_bf(13)) == 1);
-  assert(unique_vector_size(db.function_instructions_bf(14)) == 1);
-  assert(unique_vector_size(db.function_instructions_bf(15)) == 1);
+  assert(NumFunctionInstructions(db, 9) == 0);
+  assert(NumFunctionInstructions(db, 10) == 1);
+  assert(NumFunctionInstructions(db, 11) == 1);
+  assert(NumFunctionInstructions(db, 12) == 1);
+  assert(NumFunctionInstructions(db, 13) == 1);
+  assert(NumFunctionInstructions(db, 14) == 1);
+  assert(NumFunctionInstructions(db, 15) == 1);
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-
-
-  db.raw_transfer_3({{10, 11, FALL_THROUGH},
-                     {11, 12, FALL_THROUGH},
-                     {12, 13, FALL_THROUGH},
-                     {13, 14, FALL_THROUGH},
-                     {14, 15, FALL_THROUGH}});
+  
+  
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
+      transfers;
+  
+  transfers.Add(10, 11, FALL_THROUGH);
+  transfers.Add(11, 12, FALL_THROUGH);
+  transfers.Add(12, 13, FALL_THROUGH);
+  transfers.Add(13, 14, FALL_THROUGH);
+  transfers.Add(14, 15, FALL_THROUGH);
+  
+  db.raw_transfer_3(transfers);
   dump(db);
 
 
-  assert(unique_vector_size(db.function_instructions_bf(9)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(10)) == 6);
-  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(14)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+  assert(NumFunctionInstructions(db, 9) == 0);
+  assert(NumFunctionInstructions(db, 10) == 6);
+  assert(NumFunctionInstructions(db, 11) == 0);
+  assert(NumFunctionInstructions(db, 12) == 0);
+  assert(NumFunctionInstructions(db, 13) == 0);
+  assert(NumFunctionInstructions(db, 14) == 0);
+  assert(NumFunctionInstructions(db, 15) == 0);
 
-  db.instruction_1({9});
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions2;
+  instructions2.Add(9);
+  db.instruction_1(instructions2);
+  
   dump(db);
 
-  assert(unique_vector_size(db.function_instructions_bf(9)) == 1);
-  assert(unique_vector_size(db.function_instructions_bf(10)) == 6);
-  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(14)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
-
-
-  db.raw_transfer_3({{9, 10, FALL_THROUGH}});
+  assert(NumFunctionInstructions(db, 9) == 1);
+  assert(NumFunctionInstructions(db, 10) == 6);
+  assert(NumFunctionInstructions(db, 11) == 0);
+  assert(NumFunctionInstructions(db, 12) == 0);
+  assert(NumFunctionInstructions(db, 13) == 0);
+  assert(NumFunctionInstructions(db, 14) == 0);
+  assert(NumFunctionInstructions(db, 15) == 0);
+  
+  
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
+      transfers2;
+      
+  transfers2.Add(9, 10, FALL_THROUGH);
+  db.raw_transfer_3(transfers2);
   dump(db);
 
-  assert(unique_vector_size(db.function_instructions_bf(9)) == 7);
-  assert(unique_vector_size(db.function_instructions_bf(10)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(14)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+  assert(NumFunctionInstructions(db, 9) == 7);
+  assert(NumFunctionInstructions(db, 10) == 0);
+  assert(NumFunctionInstructions(db, 11) == 0);
+  assert(NumFunctionInstructions(db, 12) == 0);
+  assert(NumFunctionInstructions(db, 13) == 0);
+  assert(NumFunctionInstructions(db, 14) == 0);
+  assert(NumFunctionInstructions(db, 15) == 0);
 
-
-  db.raw_transfer_3({{10, 14, CALL}});
+  
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
+      transfers3;
+  transfers3.Add(10, 14, CALL);
+  db.raw_transfer_3(transfers3);
   dump(db);
 
-  assert(unique_vector_size(db.function_instructions_bf(9)) == 5);
-  assert(unique_vector_size(db.function_instructions_bf(10)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(11)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(12)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(13)) == 0);
-  assert(unique_vector_size(db.function_instructions_bf(14)) == 2);
-  assert(unique_vector_size(db.function_instructions_bf(15)) == 0);
+  assert(NumFunctionInstructions(db, 9) == 5);
+  assert(NumFunctionInstructions(db, 10) == 0);
+  assert(NumFunctionInstructions(db, 11) == 0);
+  assert(NumFunctionInstructions(db, 12) == 0);
+  assert(NumFunctionInstructions(db, 13) == 0);
+  assert(NumFunctionInstructions(db, 14) == 2);
+  assert(NumFunctionInstructions(db, 15) == 0);
 
   return 0;
 }

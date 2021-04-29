@@ -45,23 +45,24 @@ static Stream &Var(Stream &os, const DataVariable var) {
 
 template <typename Stream>
 static Stream &ReifyVar(Stream &os, const DataVariable var) {
-  switch (var.DefiningRole()) {
-    case VariableRole::kVectorVariable:
-    case VariableRole::kConstant:
-    case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
-    case VariableRole::kConstantFalse:
-    case VariableRole::kConstantTrue:
-    case VariableRole::kConditionRefCount:
-    case VariableRole::kJoinPivot:
-    case VariableRole::kProductOutput:
-    case VariableRole::kFunctorOutput:
-    case VariableRole::kParameter:
-    case VariableRole::kMessageOutput:
-    case VariableRole::kConstantTag:
-    case VariableRole::kScanOutput: return os;
-    default: return os << ".Reify()";
-  }
+  return os;
+//  switch (var.DefiningRole()) {
+//    case VariableRole::kVectorVariable:
+//    case VariableRole::kConstant:
+//    case VariableRole::kConstantZero:
+//    case VariableRole::kConstantOne:
+//    case VariableRole::kConstantFalse:
+//    case VariableRole::kConstantTrue:
+//    case VariableRole::kConditionRefCount:
+//    case VariableRole::kJoinPivot:
+//    case VariableRole::kProductOutput:
+//    case VariableRole::kFunctorOutput:
+//    case VariableRole::kParameter:
+//    case VariableRole::kMessageOutput:
+//    case VariableRole::kConstantTag:
+//    case VariableRole::kScanOutput: return os;
+//    default: return os << ".Reify()";
+//  }
 }
 
 // CPlusPlus representation of TypeKind

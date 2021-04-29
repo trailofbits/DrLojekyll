@@ -65,26 +65,22 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
 // Print out the type of an index. Specify whether this is being used for an index or within a table type
 static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
-                                   const DataIndex index, bool index_decl) {
-  const auto cols = table.Columns();
+                                   const DataIndex index) {
   const auto key_cols = index.KeyColumns();
   const auto val_cols = index.ValueColumns();
 
-  // The index can be implemented with the keys in the Table.
-  // In this case, the index lookup will be like an `if ... in ...`.
-  if (key_cols.size() == cols.size()) {
-    assert(val_cols.empty());
-    if (!index_decl) {
-      return os;
-    }
-
-    // Implement this index as a reference to the Table
-    return os << "decltype(" << Table(os, table) << ") & "
-              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
-  }
+//  // The index can be implemented with the keys in the Table.
+//  // In this case, the index lookup will be like an `if ... in ...`.
+//  if (key_cols.size() == cols.size()) {
+//    assert(val_cols.empty());
+//
+//    // Implement this index as a reference to the Table
+//    return os << "decltype(" << Table(os, table) << ") & "
+//              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
+//  }
 
   os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
-     << index.Id();
+     << index.Id() << ", ::hyde::rt::TypeList<";
 
   // In C++ codegen, the Index knows which columns are keys/values, but they
   // need to be ordered as they were in the table
@@ -92,8 +88,10 @@ static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
   auto val_col_iter = val_cols.begin();
 
   // Assumes keys and values are sorted by index within their respective lists
+
+  auto type_sep = "";
   while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
-    os << ", ";
+    os << type_sep;
     if (val_col_iter == val_cols.end() ||
         (key_col_iter != key_cols.end() &&
          (*key_col_iter).Index() < (*val_col_iter).Index())) {
@@ -105,19 +103,36 @@ static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
          << (*val_col_iter).Index() << ">";
       val_col_iter++;
     }
+    type_sep = ", ";
   }
-  os << ">";
 
-  // Declare the actual index
-  if (index_decl) {
-    os << " " << TableIndex(os, index) << ";\n";
+  os << ">, ::hyde::rt::TypeList<";
+  type_sep = "";
+  for (auto key_col : key_cols) {
+    os << type_sep << "column_desc_" << table.Id() << '_' << key_col.Index();
+    type_sep = ", ";
   }
+
+  os << ">, ::hyde::rt::TypeList<";
+  type_sep = "";
+  for (auto val_col : val_cols) {
+    os << type_sep << "column_desc_" << table.Id() << '_' << val_col.Index();
+    type_sep = ", ";
+  }
+
+  os << ">>";
   return os;
 }
 
 // Declare a structure containing the information about a table.
 static void DeclareTable(OutputStream &os, ParsedModule module,
                          DataTable table) {
+
+  for (auto index : table.Indices()) {
+    os << os.Indent() << "using Index" << index.Id() << " = "
+       << IndexTypeDecl(os, table, index) << ";\n";
+  }
+
   os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
      << ", hyde::rt::TypeList<";
 
@@ -131,7 +146,7 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
     // The index can be implemented with the keys in the Table.
     // In this case, the index lookup will be like an `if ... in ...`.
     if (key_cols.size() != cols.size()) {
-      os << sep << IndexTypeDecl(os, table, index, false);
+      os << sep << "Index" << index.Id();
       sep = ", ";
     }
   }
@@ -152,7 +167,8 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
   // We represent indices as mappings to vectors so that we can concurrently
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
-    os << os.Indent() << IndexTypeDecl(os, table, index, true);
+    os << os.Indent() << "Index" << index.Id() << " "
+       << TableIndex(os, index) << ";\n";
   }
   os << "\n";
 }
@@ -321,7 +337,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto functor = region.Functor();
     const auto id = region.Id();
 
-    os << os.Indent() << "int num_results_" << id << " = 0;\n";
+    os << os.Indent() << "::hyde::rt::index_t num_results_" << id << " = 0;\n";
 
     auto output_vars = region.OutputVariables();
 
@@ -594,7 +610,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       default: break;
     }
 
-    os << os.Indent() << Vector(os, region.Vector()) << ".emplace_back(";
+    os << os.Indent() << Vector(os, region.Vector()) << ".Add(";
     auto sep = "";
     for (auto var : tuple_vars) {
       os << sep << Var(os, var) << ReifyVar(os, var);
@@ -633,18 +649,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
     // Need to differentiate between our SerializedVector and regular
-    bool serial_vec = region.Usage() == VectorUsage::kProcedureInputVector;
-    if (serial_vec) {
-      os << ", tmp_" << region.UniqueId() << "_index";
-    }
-    os << "] = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
+    os << ", tmp_" << region.UniqueId() << "_index] = " << Vector(os, vec)
+       << ".Get(" << VectorIndex(os, vec) << ");\n";
 
-    os << os.Indent() << VectorIndex(os, vec);
-    if (serial_vec) {
-      os << " = tmp_" << region.UniqueId() << "_index;\n";
-    } else {
-      os << " += 1;\n";
-    }
+    os << os.Indent() << VectorIndex(os, vec)
+       << " = tmp_" << region.UniqueId() << "_index;\n";
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -656,9 +665,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramVectorUniqueRegion region) override {
     os << Comment(os, region, "ProgramVectorUniqueRegion");
 
-    os << os.Indent() << "std::unique(" << Vector(os, region.Vector())
-       << ".begin(), " << Vector(os, region.Vector()) << ".end());\n";
-    os << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
+    os << os.Indent() << Vector(os, region.Vector())
+       << ".SortAndUnique();\n"
+       << os.Indent() << VectorIndex(os, region.Vector()) << " = 0;\n";
   }
 
   void ResolveReference(DataVariable var) {
@@ -798,9 +807,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << sep << var_names.back();
       sep = ", ";
     }
-    os << "] = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "];\n";
+    os << sep << "next_" << VectorIndex(os, vec)
+       << "] = " << Vector(os, vec) << ".Get(" << VectorIndex(os, vec) << ");\n";
 
-    os << os.Indent() << VectorIndex(os, vec) << " += 1;\n";
+    os << os.Indent() << VectorIndex(os, vec)
+       << " = next_" << VectorIndex(os, vec) << ";\n";
 
     auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
@@ -831,14 +842,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         };
 
         key_columns();
-        os << ")";
-
-        // The index aliases the underlying table; lets double check that the
-        // state isn't `absent`.
-        assert(index.KeyColumns().size() == table.Columns().size());
-        os << " && (" << TableIndex(os, index) << ".Get(";
-        key_columns();
-        os << ") & " << kStateMask << ") != " << kStateAbsent << ") {\n";
+        os << ")) {\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
@@ -856,7 +860,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         // list of tuples in the index, and we also create an index variable
         // that tracks which tuple we can next look at. This allows us to
         // observe writes into the index as they happen.
-        os << os.Indent() << "int tuple_" << region.Id() << "_" << i
+        os << os.Indent() << "::hyde::rt::index_t tuple_" << region.Id() << "_" << i
            << "_index = 0;\n"
            << os.Indent() << "auto tuple_" << region.Id() << "_" << i
            << "_vec = " << TableIndex(os, index) << ".Get(";
@@ -903,8 +907,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         }
 
         os << ", tmp_" << region.Id() << "_" << i << "_index] = tuple_"
-           << region.Id() << "_" << i << "_vec[tuple_" << region.Id() << "_"
-           << i << "_index];\n";
+           << region.Id() << "_" << i << "_vec.Get(tuple_" << region.Id() << "_"
+           << i << "_index);\n";
 
         os << os.Indent() << "tuple_" << region.Id() << "_" << i
            << "_index = tmp_" << region.Id() << "_" << i << "_index;\n";
@@ -1004,7 +1008,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       // Collect all product things into a vector.
       os << os.Indent() << "vec_" << region.Id();
-      sep = ".emplace_back(";
+      sep = ".Add(";
       auto k = 0u;
       for (auto table : region.Tables()) {
         (void) table;
@@ -1072,7 +1076,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       }
       os << ");\n";
 
-      os << os.Indent() << "int scan_index_" << filled_vec.Id() << " = 0;\n";
+      os << os.Indent() << "::hyde::rt::index_t scan_index_" << filled_vec.Id() << " = 0;\n";
       os << os.Indent() << "while (scan_index_" << filled_vec.Id()
          << " < scan_tuple_" << filled_vec.Id() << "_vec.size()) {\n";
       os.PushIndent();
@@ -1084,16 +1088,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         sep = ", ";
       }
       os << ", offset_" << region.UniqueId() << "] = scan_tuple_"
-         << filled_vec.Id() << "_vec["
-         << "scan_index_" << filled_vec.Id() << "];\n"
+         << filled_vec.Id() << "_vec.Get("
+         << "scan_index_" << filled_vec.Id() << ");\n"
          << os.Indent() << "scan_index_" << filled_vec.Id() << " = offset_"
          << region.UniqueId() << ";\n";
 
-      os << os.Indent() << Vector(os, filled_vec) << ".emplace_back(";
+      os << os.Indent() << Vector(os, filled_vec) << ".Add(";
       sep = "";
       for (auto var : index.ValueColumns()) {
-        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id()
-           << ".Reify()";
+        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
+//           << ".Reify()";
         sep = ", ";
       }
       os << ");\n";
@@ -1115,7 +1119,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       }
       os << ", _] = scan_tuple_" << filled_vec.Id() << ".GetReified();\n";
 
-      os << os.Indent() << Vector(os, filled_vec) << ".emplace_back(";
+      os << os.Indent() << Vector(os, filled_vec) << ".Add(";
       sep = "";
       for (unsigned int i = 0; i < table.Columns().size(); i++) {
         os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
@@ -1393,7 +1397,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   //                     turn the return value of the procedures from a `bool`
   //                     to a `tuple`. :-/
   for (auto vec : proc.VectorParameters()) {
-    os << os.Indent() << "int " << VectorIndex(os, vec) << " = 0;\n";
+    os << os.Indent() << "::hyde::rt::index_t " << VectorIndex(os, vec) << " = 0;\n";
   }
 
   // Define the vectors that will be created and used within this procedure.
@@ -1413,7 +1417,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     os << "> " << Vector(os, vec) << ";\n";
 
     // Tracking variable for the vector.
-    os << os.Indent() << "int " << VectorIndex(os, vec) << " = 0;\n";
+    os << os.Indent() << "::hyde::rt::index_t " << VectorIndex(os, vec) << " = 0;\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -1448,27 +1452,37 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     }
   }
 
-  os << os.Indent();
-  if (num_free_params) {
-    os << "std::vector<";
-    if (1u < num_free_params) {
-      os << "std::tuple<";
-    }
-    auto sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << TypeName(module, param.Type());
-        sep = ", ";
-      }
-    }
-    if (1u < num_free_params) {
-      os << '>';
-    }
-    os << "> ";
-  } else {
-    os << "bool ";
+  if (!num_bound_params) {
+    os << os.Indent() << "// TODO: full table scans\n";
+    return;
   }
-  os << decl.Name() << '_' << decl.BindingPattern() << "(";
+
+  if (num_free_params) {
+    os << os.Indent() << "template <typename _Generator>\n";
+  }
+
+  os << os.Indent() << "::hyde::rt::index_t "
+     << decl.Name() << '_' << decl.BindingPattern() << "(";
+//  if (num_free_params) {
+//    os << "std::vector<";
+//    if (1u < num_free_params) {
+//      os << "std::tuple<";
+//    }
+//    auto sep = "";
+//    for (auto param : params) {
+//      if (param.Binding() != ParameterBinding::kBound) {
+//        os << sep << TypeName(module, param.Type());
+//        sep = ", ";
+//      }
+//    }
+//    if (1u < num_free_params) {
+//      os << '>';
+//    }
+//    os << "> ";
+//  } else {
+//    os << "bool ";
+//  }
+//  os
 
   auto sep = "";
   for (auto param : params) {
@@ -1477,31 +1491,37 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       sep = ", ";
     }
   }
+
+  if (num_free_params) {
+    os << sep << "_Generator _generator";
+  }
   os << ") {\n";
 
   assert(num_params == (num_bound_params + num_free_params));
 
   os.PushIndent();
-  os << os.Indent() << "int state = 0;\n";
+  os << os.Indent() << "int state = 0;\n"
+     << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n"
+     << os.Indent() << "::hyde::rt::index_t tuple_index = 0;\n";
 
-  // Return vector
-  if (num_free_params) {
-    os << os.Indent() << "std::vector<";
-    if (1u < num_free_params) {
-      os << "std::tuple<";
-    }
-    auto sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << TypeName(module, param.Type());
-        sep = ", ";
-      }
-    }
-    if (1u < num_free_params) {
-      os << '>';
-    }
-    os << "> ret;\n";
-  }
+//  // Return vector
+//  if (num_free_params) {
+//    os << os.Indent() << "std::vector<";
+//    if (1u < num_free_params) {
+//      os << "std::tuple<";
+//    }
+//    auto sep = "";
+//    for (auto param : params) {
+//      if (param.Binding() != ParameterBinding::kBound) {
+//        os << sep << TypeName(module, param.Type());
+//        sep = ", ";
+//      }
+//    }
+//    if (1u < num_free_params) {
+//      os << '>';
+//    }
+//    os << "> ret;\n";
+//  }
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
@@ -1515,10 +1535,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << ");\n";
   }
 
-  os << os.Indent() << "int tuple_index = 0;\n";
-
   // This is an index scan.
-  if (num_bound_params && num_bound_params < num_params) {
+  if (num_bound_params && num_free_params) {
     assert(spec.index.has_value());
     const auto index = *(spec.index);
 
@@ -1546,27 +1564,31 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
 
-    os << ", offset] = tuple_vec[tuple_index];\n"
+    os << ", offset] = tuple_vec.Get(tuple_index);\n"
        << os.Indent() << "tuple_index = offset;\n";
 
   // This is a full table scan.
-  } else if (num_free_params) {
+  } else if (!num_bound_params) {
     assert(0u < num_free_params);
 
-    os << os.Indent() << "for (auto &tuple : " << Table(os, spec.table)
-       << ".Keys()"
-       << ") {\n";
+    os << "while (true) {\n";
     os.PushIndent();
-
-    os << os.Indent() << "auto [";
-    sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
-      }
-    }
-    os << ", _] = tuple.Get();\n";
+    os << os.Indent() << "assert(false && \"TODO: full table scans\");\n";
+//
+//    os << os.Indent() << "for (auto &tuple : " << Table(os, spec.table)
+//       << ".Keys()"
+//       << ") {\n";
+//    os.PushIndent();
+//
+//    os << os.Indent() << "auto [";
+//    sep = "";
+//    for (auto param : params) {
+//      if (param.Binding() != ParameterBinding::kBound) {
+//        os << sep << "param_" << param.Index();
+//        sep = ", ";
+//      }
+//    }
+//    os << ", _] = tuple.Get();\n";
 
   // Either the tuple checker will figure out of the tuple is present, or our
   // state check on the full tuple will figure it out.
@@ -1580,8 +1602,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
     auto sep = "";
     for (auto param : params) {
-      bool reify_param = param.Binding() == ParameterBinding::kFree;
-      os << sep << "param_" << param.Index() << (reify_param ? ".Reify()" : "");
+//      bool reify_param = param.Binding() == ParameterBinding::kFree;
+      os << sep << "param_" << param.Index(); // << (reify_param ? ".Reify()" : "");
       sep = ", ";
     }
     os << ")) {\n";
@@ -1589,7 +1611,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     if (num_free_params) {
       os << os.Indent() << "continue;\n";
     } else {
-      os << os.Indent() << "return false;\n";
+      os << os.Indent() << "return num_generated;\n";
     }
     os.PopIndent();
     os << os.Indent() << "}\n";
@@ -1601,9 +1623,9 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     sep = "";
     for (auto param : params) {
       os << sep << "param_" << param.Index();
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << ".Reify()";
-      }
+//      if (param.Binding() != ParameterBinding::kBound) {
+//        os << ".Reify()";
+//      }
       sep = ", ";
     }
     os << ") & " << kStateMask << ";\n"
@@ -1612,32 +1634,38 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     if (num_free_params) {
       os << os.Indent() << "continue;\n";
     } else {
-      os << os.Indent() << "return false;\n";
+      os << os.Indent() << "return num_generated;\n";
     }
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
 
+  os << os.Indent() << "num_generated += 1u;\n";
+
   if (num_free_params) {
-    os << os.Indent() << "ret.emplace_back(";
+    os << os.Indent() << "if (!_generator(";
     auto sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index() << ".Reify()";
+        os << sep << "param_" << param.Index(); //<< ".Reify()";
         sep = ", ";
       }
     }
-    os << ");\n";
+    os << ")) {\n";
+    os.PushIndent();
+    os << os.Indent() << "return num_generated;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
 
   } else {
-    os << os.Indent() << "return true;\n";
+    os << os.Indent() << "return num_generated;\n";
   }
 
   os.PopIndent();
   os << os.Indent() << "}\n";
 
   if (num_free_params) {
-    os << os.Indent() << "return ret;\n";
+    os << os.Indent() << "return num_generated;\n";
   }
 
   os.PopIndent();
@@ -1725,10 +1753,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
       // If value columns are empty, then we've already mapped it to the table
       // itself as an accessor function
-      if (!index.ValueColumns().empty()) {
         os << ",\n"
            << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
-      }
     }
 
     os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
