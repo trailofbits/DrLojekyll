@@ -300,8 +300,6 @@ class SerializedVector<std_containers, Ts...> {
   StdSerialBuffer backing_store;
 };
 
-extern const StdSerialBuffer kEmptyIndexBackingBuffer;
-
 // Database index class using standard containers. `Columns` will be a list
 // of `Key<T>` or `Val<T>`, where each `T` is a column descriptor, and
 // `KeyColumns` and `ValColumns` will be lists of column descriptors.
@@ -361,9 +359,17 @@ class Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
   // Stores serialized Key/Value objects
   std::map<StdSerialBuffer, StdSerialBuffer> backing_store;
 
+  static const StdSerialBuffer kEmptyIndexBackingBuffer;
+
   static const VectorRef<std_containers, typename ValueType<ValColumns>::type...>
       kEmptyVecRef;
 };
+
+template <typename TableId, unsigned kIndexId, typename... Columns,
+          typename... KeyColumns, typename... ValColumns>
+const StdSerialBuffer
+Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
+      TypeList<KeyColumns...>, TypeList<ValColumns...>>::kEmptyIndexBackingBuffer{};
 
 template <typename TableId, unsigned kIndexId, typename... Columns,
           typename... KeyColumns, typename... ValColumns>

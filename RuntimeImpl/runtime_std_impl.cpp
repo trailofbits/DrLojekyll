@@ -3,7 +3,5 @@
 namespace hyde {
 namespace rt {
 
-const StdSerialBuffer kEmptyIndexBackingBuffer;
-
 }  // namespace rt
 }  // namespace hyde

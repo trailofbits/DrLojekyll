@@ -43,8 +43,7 @@ void dump(DB &db) {
   
   for (auto func_ea = 0; func_ea < 50; func_ea++) {
     db.function_instructions_bf(func_ea, [=] (uint64_t inst_ea) {
-      std::cout << "  FuncEA=" << func_ea
-          << " InstEA=" << inst_ea << "\n";
+      std::cout << "  FuncEA=" << func_ea << " InstEA=" << inst_ea << "\n";
       return true;
     });
   }
@@ -76,6 +75,8 @@ int main() {
   constexpr uint8_t FALL_THROUGH = 0;
   constexpr uint8_t CALL = 1;
   
+  
+  // Start with a few instructions, with no control-flow between them.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions;
   instructions.Add(10);
   instructions.Add(11);
@@ -83,28 +84,20 @@ int main() {
   instructions.Add(13);
   instructions.Add(14);
   instructions.Add(15);
-  
-  // Start with a few instructions. Initially `10` should show up as a function.
   db.instruction_1(instructions);
+  
   dump(db);
-
-  auto unique_vector_size = [](auto vec) {
-    auto set = std::set(vec.begin(), vec.end());
-    return set.size();
-  };
-
   assert(NumFunctionInstructions(db, 9) == 0);
   assert(NumFunctionInstructions(db, 10) == 1);
   assert(NumFunctionInstructions(db, 11) == 1);
   assert(NumFunctionInstructions(db, 12) == 1);
   assert(NumFunctionInstructions(db, 13) == 1);
   assert(NumFunctionInstructions(db, 14) == 1);
-  assert(NumFunctionInstructions(db, 15) == 1);
-
+  assert(NumFunctionInstructions(db, 15) == 1);  
+  
+  
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-  
-  
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
       transfers;
   
@@ -113,11 +106,9 @@ int main() {
   transfers.Add(12, 13, FALL_THROUGH);
   transfers.Add(13, 14, FALL_THROUGH);
   transfers.Add(14, 15, FALL_THROUGH);
-  
   db.raw_transfer_3(transfers);
+  
   dump(db);
-
-
   assert(NumFunctionInstructions(db, 9) == 0);
   assert(NumFunctionInstructions(db, 10) == 6);
   assert(NumFunctionInstructions(db, 11) == 0);
@@ -125,13 +116,16 @@ int main() {
   assert(NumFunctionInstructions(db, 13) == 0);
   assert(NumFunctionInstructions(db, 14) == 0);
   assert(NumFunctionInstructions(db, 15) == 0);
-
+  
+  
+  // Now add the instruction 9. It will show up as a function head, because
+  // it has no predecessors. The rest will stay the same because there is
+  // no changes to control-flow.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions2;
   instructions2.Add(9);
   db.instruction_1(instructions2);
   
   dump(db);
-
   assert(NumFunctionInstructions(db, 9) == 1);
   assert(NumFunctionInstructions(db, 10) == 6);
   assert(NumFunctionInstructions(db, 11) == 0);
@@ -141,13 +135,15 @@ int main() {
   assert(NumFunctionInstructions(db, 15) == 0);
   
   
+  // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
+  // not a function head anymore, so all of the function instructions transfer
+  // over to function 9.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
       transfers2;
-      
   transfers2.Add(9, 10, FALL_THROUGH);
   db.raw_transfer_3(transfers2);
+  
   dump(db);
-
   assert(NumFunctionInstructions(db, 9) == 7);
   assert(NumFunctionInstructions(db, 10) == 0);
   assert(NumFunctionInstructions(db, 11) == 0);
@@ -157,12 +153,15 @@ int main() {
   assert(NumFunctionInstructions(db, 15) == 0);
 
   
+  // Now add a function call between 10 and 14. That makes 14 look like
+  // a function head, and so now that 14 is a function head, it's no longer
+  // part of function 9.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
       transfers3;
   transfers3.Add(10, 14, CALL);
   db.raw_transfer_3(transfers3);
+  
   dump(db);
-
   assert(NumFunctionInstructions(db, 9) == 5);
   assert(NumFunctionInstructions(db, 10) == 0);
   assert(NumFunctionInstructions(db, 11) == 0);
@@ -190,7 +189,7 @@ CALL = 1
 if __name__ == "__main__":
   db = Database(DatabaseLog(), DatabaseFunctors())
 
-  # Start with a few instructions. Initially `10` should show up as a function.
+  # Start with a few instructions, with no control-flow between them.
   db.instruction_1([10, 11, 12, 13, 14, 15])
   dump(db)
 
