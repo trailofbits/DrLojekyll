@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "CPlusPlus/Util.h"
+#include "Util.h"
 
 namespace hyde {
 namespace cxx {
@@ -192,55 +192,55 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
      << Var(os, global) << " = " << TypeName(module, type)
      << TypeValueOrDefault(module, type, global) << ";\n";
 }
-
-// We want to enable referential transparency in the code, so that if an Nth
-// value is produced by some mechanism that is equal to some prior value, then
-// we replace its usage with the prior value.
-static void DefineTypeRefResolver(OutputStream &os) {
-
-  // Has merge_into method
-  os << os.Indent() << "template<typename T>\n"
-     << os.Indent()
-     << "typename ::hyde::rt::enable_if<::hyde::rt::has_merge_into<T,\n"
-     << os.Indent() << "         void(T::*)(T &)>::value, T>::type\n"
-     << os.Indent() << "_resolve(T &obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << "auto ref_list = _refs[std::hash<T>(obj)];\n"
-     << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
-  os.PushIndent();
-  os << os.Indent() << "// TODO(ekilmer): This isn't going to work...\n";
-  os << os.Indent() << "if (&obj == &maybe_obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << "return obj;\n";
-  os.PopIndent();
-  os << os.Indent() << "} else if (obj == maybe_obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << "T prior_obj = static_cast<T>(maybe_obj);\n"
-     << os.Indent() << "obj.merge_into(prior_obj);\n"
-     << os.Indent() << "return prior_obj;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n"
-     << os.Indent() << "ref_list.push_back(obj);\n"
-     << os.Indent() << "return obj;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
-
-  // Does not have merge_into
-  os << os.Indent() << "template<typename T>\n"
-     << os.Indent() << os.Indent() << "auto _resolve(T &&obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << "return obj;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
-  os << os.Indent() << "template<typename T>\n"
-     << os.Indent() << os.Indent() << "auto _resolve(T &obj) {\n";
-  os.PushIndent();
-  os << os.Indent() << "return obj;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
-}
+//
+//// We want to enable referential transparency in the code, so that if an Nth
+//// value is produced by some mechanism that is equal to some prior value, then
+//// we replace its usage with the prior value.
+//static void DefineTypeRefResolver(OutputStream &os) {
+//
+//  // Has merge_into method
+//  os << os.Indent() << "template<typename T>\n"
+//     << os.Indent()
+//     << "typename ::hyde::rt::enable_if<::hyde::rt::has_merge_into<T,\n"
+//     << os.Indent() << "         void(T::*)(T &)>::value, T>::type\n"
+//     << os.Indent() << "_resolve(T &obj) {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "auto ref_list = _refs[std::hash<T>(obj)];\n"
+//     << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "// TODO(ekilmer): This isn't going to work...\n";
+//  os << os.Indent() << "if (&obj == &maybe_obj) {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "return obj;\n";
+//  os.PopIndent();
+//  os << os.Indent() << "} else if (obj == maybe_obj) {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "T prior_obj = static_cast<T>(maybe_obj);\n"
+//     << os.Indent() << "obj.merge_into(prior_obj);\n"
+//     << os.Indent() << "return prior_obj;\n";
+//  os.PopIndent();
+//  os << os.Indent() << "}\n";
+//  os.PopIndent();
+//  os << os.Indent() << "}\n"
+//     << os.Indent() << "ref_list.push_back(obj);\n"
+//     << os.Indent() << "return obj;\n";
+//  os.PopIndent();
+//  os << os.Indent() << "}\n\n";
+//
+//  // Does not have merge_into
+//  os << os.Indent() << "template<typename T>\n"
+//     << os.Indent() << os.Indent() << "auto _resolve(T &&obj) {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "return obj;\n";
+//  os.PopIndent();
+//  os << os.Indent() << "}\n\n";
+//  os << os.Indent() << "template<typename T>\n"
+//     << os.Indent() << os.Indent() << "auto _resolve(T &obj) {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "return obj;\n";
+//  os.PopIndent();
+//  os << os.Indent() << "}\n\n";
+//}
 
 class CPPCodeGenVisitor final : public ProgramVisitor {
  public:
@@ -265,7 +265,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Pass in the variable parameters, or the references to the variables.
     for (auto var : region.VariableArguments()) {
-      os << sep << Var(os, var) << ReifyVar(os, var);
+      os << sep << Var(os, var);
       sep = ", ";
     }
 
@@ -595,17 +595,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     const auto tuple_vars = region.TupleVariables();
 
-//    // Make sure to resolve to the correct reference of the foreign object.
-//    switch (region.Usage()) {
-//      case VectorUsage::kInductionVector:
-//      case VectorUsage::kJoinPivots: ResolveReferences(tuple_vars); break;
-//      default: break;
-//    }
-
     os << os.Indent() << Vector(os, region.Vector());
     auto sep = ".Add(";
-    for (auto var : tuple_vars) {
-      os << sep << Var(os, var) << ReifyVar(os, var);
+    for (DataVariable var : tuple_vars) {
+      os << sep << Var(os, var);
       sep = ", ";
     }
     os << ");\n";
@@ -654,44 +647,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
        << ".SortAndUnique();\n";
   }
 
-//  void ResolveReference(DataVariable var) {
-//    if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-//      if (var.DefiningRegion()) {
-//        if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
-//          os << os.Indent() << "auto reified_" << Var(os, var) << " = _resolve<"
-//             << TypeName(*foreign_type) << ">(" << Var(os, var)
-//             << ReifyVar(os, var) << ");\n";
-//        }
-//      } else {
-//        switch (var.DefiningRole()) {
-//          case VariableRole::kConditionRefCount:
-//          case VariableRole::kInitGuard:
-//          case VariableRole::kConstantZero:
-//          case VariableRole::kConstantOne:
-//          case VariableRole::kConstantFalse:
-//          case VariableRole::kConstantTrue: assert(false); break;
-//          case VariableRole::kConstant:
-//          case VariableRole::kConstantTag:
-//          default: break;
-//        }
-//      }
-//    }
-//  }
-//
-//  void ResolveReferences(UsedNodeRange<DataVariable> vars) {
-//    if (false) {
-//      for (auto var : vars) {
-//        ResolveReference(var);
-//      }
-//    }
-//  }
-
   void Visit(ProgramTransitionStateRegion region) override {
     os << Comment(os, region, "ProgramTransitionStateRegion");
     const auto tuple_vars = region.TupleVariables();
-
-//    // Make sure to resolve to the correct reference of the foreign object.
-//    ResolveReferences(tuple_vars);
 
     auto print_state_enum = [&](TupleState state) {
       switch (state) {
@@ -744,7 +702,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "switch (" << Table(os, table) << ".GetState(";
     auto sep = "";
     for (auto var : vars) {
-      os << sep << Var(os, var) << ReifyVar(os, var);
+      os << sep << Var(os, var);
       sep = ", ";
     }
     os << ")) {\n";
@@ -1023,9 +981,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto input_vars = region.InputVariables();
     const auto filled_vec = region.FilledVector();
 
-//    // Make sure to resolve to the correct reference of the foreign object.
-//    ResolveReferences(input_vars);
-
     // Index scan :-D
     if (auto maybe_index = region.Index(); maybe_index) {
       const auto index = *maybe_index;
@@ -1034,7 +989,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
          << "_vec = " << TableIndex(os, index) << ".Get(";
       auto sep = "";
       for (auto var : input_vars) {
-        os << sep << Var(os, var) << ReifyVar(os, var);
+        os << sep << Var(os, var);
         sep = ", ";
       }
       os << ");\n";
@@ -1088,24 +1043,21 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto lhs_vars = region.LHS();
     const auto rhs_vars = region.RHS();
 
-    if (lhs_vars.size() == 1u) {
-      os << os.Indent() << "if (" << Var(os, lhs_vars[0])
-         << ReifyVar(os, lhs_vars[0]) << ' '
-         << OperatorString(region.Operator()) << ' ' << Var(os, rhs_vars[0])
-         << ReifyVar(os, rhs_vars[0]) << ") {\n";
+    os << os.Indent() << "if (std::make_tuple(";
 
-    } else {
-      os << os.Indent() << "if (";
-
-      auto cond = "";
-      for (size_t i = 0; i < region.LHS().size(); i++) {
-        os << cond << '(' << Var(os, lhs_vars[i]) << ReifyVar(os, lhs_vars[i])
-           << ' ' << OperatorString(region.Operator()) << ' '
-           << Var(os, rhs_vars[i]) << ReifyVar(os, rhs_vars[i]) << ')';
-        cond = " && ";
-      }
-      os << ") {\n";
+    auto sep = "";
+    for (auto var : lhs_vars) {
+      os << sep << Var(os, var);
+      sep = ", ";
     }
+
+    os << ") " << OperatorString(region.Operator()) << " std::make_tuple(";
+    sep = "";
+    for (auto var : rhs_vars) {
+      os << sep << Var(os, var);
+      sep = ", ";
+    }
+    os << ")) {\n";
 
     os.PushIndent();
     if (auto true_body = region.BodyIfTrue(); true_body) {
@@ -1504,7 +1456,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     auto sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index(); //<< ".Reify()";
+        os << sep << "param_" << param.Index();
         sep = ", ";
       }
     }
@@ -1649,10 +1601,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os.PopIndent();  // public:
-
+  os.PopIndent();
   os << os.Indent() << "private:\n";
-  os.PushIndent();  // private:
+  os.PushIndent();
 
   for (auto table : program.Tables()) {
     DeclareTable(os, module, table);
@@ -1667,8 +1618,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     DefineConstant(os, module, constant);
   }
   os << "\n";
-
-  DefineTypeRefResolver(os);
 
   for (auto proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
