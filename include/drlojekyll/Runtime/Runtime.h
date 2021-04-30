@@ -17,11 +17,6 @@ namespace rt {
 
 using index_t = size_t;
 
-struct absent {};
-struct present {};
-struct unknown {};
-struct absent_or_unknown {};
-
 // DrLojekyll supported types
 using UTF8 = std::string_view;
 using Any = void;

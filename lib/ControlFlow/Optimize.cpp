@@ -413,6 +413,18 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
 
   bool changed = false;
 
+  if (cmp->body && cmp->body->IsNoOp()) {
+    cmp->body->parent = nullptr;
+    cmp->body.Clear();
+    changed = true;
+  }
+
+  if (cmp->false_body && cmp->false_body->IsNoOp()) {
+    cmp->false_body->parent = nullptr;
+    cmp->false_body.Clear();
+    changed = true;
+  }
+
   auto max_i = cmp->lhs_vars.Size();
   if (auto parent_op = cmp->parent->AsOperation(); max_i && parent_op) {
     if (auto parent_cmp = parent_op->AsTupleCompare();
@@ -570,6 +582,32 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 }
 
 
+// Try to eliminate unnecessary children of a transition state regions.
+static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
+  auto changed = false;
+
+  if (transition->body) {
+    assert(transition->body->parent == transition);
+
+    if (transition->body->IsNoOp()) {
+      transition->body->parent = nullptr;
+      transition->body.Clear();
+      changed = true;
+    }
+  }
+  if (transition->failed_body) {
+    assert(transition->failed_body->parent == transition);
+
+    if (transition->failed_body->IsNoOp()) {
+      transition->failed_body->parent = nullptr;
+      transition->failed_body.Clear();
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 // Try to eliminate unnecessary children of a check state region.
 static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
   auto changed = false;
@@ -703,6 +741,9 @@ void ProgramImpl::Optimize(void) {
 
       } else if (auto check = op->AsCheckState(); check) {
         changed = OptimizeImpl(this, check) | changed;
+
+      } else if (auto transition = op->AsTransitionState(); transition) {
+        changed = OptimizeImpl(this, transition) | changed;
 
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.

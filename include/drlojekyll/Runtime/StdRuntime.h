@@ -83,16 +83,20 @@ template <typename... Ts>
 class SerializedVectorIterator {
  public:
   inline SerializedVectorIterator(const StdSerialBuffer &backing_store_)
-      : backing_store(backing_store_) {}
+      : backing_store(backing_store_),
+        max_offset(backing_store.size()) {}
 
   using SelfType = SerializedVectorIterator<Ts...>;
 
   inline bool operator!=(SerializedVectorIteratorEnd that) const {
-    return offset != backing_store.size();
+    return offset < max_offset;
   }
 
   SelfType &operator++(void) {
     offset = next_offset;
+    if (next_offset == max_offset) {
+      max_offset = backing_store.size();
+    }
     return *this;
   }
 
@@ -104,6 +108,7 @@ class SerializedVectorIterator {
  private:
   const StdSerialBuffer &backing_store;
   index_t offset{0};
+  index_t max_offset;
   mutable index_t next_offset{0};
 };
 
@@ -277,10 +282,10 @@ Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
 // Backing implementation of a table.
 struct TableImpl {
  protected:
-  std::pair<bool, bool> TransitionAbsentOrUnknownToPresent(void);
-  std::pair<bool, bool> TransitionAbsentToPresent(void);
-  bool TransitionPresentToUnknown(void);
-  bool TransitionUnknownToAbsent(void);
+  std::pair<bool, bool> TryChangeStateFromAbsentOrUnknownToPresent(void);
+  std::pair<bool, bool> TryChangeStateFromAbsentToPresent(void);
+  bool TryChangeStateFromPresentToUnknown(void);
+  bool TryChangeStateFromUnknownToAbsent(void);
   bool KeyExists(void) const;
   TupleState GetState(void) const;
 
@@ -297,41 +302,44 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
       : indices(indices_...) {}
 
   // For use when indices are aliased to the Table. Gets the state
-  inline TupleState GetState(const typename ValueType<Columns>::type &... cols) const {
+  inline TupleState GetState(
+      const typename ValueType<Columns>::type &... cols) const {
     SerializeKey(cols...);
     return TableImpl::GetState();
   }
 
-  inline bool TransitionState(const typename ValueType<Columns>::type &... cols,
-                              absent_or_unknown, present) {
+  inline bool TryChangeStateFromAbsentOrUnknownToPresent(
+      const typename ValueType<Columns>::type &... cols) {
     SerializeKey(cols...);
-    const auto [transitioned, added] = TransitionAbsentOrUnknownToPresent();
+    const auto [transitioned, added] =
+        TableImpl::TryChangeStateFromAbsentOrUnknownToPresent();
     if (added) {
       UpdateIndices(cols...);
     }
     return transitioned;
   }
 
-  inline bool TransitionState(const typename ValueType<Columns>::type &... cols,
-                              absent, present) {
+  inline bool TryChangeStateFromAbsentToPresent(
+      const typename ValueType<Columns>::type &... cols) {
     SerializeKey(cols...);
-    const auto [transitioned, added] = TransitionAbsentToPresent();
+    const auto [transitioned, added] =
+        TableImpl::TryChangeStateFromAbsentToPresent();
     if (added) {
       UpdateIndices(cols...);
     }
     return transitioned;
   }
 
-  inline bool TransitionState(const typename ValueType<Columns>::type &... cols,
-                              present, unknown) {
+  inline bool TryChangeStateFromPresentToUnknown(
+      const typename ValueType<Columns>::type &... cols) {
     SerializeKey(cols...);
-    return TransitionPresentToUnknown();
+    return TableImpl::TryChangeStateFromPresentToUnknown();
   }
 
-  inline bool TransitionState(const typename ValueType<Columns>::type &... cols,
-                              unknown, absent) {
+  inline bool TryChangeStateFromUnknownToAbsent(
+      const typename ValueType<Columns>::type &... cols) {
     SerializeKey(cols...);
-    return TransitionUnknownToAbsent();
+    return TableImpl::TryChangeStateFromUnknownToAbsent();
   }
 
   using ReadOnlySerializedVectorType = ReadOnlySerializedVector<

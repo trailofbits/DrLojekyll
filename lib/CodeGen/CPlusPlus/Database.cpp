@@ -245,12 +245,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "ProgramCallRegion");
 
-    const auto id = region.Id();
-
     const auto called_proc = region.CalledProcedure();
 
-    os << os.Indent() << "auto ret_" << id << " = "
-       << Procedure(os, called_proc) << "(";
+    os << os.Indent() << "if (" << Procedure(os, called_proc) << "(";
 
     auto sep = "";
 
@@ -266,22 +263,24 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
 
-    os << ");\n";
+    os << ")) {\n";
+    os.PushIndent();
 
     if (auto true_body = region.BodyIfTrue(); true_body) {
-      os << os.Indent() << "if (ret_" << id << ") {\n";
-      os.PushIndent();
       true_body->Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
     }
 
+    os.PopIndent();
+    os << os.Indent() << '}';
+
     if (auto false_body = region.BodyIfFalse(); false_body) {
-      os << os.Indent() << "if (!ret_" << id << ") {\n";
+      os << " else {\n";
       os.PushIndent();
       false_body->Accept(*this);
       os.PopIndent();
       os << os.Indent() << "}\n";
+    } else {
+      os << '\n';
     }
   }
 
@@ -687,42 +686,45 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto print_state_enum = [&](TupleState state) {
       switch (state) {
-        case TupleState::kAbsent: os << "::hyde::rt::absent{}"; break;
-        case TupleState::kPresent: os << "::hyde::rt::present{}"; break;
-        case TupleState::kUnknown: os << "::hyde::rt::unknown{}"; break;
+        case TupleState::kAbsent: os << "Absent"; break;
+        case TupleState::kPresent: os << "Present"; break;
+        case TupleState::kUnknown: os << "Unknown"; break;
         case TupleState::kAbsentOrUnknown:
-          os << "::hyde::rt::absent_or_unknown{}";
+          os << "AbsentOrUnknown";
           break;
       }
     };
 
-    os << os.Indent() << "bool did_transition_" << region.UniqueId() << " = "
-       << Table(os, region.Table()) << ".TransitionState(";
+    os << os.Indent() << "if (" << Table(os, region.Table())
+       << ".TryChangeStateFrom";
 
-    auto sep = "";
+    print_state_enum(region.FromState());
+    os << "To";
+    print_state_enum(region.ToState());
+
+    auto sep = "(";
     for (auto var : tuple_vars) {
       os << sep << Var(os, var) << ReifyVar(os, var);
       sep = ", ";
     }
 
-    os << sep;
-    print_state_enum(region.FromState());
-    os << ", ";
-    print_state_enum(region.ToState());
-
-    os << ");\n";
-
-    os << os.Indent() << "if (did_transition_" << region.UniqueId() << ") {\n";
+    os << ")) {\n";
     os.PushIndent();
 
     if (auto succeeded_body = region.BodyIfSucceeded(); succeeded_body) {
       succeeded_body->Accept(*this);
-    } else {
-      os << os.Indent() << "{}\n";
     }
-
     os.PopIndent();
-    os << os.Indent() << "}\n";
+    os << os.Indent() << "}";
+    if (auto failed_body = region.BodyIfFailed(); failed_body) {
+      os << " else {\n";
+      os.PushIndent();
+      failed_body->Accept(*this);
+      os.PopIndent();
+      os << os.Indent() <<"}\n";
+    } else {
+      os << '\n';
+    }
   }
 
   void Visit(ProgramCheckStateRegion region) override {
@@ -844,25 +846,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       // columns/tuples.
       } else {
 
-        // We don't want to have to make a temporary copy of the current state
-        // of the index, so instead what we do is we capture a reference to the
-        // list of tuples in the index, and we also create an index variable
-        // that tracks which tuple we can next look at. This allows us to
-        // observe writes into the index as they happen.
-        os << os.Indent() << "::hyde::rt::index_t tuple_" << region.Id() << "_" << i
-           << "_index = 0;\n"
-           << os.Indent() << "auto tuple_" << region.Id() << "_" << i
-           << "_vec = " << TableIndex(os, index) << ".Get(";
+        auto out_vars = region.OutputVariables(i);
+        assert(out_vars.size() == region.SelectedColumns(i).size());
+        os << os.Indent() << "for (auto [";
+        sep = "";
+        for (auto var : out_vars) {
+          os << sep << Var(os, var);
+          sep = ", ";
+        }
 
-        // This is a bit ugly, but basically: we want to index into the
-        // Python representation of this index, e.g. via `index_10[(a, b)]`,
-        // where `a` and `b` are pivot variables. However, the pivot vector
-        // might have the tuple entries in the order `(b, a)`. To easy matching
-        // between pivot variables and indexed columns, `region.IndexedColumns`
-        // exposes columns in the same order as the pivot variables, which as we
-        // see, might not match the order of the columns in the index. Thus we
-        // need to re-order our usage of variables so that they match the
-        // order expected by `index_10[...]`.
+        os << "] : " << TableIndex(os, index) << ".Get(";
         sep = "";
         for (auto index_col : index_keys) {
           auto j = 0u;
@@ -875,19 +868,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           }
         }
 
-        os << ");\n";
-
-        auto out_vars = region.OutputVariables(i);
-        assert(out_vars.size() == region.SelectedColumns(i).size());
-        os << os.Indent() << "for (auto [";
-        sep = "";
-        for (auto var : out_vars) {
-          os << sep << Var(os, var);
-          sep = ", ";
-        }
-
-        os << "] : tuple_"
-           << region.Id() << "_" << i << "_vec) {\n";
+        os << ")) {\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
@@ -1127,19 +1108,19 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
     if (auto true_body = region.BodyIfTrue(); true_body) {
       true_body->Accept(*this);
-    } else {
-      os << os.Indent() << "{}\n";
     }
     os.PopIndent();
-    os << os.Indent() << "} else {\n";
-    os.PushIndent();
+    os << os.Indent() << '}';
+
     if (auto false_body = region.BodyIfFalse(); false_body) {
+      os << " else {\n";
+      os.PushIndent();
       false_body->Accept(*this);
+      os.PopIndent();
+      os << "}\n";
     } else {
-      os << os.Indent() << "{}\n";
+      os << '\n';
     }
-    os.PopIndent();
-    os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramWorkerIdRegion region) override {
@@ -1393,6 +1374,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   auto num_free_params = 0u;
   const auto params = decl.Parameters();
   const auto num_params = decl.Arity();
+  (void) num_params;
 
   for (auto param : params) {
     if (param.Binding() == ParameterBinding::kBound) {
@@ -1445,7 +1427,16 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     assert(spec.index.has_value());
     const auto index = *(spec.index);
 
-    os << os.Indent() << "auto tuple_vec = " << TableIndex(os, index)
+    os << os.Indent() << "for (auto [";
+    sep = "";
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound) {
+        os << sep << "param_" << param.Index();
+        sep = ", ";
+      }
+    }
+
+    os << "] : " << TableIndex(os, index)
        << ".Get(";
 
     sep = "";
@@ -1456,18 +1447,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
 
-    os << ");\n";
-
-    os << os.Indent() << "for (auto [";
-    sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
-      }
-    }
-
-    os << "] : tuple_vec) {\n";
+    os << ")) {\n";
 
   // This is a full table scan.
   } else if (!num_bound_params) {
