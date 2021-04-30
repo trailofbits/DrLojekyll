@@ -77,22 +77,18 @@ inline static std::tuple<E, Es...> ReifyTuple(
   }
 }
 
+class SerializedVectorIteratorEnd {};
+
 template <typename... Ts>
 class SerializedVectorIterator {
  public:
-  inline SerializedVectorIterator(const StdSerialBuffer &backing_store_,
-                                  index_t offset_)
-      : backing_store(backing_store_)
-      , offset(offset_) {}
+  inline SerializedVectorIterator(const StdSerialBuffer &backing_store_)
+      : backing_store(backing_store_) {}
 
   using SelfType = SerializedVectorIterator<Ts...>;
 
-  inline bool operator==(const SelfType &that) const {
-    return offset == that.offset;
-  }
-
-  inline bool operator!=(const SelfType &that) const {
-    return offset != that.offset;
+  inline bool operator!=(SerializedVectorIteratorEnd that) const {
+    return offset != backing_store.size();
   }
 
   SelfType &operator++(void) {
@@ -121,7 +117,7 @@ class Vector<std_containers, Ts...> {
     backing_store.emplace_back(std::make_tuple(std::move(args)...));
   }
 
-  index_t size(void) const noexcept {
+  index_t Size(void) const noexcept {
     return static_cast<index_t>(backing_store.size());
   }
 
@@ -160,11 +156,11 @@ class ReadOnlySerializedVector<std_containers, Ts...> {
       : backing_store(backing_store_) {}
 
   inline auto begin(void) const {
-    return SerializedVectorIterator<Ts...>(backing_store, 0);
+    return SerializedVectorIterator<Ts...>(backing_store);
   }
 
-  inline auto end(void) const {
-    return SerializedVectorIterator<Ts...>(backing_store, backing_store.size());
+  inline SerializedVectorIteratorEnd end(void) const {
+    return {};
   }
 };
 
@@ -194,11 +190,11 @@ class SerializedVector<std_containers, Ts...> {
   }
 
   inline auto begin(void) const {
-    return SerializedVectorIterator<Ts...>(backing_store, 0);
+    return SerializedVectorIterator<Ts...>(backing_store);
   }
 
-  inline auto end(void) const {
-    return SerializedVectorIterator<Ts...>(backing_store, backing_store.size());
+  inline SerializedVectorIteratorEnd end(void) const {
+    return {};
   }
 };
 

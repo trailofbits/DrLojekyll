@@ -489,16 +489,31 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "while (changed_" << region.Id() << ") {\n";
 
     os.PushIndent();
+
+    os << os.Indent() << "fprintf(stderr, \"";
+
+    auto sep = "";
+    for (auto vec : region.Vectors()) {
+      os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
+      sep = " ";
+    }
+    sep = "\\n\", ";
+    for (auto vec : region.Vectors()) {
+      os << sep << Vector(os, vec) << ".Size()";
+      sep = ", ";
+    }
+    os << ");\n";
+
     region.FixpointLoop().Accept(*this);
 
     // Update the entry condition on the back-edge.
-    os << os.Indent() << "changed_" << region.Id() << " = ";
-    auto sep = "";
+    os << os.Indent() << "changed_" << region.Id() << " = !!(";
+    sep = "";
     for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".size() != 0";
-      sep = " || ";
+      os << sep << Vector(os, vec) << ".Size() ";
+      sep = " | ";
     }
-    os << ";\n";
+    os << ");\n";
 
     os.PopIndent();
     os << os.Indent() << "}\n";
@@ -656,8 +671,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   }
 
   void ResolveReferences(UsedNodeRange<DataVariable> vars) {
-    for (auto var : vars) {
-      ResolveReference(var);
+    if (false) {
+      for (auto var : vars) {
+        ResolveReference(var);
+      }
     }
   }
 

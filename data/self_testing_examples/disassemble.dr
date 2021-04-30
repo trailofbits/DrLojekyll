@@ -29,14 +29,18 @@
     , raw_transfer(PredEA, InstEA, FALL_THROUGH)
     , !function(InstEA).
 
-#epilogue ```c++
+#prologue ```c++
 #include <drlojekyll/Runtime/StdRuntime.h>
 #include <algorithm>
 #include <vector>
 #include <iomanip>
 #include <iostream>
 #include <set>
+#include <cstdio>
+#include <cinttypes>
+```.
 
+#epilogue ```c++
 template <typename DB>
 void dump(DB &db) {
   std::cout << "Dump:\n";
