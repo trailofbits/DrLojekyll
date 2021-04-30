@@ -1,0 +1,28 @@
+; This example shows boolean predicates, i.e. predicates that don't have any parameters.
+
+#import "../booleans_diff.dr".
+
+#epilogue ```python
+class Functors(DatabaseFunctors):
+  pass
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), Functors())
+  
+  db.log_in_1([1], [])
+  assert not db.user_is_logged_in_b(1)
+  
+  db.add_user_1([2])
+  assert not db.user_is_logged_in_b(1)
+  assert not db.user_is_logged_in_b(2)
+  
+  
+  db.add_user_1([1])
+  assert db.user_is_logged_in_b(1)
+  assert db.user_is_logged_in_b(2)
+
+  db.log_in_1([], [1])  # un-login the user
+  assert not db.user_is_logged_in_b(1)
+  assert not db.user_is_logged_in_b(2)
+
+```.

@@ -1,0 +1,150 @@
+
+#message add_edge(i64 From, i64 To) @differential.
+#query reachable_from(bound i64 From, free i64 To).
+#query reaching_to(free i64 From, bound i64 To).
+#local tc(From, To).
+#local edge(From, To).
+
+#message found_path(i64 From, i64 To) @differential.
+found_path(From, To) : tc(From, To).
+
+reachable_from(From, To) : tc(From, To).
+reaching_to(From, To) : tc(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : tc(From, X), tc(X, To).
+tc(From, To) : edge(From, To).
+
+#epilogue ```c++
+#include "runtime_std_impl.h"
+#include <cassert>
+#include <algorithm>
+#include <vector>
+#include <tuple>
+#include <iostream>
+#include <unordered_set>
+
+using edge_set = std::unordered_set<std::tuple<int64_t, int64_t>, ::hyde::rt::hash<std::tuple<int64_t, int64_t>>>;
+
+class Log : public DatabaseLog {
+public:
+  edge_set edges;
+  edge_set removed_edges;
+
+  Log() : edges(), removed_edges() {}
+
+  void found_path_2(int64_t From, int64_t To, bool added) override {
+    auto old_size = edges.size();
+    if (added) {
+      edges.insert(std::make_tuple(From, To));
+    } else {
+      edges.erase(std::make_tuple(From, To));
+      removed_edges.insert(std::make_tuple(From, To));
+    }
+    assert(old_size != edges.size());
+  }
+};
+
+int main() {
+  DatabaseFunctors functors;
+  DatabaseLog log;
+  auto backend = hyde::rt::std_containers();
+  Database<hyde::rt::std_containers, DatabaseLog, DatabaseFunctors> db(
+      backend, log, functors);
+
+  auto assert_reachable_from = [&db](int64_t i, std::vector<int64_t> expect) {
+    auto reach_from = db.reachable_from_bf(i);
+    std::sort(reach_from.begin(), reach_from.end());
+    if (reach_from != expect) {
+      std::cout << "Reached from 0:\n" << std::dec;
+      for (auto v : reach_from) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      std::cout << "Expected reaching from " << i << ":\n";
+      for (auto v : expect) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      assert(false);
+    }
+  };
+
+  db.add_edge_2({{0,1}, {0,2}, {2,0}, {1,2}, {2,3}}, {});
+
+  assert_reachable_from(0, {0, 1, 2, 3});
+
+  std::cout << "Removing (2,3)\n";
+  db.add_edge_2({}, {{2, 3}});
+  assert_reachable_from(0, {0, 1, 2});
+
+  assert(messages.removed_edges.size() == 3);
+  assert(edge_set({{2,3}, {0,3}, {1,3}}) == messages.removed_edges);
+
+  std::cout << "Adding (2,3) again\n";
+  db.add_edge_2({{2, 3}}, {});
+  assert_reachable_from(0, {0, 1, 2, 3});
+
+  return 0;
+}
+```
+.
+
+#epilogue ```python
+
+class Functors(DatabaseFunctors):
+  pass
+
+
+class Log(DatabaseLog):
+  def __init__(self):
+    self.edges = set()
+    self.removed_edges = set()
+
+  def found_path_2(self, From: int, To: int, added: bool):
+    old_size = len(self.edges)
+    if added:
+      self.edges.add((From, To))
+    else:
+      self.edges.remove((From, To))
+      self.removed_edges.add((From, To))
+    assert old_size != len(self.edges)
+
+
+if __name__ == "__main__":
+  messages = Log()
+  db = Database(messages, Functors())
+  db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)], [])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  print("Reached from 0:", reached_from_zero)
+  assert len(reached_from_zero) == 4
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  assert 3 in reached_from_zero  # 0 -> 2 -> 3
+
+  print("Removing (2, 3)")
+  db.add_edge_2([], [(2, 3)])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  print("Reached from 0:", reached_from_zero)
+  assert len(reached_from_zero) == 3
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+
+  assert len(messages.removed_edges) == 3
+  assert (2, 3) in messages.removed_edges
+  assert (0, 3) in messages.removed_edges
+  assert (1, 3) in messages.removed_edges
+
+  print("Adding (2, 3) again")
+  db.add_edge_2([(2, 3)], [])
+  reached_from_zero = list(db.reachable_from_bf(0))
+  print("Reached from 0:", reached_from_zero)
+  assert len(reached_from_zero) == 4
+  assert 1 in reached_from_zero  # 0 -> 1
+  assert 2 in reached_from_zero  # 0 -> 2
+  assert 0 in reached_from_zero  # 0 -> 2 -> 0
+  assert 3 in reached_from_zero  # 0 -> 2 -> 3
+```.

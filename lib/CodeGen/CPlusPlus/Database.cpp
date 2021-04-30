@@ -125,8 +125,10 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
                          DataTable table) {
 
   for (auto index : table.Indices()) {
-    os << os.Indent() << "using Index" << index.Id() << " = "
-       << IndexTypeDecl(os, table, index) << ";\n";
+    if (!index.ValueColumns().empty()) {
+      os << os.Indent() << "using Index" << index.Id() << " = "
+         << IndexTypeDecl(os, table, index) << ";\n";
+    }
   }
 
   os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
@@ -137,10 +139,12 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
   // List index types first
   auto sep = "";
   for (auto index : table.Indices()) {
-    // The index can be implemented with the keys in the Table.
-    // In this case, the index lookup will be like an `if ... in ...`.
-    os << sep << "Index" << index.Id();
-    sep = ", ";
+    if (!index.ValueColumns().empty()) {
+      // The index can be implemented with the keys in the Table.
+      // In this case, the index lookup will be like an `if ... in ...`.
+      os << sep << "Index" << index.Id();
+      sep = ", ";
+    }
   }
 
   // Then column types
@@ -154,8 +158,10 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
   // We represent indices as mappings to vectors so that we can concurrently
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
-    os << os.Indent() << "Index" << index.Id() << " "
-       << TableIndex(os, index) << ";\n";
+    if (!index.ValueColumns().empty()) {
+      os << os.Indent() << "Index" << index.Id() << " "
+         << TableIndex(os, index) << ";\n";
+    }
   }
   os << "\n";
 }
@@ -286,9 +292,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramReturnRegion region) override {
     os << Comment(os, region, "ProgramReturnRegion");
-
-    os << os.Indent() << "return " << (region.ReturnsFalse() ? "false" : "true")
-       << ";\n";
+    os << os.Indent() << "return "
+       << (region.ReturnsFalse() ? "false;\n" : "true;\n");
   }
 
   void Visit(ProgramTestAndSetRegion region) override {
@@ -296,28 +301,37 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto acc = region.Accumulator();
     const auto disp = region.Displacement();
     const auto cmp = region.Comparator();
-    if (region.IsAdd()) {
-      os << os.Indent() << Var(os, acc) << " += " << Var(os, disp) << ";\n";
-    } else {
-      os << os.Indent() << Var(os, acc) << " -= " << Var(os, disp) << ";\n";
+
+    auto body = region.Body();
+
+    os << os.Indent();
+    if (body) {
+      os << "if ((";
     }
 
-    if (auto body = region.Body(); body) {
-      if (region.IsAdd()) {
-        os << os.Indent() << "if (" << Var(os, acc) << " == " << Var(os, cmp)
-           << ") {\n";
-      } else {
-        os << os.Indent() << "if (" << Var(os, acc) << " == " << Var(os, cmp)
-           << ") {\n";
-      }
+    os << Var(os, acc);
+    if (region.IsAdd()) {
+      os << " += ";
+    } else if (region.IsSubtract()) {
+      os << " -= ";
+    } else {
+      assert(false);
+    }
+    os << Var(os, disp);
+
+    if (body) {
+      os << ") == " << Var(os, cmp) << ") {\n";
       os.PushIndent();
       body->Accept(*this);
       os.PopIndent();
       os << os.Indent() << "}\n";
+    } else {
+      os << ";\n";
     }
   }
 
   void Visit(ProgramGenerateRegion region) override {
+    assert(false && "Revisit with internal iterator\n");
     os << Comment(os, region, "ProgramGenerateRegion");
 
     const auto functor = region.Functor();
@@ -484,14 +498,21 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Fixpoint
     os << Comment(os, region, "Induction Fixpoint Loop Region");
-    os << os.Indent() << "bool changed_" << region.Id() << " = true;\n";
-    os << os.Indent() << "while (changed_" << region.Id() << ") {\n";
+    os << os.Indent() << "for (auto changed_" << region.Id()
+       << " = true; changed_" << region.Id() << "; changed_" << region.Id()
+       << " = !!(";
+    auto sep = "";
+    for (auto vec : region.Vectors()) {
+      os << sep << Vector(os, vec) << ".Size()";
+      sep = " | ";
+    }
+    os << ")) {\n";
 
     os.PushIndent();
 
     os << os.Indent() << "fprintf(stderr, \"";
 
-    auto sep = "";
+    sep = "";
     for (auto vec : region.Vectors()) {
       os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
       sep = " ";
@@ -504,15 +525,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << ");\n";
 
     region.FixpointLoop().Accept(*this);
-
-    // Update the entry condition on the back-edge.
-    os << os.Indent() << "changed_" << region.Id() << " = !!(";
-    sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".Size() ";
-      sep = " | ";
-    }
-    os << ");\n";
 
     os.PopIndent();
     os << os.Indent() << "}\n";
@@ -535,8 +547,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
-    } else {
-      os << os.Indent() << "{}\n";
     }
   }
 
@@ -585,15 +595,15 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     const auto tuple_vars = region.TupleVariables();
 
-    // Make sure to resolve to the correct reference of the foreign object.
-    switch (region.Usage()) {
-      case VectorUsage::kInductionVector:
-      case VectorUsage::kJoinPivots: ResolveReferences(tuple_vars); break;
-      default: break;
-    }
+//    // Make sure to resolve to the correct reference of the foreign object.
+//    switch (region.Usage()) {
+//      case VectorUsage::kInductionVector:
+//      case VectorUsage::kJoinPivots: ResolveReferences(tuple_vars); break;
+//      default: break;
+//    }
 
-    os << os.Indent() << Vector(os, region.Vector()) << ".Add(";
-    auto sep = "";
+    os << os.Indent() << Vector(os, region.Vector());
+    auto sep = ".Add(";
     for (auto var : tuple_vars) {
       os << sep << Var(os, var) << ReifyVar(os, var);
       sep = ", ";
@@ -603,18 +613,22 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorClearRegion region) override {
     os << Comment(os, region, "ProgramVectorClearRegion");
-
     os << os.Indent() << Vector(os, region.Vector()) << ".Clear();\n";
   }
 
   void Visit(ProgramVectorSwapRegion region) override {
     os << Comment(os, region, "Program VectorSwap Region");
-
     os << os.Indent() << Vector(os, region.LHS()) << ".Swap("
        << Vector(os, region.RHS()) << ");\n";
   }
 
   void Visit(ProgramVectorLoopRegion region) override {
+    auto body = region.Body();
+    if (!body) {
+      os << Comment(os, region, "Empty ProgramVectorLoopRegion");
+      return;
+    }
+
     os << Comment(os, region, "ProgramVectorLoopRegion");
     auto vec = region.Vector();
     os << os.Indent() << "for (auto [";
@@ -626,63 +640,58 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
     // Need to differentiate between our SerializedVector and regular
-    os << "] : " << Vector(os, vec)
-       << ") {\n";
+    os << "] : " << Vector(os, vec) << ") {\n";
 
     os.PushIndent();
-
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
-    }
+    body->Accept(*this);
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
 
   void Visit(ProgramVectorUniqueRegion region) override {
     os << Comment(os, region, "ProgramVectorUniqueRegion");
-
     os << os.Indent() << Vector(os, region.Vector())
        << ".SortAndUnique();\n";
   }
 
-  void ResolveReference(DataVariable var) {
-    if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
-      if (var.DefiningRegion()) {
-        if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
-          os << os.Indent() << "auto reified_" << Var(os, var) << " = _resolve<"
-             << TypeName(*foreign_type) << ">(" << Var(os, var)
-             << ReifyVar(os, var) << ");\n";
-        }
-      } else {
-        switch (var.DefiningRole()) {
-          case VariableRole::kConditionRefCount:
-          case VariableRole::kInitGuard:
-          case VariableRole::kConstantZero:
-          case VariableRole::kConstantOne:
-          case VariableRole::kConstantFalse:
-          case VariableRole::kConstantTrue: assert(false); break;
-          case VariableRole::kConstant:
-          case VariableRole::kConstantTag:
-          default: break;
-        }
-      }
-    }
-  }
-
-  void ResolveReferences(UsedNodeRange<DataVariable> vars) {
-    if (false) {
-      for (auto var : vars) {
-        ResolveReference(var);
-      }
-    }
-  }
+//  void ResolveReference(DataVariable var) {
+//    if (auto foreign_type = module.ForeignType(var.Type()); foreign_type) {
+//      if (var.DefiningRegion()) {
+//        if (!foreign_type->IsReferentiallyTransparent(Language::kCxx)) {
+//          os << os.Indent() << "auto reified_" << Var(os, var) << " = _resolve<"
+//             << TypeName(*foreign_type) << ">(" << Var(os, var)
+//             << ReifyVar(os, var) << ");\n";
+//        }
+//      } else {
+//        switch (var.DefiningRole()) {
+//          case VariableRole::kConditionRefCount:
+//          case VariableRole::kInitGuard:
+//          case VariableRole::kConstantZero:
+//          case VariableRole::kConstantOne:
+//          case VariableRole::kConstantFalse:
+//          case VariableRole::kConstantTrue: assert(false); break;
+//          case VariableRole::kConstant:
+//          case VariableRole::kConstantTag:
+//          default: break;
+//        }
+//      }
+//    }
+//  }
+//
+//  void ResolveReferences(UsedNodeRange<DataVariable> vars) {
+//    if (false) {
+//      for (auto var : vars) {
+//        ResolveReference(var);
+//      }
+//    }
+//  }
 
   void Visit(ProgramTransitionStateRegion region) override {
     os << Comment(os, region, "ProgramTransitionStateRegion");
     const auto tuple_vars = region.TupleVariables();
 
-    // Make sure to resolve to the correct reference of the foreign object.
-    ResolveReferences(tuple_vars);
+//    // Make sure to resolve to the correct reference of the foreign object.
+//    ResolveReferences(tuple_vars);
 
     auto print_state_enum = [&](TupleState state) {
       switch (state) {
@@ -704,7 +713,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto sep = "(";
     for (auto var : tuple_vars) {
-      os << sep << Var(os, var) << ReifyVar(os, var);
+      os << sep << Var(os, var);
       sep = ", ";
     }
 
@@ -714,6 +723,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     if (auto succeeded_body = region.BodyIfSucceeded(); succeeded_body) {
       succeeded_body->Accept(*this);
     }
+
     os.PopIndent();
     os << os.Indent() << "}";
     if (auto failed_body = region.BodyIfFailed(); failed_body) {
@@ -731,22 +741,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "ProgramCheckStateRegion");
     const auto table = region.Table();
     const auto vars = region.TupleVariables();
-    os << os.Indent() << "state = " << Table(os, table) << ".GetState(";
-    if (vars.size() == 1u) {
-      os << Var(os, vars[0]);
-    } else {
-      auto sep = "";
-      for (auto var : vars) {
-        os << sep << Var(os, var) << ReifyVar(os, var);
-        sep = ", ";
-      }
+    os << os.Indent() << "switch (" << Table(os, table) << ".GetState(";
+    auto sep = "";
+    for (auto var : vars) {
+      os << sep << Var(os, var) << ReifyVar(os, var);
+      sep = ", ";
     }
-    os << ");\n";
+    os << ")) {\n";
 
-    os << os.Indent() << "switch (state) {\n";
     os.PushIndent();
 
-    auto num = 0u;
     if (auto absent_body = region.IfAbsent(); absent_body) {
       os << os.Indent() << "case ::hyde::rt::TupleState::kAbsent: {\n";
       os.PushIndent();
@@ -754,7 +758,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << os.Indent() << "break;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
-      ++num;
+    } else {
+      os << os.Indent() << "case ::hyde::rt::TupleState::kAbsent: break;\n";
     }
 
     if (auto present_body = region.IfPresent(); present_body) {
@@ -764,7 +769,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << os.Indent() << "break;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
-      ++num;
+    } else {
+      os << os.Indent() << "case ::hyde::rt::TupleState::kPresent: break;\n";
     }
 
     if (auto unknown_body = region.IfUnknown(); unknown_body) {
@@ -774,11 +780,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << os.Indent() << "break;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
-      ++num;
-    }
-
-    if (num != 3u) {
-      os << os.Indent() << "default: break;\n";
+    } else {
+      os << os.Indent() << "case ::hyde::rt::TupleState::kUnknown: break;\n";
     }
 
     os.PopIndent();
@@ -786,6 +789,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableJoinRegion region) override {
+    auto body = region.Body();
+    if (!body) {
+      os << Comment(os, region, "Empty ProgramTableJoinRegion");
+      return;
+    }
+
     os << Comment(os, region, "ProgramTableJoinRegion");
 
     // Nested loop join
@@ -811,11 +820,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       const auto index_keys = index.KeyColumns();
       const auto index_vals = index.ValueColumns();
 
-      (void) table;
-
       // The index is a set of key column values/tuples.
       if (index_vals.empty()) {
-        os << os.Indent() << "if (" << TableIndex(os, index) << ".Contains(";
+        os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
 
         // Print out key columns
         auto key_columns = [&]() {
@@ -833,7 +840,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         };
 
         key_columns();
-        os << ")) {\n";
+        os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
 
         // We increase indentation here, and the corresponding `PopIndent()`
         // only comes *after* visiting the `region.Body()`.
@@ -876,11 +883,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       }
     }
 
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
-    } else {
-      os << os.Indent() << "{}\n";
-    }
+    body->Accept(*this);
 
     // Outdent for each nested for loop over an index.
     for (auto table : tables) {
@@ -895,6 +898,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableProductRegion region) override {
+    auto body = region.Body();
+    if (!body) {
+      os << Comment(os, region, "Empty ProgramTableProductRegion");
+      return;
+    }
+
     os << Comment(os, region, "ProgramTableProductRegion");
 
     os << os.Indent();
@@ -962,7 +971,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         if (inner_vars_size > 1) {
           os << "]";
         }
-        os << " : " << Table(os, inner_table) << ") {\n";
+        os << " : " << Table(os, inner_table) << ".Keys()) {\n";
         os.PushIndent();
         ++indents;
       }
@@ -1003,11 +1012,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os << "] : vec_" << region.Id() << ") {\n";
     os.PushIndent();
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
-    } else {
-      os << os.Indent() << "{}\n";
-    }
+    body->Accept(*this);
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
@@ -1018,11 +1023,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto input_vars = region.InputVariables();
     const auto filled_vec = region.FilledVector();
 
-    // Make sure to resolve to the correct reference of the foreign object.
-    ResolveReferences(input_vars);
-
-    // TODO(pag): Do we need to watch out for the index aliasing the key space
-    //            of the table, and having some columns in the absent state?
+//    // Make sure to resolve to the correct reference of the foreign object.
+//    ResolveReferences(input_vars);
 
     // Index scan :-D
     if (auto maybe_index = region.Index(); maybe_index) {
@@ -1127,8 +1129,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << Comment(os, region, "Program WorkerId Region");
     if (auto body = region.Body(); body) {
       body->Accept(*this);
-    } else {
-      os << os.Indent() << "{}";
     }
   }
 
@@ -1329,10 +1329,6 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   os << ") {\n";
   os.PushIndent();
-  os << os.Indent() << "auto state = ::hyde::rt::TupleState::kAbsent;\n"
-     << os.Indent() << "auto prev_state = ::hyde::rt::TupleState::kUnknown;\n"
-     << os.Indent() << "bool ret = false;\n"
-     << os.Indent() << "bool found = false;\n";
 
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
@@ -1406,9 +1402,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   assert(num_params == (num_bound_params + num_free_params));
 
   os.PushIndent();
-  os << os.Indent() << "int state = 0;\n"
-     << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n"
-     << os.Indent() << "::hyde::rt::index_t tuple_index = 0;\n";
+  os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n";
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
@@ -1472,47 +1466,36 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   os.PushIndent();
 
+  // Check the tuple's state using a finder function.
   if (spec.tuple_checker) {
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
     auto sep = "";
     for (auto param : params) {
-//      bool reify_param = param.Binding() == ParameterBinding::kFree;
-      os << sep << "param_" << param.Index(); // << (reify_param ? ".Reify()" : "");
+      os << sep << "param_" << param.Index();
       sep = ", ";
     }
     os << ")) {\n";
-    os.PushIndent();
-    if (num_free_params) {
-      os << os.Indent() << "continue;\n";
-    } else {
-      os << os.Indent() << "return num_generated;\n";
-    }
-    os.PopIndent();
-    os << os.Indent() << "}\n";
 
-  // Double check the tuple's state.
+  // Check the tuple's state directly.
   } else {
-    os << os.Indent() << "state = " << Table(os, spec.table) << ".GetState(";
+    os << os.Indent() << "if (" << Table(os, spec.table) << ".GetState(";
 
     sep = "";
     for (auto param : params) {
       os << sep << "param_" << param.Index();
-//      if (param.Binding() != ParameterBinding::kBound) {
-//        os << ".Reify()";
-//      }
       sep = ", ";
     }
-    os << ");\n"
-       << os.Indent() << "if (state != ::hyde::rt::TupleState::kPresent) {\n";
-    os.PushIndent();
-    if (num_free_params) {
-      os << os.Indent() << "continue;\n";
-    } else {
-      os << os.Indent() << "return num_generated;\n";
-    }
-    os.PopIndent();
-    os << os.Indent() << "}\n";
+    os << ") != ::hyde::rt::TupleState::kPresent) {\n";
   }
+
+  os.PushIndent();
+  if (num_free_params) {
+    os << os.Indent() << "continue;\n";
+  } else {
+    os << os.Indent() << "return num_generated;\n";
+  }
+  os.PopIndent();
+  os << os.Indent() << "}\n";
 
   os << os.Indent() << "num_generated += 1u;\n";
 
@@ -1624,16 +1607,17 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   for (auto table : program.Tables()) {
     for (auto index : table.Indices()) {
-
-      // If value columns are empty, then we've already mapped it to the table
-      // itself as an accessor function
+      if (!index.ValueColumns().empty()) {
         os << ",\n"
            << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
+      }
     }
 
     os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
     for (auto index : table.Indices()) {
-      os << ", " << TableIndex(os, index);
+      if (!index.ValueColumns().empty()) {
+        os << ", " << TableIndex(os, index);
+      }
     }
     os << ")";
   }

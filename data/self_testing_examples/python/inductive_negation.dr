@@ -1,0 +1,39 @@
+
+#message input(i32 Val1, i32 Val2).
+
+#local foo(Val)
+    : input(Val, _).
+
+#local bar(Val)
+    : input(Val, Val).
+
+    
+#local baz(Val)
+    : input(Val, X)
+    , baz(X)
+    
+    : baz(Val)
+    , !bar(Val)
+    
+    : input(_, Val).
+
+    
+#query out(free i32 Val)
+    
+    : baz(Val)
+    , !bar(Val).
+
+
+#epilogue ```python
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), DatabaseFunctors())
+  
+  
+  db.input_2([(1, 2)])
+  ret = list(db.out_f())
+  assert len(ret) == 2
+  assert 1 in ret
+  assert 2 in ret
+
+```.
