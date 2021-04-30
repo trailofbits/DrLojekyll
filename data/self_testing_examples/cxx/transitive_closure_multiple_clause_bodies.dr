@@ -1,6 +1,5 @@
 
-#import "../transitive_closure.dr".
-
+#import "../transitive_closure_multiple_clause_bodies.dr".
 
 #prologue ```c++
 #include <drlojekyll/Runtime/StdRuntime.h>
@@ -12,6 +11,7 @@
 #include <cstdio>
 #include <cinttypes>
 ```.
+
 
 #epilogue ```c++
 
@@ -76,7 +76,8 @@ int main() {
   edges.Add(2, 0);
   edges.Add(1, 2);
   edges.Add(2, 3);
-  db.add_edge_2(edges);
+  db.add_edge1_2(edges);
+  db.add_edge2_2(edges);
   edges.Clear();
 
   assert_reachable_from(0, {0, 1, 2, 3});
@@ -97,7 +98,8 @@ int main() {
 
   // now add more to the graph
   edges.Add(4, 3);
-  db.add_edge_2(edges);
+  db.add_edge1_2(edges);
+  db.add_edge2_2(edges);
   edges.Clear();
 
   assert_reachable_from(0, {0, 1, 2, 3});

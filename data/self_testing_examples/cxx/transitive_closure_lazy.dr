@@ -1,0 +1,127 @@
+
+#import "../transitive_closure_lazy.dr".
+
+#prologue ```c++
+#include <drlojekyll/Runtime/StdRuntime.h>
+#include <algorithm>
+#include <vector>
+#include <iomanip>
+#include <iostream>
+#include <set>
+#include <cstdio>
+#include <cinttypes>
+```.
+
+#epilogue ```c++
+
+using DatabaseStorage = hyde::rt::std_containers;
+
+int main() {
+  DatabaseFunctors functors;
+  DatabaseLog log;
+  DatabaseStorage storage;
+  Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
+      storage, log, functors);
+
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t> edges;
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> unlocks;
+  
+  auto print_reaching_to = [&db](uint64_t T) {
+  
+    printf("Reaching to %" PRIu64 ":", T);
+    db.reaching_to_fb(T, [&] (uint64_t F) {
+      printf(" %" PRIu64, F);
+      return true;
+    });
+    
+    printf("\n");
+  };
+  
+  auto assert_reaching_to = [&db](uint64_t T, std::vector<uint64_t> expect) {
+    std::vector<uint64_t> got;
+    db.reaching_to_fb(T, [&] (uint64_t F) {
+      got.push_back(F);
+      return true;
+    });
+    
+    std::sort(got.begin(), got.end());
+    assert(got == expect);
+  };
+  
+  
+  printf("Empty graph\n");
+  print_reaching_to(0);
+  print_reaching_to(1);
+  print_reaching_to(2);
+  print_reaching_to(3);
+  print_reaching_to(4);
+  
+  // 0 -> 1
+  //      1 -> 2
+  //           2 -> 3
+  //                3 -> 4
+  
+  // start with a simple graph
+  printf("\nAdding edges 0 -> 1 -> 2 -> 3 -> 4\n");
+  edges.Add(0, 1);
+  edges.Add(1, 2);
+  edges.Add(2, 3);
+  edges.Add(3, 4);
+  db.add_edge_2(edges);
+  
+  
+  // If we've properly locked things, then the transitive closure
+  // relation will not be eagerly computed, so the only thing
+  // reaching anywhere is the original edges.
+  print_reaching_to(0);
+  print_reaching_to(1);
+  print_reaching_to(2);
+  print_reaching_to(3);
+  print_reaching_to(4);
+  
+  assert_reaching_to(1, {0});
+  assert_reaching_to(2, {1});
+  assert_reaching_to(3, {2});
+  assert_reaching_to(4, {3});
+  
+  // Internally, a call to `reaching_to(A, B)` would "unlock"
+  // `B` via an internal message. Here we will manually
+  // emulate this process.
+  printf("\nUnlocking reaching_to 4\n");
+  unlocks.Add(4);
+  db.unlock_reaching_to_1(unlocks);
+  print_reaching_to(0);
+  print_reaching_to(1);
+  print_reaching_to(2);
+  print_reaching_to(3);
+  print_reaching_to(4);
+  
+  
+  printf("\nAdd edges 8 -> 9 -> 4\n");
+  edges.Clear();
+  edges.Add(9, 4);
+  edges.Add(8, 9);
+  db.add_edge_2(edges);
+  print_reaching_to(0);
+  print_reaching_to(1);
+  print_reaching_to(2);
+  print_reaching_to(3);
+  print_reaching_to(4);
+  print_reaching_to(8);
+  print_reaching_to(9);
+  
+  printf("\nUnlocking reaching_to 2\n");
+  unlocks.Clear();
+  unlocks.Add(2);
+  db.unlock_reaching_to_1(unlocks);
+  print_reaching_to(0);
+  print_reaching_to(1);
+  print_reaching_to(2);
+  print_reaching_to(3);
+  print_reaching_to(4);
+  print_reaching_to(8);
+  print_reaching_to(9);
+  
+  return 0;
+}
+```.
