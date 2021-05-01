@@ -67,9 +67,35 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     }
   }
 
-  for (auto view : query.Joins()) {
-    for (auto pred : view.JoinedViews()) {
+  for (auto join : query.Joins()) {
+    for (auto pred : join.JoinedViews()) {
       (void) TABLE::GetOrCreate(impl, context, pred);
+    }
+
+    // A top-down checker looking at a join can hit terrible performance issues
+    // if they need to inspect the JOIN's outputs and if the pivot columns
+    // aren't used.
+    QueryView view(join);
+    if (view.CanReceiveDeletions()) {
+      auto num_pivots = join.NumPivotColumns();
+      for (auto succ_view : view.Successors()) {
+        std::vector<bool> used_pivots(num_pivots);
+        auto num_used_pivots = 0u;
+        succ_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                                 std::optional<QueryColumn> out_col) {
+          if (!in_col.IsConstant() && QueryView::Containing(in_col) == view) {
+            if (auto index = *(in_col.Index());
+                index < num_pivots && !used_pivots[index]) {
+              used_pivots[index] = true;
+              ++num_used_pivots;
+            }
+          }
+        });
+        if (num_used_pivots < num_pivots) {
+          (void) TABLE::GetOrCreate(impl, context, view);
+          break;
+        }
+      }
     }
   }
 
@@ -1057,20 +1083,20 @@ void ExpandAvailableColumns(
 
   pivot_ins_to_outs();
 
-  // Finally, some of the inputs may be constants. We have to do constants
-  // last because something in `available_cols` might be a "variable" that
-  // takes on a different value than a constant, and thus needs to be checked
-  // against that constant.
-  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-                      std::optional<QueryColumn> out_col) {
-    if (out_col && InputColumnRole::kIndexValue != role &&
-        InputColumnRole::kAggregatedColumn != role &&
-        in_col.IsConstantOrConstantRef()) {
-      wanted_to_avail.emplace(out_col->Id(), in_col);
-    }
-  });
-
-  pivot_ins_to_outs();
+//  // Finally, some of the inputs may be constants. We have to do constants
+//  // last because something in `available_cols` might be a "variable" that
+//  // takes on a different value than a constant, and thus needs to be checked
+//  // against that constant.
+//  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+//                      std::optional<QueryColumn> out_col) {
+//    if (out_col && InputColumnRole::kIndexValue != role &&
+//        InputColumnRole::kAggregatedColumn != role &&
+//        in_col.IsConstantOrConstantRef()) {
+//      wanted_to_avail.emplace(out_col->Id(), in_col);
+//    }
+//  });
+//
+//  pivot_ins_to_outs();
 }
 
 // Filter out only the available columns that are part of the view we care
@@ -1128,7 +1154,7 @@ PROC *GetOrCreateTopDownChecker(
     }
 
     auto sub_wanted_to_avail =
-        ComputeAvailableColumns(view, available_cols_in_merge);
+        ComputeAvailableColumns(top_merge, available_cols_in_merge);
 
     return GetOrCreateTopDownChecker(impl, context, top_merge,
                                      sub_wanted_to_avail,
