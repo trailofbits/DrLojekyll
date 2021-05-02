@@ -1064,7 +1064,9 @@ class Node<ProgramTupleCompareRegion> final
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCompareTuples),
         cmp_op(op_),
         lhs_vars(this),
-        rhs_vars(this) {}
+        rhs_vars(this) {
+    assert(cmp_op != ComparisonOperator::kNotEqual);
+  }
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;

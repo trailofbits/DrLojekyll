@@ -77,6 +77,11 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     // aren't used.
     QueryView view(join);
     if (view.CanReceiveDeletions()) {
+
+//      // Easier to just avoid any possible performance issues; storage is
+//      // cheap... right? :-P
+//      (void) TABLE::GetOrCreate(impl, context, view);
+
       auto num_pivots = join.NumPivotColumns();
       for (auto succ_view : view.Successors()) {
         std::vector<bool> used_pivots(num_pivots);
@@ -288,18 +293,17 @@ static CALL *InCondionalTests(ProgramImpl *impl, QueryView view,
     // Innermost test for positive conditions.
     if (!pos_conds.empty()) {
       TUPLECMP *const test = impl->operation_regions.CreateDerived<TUPLECMP>(
-          parent, ComparisonOperator::kNotEqual);
+          parent, ComparisonOperator::kEqual);
 
       for (auto cond : pos_conds) {
         test->lhs_vars.AddUse(ConditionVariable(impl, cond));
         test->rhs_vars.AddUse(impl->zero);
       }
 
-      test->false_body.Emplace(test,
-                               BuildStateCheckCaseReturnFalse(impl, test));
+      test->body.Emplace(test, BuildStateCheckCaseReturnFalse(impl, test));
 
       parent_body->Emplace(parent, test);
-      parent_body = &(test->body);
+      parent_body = &(test->false_body);
       parent = test;
     }
 
@@ -834,7 +838,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
   // Outermost test for positive conditions.
   if (!pos_conds.empty()) {
     auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
-        proc, ComparisonOperator::kNotEqual);
+        proc, ComparisonOperator::kEqual);
 
     for (auto cond : pos_conds) {
       test->lhs_vars.AddUse(ConditionVariable(impl, cond));
@@ -842,7 +846,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
     }
 
     proc->body.Emplace(proc, test);
-    test->body.Emplace(test, proc_body);
+    test->false_body.Emplace(test, proc_body);
   }
 
   if (!EndsWithReturn(proc)) {

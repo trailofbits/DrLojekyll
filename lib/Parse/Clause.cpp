@@ -629,6 +629,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
               assert(const_ptr->parent != nullptr);
               assign->rhs.type = const_ptr->type;
               assign->rhs.foreign_type = const_ptr->parent;
+              assign->rhs.foreign_constant = const_ptr;
             }
 
             // Add to the clause's assignment list.
