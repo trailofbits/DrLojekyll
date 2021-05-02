@@ -6,8 +6,6 @@
 #foreign Lexeme ```python str```.
 #foreign ASTNode ```python Tuple[Tuple[str,int], ...]```.
 
-#constant Token FAKE_R_PAREN ```python (")", -1)```.
-
 #epilogue ```python
 def left_corner_bf(node: Tuple[Tuple[str,int], ...]):
     #print("left_corner({})".format(node))

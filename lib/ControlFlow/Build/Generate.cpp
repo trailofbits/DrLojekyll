@@ -238,7 +238,7 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
       // more than one set of outputs from this generator.
       case FunctorRange::kZeroOrOne:
       case FunctorRange::kOneToOne:
-        cmp->false_body.Emplace(gen, BuildStateCheckCaseReturnFalse(impl, gen));
+        cmp->false_body.Emplace(cmp, BuildStateCheckCaseReturnFalse(impl, cmp));
         break;
     }
 
