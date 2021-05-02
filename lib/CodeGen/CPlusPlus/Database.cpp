@@ -1017,7 +1017,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       auto sep = "";
 
       auto table = region.Table();
-      for (auto i = 0; i < table.Columns().size(); i++) {
+      for (auto i = 0u; i < table.Columns().size(); i++) {
         os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
         sep = ", ";
       }
@@ -1071,7 +1071,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os.PushIndent();
       false_body->Accept(*this);
       os.PopIndent();
-      os << "}\n";
+      os << os.Indent() << "}\n";
     } else {
       os << '\n';
     }

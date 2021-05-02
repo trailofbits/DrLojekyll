@@ -832,6 +832,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
     }
 
     proc->body.Emplace(proc, test);
+    proc_body->parent = test;
     test->body.Emplace(test, proc_body);
   }
 
@@ -846,6 +847,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
     }
 
     proc->body.Emplace(proc, test);
+    proc_body->parent = test;
     test->false_body.Emplace(test, proc_body);
   }
 

@@ -223,7 +223,8 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 
 INSTANTIATE_TEST_SUITE_P(
     ValidExampleParsing, PassingExamplesParsingSuite,
-    testing::ValuesIn(DrFilesInDir(kExamplesDir, kSelfTestingExamplesDir)));
+    testing::ValuesIn(DrFilesInDir(kExamplesDir, kSelfTestingPythonExamplesDir,
+                                   kSelfTestingCxxExamplesDir)));
 
 class FailingExamplesParsingSuite : public testing::TestWithParam<fs::path> {};
 

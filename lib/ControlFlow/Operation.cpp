@@ -36,7 +36,8 @@ Node<ProgramVectorUniqueRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
-      op(op_) {
+      op(op_),
+      body(this) {
   assert(parent_->Ancestor()->AsProcedure());
 }
 
@@ -57,6 +58,7 @@ Node<ProgramCallRegion>::Node(unsigned id_, Node<ProgramRegion> *parent_,
       called_proc(this, called_proc_),
       arg_vars(this),
       arg_vecs(this),
+      false_body(this),
       id(id_) {}
 
 Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {

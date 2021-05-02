@@ -19,6 +19,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   // child to replace the parent.
   } else if (par->regions.Size() == 1u) {
     const auto only_region = par->regions[0u];
+    assert(only_region->parent == par);
     par->regions.Clear();
     par->ReplaceAllUsesWith(only_region);
     return true;
@@ -284,6 +285,7 @@ static bool OptimizeImpl(SERIES *series) {
   // child to replace the parent.
   } else if (series->regions.Size() == 1u) {
     const auto only_region = series->regions[0u];
+    assert(only_region->parent == series);
     series->regions.Clear();
     series->ReplaceAllUsesWith(only_region);
     return true;
@@ -386,6 +388,10 @@ static bool OptimizeImpl(SERIES *series) {
 
 // Down-propagate all bindings.
 static bool OptimizeImpl(LET *let) {
+  if (!let->IsUsed() || !let->parent) {
+    return false;
+  }
+
   bool changed = false;
 
   for (auto i = 0u, max_i = let->defined_vars.Size(); i < max_i; ++i) {
@@ -410,6 +416,10 @@ static bool OptimizeImpl(LET *let) {
 // Propagate comparisons upwards, trying to join towers of comparisons into
 // single tuple group comparisons.
 static bool OptimizeImpl(TUPLECMP *cmp) {
+  if (!cmp->IsUsed() || !cmp->parent) {
+    return false;
+  }
+
   assert(cmp->cmp_op != ComparisonOperator::kNotEqual);
 
   bool changed = false;
@@ -656,21 +666,21 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
 static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
   auto changed = false;
 
-  if (call->body) {
-    assert(call->body->parent == call);
+  if (auto true_body = call->body.get()) {
+    assert(true_body->parent == call);
 
-    if (call->body->IsNoOp()) {
-      call->body->parent = nullptr;
+    if (true_body->IsNoOp()) {
+      true_body->parent = nullptr;
       call->body.Clear();
       changed = true;
     }
   }
 
-  if (call->false_body) {
-    assert(call->false_body->parent == call);
+  if (auto false_body = call->false_body.get()) {
+    assert(false_body->parent == call);
 
-    if (call->false_body->IsNoOp()) {
-      call->false_body->parent = nullptr;
+    if (false_body->IsNoOp()) {
+      false_body->parent = nullptr;
       call->false_body.Clear();
       changed = true;
     }
@@ -689,20 +699,20 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 
   auto changed = false;
 
-  if (gen->body) {
-    assert(gen->body->parent == gen);
+  if (auto some_body = gen->body.get()) {
+    assert(some_body->parent == gen);
 
-    if (gen->body->IsNoOp()) {
-      gen->body->parent = nullptr;
+    if (some_body->IsNoOp()) {
+      some_body->parent = nullptr;
       gen->body.Clear();
       changed = true;
     }
   }
-  if (gen->empty_body) {
-    assert(gen->empty_body->parent == gen);
+  if (auto empty_body = gen->empty_body.get()) {
+    assert(empty_body->parent == gen);
 
-    if (gen->empty_body->IsNoOp()) {
-      gen->empty_body->parent = nullptr;
+    if (empty_body->IsNoOp()) {
+      empty_body->parent = nullptr;
       gen->empty_body.Clear();
       changed = true;
     }
@@ -720,23 +730,28 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
   auto changed = false;
 
-  if (transition->body) {
-    assert(transition->body->parent == transition);
+  if (auto done_body = transition->body.get()) {
+    assert(done_body->parent == transition);
 
-    if (transition->body->IsNoOp()) {
-      transition->body->parent = nullptr;
+    if (done_body->IsNoOp()) {
+      done_body->parent = nullptr;
       transition->body.Clear();
       changed = true;
     }
   }
-  if (transition->failed_body) {
-    assert(transition->failed_body->parent == transition);
 
-    if (transition->failed_body->IsNoOp()) {
-      transition->failed_body->parent = nullptr;
+  if (auto failed_body = transition->failed_body.get()) {
+    assert(failed_body->parent == transition);
+
+    if (failed_body->IsNoOp()) {
+      failed_body->parent = nullptr;
       transition->failed_body.Clear();
       changed = true;
     }
+  }
+
+  if (transition->body && transition->failed_body) {
+    assert(transition->body.get() != transition->failed_body.get());
   }
 
   return changed;
@@ -746,31 +761,31 @@ static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
 static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
   auto changed = false;
 
-  if (check->body) {
-    assert(check->body->parent == check);
+  if (auto present_body = check->body.get()) {
+    assert(present_body->parent == check);
 
-    if (check->body->IsNoOp()) {
-      check->body->parent = nullptr;
+    if (present_body->IsNoOp()) {
+      present_body->parent = nullptr;
       check->body.Clear();
       changed = true;
     }
   }
 
-  if (check->unknown_body) {
-    assert(check->unknown_body->parent == check);
+  if (auto unknown_body = check->unknown_body.get()) {
+    assert(unknown_body->parent == check);
 
-    if (check->unknown_body->IsNoOp()) {
-      check->unknown_body->parent = nullptr;
+    if (unknown_body->IsNoOp()) {
+      unknown_body->parent = nullptr;
       check->unknown_body.Clear();
       changed = true;
     }
   }
 
-  if (check->absent_body) {
-    assert(check->absent_body->parent == check);
+  if (auto absent_body = check->absent_body.get()) {
+    assert(absent_body->parent == check);
 
-    if (check->absent_body->IsNoOp()) {
-      check->absent_body->parent = nullptr;
+    if (absent_body->IsNoOp()) {
+      absent_body->parent = nullptr;
       check->absent_body.Clear();
       changed = true;
     }
@@ -789,6 +804,9 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
 
 // Perform dead argument elimination.
 static bool OptimizeImpl(PROC *proc) {
+  if (auto body = proc->body.get()) {
+    assert(body->parent == proc);
+  }
   return false;
 }
 
