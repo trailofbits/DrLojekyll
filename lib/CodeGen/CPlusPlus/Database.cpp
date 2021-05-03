@@ -65,15 +65,15 @@ static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
   const auto key_cols = index.KeyColumns();
   const auto val_cols = index.ValueColumns();
 
-//  // The index can be implemented with the keys in the Table.
-//  // In this case, the index lookup will be like an `if ... in ...`.
-//  if (key_cols.size() == cols.size()) {
-//    assert(val_cols.empty());
-//
-//    // Implement this index as a reference to the Table
-//    return os << "decltype(" << Table(os, table) << ") & "
-//              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
-//  }
+  //  // The index can be implemented with the keys in the Table.
+  //  // In this case, the index lookup will be like an `if ... in ...`.
+  //  if (key_cols.size() == cols.size()) {
+  //    assert(val_cols.empty());
+  //
+  //    // Implement this index as a reference to the Table
+  //    return os << "decltype(" << Table(os, table) << ") & "
+  //              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
+  //  }
 
   os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
      << index.Id() << ", ::hyde::rt::TypeList<";
@@ -140,6 +140,7 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
   auto sep = "";
   for (auto index : table.Indices()) {
     if (!index.ValueColumns().empty()) {
+
       // The index can be implemented with the keys in the Table.
       // In this case, the index lookup will be like an `if ... in ...`.
       os << sep << "Index" << index.Id();
@@ -159,8 +160,8 @@ static void DeclareTable(OutputStream &os, ParsedModule module,
   // write to them while iterating over them (via an index and length check).
   for (auto index : table.Indices()) {
     if (!index.ValueColumns().empty()) {
-      os << os.Indent() << "Index" << index.Id() << " "
-         << TableIndex(os, index) << ";\n";
+      os << os.Indent() << "Index" << index.Id() << " " << TableIndex(os, index)
+         << ";\n";
     }
   }
   os << "\n";
@@ -643,8 +644,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramVectorUniqueRegion region) override {
     os << Comment(os, region, "ProgramVectorUniqueRegion");
-    os << os.Indent() << Vector(os, region.Vector())
-       << ".SortAndUnique();\n";
+    os << os.Indent() << Vector(os, region.Vector()) << ".SortAndUnique();\n";
   }
 
   void Visit(ProgramTransitionStateRegion region) override {
@@ -656,9 +656,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         case TupleState::kAbsent: os << "Absent"; break;
         case TupleState::kPresent: os << "Present"; break;
         case TupleState::kUnknown: os << "Unknown"; break;
-        case TupleState::kAbsentOrUnknown:
-          os << "AbsentOrUnknown";
-          break;
+        case TupleState::kAbsentOrUnknown: os << "AbsentOrUnknown"; break;
       }
     };
 
@@ -689,7 +687,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os.PushIndent();
       failed_body->Accept(*this);
       os.PopIndent();
-      os << os.Indent() <<"}\n";
+      os << os.Indent() << "}\n";
     } else {
       os << '\n';
     }
@@ -1335,8 +1333,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "template <typename _Generator>\n";
   }
 
-  os << os.Indent() << "::hyde::rt::index_t "
-     << decl.Name() << '_' << decl.BindingPattern() << "(";
+  os << os.Indent() << "::hyde::rt::index_t " << decl.Name() << '_'
+     << decl.BindingPattern() << "(";
 
   auto sep = "";
   for (auto param : params) {
@@ -1382,8 +1380,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
 
-    os << "] : " << TableIndex(os, index)
-       << ".Get(";
+    os << "] : " << TableIndex(os, index) << ".Get(";
 
     sep = "";
     for (auto param : decl.Parameters()) {

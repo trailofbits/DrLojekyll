@@ -3,14 +3,14 @@
 #pragma once
 
 #include <cassert>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace hyde {
 namespace rt {
@@ -27,22 +27,19 @@ struct Bytes : public std::vector<uint8_t> {
   inline Bytes(const uint8_t *begin_, const uint8_t *end_)
       : std::vector<uint8_t>(begin_, end_) {}
 
-  inline Bytes(const std::vector<uint8_t> &that)
-      : std::vector<uint8_t>(that) {}
+  inline Bytes(const std::vector<uint8_t> &that) : std::vector<uint8_t>(that) {}
 
 
   inline Bytes(std::vector<uint8_t> &&that) noexcept
       : std::vector<uint8_t>(that) {}
 
   Bytes(std::string_view that)
-      : Bytes(
-            reinterpret_cast<const uint8_t *>(that.data()),
-            reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
+      : Bytes(reinterpret_cast<const uint8_t *>(that.data()),
+              reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
 
   Bytes(const std::string &that)
-      : Bytes(
-            reinterpret_cast<const uint8_t *>(that.data()),
-            reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
+      : Bytes(reinterpret_cast<const uint8_t *>(that.data()),
+              reinterpret_cast<const uint8_t *>(that.data() + that.size())) {}
 };
 
 enum class TupleState : uint8_t {
@@ -111,12 +108,24 @@ struct ByteCountingWriter {
 
 struct NullReader {
  public:
-  inline double ReadF64(void) { return {}; }
-  inline float ReadF32(void) { return {}; }
-  inline uint64_t ReadU64(uint64_t) { return {}; }
-  inline uint64_t ReadU32(uint32_t) { return {}; }
-  inline uint64_t ReadU16(uint16_t) { return {}; }
-  inline uint64_t ReadU8(uint8_t) { return {}; }
+  inline double ReadF64(void) {
+    return {};
+  }
+  inline float ReadF32(void) {
+    return {};
+  }
+  inline uint64_t ReadU64(uint64_t) {
+    return {};
+  }
+  inline uint64_t ReadU32(uint32_t) {
+    return {};
+  }
+  inline uint64_t ReadU16(uint16_t) {
+    return {};
+  }
+  inline uint64_t ReadU8(uint8_t) {
+    return {};
+  }
 };
 
 struct NullWriter {
@@ -136,19 +145,19 @@ struct Serializer;
 #define DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN
 #define DRLOJEKYLL_HYDE_RT_NAMESPACE_END
 #define DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(type, cast_type, method_suffix) \
-    DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN \
-    template <typename Reader, typename Writer> \
-    struct Serializer<Reader, Writer, type> { \
-      static inline void WriteKeySort(Writer &writer, type data) { \
-        writer.Write ## method_suffix (static_cast<cast_type>(data)); \
-      } \
-      static inline void WriteKeyUnique(Writer &writer, type data) {} \
-      static inline void WriteKeyData(Writer &writer, type data) {} \
-      static inline void WriteValue(Writer &writer, type data) { \
-        writer.Write ## method_suffix(static_cast<cast_type>(data)); \
-      } \
-    }; \
-    DRLOJEKYLL_HYDE_RT_NAMESPACE_END
+  DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN \
+  template <typename Reader, typename Writer> \
+  struct Serializer<Reader, Writer, type> { \
+    static inline void WriteKeySort(Writer &writer, type data) { \
+      writer.Write##method_suffix(static_cast<cast_type>(data)); \
+    } \
+    static inline void WriteKeyUnique(Writer &writer, type data) {} \
+    static inline void WriteKeyData(Writer &writer, type data) {} \
+    static inline void WriteValue(Writer &writer, type data) { \
+      writer.Write##method_suffix(static_cast<cast_type>(data)); \
+    } \
+  }; \
+  DRLOJEKYLL_HYDE_RT_NAMESPACE_END
 
 
 DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(char, uint8_t, U8)
@@ -175,14 +184,12 @@ template <typename Reader, typename Writer, typename ContainerType,
           typename ElementType>
 struct LinearContainerSerializer {
 
-  static inline void WriteKeySort(Writer &writer,
-                                   const ContainerType &data) {
+  static inline void WriteKeySort(Writer &writer, const ContainerType &data) {
     const auto len = static_cast<uint32_t>(data.size());
     writer.WriteU32(len);
   }
 
-  static inline void WriteKeyUnique(Writer &writer,
-                                     const ContainerType &data) {
+  static inline void WriteKeyUnique(Writer &writer, const ContainerType &data) {
     if constexpr (std::is_fundamental_v<ElementType> ||
                   std::is_enum_v<ElementType>) {
       for (ElementType val : data) {
@@ -195,8 +202,7 @@ struct LinearContainerSerializer {
     }
   }
 
-  static inline void WriteKeyData(Writer &writer,
-                                   const ContainerType &data) {}
+  static inline void WriteKeyData(Writer &writer, const ContainerType &data) {}
 
   static inline void WriteValue(Writer &writer, const ContainerType &data) {
     WriteKeySort(writer, data);
@@ -214,7 +220,8 @@ struct Serializer<Reader, Writer, std::string>
 
 template <typename Reader, typename Writer>
 struct Serializer<Reader, Writer, std::string_view>
-    : public LinearContainerSerializer<Reader, Writer, std::string_view, char> {};
+    : public LinearContainerSerializer<Reader, Writer, std::string_view, char> {
+};
 
 template <typename Reader, typename Writer, typename Val, size_t i,
           typename First, typename... Rest>
@@ -228,7 +235,8 @@ struct IndexedSerializer {
   }
 
   static inline void WriteKeyUnique(Writer &writer, const Val &data) {
-    Serializer<Reader, Writer, First>::WriteKeyUnique(writer, std::get<i>(data));
+    Serializer<Reader, Writer, First>::WriteKeyUnique(writer,
+                                                      std::get<i>(data));
     if constexpr (0u < sizeof...(Rest)) {
       IndexedSerializer<Reader, Writer, Val, i + 1u, Rest...>::WriteKeyUnique(
           writer, data);
@@ -258,8 +266,8 @@ struct Serializer<Reader, Writer, std::pair<A, B>>
 
 template <typename Reader, typename Writer, typename... Elems>
 struct Serializer<Reader, Writer, std::tuple<Elems...>>
-    : public IndexedSerializer<Reader, Writer, std::tuple<Elems...>,
-                               0, Elems...> {};
+    : public IndexedSerializer<Reader, Writer, std::tuple<Elems...>, 0,
+                               Elems...> {};
 
 template <typename Reader, typename Writer>
 struct Serializer<Reader, Writer, Bytes>
@@ -323,6 +331,7 @@ struct KeyValueColumnWriter<Writer, Value<Column>> {
     Serializer<NullReader, Writer, ColumnType>::WriteValue(writer, val);
   }
 };
+
 //
 //// Don't do anything if nothing to write
 //template <typename Writer>
@@ -432,7 +441,6 @@ struct SerialRef {
   }
 
  private:
-
   const BackingStoreT &store;
   const size_t offset;
 };
@@ -481,4 +489,3 @@ HAS_MEMBER_FUNC(merge_into, has_merge_into);
 
 #define DRLOJEKYLL_HYDE_RT_NAMESPACE_BEGIN namespace hyde::rt {
 #define DRLOJEKYLL_HYDE_RT_NAMESPACE_END }
-

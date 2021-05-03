@@ -78,9 +78,9 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     QueryView view(join);
     if (view.CanReceiveDeletions()) {
 
-//      // Easier to just avoid any possible performance issues; storage is
-//      // cheap... right? :-P
-//      (void) TABLE::GetOrCreate(impl, context, view);
+      //      // Easier to just avoid any possible performance issues; storage is
+      //      // cheap... right? :-P
+      //      (void) TABLE::GetOrCreate(impl, context, view);
 
       auto num_pivots = join.NumPivotColumns();
       for (auto succ_view : view.Successors()) {
@@ -1089,20 +1089,20 @@ void ExpandAvailableColumns(
 
   pivot_ins_to_outs();
 
-//  // Finally, some of the inputs may be constants. We have to do constants
-//  // last because something in `available_cols` might be a "variable" that
-//  // takes on a different value than a constant, and thus needs to be checked
-//  // against that constant.
-//  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-//                      std::optional<QueryColumn> out_col) {
-//    if (out_col && InputColumnRole::kIndexValue != role &&
-//        InputColumnRole::kAggregatedColumn != role &&
-//        in_col.IsConstantOrConstantRef()) {
-//      wanted_to_avail.emplace(out_col->Id(), in_col);
-//    }
-//  });
-//
-//  pivot_ins_to_outs();
+  //  // Finally, some of the inputs may be constants. We have to do constants
+  //  // last because something in `available_cols` might be a "variable" that
+  //  // takes on a different value than a constant, and thus needs to be checked
+  //  // against that constant.
+  //  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+  //                      std::optional<QueryColumn> out_col) {
+  //    if (out_col && InputColumnRole::kIndexValue != role &&
+  //        InputColumnRole::kAggregatedColumn != role &&
+  //        in_col.IsConstantOrConstantRef()) {
+  //      wanted_to_avail.emplace(out_col->Id(), in_col);
+  //    }
+  //  });
+  //
+  //  pivot_ins_to_outs();
 }
 
 // Filter out only the available columns that are part of the view we care

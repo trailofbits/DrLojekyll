@@ -66,8 +66,8 @@ inline static T ReifyValue(const StdSerialBuffer &backing_store,
 
 // Deserialize a series of values form a serial byte store.
 template <typename E, typename... Es>
-inline static std::tuple<E, Es...> ReifyTuple(
-    const StdSerialBuffer &backing_store, index_t &offset) {
+inline static std::tuple<E, Es...>
+ReifyTuple(const StdSerialBuffer &backing_store, index_t &offset) {
   auto val = ReifyValue<E>(backing_store, offset);
   if constexpr (0u < sizeof...(Es)) {
     std::tuple<Es...> next_vals = ReifyTuple<Es...>(backing_store, offset);
@@ -178,7 +178,6 @@ class SerializedVector<std_containers, Ts...> {
   StdSerialBuffer backing_store;
 
  public:
-
   // Add a single serialized element
   void Add(Ts... ts) {
     BufferedWriter writer(backing_store);
@@ -216,27 +215,28 @@ class Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
   void Add(const typename ValueType<Columns>::type &...cols) {
     key_data.clear();
     BufferedWriter key_writer(key_data);
-    KeyValueWriter<BufferedWriter, Columns...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter, Columns...>::WriteKeyUnique(
-        key_writer, cols...);
+    KeyValueWriter<BufferedWriter, Columns...>::WriteKeySort(key_writer,
+                                                             cols...);
+    KeyValueWriter<BufferedWriter, Columns...>::WriteKeyUnique(key_writer,
+                                                               cols...);
 
     BufferedWriter data_writer(backing_store[key_data]);
-    KeyValueWriter<BufferedWriter, Columns...>::WriteValue(
-        data_writer, cols...);
+    KeyValueWriter<BufferedWriter, Columns...>::WriteValue(data_writer,
+                                                           cols...);
   }
 
-  using ReadOnlySerializedVecType = ReadOnlySerializedVector<
-      std_containers, typename ValueType<ValColumns>::type...>;
+  using ReadOnlySerializedVecType =
+      ReadOnlySerializedVector<std_containers,
+                               typename ValueType<ValColumns>::type...>;
 
   const ReadOnlySerializedVecType
   Get(const typename ValueType<KeyColumns>::type &...cols) const {
     key_data.clear();
     BufferedWriter key_writer(key_data);
-    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeyUnique(
-        key_writer, cols...);
+    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeySort(key_writer,
+                                                                cols...);
+    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeyUnique(key_writer,
+                                                                  cols...);
 
     auto it = backing_store.find(key_data);
     if (it == backing_store.end()) {
@@ -249,15 +249,14 @@ class Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
   bool Contains(const typename ValueType<KeyColumns>::type &...cols) const {
     key_data.clear();
     BufferedWriter key_writer(key_data);
-    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeyUnique(
-        key_writer, cols...);
-    return  backing_store.find(key_data) != backing_store.end();
+    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeySort(key_writer,
+                                                                cols...);
+    KeyValueWriter<BufferedWriter, KeyColumns...>::WriteKeyUnique(key_writer,
+                                                                  cols...);
+    return backing_store.find(key_data) != backing_store.end();
   }
 
  private:
-
   // Working buffer for writing key data when doing lookups.
   mutable StdSerialBuffer key_data;
 
@@ -275,9 +274,9 @@ template <typename TableId, unsigned kIndexId, typename... Columns,
           typename... KeyColumns, typename... ValColumns>
 const ReadOnlySerializedVector<std_containers,
                                typename ValueType<ValColumns>::type...>
-Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
-      TypeList<KeyColumns...>, TypeList<ValColumns...>>::kEmptyVecRef(
-          kEmptyIndexBackingBuffer);
+    Index<std_containers, TableId, kIndexId, TypeList<Columns...>,
+          TypeList<KeyColumns...>,
+          TypeList<ValColumns...>>::kEmptyVecRef(kEmptyIndexBackingBuffer);
 
 // Backing implementation of a table.
 struct TableImpl {
@@ -298,18 +297,17 @@ template <typename kTableId, typename... Indices, typename... Columns>
 class Table<std_containers, kTableId, TypeList<Indices...>,
             TypeList<Columns...>> : public TableImpl {
  public:
-  Table(std_containers &, Indices &...indices_)
-      : indices(indices_...) {}
+  Table(std_containers &, Indices &...indices_) : indices(indices_...) {}
 
   // For use when indices are aliased to the Table. Gets the state
-  inline TupleState GetState(
-      const typename ValueType<Columns>::type &... cols) const {
+  inline TupleState
+  GetState(const typename ValueType<Columns>::type &...cols) const {
     SerializeKey(cols...);
     return TableImpl::GetState();
   }
 
   inline bool TryChangeStateFromAbsentOrUnknownToPresent(
-      const typename ValueType<Columns>::type &... cols) {
+      const typename ValueType<Columns>::type &...cols) {
     SerializeKey(cols...);
     const auto [transitioned, added] =
         TableImpl::TryChangeStateFromAbsentOrUnknownToPresent();
@@ -320,7 +318,7 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
   }
 
   inline bool TryChangeStateFromAbsentToPresent(
-      const typename ValueType<Columns>::type &... cols) {
+      const typename ValueType<Columns>::type &...cols) {
     SerializeKey(cols...);
     const auto [transitioned, added] =
         TableImpl::TryChangeStateFromAbsentToPresent();
@@ -331,19 +329,20 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
   }
 
   inline bool TryChangeStateFromPresentToUnknown(
-      const typename ValueType<Columns>::type &... cols) {
+      const typename ValueType<Columns>::type &...cols) {
     SerializeKey(cols...);
     return TableImpl::TryChangeStateFromPresentToUnknown();
   }
 
   inline bool TryChangeStateFromUnknownToAbsent(
-      const typename ValueType<Columns>::type &... cols) {
+      const typename ValueType<Columns>::type &...cols) {
     SerializeKey(cols...);
     return TableImpl::TryChangeStateFromUnknownToAbsent();
   }
 
-  using ReadOnlySerializedVectorType = ReadOnlySerializedVector<
-      std_containers, typename ValueType<Columns>::type...>;
+  using ReadOnlySerializedVectorType =
+      ReadOnlySerializedVector<std_containers,
+                               typename ValueType<Columns>::type...>;
 
   ReadOnlySerializedVectorType Keys(void) const {
     return ReadOnlySerializedVectorType(all_key_data);
@@ -353,20 +352,21 @@ class Table<std_containers, kTableId, TypeList<Indices...>,
   std::tuple<std::reference_wrapper<Indices>...> indices;
 
   // Serialize columns into a Key that can be used to look up the value in our backing_store
-  void SerializeKey(const typename ValueType<Columns>::type &... cols) const {
+  void SerializeKey(const typename ValueType<Columns>::type &...cols) const {
     key_data.clear();
     BufferedWriter key_writer(key_data);
-    KeyValueWriter<BufferedWriter, Key<Columns>...>::WriteKeySort(
-        key_writer, cols...);
-    KeyValueWriter<BufferedWriter, Key<Columns>...>::WriteKeyUnique(
-        key_writer, cols...);
+    KeyValueWriter<BufferedWriter, Key<Columns>...>::WriteKeySort(key_writer,
+                                                                  cols...);
+    KeyValueWriter<BufferedWriter, Key<Columns>...>::WriteKeyUnique(key_writer,
+                                                                    cols...);
   }
 
   template <index_t I = 0>
-  void UpdateIndices(const typename ValueType<Columns>::type &... cols) {
+  void UpdateIndices(const typename ValueType<Columns>::type &...cols) {
 
     // If we have iterated through all elements
     if constexpr (I < sizeof...(Indices)) {
+
       // Add to this index
       std::get<I>(indices).get().Add(cols...);
 

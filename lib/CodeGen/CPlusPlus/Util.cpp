@@ -21,11 +21,12 @@ namespace cxx {
 // Make a comment in code for debugging purposes
 OutputStream &Comment(OutputStream &os, ProgramRegion region,
                       const char *message) {
-//#ifndef NDEBUG
-//  os << os.Indent() << "// " << message << "\n";
-//#else
-//  (void) message;
-//#endif
+
+  //#ifndef NDEBUG
+  //  os << os.Indent() << "// " << message << "\n";
+  //#else
+  //  (void) message;
+  //#endif
   if (!region.Comment().empty()) {
     os << os.Indent() << "// " << region.Comment() << "\n";
   }

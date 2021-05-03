@@ -6,8 +6,9 @@ namespace hyde {
 namespace {
 
 // Build an eager region for performing a comparison.
-std::pair<TUPLECMP *, OP *> CreateCompareRegion(
-    ProgramImpl *impl, QueryCompare view, Context &context, REGION *parent) {
+std::pair<TUPLECMP *, OP *>
+CreateCompareRegion(ProgramImpl *impl, QueryCompare view, Context &context,
+                    REGION *parent) {
   auto lhs_var = parent->VariableFor(impl, view.InputLHS());
   auto rhs_var = parent->VariableFor(impl, view.InputRHS());
 
@@ -18,14 +19,14 @@ std::pair<TUPLECMP *, OP *> CreateCompareRegion(
     cmp->lhs_vars.AddUse(lhs_var);
     cmp->rhs_vars.AddUse(rhs_var);
 
-    auto do_lhs = [&] (void) {
+    auto do_lhs = [&](void) {
       cmp->col_id_to_var[view.InputLHS().Id()] = lhs_var;
       cmp->col_id_to_var[view.InputRHS().Id()] = lhs_var;
       cmp->col_id_to_var[view.LHS().Id()] = lhs_var;
       cmp->col_id_to_var[view.RHS().Id()] = lhs_var;
     };
 
-    auto do_rhs = [&] (void) {
+    auto do_rhs = [&](void) {
       cmp->col_id_to_var[view.InputLHS().Id()] = rhs_var;
       cmp->col_id_to_var[view.InputRHS().Id()] = rhs_var;
       cmp->col_id_to_var[view.LHS().Id()] = rhs_var;
@@ -67,8 +68,8 @@ std::pair<TUPLECMP *, OP *> CreateCompareRegion(
     return {cmp, let};
 
   } else {
-    auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
-        parent, view.Operator());
+    auto cmp = impl->operation_regions.CreateDerived<TUPLECMP>(parent,
+                                                               view.Operator());
     cmp->lhs_vars.AddUse(lhs_var);
     cmp->rhs_vars.AddUse(rhs_var);
 
@@ -124,13 +125,13 @@ REGION *BuildTopDownCompareChecker(ProgramImpl *impl, Context &context,
     false_body = &(check->body);
 
   } else {
-    check = impl->operation_regions.CreateDerived<TUPLECMP>(
-        parent, cmp.Operator());
+    check =
+        impl->operation_regions.CreateDerived<TUPLECMP>(parent, cmp.Operator());
     true_body = &(check->body);
     false_body = &(check->false_body);
   }
 
-  REGION * const ret = check;
+  REGION *const ret = check;
 
   // If the comparison failed then return false.
   false_body->Emplace(check, BuildStateCheckCaseReturnFalse(impl, check));
@@ -192,15 +193,14 @@ REGION *BuildTopDownCompareChecker(ProgramImpl *impl, Context &context,
   // passes, and its time to call our predecessor.
   const QueryView pred_view = view.Predecessors()[0];
   let->body.Emplace(
-      let,
-      CallTopDownChecker(
-          impl, context, let, view, view_cols, pred_view, already_checked,
-          [=](REGION *parent_if_true) -> REGION * {
-            return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
-          },
-          [=](REGION *parent_if_false) -> REGION * {
-            return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
-          }));
+      let, CallTopDownChecker(
+               impl, context, let, view, view_cols, pred_view, already_checked,
+               [=](REGION *parent_if_true) -> REGION * {
+                 return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
+               },
+               [=](REGION *parent_if_false) -> REGION * {
+                 return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
+               }));
 
   return ret;
 }
@@ -208,8 +208,8 @@ REGION *BuildTopDownCompareChecker(ProgramImpl *impl, Context &context,
 void CreateBottomUpCompareRemover(ProgramImpl *impl, Context &context,
                                   QueryView view, OP *root,
                                   TABLE *already_checked) {
-  const auto [check, body] = CreateCompareRegion(
-      impl, QueryCompare::From(view), context, root);
+  const auto [check, body] =
+      CreateCompareRegion(impl, QueryCompare::From(view), context, root);
   root->body.Emplace(root, check);
 
   auto parent = impl->parallel_regions.Create(body);

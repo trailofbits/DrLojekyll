@@ -305,10 +305,10 @@ using REGION = Node<ProgramRegion>;
 struct RegionRef : public UseRef<REGION> {
 #ifndef NDEBUG
  private:
-  REGION * const self;
+  REGION *const self;
+
  public:
-  RegionRef(REGION *parent_)
-      : self(parent_) {}
+  RegionRef(REGION *parent_) : self(parent_) {}
 #else
   RegionRef(REGION *) {}
 #endif

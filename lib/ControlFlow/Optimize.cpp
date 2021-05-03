@@ -443,26 +443,27 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
   }
 
   auto max_i = cmp->lhs_vars.Size();
-//  if (auto parent_op = cmp->parent->AsOperation();
-//      max_i && parent_op &&
-//      cmp->cmp_op == ComparisonOperator::kEqual &&
-//      !cmp->false_body) {
-//
-//    if (auto parent_cmp = parent_op->AsTupleCompare();
-//        parent_cmp && parent_cmp->cmp_op == ComparisonOperator::kEqual &&
-//        !parent_cmp->false_body) {
-//
-//      for (auto i = 0u; i < max_i; ++i) {
-//        parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
-//        parent_cmp->rhs_vars.AddUse(cmp->rhs_vars[i]);
-//        changed = true;
-//      }
-//
-//      cmp->lhs_vars.Clear();
-//      cmp->rhs_vars.Clear();
-//      max_i = 0u;
-//    }
-//  }
+
+  //  if (auto parent_op = cmp->parent->AsOperation();
+  //      max_i && parent_op &&
+  //      cmp->cmp_op == ComparisonOperator::kEqual &&
+  //      !cmp->false_body) {
+  //
+  //    if (auto parent_cmp = parent_op->AsTupleCompare();
+  //        parent_cmp && parent_cmp->cmp_op == ComparisonOperator::kEqual &&
+  //        !parent_cmp->false_body) {
+  //
+  //      for (auto i = 0u; i < max_i; ++i) {
+  //        parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
+  //        parent_cmp->rhs_vars.AddUse(cmp->rhs_vars[i]);
+  //        changed = true;
+  //      }
+  //
+  //      cmp->lhs_vars.Clear();
+  //      cmp->rhs_vars.Clear();
+  //      max_i = 0u;
+  //    }
+  //  }
 
   // This compare has no variables being compared, so replace it with its
   // body.
@@ -507,8 +508,8 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
 
   for (auto i = 0u; i < max_i; ++i) {
 
-    VAR * const lhs = cmp->lhs_vars[i];
-    VAR * const rhs = cmp->rhs_vars[i];
+    VAR *const lhs = cmp->lhs_vars[i];
+    VAR *const rhs = cmp->rhs_vars[i];
 
     if (lhs == rhs) {
       equal[i] = true;
