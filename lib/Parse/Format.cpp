@@ -313,6 +313,9 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
   }
 
   os << constant.Constructor() << "```";
+  if (constant.IsUnique()) {
+    os << " @unique";
+  }
   os << ".";
   return os;
 }

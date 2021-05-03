@@ -589,6 +589,18 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
         if (Lexeme::kPuncPeriod == lexeme) {
           state = 4;
           continue;
+        } else if (Lexeme::kPragmaPerfUnique == lexeme) {
+          if (const_val.unique.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected duplicate '@unique' pragma specified";
+
+            err.Note(scope_range, const_val.unique.SpellingRange())
+                << "Previous specification is here";
+          } else {
+            const_val.unique = tok;
+          }
+          state = 3;
+          continue;
         }
         [[clang::fallthrough]];
 

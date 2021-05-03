@@ -36,7 +36,8 @@ Node<ProgramVectorUniqueRegion>::~Node(void) {}
 
 Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
     : Node<ProgramRegion>(parent_),
-      op(op_) {
+      op(op_),
+      body(this) {
   assert(parent_->Ancestor()->AsProcedure());
 }
 
@@ -57,6 +58,7 @@ Node<ProgramCallRegion>::Node(unsigned id_, Node<ProgramRegion> *parent_,
       called_proc(this, called_proc_),
       arg_vars(this),
       arg_vecs(this),
+      false_body(this),
       id(id_) {}
 
 Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
@@ -1286,14 +1288,18 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
   auto new_false_par = prog->parallel_regions.Create(this);
 
   if (auto this_body = body.get(); this_body) {
-    new_par->regions.AddUse(this_body);
+    assert(this_body->parent == this);
+    assert(!this_body->EndsWithReturn());
     this_body->parent = new_par;
+    new_par->AddRegion(this_body);
     body.Clear();
   }
 
   if (auto this_false_body = false_body.get(); this_false_body) {
-    new_par->regions.AddUse(this_false_body);
+    assert(this_false_body->parent == this);
+    assert(!this_false_body->EndsWithReturn());
     this_false_body->parent = new_false_par;
+    new_false_par->AddRegion(this_false_body);
     false_body.Clear();
   }
 
@@ -1303,17 +1309,23 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsTupleCompare();
     assert(merge);  // These should all be the same type
+    assert(merge != this);
     assert(merge->lhs_vars.Size() == num_vars);
 
     if (const auto merge_body = merge->body.get(); merge_body) {
-      new_par->regions.AddUse(merge_body);
+      assert(merge_body->parent == merge);
+      assert(!merge_body->EndsWithReturn());
       merge_body->parent = new_par;
+      new_par->AddRegion(merge_body);
       merge->body.Clear();
     }
 
-    if (const auto merge_false_body = merge->body.get(); merge_false_body) {
-      new_false_par->regions.AddUse(merge_false_body);
-      merge_false_body->parent = new_par;
+    if (const auto merge_false_body = merge->false_body.get();
+        merge_false_body) {
+      assert(merge_false_body->parent == merge);
+      assert(!merge_false_body->EndsWithReturn());
+      merge_false_body->parent = new_false_par;
+      new_false_par->AddRegion(merge_false_body);
       merge->false_body.Clear();
     }
 
@@ -1637,6 +1649,7 @@ const bool Node<ProgramCallRegion>::MergeEqual(
   // New parallel region for merged `body` into 'this'
   auto new_par = prog->parallel_regions.Create(this);
   if (auto body_ptr = body.get(); body_ptr) {
+    assert(body_ptr->parent == this);
     body_ptr->parent = new_par;
     new_par->AddRegion(body_ptr);
     body.Clear();
@@ -1645,6 +1658,7 @@ const bool Node<ProgramCallRegion>::MergeEqual(
   // New parallel region for merged `false_body` into 'this'
   auto new_false_par = prog->parallel_regions.Create(this);
   if (auto false_body_ptr = false_body.get(); false_body_ptr) {
+    assert(false_body_ptr->parent == this);
     false_body_ptr->parent = new_false_par;
     new_false_par->AddRegion(false_body_ptr);
     false_body.Clear();
@@ -1659,6 +1673,7 @@ const bool Node<ProgramCallRegion>::MergeEqual(
     assert(merge != this);
 
     if (auto merge_body_ptr = merge->body.get(); merge_body_ptr) {
+      assert(merge_body_ptr->parent == merge);
       merge_body_ptr->parent = new_par;
       new_par->AddRegion(merge_body_ptr);
       merge->body.Clear();
@@ -1666,6 +1681,7 @@ const bool Node<ProgramCallRegion>::MergeEqual(
 
     if (auto merge_false_body_ptr = merge->false_body.get();
         merge_false_body_ptr) {
+      assert(merge_false_body_ptr->parent == merge);
       merge_false_body_ptr->parent = new_false_par;
       new_false_par->AddRegion(merge_false_body_ptr);
       merge->false_body.Clear();
@@ -1951,11 +1967,6 @@ const bool Node<ProgramCheckStateRegion>::MergeEqual(
   }
 
   return true;
-
-
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramCheckStateRegion");
-  assert(false);
-  return false;
 }
 
 }  // namespace hyde

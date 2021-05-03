@@ -106,6 +106,7 @@ class ParsedLiteral : public parse::ParsedNode<ParsedLiteral> {
 
  protected:
   friend class ParsedVariable;
+  friend class ParsedForeignConstant;
 
   using parse::ParsedNode<ParsedLiteral>::ParsedNode;
 };
@@ -929,6 +930,8 @@ class ParsedImport : public parse::ParsedNode<ParsedImport> {
 // Where `type_name` is a foreign type declared with `#foreign`.
 class ParsedForeignConstant : public parse::ParsedNode<ParsedForeignConstant> {
  public:
+  static ParsedForeignConstant From(const ParsedLiteral &lit);
+
   TypeLoc Type(void) const noexcept;
 
   // Name of this constant.
@@ -939,6 +942,10 @@ class ParsedForeignConstant : public parse::ParsedNode<ParsedForeignConstant> {
   DisplayRange SpellingRange(void) const noexcept;
 
   std::string_view Constructor(void) const noexcept;
+
+  // Can the optimizers assume that this constant has a unique value (w.r.t.
+  // any other constant, marked `@unique` or not).
+  bool IsUnique(void) const noexcept;
 
  protected:
   friend class ParsedForeignType;

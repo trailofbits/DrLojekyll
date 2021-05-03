@@ -243,7 +243,6 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
     let_in_fixpoint_region->parent = parent;
     parent->body.Emplace(parent, let_in_fixpoint_region);
 
-
     // Fill in the assignments!
     assert(let_in_fixpoint_region->defined_vars.Size() ==
            view.Columns().size());

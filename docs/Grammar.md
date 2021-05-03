@@ -261,7 +261,10 @@ query_decl: "#query" atom "(" param_list_3 ")" finish_decl_or_start_clause;
 finish_decl_or_start_clause : "." ;
 finish_decl_or_start_clause : ":" conjunct_list "." ;
 
-constant_decl: "#constant" foreign_type_name code_data ".";
+constant_decl: "#constant" foreign_type_name code_data constant_pragmas "." ;
+
+constant_pragmas: "@unique" ;
+constant_pragmas: ;
 
 maybe_differential: "@differential" ;
 maybe_differential: ;

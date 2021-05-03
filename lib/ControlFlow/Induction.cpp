@@ -24,6 +24,9 @@ bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
 
 Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
     : Node<ProgramRegion>(parent_->containing_procedure),
+      init_region(this),
+      cyclic_region(this),
+      output_region(this),
       vectors(this),
       id(impl->next_id++) {
   assert(parent_->Ancestor()->AsProcedure());

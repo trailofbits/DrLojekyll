@@ -561,8 +561,8 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   auto ancestor_of_inits = FindCommonAncestorOfInitRegions(regions);
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
-  induction->init_region.Emplace(induction, ancestor_of_inits);
   ancestor_of_inits->parent = induction;
+  induction->init_region.Emplace(induction, ancestor_of_inits);
 
   // Make sure that we only enter into the cycle accumulation process once.
   assert(!induction->cyclic_region);

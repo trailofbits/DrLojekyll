@@ -162,7 +162,7 @@ jobs:
       - name: Debug Backend Fuzzer Sanity Check
         run: |
           mkdir -p backend-fuzz-run/Debug
-          cp -r data/self_testing_examples backend-fuzz-run/Debug/corpus
+          cp -r data/examples backend-fuzz-run/Debug/corpus
           cd backend-fuzz-run/Debug
           if ! ../../build/fuzz/Debug/drlojekyll-backend-fuzzer \
                  -max_total_time=60 \
@@ -220,7 +220,7 @@ jobs:
       - name: Release Backend Fuzzer Sanity Check
         run: |
           mkdir -p backend-fuzz-run/RelWithDebInfo
-          cp -r data/self_testing_examples backend-fuzz-run/RelWithDebInfo/corpus
+          cp -r data/examples backend-fuzz-run/RelWithDebInfo/corpus
           cd backend-fuzz-run/RelWithDebInfo
           if ! ../../build/fuzz/RelWithDebInfo/drlojekyll-backend-fuzzer \
                  -max_total_time=3 \
@@ -281,7 +281,11 @@ jobs:
         run: cmake --build build --config Debug -j
 
       - name: Test
-        run: cd build && ctest --output-on-failure -j 2 --schedule-random
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd build
+          ctest --output-on-failure -j 2 --schedule-random
 
       - name: Install
         run: cmake --install build --config Debug
