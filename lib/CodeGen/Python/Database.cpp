@@ -11,6 +11,7 @@
 #include "Util.h"
 
 namespace hyde {
+namespace python {
 namespace {
 
 static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
@@ -1724,7 +1725,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 }  // namespace
 
 // Emits Python code for the given program to `os`.
-void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
+void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "# Auto-generated file\n\n"
      << "# flake8: noqa\n"  // Disable Flake8 linting.
      << "# fmt: off\n\n"  // Disable Black auto-formatting.
@@ -1829,4 +1830,5 @@ void GeneratePythonDatabaseCode(const Program &program, OutputStream &os) {
   os << "# End of auto-generated file\n";
 }
 
+}  // namespace python
 }  // namespace hyde

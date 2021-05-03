@@ -330,6 +330,11 @@ enum class Lexeme : uint8_t {
   // because function calls to resolve the earliest identity of an object and
   // merge with that need not be generated.
   kPragmaPerfTransparent,
+
+  // Used to mark a foreign constant as unique. If a constant is marked as
+  // unique, and if it's compared to any other constant that isn't identical,
+  // then the comparison is assumed to be unequal.
+  kPragmaPerfUnique,
 };
 
 enum class TypeKind : uint32_t;

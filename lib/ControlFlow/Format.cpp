@@ -223,16 +223,16 @@ OutputStream &operator<<(OutputStream &os, ProgramReturnRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramTupleCompareRegion region) {
-  os << os.Indent();
-  auto sep = "if-compare {";
+  os << os.Indent() << "if-compare {";
+  auto sep = "";
   for (auto var : region.LHS()) {
     os << sep << var;
     sep = ", ";
   }
 
-  os << "} " << region.Operator();
+  os << "} " << region.Operator() << " {";
 
-  sep = " {";
+  sep = "";
   for (auto var : region.RHS()) {
     os << sep << var;
     sep = ", ";
