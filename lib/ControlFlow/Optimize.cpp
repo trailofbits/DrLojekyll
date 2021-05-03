@@ -807,6 +807,7 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
 static bool OptimizeImpl(PROC *proc) {
   if (auto body = proc->body.get()) {
     assert(body->parent == proc);
+    (void) body;
   }
   return false;
 }
