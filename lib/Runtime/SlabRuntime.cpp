@@ -1,10 +1,28 @@
 
 #include <drlojekyll/Runtime/StdRuntime.h>
 
+#include <new>
+#include <mutex>
+
 namespace hyde {
 namespace rt {
 
+std::unique_ptr<SlabStorage> CreateSlabStorage(void) {
+
+}
+
 const StdSerialBuffer kEmptyIndexBackingBuffer{};
+
+
+
+
+
+
+class TableImpl {
+ public:
+
+
+};
 
 void BufferedWriter::WriteF64(double d) {
   WriteU64(reinterpret_cast<const uint64_t &>(d));

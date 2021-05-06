@@ -1516,7 +1516,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
       context.functors.push_back(pred);
-    } else {
+    } else if (pred.Arity()) {
       context.negated_predicates.push_back(pred);
     }
   }

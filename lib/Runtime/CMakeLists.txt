@@ -1,29 +1,50 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-# Need a cpp file to support IDE include paths when parsing compile_commands.json...
-add_library(StdRuntime STATIC
-  "StdRuntime.cpp"
-  )
 
-add_library(${PROJECT_NAME}::StdRuntime ALIAS StdRuntime)
-set_target_properties(StdRuntime PROPERTIES
-  PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdRuntime.h")
-target_include_directories(StdRuntime PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+set(Runtime_PUBLIC_H
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Column.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Serializer.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Slab.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabList.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabReference.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabStorage.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabTuple.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabVector.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Util.h"
 )
 
-string(TOLOWER ${PROJECT_NAME} lower_project_name)
-install(
-  TARGETS StdRuntime
-  EXPORT "${PROJECT_NAME}Targets"
-  RUNTIME
-    DESTINATION "bin"
-  LIBRARY
-    DESTINATION "lib/${lower_project_name}"
-  ARCHIVE
-    DESTINATION "lib/${lower_project_name}"
-  PUBLIC_HEADER
-    DESTINATION "include/${lower_project_name}/Runtime"
+set(Runtime_SRCS
+  "Slab.cpp"
+  "Slab.h"
+  
+  "SlabList.cpp"
+  
+  "SlabManager.cpp"
+  "SlabManager.h"
+  
+  "SlabManager.cpp"
+  "SlabManager.h"
+  
+  "SlabReference.cpp"
+
+  "SlabStorage.cpp"
+  "SlabStorage.h"
+  
+  "SlabVector.cpp"
+)
+
+set(Runtime_PRIV_DEPS
+)
+
+set(Runtime_DEPS
+    
+)
+
+dr_define_static_library(Runtime
+  CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
+  SOURCES ${Runtime_SRCS}
+  PUBLIC_HEADERS ${Runtime_PUBLIC_H}
+  DEPENDENCIES ${Runtime_DEPS}
+  PRIVATE_DEPS ${Runtime_PRIV_DEPS}
 )

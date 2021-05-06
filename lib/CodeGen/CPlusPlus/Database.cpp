@@ -42,9 +42,10 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
   // Table and column descriptors
   for (auto table : program.Tables()) {
-    os << "struct table_desc_" << table.Id() << " {};\n";
+    os << os.Indent() << "struct table_desc_" << table.Id() << " {};\n";
     for (auto col : table.Columns()) {
-      os << "struct column_desc_" << table.Id() << "_" << col.Index() << " {\n";
+      os << os.Indent() << "struct column_desc_" << table.Id()
+         << "_" << col.Index() << " {\n";
       os.PushIndent();
 
       // NOTE(ekilmer): Will want to fill this programmatically someday
@@ -52,7 +53,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
       os << os.Indent() << "using type = " << TypeName(module, col.Type())
          << ";\n";
       os.PopIndent();
-      os << "};\n";
+      os << os.Indent() << "};\n";
     }
     os << "\n";
   }
@@ -1294,7 +1295,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
       os << ", " << TypeName(module, type);
     }
 
-    os << "> " << Vector(os, vec) << ";\n";
+    os << "> " << Vector(os, vec) << "(storage);\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -1541,18 +1542,17 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "public:\n";
   os.PushIndent();  // public:
 
-  os << os.Indent() << "LogT &log;\n";
-  os << os.Indent() << "FunctorsT &functors;\n";
-
-  os << os.Indent()
-     << "std::unordered_map<std::size_t, std::vector<::hyde::rt::Any*>> _refs;\n";
-
-  os << "\n";
+  os << os.Indent() << "StorageT &storage;\n"
+     << os.Indent() << "LogT &log;\n"
+     << os.Indent() << "FunctorsT &functors;\n"
+     << "\n";
 
   os << os.Indent() << "explicit " << gClassName
-     << "(StorageT &storage, LogT &l, FunctorsT &f)\n";
+     << "(StorageT &s, LogT &l, FunctorsT &f)\n";
   os.PushIndent();  // constructor
-  os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
+  os << os.Indent() << ": storage(s),\n"
+     << os.Indent() << "  log(l),\n"
+     << os.Indent() << "  functors(f)";
 
   for (auto table : program.Tables()) {
     for (auto index : table.Indices()) {
@@ -1623,11 +1623,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
 
   os.PopIndent();  // private:
-
   os.PopIndent();  // class:
-  os << os.Indent() << "};\n\n";
-
-  os << "}  // namespace\n";
+  os << "};\n\n"
+     << "}  // namespace\n";
 
   // Output epilogue code.
   for (auto sub_module : ParsedModuleIterator(module)) {

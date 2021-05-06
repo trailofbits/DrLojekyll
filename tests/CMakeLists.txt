@@ -12,6 +12,7 @@ add_executable(unittests
     UnitTests.h
     BitManipulation.cpp
     Parsing.cpp
+    Runtime.cpp
     )
 
 option(ENABLE_TEST_MYPY_CHECKS "Test and verify generated Python code using Mypy" ON)
@@ -48,6 +49,7 @@ target_link_libraries(
           Lex
           Parse
           DataFlow
+          Runtime
           Version
           std::filesystem)
 
