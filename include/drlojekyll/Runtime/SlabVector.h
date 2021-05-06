@@ -31,7 +31,6 @@ class SlabVector : public SlabList {
 
   void Clear(void);
 
- protected:
   SlabStorage &storage;
   const unsigned worker_id;
 
@@ -140,7 +139,7 @@ class TypedSlabVector : public SlabVector {
     AddImpl<0, SlabListWriter, InputT, InputTs...>(writer, t, ts...);
   }
 
- private:
+ protected:
   template <size_t kIndex, typename Writer, typename InputT,
             typename... InputTs>
   void AddImpl(Writer &writer, const InputT &elem,
@@ -169,6 +168,24 @@ class TypedSlabVector : public SlabVector {
     if constexpr (0u < sizeof...(InputTs)) {
       AddImpl<kIndex + 1u, Writer, InputTs...>(writer, elems...);
     }
+  }
+};
+
+// An append-only vector of serialiazed tuples of type `Ts`. This variant
+// is "persistent", i.e. data added is persistently stored.
+template <typename T, typename... Ts>
+class PersistentTypedSlabVector : public TypedSlabVector<T, Ts...> {
+ public:
+  template <typename InputT, typename... InputTs>
+  HYDE_RT_FLATTEN void Add(const InputT &t, const InputTs&... ts) noexcept {
+    static_assert(sizeof...(Ts) == sizeof...(InputTs));
+
+    using Parent = TypedSlabVector<T, Ts...>;
+
+    SlabListWriter writer(this->Parent::storage,
+                          *this, true  /* is_persistent */);
+    this->Parent::template AddImpl<0, SlabListWriter, InputT, InputTs...>(
+        writer, t, ts...);
   }
 };
 

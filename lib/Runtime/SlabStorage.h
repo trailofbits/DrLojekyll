@@ -27,10 +27,16 @@ class SlabStorage {
   // than `-1`.
   const int fd;
   const uint64_t base_file_size;
-  std::atomic<uint64_t> current_file_size;
 
-  uint8_t * const base;
+  // The slab base address. For an in-memory slab store, this will be `nullptr`,
+  // and all slab offsets will be the actual addresses of slabs. For persistent
+  // slab stores, this will be the base of a file-backed `mmap`, and all slab
+  // offsets will either
+  Slab * const base;
   const uint64_t max_size;
+
+  std::mutex file_size_lock;
+  uint64_t file_size;
 
   // List of all allocated slabs of memory.
   std::mutex all_slabs_lock;
@@ -40,6 +46,12 @@ class SlabStorage {
   std::mutex maybe_free_slabs_lock;
   std::vector<Slab *> maybe_free_slabs;
   std::atomic<bool> has_free_slab_heads;
+
+  // Allocate an ephemeral slab.
+  void *AllocateEphemeralSlab(void);
+
+  // Allocate a persistent slab.
+  void *AllocatePersistentSlab(void);
 
  private:
   SlabStorage(const SlabStorage &) = delete;

@@ -31,16 +31,24 @@ namespace {
 #endif
 
 Result<SlabStorePtr, std::error_code> CreateSlabStorage(
-    SlabStoreKind kind, SlabStoreSize size, unsigned num_workers) {
+    SlabStoreKind kind, SlabStoreSize size_, unsigned num_workers) {
 
   ClearLastError();
 
-  // Go and
-  auto base = mmap(nullptr, static_cast<size_t>(size), PROT_NONE,
+  size_t size = static_cast<size_t>(size_);
+  auto base = mmap(nullptr, size, PROT_NONE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE |
                    MAP_UNINITIALIZED, -1, 0);
   if (MAP_FAILED == base) {
     return GetLastError();
+  }
+
+  // Make sure the `mmap`ed address is `Slab`-aligned.
+  auto base_addr = reinterpret_cast<uintptr_t>(base);
+  while (base_addr & (sizeof(Slab) - 1ull)) {
+    base_addr += 4096u;
+    size -= 4096u;
+    base = reinterpret_cast<void *>(base_addr);
   }
 
   int fd = -1;
@@ -82,7 +90,7 @@ Result<SlabStorePtr, std::error_code> CreateSlabStorage(
   }
 
   return std::make_unique<SlabStorage>(
-      num_workers, fd, file_size, base, static_cast<uint64_t>(size));
+      num_workers, fd, file_size, base, size);
 }
 
 SlabStorage::~SlabStorage(void) {
@@ -101,9 +109,9 @@ SlabStorage::SlabStorage(unsigned num_workers_, int fd_, uint64_t file_size_,
     : num_workers(num_workers_),
       fd(fd_),
       base_file_size(file_size_),
-      current_file_size(file_size_),
-      base(reinterpret_cast<uint8_t *>(base_)),
+      base(reinterpret_cast<Slab *>(base_)),
       max_size(max_size_),
+      file_size(file_size_),
       has_free_slab_heads(false) {
   all_slabs.reserve(4096u);
   maybe_free_slabs.reserve(4096u);
@@ -118,13 +126,13 @@ SlabStats GarbageCollect(SlabStorage &storage) {
   SlabStats stats;
 
   auto count_num_used = [&] (Slab *slab) {
-    for (; slab; slab = slab->header.u.next) {
+    for (; slab; slab = slab->Next()) {
       stats.num_open_slabs += 1u;
     }
   };
 
   auto count_num_free = [&] (Slab *slab) {
-    for (; slab; slab = slab->header.u.next) {
+    for (; slab; slab = slab->Next()) {
       if (slab->IsReferenced()) {
         count_num_used(slab);
         break;
@@ -143,6 +151,91 @@ SlabStats GarbageCollect(SlabStorage &storage) {
   }
 
   return stats;
+}
+
+// Allocate an ephemeral slab.
+void *SlabStorage::AllocateEphemeralSlab(void) {
+  Slab *ret_slab = nullptr;
+  if (has_free_slab_heads.load(std::memory_order_acquire)) {
+
+    std::unique_lock<std::mutex> locker(maybe_free_slabs_lock);
+
+    unsigned to_remove = 0u;
+    for (size_t max_i = maybe_free_slabs.size(), i = 0; i < max_i; ++i) {
+
+      auto &found_slab = maybe_free_slabs[i];
+
+      // This slot has a null entry, schedule it for removal.
+      if (!found_slab) {
+        ++to_remove;
+        std::swap(found_slab, maybe_free_slabs[max_i - to_remove]);
+        continue;
+      }
+
+      // This slab is still referenced.
+      if (found_slab->IsReferenced()) {
+        continue;
+      }
+
+      ret_slab = found_slab;
+      found_slab = ret_slab->Next();
+
+      // `ret_slab->header.next` is null, schedule it for removal.
+      if (!found_slab) {
+        ++to_remove;
+        std::swap(found_slab, maybe_free_slabs[max_i - to_remove]);
+      }
+      break;
+    }
+
+    // Clean up our list.
+    if (to_remove) {
+      while (!maybe_free_slabs.back()) {
+        maybe_free_slabs.pop_back();
+      }
+      has_free_slab_heads.store(!maybe_free_slabs.empty(),
+                                std::memory_order_release);
+    }
+  }
+
+  // We have nothing in a free list, so go and allocate some new memory.
+  if (!ret_slab) {
+    void *ptr = nullptr;
+    if (posix_memalign(&ptr, sizeof(Slab), sizeof(Slab))) {
+      perror("Failed to perform 2 MiB aligned allocation");
+      abort();
+    }
+
+    ret_slab = reinterpret_cast<Slab *>(ptr);
+    std::unique_lock<std::mutex> locker(all_slabs_lock);
+    all_slabs.emplace_back(ret_slab);
+  }
+
+  return ret_slab;
+}
+
+// Allocate a persistent slab.
+void *SlabStorage::AllocatePersistentSlab(void) {
+  uint64_t old_size = 0;
+  {
+    std::unique_lock<std::mutex> locker(file_size_lock);
+    old_size = file_size;
+    file_size += sizeof(Slab);
+    if (ftruncate(fd, static_cast<off_t>(file_size))) {
+      perror("Unable to extend backing file");
+      abort();
+    }
+  }
+
+  auto ret = mmap(
+      &(base[old_size / sizeof(Slab)]), sizeof(Slab), PROT_READ | PROT_WRITE,
+      MAP_SHARED | MAP_FILE, fd, static_cast<off_t>(old_size));
+  if (MAP_FAILED == ret) {
+    perror("Failed to map Slab to file");
+    abort();
+  }
+
+  return ret;
 }
 
 }  // namespace rt

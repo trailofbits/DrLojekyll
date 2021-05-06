@@ -68,7 +68,8 @@ class SlabList {
 // unsafe because no bounds checking is performed.
 class UnsafeSlabListWriter {
  public:
-  explicit UnsafeSlabListWriter(SlabStorage &, SlabList &);
+  explicit UnsafeSlabListWriter(SlabStorage &, SlabList &,
+                                bool is_persistent=false);
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE ~UnsafeSlabListWriter(void) {
     UpdateSlabSize();
@@ -163,7 +164,6 @@ class UnsafeSlabListWriter {
  protected:
   SlabStorage &manager;
   Slab ** const last_ptr;
-  Slab **last_next_ptr;
   uint8_t *write_ptr;
   const uint8_t *max_write_ptr;
 
