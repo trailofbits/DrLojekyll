@@ -5,8 +5,55 @@
 #include <drlojekyll/Runtime/SlabStorage.h>
 #include <drlojekyll/Runtime/SlabVector.h>
 
+TEST(SlabRuntime, TinyInMemorySlabStore) {
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+}
+
+TEST(SlabRuntime, SmallInMemorySlabStore) {
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kSmall);
+  RC_ASSERT(maybe_storage.Succeeded());
+}
+
+TEST(SlabRuntime, MediumInMemorySlabStore) {
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kMedium);
+  RC_ASSERT(maybe_storage.Succeeded());
+}
+
+TEST(SlabRuntime, LargeInMemorySlabStore) {
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kLarge);
+  RC_ASSERT(maybe_storage.Succeeded());
+}
+
+TEST(SlabRuntime, ExtraLargeInMemorySlabStore) {
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kExtraLarge);
+  RC_ASSERT(maybe_storage.Succeeded());
+}
+
+TEST(SlabRuntime, HugeInMemorySlabStore) {
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kHuge);
+  RC_ASSERT(maybe_storage.Succeeded());
+}
+
 TEST(SlabRuntime, SlabVectorOfU8sWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<uint8_t> vec(*storage, 0u);
   vec.Add<uint8_t>(0xAA);
   vec.Add<uint8_t>(0x11);
@@ -27,7 +74,12 @@ TEST(SlabRuntime, SlabVectorOfU8sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfU16sWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<uint16_t> vec(*storage, 0u);
   vec.Add<uint16_t>(0xAA11);
   vec.Add<uint16_t>(0xBB22);
@@ -48,7 +100,12 @@ TEST(SlabRuntime, SlabVectorOfU16sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfU32sWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<uint32_t> vec(*storage, 0u);
   vec.Add<uint32_t>(0xAABBCCDDu);
   vec.Add<uint32_t>(0x11223344u);
@@ -69,7 +126,12 @@ TEST(SlabRuntime, SlabVectorOfU32sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfU64sWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<uint64_t> vec(*storage, 0u);
   vec.Add<uint64_t>(0xAABBCCDDull);
   vec.Add<uint64_t>(0x1122334400000000ull);
@@ -90,7 +152,12 @@ TEST(SlabRuntime, SlabVectorOfU64sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfF32sWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<float> vec(*storage, 0u);
   vec.Add<float>(1.0f);
   vec.Add<float>(99.0f);
@@ -111,7 +178,12 @@ TEST(SlabRuntime, SlabVectorOfF32sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfF64sWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<double> vec(*storage, 0u);
   vec.Add<double>(1.0);
   vec.Add<double>(99.0);
@@ -133,7 +205,12 @@ TEST(SlabRuntime, SlabVectorOfF64sWorks) {
 
 
 TEST(SlabRuntime, SlabVectorOfPairsWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<double, int> vec(*storage, 0u);
   vec.Add<double, int>(1.0, 11111);
   vec.Add<double, int>(99.0, 22222);
@@ -164,7 +241,12 @@ TEST(SlabRuntime, SlabVectorOfPairsWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfTriplesOfPairsWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<std::pair<int, bool>,
                             std::array<char, 2>,
                             std::tuple<float, double>> vec(*storage, 0u);
@@ -205,7 +287,12 @@ TEST(SlabRuntime, SlabVectorOfTriplesOfPairsWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfStringsWorks) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<std::string> vec(*storage, 0u);
   std::string x;
   for (auto i = 0; i < ::hyde::rt::kSlabSize; ++i) {
@@ -223,7 +310,12 @@ TEST(SlabRuntime, SlabVectorOfStringsWorks) {
 }
 
 TEST(SlabRuntime, AllMemoryIsFreed) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
 
   // Making a new storage provider does not allocate any slabs.
   auto stats = hyde::rt::GarbageCollect(*storage);
@@ -259,7 +351,12 @@ TEST(SlabRuntime, AllMemoryIsFreed) {
 
 
 TEST(SlabRuntime, AllMemoryIsFreedWithScopedIteration) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
 
   // Making a new storage provider does not allocate any slabs.
   auto stats = hyde::rt::GarbageCollect(*storage);
@@ -307,7 +404,12 @@ TEST(SlabRuntime, AllMemoryIsFreedWithScopedIteration) {
 }
 
 TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByCopy) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
 
   // Making a new storage provider does not allocate any slabs.
   auto stats = hyde::rt::GarbageCollect(*storage);
@@ -373,7 +475,12 @@ TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByCopy) {
 
 
 TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByMove) {
-  auto storage = hyde::rt::CreateSlabStorage();
+  auto maybe_storage = hyde::rt::CreateSlabStorage(
+      hyde::rt::InMemorySlabStore{},
+      hyde::rt::SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
 
   // Making a new storage provider does not allocate any slabs.
   auto stats = hyde::rt::GarbageCollect(*storage);

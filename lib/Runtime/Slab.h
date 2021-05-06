@@ -10,7 +10,7 @@
 namespace hyde {
 namespace rt {
 
-class SlabManager;
+class SlabStorage;
 
 // A slab is an aligned region in memory holding a byte array containing
 // serialized data. We rely on a slab's alignment in memory to be able to
@@ -83,7 +83,7 @@ class Slab {
     return reinterpret_cast<Slab *>(slab_addr);
   }
 
-  static void *operator new(size_t, SlabManager &manager) noexcept;
+  static void *operator new(size_t, SlabStorage &manager) noexcept;
   static void operator delete(void *ptr) noexcept;
 };
 

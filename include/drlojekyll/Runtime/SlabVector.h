@@ -22,7 +22,7 @@ class SlabVector : public SlabList {
 
   SlabVector(SlabVector &&that) noexcept
       : SlabList(std::forward<SlabList>(that)),
-        manager(that.manager),
+        storage(that.storage),
         worker_id(that.worker_id) {}
 
   HYDE_RT_ALWAYS_INLINE ~SlabVector(void) {
@@ -32,7 +32,7 @@ class SlabVector : public SlabList {
   void Clear(void);
 
  protected:
-  SlabManager &manager;
+  SlabStorage &storage;
   const unsigned worker_id;
 
  private:
@@ -136,7 +136,7 @@ class TypedSlabVector : public SlabVector {
   HYDE_RT_FLATTEN void Add(const InputT &t, const InputTs&... ts) noexcept {
     static_assert(sizeof...(Ts) == sizeof...(InputTs));
 
-    SlabListWriter writer(manager, *this);
+    SlabListWriter writer(storage, *this);
     AddImpl<0, SlabListWriter, InputT, InputTs...>(writer, t, ts...);
   }
 

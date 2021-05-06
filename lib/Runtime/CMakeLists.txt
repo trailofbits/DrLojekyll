@@ -4,6 +4,7 @@
 set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Column.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Serializer.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Slab.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabList.h"
@@ -15,16 +16,16 @@ set(Runtime_PUBLIC_H
 )
 
 set(Runtime_SRCS
+  "Error.cpp"
+  "Error.h"
+
   "Slab.cpp"
   "Slab.h"
   
   "SlabList.cpp"
   
-  "SlabManager.cpp"
-  "SlabManager.h"
-  
-  "SlabManager.cpp"
-  "SlabManager.h"
+  "SlabStorage.cpp"
+  "SlabStorage.h"
   
   "SlabReference.cpp"
 

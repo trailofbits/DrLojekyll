@@ -11,7 +11,7 @@ namespace hyde {
 namespace rt {
 
 UnsafeSlabListWriter::UnsafeSlabListWriter(
-    SlabManager &manager_, SlabList &buffer)
+    SlabStorage &manager_, SlabList &buffer)
     : manager(manager_),
       last_ptr(&(buffer.last)) {
 

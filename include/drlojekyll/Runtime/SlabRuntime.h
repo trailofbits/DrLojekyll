@@ -26,45 +26,10 @@ class Slab;
 class SlabList;
 class SlabListWriter;
 class SlabListReader;
-class SlabManager;
+class SlabStorage;
 class SlabStorage;
 class SlabReference;
 
-
-//// Deserialize a value from a serial byte store.
-//template <typename T>
-//inline static T ReifyValue(const StdSerialBuffer &backing_store,
-//                           index_t &offset) {
-//  if constexpr (std::is_fundamental_v<T> || std::is_enum_v<T>) {
-//
-//    // TODO(pag,ekilmer): This assumes that writes into the backing store
-//    // are little-endian, and that memory loads on the host architecture are
-//    // also little-endian.
-//    T tmp;
-//    std::memcpy(&tmp, &(backing_store[offset]), sizeof(T));
-//    offset += static_cast<index_t>(sizeof(T));
-//    return tmp;
-//
-//  } else {
-//    assert(false && "TODO: Reify is only supported for fundamental types.");
-//    return {};
-//  }
-//}
-//
-//// Deserialize a series of values form a serial byte store.
-//template <typename E, typename... Es>
-//inline static std::tuple<E, Es...> ReifyTuple(
-//    const StdSerialBuffer &backing_store, index_t &offset) {
-//  auto val = ReifyValue<E>(backing_store, offset);
-//  if constexpr (0u < sizeof...(Es)) {
-//    std::tuple<Es...> next_vals = ReifyTuple<Es...>(backing_store, offset);
-//    return std::tuple_cat(std::make_tuple(val), next_vals);
-//  } else {
-//    return {val};
-//  }
-//}
-
-//
 //template <typename... Ts>
 //class Vector<SlabStorage, Ts...> {
 // private:

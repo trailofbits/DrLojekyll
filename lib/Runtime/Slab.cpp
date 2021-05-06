@@ -5,12 +5,12 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "SlabManager.h"
+#include "SlabStorage.h"
 
 namespace hyde {
 namespace rt {
 
-void *Slab::operator new(size_t, SlabManager &manager) noexcept {
+void *Slab::operator new(size_t, SlabStorage &manager) noexcept {
   Slab *ret_slab = nullptr;
   if (manager.has_free_slab_heads.load(std::memory_order_acquire)) {
 

@@ -14,7 +14,7 @@ namespace rt {
 class Slab;
 class SlabListWriter;
 class SlabListReader;
-class SlabManager;
+class SlabStorage;
 class SlabReference;
 class SlabStorage;
 class SlabVector;
@@ -68,7 +68,7 @@ class SlabList {
 // unsafe because no bounds checking is performed.
 class UnsafeSlabListWriter {
  public:
-  explicit UnsafeSlabListWriter(SlabManager &, SlabList &);
+  explicit UnsafeSlabListWriter(SlabStorage &, SlabList &);
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE ~UnsafeSlabListWriter(void) {
     UpdateSlabSize();
@@ -161,7 +161,7 @@ class UnsafeSlabListWriter {
   }
 
  protected:
-  SlabManager &manager;
+  SlabStorage &manager;
   Slab ** const last_ptr;
   Slab **last_next_ptr;
   uint8_t *write_ptr;

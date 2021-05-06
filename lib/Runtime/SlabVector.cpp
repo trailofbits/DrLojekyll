@@ -7,18 +7,18 @@
 namespace hyde {
 namespace rt {
 
-SlabVector::SlabVector(SlabStorage &storage, unsigned worker_id_)
+SlabVector::SlabVector(SlabStorage &storage_, unsigned worker_id_)
     : SlabList(),
-      manager(storage.manager),
+      storage(storage_),
       worker_id(worker_id_) {}
 
 void SlabVector::Clear(void) {
   if (auto slab = first) {
     first = nullptr;
     last = nullptr;
-    std::unique_lock<std::mutex> locker(manager.maybe_free_slabs_lock);
-    manager.maybe_free_slabs.push_back(slab);
-    manager.has_free_slab_heads.store(true, std::memory_order_release);
+    std::unique_lock<std::mutex> locker(storage.maybe_free_slabs_lock);
+    storage.maybe_free_slabs.push_back(slab);
+    storage.has_free_slab_heads.store(true, std::memory_order_release);
   }
 }
 

@@ -3,7 +3,7 @@
 #include <drlojekyll/Runtime/SlabReference.h>
 
 #include "Slab.h"
-#include "SlabManager.h"
+#include "SlabStorage.h"
 
 namespace hyde {
 namespace rt {
