@@ -1475,6 +1475,11 @@ ParsedForeignType::Constants(Language lang_) const noexcept {
   }
 }
 
+ParsedForeignConstant ParsedForeignConstant::From(const ParsedLiteral &lit) {
+  assert(lit.impl->foreign_constant != nullptr);
+  return ParsedForeignConstant(lit.impl->foreign_constant);
+}
+
 TypeLoc ParsedForeignConstant::Type(void) const noexcept {
   return impl->type;
 }
@@ -1494,6 +1499,12 @@ DisplayRange ParsedForeignConstant::SpellingRange(void) const noexcept {
 
 std::string_view ParsedForeignConstant::Constructor(void) const noexcept {
   return impl->code;
+}
+
+// Can the optimizers assume that this constant has a unique value (w.r.t.
+// any other constant, marked `@unique` or not).
+bool ParsedForeignConstant::IsUnique(void) const noexcept {
+  return impl->unique.IsValid();
 }
 
 DisplayRange ParsedInline::SpellingRange(void) const noexcept {

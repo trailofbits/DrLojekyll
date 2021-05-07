@@ -112,6 +112,7 @@ class Node<ParsedLiteral> {
   TypeLoc type;
   std::string data;
   Node<ParsedForeignType> *foreign_type{nullptr};
+  Node<ParsedForeignConstant> *foreign_constant{nullptr};
 };
 
 class UseBase {
@@ -490,6 +491,7 @@ class Node<ParsedForeignConstant> {
   DisplayRange range;
   std::string code;
   Token name;
+  Token unique;
   TypeLoc type;
   bool can_overide{true};
 };

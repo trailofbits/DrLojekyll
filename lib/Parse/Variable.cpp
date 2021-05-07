@@ -71,8 +71,10 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
     assert(const_ptr->parent != nullptr);
 
     lhs->type = const_ptr->type;
+
     assign->rhs.type = const_ptr->type;
     assign->rhs.foreign_type = const_ptr->parent;
+    assign->rhs.foreign_constant = const_ptr;
 
   // Boolean constants bring along their types as well.
   } else if (Lexeme::kLiteralTrue == tok_lexeme ||

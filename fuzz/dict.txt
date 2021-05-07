@@ -84,7 +84,9 @@
 " @impure "
 " @inline "
 " @transparent "
-
+" @differential "
+" @unique "
+" @product "
 
 "( "
 ") "

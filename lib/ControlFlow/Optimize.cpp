@@ -19,6 +19,7 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   // child to replace the parent.
   } else if (par->regions.Size() == 1u) {
     const auto only_region = par->regions[0u];
+    assert(only_region->parent == par);
     par->regions.Clear();
     par->ReplaceAllUsesWith(only_region);
     return true;
@@ -284,6 +285,7 @@ static bool OptimizeImpl(SERIES *series) {
   // child to replace the parent.
   } else if (series->regions.Size() == 1u) {
     const auto only_region = series->regions[0u];
+    assert(only_region->parent == series);
     series->regions.Clear();
     series->ReplaceAllUsesWith(only_region);
     return true;
@@ -386,6 +388,10 @@ static bool OptimizeImpl(SERIES *series) {
 
 // Down-propagate all bindings.
 static bool OptimizeImpl(LET *let) {
+  if (!let->IsUsed() || !let->parent) {
+    return false;
+  }
+
   bool changed = false;
 
   for (auto i = 0u, max_i = let->defined_vars.Size(); i < max_i; ++i) {
@@ -410,99 +416,250 @@ static bool OptimizeImpl(LET *let) {
 // Propagate comparisons upwards, trying to join towers of comparisons into
 // single tuple group comparisons.
 static bool OptimizeImpl(TUPLECMP *cmp) {
+  if (!cmp->IsUsed() || !cmp->parent) {
+    return false;
+  }
+
+  assert(cmp->cmp_op != ComparisonOperator::kNotEqual);
 
   bool changed = false;
 
-  auto max_i = cmp->lhs_vars.Size();
-  if (auto parent_op = cmp->parent->AsOperation(); max_i && parent_op) {
-    if (auto parent_cmp = parent_op->AsTupleCompare();
-        parent_cmp && cmp->cmp_op == ComparisonOperator::kEqual &&
-        cmp->cmp_op == parent_cmp->cmp_op) {
-
-      for (auto i = 0u; i < max_i; ++i) {
-        parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
-        parent_cmp->rhs_vars.AddUse(cmp->rhs_vars[i]);
-        changed = true;
-      }
-
-      cmp->lhs_vars.Clear();
-      cmp->rhs_vars.Clear();
-      max_i = 0u;
+  if (auto true_body = cmp->body.get()) {
+    assert(true_body->parent == cmp);
+    if (true_body->IsNoOp()) {
+      cmp->body->parent = nullptr;
+      cmp->body.Clear();
+      changed = true;
     }
   }
+
+  if (auto false_body = cmp->false_body.get()) {
+    assert(false_body->parent == cmp);
+    if (false_body->IsNoOp()) {
+      cmp->false_body->parent = nullptr;
+      cmp->false_body.Clear();
+      changed = true;
+    }
+  }
+
+  auto max_i = cmp->lhs_vars.Size();
+
+  //  if (auto parent_op = cmp->parent->AsOperation();
+  //      max_i && parent_op &&
+  //      cmp->cmp_op == ComparisonOperator::kEqual &&
+  //      !cmp->false_body) {
+  //
+  //    if (auto parent_cmp = parent_op->AsTupleCompare();
+  //        parent_cmp && parent_cmp->cmp_op == ComparisonOperator::kEqual &&
+  //        !parent_cmp->false_body) {
+  //
+  //      for (auto i = 0u; i < max_i; ++i) {
+  //        parent_cmp->lhs_vars.AddUse(cmp->lhs_vars[i]);
+  //        parent_cmp->rhs_vars.AddUse(cmp->rhs_vars[i]);
+  //        changed = true;
+  //      }
+  //
+  //      cmp->lhs_vars.Clear();
+  //      cmp->rhs_vars.Clear();
+  //      max_i = 0u;
+  //    }
+  //  }
 
   // This compare has no variables being compared, so replace it with its
   // body.
   if (!max_i) {
-    const auto body = cmp->body.get();
-    if (const auto false_body = cmp->false_body.get(); false_body) {
-      false_body->parent = nullptr;
-      cmp->false_body.Clear();
-      changed = true;
-    }
+    if (cmp->cmp_op == ComparisonOperator::kEqual) {
 
-    if (body) {
-      cmp->body.Clear();
-      cmp->ReplaceAllUsesWith(body);
-      changed = true;
+      if (const auto false_body = cmp->false_body.get(); false_body) {
+        false_body->parent = nullptr;
+        cmp->false_body.Clear();
+        changed = true;
+      }
+
+      if (const auto body = cmp->body.get(); body) {
+        cmp->body.Clear();
+        cmp->ReplaceAllUsesWith(body);
+        changed = true;
+      }
+
+    } else {
+      assert(false);  // This is weird....
+
+      if (const auto body = cmp->body.get(); body) {
+        body->parent = nullptr;
+        cmp->body.Clear();
+        changed = true;
+      }
+
+      if (const auto false_body = cmp->false_body.get(); false_body) {
+        cmp->false_body.Clear();
+        cmp->ReplaceAllUsesWith(false_body);
+        changed = true;
+      }
     }
 
     return changed;
   }
-  auto has_matching = false;
+
+  auto has_equal = false;
+  auto has_unequal = false;
+
+  std::vector<bool> equal(max_i);
+
   for (auto i = 0u; i < max_i; ++i) {
-    if (cmp->lhs_vars[i] == cmp->rhs_vars[i]) {
-      has_matching = true;
-      break;
+
+    VAR *const lhs = cmp->lhs_vars[i];
+    VAR *const rhs = cmp->rhs_vars[i];
+
+    if (lhs == rhs) {
+      equal[i] = true;
+      has_equal = true;
+      continue;
+    }
+
+    // In a top-down context, we don't want to check if any variables look
+    // equal by way of looking at constants, because those constants were
+    // propagated up through the data flow graph, and thus cannot be trusted
+    // in a top-down direction, where the data is flowing down. E.g.
+    //
+    //                  UNION
+    //                 /     \              .
+    //             TUPLE   COMPARE
+    //                        |
+    //                     CONSTANT
+    //
+    // So in this case, a top down check of COMPARE may observe that the input/
+    // output columns of the COMPARE are constants, but from the top-down
+    // perspective of the UNION, the data that it's asking for checking could come
+    // from either of the TUPLE or the COMPARE.
+    if (cmp->containing_procedure->kind == ProcedureKind::kTupleFinder) {
+      continue;
+    }
+
+    DataVariable lhs_var(lhs);
+    DataVariable rhs_var(rhs);
+    if (!lhs_var.IsConstant() || !rhs_var.IsConstant()) {
+      continue;
+    }
+
+    const auto lhs_const = lhs_var.Value();
+    const auto rhs_const = rhs_var.Value();
+    if (!lhs_const || !rhs_const) {
+      continue;
+    }
+
+    auto lhs_is_tag = lhs_const->IsTag();
+    auto rhs_is_tag = rhs_const->IsTag();
+    if (lhs_is_tag && rhs_is_tag) {
+      if (QueryTag::From(*lhs_const).Value() ==
+          QueryTag::From(*rhs_const).Value()) {
+        equal[i] = true;
+        has_equal = true;
+      } else {
+        has_unequal = true;
+      }
+
+    } else if (!lhs_is_tag && !rhs_is_tag) {
+      auto lhs_lit = lhs_const->Literal();
+      auto rhs_lit = rhs_const->Literal();
+      if (!lhs_lit || !rhs_lit) {
+        continue;
+      }
+
+      if (lhs_lit->Literal() == rhs_lit->Literal()) {
+        equal[i] = true;
+        has_equal = true;
+
+      } else if (lhs_lit->IsConstant() && rhs_lit->IsConstant()) {
+        auto foreign_lhs = ParsedForeignConstant::From(*lhs_lit);
+        auto foreign_rhs = ParsedForeignConstant::From(*rhs_lit);
+
+        if (foreign_lhs == foreign_rhs) {
+          equal[i] = true;
+          has_equal = true;
+
+        } else if (foreign_lhs.IsUnique() || foreign_rhs.IsUnique()) {
+          has_unequal = true;
+        }
+      }
     }
   }
 
-  if (!has_matching) {
-    return changed;
+  if (has_unequal && cmp->cmp_op == ComparisonOperator::kEqual) {
+    cmp->lhs_vars.Clear();
+    cmp->rhs_vars.Clear();
+
+    if (const auto body = cmp->body.get(); body) {
+      body->parent = nullptr;
+      cmp->body.Clear();
+    }
+
+    if (auto false_body = cmp->false_body.get(); false_body) {
+      cmp->false_body.Clear();
+      cmp->ReplaceAllUsesWith(false_body);
+    }
+
+    return true;
   }
 
-  if (cmp->cmp_op == ComparisonOperator::kEqual) {
+  if (has_equal) {
+    changed = true;
+
+    // This comparison had some redundant comparisons, swap in the less
+    // redundant ones.
     UseList<VAR> new_lhs_vars(cmp);
     UseList<VAR> new_rhs_vars(cmp);
     for (auto i = 0u; i < max_i; ++i) {
-      if (cmp->lhs_vars[i] != cmp->rhs_vars[i]) {
+      if (!equal[i]) {
         new_lhs_vars.AddUse(cmp->lhs_vars[i]);
         new_rhs_vars.AddUse(cmp->rhs_vars[i]);
       }
     }
 
-    // This comparison is trivially true, replace it with its body.
-    if (new_lhs_vars.Empty()) {
-      cmp->lhs_vars.Clear();
-      cmp->rhs_vars.Clear();
+    max_i = new_lhs_vars.Size();
+    cmp->lhs_vars.Swap(new_lhs_vars);
+    cmp->rhs_vars.Swap(new_rhs_vars);
+
+    // This comparison is trivially true or false, replace it with one of its
+    // bodies.
+    if (!max_i) {
       OptimizeImpl(cmp);
       return true;
-
-    // This comparison had some redundant comparisons, swap in the less
-    // redundant ones.
-    } else {
-      cmp->lhs_vars.Swap(new_lhs_vars);
-      cmp->rhs_vars.Swap(new_rhs_vars);
-    }
-
-  // This tuple compare will never be satisfiable, and so everything inside
-  // it is dead. Replace it with its `false_body`, if any.
-  } else {
-    if (const auto body = cmp->body.get(); body) {
-      body->parent = nullptr;
-    }
-
-    cmp->body.Clear();
-    cmp->lhs_vars.Clear();
-    cmp->rhs_vars.Clear();
-
-    if (auto false_body = cmp->false_body.get(); false_body) {
-      false_body->parent = cmp->parent;
-      cmp->ReplaceAllUsesWith(false_body);
     }
   }
 
-  return true;
+  // Arrange things to have constant comparisons on the left-hand side.
+
+  if (max_i == 1u && cmp->cmp_op == ComparisonOperator::kEqual) {
+    assert(cmp->lhs_vars.Size() == 1u);
+
+    VAR *lhs = cmp->lhs_vars[0];
+    VAR *rhs = cmp->rhs_vars[0];
+
+    auto orig_lhs = lhs;
+
+    if (lhs->id < rhs->id) {
+      cmp->lhs_vars.Clear();
+      cmp->rhs_vars.Clear();
+      cmp->lhs_vars.AddUse(rhs);
+      cmp->rhs_vars.AddUse(lhs);
+      std::swap(lhs, rhs);
+    }
+
+    if (!DataVariable(lhs).IsConstant() && DataVariable(rhs).IsConstant()) {
+      cmp->lhs_vars.Clear();
+      cmp->rhs_vars.Clear();
+      cmp->lhs_vars.AddUse(rhs);
+      cmp->rhs_vars.AddUse(lhs);
+      std::swap(lhs, rhs);
+    }
+
+    if (orig_lhs != lhs) {
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 // Try to eliminate unnecessary function calls. This is pretty common when
@@ -510,21 +667,21 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
 static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
   auto changed = false;
 
-  if (call->body) {
-    assert(call->body->parent == call);
+  if (auto true_body = call->body.get()) {
+    assert(true_body->parent == call);
 
-    if (call->body->IsNoOp()) {
-      call->body->parent = nullptr;
+    if (true_body->IsNoOp()) {
+      true_body->parent = nullptr;
       call->body.Clear();
       changed = true;
     }
   }
 
-  if (call->false_body) {
-    assert(call->false_body->parent == call);
+  if (auto false_body = call->false_body.get()) {
+    assert(false_body->parent == call);
 
-    if (call->false_body->IsNoOp()) {
-      call->false_body->parent = nullptr;
+    if (false_body->IsNoOp()) {
+      false_body->parent = nullptr;
       call->false_body.Clear();
       changed = true;
     }
@@ -543,20 +700,20 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 
   auto changed = false;
 
-  if (gen->body) {
-    assert(gen->body->parent == gen);
+  if (auto some_body = gen->body.get()) {
+    assert(some_body->parent == gen);
 
-    if (gen->body->IsNoOp()) {
-      gen->body->parent = nullptr;
+    if (some_body->IsNoOp()) {
+      some_body->parent = nullptr;
       gen->body.Clear();
       changed = true;
     }
   }
-  if (gen->empty_body) {
-    assert(gen->empty_body->parent == gen);
+  if (auto empty_body = gen->empty_body.get()) {
+    assert(empty_body->parent == gen);
 
-    if (gen->empty_body->IsNoOp()) {
-      gen->empty_body->parent = nullptr;
+    if (empty_body->IsNoOp()) {
+      empty_body->parent = nullptr;
       gen->empty_body.Clear();
       changed = true;
     }
@@ -570,35 +727,66 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 }
 
 
+// Try to eliminate unnecessary children of a transition state regions.
+static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
+  auto changed = false;
+
+  if (auto done_body = transition->body.get()) {
+    assert(done_body->parent == transition);
+
+    if (done_body->IsNoOp()) {
+      done_body->parent = nullptr;
+      transition->body.Clear();
+      changed = true;
+    }
+  }
+
+  if (auto failed_body = transition->failed_body.get()) {
+    assert(failed_body->parent == transition);
+
+    if (failed_body->IsNoOp()) {
+      failed_body->parent = nullptr;
+      transition->failed_body.Clear();
+      changed = true;
+    }
+  }
+
+  if (transition->body && transition->failed_body) {
+    assert(transition->body.get() != transition->failed_body.get());
+  }
+
+  return changed;
+}
+
 // Try to eliminate unnecessary children of a check state region.
 static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
   auto changed = false;
 
-  if (check->body) {
-    assert(check->body->parent == check);
+  if (auto present_body = check->body.get()) {
+    assert(present_body->parent == check);
 
-    if (check->body->IsNoOp()) {
-      check->body->parent = nullptr;
+    if (present_body->IsNoOp()) {
+      present_body->parent = nullptr;
       check->body.Clear();
       changed = true;
     }
   }
 
-  if (check->unknown_body) {
-    assert(check->unknown_body->parent == check);
+  if (auto unknown_body = check->unknown_body.get()) {
+    assert(unknown_body->parent == check);
 
-    if (check->unknown_body->IsNoOp()) {
-      check->unknown_body->parent = nullptr;
+    if (unknown_body->IsNoOp()) {
+      unknown_body->parent = nullptr;
       check->unknown_body.Clear();
       changed = true;
     }
   }
 
-  if (check->absent_body) {
-    assert(check->absent_body->parent == check);
+  if (auto absent_body = check->absent_body.get()) {
+    assert(absent_body->parent == check);
 
-    if (check->absent_body->IsNoOp()) {
-      check->absent_body->parent = nullptr;
+    if (absent_body->IsNoOp()) {
+      absent_body->parent = nullptr;
       check->absent_body.Clear();
       changed = true;
     }
@@ -617,6 +805,10 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
 
 // Perform dead argument elimination.
 static bool OptimizeImpl(PROC *proc) {
+  if (auto body = proc->body.get()) {
+    assert(body->parent == proc);
+    (void) body;
+  }
   return false;
 }
 
@@ -703,6 +895,9 @@ void ProgramImpl::Optimize(void) {
 
       } else if (auto check = op->AsCheckState(); check) {
         changed = OptimizeImpl(this, check) | changed;
+
+      } else if (auto transition = op->AsTransitionState(); transition) {
+        changed = OptimizeImpl(this, transition) | changed;
 
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.

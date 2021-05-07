@@ -302,6 +302,24 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
 using REGION = Node<ProgramRegion>;
 
+struct RegionRef : public UseRef<REGION> {
+#ifndef NDEBUG
+ private:
+  REGION *const self;
+
+ public:
+  RegionRef(REGION *parent_) : self(parent_) {}
+#else
+  RegionRef(REGION *) {}
+#endif
+
+  void Emplace(REGION *parent, REGION *child) {
+    assert(child->parent == self);
+    this->UseRef<REGION>::Emplace(parent, child);
+  }
+};
+
+
 enum class ProgramOperation {
   kInvalid,
 
@@ -448,7 +466,7 @@ class Node<ProgramOperationRegion> : public Node<ProgramRegion> {
 
   // If this operation does something conditional then this is the body it
   // executes.
-  UseRef<REGION> body;
+  RegionRef body;
 };
 
 using OP = Node<ProgramOperationRegion>;
@@ -705,6 +723,7 @@ class Node<ProgramTransitionStateRegion> final
       : Node<ProgramOperationRegion>(parent_,
                                      ProgramOperation::kInsertIntoTable),
         col_values(this),
+        failed_body(this),
         from_state(from_state_),
         to_state(to_state_) {}
 
@@ -733,7 +752,7 @@ class Node<ProgramTransitionStateRegion> final
   UseRef<TABLE> table;
 
   // If we failed to change the state, then execute this body.
-  UseRef<REGION> failed_body;
+  RegionRef failed_body;
 
   const TupleState from_state;
   const TupleState to_state;
@@ -756,7 +775,9 @@ class Node<ProgramCheckStateRegion> final
   inline Node(Node<ProgramRegion> *parent_)
       : Node<ProgramOperationRegion>(parent_,
                                      ProgramOperation::kCheckStateInTable),
-        col_values(this) {}
+        col_values(this),
+        absent_body(this),
+        unknown_body(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -782,11 +803,11 @@ class Node<ProgramCheckStateRegion> final
   UseRef<TABLE> table;
 
   // Region that is conditionally executed if the tuple is not present.
-  UseRef<REGION> absent_body;
+  RegionRef absent_body;
 
   // Region that is conditionally executed if the tuple was deleted and hasn't
   // been re-checked.
-  UseRef<REGION> unknown_body;
+  RegionRef unknown_body;
 };
 
 using CHECKSTATE = Node<ProgramCheckStateRegion>;
@@ -831,7 +852,7 @@ class Node<ProgramCallRegion> final : public Node<ProgramOperationRegion> {
 
   // If the `call` returns `true`, then `body` is executed, otherwise if it
   // returns `false` then `false_body` is executed.
-  UseRef<REGION> false_body;
+  RegionRef false_body;
 
   const unsigned id;
 };
@@ -1064,7 +1085,10 @@ class Node<ProgramTupleCompareRegion> final
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kCompareTuples),
         cmp_op(op_),
         lhs_vars(this),
-        rhs_vars(this) {}
+        rhs_vars(this),
+        false_body(this) {
+    assert(cmp_op != ComparisonOperator::kNotEqual);
+  }
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1083,12 +1107,12 @@ class Node<ProgramTupleCompareRegion> final
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
 
-  // Optional body executed if the comparison fails.
-  UseRef<REGION> false_body;
-
   const ComparisonOperator cmp_op;
   UseList<VAR> lhs_vars;
   UseList<VAR> rhs_vars;
+
+  // Optional body executed if the comparison fails.
+  RegionRef false_body;
 };
 
 using TUPLECMP = Node<ProgramTupleCompareRegion>;
@@ -1104,9 +1128,10 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
         functor(functor_),
+        id(id_),
         defined_vars(this),
         used_vars(this),
-        id(id_) {}
+        empty_body(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1127,6 +1152,11 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
 
   const ParsedFunctor functor;
 
+  // Unique ID of this node. Useful during codegen to ensure we can count the
+  // results of one generate without it interfering with the count of a nested
+  // generate.
+  const unsigned id;
+
   // Free variables that are generated from the application of the functor.
   DefList<VAR> defined_vars;
 
@@ -1135,12 +1165,7 @@ class Node<ProgramGenerateRegion> final : public Node<ProgramOperationRegion> {
 
   // If the `functor` produces results, then `body` is executed, otherwise if it
   // doesn't produce results then `empty_body` is executed.
-  UseRef<REGION> empty_body;
-
-  // Unique ID of this node. Useful during codegen to ensure we can count the
-  // results of one generate without it interfering with the count of a nested
-  // generate.
-  const unsigned id;
+  RegionRef empty_body;
 };
 
 using GENERATOR = Node<ProgramGenerateRegion>;
@@ -1156,6 +1181,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
         id(id_),
         kind(kind_),
         tables(this),
+        body(this),
         input_vecs(this),
         input_vars(this),
         vectors(this) {}
@@ -1188,7 +1214,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
 
   // Body of this procedure. Initially starts with a loop over an implicit
   // input vector.
-  UseRef<REGION> body;
+  RegionRef body;
 
   // Input vectors and variables.
   DefList<VECTOR> input_vecs;
@@ -1310,13 +1336,13 @@ class Node<ProgramInductionRegion> final : public Node<ProgramRegion> {
   bool EndsWithReturn(void) const noexcept override;
 
   // Initial regions that fill up one or more of the inductive vectors.
-  UseRef<REGION> init_region;
+  RegionRef init_region;
 
   // The cyclic regions of this induction. This is a PARALLEL region.
-  UseRef<REGION> cyclic_region;
+  RegionRef cyclic_region;
 
   // The output regions of this induction. This is a PARALLEL region.
-  UseRef<REGION> output_region;
+  RegionRef output_region;
 
   // Vectors built up by this induction.
   UseList<VECTOR> vectors;

@@ -71,7 +71,7 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
         if (gCxxCodeStream) {
           gCxxCodeStream->SetIndentSize(2u);
-          hyde::GenerateCxxCode(*program_opt, *gCxxCodeStream);
+          hyde::GenerateCxxDatabaseCode(*program_opt, *gCxxCodeStream);
         }
 
         if (gPyCodeStream) {
