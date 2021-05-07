@@ -217,10 +217,10 @@ const char *QueryView::KindName(void) const noexcept {
 }
 
 void QueryView::SetTableId(unsigned id) const noexcept {
-  impl->table_id.emplace(id);
+  impl->table_id = id;
 }
 
-std::optional<unsigned> QueryView::TableId(void) const noexcept {
+unsigned QueryView::TableId(void) const noexcept {
   return impl->table_id;
 }
 

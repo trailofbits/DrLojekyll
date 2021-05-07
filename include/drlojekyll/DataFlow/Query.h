@@ -377,7 +377,7 @@ class QueryView : public query::QueryNode<QueryView> {
   // These break abstraction layers, as table IDs come from the control-flow
   // IR, but it's nifty for debugging.
   void SetTableId(unsigned id) const noexcept;
-  std::optional<unsigned> TableId(void) const noexcept;
+  unsigned TableId(void) const noexcept;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;

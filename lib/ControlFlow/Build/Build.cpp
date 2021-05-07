@@ -136,12 +136,12 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     auto model = new DataModel;
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
-    eq_classes.emplace(*view.TableId(), model);
+    eq_classes.emplace(view.TableId(), model);
   });
 
   query.ForEachView([&](QueryView view) {
       auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-      auto dest_model = eq_classes[*view.TableId()];
+      auto dest_model = eq_classes[view.TableId()];
       DisjointSet::Union(curr_model, dest_model);
   });
 
