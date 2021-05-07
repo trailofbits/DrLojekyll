@@ -58,7 +58,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
       sep = "<BR />";
     }
-    
+
     os << "<BR />EQ SET " << *view.EquivalenceSetId();
 
     os << "</TD>";

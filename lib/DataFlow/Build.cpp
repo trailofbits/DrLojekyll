@@ -1749,13 +1749,12 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   unsigned next_data_model_id = 1u;
   std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
-  query->ForEachView([&](VIEW * view) {
+  query->ForEachView([&](VIEW *view) {
     view->equivalence_set.reset(new EquivalenceSet(next_data_model_id++));
     view_to_model.emplace(view, view->equivalence_set.get());
     if (auto induction_info = view->induction_info.get(); induction_info) {
       view->equivalence_set.get()->TrySetInductionGroup(
-          induction_info->merge_set_id, induction_info->merge_depth
-          );
+          induction_info->merge_set_id, induction_info->merge_depth);
     }
   });
 
@@ -1830,7 +1829,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     if (pred.IsNegate()) {
       return false;
     }
-    return true; // TODO(sonya): revisit this
+    return true;  // TODO(sonya): revisit this
 
     // With any special cases, we need to watch out for the following kind of
     // pattern:
@@ -1879,8 +1878,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     // otherwise the UNION1 might end up sharing its data model with completely
     // unrelated stuff in UNION2 (via TUPLE4).
 
-    return pred.Successors().size() == 1u ;
-
+    return pred.Successors().size() == 1u;
   };
 
   // With maps, we try to avoid saving the outputs and attached columns
@@ -1890,20 +1888,21 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   //            in Data.cpp, `TABLE::GetOrCreate`.
   auto is_diff_map = +[](QueryView view) {
     return false;
-//
-//    if (!view.IsMap()) {
-//      return false;
-//    }
-//
-//    const auto functor = QueryMap::From(view).Functor();
-//    if (!functor.IsPure()) {
-//      return false;  // All output columns are stored.
-//    }
-//
-//    // These are the conditions for whether or not to persist the data of a
-//    // map. If the map is persisted and it's got a pure functor then we don't
-//    // actually store the outputs of the functor.
-//    return view.CanReceiveDeletions() || !!view.SetCondition();
+
+    //
+    //    if (!view.IsMap()) {
+    //      return false;
+    //    }
+    //
+    //    const auto functor = QueryMap::From(view).Functor();
+    //    if (!functor.IsPure()) {
+    //      return false;  // All output columns are stored.
+    //    }
+    //
+    //    // These are the conditions for whether or not to persist the data of a
+    //    // map. If the map is persisted and it's got a pure functor then we don't
+    //    // actually store the outputs of the functor.
+    //    return view.CanReceiveDeletions() || !!view.SetCondition();
   };
 
   query->ForEachView([&](QueryView view) {
@@ -1925,14 +1924,14 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     // If `pred` is another UNION, then `pred` may be a subset of `view`, thus
     // we cannot merge `pred` and `view`.
     if (view.IsMerge()) {
+
       //auto possible_sharing_preds = !view.CanReceiveDeletions() ? preds : view.InductivePredecessors();
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
-        if (can_share(view, pred) &&
-            !output_is_conditional(pred) &&
+        if (can_share(view, pred) && !output_is_conditional(pred) &&
             !pred.IsMerge()) {
-            const auto pred_model = view_to_model[pred];
-            EquivalenceSet::TryUnion(model, pred_model);
+          const auto pred_model = view_to_model[pred];
+          EquivalenceSet::TryUnion(model, pred_model);
         }
       }
 
@@ -1942,8 +1941,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
         const auto tuple = QueryTuple::From(view);
-        if (can_share(view, pred) &&
-            !output_is_conditional(pred) &&
+        if (can_share(view, pred) && !output_is_conditional(pred) &&
             all_cols_match(tuple.InputColumns(), pred.Columns())) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
@@ -1955,24 +1953,21 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     // the data model with their corresponding INSERTs.
     //
     // TODO(pag): This more about the interplay with conditional inserts.
-      // TODO(sonya): This should be taken care of above
-//    } else if (view.IsSelect()) {
-//      for (auto pred : preds) {
-//        assert(pred.IsInsert());
-//        assert(can_share(view, pred));
-//        assert(!output_is_conditional(pred));
-//        const auto pred_model = view_to_model[pred];
-//        EquivalenceSet::TryUnion(model, pred_model);
-//      }
+    // TODO(sonya): This should be taken care of above
+    //    } else if (view.IsSelect()) {
+    //      for (auto pred : preds) {
+    //        assert(pred.IsInsert());
+    //        assert(can_share(view, pred));
+    //        assert(!output_is_conditional(pred));
+    //        const auto pred_model = view_to_model[pred];
+    //        EquivalenceSet::TryUnion(model, pred_model);
+    //      }
     } else if (view.IsNegate()) {
-
     }
   });
 
-  query->ForEachView([&](QueryView view) {
-    view.SetTableId(*view.EquivalenceSetId());
-  });
-
+  query->ForEachView(
+      [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });
 }
 
 

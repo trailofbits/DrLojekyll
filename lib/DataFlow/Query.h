@@ -7,13 +7,13 @@
 #include <drlojekyll/Util/BitManipulation.h>
 #include <drlojekyll/Util/DefUse.h>
 
-#include "EquivalenceSet.h"
-
 #include <cassert>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "EquivalenceSet.h"
 
 namespace hyde {
 

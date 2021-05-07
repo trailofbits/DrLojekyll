@@ -140,11 +140,10 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
   });
 
   query.ForEachView([&](QueryView view) {
-      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-      auto dest_model = eq_classes[view.TableId()];
-      DisjointSet::Union(curr_model, dest_model);
+    auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
+    auto dest_model = eq_classes[view.TableId()];
+    DisjointSet::Union(curr_model, dest_model);
   });
-
 }
 
 // Build out all the bottom-up (negative) provers that are used to mark tuples
