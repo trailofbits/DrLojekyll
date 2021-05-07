@@ -1746,24 +1746,25 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 // the same backing storage. This doesn't mean that all views will be backed by
 // such storage, but when we need backing storage, we can maximally share it
 // among other places where it might be needed.
-static void AssignDataModelIDs(QueryImpl *query) {
+static void BuildEquivalenceSets(QueryImpl *query) {
   unsigned next_data_model_id = 1u;
-  std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
+  //std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
   query->ForEachView([&](QueryView view) {
-    view_to_model.emplace(view, new EquivalenceSet(next_data_model_id++));
+    view.SetEquivalenceSet(new EquivalenceSet(next_data_model_id++));
     auto group_id = view.InductionGroupId();
     auto depth = view.InductionDepth();
     if (group_id && depth) {
-      view_to_model[view]->TrySetInductionGroup(*group_id, *depth);
+      view.EquivalenceSet()->TrySetInductionGroup(*group_id, *depth);
+      //view_to_model[view]->TrySetInductionGroup(*group_id, *depth);
     }
   });
 
   // INSERTs and SELECTs from the same relation share the same data models.
   for (auto rel : query->relations) {
     EquivalenceSet *last_model = nullptr;
-    for (auto insert : rel->inserts) {
-      auto curr_model = view_to_model[insert]->Find();
+    for (auto view : rel->inserts) {
+      auto curr_model = view->equivalence_set->Find();
       if (last_model) {
         EquivalenceSet::TryUnion(curr_model, last_model);
       } else {
@@ -1772,7 +1773,7 @@ static void AssignDataModelIDs(QueryImpl *query) {
     }
 
     for (auto view : rel->selects) {
-      auto curr_model = view_to_model[view]->Find();
+      auto curr_model = view->equivalence_set->Find();
       if (last_model) {
         EquivalenceSet::TryUnion(curr_model, last_model);
       } else {
@@ -1786,10 +1787,10 @@ static void AssignDataModelIDs(QueryImpl *query) {
   // Note(sonya): Order does matter here. This should be done before iterating
   // over all views to prioritize merging INSERT and guard TUPLE tables
   for (auto insert : query->inserts) {
-    EquivalenceSet *insert_model = view_to_model[insert]->Find();
+    EquivalenceSet *insert_model = insert->equivalence_set->Find();
     for (auto pred_view : insert->predecessors) {
       if (pred_view->AsTuple()) {
-        auto tuple_model = view_to_model[pred_view]->Find();
+        auto tuple_model = pred_view->equivalence_set->Find();
         EquivalenceSet::TryUnion(insert_model, tuple_model);
       }
     }
@@ -1911,7 +1912,7 @@ static void AssignDataModelIDs(QueryImpl *query) {
       return;
     }
 
-    const auto model = view_to_model[view];
+    const auto model = view.EquivalenceSet();
     const auto preds = view.Predecessors();
 
     // UNIONs can share the data of any of their predecessors so long as
@@ -1931,7 +1932,7 @@ static void AssignDataModelIDs(QueryImpl *query) {
         if (can_share(view, pred) &&
             !output_is_conditional(pred) &&
             !pred.IsMerge()) {
-            const auto pred_model = view_to_model[pred];
+            const auto pred_model = pred.EquivalenceSet();
             EquivalenceSet::TryUnion(model, pred_model);
         }
       }
@@ -1945,7 +1946,7 @@ static void AssignDataModelIDs(QueryImpl *query) {
         if (can_share(view, pred) &&
             !output_is_conditional(pred) &&
             all_cols_match(tuple.InputColumns(), pred.Columns())) {
-          const auto pred_model = view_to_model[pred];
+          const auto pred_model = pred.EquivalenceSet();
           EquivalenceSet::TryUnion(model, pred_model);
         }
       }
@@ -1970,7 +1971,7 @@ static void AssignDataModelIDs(QueryImpl *query) {
   });
 
   query->ForEachView([&](QueryView view) {
-    view.SetTableId(view_to_model[view]->Find()->id);
+    view.SetTableId(view.EquivalenceSet()->Find()->id);
   });
 
 }
@@ -2044,7 +2045,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
 
-  AssignDataModelIDs(impl.get());
+  BuildEquivalenceSets(impl.get());
 
   return Query(std::move(impl));
 }

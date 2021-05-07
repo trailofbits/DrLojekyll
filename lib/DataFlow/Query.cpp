@@ -225,6 +225,10 @@ unsigned QueryView::TableId(void) const noexcept {
   return impl->table_id;
 }
 
+void QueryView::SetEquivalenceSet(class EquivalenceSet * set) const noexcept {
+  impl->equivalence_set = set;
+}
+
 EquivalenceSet * QueryView::EquivalenceSet(void) const noexcept {
   return impl->equivalence_set;
 }

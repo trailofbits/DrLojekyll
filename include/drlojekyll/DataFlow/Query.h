@@ -381,6 +381,7 @@ class QueryView : public query::QueryNode<QueryView> {
   void SetTableId(unsigned id) const noexcept;
   unsigned TableId(void) const noexcept;
 
+  void SetEquivalenceSet(EquivalenceSet * set) const noexcept;
   EquivalenceSet * EquivalenceSet(void) const noexcept;
 
   bool IsSelect(void) const noexcept;
