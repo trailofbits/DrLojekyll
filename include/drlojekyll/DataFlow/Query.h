@@ -70,6 +70,8 @@ class QuerySelect;
 class QueryStream;
 class QueryTag;
 class QueryView;
+class EquivalenceSet;
+
 
 // A column. Columns may be derived from selections or from joins.
 class QueryColumn : public query::QueryNode<QueryColumn> {
@@ -378,6 +380,8 @@ class QueryView : public query::QueryNode<QueryView> {
   // IR, but it's nifty for debugging.
   void SetTableId(unsigned id) const noexcept;
   unsigned TableId(void) const noexcept;
+
+  EquivalenceSet * EquivalenceSet(void) const noexcept;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;

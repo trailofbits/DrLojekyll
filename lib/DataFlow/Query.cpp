@@ -5,6 +5,7 @@
 #include <cassert>
 #include <functional>
 #include <optional>
+#include "EquivalenceSet.h"
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
@@ -223,6 +224,11 @@ void QueryView::SetTableId(unsigned id) const noexcept {
 unsigned QueryView::TableId(void) const noexcept {
   return impl->table_id;
 }
+
+EquivalenceSet * QueryView::EquivalenceSet(void) const noexcept {
+  return impl->equivalence_set;
+}
+
 
 bool QueryView::IsSelect(void) const noexcept {
   return impl->AsSelect() != nullptr;

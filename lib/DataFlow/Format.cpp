@@ -6,6 +6,8 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
+#include "EquivalenceSet.h"
+
 #define DEBUG(...)
 
 namespace hyde {
@@ -56,6 +58,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
       sep = "<BR />";
     }
+    
+    os << "<BR />EQ SET " << view.EquivalenceSet()->Find()->id;
+
     os << "</TD>";
   };
 

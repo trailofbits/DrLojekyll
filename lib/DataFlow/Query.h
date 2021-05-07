@@ -646,6 +646,8 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Information about if this is inductive.
   std::unique_ptr<InductionInfo> induction_info;
 
+  EquivalenceSet * equivalence_set;
+
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
