@@ -867,7 +867,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   //            canonicalization.
   WeakUseList<VIEW> joined_views;
 
-  // Number of pivot columns. If this value is zero then this is actuall a
+  // Number of pivot columns. If this value is zero then this is actually a
   // cross-product.
   unsigned num_pivots{0};
 };

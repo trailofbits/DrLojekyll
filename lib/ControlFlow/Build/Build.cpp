@@ -130,40 +130,21 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 // such storage, but when we need backing storage, we can maximally share it
 // among other places where it might be needed.
 static void BuildDataModel(const Query &query, ProgramImpl *program) {
-  query.ForEachView([=](QueryView view) {
+  std::unordered_map<unsigned, DataModel *> eq_classes;
+
+  query.ForEachView([&](QueryView view) {
     auto model = new DataModel;
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
+    eq_classes.emplace(*view.TableId(), model);
   });
 
-  // Inserts and selects from the same relation share the same data models.
-  for (auto rel : query.Relations()) {
-    DataModel *last_model = nullptr;
-    for (auto view : rel.Selects()) {
+  query.ForEachView([&](QueryView view) {
       auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-      if (last_model) {
-        DisjointSet::Union(curr_model, last_model);
-      } else {
-        last_model = curr_model;
-      }
-    }
+      auto dest_model = eq_classes[*view.TableId()];
+      DisjointSet::Union(curr_model, dest_model);
+  });
 
-    for (auto view : rel.Inserts()) {
-      auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-      if (last_model) {
-        DisjointSet::Union(curr_model, last_model);
-      } else {
-        last_model = curr_model;
-      }
-
-      // Join together the tables of inserts and their predecessors, which are
-      // always TUPLEs.
-      for (auto pred_view : view.Predecessors()) {
-        auto pred_model = program->view_to_model[pred_view];
-        DisjointSet::Union(last_model, pred_model);
-      }
-    }
-  }
 }
 
 // Build out all the bottom-up (negative) provers that are used to mark tuples
