@@ -70,8 +70,6 @@ class QuerySelect;
 class QueryStream;
 class QueryTag;
 class QueryView;
-class EquivalenceSet;
-
 
 // A column. Columns may be derived from selections or from joins.
 class QueryColumn : public query::QueryNode<QueryColumn> {
@@ -381,8 +379,7 @@ class QueryView : public query::QueryNode<QueryView> {
   void SetTableId(unsigned id) const noexcept;
   unsigned TableId(void) const noexcept;
 
-  void SetEquivalenceSet(EquivalenceSet * set) const noexcept;
-  EquivalenceSet * EquivalenceSet(void) const noexcept;
+  std::optional<unsigned> EquivalenceSetId(void) const noexcept;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;

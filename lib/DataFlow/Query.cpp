@@ -5,7 +5,6 @@
 #include <cassert>
 #include <functional>
 #include <optional>
-#include "EquivalenceSet.h"
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
@@ -225,14 +224,13 @@ unsigned QueryView::TableId(void) const noexcept {
   return impl->table_id;
 }
 
-void QueryView::SetEquivalenceSet(class EquivalenceSet * set) const noexcept {
-  impl->equivalence_set = set;
+std::optional<unsigned> QueryView::EquivalenceSetId(void) const noexcept {
+  if (auto equivalence_set = impl->equivalence_set.get()) {
+    return equivalence_set->Find()->id;
+  } else {
+    return std::nullopt;
+  }
 }
-
-EquivalenceSet * QueryView::EquivalenceSet(void) const noexcept {
-  return impl->equivalence_set;
-}
-
 
 bool QueryView::IsSelect(void) const noexcept {
   return impl->AsSelect() != nullptr;

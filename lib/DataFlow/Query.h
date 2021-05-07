@@ -7,6 +7,8 @@
 #include <drlojekyll/Util/BitManipulation.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include "EquivalenceSet.h"
+
 #include <cassert>
 #include <optional>
 #include <string>
@@ -646,7 +648,8 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Information about if this is inductive.
   std::unique_ptr<InductionInfo> induction_info;
 
-  EquivalenceSet * equivalence_set;
+  // Equivalence set of views sharing the same data model
+  std::unique_ptr<EquivalenceSet> equivalence_set;
 
   // Check that all non-constant views in `cols1` and `cols2` match.
   //

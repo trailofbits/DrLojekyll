@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "Query.h"
-#include "EquivalenceSet.h"
 
 #define DEBUG(...)
 
@@ -1748,15 +1747,15 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 // among other places where it might be needed.
 static void BuildEquivalenceSets(QueryImpl *query) {
   unsigned next_data_model_id = 1u;
-  //std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
+  std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
-  query->ForEachView([&](QueryView view) {
-    view.SetEquivalenceSet(new EquivalenceSet(next_data_model_id++));
-    auto group_id = view.InductionGroupId();
-    auto depth = view.InductionDepth();
-    if (group_id && depth) {
-      view.EquivalenceSet()->TrySetInductionGroup(*group_id, *depth);
-      //view_to_model[view]->TrySetInductionGroup(*group_id, *depth);
+  query->ForEachView([&](VIEW * view) {
+    view->equivalence_set.reset(new EquivalenceSet(next_data_model_id++));
+    view_to_model.emplace(view, view->equivalence_set.get());
+    if (auto induction_info = view->induction_info.get(); induction_info) {
+      view->equivalence_set.get()->TrySetInductionGroup(
+          induction_info->merge_set_id, induction_info->merge_depth
+          );
     }
   });
 
@@ -1764,7 +1763,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   for (auto rel : query->relations) {
     EquivalenceSet *last_model = nullptr;
     for (auto view : rel->inserts) {
-      auto curr_model = view->equivalence_set->Find();
+      auto curr_model = view->equivalence_set.get()->Find();
       if (last_model) {
         EquivalenceSet::TryUnion(curr_model, last_model);
       } else {
@@ -1773,7 +1772,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
 
     for (auto view : rel->selects) {
-      auto curr_model = view->equivalence_set->Find();
+      auto curr_model = view->equivalence_set.get()->Find();
       if (last_model) {
         EquivalenceSet::TryUnion(curr_model, last_model);
       } else {
@@ -1787,10 +1786,10 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   // Note(sonya): Order does matter here. This should be done before iterating
   // over all views to prioritize merging INSERT and guard TUPLE tables
   for (auto insert : query->inserts) {
-    EquivalenceSet *insert_model = insert->equivalence_set->Find();
+    EquivalenceSet *insert_model = insert->equivalence_set.get()->Find();
     for (auto pred_view : insert->predecessors) {
       if (pred_view->AsTuple()) {
-        auto tuple_model = pred_view->equivalence_set->Find();
+        auto tuple_model = pred_view->equivalence_set.get()->Find();
         EquivalenceSet::TryUnion(insert_model, tuple_model);
       }
     }
@@ -1912,7 +1911,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       return;
     }
 
-    const auto model = view.EquivalenceSet();
+    const auto model = view_to_model[view];
     const auto preds = view.Predecessors();
 
     // UNIONs can share the data of any of their predecessors so long as
@@ -1932,7 +1931,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
         if (can_share(view, pred) &&
             !output_is_conditional(pred) &&
             !pred.IsMerge()) {
-            const auto pred_model = pred.EquivalenceSet();
+            const auto pred_model = view_to_model[pred];
             EquivalenceSet::TryUnion(model, pred_model);
         }
       }
@@ -1946,7 +1945,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
         if (can_share(view, pred) &&
             !output_is_conditional(pred) &&
             all_cols_match(tuple.InputColumns(), pred.Columns())) {
-          const auto pred_model = pred.EquivalenceSet();
+          const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
       }
@@ -1971,7 +1970,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   });
 
   query->ForEachView([&](QueryView view) {
-    view.SetTableId(view.EquivalenceSet()->Find()->id);
+    view.SetTableId(*view.EquivalenceSetId());
   });
 
 }

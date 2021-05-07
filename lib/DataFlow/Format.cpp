@@ -59,7 +59,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       sep = "<BR />";
     }
     
-    os << "<BR />EQ SET " << view.EquivalenceSet()->Find()->id;
+    os << "<BR />EQ SET " << *view.EquivalenceSetId();
 
     os << "</TD>";
   };
