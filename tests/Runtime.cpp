@@ -2,8 +2,8 @@
 
 #include "UnitTests.h"
 
-#include <drlojekyll/Runtime/SlabStorage.h>
 #include <drlojekyll/Runtime/SlabVector.h>
+#include "../include/drlojekyll/Runtime/SlabManager.h"
 
 TEST(SlabRuntime, TinyInMemorySlabStore) {
   auto maybe_storage = hyde::rt::CreateSlabStorage(
@@ -72,6 +72,37 @@ TEST(SlabRuntime, SlabVectorOfU8sWorks) {
 
   RC_ASSERT(index == 3u);
 }
+
+//TEST(SlabRuntime, PersistentSlabVectorOfU8sWorks) {
+//  auto path = std::filesystem::temp_directory_path() /
+//              "PersistentSlabVectorOfU8sWorks.tmp";
+//
+////  std::cerr << "Path is: " << path.string();
+//
+//  auto maybe_storage = hyde::rt::CreateSlabStorage(
+//      hyde::rt::FileBackedSlabStore{path},
+//      hyde::rt::SlabStoreSize::kTiny);
+//  RC_ASSERT(maybe_storage.Succeeded());
+//
+//  auto storage = maybe_storage.TakeValue();
+//  hyde::rt::PersistentTypedSlabVector<uint8_t> vec(*storage, 0u);
+//  vec.Add<uint8_t>(0xAA);
+//  vec.Add<uint8_t>(0x11);
+//  vec.Add<uint8_t>(0xBB);
+//
+//  auto index = 0u;
+//  for (auto [val_ref] : vec) {
+//    uint8_t val = val_ref;
+//    switch (index++) {
+//      case 0: RC_ASSERT(val == 0xAAu); break;
+//      case 1: RC_ASSERT(val == 0x11u); break;
+//      case 2: RC_ASSERT(val == 0xBBu); break;
+//      default: break;
+//    }
+//  }
+//
+//  RC_ASSERT(index == 3u);
+//}
 
 TEST(SlabRuntime, SlabVectorOfU16sWorks) {
   auto maybe_storage = hyde::rt::CreateSlabStorage(
@@ -542,4 +573,123 @@ TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByMove) {
   RC_ASSERT(stats.num_allocated_slabs == 1u);
   RC_ASSERT(stats.num_free_slabs == 1u);
   RC_ASSERT(stats.num_open_slabs == 0u);
+}
+
+TEST(SlabRuntime, PointerToAddressableTest) {
+  using namespace hyde::rt;
+
+  auto maybe_storage = CreateSlabStorage(
+      InMemorySlabStore{}, SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
+  TypedSlabVector<Addressable<int>> vec1(*storage, 0u);
+  TypedSlabVector<int *> vec2(*storage, 0u);
+  vec1.Add(111);
+  vec1.Add(222);
+  vec1.Add(333);
+
+  auto num_iters = 0;
+  for (auto [int_ref] : vec1) {
+    vec2.Add(&int_ref);
+    ++num_iters;
+  }
+
+  RC_ASSERT(num_iters == 3);
+
+  num_iters = 0;
+  for (auto [int_ptr] : vec2) {
+    auto int_ref = *int_ptr;
+    int int_val = int_ref;
+
+    switch (num_iters) {
+      case 0:
+        RC_ASSERT(int_val == 111);
+        break;
+      case 1:
+        RC_ASSERT(int_val == 222);
+        break;
+      case 2:
+        RC_ASSERT(int_val == 333);
+        break;
+    }
+
+    ++num_iters;
+  }
+
+  RC_ASSERT(num_iters == 3);
+}
+
+TEST(SlabRuntime, PointerToMutableTest) {
+  using namespace hyde::rt;
+
+  auto maybe_storage = CreateSlabStorage(
+      InMemorySlabStore{}, SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
+
+  auto storage = maybe_storage.TakeValue();
+  TypedSlabVector<Mutable<int>> vec1(*storage, 0u);
+  TypedSlabVector<int *> vec2(*storage, 0u);
+  vec1.Add(111);
+  vec1.Add(222);
+  vec1.Add(333);
+
+  auto num_iters = 0;
+  for (auto [int_ref] : vec1) {
+    vec2.Add(&int_ref);
+    ++num_iters;
+  }
+
+  RC_ASSERT(num_iters == 3);
+
+  num_iters = 0;
+  for (auto [int_ptr] : vec2) {
+    auto int_ref = *int_ptr;
+    int int_val = int_ref;
+
+    switch (num_iters) {
+      case 0:
+        RC_ASSERT(int_val == 111);
+        break;
+      case 1:
+        RC_ASSERT(int_val == 222);
+        break;
+      case 2:
+        RC_ASSERT(int_val == 333);
+        break;
+    }
+
+    ++num_iters;
+  }
+
+  RC_ASSERT(num_iters == 3);
+
+  // Go through and mutate the underlying data.
+  for (auto [int_ref] : vec1) {
+    int_ref = int(int_ref) * 2;
+  }
+
+  // Now go back and read the mutated data.
+  num_iters = 0;
+  for (auto [int_ptr] : vec2) {
+    auto int_ref = *int_ptr;
+    int int_val = int_ref;
+
+    switch (num_iters) {
+      case 0:
+        RC_ASSERT(int_val == 222);
+        break;
+      case 1:
+        RC_ASSERT(int_val == 444);
+        break;
+      case 2:
+        RC_ASSERT(int_val == 666);
+        break;
+    }
+
+    ++num_iters;
+  }
+
+  RC_ASSERT(num_iters == 3);
+
 }

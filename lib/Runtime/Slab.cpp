@@ -4,14 +4,25 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <mutex>
 
-#include <sys/mman.h>
-#include <sys/types.h>
-
-#include "SlabStorage.h"
+#include "SlabManager.h"
 
 namespace hyde {
 namespace rt {
+namespace {
+
+static std::mutex gAtomicAccessLock;
+
+}  // namespace
+
+void LockSlab(void *, uint32_t) noexcept {
+  gAtomicAccessLock.lock();
+}
+
+void UnlockSlab(void *, uint32_t) noexcept {
+  gAtomicAccessLock.unlock();
+}
 
 Slab::Slab(bool is_persistent) {
   header.u.s.is_persistent = uint64_t(is_persistent) & 1ull;
@@ -22,7 +33,7 @@ void Slab::operator delete(void *ptr) noexcept {
   free(ptr);
 }
 
-void *Slab::operator new(size_t, SlabStorage &manager,
+void *Slab::operator new(size_t, SlabManager &manager,
                          bool is_persistent) noexcept {
 
   // If we're not using a file-backed

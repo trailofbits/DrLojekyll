@@ -3,15 +3,21 @@
 
 set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Column.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Index.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Serializer.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Slab.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabIndex.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabList.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabManager.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabPointer.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabReference.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabStorage.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabTable.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabTuple.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabVector.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Table.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Util.h"
 )
 
@@ -24,14 +30,11 @@ set(Runtime_SRCS
   
   "SlabList.cpp"
   
-  "SlabStorage.cpp"
-  "SlabStorage.h"
+  "SlabManager.cpp"
+  "SlabManager.h"
   
   "SlabReference.cpp"
 
-  "SlabStorage.cpp"
-  "SlabStorage.h"
-  
   "SlabVector.cpp"
 )
 

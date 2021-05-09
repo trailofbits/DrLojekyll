@@ -10,6 +10,12 @@
 namespace hyde {
 namespace rt {
 
+struct RawReference {
+  uint8_t *data;
+  uint32_t num_bytes;
+  uint32_t hash;
+};
+
 // A slab tuple is like a slab reference, except that it doesn't do any
 // reference counting.
 template <typename... Ts>
@@ -22,11 +28,12 @@ class SlabTuple {
   template <size_t kIndex>
   auto get(void) const noexcept {
     using T = std::tuple_element_t<kIndex, std::tuple<Ts...>>;
-    return ::hyde::rt::TypedSlabReference<T>(elems[kIndex].first,
-                                             elems[kIndex].second);
+    return ::hyde::rt::TypedSlabReference<T>(elems[kIndex].data,
+                                             elems[kIndex].num_bytes,
+                                             elems[kIndex].hash);
   }
 
-  const std::pair<const uint8_t *, uint32_t> elems[sizeof...(Ts)];
+  const RawReference elems[sizeof...(Ts)];
 };
 
 }  // namespace rt

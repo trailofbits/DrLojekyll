@@ -15,6 +15,10 @@
 #include <type_traits>
 #include <utility>
 
+#include "Column.h"
+#include "Index.h"
+#include "Table.h"
+
 namespace hyde {
 namespace rt {
 

@@ -1,7 +1,5 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-#include "SlabStorage.h"
-
 #include <string>
 
 #include <unistd.h>
@@ -11,6 +9,7 @@
 #include <sys/types.h>
 
 #include "Error.h"
+#include "SlabManager.h"
 
 namespace hyde {
 namespace rt {
@@ -35,15 +34,17 @@ Result<SlabStorePtr, std::error_code> CreateSlabStorage(
 
   ClearLastError();
 
-  size_t size = static_cast<size_t>(size_);
-  auto base = mmap(nullptr, size, PROT_NONE,
-                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE |
-                   MAP_UNINITIALIZED, -1, 0);
-  if (MAP_FAILED == base) {
+  size_t real_size = static_cast<size_t>(size_);
+  auto real_base = mmap(nullptr, real_size, PROT_NONE,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE |
+                        MAP_UNINITIALIZED, -1, 0);
+  if (MAP_FAILED == real_base) {
     return GetLastError();
   }
 
   // Make sure the `mmap`ed address is `Slab`-aligned.
+  auto base = real_base;
+  auto size = real_size;
   auto base_addr = reinterpret_cast<uintptr_t>(base);
   while (base_addr & (sizeof(Slab) - 1ull)) {
     base_addr += 4096u;
@@ -83,17 +84,17 @@ Result<SlabStorePtr, std::error_code> CreateSlabStorage(
   // Map the file to be beginning of our stuff.
   if (-1 != fd && file_size) {
     auto file_base = mmap(base, file_size, PROT_READ | PROT_WRITE,
-                          MAP_SHARED | MAP_FILE, fd, 0);
+                          MAP_SHARED | MAP_FILE | MAP_FIXED, fd, 0);
     if (file_base != base) {
       return GetLastError();
     }
   }
 
-  return std::make_unique<SlabStorage>(
-      num_workers, fd, file_size, base, size);
+  return std::make_unique<SlabManager>(
+      num_workers, fd, file_size, real_base, real_size, base, size);
 }
 
-SlabStorage::~SlabStorage(void) {
+SlabManager::~SlabManager(void) {
   {
     std::unique_lock<std::mutex> locker(maybe_free_slabs_lock);
     maybe_free_slabs.clear();
@@ -102,13 +103,23 @@ SlabStorage::~SlabStorage(void) {
     std::unique_lock<std::mutex> locker(all_slabs_lock);
     all_slabs.clear();
   }
+  if (-1 != fd) {
+    std::unique_lock<std::mutex> locker(file_size_lock);
+    msync(base, file_size, MS_SYNC);
+    fsync(fd);
+    munmap(real_base, real_max_size);
+    close(fd);
+  }
 }
 
-SlabStorage::SlabStorage(unsigned num_workers_, int fd_, uint64_t file_size_,
+SlabManager::SlabManager(unsigned num_workers_, int fd_, uint64_t file_size_,
+                         void *real_base_, uint64_t real_max_size_,
                          void *base_, uint64_t max_size_)
     : num_workers(num_workers_),
       fd(fd_),
       base_file_size(file_size_),
+      real_base(real_base_),
+      real_max_size(real_max_size_),
       base(reinterpret_cast<Slab *>(base_)),
       max_size(max_size_),
       file_size(file_size_),
@@ -117,11 +128,11 @@ SlabStorage::SlabStorage(unsigned num_workers_, int fd_, uint64_t file_size_,
   maybe_free_slabs.reserve(4096u);
 }
 
-void ShutDownSlabStorage(SlabStorage *ptr) {
+void ShutDownSlabStorage(SlabManager *ptr) {
   delete ptr;
 }
 
-SlabStats GarbageCollect(SlabStorage &storage) {
+SlabStats GarbageCollect(SlabManager &storage) {
 
   SlabStats stats;
 
@@ -154,7 +165,7 @@ SlabStats GarbageCollect(SlabStorage &storage) {
 }
 
 // Allocate an ephemeral slab.
-void *SlabStorage::AllocateEphemeralSlab(void) {
+void *SlabManager::AllocateEphemeralSlab(void) {
   Slab *ret_slab = nullptr;
   if (has_free_slab_heads.load(std::memory_order_acquire)) {
 
@@ -215,7 +226,7 @@ void *SlabStorage::AllocateEphemeralSlab(void) {
 }
 
 // Allocate a persistent slab.
-void *SlabStorage::AllocatePersistentSlab(void) {
+void *SlabManager::AllocatePersistentSlab(void) {
   uint64_t old_size = 0;
   {
     std::unique_lock<std::mutex> locker(file_size_lock);
@@ -229,7 +240,7 @@ void *SlabStorage::AllocatePersistentSlab(void) {
 
   auto ret = mmap(
       &(base[old_size / sizeof(Slab)]), sizeof(Slab), PROT_READ | PROT_WRITE,
-      MAP_SHARED | MAP_FILE, fd, static_cast<off_t>(old_size));
+      MAP_FIXED | MAP_SHARED | MAP_FILE, fd, static_cast<off_t>(old_size));
   if (MAP_FAILED == ret) {
     perror("Failed to map Slab to file");
     abort();

@@ -3,16 +3,18 @@
 #include <drlojekyll/Runtime/SlabList.h>
 
 #include <cassert>
+#include <sys/mman.h>
 
 #include "Slab.h"
-#include "SlabStorage.h"
+#include "SlabManager.h"
 
 namespace hyde {
 namespace rt {
 
 UnsafeSlabListWriter::UnsafeSlabListWriter(
-    SlabStorage &manager_, SlabList &buffer, bool is_persistent)
-    : manager(manager_),
+    SlabManager &manager_, SlabList &buffer, bool is_persistent)
+    : UnsafeByteWriter(nullptr),
+      manager(manager_),
       last_ptr(&(buffer.last)) {
 
   Slab *slab = *last_ptr;
@@ -50,6 +52,11 @@ HYDE_RT_FLATTEN void UnsafeSlabListWriter::UpdateWritePointer(void) {
   assert(nullptr != last_slab);
 
   const auto is_persistent = last_slab->IsPersistent();
+
+  if (is_persistent) {
+    msync(last_slab, sizeof(Slab), MS_ASYNC);
+  }
+
   const auto slab = new (manager, is_persistent) Slab(is_persistent);
   last_slab->SetNext(slab);
   *last_ptr = slab;
@@ -71,7 +78,7 @@ HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
 }
 
 HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
-    const uint8_t *ref_read_ptr, uint32_t  /* ref_num_bytes  */) noexcept {
+    uint8_t *ref_read_ptr, uint32_t  /* ref_num_bytes  */) noexcept {
   const auto slab = Slab::Containing(ref_read_ptr - 1u);
   read_ptr = ref_read_ptr;
   max_read_ptr = slab->LogicalEnd();

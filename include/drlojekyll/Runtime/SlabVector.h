@@ -10,6 +10,7 @@
 namespace hyde {
 namespace rt {
 
+class SlabStorage;
 class SlabVectorIteratorEnd {};
 
 // An append-only vector of serialized bytes, implemented using a `SlabList`.
@@ -18,12 +19,18 @@ class SlabVectorIteratorEnd {};
 // is responsible for freeing the backing slabs.
 class SlabVector : public SlabList {
  public:
-  SlabVector(SlabStorage &storage_, unsigned worker_id_);
+  SlabVector(SlabManager &storage_, unsigned worker_id_);
 
   SlabVector(SlabVector &&that) noexcept
       : SlabList(std::forward<SlabList>(that)),
         storage(that.storage),
         worker_id(that.worker_id) {}
+
+  SlabVector(SlabManager &storage_, SlabList &&that,
+             unsigned worker_id_) noexcept
+      : SlabList(std::forward<SlabList>(that)),
+        storage(storage_),
+        worker_id(worker_id_) {}
 
   HYDE_RT_ALWAYS_INLINE ~SlabVector(void) {
     Clear();
@@ -31,10 +38,11 @@ class SlabVector : public SlabList {
 
   void Clear(void);
 
-  SlabStorage &storage;
+  SlabManager &storage;
   const unsigned worker_id;
 
- private:
+ protected:
+
   // We don't permit copying of slab vectors, only moving. That way the
   // ownership of the backing slab lists does not get confusing.
   SlabVector(const SlabVector &) = delete;
@@ -70,30 +78,31 @@ class TypedSlabVectorVectorIterator {
 
  private:
 
-  using IndexT = std::pair<const uint8_t *, uint32_t>;
-
   template <size_t kIndex, typename... Indices>
   [[gnu::hot]] HYDE_RT_FLATTEN
   SlabTuple<T, Ts...> Read(Indices... indices) {
     using E = std::tuple_element_t<kIndex, std::tuple<T, Ts...>>;
+    using ValT = typename ValueType<E>::Type;
 
-    const uint8_t * const elem_read_ptr = reader.read_ptr;
+    uint8_t * const elem_read_ptr = reader.read_ptr;
 
-    alignas(E) char dummy_data[sizeof(E)];
-    Serializer<CountingReader, NullWriter, E>::Read(
-        reader, *reinterpret_cast<E *>(dummy_data));
+    alignas(ValT) char dummy_data[sizeof(ValT)];
+    Serializer<CountingReader, NullWriter, ValT>::Read(
+        reader, *reinterpret_cast<ValT *>(dummy_data));
 
     const uint32_t elem_size = static_cast<uint32_t>(reader.num_bytes);
     reader.num_bytes = 0;
 
+    // TODO(pag): Hashing the bytes.
+
     if constexpr (kIndex < sizeof...(Ts)) {
-      return Read<kIndex + 1u, Indices..., IndexT>(
+      return Read<kIndex + 1u, Indices..., RawReference>(
           indices...,
-          IndexT{elem_read_ptr, elem_size});
+          RawReference{elem_read_ptr, elem_size, 0u});
     } else {
       return SlabTuple<T, Ts...>(
           indices...,
-          IndexT{elem_read_ptr, elem_size});
+          RawReference{elem_read_ptr, elem_size, 0u});
     }
   }
 
@@ -105,21 +114,6 @@ template <typename T, typename... Ts>
 class TypedSlabVector : public SlabVector {
  public:
   using SlabVector::SlabVector;
-
-//  // Add a single serialized element
-//  HYDE_RT_FLATTEN void Add(Ts... ts) noexcept {
-//    using Tuple = std::tuple<Ts...>;
-//    const Tuple row(std::move(ts)...);
-//    ByteCountingWriter counter;
-//    Serializer<NullReader, ByteCountingWriter, Tuple>::WriteValue(counter, row);
-//    SlabListWriter writer(manager, *this);
-//    if (HYDE_RT_LIKELY(writer.CanWriteUnsafely(counter.num_bytes))) {
-//      Serializer<NullReader, UnsafeSlabListWriter, Tuple>::WriteValue(
-//          writer, row);
-//    } else {
-//      Serializer<NullReader, SlabListWriter, Tuple>::WriteValue(writer, row);
-//    }
-//  }
 
   HYDE_RT_ALWAYS_INLINE
   TypedSlabVectorVectorIterator<T, Ts...> begin(void) const {
@@ -148,18 +142,39 @@ class TypedSlabVector : public SlabVector {
     using Nth =
         typename std::tuple_element_t<kIndex, std::tuple<T, Ts...>>;
 
+    using ValT = typename ValueType<Nth>::Type;
+
+    // We're trying to add in a pointer, therefore we should only allow
+    // a `Address<T>` value.
+    if constexpr (std::is_pointer_v<ValT>) {
+      if constexpr (kIsAddress<InputT>) {
+        auto ptr = ExtractAddress(elem);
+        Serializer<NullReader, Writer, InputT>::Write(writer, ptr);
+
+      } else {
+        __builtin_unreachable();
+      }
     // It's a value, so write it.
-    if constexpr (std::is_same_v<InputT, Nth>) {
-      Serializer<NullReader, Writer, InputT>::Write(writer, elem);
+    } else if constexpr (std::is_same_v<InputT, ValT>) {
+      Serializer<NullReader, Writer, ValT>::Write(writer, elem);
 
     // It's a reference to something we've already serialized.
     } else if constexpr (std::is_same_v<InputT, TypedSlabReference<Nth>>) {
-      Serializer<NullReader, Writer, SlabReference>::Write(
+      Serializer<NullReader, Writer, TypedSlabReference<Nth>>::Write(
+          writer, elem);
+
+    // It's a reference to something we've already serialized.
+    } else if constexpr (std::is_same_v<InputT, TypedSlabReference<ValT>>) {
+      Serializer<NullReader, Writer, TypedSlabReference<ValT>>::Write(
           writer, elem);
 
     } else if constexpr (std::is_constructible_v<Nth, InputT>) {
       Nth real_elem(elem);
       Serializer<NullReader, Writer, Nth>::Write(writer, real_elem);
+
+    } else if constexpr (std::is_constructible_v<ValT, InputT>) {
+      ValT real_elem(elem);
+      Serializer<NullReader, Writer, ValT>::Write(writer, real_elem);
 
     } else {
       __builtin_unreachable();
@@ -176,6 +191,8 @@ class TypedSlabVector : public SlabVector {
 template <typename T, typename... Ts>
 class PersistentTypedSlabVector : public TypedSlabVector<T, Ts...> {
  public:
+  using TypedSlabVector<T, Ts...>::TypedSlabVector;
+
   template <typename InputT, typename... InputTs>
   HYDE_RT_FLATTEN void Add(const InputT &t, const InputTs&... ts) noexcept {
     static_assert(sizeof...(Ts) == sizeof...(InputTs));

@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <drlojekyll/Runtime/SlabStorage.h>
+#include <drlojekyll/Runtime/SlabManager.h>
 
 #include <atomic>
 #include <mutex>
@@ -13,12 +13,13 @@
 namespace hyde {
 namespace rt {
 
-class SlabStorage {
+class SlabManager {
  public:
-  ~SlabStorage(void);
+  ~SlabManager(void);
 
-  SlabStorage(unsigned num_workers_, int fd_, uint64_t file_size_,
-              void *base_, uint64_t max_size_);
+  SlabManager(unsigned num_workers_, int fd_, uint64_t file_size_,
+              void *real_base_, uint64_t real_max_size_, void *base_,
+              uint64_t max_size_);
 
   // Number of worker threads permitted.
   const unsigned num_workers;
@@ -27,6 +28,11 @@ class SlabStorage {
   // than `-1`.
   const int fd;
   const uint64_t base_file_size;
+
+  // These may be different than below if `mmap` gave us back an address that
+  // wasn't `Slab`-sized-aligned.
+  void * const real_base;
+  const uint64_t real_max_size;
 
   // The slab base address. For an in-memory slab store, this will be `nullptr`,
   // and all slab offsets will be the actual addresses of slabs. For persistent
@@ -54,11 +60,11 @@ class SlabStorage {
   void *AllocatePersistentSlab(void);
 
  private:
-  SlabStorage(const SlabStorage &) = delete;
-  SlabStorage(SlabStorage &&) noexcept = delete;
-  SlabStorage &operator=(const SlabStorage &) = delete;
-  SlabStorage &operator=(SlabStorage &&) noexcept = delete;
-  SlabStorage(void) = delete;
+  SlabManager(const SlabManager &) = delete;
+  SlabManager(SlabManager &&) noexcept = delete;
+  SlabManager &operator=(const SlabManager &) = delete;
+  SlabManager &operator=(SlabManager &&) noexcept = delete;
+  SlabManager(void) = delete;
 };
 
 }  // namespace rt

@@ -11,7 +11,7 @@
 namespace hyde {
 namespace rt {
 
-class SlabStorage;
+class SlabManager;
 
 // A slab is an aligned region in memory holding a byte array containing
 // serialized data. We rely on a slab's alignment in memory to be able to
@@ -75,7 +75,7 @@ class Slab {
     header.ref_count.fetch_add(1u, order);
   }
 
-  inline void DefRef(
+  inline void DecRef(
       std::memory_order order=std::memory_order_release) noexcept {
     header.ref_count.fetch_sub(1u, order);
   }
@@ -132,7 +132,7 @@ class Slab {
     return reinterpret_cast<Slab *>(slab_addr);
   }
 
-  static void *operator new(size_t, SlabStorage &manager,
+  static void *operator new(size_t, SlabManager &manager,
                             bool is_persistent) noexcept;
 
   static void operator delete(void *ptr) noexcept;

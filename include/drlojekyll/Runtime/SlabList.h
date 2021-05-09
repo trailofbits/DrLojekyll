@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "Serializer.h"
 #include "Slab.h"
-#include "Util.h"
 
 namespace hyde {
 namespace rt {
@@ -14,7 +14,7 @@ namespace rt {
 class Slab;
 class SlabListWriter;
 class SlabListReader;
-class SlabStorage;
+class SlabManager;
 class SlabReference;
 class SlabStorage;
 class SlabVector;
@@ -53,9 +53,14 @@ class SlabList {
  private:
   friend class SlabListWriter;
   friend class SlabListReader;
+  friend class SlabStorage;
   friend class SlabVector;
   friend class UnsafeSlabListWriter;
   friend class UnsafeSlabListReader;
+
+  HYDE_RT_ALWAYS_INLINE SlabList(Slab *first_, Slab *last_) noexcept
+      : first(first_),
+        last(last_) {}
 
   SlabList(void) = default;
 
@@ -66,13 +71,20 @@ class SlabList {
 // A writer for writing bytes into a discontinuous backing buffer. Individual
 // fundamental types are always stored sequentially. This writer is considered
 // unsafe because no bounds checking is performed.
-class UnsafeSlabListWriter {
+class UnsafeSlabListWriter : public UnsafeByteWriter {
  public:
-  explicit UnsafeSlabListWriter(SlabStorage &, SlabList &,
+  explicit UnsafeSlabListWriter(SlabManager &, SlabList &,
                                 bool is_persistent=false);
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE ~UnsafeSlabListWriter(void) {
     UpdateSlabSize();
+  }
+
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  void WritePointer(void *ptr) noexcept {
+    auto addr = reinterpret_cast<intptr_t>(ptr);
+    auto write_addr = reinterpret_cast<intptr_t>(write_ptr);
+    WriteI64(addr - write_addr);
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
@@ -162,9 +174,8 @@ class UnsafeSlabListWriter {
   }
 
  protected:
-  SlabStorage &manager;
+  SlabManager &manager;
   Slab ** const last_ptr;
-  uint8_t *write_ptr;
   const uint8_t *max_write_ptr;
 
   [[gnu::hot]] void UpdateWritePointer(void);
@@ -183,6 +194,14 @@ class SlabListWriter : public UnsafeSlabListWriter {
   SlabListWriter(SlabListWriter &&) noexcept = delete;
   SlabListWriter &operator=(const SlabListWriter &) = delete;
   SlabListWriter &operator=(SlabListWriter &&) noexcept = delete;
+
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  void WritePointer(void *ptr) noexcept {
+    if (&(write_ptr[7]) >= max_write_ptr) {
+      UpdateWritePointer();
+    }
+    UnsafeSlabListWriter::WritePointer(ptr);
+  }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   void WriteF64(double d) noexcept {
@@ -281,8 +300,8 @@ class UnsafeSlabListReader {
   explicit UnsafeSlabListReader(SlabList) noexcept;
 
   // Constructor for use by a `SlabReference`.
-  explicit UnsafeSlabListReader(const uint8_t *read_ptr_,
-                                uint32_t num_bytes) noexcept;
+  explicit UnsafeSlabListReader(uint8_t *read_ptr_,
+                                uint32_t num_bytes=0) noexcept;
 
   // Have we reached the soft limit, i.e. the end of the current slab.
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
@@ -302,6 +321,13 @@ class UnsafeSlabListReader {
     const auto read_addr = reinterpret_cast<uintptr_t>(read_ptr);
     const auto max_read_addr = (read_addr + kSlabSize) & ~(kSlabSize - 1u);
     return (max_read_addr - read_addr) >= num_bytes;
+  }
+
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
+  void *ReadPointer(void) noexcept {
+    const auto read_addr = reinterpret_cast<intptr_t>(read_ptr);
+    const auto disp = ReadI64();
+    return reinterpret_cast<void *>(read_addr + disp);
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
@@ -425,14 +451,22 @@ class UnsafeSlabListReader {
   template <typename, typename...>
   friend class TypedSlabVectorVectorIterator;
 
-  const uint8_t *read_ptr;
-  const uint8_t *max_read_ptr;
+  uint8_t *read_ptr;
+  uint8_t *max_read_ptr;
 };
 
 // A reader for reading the discontinuous data in a `SlabList`.
 class SlabListReader : public UnsafeSlabListReader {
  public:
   using UnsafeSlabListReader::UnsafeSlabListReader;
+
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
+  void *ReadPointer(void) noexcept {
+    if (&(read_ptr[7]) >= max_read_ptr) {
+      UpdateReadPointer();
+    }
+    return UnsafeSlabListReader::ReadPointer();
+  }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   double ReadF64(void) noexcept {
@@ -524,6 +558,30 @@ class SlabListReader : public UnsafeSlabListReader {
 
   SlabListReader(void) = delete;
 };
+
+template <typename T>
+static constexpr bool kIsSlabListReader = false;
+
+template <>
+static constexpr bool kIsSlabListReader<UnsafeSlabListReader> = true;
+
+template <>
+static constexpr bool kIsSlabListReader<SlabListReader> = true;
+
+// Transfer data from one reader to a writer.
+template <typename Writer, typename Reader>
+static void TransferData(Writer &writer, Reader &reader,
+                         uint32_t num_bytes) {
+  if (HYDE_RT_LIKELY(reader.CanReadUnsafely(num_bytes))) {
+    for (auto i = 0u; i < num_bytes; ++i) {
+      writer.WriteU8(reader.UnsafeSlabListReader::ReadU8());
+    }
+  } else {
+    for (auto i = 0u; i < num_bytes; ++i) {
+      writer.WriteU8(reader.ReadU8());
+    }
+  }
+}
 
 }  // namespace rt
 }  // namespace hyde

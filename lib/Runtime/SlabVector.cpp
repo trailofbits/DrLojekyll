@@ -2,12 +2,12 @@
 
 #include <drlojekyll/Runtime/SlabVector.h>
 
-#include "SlabStorage.h"
+#include "SlabManager.h"
 
 namespace hyde {
 namespace rt {
 
-SlabVector::SlabVector(SlabStorage &storage_, unsigned worker_id_)
+SlabVector::SlabVector(SlabManager &storage_, unsigned worker_id_)
     : SlabList(),
       storage(storage_),
       worker_id(worker_id_) {}

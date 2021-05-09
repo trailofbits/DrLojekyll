@@ -26,8 +26,8 @@ class Slab;
 class SlabList;
 class SlabListWriter;
 class SlabListReader;
-class SlabStorage;
-class SlabStorage;
+class SlabManager;
+class SlabManager;
 class SlabReference;
 
 //template <typename... Ts>

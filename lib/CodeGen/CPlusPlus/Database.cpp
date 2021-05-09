@@ -36,137 +36,201 @@ static OutputStream &Vector(OutputStream &os, const DataVector vec) {
   return os << "vec_" << vec.Id();
 }
 
-// Declare Table Descriptors that contain additional metadata about
+// Declare Table Descriptors that contain additional metadata about columns,
+// indexes, and tables. The output of this code looks roughly like this:
+//
+//      template <>
+//      struct ColumnDescriptor<12> {
+//        static constexpr bool kIsNamed = false;
+//        static constexpr unsigned kId = 12;
+//        static constexpr unsigned kTableId = 10;
+//        static constexpr unsigned kOffset = 1
+//        using Type = uint64_t;
+//      };
+//      template <>
+//      struct IndexDescriptor<141> {
+//        static constexpr unsigned kId = 141;
+//        static constexpr unsigned kTableId = 10;
+//        using Columns = TypeList<KeyColumn<11>, ValueColumn<12>>;
+//        using KeyColumnIds = IdList<11>;
+//        using ValueColumnIds = IdList<12>;
+//      };
+//      template <>
+//      struct TableDescriptor<10> {
+//        using ColumnIds = IdList<11, 12>;
+//        using IndexIds = IdList<141>;
+//      };
+//
+// We use the IDs of columns/indices/tables in place of type names so that we
+// can have circular references.
 static void DeclareDescriptors(OutputStream &os, Program program,
                                ParsedModule module) {
 
   // Table and column descriptors
+  os << "namespace hyde::rt {\n";
   for (auto table : program.Tables()) {
-    os << os.Indent() << "struct table_desc_" << table.Id() << " {};\n";
     for (auto col : table.Columns()) {
-      os << os.Indent() << "struct column_desc_" << table.Id()
-         << "_" << col.Index() << " {\n";
+      os << os.Indent() << "template <>\n"
+         << os.Indent() << "struct ColumnDescriptor<" << col.Id() << "> {\n";
       os.PushIndent();
-
-      // NOTE(ekilmer): Will want to fill this programmatically someday
-      os << os.Indent() << "static constexpr bool kIsNamed = false;\n";
-      os << os.Indent() << "using type = " << TypeName(module, col.Type())
+      os << os.Indent() << "static constexpr bool kIsNamed = false;\n"
+         << os.Indent() << "static constexpr unsigned kId = "
+         << col.Id() << ";\n"
+         << os.Indent() << "static constexpr unsigned kTableId = "
+         << table.Id() << ";\n"
+         << os.Indent() << "static constexpr unsigned kOffset = "
+         << col.Index() << '\n'
+         << os.Indent() << "using Type = " << TypeName(module, col.Type())
          << ";\n";
       os.PopIndent();
       os << os.Indent() << "};\n";
     }
-    os << "\n";
-  }
-  os << "\n";
-}
 
-// Print out the type of an index. Specify whether this is being used for an index or within a table type
-static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
-                                   const DataIndex index) {
-  const auto key_cols = index.KeyColumns();
-  const auto val_cols = index.ValueColumns();
+    auto sep = "";
 
-  //  // The index can be implemented with the keys in the Table.
-  //  // In this case, the index lookup will be like an `if ... in ...`.
-  //  if (key_cols.size() == cols.size()) {
-  //    assert(val_cols.empty());
-  //
-  //    // Implement this index as a reference to the Table
-  //    return os << "decltype(" << Table(os, table) << ") & "
-  //              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
-  //  }
+    for (auto index : table.Indices()) {
+      os << os.Indent() << "template <>\n"
+         << os.Indent() << "struct IndexDescriptor<" << index.Id() << "> {\n";
+      os.PushIndent();
+      os << os.Indent() << "static constexpr unsigned kId = "
+         << index.Id() << ";\n"
+         << os.Indent() << "static constexpr unsigned kTableId = "
+         << table.Id() << ";\n"
+         << os.Indent() << "using Columns = TypeList<";
 
-  os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
-     << index.Id() << ", ::hyde::rt::TypeList<";
+      const auto key_cols = index.KeyColumns();
+      const auto val_cols = index.ValueColumns();
 
-  // In C++ codegen, the Index knows which columns are keys/values, but they
-  // need to be ordered as they were in the table
-  auto key_col_iter = key_cols.begin();
-  auto val_col_iter = val_cols.begin();
+      // In C++ codegen, the Index knows which columns are keys/values, but they
+      // need to be ordered as they were in the table
+      auto key_col_iter = key_cols.begin();
+      auto val_col_iter = val_cols.begin();
 
-  // Assumes keys and values are sorted by index within their respective lists
+      // Assumes keys and values are sorted by index within their respective lists
 
-  auto type_sep = "";
-  while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
-    os << type_sep;
-    if (val_col_iter == val_cols.end() ||
-        (key_col_iter != key_cols.end() &&
-         (*key_col_iter).Index() < (*val_col_iter).Index())) {
-      os << "::hyde::rt::Key<column_desc_" << table.Id() << "_"
-         << (*key_col_iter).Index() << ">";
-      key_col_iter++;
-    } else {
-      os << "::hyde::rt::Value<column_desc_" << table.Id() << "_"
-         << (*val_col_iter).Index() << ">";
-      val_col_iter++;
+      sep = "";
+      while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
+        os << sep;
+        if (val_col_iter == val_cols.end() ||
+            (key_col_iter != key_cols.end() &&
+             (*key_col_iter).Index() < (*val_col_iter).Index())) {
+          os << "KeyColumn<" << (*key_col_iter).Id() << ">";
+          key_col_iter++;
+        } else {
+          os << "ValueColumn<" << (*val_col_iter).Id() << ">";
+          val_col_iter++;
+        }
+        sep = ", ";
+      }
+
+      os << ">;\n"
+         << os.Indent() << "using KeyColumnIds = IdList<";
+      sep = "";
+      for (auto key_col : key_cols) {
+        os << sep << key_col.Id();
+        sep = ", ";
+      }
+
+      os << ">;\n"
+         << os.Indent() << "using ValueColumnIds = IdList<";
+      sep = "";
+      for (auto val_col : val_cols) {
+        os << sep << val_col.Id();
+        sep = ", ";
+      }
+
+      os << ">;\n";
+      os.PopIndent();
+      os << os.Indent() << "};\n";
     }
-    type_sep = ", ";
-  }
 
-  os << ">, ::hyde::rt::TypeList<";
-  type_sep = "";
-  for (auto key_col : key_cols) {
-    os << type_sep << "column_desc_" << table.Id() << '_' << key_col.Index();
-    type_sep = ", ";
-  }
+    os << os.Indent() << "template <>\n"
+       << os.Indent() << "struct TableDescriptor<" << table.Id() << "> {\n";
+    os.PushIndent();
 
-  os << ">, ::hyde::rt::TypeList<";
-  type_sep = "";
-  for (auto val_col : val_cols) {
-    os << type_sep << "column_desc_" << table.Id() << '_' << val_col.Index();
-    type_sep = ", ";
-  }
-
-  os << ">>";
-  return os;
-}
-
-// Declare a structure containing the information about a table.
-static void DeclareTable(OutputStream &os, ParsedModule module,
-                         DataTable table) {
-
-  for (auto index : table.Indices()) {
-    if (!index.ValueColumns().empty()) {
-      os << os.Indent() << "using Index" << index.Id() << " = "
-         << IndexTypeDecl(os, table, index) << ";\n";
-    }
-  }
-
-  os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
-     << ", hyde::rt::TypeList<";
-
-  const auto cols = table.Columns();
-
-  // List index types first
-  auto sep = "";
-  for (auto index : table.Indices()) {
-    if (!index.ValueColumns().empty()) {
-
-      // The index can be implemented with the keys in the Table.
-      // In this case, the index lookup will be like an `if ... in ...`.
-      os << sep << "Index" << index.Id();
+    os << os.Indent() << "using ColumnIds = IdList<";
+    sep = "";
+    for (auto col : table.Columns()) {
+      os << sep << col.Id();
       sep = ", ";
     }
-  }
-
-  // Then column types
-  sep = ">, hyde::rt::TypeList<";
-  for (auto col : cols) {
-    os << sep << "column_desc_" << table.Id() << '_' << col.Index();
-    sep = ", ";
-  }
-  os << ">> " << Table(os, table) << ";\n";
-
-  // We represent indices as mappings to vectors so that we can concurrently
-  // write to them while iterating over them (via an index and length check).
-  for (auto index : table.Indices()) {
-    if (!index.ValueColumns().empty()) {
-      os << os.Indent() << "Index" << index.Id() << " " << TableIndex(os, index)
-         << ";\n";
+    os << ">;\n"
+       << os.Indent() << "using IndexIds = IdList<";
+    sep = "";
+    for (auto index : table.Indices()) {
+      os << sep << index.Id();
+      sep = ", ";
     }
+    os << ">;\n";
+
+    os.PopIndent();
+    os << "};\n";
+
+    os << "\n";
   }
-  os << "\n";
+  os << "}  // namepace hyde::rt\n\n";
 }
+
+//// Print out the type of an index. Specify whether this is being used for an index or within a table type
+//static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
+//                                   const DataIndex index) {
+//
+//  //  // The index can be implemented with the keys in the Table.
+//  //  // In this case, the index lookup will be like an `if ... in ...`.
+//  //  if (key_cols.size() == cols.size()) {
+//  //    assert(val_cols.empty());
+//  //
+//  //    // Implement this index as a reference to the Table
+//  //    return os << "decltype(" << Table(os, table) << ") & "
+//  //              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
+//  //  }
+//
+//  os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
+//     << index.Id() << ",
+//  return os;
+//}
+//
+//// Declare a structure containing the information about a table.
+//static void DeclareTable(OutputStream &os, ParsedModule module,
+//                         DataTable table) {
+//
+//  os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
+//     << "> " << Table(os, table) << ";\n";
+//
+////     << ", hyde::rt::TypeList<";
+////
+////  const auto cols = table.Columns();
+////
+////  // List index types first
+////  auto sep = "";
+////  for (auto index : table.Indices()) {
+////    if (!index.ValueColumns().empty()) {
+////
+////      // The index can be implemented with the keys in the Table.
+////      // In this case, the index lookup will be like an `if ... in ...`.
+////      os << sep << "Index" << index.Id();
+////      sep = ", ";
+////    }
+////  }
+////
+////  // Then column types
+////  sep = ">, hyde::rt::TypeList<";
+////  for (auto col : cols) {
+////    os << sep << "column_desc_" << table.Id() << '_' << col.Index();
+////    sep = ", ";
+////  }
+////  os << ">> " << Table(os, table) << ";\n";
+////
+////  // We represent indices as mappings to vectors so that we can concurrently
+////  // write to them while iterating over them (via an index and length check).
+////  for (auto index : table.Indices()) {
+////    if (!index.ValueColumns().empty()) {
+////      os << os.Indent() << "Index" << index.Id() << " " << TableIndex(os, index)
+////         << ";\n";
+////    }
+////  }
+////  os << "\n";
+//}
 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
@@ -1547,6 +1611,15 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << os.Indent() << "FunctorsT &functors;\n"
      << "\n";
 
+  for (auto table : program.Tables()) {
+    os << os.Indent() << "::hyde::rt::Table<StorageT, " << table.Id()
+       << "> " << Table(os, table) << ";\n";
+  }
+
+  for (auto global : program.GlobalVariables()) {
+    DefineGlobal(os, module, global);
+  }
+
   os << os.Indent() << "explicit " << gClassName
      << "(StorageT &s, LogT &l, FunctorsT &f)\n";
   os.PushIndent();  // constructor
@@ -1555,20 +1628,22 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << os.Indent() << "  functors(f)";
 
   for (auto table : program.Tables()) {
-    for (auto index : table.Indices()) {
-      if (!index.ValueColumns().empty()) {
-        os << ",\n"
-           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
-      }
-    }
+    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage)";
 
-    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
-    for (auto index : table.Indices()) {
-      if (!index.ValueColumns().empty()) {
-        os << ", " << TableIndex(os, index);
-      }
-    }
-    os << ")";
+//    for (auto index : table.Indices()) {
+//      if (!index.ValueColumns().empty()) {
+//        os << ",\n"
+//           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
+//      }
+//    }
+//
+//    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
+//    for (auto index : table.Indices()) {
+//      if (!index.ValueColumns().empty()) {
+//        os << ", " << TableIndex(os, index);
+//      }
+//    }
+//    os << ")";
   }
 
   for (auto global : program.GlobalVariables()) {
@@ -1602,13 +1677,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "private:\n";
   os.PushIndent();
 
-  for (auto table : program.Tables()) {
-    DeclareTable(os, module, table);
-  }
+//  for (auto table : program.Tables()) {
+//    DeclareTable(os, module, table);
+//  }
 
-  for (auto global : program.GlobalVariables()) {
-    DefineGlobal(os, module, global);
-  }
   os << "\n";
 
   for (auto constant : program.Constants()) {
