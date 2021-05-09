@@ -24,8 +24,8 @@ void UnlockSlab(void *, uint32_t) noexcept {
   gAtomicAccessLock.unlock();
 }
 
-Slab::Slab(bool is_persistent) {
-  header.u.s.is_persistent = uint64_t(is_persistent) & 1ull;
+Slab::Slab(SlabManager &manager, bool is_persistent) {
+  header.u.s.is_persistent = is_persistent && (manager.fd != -1);
   header.u.s.has_next = 0;
 }
 

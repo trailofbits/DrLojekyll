@@ -126,7 +126,8 @@ class TypedSlabVector : public SlabVector {
   }
 
   template <typename InputT, typename... InputTs>
-  HYDE_RT_FLATTEN void Add(const InputT &t, const InputTs&... ts) noexcept {
+  HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  void Add(const InputT &t, const InputTs&... ts) noexcept {
     static_assert(sizeof...(Ts) == sizeof...(InputTs));
 
     SlabListWriter writer(storage, *this);

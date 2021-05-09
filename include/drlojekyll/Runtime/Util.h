@@ -10,8 +10,8 @@ namespace hyde {
 namespace rt {
 
 #ifdef NDEBUG
-# define HYDE_RT_LIKELY(...) __builtin_expect((__VA_ARGS__), 1)
-# define HYDE_RT_UNLIKELY(...) __builtin_expect((__VA_ARGS__), 0)
+# define HYDE_RT_LIKELY(...) __builtin_expect(!!(__VA_ARGS__), 1)
+# define HYDE_RT_UNLIKELY(...) __builtin_expect(!!(__VA_ARGS__), 0)
 # define HYDE_RT_INLINE inline
 # define HYDE_RT_ALWAYS_INLINE [[gnu::always_inline]] HYDE_RT_INLINE
 # define HYDE_RT_FLATTEN [[gnu::flatten]]
@@ -75,13 +75,13 @@ static constexpr bool kIsAddress<std::nullptr_t> = true;
 
 template <typename T>
 HYDE_RT_ALWAYS_INLINE
-inline static T *ExtractAddress(Address<T> a) {
+static T *ExtractAddress(Address<T> a) {
   return reinterpret_cast<T *>(a.data);
 }
 
 template <typename T>
 HYDE_RT_ALWAYS_INLINE
-inline static T *ExtractAddress(std::nullptr_t) {
+static T *ExtractAddress(std::nullptr_t) {
   return nullptr;
 }
 

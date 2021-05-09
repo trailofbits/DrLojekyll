@@ -21,7 +21,7 @@ class SlabManager;
 class Slab {
  public:
 
-  explicit Slab(bool is_persistent);
+  explicit Slab(SlabManager &manager, bool is_persistent);
 
   static constexpr auto kShiftNextOffsetShift = 2;
 
@@ -67,17 +67,25 @@ class Slab {
 
   inline bool IsReferenced(
       std::memory_order order=std::memory_order_acquire) const noexcept {
-    return 0u < header.ref_count.load(order);
+    if (header.u.s.is_persistent) {
+      return true;
+    } else {
+      return 0u < header.ref_count.load(order);
+    }
   }
 
   inline void IncRef(
       std::memory_order order=std::memory_order_release) noexcept {
-    header.ref_count.fetch_add(1u, order);
+    if (!IsPersistent()) {
+      header.ref_count.fetch_add(1u, order);
+    }
   }
 
   inline void DecRef(
       std::memory_order order=std::memory_order_release) noexcept {
-    header.ref_count.fetch_sub(1u, order);
+    if (!IsPersistent()) {
+      header.ref_count.fetch_sub(1u, order);
+    }
   }
 
   inline uint32_t Size(
@@ -141,7 +149,8 @@ class Slab {
   Slab(void) = delete;
 };
 
-static constexpr auto kSlabDataSize = sizeof(Slab(false).data);
+static constexpr auto kSlabDataSize =
+    sizeof(reinterpret_cast<Slab *>(NULL)->data);
 
 static_assert(sizeof(Slab) == kSlabSize);
 static_assert(__builtin_offsetof(Slab, header.u) == 0u);

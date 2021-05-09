@@ -693,3 +693,28 @@ TEST(SlabRuntime, PointerToMutableTest) {
   RC_ASSERT(num_iters == 3);
 
 }
+
+extern "C" {
+__attribute__((noinline)) void with_int(int) {}
+void whatever(void) {
+  using namespace hyde::rt;
+
+  auto maybe_storage = CreateSlabStorage(
+      InMemorySlabStore{}, SlabStoreSize::kTiny);
+
+  auto storage = maybe_storage.TakeValue();
+  TypedSlabVector<Mutable<int>> vec1(*storage, 0u);
+  TypedSlabVector<int *> vec2(*storage, 0u);
+  vec1.Add(111);
+  vec1.Add(222);
+  vec1.Add(333);
+
+  for (auto [int_ref] : vec1) {
+    vec2.Add(&int_ref);
+  }
+
+  for (auto [int_ptr] : vec2) {
+    with_int(*int_ptr);
+  }
+}
+}  // extern C

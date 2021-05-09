@@ -25,13 +25,14 @@ class SlabReference {
   explicit SlabReference(uint8_t *read_ptr_, uint32_t num_bytes_,
                          uint32_t hash_) noexcept;
 
-  HYDE_RT_INLINE SlabReference(void) noexcept
-      : u{} {}
+  HYDE_RT_INLINE SlabReference(void) noexcept {}
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   SlabReference(SlabReference &&that) noexcept {
-    u.opaque = that.u.opaque;
-    that.u.opaque = 0;
+    data_ptr = that.data_ptr;
+    that.data_ptr = nullptr;
+//    u.opaque = that.u.opaque;
+//    that.u.opaque = 0;
   }
 
   SlabReference(const SlabReference &that) noexcept;
@@ -53,28 +54,24 @@ class SlabReference {
   friend class UnsafeSlabListReader;
 
   HYDE_RT_INLINE uint8_t *Data(void) const noexcept {
-    return reinterpret_cast<uint8_t *>(u.p.data_addr);
-  }
-
-  HYDE_RT_INLINE uint64_t Handle(void) const noexcept {
-    return u.opaque;
+    return data_ptr;
   }
 
   HYDE_RT_INLINE uint32_t Hash(void) const noexcept {
-    return u.p.hash;
+    return 0;
   }
 
   // Packed representation that bring along the address of some data, as well
   // as a truncated hash.
-  union {
-    uint64_t opaque{0u};
-    struct {
-      uint64_t hash:16;
-      int64_t data_addr:48;
-    } __attribute__((packed)) p;
-  } __attribute__((packed)) u;
-
-  static_assert(sizeof(u) == sizeof(uint64_t));
+  uint8_t *data_ptr{nullptr};
+//  union {
+//    uint64_t opaque{0u};
+//    struct {
+//      uint64_t hash:16;
+//      int64_t data_addr:48;
+//    } __attribute__((packed)) p;
+//  } __attribute__((packed)) u;
+//  static_assert(sizeof(u) == sizeof(uint64_t));
 };
 
 // A sized slab reference is a reference to a variable-sized data structure.
@@ -106,7 +103,6 @@ class SizedSlabReference : public SlabReference {
 
  protected:
   using SlabReference::Data;
-  using SlabReference::Handle;
 
   uint32_t num_bytes{0u};
   uint32_t hash{0u};
@@ -143,7 +139,6 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
   using TypedSlabReferenceBase<T>::operator=;
   using TypedSlabReferenceBase<T>::Hash;
   using TypedSlabReferenceBase<T>::Data;
-  using TypedSlabReferenceBase<T>::Handle;
   using TypedSlabReferenceBase<T>::Clear;
 
   using ValT = typename ValueType<T>::Type;
@@ -180,7 +175,7 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
   }
 
   bool operator==(const TypedSlabReference<T> &that) const noexcept {
-    if (Handle() == that.Handle()) {
+    if (Data() == that.Data()) {
       return true;
     }
 
@@ -208,7 +203,7 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
   }
 
   bool operator<(const TypedSlabReference<T> &that) const noexcept {
-    if (Handle() == Handle()) {
+    if (Data() == Data()) {
       return false;
     }
 
@@ -234,7 +229,7 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
   }
 
   bool operator>(const TypedSlabReference<T> &that) const noexcept {
-    if (Handle() == Handle()) {
+    if (Data() == Data()) {
       return false;
     }
 
@@ -337,7 +332,6 @@ class TypedSlabReference : public TypedSlabReferenceOps<T> {
   using TypedSlabReferenceOps<T>::operator>;
   using TypedSlabReferenceOps<T>::Hash;
   using TypedSlabReferenceOps<T>::Data;
-  using TypedSlabReferenceOps<T>::Handle;
   using TypedSlabReferenceOps<T>::Clear;
   using TypedSlabReferenceOps<T>::SizeInBytes;
 };
@@ -352,7 +346,6 @@ class TypedSlabReference<T *> : public TypedSlabReferenceOps<T *> {
   using TypedSlabReferenceOps<T *>::operator>;
   using TypedSlabReferenceOps<T *>::Hash;
   using TypedSlabReferenceOps<T *>::Data;
-  using TypedSlabReferenceOps<T *>::Handle;
   using TypedSlabReferenceOps<T *>::Clear;
   using TypedSlabReferenceOps<T *>::SizeInBytes;
   using ValT = typename TypedSlabReferenceOps<T *>::ValT;
@@ -395,7 +388,6 @@ class TypedSlabReference<Addressable<T>> : public TypedSlabReferenceOps<T> {
   using TypedSlabReferenceOps<T>::operator>;
   using TypedSlabReferenceOps<T>::Hash;
   using TypedSlabReferenceOps<T>::Data;
-  using TypedSlabReferenceOps<T>::Handle;
   using TypedSlabReferenceOps<T>::Clear;
   using TypedSlabReferenceOps<T>::SizeInBytes;
   using ValT = typename TypedSlabReferenceOps<T>::ValT;
@@ -415,7 +407,6 @@ class TypedSlabReference<Mutable<T>> : public TypedSlabReferenceOps<T> {
   using TypedSlabReferenceOps<T>::operator>;
   using TypedSlabReferenceOps<T>::Hash;
   using TypedSlabReferenceOps<T>::Data;
-  using TypedSlabReferenceOps<T>::Handle;
   using TypedSlabReferenceOps<T>::Clear;
   using TypedSlabReferenceOps<T>::SizeInBytes;
   using ValT = typename TypedSlabReferenceOps<T>::ValT;

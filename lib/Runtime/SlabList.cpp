@@ -23,7 +23,7 @@ UnsafeSlabListWriter::UnsafeSlabListWriter(
   // that we intend to write to the slab list, so immediately create the first
   // slab.
   if (!slab) {
-    slab = new (manager, is_persistent) Slab(is_persistent);
+    slab = new (manager, is_persistent) Slab(manager, is_persistent);
     buffer.first = slab;
     write_ptr = slab->Begin();
 
@@ -57,7 +57,7 @@ HYDE_RT_FLATTEN void UnsafeSlabListWriter::UpdateWritePointer(void) {
     msync(last_slab, sizeof(Slab), MS_ASYNC);
   }
 
-  const auto slab = new (manager, is_persistent) Slab(is_persistent);
+  const auto slab = new (manager, is_persistent) Slab(manager, is_persistent);
   last_slab->SetNext(slab);
   *last_ptr = slab;
   write_ptr = slab->Begin();

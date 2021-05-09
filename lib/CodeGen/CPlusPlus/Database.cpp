@@ -1628,7 +1628,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << os.Indent() << "  functors(f)";
 
   for (auto table : program.Tables()) {
-    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage)";
+    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(s)";
 
 //    for (auto index : table.Indices()) {
 //      if (!index.ValueColumns().empty()) {

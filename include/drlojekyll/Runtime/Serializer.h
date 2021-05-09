@@ -81,6 +81,9 @@ class UnsafeByteWriter {
   void WriteU64(uint64_t q) noexcept {
     const auto ptr = write_ptr;
     write_ptr += 8;
+#ifndef HYDE_RT_DISALLOW_ACCESS
+    *reinterpret_cast<uint64_t *>(ptr) = q;
+#else
     ptr[0] = static_cast<uint8_t>(q >> 0);
     ptr[1] = static_cast<uint8_t>(q >> 8);
     ptr[2] = static_cast<uint8_t>(q >> 16);
@@ -89,24 +92,33 @@ class UnsafeByteWriter {
     ptr[5] = static_cast<uint8_t>(q >> 40);
     ptr[6] = static_cast<uint8_t>(q >> 48);
     ptr[7] = static_cast<uint8_t>(q >> 56);
+#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
   void WriteU32(uint32_t d) noexcept {
     const auto ptr = write_ptr;
     write_ptr += 4;
+#ifndef HYDE_RT_DISALLOW_ACCESS
+    *reinterpret_cast<uint32_t *>(ptr) = d;
+#else
     ptr[0] = static_cast<uint8_t>(d >> 0);
     ptr[1] = static_cast<uint8_t>(d >> 8);
     ptr[2] = static_cast<uint8_t>(d >> 16);
     ptr[3] = static_cast<uint8_t>(d >> 24);
+#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
   void WriteU16(uint16_t h) noexcept {
     const auto ptr = write_ptr;
     write_ptr += 2;
+#ifndef HYDE_RT_DISALLOW_ACCESS
+    *reinterpret_cast<uint16_t *>(ptr) = h;
+#else
     ptr[0] = static_cast<uint8_t>(h >> 0);
     ptr[1] = static_cast<uint8_t>(h >> 8);
+#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
