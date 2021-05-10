@@ -380,6 +380,7 @@ class QueryView : public query::QueryNode<QueryView> {
   unsigned TableId(void) const noexcept;
 
   std::optional<unsigned> EquivalenceSetId(void) const noexcept;
+  UsedNodeRange<QueryView> EquivalenceSetViews(void) const;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;

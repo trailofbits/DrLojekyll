@@ -1749,9 +1749,11 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
   query->ForEachView([&](VIEW *view) {
-    EquivalenceSet *const eq_set = new EquivalenceSet(next_data_model_id++);
+    QueryView query_view(view);
+    EquivalenceSet *const eq_set =
+        new EquivalenceSet(next_data_model_id++, view);
     view->equivalence_set.reset(eq_set);
-    view_to_model.emplace(view, eq_set);
+    view_to_model.emplace(query_view, eq_set);
     if (view->induction_info) {
       eq_set->TrySetInductionGroup(view);
     }

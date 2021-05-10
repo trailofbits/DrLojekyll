@@ -236,6 +236,16 @@ std::optional<unsigned> QueryView::EquivalenceSetId(void) const noexcept {
   }
 }
 
+// VIEWs in this nodes equivelence set
+UsedNodeRange<QueryView> QueryView::EquivalenceSetViews(void) const {
+  if (auto set = impl->equivalence_set.get()) {
+    return {UsedNodeIterator<QueryView>(set->Find()->views_in_set.begin()),
+            UsedNodeIterator<QueryView>(set->Find()->views_in_set.end())};
+  } else {
+    return {};
+  }
+}
+
 bool QueryView::IsSelect(void) const noexcept {
   return impl->AsSelect() != nullptr;
 }

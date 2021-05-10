@@ -7,7 +7,12 @@ namespace hyde {
 
 class EquivalenceSet {
  public:
-  EquivalenceSet(unsigned id_) : parent(this), id(id_) {}
+  EquivalenceSet(unsigned id_, VIEW *view)
+      : parent(this),
+        id(id_),
+        views_in_set(view) {
+    views_in_set.AddUse(view);
+  }
 
   EquivalenceSet *Find(void) {
     if (parent == this) {
@@ -23,9 +28,9 @@ class EquivalenceSet {
     b = b->Find();
     if (a != b) {
       if (a->id > b->id) {
-        a->parent = b;
+        MakeParent(a, b);
       } else {
-        b->parent = a;
+        MakeParent(b, a);
       }
     }
   }
@@ -38,47 +43,54 @@ class EquivalenceSet {
 
     } else if (a->induction_view == b->induction_view) {
       if (a->id > b->id) {
-        a->parent = b;
+        MakeParent(a, b);
         return true;
       } else {
-        b->parent = a;
+        MakeParent(b, a);
         return true;
       }
 
     } else if (a->induction_view && !b->induction_view) {
       b->induction_view = a->induction_view;
-      b->parent = a;
+      MakeParent(b, a);
       return true;
 
     } else if (!a->induction_view && b->induction_view) {
       a->induction_view = b->induction_view;
-      a->parent = b;
+      MakeParent(a, b);
       return true;
 
     } else {
       return false;
     }
   }
-  std::optional<unsigned> InductionGroup(void) {
-    return *Find()->induction_group_id;
+
+  VIEW *InductionView(void) {
+    return Find()->induction_view;
   }
+
   bool TrySetInductionGroup(VIEW *view) {
     auto self = Find();
-
-    //if (self->induction_view
-    //  *(self->induction_group_id) != induction_group_id_ &&
-    //  *(self->induction_depth) != induction_depth_) {
-    // return false;
-    //}
+    if (self->induction_view) {
+      return false;
+    }
     this->induction_view = view;
     self->induction_view = view;
     return true;
   }
+
   EquivalenceSet *parent;
   unsigned id;
-  std::optional<unsigned> induction_group_id;
+  WeakUseList<VIEW> views_in_set;
 
  private:
+  static void MakeParent(EquivalenceSet *old_set, EquivalenceSet *new_parent) {
+    for (auto use : old_set->views_in_set) {
+      new_parent->views_in_set.AddUse(use);
+    }
+    old_set->parent = new_parent;
+  }
+
   VIEW *induction_view{nullptr};
 };
 
