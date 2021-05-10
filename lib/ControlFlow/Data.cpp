@@ -196,7 +196,7 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
   if (model->table->views.size() > old_size) {
 
     // Breaks abstraction layers but is super nifty for debugging.
-    view.SetTableId(model->table->id);
+    // view.SetTableId(model->table->id);
 
     unsigned i = 0u;
     for (auto col : cols) {

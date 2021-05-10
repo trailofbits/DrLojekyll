@@ -19,6 +19,7 @@
 #include <variant>
 #include <vector>
 
+#include "EquivalenceSet.h"
 #include "Query.h"
 
 #define DEBUG(...)
@@ -1739,6 +1740,228 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   return true;
 }
 
+// Building equivalence sets means figuring out which sets of `QueryView`s can
+// share the same backing storage. This doesn't mean that all views will be
+// backed by such storage, but when we need backing storage, we can maximally
+// share it among other places where it might be needed.
+static void BuildEquivalenceSets(QueryImpl *query) {
+  unsigned next_data_model_id = 1u;
+  std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
+
+  query->ForEachView([&](VIEW *view) {
+    QueryView query_view(view);
+    EquivalenceSet *const eq_set =
+        new EquivalenceSet(next_data_model_id++, view);
+    view->equivalence_set.reset(eq_set);
+    view_to_model.emplace(query_view, eq_set);
+    if (view->induction_info) {
+      eq_set->TrySetInductionGroup(view);
+    }
+  });
+
+  auto all_cols_match = [](auto cols, auto pred_cols) {
+    const auto num_cols = cols.size();
+    if (num_cols != pred_cols.size()) {
+      return false;
+    }
+
+    for (auto i = 0u; i < num_cols; ++i) {
+      if (cols[i].Index() != pred_cols[i].Index()) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // If this view might admit fewer tuples through than its predecessor, then
+  // we can't have it share a data model with its predecessor.
+  auto may_admit_fewer_tuples_than_pred =
+      +[](QueryView view) { return view.IsCompare() || view.IsMap(); };
+
+  // If the output of `view` is conditional, i.e. dependent on the refcount
+  // condition variables, or if a condition variable is dependent on the
+  // output, then successors of `view` can't share the data model with `view`.
+  auto output_is_conditional = +[](QueryView view) {
+    return view.SetCondition() || !view.PositiveConditions().empty() ||
+           !view.NegativeConditions().empty();
+  };
+
+  auto has_multiple_succs =
+      +[](QueryView view) { return 1u < view.Successors().size(); };
+
+  // With any special cases, we need to watch out for the following kind of
+  // pattern:
+  //
+  //                               ...
+  //      ... ----.                 |
+  //           UNION1 -- TUPLE -- UNION2
+  //      ... ----'
+  //
+  // In this case, suppose TUPLE perfectly forwards data of UNION1 to
+  // UNION2. Thus, UNION1 is a subset of UNION2. We don't want to accidentally
+  // merge the data models of UNION1 and UNION2, otherwise we'd lose this
+  // subset relation. At the same time, we don't want to break all sorts of
+  // other stuff out, so we have a bunch of special cases to try to be more
+  // aggressive about merging data models without falling prey to this
+  // specific case.
+  //
+  // Another situation comes up with things like:
+  //
+  //          UNION1 -- INSERT -- SELECT -- UNION2
+  //
+  // In this situation, we want UNION1 and the INSERT/SELECT to share the
+  // same data model, but UNION2 should not be allowed to share it. Similarly,
+  // in this situation:
+  //
+  //
+  //          UNION1 -- INSERT -- SELECT -- TUPLE -- UNION2
+  //
+  // We want the UNION1, INSERT, SELECT, and TUPLE to share the same data
+  // model, but not UNION2.
+
+
+  // Here we also need to check on the number of successors of the tuple's
+  // predecessor, e.g.
+  //
+  //             --> flow -->
+  //
+  //      TUPLE1 -- TUPLE2 -- UNION1
+  //         |
+  //         '----- TUPLE3 -- UNION2
+  //                            |
+  //                TUPLE4 -----'
+  //
+  // In this case, UNION1 and TUPLE2 will share their data models, but we
+  // can't let TUPLE1 and TUPLE2 or TUPLE1 and TUPLE3 share their data models,
+  // otherwise the UNION1 might end up sharing its data model with completely
+  // unrelated stuff in UNION2 (via TUPLE4).
+
+  // INSERTs and SELECTs from the same relation share the same data models.
+  for (auto rel : query->relations) {
+    EquivalenceSet *last_model = nullptr;
+    for (auto view : rel->inserts) {
+      auto curr_model = view->equivalence_set.get()->Find();
+      if (last_model) {
+        EquivalenceSet::TryUnion(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+
+    for (auto view : rel->selects) {
+      auto curr_model = view->equivalence_set.get()->Find();
+      if (last_model) {
+        EquivalenceSet::TryUnion(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+  }
+
+  // All INSERTs should be guarded with a TUPLE predecessor which can share
+  // the same data model.
+  // Note(sonya): Order does matter here. This should be done before iterating
+  // over all views to prioritize merging INSERT and guard TUPLE tables
+  for (auto insert : query->inserts) {
+    EquivalenceSet *insert_model = insert->equivalence_set.get()->Find();
+    for (auto pred_view : insert->predecessors) {
+      if (pred_view->AsTuple()) {
+        auto tuple_model = pred_view->equivalence_set.get()->Find();
+        EquivalenceSet::TryUnion(insert_model, tuple_model);
+      }
+    }
+  }
+
+  // Select predecessors are INSERTs, which don't have output columns.
+  // In theory, there could be more than one INSERT. Selects always share
+  // the data model with their corresponding INSERTs.
+  //
+  // TODO(pag): This more about the interplay with conditional inserts.
+  for (auto select : query->selects) {
+    EquivalenceSet *insert_model = select->equivalence_set.get()->Find();
+    for (auto pred : select->predecessors) {
+      assert(pred->AsInsert());
+      assert(!output_is_conditional(pred));
+      const auto pred_model = view_to_model[pred];
+      EquivalenceSet::TryUnion(insert_model, pred_model);
+    }
+  }
+
+
+  query->ForEachView([&](QueryView view) {
+    if (may_admit_fewer_tuples_than_pred(view)) {
+      return;
+    }
+
+    const auto model = view_to_model[view];
+    const auto preds = view.Predecessors();
+
+    // UNIONs can share the data of any of their predecessors so long as
+    // those predecessors don't themselves have other successors, i.e. they
+    // only lead into the UNION.
+    //
+    // We also have to be careful about merges that receive deletions. If so,
+    // then we need to be able to distinguish where data is from. This is
+    // especially important for comparisons or maps leading into merges.
+    //
+    // If `pred` is another UNION, then `pred` may be a subset of `view`, thus
+    // we cannot merge `pred` and `view`.
+    if (view.IsMerge()) {
+      auto possible_sharing_preds = view.InductivePredecessors();
+      for (auto pred : possible_sharing_preds) {
+        if (!output_is_conditional(pred) && !pred.IsMerge()) {
+          const auto pred_model = view_to_model[pred];
+          EquivalenceSet::TryUnion(model, pred_model);
+        }
+      }
+
+    // If a TUPLE "perfectly" passes through its data, then it shares the
+    // same data model as its predecessor.
+    } else if (view.IsTuple()) {
+      if (preds.size() == 1u) {
+        const auto pred = preds[0];
+        const auto tuple = QueryTuple::From(view);
+        if (!output_is_conditional(pred) &&
+            all_cols_match(tuple.InputColumns(), pred.Columns())) {
+          const auto pred_model = view_to_model[pred];
+          EquivalenceSet::TryUnion(model, pred_model);
+        }
+      }
+
+    // NEGATE's can share data with TUPLE's that are non-inductive successors
+    // and who's data matches perfectly.
+    } else if (view.IsNegate()) {
+      for (auto succ : view.NonInductiveSuccessors()) {
+        if (succ.IsTuple()) {
+          const auto tuple = QueryTuple::From(succ);
+          if (all_cols_match(view.Columns(), tuple.InputColumns()) &&
+              !output_is_conditional(succ)) {
+            const auto succ_model = view_to_model[succ];
+            EquivalenceSet::TryUnion(model, succ_model);
+          }
+        }
+      }
+    }
+  });
+
+  for (MERGE *merge : query->merges) {
+    if (merge->merged_views.Size() == 1u) {
+      QueryView view(merge);
+      QueryView pred_view(merge->merged_views[0]);
+      if (!has_multiple_succs(pred_view) && !output_is_conditional(pred_view)) {
+        const auto model = view_to_model[view];
+        const auto pred_model = view_to_model[pred_view];
+        EquivalenceSet::ForceUnion(model, pred_model);
+      }
+    }
+  }
+
+  query->ForEachView(
+      [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });
+}
+
+
 }  // namespace
 
 std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
@@ -1806,6 +2029,8 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->IdentifyInductions(log);
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
+
+  BuildEquivalenceSets(impl.get());
 
   return Query(std::move(impl));
 }
