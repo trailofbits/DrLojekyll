@@ -1739,12 +1739,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   return true;
 }
 
-// TODO(sonya): When this function is complete make sure this comment is still relevant
-// ------------------------
-// Assigning the data model IDs means figuring out which `QueryView`s can share
-// the same backing storage. This doesn't mean that all views will be backed by
-// such storage, but when we need backing storage, we can maximally share it
-// among other places where it might be needed.
+// Building equivalence sets means figuring out which sets of `QueryView`s can
+// share the same backing storage. This doesn't mean that all views will be
+// backed by such storage, but when we need backing storage, we can maximally
+// share it among other places where it might be needed.
 static void BuildEquivalenceSets(QueryImpl *query) {
   unsigned next_data_model_id = 1u;
   std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
@@ -1963,7 +1961,8 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       }
 
 
-    //
+    // NEGATE's can share data with TUPLE's that are non-inductive successors
+    // and who's data matches perfectly.
     } else if (view.IsNegate()) {
       for (auto succ : view.NonInductiveSuccessors()) {
         if (succ.IsTuple()) {
