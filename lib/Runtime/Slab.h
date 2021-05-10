@@ -8,6 +8,8 @@
 #include <cassert>
 #include <cstdint>
 
+#include <iostream>
+
 namespace hyde {
 namespace rt {
 
@@ -77,6 +79,7 @@ class Slab {
   inline void IncRef(
       std::memory_order order=std::memory_order_release) noexcept {
     if (!IsPersistent()) {
+      std::cerr << "incref " << reinterpret_cast<void *>(this) << '\n';
       header.ref_count.fetch_add(1u, order);
     }
   }
@@ -84,7 +87,10 @@ class Slab {
   inline void DecRef(
       std::memory_order order=std::memory_order_release) noexcept {
     if (!IsPersistent()) {
-      header.ref_count.fetch_sub(1u, order);
+      std::cerr << "decref " << reinterpret_cast<void *>(this) << '\n';
+      auto old_val = header.ref_count.fetch_sub(1u, order);
+      assert(0 < old_val);
+      (void) old_val;
     }
   }
 

@@ -126,11 +126,11 @@ class TypedSlabVector : public SlabVector {
   }
 
   template <typename InputT, typename... InputTs>
-  HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  HYDE_RT_FLATTEN
   void Add(const InputT &t, const InputTs&... ts) noexcept {
     static_assert(sizeof...(Ts) == sizeof...(InputTs));
 
-    SlabListWriter writer(storage, *this);
+    SlabListWriter writer(storage, *this, false  /* is_persistent */);
     AddImpl<0, SlabListWriter, InputT, InputTs...>(writer, t, ts...);
   }
 
@@ -192,13 +192,12 @@ class TypedSlabVector : public SlabVector {
 template <typename T, typename... Ts>
 class PersistentTypedSlabVector : public TypedSlabVector<T, Ts...> {
  public:
-  using TypedSlabVector<T, Ts...>::TypedSlabVector;
+  using Parent = TypedSlabVector<T, Ts...>;
+  using Parent::Parent;
 
   template <typename InputT, typename... InputTs>
   HYDE_RT_FLATTEN void Add(const InputT &t, const InputTs&... ts) noexcept {
     static_assert(sizeof...(Ts) == sizeof...(InputTs));
-
-    using Parent = TypedSlabVector<T, Ts...>;
 
     SlabListWriter writer(this->Parent::storage,
                           *this, true  /* is_persistent */);

@@ -11,6 +11,9 @@ namespace rt {
 HYDE_RT_FLATTEN
 SlabReference::SlabReference(uint8_t *data, uint32_t, uint32_t hash) noexcept {
   data_ptr = data;
+  if (HYDE_RT_LIKELY(data_ptr)) {
+    Slab::Containing(data_ptr)->IncRef();
+  }
 //  u.opaque = 0;
 //  if (HYDE_RT_LIKELY(data)) {
 //    u.p.data_addr = reinterpret_cast<intptr_t>(data);
