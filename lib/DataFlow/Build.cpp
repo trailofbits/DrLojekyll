@@ -1812,7 +1812,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   // If this view might admit fewer tuples through than its predecessor, then
   // we can't have it share a data model with its predecessor.
   auto may_admit_fewer_tuples_than_pred = +[](QueryView view) {
-    return view.IsCompare() || view.IsMap() || view.IsNegate();
+    return view.IsCompare() || view.IsMap();
   };
 
   // If the output of `view` is conditional, i.e. dependent on the refcount
@@ -1924,8 +1924,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     // If `pred` is another UNION, then `pred` may be a subset of `view`, thus
     // we cannot merge `pred` and `view`.
     if (view.IsMerge()) {
-
-      //auto possible_sharing_preds = !view.CanReceiveDeletions() ? preds : view.InductivePredecessors();
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
         if (can_share(view, pred) && !output_is_conditional(pred) &&
@@ -1962,13 +1960,22 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     //        const auto pred_model = view_to_model[pred];
     //        EquivalenceSet::TryUnion(model, pred_model);
     //      }
+
+    //
     } else if (view.IsNegate()) {
+      for (auto succ : view.NonInductiveSuccessors()) {
+        //const auto negate = QueryNegate::From(view);
+        //if (all_cols_match(negate., succ.Columns()) && !output_is_conditional(succ)) {
+          const auto succ_model = view_to_model[succ];
+          EquivalenceSet::TryUnion(model, succ_model);
+        //}
+      }
     }
   });
 
   query->ForEachView(
       [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });
-}
+  }
 
 
 }  // namespace
