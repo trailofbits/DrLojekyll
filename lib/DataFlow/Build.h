@@ -1,5 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <optional>
+
 #include "Query.h"
 
 namespace hyde {

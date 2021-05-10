@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "EquivalenceSet.h"
+
 namespace hyde {
 
 class EqualitySet;
@@ -641,10 +643,13 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // This breaks abstraction layers, as table IDs come from the control-flow
   // IR, but it's nifty for debugging.
-  mutable std::optional<unsigned> table_id;
+  unsigned table_id;
 
   // Information about if this is inductive.
   std::unique_ptr<InductionInfo> induction_info;
+
+  // Equivalence set of views sharing the same data model
+  std::unique_ptr<EquivalenceSet> equivalence_set;
 
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
@@ -867,7 +872,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
   //            canonicalization.
   WeakUseList<VIEW> joined_views;
 
-  // Number of pivot columns. If this value is zero then this is actuall a
+  // Number of pivot columns. If this value is zero then this is actually a
   // cross-product.
   unsigned num_pivots{0};
 };

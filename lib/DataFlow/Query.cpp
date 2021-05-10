@@ -217,11 +217,21 @@ const char *QueryView::KindName(void) const noexcept {
 }
 
 void QueryView::SetTableId(unsigned id) const noexcept {
-  impl->table_id.emplace(id);
+  impl->table_id = id;
 }
 
-std::optional<unsigned> QueryView::TableId(void) const noexcept {
+unsigned QueryView::TableId(void) const noexcept {
   return impl->table_id;
+}
+
+// Id assigned by building the equivalence set in BuildEquivalenceSets
+// return std::nullopt if the EquivalenceSet hasn't been built yet
+std::optional<unsigned> QueryView::EquivalenceSetId(void) const noexcept {
+  if (auto equivalence_set = impl->equivalence_set.get()) {
+    return equivalence_set->Find()->id;
+  } else {
+    return std::nullopt;
+  }
 }
 
 bool QueryView::IsSelect(void) const noexcept {
