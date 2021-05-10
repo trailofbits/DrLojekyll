@@ -1758,42 +1758,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
   });
 
-  // INSERTs and SELECTs from the same relation share the same data models.
-  for (auto rel : query->relations) {
-    EquivalenceSet *last_model = nullptr;
-    for (auto view : rel->inserts) {
-      auto curr_model = view->equivalence_set.get()->Find();
-      if (last_model) {
-        EquivalenceSet::TryUnion(curr_model, last_model);
-      } else {
-        last_model = curr_model;
-      }
-    }
-
-    for (auto view : rel->selects) {
-      auto curr_model = view->equivalence_set.get()->Find();
-      if (last_model) {
-        EquivalenceSet::TryUnion(curr_model, last_model);
-      } else {
-        last_model = curr_model;
-      }
-    }
-  }
-
-  // All INSERTs should be guarded with a TUPLE predecessor which can share
-  // the same data model.
-  // Note(sonya): Order does matter here. This should be done before iterating
-  // over all views to prioritize merging INSERT and guard TUPLE tables
-  for (auto insert : query->inserts) {
-    EquivalenceSet *insert_model = insert->equivalence_set.get()->Find();
-    for (auto pred_view : insert->predecessors) {
-      if (pred_view->AsTuple()) {
-        auto tuple_model = pred_view->equivalence_set.get()->Find();
-        EquivalenceSet::TryUnion(insert_model, tuple_model);
-      }
-    }
-  }
-
   auto all_cols_match = [](auto cols, auto pred_cols) {
     const auto num_cols = cols.size();
     if (num_cols != pred_cols.size()) {
@@ -1811,9 +1775,8 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 
   // If this view might admit fewer tuples through than its predecessor, then
   // we can't have it share a data model with its predecessor.
-  auto may_admit_fewer_tuples_than_pred = +[](QueryView view) {
-    return view.IsCompare() || view.IsMap();
-  };
+  auto may_admit_fewer_tuples_than_pred =
+      +[](QueryView view) { return view.IsCompare() || view.IsMap(); };
 
   // If the output of `view` is conditional, i.e. dependent on the refcount
   // condition variables, or if a condition variable is dependent on the
@@ -1905,6 +1868,59 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     //    return view.CanReceiveDeletions() || !!view.SetCondition();
   };
 
+  // INSERTs and SELECTs from the same relation share the same data models.
+  for (auto rel : query->relations) {
+    EquivalenceSet *last_model = nullptr;
+    for (auto view : rel->inserts) {
+      auto curr_model = view->equivalence_set.get()->Find();
+      if (last_model) {
+        EquivalenceSet::TryUnion(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+
+    for (auto view : rel->selects) {
+      auto curr_model = view->equivalence_set.get()->Find();
+      if (last_model) {
+        EquivalenceSet::TryUnion(curr_model, last_model);
+      } else {
+        last_model = curr_model;
+      }
+    }
+  }
+
+  // All INSERTs should be guarded with a TUPLE predecessor which can share
+  // the same data model.
+  // Note(sonya): Order does matter here. This should be done before iterating
+  // over all views to prioritize merging INSERT and guard TUPLE tables
+  for (auto insert : query->inserts) {
+    EquivalenceSet *insert_model = insert->equivalence_set.get()->Find();
+    for (auto pred_view : insert->predecessors) {
+      if (pred_view->AsTuple()) {
+        auto tuple_model = pred_view->equivalence_set.get()->Find();
+        EquivalenceSet::TryUnion(insert_model, tuple_model);
+      }
+    }
+  }
+
+  // Select predecessors are INSERTs, which don't have output columns.
+  // In theory, there could be more than one INSERT. Selects always share
+  // the data model with their corresponding INSERTs.
+  //
+  // TODO(pag): This more about the interplay with conditional inserts.
+  for (auto select : query->selects) {
+    EquivalenceSet *insert_model = select->equivalence_set.get()->Find();
+    for (auto pred : select->predecessors) {
+      assert(pred->AsInsert());
+      assert(can_share(select, pred));
+      assert(!output_is_conditional(pred));
+      const auto pred_model = view_to_model[pred];
+      EquivalenceSet::TryUnion(insert_model, pred_model);
+    }
+  }
+
+
   query->ForEachView([&](QueryView view) {
     if (may_admit_fewer_tuples_than_pred(view)) {
       return;
@@ -1946,28 +1962,14 @@ static void BuildEquivalenceSets(QueryImpl *query) {
         }
       }
 
-    // Select predecessors are INSERTs, which don't have output columns.
-    // In theory, there could be more than one INSERT. Selects always share
-    // the data model with their corresponding INSERTs.
-    //
-    // TODO(pag): This more about the interplay with conditional inserts.
-    // TODO(sonya): This should be taken care of above
-    //    } else if (view.IsSelect()) {
-    //      for (auto pred : preds) {
-    //        assert(pred.IsInsert());
-    //        assert(can_share(view, pred));
-    //        assert(!output_is_conditional(pred));
-    //        const auto pred_model = view_to_model[pred];
-    //        EquivalenceSet::TryUnion(model, pred_model);
-    //      }
 
     //
     } else if (view.IsNegate()) {
       for (auto succ : view.NonInductiveSuccessors()) {
         if (succ.IsTuple()) {
           const auto tuple = QueryTuple::From(succ);
-          if (all_cols_match(view.Columns(), tuple.InputColumns())
-              && !output_is_conditional(succ)) {
+          if (all_cols_match(view.Columns(), tuple.InputColumns()) &&
+              !output_is_conditional(succ)) {
             const auto succ_model = view_to_model[succ];
             EquivalenceSet::TryUnion(model, succ_model);
           }
@@ -1978,7 +1980,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 
   query->ForEachView(
       [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });
-  }
+}
 
 
 }  // namespace
