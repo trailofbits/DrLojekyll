@@ -1964,11 +1964,14 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     //
     } else if (view.IsNegate()) {
       for (auto succ : view.NonInductiveSuccessors()) {
-        //const auto negate = QueryNegate::From(view);
-        //if (all_cols_match(negate., succ.Columns()) && !output_is_conditional(succ)) {
-          const auto succ_model = view_to_model[succ];
-          EquivalenceSet::TryUnion(model, succ_model);
-        //}
+        if (succ.IsTuple()) {
+          const auto tuple = QueryTuple::From(succ);
+          if (all_cols_match(view.Columns(), tuple.InputColumns())
+              && !output_is_conditional(succ)) {
+            const auto succ_model = view_to_model[succ];
+            EquivalenceSet::TryUnion(model, succ_model);
+          }
+        }
       }
     }
   });
