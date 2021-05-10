@@ -13,11 +13,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "EquivalenceSet.h"
-
 namespace hyde {
 
 class EqualitySet;
+class EquivalenceSet;
 class ErrorLog;
 class OptimizationContext;
 
@@ -345,19 +344,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
  public:
   virtual ~Node(void);
 
-  Node(void)
-      : Def<Node<QueryView>>(this),
-        User(this),
-        columns(this),
-        input_columns(this),
-        attached_columns(this),
-        positive_conditions(this),
-        negative_conditions(this),
-        predecessors(this),
-        successors(this) {
-    assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
-           reinterpret_cast<uintptr_t>(this));
-  }
+  Node(void);
 
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
@@ -643,7 +630,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // This breaks abstraction layers, as table IDs come from the control-flow
   // IR, but it's nifty for debugging.
-  unsigned table_id;
+  unsigned table_id{0u};
 
   // Information about if this is inductive.
   std::unique_ptr<InductionInfo> induction_info;

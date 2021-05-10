@@ -19,6 +19,7 @@
 #include <variant>
 #include <vector>
 
+#include "EquivalenceSet.h"
 #include "Query.h"
 
 #define DEBUG(...)
@@ -1748,11 +1749,11 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
   query->ForEachView([&](VIEW *view) {
-    view->equivalence_set.reset(new EquivalenceSet(next_data_model_id++));
-    view_to_model.emplace(view, view->equivalence_set.get());
-    if (auto induction_info = view->induction_info.get(); induction_info) {
-      view->equivalence_set.get()->TrySetInductionGroup(
-          induction_info->merge_set_id, induction_info->merge_depth);
+    EquivalenceSet *const eq_set = new EquivalenceSet(next_data_model_id++);
+    view->equivalence_set.reset(eq_set);
+    view_to_model.emplace(view, eq_set);
+    if (view->induction_info) {
+      eq_set->TrySetInductionGroup(view);
     }
   });
 
@@ -1784,87 +1785,55 @@ static void BuildEquivalenceSets(QueryImpl *query) {
            !view.NegativeConditions().empty();
   };
 
-  // Simple tests to figure out if `view` (treated as a predecessor) can
-  // share its data model with its successors.
-  auto can_share = [&](QueryView view, QueryView pred) {
-    if (pred.IsNegate()) {
-      return false;
-    }
-    return true;  // TODO(sonya): revisit this
+  auto has_multiple_succs =
+      +[](QueryView view) { return 1u < view.Successors().size(); };
 
-    // With any special cases, we need to watch out for the following kind of
-    // pattern:
-    //
-    //                               ...
-    //      ... ----.                 |
-    //           UNION1 -- TUPLE -- UNION2
-    //      ... ----'
-    //
-    // In this case, suppose TUPLE perfectly forwards data of UNION1 to
-    // UNION2. Thus, UNION1 is a subset of UNION2. We don't want to accidentally
-    // merge the data models of UNION1 and UNION2, otherwise we'd lose this
-    // subset relation. At the same time, we don't want to break all sorts of
-    // other stuff out, so we have a bunch of special cases to try to be more
-    // aggressive about merging data models without falling prey to this
-    // specific case.
-    //
-    // Another situation comes up with things like:
-    //
-    //          UNION1 -- INSERT -- SELECT -- UNION2
-    //
-    // In this situation, we want UNION1 and the INSERT/SELECT to share the
-    // same data model, but UNION2 should not be allowed to share it. Similarly,
-    // in this situation:
-    //
-    //
-    //          UNION1 -- INSERT -- SELECT -- TUPLE -- UNION2
-    //
-    // We want the UNION1, INSERT, SELECT, and TUPLE to share the same data
-    // model, but not UNION2.
-
-
-    // Here we also need to check on the number of successors of the tuple's
-    // predecessor, e.g.
-    //
-    //             --> flow -->
-    //
-    //      TUPLE1 -- TUPLE2 -- UNION1
-    //         |
-    //         '----- TUPLE3 -- UNION2
-    //                            |
-    //                TUPLE4 -----'
-    //
-    // In this case, UNION1 and TUPLE2 will share their data models, but we
-    // can't let TUPLE1 and TUPLE2 or TUPLE1 and TUPLE3 share their data models,
-    // otherwise the UNION1 might end up sharing its data model with completely
-    // unrelated stuff in UNION2 (via TUPLE4).
-
-    return pred.Successors().size() == 1u;
-  };
-
-  // With maps, we try to avoid saving the outputs and attached columns
-  // when the maps are differential.
+  // With any special cases, we need to watch out for the following kind of
+  // pattern:
   //
-  // TODO(pag): Eventually revisit this idea. It needs corresponding support
-  //            in Data.cpp, `TABLE::GetOrCreate`.
-  auto is_diff_map = +[](QueryView view) {
-    return false;
+  //                               ...
+  //      ... ----.                 |
+  //           UNION1 -- TUPLE -- UNION2
+  //      ... ----'
+  //
+  // In this case, suppose TUPLE perfectly forwards data of UNION1 to
+  // UNION2. Thus, UNION1 is a subset of UNION2. We don't want to accidentally
+  // merge the data models of UNION1 and UNION2, otherwise we'd lose this
+  // subset relation. At the same time, we don't want to break all sorts of
+  // other stuff out, so we have a bunch of special cases to try to be more
+  // aggressive about merging data models without falling prey to this
+  // specific case.
+  //
+  // Another situation comes up with things like:
+  //
+  //          UNION1 -- INSERT -- SELECT -- UNION2
+  //
+  // In this situation, we want UNION1 and the INSERT/SELECT to share the
+  // same data model, but UNION2 should not be allowed to share it. Similarly,
+  // in this situation:
+  //
+  //
+  //          UNION1 -- INSERT -- SELECT -- TUPLE -- UNION2
+  //
+  // We want the UNION1, INSERT, SELECT, and TUPLE to share the same data
+  // model, but not UNION2.
 
-    //
-    //    if (!view.IsMap()) {
-    //      return false;
-    //    }
-    //
-    //    const auto functor = QueryMap::From(view).Functor();
-    //    if (!functor.IsPure()) {
-    //      return false;  // All output columns are stored.
-    //    }
-    //
-    //    // These are the conditions for whether or not to persist the data of a
-    //    // map. If the map is persisted and it's got a pure functor then we don't
-    //    // actually store the outputs of the functor.
-    //    return view.CanReceiveDeletions() || !!view.SetCondition();
-  };
+
+  // Here we also need to check on the number of successors of the tuple's
+  // predecessor, e.g.
+  //
+  //             --> flow -->
+  //
+  //      TUPLE1 -- TUPLE2 -- UNION1
+  //         |
+  //         '----- TUPLE3 -- UNION2
+  //                            |
+  //                TUPLE4 -----'
+  //
+  // In this case, UNION1 and TUPLE2 will share their data models, but we
+  // can't let TUPLE1 and TUPLE2 or TUPLE1 and TUPLE3 share their data models,
+  // otherwise the UNION1 might end up sharing its data model with completely
+  // unrelated stuff in UNION2 (via TUPLE4).
 
   // INSERTs and SELECTs from the same relation share the same data models.
   for (auto rel : query->relations) {
@@ -1911,7 +1880,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     EquivalenceSet *insert_model = select->equivalence_set.get()->Find();
     for (auto pred : select->predecessors) {
       assert(pred->AsInsert());
-      assert(can_share(select, pred));
       assert(!output_is_conditional(pred));
       const auto pred_model = view_to_model[pred];
       EquivalenceSet::TryUnion(insert_model, pred_model);
@@ -1940,8 +1908,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     if (view.IsMerge()) {
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
-        if (can_share(view, pred) && !output_is_conditional(pred) &&
-            !pred.IsMerge()) {
+        if (!output_is_conditional(pred) && !pred.IsMerge()) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
@@ -1953,13 +1920,12 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       if (preds.size() == 1u) {
         const auto pred = preds[0];
         const auto tuple = QueryTuple::From(view);
-        if (can_share(view, pred) && !output_is_conditional(pred) &&
+        if (!output_is_conditional(pred) &&
             all_cols_match(tuple.InputColumns(), pred.Columns())) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
       }
-
 
     // NEGATE's can share data with TUPLE's that are non-inductive successors
     // and who's data matches perfectly.
@@ -1976,6 +1942,18 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       }
     }
   });
+
+  for (MERGE *merge : query->merges) {
+    if (merge->merged_views.Size() == 1u) {
+      QueryView view(merge);
+      QueryView pred_view(merge->merged_views[0]);
+      if (!has_multiple_succs(pred_view) && !output_is_conditional(pred_view)) {
+        const auto model = view_to_model[view];
+        const auto pred_model = view_to_model[pred_view];
+        EquivalenceSet::ForceUnion(model, pred_model);
+      }
+    }
+  }
 
   query->ForEachView(
       [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });

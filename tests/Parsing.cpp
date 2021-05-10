@@ -47,7 +47,7 @@ static size_t NumMessages(const hyde::ParsedModule &module) {
 
 // Return a vector of all *.dr files immediately under the directories
 template <typename... Path>
-static std::vector<fs::path> DrFilesInDir(const Path &... dirs) {
+static std::vector<fs::path> DrFilesInDir(const Path &...dirs) {
   std::vector<fs::path> all_entries;
 
   for (const auto &dir : {dirs...}) {

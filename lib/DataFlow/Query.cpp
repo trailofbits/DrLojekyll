@@ -6,6 +6,8 @@
 #include <functional>
 #include <optional>
 
+#include "EquivalenceSet.h"
+
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wstrict-aliasing"

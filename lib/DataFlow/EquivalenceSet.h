@@ -1,4 +1,8 @@
 
+#include <optional>
+
+#include "Query.h"
+
 namespace hyde {
 
 class EquivalenceSet {
@@ -14,13 +18,25 @@ class EquivalenceSet {
     }
   }
 
+  static void ForceUnion(EquivalenceSet *a, EquivalenceSet *b) {
+    a = a->Find();
+    b = b->Find();
+    if (a != b) {
+      if (a->id > b->id) {
+        a->parent = b;
+      } else {
+        b->parent = a;
+      }
+    }
+  }
+
   static bool TryUnion(EquivalenceSet *a, EquivalenceSet *b) {
     a = a->Find();
     b = b->Find();
     if (a == b) {
       return true;
-    } else if (!a->induction_group_id && !b->induction_group_id &&
-               !a->induction_depth && !b->induction_depth) {
+
+    } else if (a->induction_view == b->induction_view) {
       if (a->id > b->id) {
         a->parent = b;
         return true;
@@ -28,52 +44,42 @@ class EquivalenceSet {
         b->parent = a;
         return true;
       }
-    } else if (a->induction_group_id && !b->induction_group_id &&
-               a->induction_depth && !b->induction_depth) {
-      b->induction_group_id.emplace(*a->induction_group_id);
-      b->induction_depth.emplace(*a->induction_depth);
+
+    } else if (a->induction_view && !b->induction_view) {
+      b->induction_view = a->induction_view;
       b->parent = a;
       return true;
-    } else if (!a->induction_group_id && b->induction_group_id &&
-               !a->induction_depth && b->induction_depth) {
-      a->induction_group_id.emplace(*b->induction_group_id);
-      a->induction_depth.emplace(*b->induction_depth);
+
+    } else if (!a->induction_view && b->induction_view) {
+      a->induction_view = b->induction_view;
       a->parent = b;
       return true;
-    } else if (*a->induction_group_id == *b->induction_group_id &&
-               *a->induction_depth == *b->induction_depth) {
-      a->parent = b;
-      return true;
+
     } else {
       return false;
     }
   }
-
   std::optional<unsigned> InductionGroup(void) {
     return *Find()->induction_group_id;
   }
-
-  bool TrySetInductionGroup(unsigned induction_group_id_,
-                            unsigned induction_depth_) {
+  bool TrySetInductionGroup(VIEW *view) {
     auto self = Find();
-    if (self->induction_group_id && self->induction_depth &&
-        *(self->induction_group_id) != induction_group_id_ &&
-        *(self->induction_depth) != induction_depth_) {
-      return false;
-    }
-    this->induction_group_id.emplace(induction_group_id_);
-    self->induction_group_id.emplace(induction_group_id_);
-    this->induction_depth.emplace(induction_depth_);
-    self->induction_depth.emplace(induction_depth_);
+
+    //if (self->induction_view
+    //  *(self->induction_group_id) != induction_group_id_ &&
+    //  *(self->induction_depth) != induction_depth_) {
+    // return false;
+    //}
+    this->induction_view = view;
+    self->induction_view = view;
     return true;
   }
-
   EquivalenceSet *parent;
   unsigned id;
+  std::optional<unsigned> induction_group_id;
 
  private:
-  std::optional<unsigned> induction_group_id;
-  std::optional<unsigned> induction_depth;
+  VIEW *induction_view{nullptr};
 };
 
 }  // namespace hyde

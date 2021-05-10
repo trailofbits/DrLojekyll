@@ -351,7 +351,7 @@ struct KeyValueWriter<Writer, Column, Columns...> {
 
   static inline void
   WriteKeySort(Writer &writer, const ColumnType &val,
-               const typename ValueType<Columns>::type &... rest) {
+               const typename ValueType<Columns>::type &...rest) {
     KeyValueColumnWriter<Writer, Column>::WriteKeySort(writer, val);
     if constexpr (0u < sizeof...(Columns)) {
       KeyValueWriter<Writer, Columns...>::WriteKeySort(writer, rest...);
@@ -359,7 +359,7 @@ struct KeyValueWriter<Writer, Column, Columns...> {
   }
   static inline void
   WriteKeyUnique(Writer &writer, const ColumnType &val,
-                 const typename ValueType<Columns>::type &... rest) {
+                 const typename ValueType<Columns>::type &...rest) {
     KeyValueColumnWriter<Writer, Column>::WriteKeyUnique(writer, val);
     if constexpr (0u < sizeof...(Columns)) {
       KeyValueWriter<Writer, Columns...>::WriteKeyUnique(writer, rest...);
@@ -367,7 +367,7 @@ struct KeyValueWriter<Writer, Column, Columns...> {
   }
   static inline void
   WriteKeyData(Writer &writer, const ColumnType &val,
-               const typename ValueType<Columns>::type &... rest) {
+               const typename ValueType<Columns>::type &...rest) {
     KeyValueColumnWriter<Writer, Column>::WriteKeyData(writer, val);
     if constexpr (0u < sizeof...(Columns)) {
       KeyValueWriter<Writer, Columns...>::WriteKeyData(writer, rest...);
@@ -375,7 +375,7 @@ struct KeyValueWriter<Writer, Column, Columns...> {
   }
   static inline void
   WriteValue(Writer &writer, const ColumnType &val,
-             const typename ValueType<Columns>::type &... rest) {
+             const typename ValueType<Columns>::type &...rest) {
     KeyValueColumnWriter<Writer, Column>::WriteValue(writer, val);
     if constexpr (0u < sizeof...(Columns)) {
       KeyValueWriter<Writer, Columns...>::WriteValue(writer, rest...);

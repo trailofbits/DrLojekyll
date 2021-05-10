@@ -1735,6 +1735,64 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
     par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, par));
   }
 
+  //  std::unordered_map<DataModel *, std::vector<QueryView>> grouped_successors;
+  //  for (auto succ_view : successors) {
+  //    const auto succ_view_model =
+  //        impl->view_to_model[succ_view]->FindAs<DataModel>();
+  //    grouped_successors[succ_view_model].push_back(succ_view);
+  //  }
+  //
+  //  for (const auto &[succ_model, succ_views] : grouped_successors) {
+  //    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+  //    par->AddRegion(let);
+  //
+  //    const auto num_succ_views = succ_views.size();
+  //
+  //    if (1u == num_succ_views) {
+  //      BuildEagerRegion(impl, view, succ_views[0], context, let, last_table);
+  //
+  //    // We may have multiple successors sharing a data model. If this happens,
+  //    // then the code for one successor might
+  //    } else {
+  //
+  //      OP *succ_parent = let;
+  //      TABLE *succ_table = table;
+  //      TABLE *succ_last_table = last_table;
+  //
+  //      // Only try to do an insert for the group of table-sharing successors
+  //      // if their table is different than the table of `view`, into which we
+  //      // have just inserted (initial `InTryInsert` in this function).
+  //      //
+  //      //
+  //      if (table != succ_model->table &&
+  //          (succ_views[0].IsTuple() || succ_views[0].IsMerge())) {
+  //        auto combined_succ_insert = InTryInsert(
+  //            impl, context, succ_views[0], let, last_table);
+  //        succ_parent = std::get<0>(combined_succ_insert);
+  //        succ_table = std::get<1>(combined_succ_insert);
+  //        succ_last_table = std::get<2>(combined_succ_insert);
+  //      }
+  //
+  //      PARALLEL * const succ_par = impl->parallel_regions.Create(succ_parent);
+  //      succ_parent->body.Emplace(succ_parent, succ_par);
+  //
+  ////      const auto first_cols = succ_views[0].Columns();
+  ////      for (auto i = 1ull; i < num_succ_views; ++i) {
+  ////        auto j = 0u;
+  ////        for (auto cols : succ_views[i].Columns()) {
+  ////
+  ////        }
+  ////      }
+  //
+  //      for (auto succ_view : succ_views) {
+  //        LET * const succ_let =
+  //            impl->operation_regions.CreateDerived<LET>(succ_par);
+  //        succ_par->AddRegion(succ_let);
+  //        BuildEagerRegion(impl, view, succ_view, context, succ_let, succ_last_table);
+  //      }
+  //    }
+  //  }
+
   for (QueryView succ_view : successors) {
     const auto let = impl->operation_regions.CreateDerived<LET>(par);
     par->AddRegion(let);

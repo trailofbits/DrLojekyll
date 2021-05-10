@@ -364,7 +364,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     assert(!view->AsInsert());
 
     MERGE *const new_union = merges.Create();
-
     auto col_index = 0u;
     for (auto col : view->columns) {
       const auto union_col = new_union->columns.Create(
