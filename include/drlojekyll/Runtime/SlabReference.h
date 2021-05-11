@@ -4,8 +4,8 @@
 
 #include <cstdint>
 
-#include "SlabList.h"
 #include "Serializer.h"
+#include "SlabList.h"
 
 namespace hyde {
 namespace rt {
@@ -31,8 +31,9 @@ class SlabReference {
   SlabReference(SlabReference &&that) noexcept {
     data_ptr = that.data_ptr;
     that.data_ptr = nullptr;
-//    u.opaque = that.u.opaque;
-//    that.u.opaque = 0;
+
+    //    u.opaque = that.u.opaque;
+    //    that.u.opaque = 0;
   }
 
   SlabReference(const SlabReference &that) noexcept;
@@ -64,29 +65,38 @@ class SlabReference {
   // Packed representation that bring along the address of some data, as well
   // as a truncated hash.
   uint8_t *data_ptr{nullptr};
-//  union {
-//    uint64_t opaque{0u};
-//    struct {
-//      uint64_t hash:16;
-//      int64_t data_addr:48;
-//    } __attribute__((packed)) p;
-//  } __attribute__((packed)) u;
-//  static_assert(sizeof(u) == sizeof(uint64_t));
+
+  //  union {
+  //    uint64_t opaque{0u};
+  //    struct {
+  //      uint64_t hash:16;
+  //      int64_t data_addr:48;
+  //    } __attribute__((packed)) p;
+  //  } __attribute__((packed)) u;
+  //  static_assert(sizeof(u) == sizeof(uint64_t));
 };
 
 // A sized slab reference is a reference to a variable-sized data structure.
 class SizedSlabReference : public SlabReference {
  public:
-
-  HYDE_RT_FLATTEN HYDE_RT_INLINE
-  explicit SizedSlabReference(uint8_t *data_, uint32_t num_bytes_,
-                              uint32_t hash_) noexcept
+  HYDE_RT_FLATTEN HYDE_RT_INLINE explicit SizedSlabReference(
+      uint8_t *data_, uint32_t num_bytes_, uint32_t hash_) noexcept
       : SlabReference(data_, num_bytes_, hash_),
         num_bytes(num_bytes_),
         hash(hash_) {}
 
   HYDE_RT_FLATTEN HYDE_RT_INLINE SizedSlabReference(void) noexcept
       : SlabReference() {}
+
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  SizedSlabReference(SizedSlabReference &&that) noexcept
+      : SlabReference(std::forward<SlabReference>(that)) {
+    num_bytes = that.num_bytes;
+    hash = that.hash;
+
+    that.num_bytes = 0;
+    that.hash = 0;
+  }
 
   HYDE_RT_INLINE void Clear(void) noexcept {
     this->SlabReference::Clear();
@@ -127,8 +137,8 @@ class SizedSlabReference : public SlabReference {
 
 template <typename T>
 using TypedSlabReferenceBase =
-    std::conditional_t<kHasTrivialFixedSizeSerialization<T>,
-                       SlabReference, SizedSlabReference>;
+    std::conditional_t<kHasTrivialFixedSizeSerialization<T>, SlabReference,
+                       SizedSlabReference>;
 
 // Operations provided for a pointer to some typed data stored in a type-
 // erased way in a `Slab`.
@@ -141,18 +151,20 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
   using TypedSlabReferenceBase<T>::Data;
   using TypedSlabReferenceBase<T>::Clear;
 
+  static constexpr bool kIsValue = false;
+
   using ValT = typename ValueType<T>::Type;
-  using Reader = typename std::conditional<kCanReadWriteUnsafely<ValT>,
-                                           UnsafeSlabListReader,
-                                           SlabListReader>::type;
+  using Reader =
+      typename std::conditional<kCanReadWriteUnsafely<ValT>,
+                                UnsafeSlabListReader, SlabListReader>::type;
   using SizeReader = ByteCountingReader<Reader>;
 
   TypedSlabReferenceOps(uint8_t *ptr, uint32_t num_bytes_, uint32_t hash_)
       : TypedSlabReferenceBase<T>(ptr, num_bytes_, hash_) {}
 
   // Returns the serialized size in bytes of something.
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_INLINE
-  uint32_t SizeInBytes(void) const noexcept {
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_INLINE uint32_t
+  SizeInBytes(void) const noexcept {
     if constexpr (kHasTrivialFixedSizeSerialization<T>) {
       return kFixedSerializationSize<T>;
     } else {
@@ -172,6 +184,11 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
       Serializer<Reader, NullWriter, ValT>::Read(reader, val);
     }
     return val;
+  }
+
+  HYDE_RT_INLINE
+  bool operator!=(const TypedSlabReference<T> &that) const noexcept {
+    return !this->operator==(that);
   }
 
   bool operator==(const TypedSlabReference<T> &that) const noexcept {
@@ -253,10 +270,16 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
     return writer.greater;
   }
 
+
+  HYDE_RT_INLINE
+  bool operator!=(const ValT &that) const noexcept {
+    return !this->operator==(that);
+  }
+
   bool operator==(const ValT &that) const noexcept {
     ByteCountingWriter counting_writer;
-    Serializer<NullReader, ByteCountingWriter, ValT>::Write(
-        counting_writer, that);
+    Serializer<NullReader, ByteCountingWriter, ValT>::Write(counting_writer,
+                                                            that);
 
     const auto num_bytes = SizeInBytes();
     if (counting_writer.num_bytes != num_bytes) {
@@ -276,8 +299,8 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
 
   bool operator<(const ValT &that) const noexcept {
     ByteCountingWriter counting_writer;
-    Serializer<NullReader, ByteCountingWriter, ValT>::Write(
-        counting_writer, that);
+    Serializer<NullReader, ByteCountingWriter, ValT>::Write(counting_writer,
+                                                            that);
 
     const auto num_bytes = SizeInBytes();
     if (counting_writer.num_bytes < num_bytes) {
@@ -299,8 +322,8 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
 
   bool operator>(const ValT &that) const noexcept {
     ByteCountingWriter counting_writer;
-    Serializer<NullReader, ByteCountingWriter, ValT>::Write(
-        counting_writer, that);
+    Serializer<NullReader, ByteCountingWriter, ValT>::Write(counting_writer,
+                                                            that);
 
     const auto num_bytes = SizeInBytes();
     if (counting_writer.num_bytes < num_bytes) {
@@ -328,6 +351,7 @@ class TypedSlabReference : public TypedSlabReferenceOps<T> {
   using TypedSlabReferenceOps<T>::TypedSlabReferenceOps;
   using TypedSlabReferenceOps<T>::operator=;
   using TypedSlabReferenceOps<T>::operator==;
+  using TypedSlabReferenceOps<T>::operator!=;
   using TypedSlabReferenceOps<T>::operator<;
   using TypedSlabReferenceOps<T>::operator>;
   using TypedSlabReferenceOps<T>::Hash;
@@ -342,6 +366,7 @@ class TypedSlabReference<T *> : public TypedSlabReferenceOps<T *> {
   using TypedSlabReferenceOps<T *>::TypedSlabReferenceOps;
   using TypedSlabReferenceOps<T *>::operator=;
   using TypedSlabReferenceOps<T *>::operator==;
+  using TypedSlabReferenceOps<T *>::operator!=;
   using TypedSlabReferenceOps<T *>::operator<;
   using TypedSlabReferenceOps<T *>::operator>;
   using TypedSlabReferenceOps<T *>::Hash;
@@ -371,8 +396,10 @@ class TypedSlabReference<T *> : public TypedSlabReferenceOps<T *> {
       ByteCountingReader<SlabListReader> counting_reader(ptr, 0u);
       using IndirectValT = typename ValueType<T>::Type;
       alignas(IndirectValT) uint8_t dummy_data[sizeof(IndirectValT)];
-      Serializer<ByteCountingReader<SlabListReader>, NullWriter, IndirectValT>::Read(
-          reader, *reinterpret_cast<IndirectValT *>(dummy_data));
+      Serializer<ByteCountingReader<SlabListReader>, NullWriter,
+                 IndirectValT>::Read(reader,
+                                     *reinterpret_cast<IndirectValT *>(
+                                         dummy_data));
       return TypedSlabReference<T>(ptr, reader.num_bytes, 0);
     }
   }
@@ -384,6 +411,7 @@ class TypedSlabReference<Addressable<T>> : public TypedSlabReferenceOps<T> {
   using TypedSlabReferenceOps<T>::TypedSlabReferenceOps;
   using TypedSlabReferenceOps<T>::operator=;
   using TypedSlabReferenceOps<T>::operator==;
+  using TypedSlabReferenceOps<T>::operator!=;
   using TypedSlabReferenceOps<T>::operator<;
   using TypedSlabReferenceOps<T>::operator>;
   using TypedSlabReferenceOps<T>::Hash;
@@ -403,6 +431,7 @@ class TypedSlabReference<Mutable<T>> : public TypedSlabReferenceOps<T> {
  public:
   using TypedSlabReferenceOps<T>::TypedSlabReferenceOps;
   using TypedSlabReferenceOps<T>::operator==;
+  using TypedSlabReferenceOps<T>::operator!=;
   using TypedSlabReferenceOps<T>::operator<;
   using TypedSlabReferenceOps<T>::operator>;
   using TypedSlabReferenceOps<T>::Hash;
@@ -435,51 +464,50 @@ class TypedSlabReference<Mutable<T>> : public TypedSlabReferenceOps<T> {
 };
 
 #define HYDE_RT_DEFINE_SLAB_VALUE(type) \
-    template <> \
-    class TypedSlabReference<type> { \
-     public: \
-      static constexpr bool kIsValue = true; \
-      TypedSlabReference(void) = default; \
-      HYDE_RT_ALWAYS_INLINE TypedSlabReference(type val_) \
-          : val(val_) {} \
-      HYDE_RT_ALWAYS_INLINE TypedSlabReference( \
-          uint8_t *read_ptr, uint32_t, uint32_t) { \
-        SlabListReader reader(read_ptr); \
-        Serializer<UnsafeSlabListReader, NullWriter, type>::Read(reader, val); \
-      } \
-      void operator&(void) const noexcept { \
-        __builtin_unreachable(); \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      bool operator==(const type that_val) const noexcept { \
-        return val == that_val; \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      bool operator!=(const type that_val) const noexcept { \
-        return val != that_val; \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      bool operator<(const type that_val) const noexcept { \
-        return val < that_val; \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      bool operator>(const type that_val) const noexcept { \
-        return val > that_val; \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      bool operator<=(const type that_val) const noexcept { \
-        return val <= that_val; \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      bool operator>=(const type that_val) const noexcept { \
-        return val >= that_val; \
-      } \
-      HYDE_RT_ALWAYS_INLINE \
-      operator type(void) const noexcept { \
-        return val; \
-      } \
-      type val; \
-    }
+  template <> \
+  class TypedSlabReference<type> { \
+   public: \
+    static constexpr bool kIsValue = true; \
+    TypedSlabReference(void) = default; \
+    HYDE_RT_ALWAYS_INLINE TypedSlabReference(type val_) : val(val_) {} \
+    HYDE_RT_ALWAYS_INLINE TypedSlabReference(uint8_t *read_ptr, uint32_t, \
+                                             uint32_t) { \
+      SlabListReader reader(read_ptr); \
+      Serializer<UnsafeSlabListReader, NullWriter, type>::Read(reader, val); \
+    } \
+    void operator&(void) const noexcept { \
+      __builtin_unreachable(); \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    bool operator==(const type that_val) const noexcept { \
+      return val == that_val; \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    bool operator!=(const type that_val) const noexcept { \
+      return val != that_val; \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    bool operator<(const type that_val) const noexcept { \
+      return val < that_val; \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    bool operator>(const type that_val) const noexcept { \
+      return val > that_val; \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    bool operator<=(const type that_val) const noexcept { \
+      return val <= that_val; \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    bool operator>=(const type that_val) const noexcept { \
+      return val >= that_val; \
+    } \
+    HYDE_RT_ALWAYS_INLINE \
+    operator type(void) const noexcept { \
+      return val; \
+    } \
+    type val; \
+  }
 
 HYDE_RT_DEFINE_SLAB_VALUE(char);
 HYDE_RT_DEFINE_SLAB_VALUE(bool);
@@ -546,8 +574,8 @@ struct Serializer<Reader, Writer, TypedSlabReference<DataT>> {
 
 // A reference to a reference is just a reference.
 template <typename T>
-class TypedSlabReference<TypedSlabReference<T>>
-    : public TypedSlabReference<T> {};
+class TypedSlabReference<TypedSlabReference<T>> : public TypedSlabReference<T> {
+};
 
 }  // namespace rt
 }  // namespace hyde

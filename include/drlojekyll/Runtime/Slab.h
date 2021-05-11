@@ -40,7 +40,7 @@ class SlabLocker<Mutable<T>> {
   }
 
  private:
-  void * const ptr;
+  void *const ptr;
   const uint32_t num_bytes;
 };
 

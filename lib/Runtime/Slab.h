@@ -8,8 +8,6 @@
 #include <cassert>
 #include <cstdint>
 
-#include <iostream>
-
 namespace hyde {
 namespace rt {
 
@@ -22,12 +20,12 @@ class SlabManager;
 // references to internal areas in the slab.
 class Slab {
  public:
-
   explicit Slab(SlabManager &manager, bool is_persistent);
 
   static constexpr auto kShiftNextOffsetShift = 2;
 
   struct {
+
     // Next slab in either a maybe-free list, or in a discontiguous list for
     // a vector. This is a offset that is relative to the address of this slab.
     // This works for both persistent and ephemeral slabs because persistent
@@ -38,15 +36,15 @@ class Slab {
       uint64_t opaque{0};
 
       struct {
-        uint64_t is_persistent:1;
+        uint64_t is_persistent : 1;
 
         // Do we have a next offset?
-        int64_t has_next:1;
+        int64_t has_next : 1;
 
         // Slabs are always 2 MiB aligned, so the low bits of an offset will
         // always be zero. In the case of ephemeral slabs, the slabs could be
         // anywhere in memory, so we need to use an `int64_t` displacement.
-        int64_t shifted_next_offset:62;
+        int64_t shifted_next_offset : 62;
 
       } __attribute__((packed)) s;
     } __attribute__((packed)) u;
@@ -68,7 +66,7 @@ class Slab {
   uint8_t data[kSlabSize - sizeof(header)];
 
   inline bool IsReferenced(
-      std::memory_order order=std::memory_order_acquire) const noexcept {
+      std::memory_order order = std::memory_order_acquire) const noexcept {
     if (header.u.s.is_persistent) {
       return true;
     } else {
@@ -76,26 +74,24 @@ class Slab {
     }
   }
 
-  inline void IncRef(
-      std::memory_order order=std::memory_order_release) noexcept {
+  inline void
+  IncRef(std::memory_order order = std::memory_order_release) noexcept {
     if (!IsPersistent()) {
-      std::cerr << "incref " << reinterpret_cast<void *>(this) << '\n';
       header.ref_count.fetch_add(1u, order);
     }
   }
 
-  inline void DecRef(
-      std::memory_order order=std::memory_order_release) noexcept {
+  inline void
+  DecRef(std::memory_order order = std::memory_order_release) noexcept {
     if (!IsPersistent()) {
-      std::cerr << "decref " << reinterpret_cast<void *>(this) << '\n';
       auto old_val = header.ref_count.fetch_sub(1u, order);
       assert(0 < old_val);
       (void) old_val;
     }
   }
 
-  inline uint32_t Size(
-      std::memory_order order=std::memory_order_acquire) const noexcept {
+  inline uint32_t
+  Size(std::memory_order order = std::memory_order_acquire) const noexcept {
     return header.num_used_bytes.load(order);
   }
 
@@ -111,8 +107,8 @@ class Slab {
     return &(data[sizeof(data)]);
   }
 
-  inline uint8_t *LogicalEnd(
-      std::memory_order order=std::memory_order_acquire) noexcept {
+  inline uint8_t *
+  LogicalEnd(std::memory_order order = std::memory_order_acquire) noexcept {
     return &(data[Size(order)]);
   }
 

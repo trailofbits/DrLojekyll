@@ -2,22 +2,21 @@
 
 #pragma once
 
-#include "Util.h"
-
 #include <cassert>
 #include <climits>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "Column.h"
 #include "Index.h"
 #include "Table.h"
+#include "Util.h"
 
 namespace hyde {
 namespace rt {
@@ -35,28 +34,23 @@ enum class TupleState : uint8_t {
   kUnknown,
 };
 
-template <typename... Ts>
-struct TypeList;
-
 // An append-only and iterable container for serialized data
-template <typename BackingStore, typename... Columns>
+template <typename StorageT, typename... Columns>
 class SerializedVector;
 
-template <typename BackingStore, typename... Columns>
+template <typename StorageT, typename... Columns>
 class Vector;
 
-template <typename StorageT, typename TableId, typename... Columns>
+template <typename StorageT, const unsigned  kTableId>
 class Table;
 
-template <typename StorageT, typename TableId, const unsigned kIndexId,
-          typename... Columns>
+template <typename StorageT, const unsigned kIndexId>
 class Index;
 
 // A vector-like object that holds a reference to a serialized view of data and
 // and hands back SerialRefs
-template <typename BackingStore, typename... Ts>
+template <typename StorageT, typename... Ts>
 class ReadOnlySerializedVector;
 
 }  // namespace rt
 }  // namespace hyde
-

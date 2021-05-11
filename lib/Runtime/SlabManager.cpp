@@ -1,43 +1,42 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-#include <string>
+#include "SlabManager.h"
 
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
+
+#include <string>
 
 #include "Error.h"
-#include "SlabManager.h"
 
 namespace hyde {
 namespace rt {
-namespace {
-
-}  // namespace
+namespace {}  // namespace
 
 #ifndef MAP_UNINITIALIZED
-# define MAP_UNINITIALIZED 0
+#  define MAP_UNINITIALIZED 0
 #endif
 
 #ifndef MAP_FILE
-# define MAP_FILE 0
+#  define MAP_FILE 0
 #endif
 
 #if defined(MAP_ANON) && !defined(MAP_ANONYMOUS)
-# define MAP_ANONYMOUS MAP_ANON
+#  define MAP_ANONYMOUS MAP_ANON
 #endif
 
-Result<SlabStorePtr, std::error_code> CreateSlabStorage(
+Result<SlabManagerPtr, std::error_code> CreateSlabManager(
     SlabStoreKind kind, SlabStoreSize size_, unsigned num_workers) {
 
   ClearLastError();
 
   size_t real_size = static_cast<size_t>(size_);
-  auto real_base = mmap(nullptr, real_size, PROT_NONE,
-                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE |
-                        MAP_UNINITIALIZED, -1, 0);
+  auto real_base = mmap(
+      nullptr, real_size, PROT_NONE,
+      MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_UNINITIALIZED, -1, 0);
   if (MAP_FAILED == real_base) {
     return GetLastError();
   }
@@ -90,8 +89,8 @@ Result<SlabStorePtr, std::error_code> CreateSlabStorage(
     }
   }
 
-  return std::make_unique<SlabManager>(
-      num_workers, fd, file_size, real_base, real_size, base, size);
+  return std::make_unique<SlabManager>(num_workers, fd, file_size, real_base,
+                                       real_size, base, size);
 }
 
 SlabManager::~SlabManager(void) {
@@ -113,8 +112,8 @@ SlabManager::~SlabManager(void) {
 }
 
 SlabManager::SlabManager(unsigned num_workers_, int fd_, uint64_t file_size_,
-                         void *real_base_, uint64_t real_max_size_,
-                         void *base_, uint64_t max_size_)
+                         void *real_base_, uint64_t real_max_size_, void *base_,
+                         uint64_t max_size_)
     : num_workers(num_workers_),
       fd(fd_),
       base_file_size(file_size_),
@@ -128,7 +127,7 @@ SlabManager::SlabManager(unsigned num_workers_, int fd_, uint64_t file_size_,
   maybe_free_slabs.reserve(4096u);
 }
 
-void ShutDownSlabStorage(SlabManager *ptr) {
+void ShutDownSlabManager(SlabManager *ptr) {
   delete ptr;
 }
 
@@ -136,13 +135,13 @@ SlabStats GarbageCollect(SlabManager &storage) {
 
   SlabStats stats;
 
-  auto count_num_used = [&] (Slab *slab) {
+  auto count_num_used = [&](Slab *slab) {
     for (; slab; slab = slab->Next()) {
       stats.num_open_slabs += 1u;
     }
   };
 
-  auto count_num_free = [&] (Slab *slab) {
+  auto count_num_free = [&](Slab *slab) {
     for (; slab; slab = slab->Next()) {
       if (slab->IsReferenced()) {
         count_num_used(slab);
@@ -238,9 +237,9 @@ void *SlabManager::AllocatePersistentSlab(void) {
     }
   }
 
-  auto ret = mmap(
-      &(base[old_size / sizeof(Slab)]), sizeof(Slab), PROT_READ | PROT_WRITE,
-      MAP_FIXED | MAP_SHARED | MAP_FILE, fd, static_cast<off_t>(old_size));
+  auto ret = mmap(&(base[old_size / sizeof(Slab)]), sizeof(Slab),
+                  PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED | MAP_FILE, fd,
+                  static_cast<off_t>(old_size));
   if (MAP_FAILED == ret) {
     perror("Failed to map Slab to file");
     abort();

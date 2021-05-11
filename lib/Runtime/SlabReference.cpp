@@ -14,12 +14,12 @@ SlabReference::SlabReference(uint8_t *data, uint32_t, uint32_t hash) noexcept {
   if (HYDE_RT_LIKELY(data_ptr)) {
     Slab::Containing(data_ptr)->IncRef();
   }
-//  u.opaque = 0;
-//  if (HYDE_RT_LIKELY(data)) {
-//    u.p.data_addr = reinterpret_cast<intptr_t>(data);
-//    u.p.hash = static_cast<uint16_t>(hash);
-//    Slab::Containing(data)->IncRef();
-//  }
+  //  u.opaque = 0;
+  //  if (HYDE_RT_LIKELY(data)) {
+  //    u.p.data_addr = reinterpret_cast<intptr_t>(data);
+  //    u.p.hash = static_cast<uint16_t>(hash);
+  //    Slab::Containing(data)->IncRef();
+  //  }
 }
 
 HYDE_RT_FLATTEN
@@ -38,8 +38,9 @@ SlabReference &SlabReference::operator=(SlabReference &&that) noexcept {
 
   data_ptr = that.data_ptr;
   that.data_ptr = nullptr;
-//  u.opaque = that.u.opaque;
-//  that.u.opaque = 0u;
+
+  //  u.opaque = that.u.opaque;
+  //  that.u.opaque = 0u;
   return *this;
 }
 
@@ -56,7 +57,7 @@ SlabReference &SlabReference::operator=(const SlabReference &that) noexcept {
     Slab::Containing(this_data)->DecRef();
   }
 
-//  u.opaque = that.u.opaque;
+  //  u.opaque = that.u.opaque;
   data_ptr = that_data;
   return *this;
 }
@@ -65,25 +66,26 @@ HYDE_RT_FLATTEN
 void SlabReference::Clear(void) noexcept {
   if (uint8_t *const data = Data()) {
     Slab::Containing(data)->DecRef();
-//    u.opaque = 0;
+
+    //    u.opaque = 0;
     data_ptr = nullptr;
   }
 }
 
 HYDE_RT_FLATTEN
-SizedSlabReference &SizedSlabReference::operator=(
-    SizedSlabReference &&that) noexcept {
+SizedSlabReference &
+SizedSlabReference::operator=(SizedSlabReference &&that) noexcept {
   if (auto data = Data()) {
     Slab::Containing(data)->DecRef();
   }
 
-//  u.opaque = that.u.opaque;
+  //  u.opaque = that.u.opaque;
 
   data_ptr = that.data_ptr;
   num_bytes = that.num_bytes;
   hash = that.hash;
 
-//  that.u.opaque = 0;
+  //  that.u.opaque = 0;
   that.data_ptr = nullptr;
   that.num_bytes = 0;
   that.hash = 0;
@@ -91,8 +93,8 @@ SizedSlabReference &SizedSlabReference::operator=(
 }
 
 HYDE_RT_FLATTEN
-SizedSlabReference &SizedSlabReference::operator=(
-    const SizedSlabReference &that) noexcept {
+SizedSlabReference &
+SizedSlabReference::operator=(const SizedSlabReference &that) noexcept {
   uint8_t *const this_data = Data();
   uint8_t *const that_data = that.Data();
 
@@ -104,7 +106,7 @@ SizedSlabReference &SizedSlabReference::operator=(
     Slab::Containing(this_data)->DecRef();
   }
 
-//  u.opaque = that.u.opaque;
+  //  u.opaque = that.u.opaque;
   data_ptr = that_data;
   num_bytes = that.num_bytes;
   hash = that.hash;

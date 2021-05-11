@@ -1,11 +1,15 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Runtime/SlabVector.h>
+#include <drlojekyll/Runtime/SlabStorage.h>
 
 #include "SlabManager.h"
 
 namespace hyde {
 namespace rt {
+
+SlabVector::SlabVector(SlabStorage &storage_, unsigned worker_id_)
+    : SlabVector(*(storage_.manager), worker_id_) {}
 
 SlabVector::SlabVector(SlabManager &storage_, unsigned worker_id_)
     : SlabList(),

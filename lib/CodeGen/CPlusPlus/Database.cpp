@@ -44,7 +44,7 @@ static OutputStream &Vector(OutputStream &os, const DataVector vec) {
 //        static constexpr bool kIsNamed = false;
 //        static constexpr unsigned kId = 12;
 //        static constexpr unsigned kTableId = 10;
-//        static constexpr unsigned kOffset = 1
+//        static constexpr unsigned kOffset = 1;
 //        using Type = uint64_t;
 //      };
 //      template <>
@@ -74,12 +74,12 @@ static void DeclareDescriptors(OutputStream &os, Program program,
          << os.Indent() << "struct ColumnDescriptor<" << col.Id() << "> {\n";
       os.PushIndent();
       os << os.Indent() << "static constexpr bool kIsNamed = false;\n"
-         << os.Indent() << "static constexpr unsigned kId = "
-         << col.Id() << ";\n"
-         << os.Indent() << "static constexpr unsigned kTableId = "
-         << table.Id() << ";\n"
-         << os.Indent() << "static constexpr unsigned kOffset = "
-         << col.Index() << '\n'
+         << os.Indent() << "static constexpr unsigned kId = " << col.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kOffset = " << col.Index()
+         << ";\n"
          << os.Indent() << "using Type = " << TypeName(module, col.Type())
          << ";\n";
       os.PopIndent();
@@ -92,10 +92,10 @@ static void DeclareDescriptors(OutputStream &os, Program program,
       os << os.Indent() << "template <>\n"
          << os.Indent() << "struct IndexDescriptor<" << index.Id() << "> {\n";
       os.PushIndent();
-      os << os.Indent() << "static constexpr unsigned kId = "
-         << index.Id() << ";\n"
-         << os.Indent() << "static constexpr unsigned kTableId = "
-         << table.Id() << ";\n"
+      os << os.Indent() << "static constexpr unsigned kId = " << index.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
+         << ";\n"
          << os.Indent() << "using Columns = TypeList<";
 
       const auto key_cols = index.KeyColumns();
@@ -123,16 +123,14 @@ static void DeclareDescriptors(OutputStream &os, Program program,
         sep = ", ";
       }
 
-      os << ">;\n"
-         << os.Indent() << "using KeyColumnIds = IdList<";
+      os << ">;\n" << os.Indent() << "using KeyColumnIds = IdList<";
       sep = "";
       for (auto key_col : key_cols) {
         os << sep << key_col.Id();
         sep = ", ";
       }
 
-      os << ">;\n"
-         << os.Indent() << "using ValueColumnIds = IdList<";
+      os << ">;\n" << os.Indent() << "using ValueColumnIds = IdList<";
       sep = "";
       for (auto val_col : val_cols) {
         os << sep << val_col.Id();
@@ -154,8 +152,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
       os << sep << col.Id();
       sep = ", ";
     }
-    os << ">;\n"
-       << os.Indent() << "using IndexIds = IdList<";
+    os << ">;\n" << os.Indent() << "using IndexIds = IdList<";
     sep = "";
     for (auto index : table.Indices()) {
       os << sep << index.Id();
@@ -1612,8 +1609,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "\n";
 
   for (auto table : program.Tables()) {
-    os << os.Indent() << "::hyde::rt::Table<StorageT, " << table.Id()
-       << "> " << Table(os, table) << ";\n";
+    os << os.Indent() << "::hyde::rt::Table<StorageT, " << table.Id() << "> "
+       << Table(os, table) << ";\n";
   }
 
   for (auto global : program.GlobalVariables()) {
@@ -1630,20 +1627,20 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   for (auto table : program.Tables()) {
     os << ",\n" << os.Indent() << "  " << Table(os, table) << "(s)";
 
-//    for (auto index : table.Indices()) {
-//      if (!index.ValueColumns().empty()) {
-//        os << ",\n"
-//           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
-//      }
-//    }
-//
-//    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
-//    for (auto index : table.Indices()) {
-//      if (!index.ValueColumns().empty()) {
-//        os << ", " << TableIndex(os, index);
-//      }
-//    }
-//    os << ")";
+    //    for (auto index : table.Indices()) {
+    //      if (!index.ValueColumns().empty()) {
+    //        os << ",\n"
+    //           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
+    //      }
+    //    }
+    //
+    //    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
+    //    for (auto index : table.Indices()) {
+    //      if (!index.ValueColumns().empty()) {
+    //        os << ", " << TableIndex(os, index);
+    //      }
+    //    }
+    //    os << ")";
   }
 
   for (auto global : program.GlobalVariables()) {
@@ -1677,9 +1674,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "private:\n";
   os.PushIndent();
 
-//  for (auto table : program.Tables()) {
-//    DeclareTable(os, module, table);
-//  }
+  //  for (auto table : program.Tables()) {
+  //    DeclareTable(os, module, table);
+  //  }
 
   os << "\n";
 

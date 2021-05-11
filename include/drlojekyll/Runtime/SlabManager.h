@@ -15,7 +15,7 @@ namespace rt {
 
 class SlabManager;
 
-void ShutDownSlabStorage(SlabManager *);
+void ShutDownSlabManager(SlabManager *);
 
 }  // namespace rt
 }  // namespace hyde
@@ -23,7 +23,7 @@ namespace std {
 template <>
 struct default_delete<::hyde::rt::SlabManager> {
   inline void operator()(::hyde::rt::SlabManager *ptr) const noexcept {
-    ::hyde::rt::ShutDownSlabStorage(ptr);
+    ::hyde::rt::ShutDownSlabManager(ptr);
   }
 };
 }  // namespace std
@@ -37,7 +37,7 @@ struct FileBackedSlabStore : public std::filesystem::path {
 };
 
 using SlabStoreKind = std::variant<InMemorySlabStore, FileBackedSlabStore>;
-using SlabStorePtr = std::unique_ptr<SlabManager>;
+using SlabManagerPtr = std::unique_ptr<SlabManager>;
 
 enum class SlabStoreSize : uint64_t {
   kTiny = 1ull * (1ull << 30u),  // 1 GiB
@@ -49,8 +49,9 @@ enum class SlabStoreSize : uint64_t {
 };
 
 // Create a new slab storage engine.
-Result<SlabStorePtr, std::error_code> CreateSlabStorage(
-    SlabStoreKind kind, SlabStoreSize size, unsigned num_workers=1u);
+Result<SlabManagerPtr, std::error_code>
+CreateSlabManager(SlabStoreKind kind, SlabStoreSize size,
+                  unsigned num_workers = 1u);
 
 struct SlabStats {
   size_t num_allocated_slabs{0};

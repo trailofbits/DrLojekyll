@@ -19,7 +19,6 @@ template <>
 static constexpr size_t kFixedSerializationSize<SlabPointer> = 8u;
 
 
-
 // Methods to overload for serializing data
 template <SlabListReader, typename Writer, typename DataT>
 struct Serializer;

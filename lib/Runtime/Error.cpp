@@ -3,7 +3,7 @@
 #include "Error.h"
 
 #ifdef _WIN32
-# include <errhandlingapi.h>
+#  include <errhandlingapi.h>
 #endif
 
 namespace hyde {

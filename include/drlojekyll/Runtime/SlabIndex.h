@@ -5,7 +5,5 @@
 #include "Index.h"
 
 namespace hyde {
-namespace rt {
-
-}  // namespace rt
+namespace rt {}  // namespace rt
 }  // namespace hyde

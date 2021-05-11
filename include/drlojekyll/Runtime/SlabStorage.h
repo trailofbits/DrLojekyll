@@ -4,28 +4,31 @@
 
 #include "SlabManager.h"
 #include "SlabVector.h"
-#include "SlabTable.h"
 
 namespace hyde {
 namespace rt {
 
-class SlabStorage : public SlabManager {
+class SlabStorage {
  public:
-  using SlabManager::SlabManager;
+  SlabStorage(SlabManagerPtr manager_);
 
-  template <typename T, typename... Ts>
-  PersistentTypedSlabVector<T, Ts...> GetOrCreateTable(unsigned id) {
-    for (auto [found_id , first_slab_ptr, last_slab_ptr] : super_block) {
-      if (found_id == id) {
-        SlabList ls(first_slab_ptr, last_slab_ptr);
-        return PersistentTypedSlabVector<T, Ts...>(*this, std::move(ls), 0u);
-      }
-    }
-  }
+  ~SlabStorage(void);
 
  private:
+  template <unsigned>
+  friend class SlabTable;
+
+  friend class SlabTableBase;
+  friend class SlabVector;
+
+  SlabList GetTableSlabs(unsigned id) const noexcept;
+
+  void PutTableSlabs(unsigned id, const SlabList &list) noexcept;
+
+  SlabManagerPtr manager;
+
   // Triples of (id, first slab, last slab).
-  PersistentTypedSlabVector<unsigned, Slab *, Slab *> super_block;
+  PersistentTypedSlabVector<unsigned, Slab *, Mutable<Slab *>> super_block;
 };
 
 }  // namespace rt

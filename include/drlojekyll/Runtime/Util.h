@@ -10,18 +10,27 @@ namespace hyde {
 namespace rt {
 
 #ifdef NDEBUG
-# define HYDE_RT_LIKELY(...) __builtin_expect(!!(__VA_ARGS__), 1)
-# define HYDE_RT_UNLIKELY(...) __builtin_expect(!!(__VA_ARGS__), 0)
-# define HYDE_RT_INLINE inline
-# define HYDE_RT_ALWAYS_INLINE [[gnu::always_inline]] HYDE_RT_INLINE
-# define HYDE_RT_FLATTEN [[gnu::flatten]]
+#  define HYDE_RT_LIKELY(...) __builtin_expect(!!(__VA_ARGS__), 1)
+#  define HYDE_RT_UNLIKELY(...) __builtin_expect(!!(__VA_ARGS__), 0)
+#  define HYDE_RT_INLINE inline
+#  define HYDE_RT_ALWAYS_INLINE [[gnu::always_inline]] HYDE_RT_INLINE
+#  define HYDE_RT_FLATTEN [[gnu::flatten]]
 #else
-# define HYDE_RT_LIKELY(...) __VA_ARGS__
-# define HYDE_RT_UNLIKELY(...) __VA_ARGS__
-# define HYDE_RT_INLINE
-# define HYDE_RT_ALWAYS_INLINE HYDE_RT_INLINE
-# define HYDE_RT_FLATTEN
+#  define HYDE_RT_LIKELY(...) __VA_ARGS__
+#  define HYDE_RT_UNLIKELY(...) __VA_ARGS__
+#  define HYDE_RT_INLINE
+#  define HYDE_RT_ALWAYS_INLINE HYDE_RT_INLINE
+#  define HYDE_RT_FLATTEN
 #endif
+
+#if defined(__has_feature)
+#  if __has_feature(undefined_behavior_sanitizer)
+#    define HYDE_RT_DISALLOW_UNALIGNED_ACCESS
+#  endif
+#endif
+
+template <typename... Ts>
+struct TypeList;
 
 template <unsigned... kIds>
 struct IdList {};
@@ -74,14 +83,12 @@ template <>
 static constexpr bool kIsAddress<std::nullptr_t> = true;
 
 template <typename T>
-HYDE_RT_ALWAYS_INLINE
-static T *ExtractAddress(Address<T> a) {
+HYDE_RT_ALWAYS_INLINE static T *ExtractAddress(Address<T> a) {
   return reinterpret_cast<T *>(a.data);
 }
 
 template <typename T>
-HYDE_RT_ALWAYS_INLINE
-static T *ExtractAddress(std::nullptr_t) {
+HYDE_RT_ALWAYS_INLINE static T *ExtractAddress(std::nullptr_t) {
   return nullptr;
 }
 

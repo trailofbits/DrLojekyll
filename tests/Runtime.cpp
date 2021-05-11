@@ -1,56 +1,51 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
+#include <drlojekyll/Runtime/SlabVector.h>
+#include <drlojekyll/Runtime/SlabManager.h>
+#include <drlojekyll/Runtime/SlabStorage.h>
+#include <drlojekyll/Runtime/SlabTable.h>
+
 #include "UnitTests.h"
 
-#include <drlojekyll/Runtime/SlabVector.h>
-#include "../include/drlojekyll/Runtime/SlabManager.h"
-
 TEST(SlabRuntime, TinyInMemorySlabStore) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 }
 
 TEST(SlabRuntime, SmallInMemorySlabStore) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kSmall);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kSmall);
   RC_ASSERT(maybe_storage.Succeeded());
 }
 
 TEST(SlabRuntime, MediumInMemorySlabStore) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kMedium);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kMedium);
   RC_ASSERT(maybe_storage.Succeeded());
 }
 
 TEST(SlabRuntime, LargeInMemorySlabStore) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kLarge);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kLarge);
   RC_ASSERT(maybe_storage.Succeeded());
 }
 
 TEST(SlabRuntime, ExtraLargeInMemorySlabStore) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kExtraLarge);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kExtraLarge);
   RC_ASSERT(maybe_storage.Succeeded());
 }
 
 TEST(SlabRuntime, HugeInMemorySlabStore) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kHuge);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kHuge);
   RC_ASSERT(maybe_storage.Succeeded());
 }
 
 TEST(SlabRuntime, SlabVectorOfU8sWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -105,9 +100,8 @@ TEST(SlabRuntime, SlabVectorOfU8sWorks) {
 //}
 
 TEST(SlabRuntime, SlabVectorOfU16sWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -131,9 +125,8 @@ TEST(SlabRuntime, SlabVectorOfU16sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfU32sWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -157,9 +150,8 @@ TEST(SlabRuntime, SlabVectorOfU32sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfU64sWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -183,9 +175,8 @@ TEST(SlabRuntime, SlabVectorOfU64sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfF32sWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -209,9 +200,8 @@ TEST(SlabRuntime, SlabVectorOfF32sWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfF64sWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -236,9 +226,8 @@ TEST(SlabRuntime, SlabVectorOfF64sWorks) {
 
 
 TEST(SlabRuntime, SlabVectorOfPairsWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -272,18 +261,16 @@ TEST(SlabRuntime, SlabVectorOfPairsWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfTriplesOfPairsWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
-  hyde::rt::TypedSlabVector<std::pair<int, bool>,
-                            std::array<char, 2>,
-                            std::tuple<float, double>> vec(*storage, 0u);
-  vec.Add<std::pair<int, bool>,
-          std::array<char, 2>,
-          std::tuple<float, double>>({1, false}, {'a', 'b'}, {1.5f, 99.05});
+  hyde::rt::TypedSlabVector<std::pair<int, bool>, std::array<char, 2>,
+                            std::tuple<float, double>>
+      vec(*storage, 0u);
+  vec.Add<std::pair<int, bool>, std::array<char, 2>, std::tuple<float, double>>(
+      {1, false}, {'a', 'b'}, {1.5f, 99.05});
 
   auto it = vec.begin();
   auto tuple = *it;
@@ -318,9 +305,8 @@ TEST(SlabRuntime, SlabVectorOfTriplesOfPairsWorks) {
 }
 
 TEST(SlabRuntime, SlabVectorOfStringsWorks) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -341,9 +327,8 @@ TEST(SlabRuntime, SlabVectorOfStringsWorks) {
 }
 
 TEST(SlabRuntime, AllMemoryIsFreed) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -382,9 +367,8 @@ TEST(SlabRuntime, AllMemoryIsFreed) {
 
 
 TEST(SlabRuntime, AllMemoryIsFreedWithScopedIteration) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -435,9 +419,8 @@ TEST(SlabRuntime, AllMemoryIsFreedWithScopedIteration) {
 }
 
 TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByCopy) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -506,9 +489,8 @@ TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByCopy) {
 
 
 TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByMove) {
-  auto maybe_storage = hyde::rt::CreateSlabStorage(
-      hyde::rt::InMemorySlabStore{},
-      hyde::rt::SlabStoreSize::kTiny);
+  auto maybe_storage = hyde::rt::CreateSlabManager(
+      hyde::rt::InMemorySlabStore{}, hyde::rt::SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -578,8 +560,8 @@ TEST(SlabRuntime, AllMemoryIsFreedRefEscapesByMove) {
 TEST(SlabRuntime, PointerToAddressableTest) {
   using namespace hyde::rt;
 
-  auto maybe_storage = CreateSlabStorage(
-      InMemorySlabStore{}, SlabStoreSize::kTiny);
+  auto maybe_storage =
+      CreateSlabManager(InMemorySlabStore{}, SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -603,15 +585,9 @@ TEST(SlabRuntime, PointerToAddressableTest) {
     int int_val = int_ref;
 
     switch (num_iters) {
-      case 0:
-        RC_ASSERT(int_val == 111);
-        break;
-      case 1:
-        RC_ASSERT(int_val == 222);
-        break;
-      case 2:
-        RC_ASSERT(int_val == 333);
-        break;
+      case 0: RC_ASSERT(int_val == 111); break;
+      case 1: RC_ASSERT(int_val == 222); break;
+      case 2: RC_ASSERT(int_val == 333); break;
     }
 
     ++num_iters;
@@ -623,8 +599,8 @@ TEST(SlabRuntime, PointerToAddressableTest) {
 TEST(SlabRuntime, PointerToMutableTest) {
   using namespace hyde::rt;
 
-  auto maybe_storage = CreateSlabStorage(
-      InMemorySlabStore{}, SlabStoreSize::kTiny);
+  auto maybe_storage =
+      CreateSlabManager(InMemorySlabStore{}, SlabStoreSize::kTiny);
   RC_ASSERT(maybe_storage.Succeeded());
 
   auto storage = maybe_storage.TakeValue();
@@ -648,15 +624,9 @@ TEST(SlabRuntime, PointerToMutableTest) {
     int int_val = int_ref;
 
     switch (num_iters) {
-      case 0:
-        RC_ASSERT(int_val == 111);
-        break;
-      case 1:
-        RC_ASSERT(int_val == 222);
-        break;
-      case 2:
-        RC_ASSERT(int_val == 333);
-        break;
+      case 0: RC_ASSERT(int_val == 111); break;
+      case 1: RC_ASSERT(int_val == 222); break;
+      case 2: RC_ASSERT(int_val == 333); break;
     }
 
     ++num_iters;
@@ -676,45 +646,79 @@ TEST(SlabRuntime, PointerToMutableTest) {
     int int_val = int_ref;
 
     switch (num_iters) {
-      case 0:
-        RC_ASSERT(int_val == 222);
-        break;
-      case 1:
-        RC_ASSERT(int_val == 444);
-        break;
-      case 2:
-        RC_ASSERT(int_val == 666);
-        break;
+      case 0: RC_ASSERT(int_val == 222); break;
+      case 1: RC_ASSERT(int_val == 444); break;
+      case 2: RC_ASSERT(int_val == 666); break;
     }
 
     ++num_iters;
   }
 
   RC_ASSERT(num_iters == 3);
-
 }
 
-extern "C" {
-__attribute__((noinline)) void with_int(int) {}
-void whatever(void) {
+namespace hyde::rt {
+
+template <>
+struct ColumnDescriptor<2> {
+  static constexpr bool kIsNamed = false;
+  static constexpr unsigned kId = 2;
+  static constexpr unsigned kTableId = 1;
+  static constexpr unsigned kOffset = 0;
+  using Type = std::string;
+};
+
+template <>
+struct ColumnDescriptor<3> {
+  static constexpr bool kIsNamed = false;
+  static constexpr unsigned kId = 3;
+  static constexpr unsigned kTableId = 1;
+  static constexpr unsigned kOffset = 0;
+  using Type = std::vector<int>;
+};
+
+template <>
+struct TableDescriptor<1> {
+  using ColumnIds = IdList<2, 3>;
+  using IndexIds = IdList<>;
+};
+
+}  // namespace hyde::rt
+
+
+TEST(SlabRuntime, TableTest) {
   using namespace hyde::rt;
 
-  auto maybe_storage = CreateSlabStorage(
-      InMemorySlabStore{}, SlabStoreSize::kTiny);
+  auto maybe_storage =
+      CreateSlabManager(InMemorySlabStore{}, SlabStoreSize::kTiny);
+  RC_ASSERT(maybe_storage.Succeeded());
 
-  auto storage = maybe_storage.TakeValue();
-  TypedSlabVector<Mutable<int>> vec1(*storage, 0u);
-  TypedSlabVector<int *> vec2(*storage, 0u);
-  vec1.Add(111);
-  vec1.Add(222);
-  vec1.Add(333);
+  SlabStorage storage(maybe_storage.TakeValue());
 
-  for (auto [int_ref] : vec1) {
-    vec2.Add(&int_ref);
+  TypedSlabVector<std::string> strings(storage, 0u);
+  TypedSlabVector<std::vector<int>> numbers(storage, 0u);
+
+  strings.Add("hello");
+  strings.Add("world");
+
+  std::vector<int> nums;
+  numbers.Add(nums);
+
+  nums.push_back(1);
+  numbers.Add(nums);
+
+  nums.push_back(2);
+  numbers.Add(nums);
+
+  SlabTable<1> table(storage);
+
+  auto num_iters = 0;
+  for (auto [s] : strings) {
+    for (auto [n] : numbers) {
+      RC_ASSERT(table.TryChangeStateFromAbsentOrUnknownToPresent(s, n));
+      ++num_iters;
+    }
   }
 
-  for (auto [int_ptr] : vec2) {
-    with_int(*int_ptr);
-  }
+  RC_ASSERT(num_iters == 6);
 }
-}  // extern C

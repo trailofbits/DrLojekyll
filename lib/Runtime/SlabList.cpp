@@ -1,9 +1,9 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Runtime/SlabList.h>
+#include <sys/mman.h>
 
 #include <cassert>
-#include <sys/mman.h>
 
 #include "Slab.h"
 #include "SlabManager.h"
@@ -11,8 +11,8 @@
 namespace hyde {
 namespace rt {
 
-UnsafeSlabListWriter::UnsafeSlabListWriter(
-    SlabManager &manager_, SlabList &buffer, bool is_persistent)
+UnsafeSlabListWriter::UnsafeSlabListWriter(SlabManager &manager_,
+                                           SlabList &buffer, bool is_persistent)
     : UnsafeByteWriter(nullptr),
       manager(manager_),
       last_ptr(&(buffer.last)) {
@@ -64,8 +64,8 @@ HYDE_RT_FLATTEN void UnsafeSlabListWriter::UpdateWritePointer(void) {
   max_write_ptr = slab->End();
 }
 
-HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
-    SlabList slab_list) noexcept {
+HYDE_RT_FLATTEN
+UnsafeSlabListReader::UnsafeSlabListReader(SlabList slab_list) noexcept {
   if (auto slab = slab_list.first) {
     const auto num_used_bytes = slab->Size();
     assert(num_used_bytes <= kSlabDataSize);
@@ -78,20 +78,24 @@ HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
 }
 
 HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
-    uint8_t *ref_read_ptr, uint32_t  /* ref_num_bytes  */) noexcept {
+    uint8_t *ref_read_ptr, uint32_t /* ref_num_bytes  */) noexcept {
   const auto slab = Slab::Containing(ref_read_ptr - 1u);
   read_ptr = ref_read_ptr;
   max_read_ptr = slab->LogicalEnd();
   assert(slab->Begin() <= ref_read_ptr);
   assert(ref_read_ptr <= max_read_ptr);
 
-//  max_read_ptr = &(read_ptr[ref_num_bytes]);
-//  if (max_read_ptr > slab->End()) {
-//    max_read_ptr = slab->LogicalEnd();
-//  }
+  //  max_read_ptr = &(read_ptr[ref_num_bytes]);
+  //  if (max_read_ptr > slab->End()) {
+  //    max_read_ptr = slab->LogicalEnd();
+  //  }
 }
 
 HYDE_RT_FLATTEN void UnsafeSlabListReader::UpdateReadPointer(void) noexcept {
+  if (HYDE_RT_UNLIKELY(!read_ptr)) {
+    return;
+  }
+
   auto slab = Slab::Containing(max_read_ptr - 1u);
   auto new_max_read_ptr = slab->LogicalEnd();
 

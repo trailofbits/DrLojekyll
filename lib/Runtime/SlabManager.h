@@ -31,14 +31,14 @@ class SlabManager {
 
   // These may be different than below if `mmap` gave us back an address that
   // wasn't `Slab`-sized-aligned.
-  void * const real_base;
+  void *const real_base;
   const uint64_t real_max_size;
 
   // The slab base address. For an in-memory slab store, this will be `nullptr`,
   // and all slab offsets will be the actual addresses of slabs. For persistent
   // slab stores, this will be the base of a file-backed `mmap`, and all slab
   // offsets will either
-  Slab * const base;
+  Slab *const base;
   const uint64_t max_size;
 
   std::mutex file_size_lock;

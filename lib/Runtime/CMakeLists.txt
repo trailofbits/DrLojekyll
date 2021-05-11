@@ -34,7 +34,8 @@ set(Runtime_SRCS
   "SlabManager.h"
   
   "SlabReference.cpp"
-
+  "SlabStorage.cpp"
+  "SlabTable.cpp"
   "SlabVector.cpp"
 )
 
