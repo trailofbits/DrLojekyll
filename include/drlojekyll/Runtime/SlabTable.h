@@ -185,6 +185,8 @@ template <unsigned kOffset>
 class SlabTableIndices<kOffset, IdList<>> : public SlabTableBase {
  public:
 
+  using SlabTableBase::SlabTableBase;
+
   static constexpr unsigned kNumIndices = 0u;
 
   template <typename TupleType>
@@ -202,6 +204,8 @@ class SlabTableIndices<kOffset, IdList<kIndexId, kIndexIds...>>
   using Parent = SlabTableIndices<kOffset + 1u, IdList<kIndexIds...>>;
   using KeyColumnIds = typename IndexDescriptor<kIndexId>::KeyColumnIds;
   using ValueColumnIds = typename IndexDescriptor<kIndexId>::ValueColumnIds;
+
+  using Parent::Parent;
 
   static constexpr bool kIsNeeded = !std::is_same_v<ValueColumnIds, IdList<>>;
 
@@ -246,7 +250,7 @@ class SlabTable
     this->assoc_data.resize(Parent::kNumIndices + 1u);
 
     // Reserve enough storage for the number of rows in the table.
-    this->assoc_data[0].reserve(table_info.second);
+    this->assoc_data[0].reserve(this->table_info.second);
 
     // Revive the persistent data, if any.
     for (auto [state_ref, tuple_ref] : data) {
@@ -254,16 +258,16 @@ class SlabTable
     }
 
     // Consistency check on row count.
-    assert(this->assoc_data.size() == table_info.second);
+    assert(this->assoc_data[0].size() == this->table_info.second);
   }
 
   ~SlabTable(void) noexcept {
-    this->storage.PutTableSlabs(kTableId, data, assoc_data.size());
+    this->storage.PutTableSlabs(kTableId, data, this->assoc_data.size());
   }
 
   // Return the number of rows in the table.
   uint64_t Size(void) const noexcept {
-    return this->assoc_data.size();
+    return this->assoc_data[0].size();
   }
 
   template <typename... Ts>
