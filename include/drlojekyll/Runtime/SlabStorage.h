@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <utility>
+
 #include "SlabManager.h"
 #include "SlabVector.h"
 
@@ -21,14 +23,19 @@ class SlabStorage {
   friend class SlabTableBase;
   friend class SlabVector;
 
-  SlabList GetTableSlabs(unsigned id) const noexcept;
+  std::pair<SlabList, uint64_t> GetTableSlabs(unsigned id) const noexcept;
 
-  void PutTableSlabs(unsigned id, const SlabList &list) noexcept;
+  void PutTableSlabs(unsigned id, const SlabList &list,
+                     uint64_t num_rows) noexcept;
 
   SlabManagerPtr manager;
 
   // Triples of (id, first slab, last slab).
-  PersistentTypedSlabVector<unsigned, Slab *, Mutable<Slab *>> super_block;
+  PersistentTypedSlabVector<
+      unsigned  /* Table ID */,
+      Slab *  /* First slab */,
+      Mutable<Slab *>  /* Last slab */,
+      Mutable<uint64_t>  /* Number of rows */> super_block;
 };
 
 }  // namespace rt

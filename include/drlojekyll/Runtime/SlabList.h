@@ -526,7 +526,7 @@ class UnsafeSlabListReader {
   template <typename, typename...>
   friend class TypedSlabVectorVectorIterator;
 
-  [[gnu::cold]] void UpdateReadPointer(void) noexcept;
+  [[gnu::hot]] bool UpdateReadPointer(void) noexcept;
 
   uint8_t *max_read_ptr;
 };

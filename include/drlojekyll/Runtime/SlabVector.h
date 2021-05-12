@@ -101,14 +101,22 @@ class TypedSlabVector : public SlabVector {
   }
 
  protected:
-  template <size_t kIndex, typename Writer, typename InputT,
+
+  // Useful for seeing the specific types involved in an error case.
+  template <typename InputT, typename Nth>
+  [[noreturn]] HYDE_RT_ALWAYS_INLINE void Error(void) {
+    __builtin_unreachable();
+  }
+
+  template <size_t kIndex, typename Writer, typename _InputT,
             typename... InputTs>
-  uint8_t *AddImpl(Writer &writer, const InputT &elem,
+  uint8_t *AddImpl(Writer &writer, const _InputT &elem,
                    const InputTs &...elems) noexcept {
     uint8_t *ret = nullptr;
     using Nth = typename std::tuple_element_t<kIndex, std::tuple<T, Ts...>>;
 
     using ValT = typename ValueType<Nth>::Type;
+    using InputT = typename ValueType<_InputT>::Type;
 
     // We're trying to add in a pointer, therefore we should only allow
     // a `Address<T>` value.
@@ -117,9 +125,13 @@ class TypedSlabVector : public SlabVector {
         auto ptr = ExtractAddress(elem);
         ret = Serializer<NullReader, Writer, InputT>::Write(writer, ptr);
 
+      } else if constexpr (std::is_pointer_v<InputT>) {
+        ret = Serializer<NullReader, Writer, InputT>::Write(writer, elem);
+
       } else {
-        __builtin_unreachable();
+        Error<InputT, ValT>();
       }
+
     // It's a value, so write it.
     } else if constexpr (std::is_same_v<InputT, ValT>) {
       ret = Serializer<NullReader, Writer, ValT>::Write(writer, elem);
@@ -143,7 +155,7 @@ class TypedSlabVector : public SlabVector {
       ret = Serializer<NullReader, Writer, ValT>::Write(writer, real_elem);
 
     } else {
-      __builtin_unreachable();
+      Error<InputT, ValT>();
     }
 
     if constexpr (0u < sizeof...(InputTs)) {

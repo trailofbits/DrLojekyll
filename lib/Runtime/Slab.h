@@ -137,7 +137,13 @@ class Slab {
   // Compute the address of a `Slab` given an address inside of the `Slab`.
   // We rely on slabs being aligned, and enforce this using `posix_memalign`.
   static inline Slab *Containing(const void *ptr) noexcept {
-    auto addr = reinterpret_cast<uintptr_t>(ptr);
+
+    // We do `- 1ull` so that we can find the slab given a pointer that is
+    // equal to the slab's maximum address, i.e. one byte past the end of the
+    // slab. It is convenient to be able to increment by one byte to get past
+    // a `TupleState` inside of a table's vector.
+    auto addr = reinterpret_cast<uintptr_t>(ptr) - 1ull;
+
     auto slab_addr = addr & ~(kSlabSize - 1ull);
     return reinterpret_cast<Slab *>(slab_addr);
   }

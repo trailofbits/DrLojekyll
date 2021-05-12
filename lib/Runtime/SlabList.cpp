@@ -29,7 +29,7 @@ UnsafeSlabListWriter::UnsafeSlabListWriter(SlabManager &manager_,
 
   // We want to continue on where we left off.
   } else {
-    assert(slab->IsPersistent() == is_persistent);
+    assert(slab->IsPersistent() <= is_persistent);
     write_ptr = slab->LogicalEnd();
   }
 
@@ -91,9 +91,9 @@ HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
   //  }
 }
 
-HYDE_RT_FLATTEN void UnsafeSlabListReader::UpdateReadPointer(void) noexcept {
+HYDE_RT_FLATTEN bool UnsafeSlabListReader::UpdateReadPointer(void) noexcept {
   if (HYDE_RT_UNLIKELY(!read_ptr)) {
-    return;
+    return false;
   }
 
   auto slab = Slab::Containing(max_read_ptr - 1u);
@@ -103,6 +103,7 @@ HYDE_RT_FLATTEN void UnsafeSlabListReader::UpdateReadPointer(void) noexcept {
   // ending position.
   if (max_read_ptr < new_max_read_ptr) {
     max_read_ptr = new_max_read_ptr;
+    return true;
 
   // We're at the end of the slab for this reader.
   } else {
@@ -112,9 +113,11 @@ HYDE_RT_FLATTEN void UnsafeSlabListReader::UpdateReadPointer(void) noexcept {
     if (slab) {
       read_ptr = slab->Begin();
       max_read_ptr = slab->LogicalEnd();
+      return true;
 
     } else {
       read_ptr = max_read_ptr;
+      return false;
     }
   }
 }
@@ -132,10 +135,14 @@ void SlabListWriter::SkipSlow(uint32_t num_bytes) {
 HYDE_RT_FLATTEN
 void SlabListReader::SkipSlow(uint32_t num_bytes) {
   const auto diff = static_cast<uint32_t>(max_read_ptr - read_ptr);
-  read_ptr = max_read_ptr;
-  num_bytes -= diff;
-  UpdateReadPointer();
-  if (num_bytes) {
+  if (diff) {
+    read_ptr = max_read_ptr;
+    num_bytes -= diff;
+    UpdateReadPointer();
+    if (num_bytes) {
+      Skip(num_bytes);
+    }
+  } else if (UpdateReadPointer()) {
     Skip(num_bytes);
   }
 }

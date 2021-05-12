@@ -43,7 +43,7 @@ set(Runtime_PRIV_DEPS
 )
 
 set(Runtime_DEPS
-    
+  xxhash
 )
 
 dr_define_static_library(Runtime

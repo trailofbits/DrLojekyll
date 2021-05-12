@@ -15,30 +15,36 @@ SlabStorage::SlabStorage(SlabManagerPtr manager_)
 
 SlabStorage::~SlabStorage(void) {}
 
-SlabList SlabStorage::GetTableSlabs(unsigned id) const noexcept {
-  for (auto [found_id, first_slab_ptr, last_slab_ptr] : super_block) {
+std::pair<SlabList, uint64_t>
+SlabStorage::GetTableSlabs(unsigned id) const noexcept {
+  for (auto [found_id, first_slab_ptr,
+             last_slab_ptr, num_rows_ref] : super_block) {
     if (found_id == id) {
-      return {std::move(first_slab_ptr), std::move(last_slab_ptr)};
+      SlabList list(std::move(first_slab_ptr), std::move(last_slab_ptr));
+      return {std::move(list), static_cast<uint64_t>(num_rows_ref)};
     }
   }
 
-  return {nullptr, nullptr};
+  return {{nullptr, nullptr}, {}};
 }
 
-void SlabStorage::PutTableSlabs(unsigned id, const SlabList &list) noexcept {
+void SlabStorage::PutTableSlabs(unsigned id, const SlabList &list,
+                                uint64_t num_rows) noexcept {
   if (!list.first) {
     return;
   }
 
-  for (auto [found_id, first_slab_ptr, last_slab_ptr] : super_block) {
+  for (auto [found_id, first_slab_ptr,
+             last_slab_ptr, num_rows_ref] : super_block) {
     if (found_id == id) {
       assert(first_slab_ptr == list.first);
       last_slab_ptr = list.last;
+      num_rows_ref = num_rows;
       return;
     }
   }
 
-  super_block.Add(id, list.first, list.last);
+  super_block.Add(id, list.first, list.last, num_rows);
 }
 
 }  // namespace rt

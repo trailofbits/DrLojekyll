@@ -9,17 +9,11 @@ namespace hyde {
 namespace rt {
 
 HYDE_RT_FLATTEN
-SlabReference::SlabReference(uint8_t *data, uint32_t, uint32_t hash) noexcept {
+SlabReference::SlabReference(uint8_t *data, uint32_t) noexcept {
   data_ptr = data;
   if (HYDE_RT_LIKELY(data_ptr)) {
     Slab::Containing(data_ptr)->IncRef();
   }
-  //  u.opaque = 0;
-  //  if (HYDE_RT_LIKELY(data)) {
-  //    u.p.data_addr = reinterpret_cast<intptr_t>(data);
-  //    u.p.hash = static_cast<uint16_t>(hash);
-  //    Slab::Containing(data)->IncRef();
-  //  }
 }
 
 HYDE_RT_FLATTEN
@@ -38,9 +32,6 @@ SlabReference &SlabReference::operator=(SlabReference &&that) noexcept {
 
   data_ptr = that.data_ptr;
   that.data_ptr = nullptr;
-
-  //  u.opaque = that.u.opaque;
-  //  that.u.opaque = 0u;
   return *this;
 }
 
@@ -83,12 +74,10 @@ SizedSlabReference::operator=(SizedSlabReference &&that) noexcept {
 
   data_ptr = that.data_ptr;
   num_bytes = that.num_bytes;
-  hash = that.hash;
 
   //  that.u.opaque = 0;
   that.data_ptr = nullptr;
   that.num_bytes = 0;
-  that.hash = 0;
   return *this;
 }
 
@@ -109,7 +98,7 @@ SizedSlabReference::operator=(const SizedSlabReference &that) noexcept {
   //  u.opaque = that.u.opaque;
   data_ptr = that_data;
   num_bytes = that.num_bytes;
-  hash = that.hash;
+
   return *this;
 }
 

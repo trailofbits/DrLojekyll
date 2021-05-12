@@ -12,13 +12,15 @@ namespace rt {
 #ifdef NDEBUG
 #  define HYDE_RT_LIKELY(...) __builtin_expect(!!(__VA_ARGS__), 1)
 #  define HYDE_RT_UNLIKELY(...) __builtin_expect(!!(__VA_ARGS__), 0)
+#  define HYDE_RT_NEVER_INLINE [[gnu::noinline]]
 #  define HYDE_RT_INLINE inline
 #  define HYDE_RT_ALWAYS_INLINE [[gnu::always_inline]] HYDE_RT_INLINE
 #  define HYDE_RT_FLATTEN [[gnu::flatten]]
 #else
 #  define HYDE_RT_LIKELY(...) __VA_ARGS__
 #  define HYDE_RT_UNLIKELY(...) __VA_ARGS__
-#  define HYDE_RT_INLINE
+#  define HYDE_RT_NEVER_INLINE [[gnu::noinline]]
+#  define HYDE_RT_INLINE HYDE_RT_NEVER_INLINE
 #  define HYDE_RT_ALWAYS_INLINE HYDE_RT_INLINE
 #  define HYDE_RT_FLATTEN
 #endif
@@ -51,7 +53,9 @@ template <typename T>
 static constexpr bool kIsMutable<Mutable<T>> = true;
 
 template <typename T>
-struct ValueType<Mutable<T>> : public ValueType<T> {};
+struct ValueType<Mutable<T>> {
+  using Type = typename ValueType<T>::Type;
+};
 
 template <typename T>
 class Addressable;
@@ -66,7 +70,9 @@ template <typename T>
 static constexpr bool kIsAddressable<Addressable<T>> = true;
 
 template <typename T>
-struct ValueType<Addressable<T>> : public ValueType<T> {};
+struct ValueType<Addressable<T>> {
+  using Type = typename ValueType<T>::Type;
+};
 
 template <typename T>
 struct Address {

@@ -13,7 +13,6 @@ namespace rt {
 struct RawReference {
   uint8_t *data;
   uint32_t num_bytes;
-  uint32_t hash;
 };
 
 // A slab tuple is like a slab reference, except that it doesn't do any
@@ -25,11 +24,19 @@ class SlabTuple {
   HYDE_RT_ALWAYS_INLINE SlabTuple(Offsets... elems_) noexcept
       : elems{elems_...} {}
 
+  uint8_t *Data(void) noexcept {
+    return elems[0].data;
+  }
+
+  const uint8_t *Data(void) const noexcept {
+    return elems[0].data;
+  }
+
   template <size_t kIndex>
   auto get(void) const noexcept {
     using T = std::tuple_element_t<kIndex, std::tuple<Ts...>>;
     return ::hyde::rt::TypedSlabReference<T>(
-        elems[kIndex].data, elems[kIndex].num_bytes, elems[kIndex].hash);
+        elems[kIndex].data, elems[kIndex].num_bytes);
   }
 
   const RawReference elems[sizeof...(Ts)];
@@ -71,10 +78,10 @@ class TupleBuilder {
 
     if constexpr (kIndex < sizeof...(Ts)) {
       return BuildImpl<kIndex + 1u, Indices..., RawReference>(
-          indices..., RawReference{elem_read_ptr, elem_size, 0u});
+          indices..., RawReference{elem_read_ptr, elem_size});
     } else {
-      return SlabTuple<T, Ts...>(indices...,
-                                 RawReference{elem_read_ptr, elem_size, 0u});
+      return SlabTuple<T, Ts...>(
+          indices..., RawReference{elem_read_ptr, elem_size});
     }
   }
 

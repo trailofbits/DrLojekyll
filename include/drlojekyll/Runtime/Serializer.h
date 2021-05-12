@@ -10,6 +10,9 @@
 #include <utility>
 #include <vector>
 
+#define XXH_INLINE_ALL
+#include <xxhash.h>
+
 #include "Util.h"
 
 namespace hyde {
@@ -228,83 +231,319 @@ class UnsafeByteWriter {
   uint8_t *write_ptr{nullptr};
 };
 
-// A serializing writer that ignores the values being written, and instead
-// counts the number of bytes that will be written.
-struct ByteCountingWriter {
+struct HashingBase {
  public:
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *) {
-    num_bytes += 8;
+  HYDE_RT_ALWAYS_INLINE HashingBase(void) {
+    Reset();
+  }
+
+  HYDE_RT_ALWAYS_INLINE void Reset(void) noexcept {
+    XXH64_reset(&state, 0);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint64_t Digest(void) noexcept {
+    return XXH64_digest(&state);
+  }
+
+  XXH64_state_t state;
+
+  union {
+    uint64_t u64;
+    int64_t i64;
+    double f64;
+    float f32;
+    uint8_t data[8];
+  } u;
+
+  static_assert(sizeof(u) == sizeof(uint64_t));
+};
+
+struct HashingWriter : public HashingBase {
+ public:
+  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *p) {
+    u.u64 = reinterpret_cast<uintptr_t>(p);
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t) {
-    num_bytes += 4;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t num_bytes) {
+    u.u64 = num_bytes;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double) {
-    num_bytes += 8;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double d) {
+    u.f64 = d;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float) {
-    num_bytes += 4;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float f) {
+    u.u64 = 0;
+    u.f32 = f;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t) {
-    num_bytes += 8;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t q) {
+    u.u64 = q;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t) {
-    num_bytes += 4;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t d) {
+    u.u64 = d;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t) {
-    num_bytes += 2;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t h) {
+    u.u64 = h;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t) {
-    num_bytes += 1;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t b) {
+    u.u64 = b;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool) {
-    num_bytes += 1;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool b) {
+    u.u64 = b;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t) {
-    num_bytes += 8;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t q) {
+    u.i64 = q;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t) {
-    num_bytes += 4;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t d) {
+    u.i64 = d;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t) {
-    num_bytes += 2;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t h) {
+    u.i64 = h;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t) {
-    num_bytes += 1;
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t b) {
+    u.i64 = b;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
   }
 
   HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
     assert(0u < n);
-    num_bytes += n;
+    u.u64 = n;
+    XXH64_update(&state, u.data, sizeof(u.data));
     return nullptr;
+  }
+
+  HYDE_RT_ALWAYS_INLINE void Reset(void) noexcept {
+    XXH64_reset(&state, 0);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint64_t Digest(void) noexcept {
+    return XXH64_digest(&state);
+  }
+};
+
+// A reader that computes a hash as it reads.
+template <typename SubReader>
+struct HashingReader : public SubReader, HashingBase {
+ public:
+  using SubReader::SubReader;
+
+  HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) {
+    auto ret = SubReader::ReadPointer();
+    u.u64 = reinterpret_cast<uintptr_t>(ret);
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  // This is the one special case where we actual do the read.
+  HYDE_RT_ALWAYS_INLINE uint32_t ReadSize(void) {
+    auto ret = SubReader::ReadSize();
+    u.u64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE double ReadF64(void) {
+    auto ret = SubReader::ReadF64();
+    u.f64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE float ReadF32(void) {
+    auto ret = SubReader::ReadF32();
+    u.f32 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint64_t ReadU64(void) {
+    auto ret = SubReader::ReadU64();
+    u.u64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint32_t ReadU32(void) {
+    auto ret = SubReader::ReadU32();
+    u.u64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint16_t ReadU16(void) {
+    auto ret = SubReader::ReadU16();
+    u.u64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t ReadU8(void) {
+    auto ret = SubReader::ReadU8();
+    u.u64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE bool ReadB(void) {
+    auto ret = SubReader::ReadB();
+    u.u64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE int64_t ReadI64(void) {
+    auto ret = SubReader::ReadI64();
+    u.i64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE int32_t ReadI32(void) {
+    auto ret = SubReader::ReadI32();
+    u.i64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE int16_t ReadI16(void) {
+    auto ret = SubReader::ReadI16();
+    u.i64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE int8_t ReadI8(void) {
+    auto ret = SubReader::ReadI8();
+    u.i64 = ret;
+    XXH64_update(&state, u.data, sizeof(u.data));
+    return ret;
+  }
+
+  HYDE_RT_ALWAYS_INLINE void Skip(uint32_t n) {
+    assert(0u < n);
+    SubReader::Skip(n);
+    u.u64 = n;
+    XXH64_update(&state, u.data, sizeof(u.data));
+  }
+};
+
+
+// A serializing writer that ignores the values being written, and instead
+// counts the number of bytes that will be written.
+template <typename SubWriter>
+struct ByteCountingWriterProxy : public SubWriter {
+ public:
+  using SubWriter::SubWriter;
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *v) {
+    num_bytes += 8;
+    return SubWriter::WritePointer(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t v) {
+    num_bytes += 4;
+    return SubWriter::WriteSize(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double v) {
+    num_bytes += 8;
+    return SubWriter::WriteF64(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float v) {
+    num_bytes += 4;
+    return SubWriter::WriteF32(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t v) {
+    num_bytes += 8;
+    return SubWriter::WriteU64(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t v) {
+    num_bytes += 4;
+    return SubWriter::WriteU32(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t v) {
+    num_bytes += 2;
+    return SubWriter::WriteU16(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t v) {
+    num_bytes += 1;
+    return SubWriter::WriteU8(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool v) {
+    num_bytes += 1;
+    return SubWriter::WriteB(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t v) {
+    num_bytes += 8;
+    return SubWriter::WriteI64(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t v) {
+    num_bytes += 4;
+    return SubWriter::WriteI32(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t v) {
+    num_bytes += 2;
+    return SubWriter::WriteI16(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t v) {
+    num_bytes += 1;
+    return SubWriter::WriteI8(v);
+  }
+
+  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
+    assert(0u < n);
+    num_bytes += n;
+    return SubWriter::Skip(n);
   }
 
   uint32_t num_bytes{0};
 };
+
+using ByteCountingWriter = ByteCountingWriterProxy<NullWriter>;
 
 template <typename T>
 static constexpr bool kIsByteCountingWriter = false;
@@ -873,9 +1112,11 @@ struct LinearContainerReader {
                                                   ContainerType &ret) {
     const auto size = reader.ReadSize();
     ret.resize(size);
-    ElementType *const begin = &(ret[0]);
-    for (uint32_t i = 0; i < size; ++i) {
-      Serializer<Reader, NullWriter, ElementType>::Read(reader, begin[i]);
+    if (size) {
+      ElementType *const begin = &(ret[0]);
+      for (uint32_t i = 0; i < size; ++i) {
+        Serializer<Reader, NullWriter, ElementType>::Read(reader, begin[i]);
+      }
     }
   }
 };
@@ -917,9 +1158,11 @@ struct LinearContainerWriter {
 
     // NOTE(pag): Induction variable based `for` loop so that a a byte counting
     //            writer can elide the `for` loop entirely and count `size`.
-    const ElementType *const begin = &(data[0]);
-    for (uint32_t i = 0; i < size; ++i) {
-      Serializer<NullReader, Writer, ElementType>::Write(writer, begin[i]);
+    if (size) {
+      const ElementType *const begin = &(data[0]);
+      for (uint32_t i = 0; i < size; ++i) {
+        Serializer<NullReader, Writer, ElementType>::Write(writer, begin[i]);
+      }
     }
 
     return ret;
