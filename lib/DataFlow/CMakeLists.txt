@@ -6,6 +6,7 @@ set(DataFlow_PUBLIC_H
 )
 
 set(DataFlow_SRCS
+    "EquivalenceSet.h"
     "Optimize.h"
     "Query.h"
     "Taint.h"

@@ -6,6 +6,8 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
+#include "EquivalenceSet.h"
+
 #define DEBUG(...)
 
 namespace hyde {
@@ -44,23 +46,22 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   };
 
   auto do_table = [&](int row_span, QueryView view) {
-    std::optional<unsigned> table_id = view.TableId();
     std::optional<unsigned> induction_id = view.InductionGroupId();
     std::optional<unsigned> induction_depth = view.InductionDepth();
 
-    if (table_id || induction_id || induction_depth) {
-      os << "<TD rowspan=\"" << row_span << "\">";
-      auto sep = "";
-      if (table_id) {
-        os << sep << "TABLE " << *table_id;
-        sep = "<BR />";
-      }
-      if (induction_id && induction_depth) {
-        os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
-        sep = "<BR />";
-      }
-      os << "</TD>";
+    os << "<TD rowspan=\"" << row_span << "\">";
+    auto sep = "";
+    os << sep << "TABLE " << view.TableId();
+    sep = "<BR />";
+
+    if (induction_id && induction_depth) {
+      os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
+      sep = "<BR />";
     }
+
+    os << "<BR />EQ SET " << *view.EquivalenceSetId();
+
+    os << "</TD>";
   };
 
   auto do_conds = [&](int row_span, auto view_) {
