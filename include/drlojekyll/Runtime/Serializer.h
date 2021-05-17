@@ -549,7 +549,7 @@ template <typename T>
 static constexpr bool kIsByteCountingWriter = false;
 
 template <>
-static constexpr bool kIsByteCountingWriter<ByteCountingWriter> = true;
+inline constexpr bool kIsByteCountingWriter<ByteCountingWriter> = true;
 
 // A serializing writer that ignores the values being written, and instead
 // performs an element-wise equality comparison.
