@@ -22,7 +22,7 @@ class Slab {
  public:
   explicit Slab(SlabManager &manager, bool is_persistent);
 
-  static constexpr auto kShiftNextOffsetShift = 2;
+  static constexpr auto kShiftedNextOffsetShift = 2;
 
   struct {
 
@@ -117,21 +117,23 @@ class Slab {
   }
 
   inline Slab *Next(void) const noexcept {
-    auto has_next_mask = static_cast<int64_t>(header.u.s.has_next);
-    auto offset = header.u.s.shifted_next_offset << Slab::kShiftNextOffsetShift;
+    int64_t has_next_mask = static_cast<int64_t>(header.u.s.has_next);
+    int64_t offset = header.u.s.shifted_next_offset <<
+                     Slab::kShiftedNextOffsetShift;
     auto addr = reinterpret_cast<intptr_t>(this);
     return reinterpret_cast<Slab *>((addr + offset) & has_next_mask);
   }
 
   inline void SetNext(Slab *that) noexcept {
-    auto this_addr = reinterpret_cast<intptr_t>(this);
-    auto that_addr = reinterpret_cast<intptr_t>(that);
-    auto diff = that_addr - this_addr;
+    int64_t this_addr = reinterpret_cast<intptr_t>(this);
+    int64_t that_addr = reinterpret_cast<intptr_t>(that);
+    int64_t diff = that_addr - this_addr;
     assert(header.u.s.is_persistent == that->header.u.s.is_persistent);
     assert(!that->header.u.s.has_next);
     assert(!header.u.s.has_next);
-    header.u.s.has_next = 1;
-    header.u.s.shifted_next_offset = diff >> Slab::kShiftNextOffsetShift;
+    header.u.s.has_next = -1;
+    header.u.s.shifted_next_offset = static_cast<int64_t>(
+        diff >> Slab::kShiftedNextOffsetShift);
   }
 
   // Compute the address of a `Slab` given an address inside of the `Slab`.

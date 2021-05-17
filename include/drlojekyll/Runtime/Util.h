@@ -100,10 +100,10 @@ template <typename T>
 static constexpr bool kIsAddress<Address<T>> = true;
 
 template <>
-constexpr bool kIsAddress<NextTuplePointer> = true;
+inline constexpr bool kIsAddress<NextTuplePointer> = true;
 
 template <>
-constexpr bool kIsAddress<std::nullptr_t> = true;
+inline constexpr bool kIsAddress<std::nullptr_t> = true;
 
 template <typename T>
 HYDE_RT_ALWAYS_INLINE static T *ExtractAddress(Address<T> a) {
