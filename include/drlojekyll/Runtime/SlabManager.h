@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <system_error>
+#include <variant>
 
 #include <drlojekyll/Runtime/Result.h>
 
