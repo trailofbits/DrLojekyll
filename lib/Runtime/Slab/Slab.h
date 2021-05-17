@@ -132,8 +132,15 @@ class Slab {
     assert(!that->header.u.s.has_next);
     assert(!header.u.s.has_next);
     header.u.s.has_next = -1;
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
     header.u.s.shifted_next_offset = static_cast<int64_t>(
         diff >> Slab::kShiftedNextOffsetShift);
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
   }
 
   // Compute the address of a `Slab` given an address inside of the `Slab`.

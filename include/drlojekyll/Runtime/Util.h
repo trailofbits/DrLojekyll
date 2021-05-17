@@ -56,10 +56,10 @@ template <typename T>
 static constexpr bool kIsMutable = false;
 
 template <typename T>
-static constexpr bool kIsMutable<Mutable<T>> = true;
+inline constexpr bool kIsMutable<Mutable<T>> = true;
 
 template <>
-static constexpr bool kIsMutable<NextTuplePointer> = true;
+inline constexpr bool kIsMutable<NextTuplePointer> = true;
 
 template <typename T>
 struct ValueType<Mutable<T>> {
