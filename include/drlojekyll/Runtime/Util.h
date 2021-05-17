@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace hyde {
@@ -99,10 +100,10 @@ template <typename T>
 static constexpr bool kIsAddress<Address<T>> = true;
 
 template <>
-static constexpr bool kIsAddress<NextTuplePointer> = true;
+constexpr bool kIsAddress<NextTuplePointer> = true;
 
 template <>
-static constexpr bool kIsAddress<std::nullptr_t> = true;
+constexpr bool kIsAddress<std::nullptr_t> = true;
 
 template <typename T>
 HYDE_RT_ALWAYS_INLINE static T *ExtractAddress(Address<T> a) {
