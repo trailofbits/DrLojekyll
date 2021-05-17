@@ -14,7 +14,7 @@
 
 #epilogue ```c++
 
-using DatabaseStorage = hyde::rt::std_containers;
+using DatabaseStorage = hyde::rt::StdStorage;
 
 int main() {
   DatabaseFunctors functors;
@@ -23,8 +23,10 @@ int main() {
   Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
       storage, log, functors);
 
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t> edges;
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> unlocks;
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t>
+      edges(storage);
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t>
+      unlocks(storage);
   
   auto print_reaching_to = [&db](uint64_t T) {
   

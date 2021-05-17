@@ -1548,7 +1548,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   os << os.Indent() << "tuple_index: int = 0\n";
 
   // This is an index scan.
-  if (num_bound_params && num_bound_params < num_params) {
+  if (num_bound_params && num_free_params) {
     assert(0 < num_free_params);
     assert(spec.index.has_value());
 
@@ -1594,8 +1594,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
        << os.Indent() << "tuple_index += 1\n";
 
   // This is an existence check; all parameters are bound.
-  } else if (num_bound_params && num_bound_params == num_params) {
-    assert(!num_free_params);
+  } else if (num_bound_params && !num_free_params) {
+
     os << os.Indent() << "if ";
 
     if (1 < num_bound_params) {

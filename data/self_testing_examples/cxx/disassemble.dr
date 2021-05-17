@@ -42,7 +42,7 @@ size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
   return eas.size();
 }
 
-using DatabaseStorage = hyde::rt::std_containers;
+using DatabaseStorage = hyde::rt::StdStorage;
 
 int main() {
   DatabaseFunctors functors;
@@ -56,7 +56,7 @@ int main() {
   
   
   // Start with a few instructions, with no control-flow between them.
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions;
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions(storage);
   instructions.Add(10);
   instructions.Add(11);
   instructions.Add(12);
@@ -78,7 +78,7 @@ int main() {
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
-      transfers;
+      transfers(storage);
   
   transfers.Add(10, 11, FALL_THROUGH);
   transfers.Add(11, 12, FALL_THROUGH);
@@ -100,7 +100,7 @@ int main() {
   // Now add the instruction 9. It will show up as a function head, because
   // it has no predecessors. The rest will stay the same because there is
   // no changes to control-flow.
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions2;
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t> instructions2(storage);
   instructions2.Add(9);
   db.instruction_1(instructions2);
   
@@ -118,7 +118,7 @@ int main() {
   // not a function head anymore, so all of the function instructions transfer
   // over to function 9.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
-      transfers2;
+      transfers2(storage);
   transfers2.Add(9, 10, FALL_THROUGH);
   db.raw_transfer_3(transfers2);
   
@@ -136,7 +136,7 @@ int main() {
   // a function head, and so now that 14 is a function head, it's no longer
   // part of function 9.
   hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t, uint8_t>
-      transfers3;
+      transfers3(storage);
   transfers3.Add(10, 14, CALL);
   db.raw_transfer_3(transfers3);
   

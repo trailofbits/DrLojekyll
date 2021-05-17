@@ -15,7 +15,7 @@
 
 #epilogue ```c++
 
-using DatabaseStorage = hyde::rt::std_containers;
+using DatabaseStorage = hyde::rt::StdStorage;
 
 int main() {
   DatabaseFunctors functors;
@@ -68,7 +68,8 @@ int main() {
     assert(got == expect);
   };
   
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t> edges;
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t>
+      edges(storage);
   
   // start with a simple graph
   edges.Add(0, 1);

@@ -905,8 +905,9 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
   std::optional<DataIndex> scanned_index;
 
   if (!col_indices.empty()) {
-    const auto index = model->table->GetOrCreateIndex(impl, col_indices);
-    scanned_index.emplace(DataIndex(index));
+    if (const auto index = model->table->GetOrCreateIndex(impl, col_indices)) {
+      scanned_index.emplace(DataIndex(index));
+    }
   }
 
   if (view.CanReceiveDeletions()) {

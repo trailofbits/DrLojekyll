@@ -596,19 +596,19 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os.PushIndent();
 
-    os << os.Indent() << "fprintf(stderr, \"";
-
-    sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
-      sep = " ";
-    }
-    sep = "\\n\", ";
-    for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".Size()";
-      sep = ", ";
-    }
-    os << ");\n";
+//    os << os.Indent() << "fprintf(stderr, \"";
+//
+//    sep = "";
+//    for (auto vec : region.Vectors()) {
+//      os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
+//      sep = " ";
+//    }
+//    sep = "\\n\", ";
+//    for (auto vec : region.Vectors()) {
+//      os << sep << Vector(os, vec) << ".Size()";
+//      sep = ", ";
+//    }
+//    os << ");\n";
 
     region.FixpointLoop().Accept(*this);
 

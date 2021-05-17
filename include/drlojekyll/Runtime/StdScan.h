@@ -10,17 +10,17 @@ namespace hyde {
 namespace rt {
 
 // An iterator that scans through a linked list of records, where the next
-// pointer of the record is stored at `record.second[kOffset]`. A `kOffset`
-// value of `0` means we're traversing through the table, and of `N + 1` means
-// we're traversing through the table's `N`th index.
-template <typename RecordType, unsigned kOffset>
+// pointer of the record is stored at `std::get<2>(record)[kBackLink]`.
+// A `kBackLink` value of `0` means we're traversing through the table,
+// and of `N + 1` means we're traversing through the table's `N`th index.
+template <typename RecordType, unsigned kBackLink>
 class StdScanIterator {
  private:
   RecordType *ptr{nullptr};
   std::atomic<RecordType *> *scanned_ptr{nullptr};
 
  public:
-  using Self = StdScanIterator<RecordType, kOffset>;
+  using Self = StdScanIterator<RecordType, kBackLink>;
 
   HYDE_RT_ALWAYS_INLINE StdScanIterator(void) = default;
 
@@ -59,9 +59,9 @@ class StdScanIterator {
   // Return the tuple pointed to by the scan's pointer, and store it back into
   // the table as our most recently scanned tuple.
   HYDE_RT_ALWAYS_INLINE auto operator*(void) const noexcept
-      -> const decltype(this->ptr->first.second) &{
+      -> decltype(std::get<1>(*this->ptr)) {
     scanned_ptr->store(ptr, std::memory_order_release);
-    return ptr->first.second;
+    return std::get<1>(*ptr);
   }
 
   // The full table records are of the form:
@@ -71,7 +71,7 @@ class StdScanIterator {
   // The first pointer connects together every tuple in the table. The remaining
   // pointers connect together tuples with identical hashes in the indices.
   HYDE_RT_ALWAYS_INLINE void operator++(void) noexcept {
-    const auto addr = reinterpret_cast<uintptr_t>(ptr->second[kOffset]);
+    const auto addr = reinterpret_cast<uintptr_t>(std::get<2>(*ptr)[kBackLink]);
     ptr = reinterpret_cast<RecordType *>((addr >> 1u) << 1u);
   }
 };

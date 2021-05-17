@@ -14,7 +14,7 @@
 
 #epilogue ```c++
 
-using DatabaseStorage = hyde::rt::std_containers;
+using DatabaseStorage = hyde::rt::StdStorage;
 
 int main() {
   DatabaseFunctors functors;
@@ -23,7 +23,7 @@ int main() {
   Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
       storage, log, functors);
   
-  hyde::rt::SerializedVector<DatabaseStorage, int32_t> user_ids;
+  hyde::rt::SerializedVector<DatabaseStorage, int32_t> user_ids(storage);
   user_ids.Add(1);
   
   db.log_in_1(user_ids);

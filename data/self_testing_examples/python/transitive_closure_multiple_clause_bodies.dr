@@ -1,29 +1,5 @@
-#message add_edge1(i64 From, i64 To).
-#message add_edge2(i64 From, i64 To).
-#query reachable_from(bound i64 From, free i64 To).
-#query reaching_to(free i64 From, bound i64 To).
-#local tc1(From, To).
-#local tc2(From, To).
 
-reachable_from(From, To) : tc1(From, To).
-reaching_to(From, To) : tc2(From, To).
-
-tc1(From, To)
-  : tc1(From, X), tc2(X, To)
-  : add_edge1(From, To).
-
-tc2(From, To)
-  : tc2(From, X), tc1(X, To)
-  : add_edge2(From, To).
-
-
-#query is_node(free i64 Node).
-
-is_node(Node)
-  : tc1(Node, _)
-  : tc1(_, Node)
-  : tc2(Node, _)
-  : tc2(_, Node).
+#import "../transitive_closure_multiple_clause_bodies.dr".
 
 #epilogue ```python
 class Functors(DatabaseFunctors):

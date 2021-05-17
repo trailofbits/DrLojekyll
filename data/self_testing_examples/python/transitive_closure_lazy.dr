@@ -1,13 +1,5 @@
-#message add_edge(u64 From, u64 To).
-#query reaching_to(free u64 From, bound u64 To).
-#local tc(From, To).
 
-#message unlock_reaching_to(u64 To).
-
-reaching_to(From, To) : tc(From, To).
-
-tc(From, To) : tc(From, X), tc(X, To), unlock_reaching_to(To).
-tc(From, To) : add_edge(From, To).
+#import "../transitive_closure_lazy.dr".
 
 #epilogue ```python
 class Functors(DatabaseFunctors):

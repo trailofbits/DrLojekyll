@@ -996,9 +996,9 @@ class ProgramQuery {
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),
         table(table_),
-        index(index_),
-        tuple_checker(tuple_checker_),
-        forcing_function(forcing_function_) {}
+        index(std::move(index_)),
+        tuple_checker(std::move(tuple_checker_)),
+        forcing_function(std::move(forcing_function_)) {}
 
   ProgramQuery(const ProgramQuery &) = default;
   ProgramQuery(ProgramQuery &&) noexcept = default;

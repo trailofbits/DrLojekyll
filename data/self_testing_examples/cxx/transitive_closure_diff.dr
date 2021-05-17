@@ -33,7 +33,7 @@ public:
   }
 };
 
-using DatabaseStorage = hyde::rt::std_containers;
+using DatabaseStorage = hyde::rt::StdStorage;
 
 int main() {
   DatabaseFunctors functors;
@@ -64,8 +64,10 @@ int main() {
     }
   };
   
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t> edges;
-  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t> del_edges;
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t>
+      edges(storage);
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t>
+      del_edges(storage);
   edges.Add(0, 1);
   edges.Add(0, 2);
   edges.Add(2, 0);
