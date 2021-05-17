@@ -725,17 +725,10 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
         auto key_prefix = "(";
         auto key_suffix = ")";
-        auto val_prefix = "(";
-        auto val_suffix = ")";
 
         if (key_cols.size() == 1u) {
           key_prefix = "";
           key_suffix = "";
-        }
-
-        if (val_cols.size() == 1u) {
-          val_prefix = "";
-          val_suffix = "";
         }
 
         has_indices = true;
