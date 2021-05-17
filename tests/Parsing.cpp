@@ -168,21 +168,32 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 
   // Try to compile generated C++ code
   // FIXME: possible command injection here!
-  std::string compile_cmd =
-      "\"" + std::string(kCxxCompilerPath) + "\"" +
+  std::stringstream compile_cmd_ss;
+  compile_cmd_ss
+      << '"' << kCxxCompilerPath
+      << "\" " << kCxxFlags
 #ifdef _WIN32
-      " /std:c++17 " + (cxx_full_test ? "/o " + cxx_out_path : "/c") + " /I\"" +
-      kDrlogPublicHeaders + "\" /I\"" + kDrlogRuntimeImplHeaders
+      << " /std:c++17 "
+      << " /I\"" kDrlogPublicHeaders << "\" "
+      << (cxx_full_test ? "/o " + cxx_out_path : "/c")
 #else
-      " -std=c++17 " + (cxx_full_test ? "-o " + cxx_out_path : "-c") + " -I\"" +
-      kDrlogPublicHeaders + "\" -I\"" + kDrlogRuntimeImplHeaders
+      << " -std=c++17 "
+      << " -isystem \"" << kDrlogPublicHeaders << "\" "
+      << (cxx_full_test ? "-o " + cxx_out_path : "-c")
 #endif
-      + "\" " + kCxxFlags + " \"" + cxx_gen_path + "\"";
+      << " \"" << cxx_gen_path + "\"";
+
+  if (cxx_full_test) {
+    compile_cmd_ss << " \"" << kDrlogRuntimeLib << "\"";
+  }
+
+  std::string compile_cmd = compile_cmd_ss.str();
 #ifdef _WIN32
   int compile_ret_code = std::system(("\"" + compile_cmd + "\"").c_str());
 #else
   int compile_ret_code = std::system(compile_cmd.c_str());
 #endif
+  std::cerr << compile_cmd << std::endl;
   EXPECT_TRUE(compile_ret_code == 0)
       << "C++ compilation failed with command:\n\t\"" << compile_cmd
       << "\"\n\tSaved generated code at: \"" << cxx_gen_path << "\"\n";
