@@ -489,7 +489,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   // Should never be reached; defined below.
-  void Visit(ProgramProcedure region) override {
+  void Visit(ProgramProcedure) override {
     assert(false);
   }
 
@@ -877,7 +877,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
           os << "Tuple[";
         }
 
-        auto sep = "";
+        sep = "";
         for (auto col : index_vals) {
           os << sep << TypeName(module, col.Type());
           sep = ", ";
@@ -957,9 +957,6 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
       auto out_vars = region.OutputVariables(i);
       if (!out_vars.empty() && region.Index(i)) {
-        auto select_cols = region.SelectedColumns(i);
-        assert(out_vars.size() == select_cols.size());
-
         auto out_var_idx = 0u;
         for (auto var : out_vars) {
           os << os.Indent() << Var(os, var) << " = tuple_" << id << "_"
@@ -1065,11 +1062,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << "))\n";
 
       // De-dent everything.
-      for (auto outer_vec : region.Tables()) {
+      for (auto table_ : region.Tables()) {
         os.PopIndent();
         assert(0u < indents);
         indents--;
-        (void) outer_vec;
+        (void) table_;
       }
     }
 
@@ -1123,7 +1120,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       const auto index = *maybe_index;
       os << TableIndex(os, index);
 
-      auto sep = "[";
+      sep = "[";
       if (1 < input_vars.size()) {
         sep = "[(";
       }

@@ -644,7 +644,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   }
 
   // Should never be reached; defined below.
-  void Visit(ProgramProcedure region) override {
+  void Visit(ProgramProcedure) override {
     assert(false);
   }
 
@@ -1037,12 +1037,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << ");\n";
 
       // De-dent everything.
-      for (auto outer_vec : region.Tables()) {
+      for (auto table : region.Tables()) {
         os.PopIndent();
         os << os.Indent() << "}\n";
         assert(0u < indents);
         indents--;
-        (void) outer_vec;
+        (void) table;
       }
     }
 
@@ -1427,7 +1427,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
       if (param.Binding() == ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
@@ -1506,54 +1506,6 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os.PushIndent();
   }
 
-//  // This is an index scan.
-//  if (num_bound_params && num_free_params) {
-//    assert(spec.index.has_value());
-//    const auto index = *(spec.index);
-//
-//    os << os.Indent() << "for (auto [";
-//    sep = "";
-//    for (auto param : params) {
-//      if (param.Binding() != ParameterBinding::kBound) {
-//        os << sep << "param_" << param.Index();
-//        sep = ", ";
-//      }
-//    }
-//
-//    os << "] : " << Table(os, index) << ".ScanIndex(";
-//
-//    sep = "";
-//    for (auto param : decl.Parameters()) {
-//      if (param.Binding() == ParameterBinding::kBound) {
-//        os << sep << "param_" << param.Index();
-//        sep = ", ";
-//      }
-//    }
-//
-//    os << sep << "::hyde::rt::IndexTag<" << index.Id() << ">{})) {\n";
-//
-//  // This is a full table scan.
-//  } else if (!num_bound_params) {
-//    assert(0u < num_free_params);
-//
-//    os << os.Indent() << "for (auto [";
-//    sep = "";
-//    for (auto param : params) {
-//      if (param.Binding() != ParameterBinding::kBound) {
-//        os << sep << "param_" << param.Index();
-//        sep = ", ";
-//      }
-//    }
-//
-//    os << "] : " << Table(os, spec.table) << ".Keys()) {\n";
-//
-//  // Either the tuple checker will figure out of the tuple is present, or our
-//  // state check on the full tuple will figure it out.
-//  } else {
-//    os << os.Indent() << "if (true) {\n";
-//  }
-
-
   // Check the tuple's state using a finder function.
   if (spec.tuple_checker) {
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
@@ -1589,7 +1541,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   if (num_free_params) {
     os << os.Indent() << "if (!_generator(";
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
@@ -1650,13 +1602,13 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   // Forward-declare user-provided functors
   std::unordered_set<std::string> seen;
-  for (auto module : ParsedModuleIterator(module)) {
-    for (auto first_func : module.Functors()) {
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto first_func : sub_module.Functors()) {
       for (auto func : first_func.Redeclarations()) {
         std::stringstream ss;
         ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DeclareFunctor(os, module, func, true);
+          DeclareFunctor(os, sub_module, func, true);
           os << ";\n";
           (void) it;
         }
@@ -1677,7 +1629,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
-  os << os.Indent() << "public:\n";
+  os << os.Indent() << "private:\n";
   os.PushIndent();  // public:
 
   os << os.Indent() << "StorageT &storage;\n"
@@ -1693,7 +1645,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   for (auto global : program.GlobalVariables()) {
     DefineGlobal(os, module, global);
   }
-
+  os << "\n";
+  os.PopIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
   os << os.Indent() << "explicit " << gClassName
      << "(StorageT &s, LogT &l, FunctorsT &f)\n";
   os.PushIndent();  // constructor
@@ -1703,21 +1658,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   for (auto table : program.Tables()) {
     os << ",\n" << os.Indent() << "  " << Table(os, table) << "(s)";
-
-    //    for (auto index : table.Indices()) {
-    //      if (!index.ValueColumns().empty()) {
-    //        os << ",\n"
-    //           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
-    //      }
-    //    }
-    //
-    //    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
-    //    for (auto index : table.Indices()) {
-    //      if (!index.ValueColumns().empty()) {
-    //        os << ", " << TableIndex(os, index);
-    //      }
-    //    }
-    //    os << ")";
   }
 
   for (auto global : program.GlobalVariables()) {

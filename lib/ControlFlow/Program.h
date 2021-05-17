@@ -297,7 +297,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // A comment about the creation of this node.
   std::string comment;
 
-  unsigned depth{0};
+  unsigned cached_depth{0};
 };
 
 using REGION = Node<ProgramRegion>;

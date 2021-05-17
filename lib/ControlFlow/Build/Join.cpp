@@ -867,7 +867,7 @@ REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
                [=](REGION *parent_if_true) -> REGION * {
                  return BuildStateCheckCaseReturnTrue(impl, parent_if_true);
                },
-               [](REGION *parent_if_false) -> REGION * { return nullptr; }));
+               [](REGION *) -> REGION * { return nullptr; }));
 
 
   // If we fell through to the end, then none of the iterations of the join

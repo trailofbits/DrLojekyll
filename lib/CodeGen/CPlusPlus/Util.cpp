@@ -30,6 +30,7 @@ OutputStream &Comment(OutputStream &os, ProgramRegion region,
   if (!region.Comment().empty()) {
     os << os.Indent() << "// " << region.Comment() << "\n";
   }
+  (void) message;
   return os;
 }
 
@@ -165,10 +166,10 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
 }
 
 // Return all messages.
-std::unordered_set<ParsedMessage> Messages(ParsedModule module) {
+std::unordered_set<ParsedMessage> Messages(ParsedModule root_module) {
   std::unordered_set<ParsedMessage> seen;
 
-  for (auto module : ParsedModuleIterator(module)) {
+  for (auto module : ParsedModuleIterator(root_module)) {
     for (auto message : module.Messages()) {
       seen.emplace(message);
     }
