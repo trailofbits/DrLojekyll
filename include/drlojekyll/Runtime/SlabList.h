@@ -638,10 +638,10 @@ template <typename T>
 static constexpr bool kIsSlabListReader = false;
 
 template <>
-static constexpr bool kIsSlabListReader<UnsafeSlabListReader> = true;
+inline constexpr bool kIsSlabListReader<UnsafeSlabListReader> = true;
 
 template <>
-static constexpr bool kIsSlabListReader<SlabListReader> = true;
+inline constexpr bool kIsSlabListReader<SlabListReader> = true;
 
 // Transfer data from one reader to a writer.
 template <typename Writer, typename Reader>

@@ -64,7 +64,6 @@ HYDE_RT_FLATTEN void UnsafeSlabListWriter::UpdateWritePointer(void) {
   max_write_ptr = slab->End();
 }
 
-HYDE_RT_FLATTEN
 UnsafeSlabListReader::UnsafeSlabListReader(SlabList slab_list) noexcept {
   if (auto slab = slab_list.first) {
     const auto num_used_bytes = slab->Size();
@@ -77,7 +76,7 @@ UnsafeSlabListReader::UnsafeSlabListReader(SlabList slab_list) noexcept {
   }
 }
 
-HYDE_RT_FLATTEN UnsafeSlabListReader::UnsafeSlabListReader(
+UnsafeSlabListReader::UnsafeSlabListReader(
     uint8_t *ref_read_ptr, uint32_t /* ref_num_bytes  */) noexcept {
   const auto slab = Slab::Containing(ref_read_ptr - 1u);
   read_ptr = ref_read_ptr;
