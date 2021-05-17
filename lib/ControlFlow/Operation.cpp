@@ -955,7 +955,16 @@ bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
     }
   }
 
+
   for (auto i = 0u; i < num_tables; ++i) {
+    if (index_of_index[i] != that->index_of_index[i]) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
+  // NOTE(pag): There might be fewer indices than tables.
+  for (auto i = 0u, max_i = indices.Size(); i < max_i; ++i) {
     if (indices[i] != that->indices[i]) {
       FAILED_EQ(that_);
       return false;
@@ -1114,11 +1123,7 @@ uint64_t Node<ProgramTableScanRegion>::Hash(uint32_t depth) const {
 }
 
 bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
-  if (output_vector->NumUses() == 1u) {
-    return true;
-  } else {
-    return !output_vector->IsRead();
-  }
+  return !this->OP::body || this->OP::body->IsNoOp();
 }
 
 bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
@@ -1155,20 +1160,63 @@ bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
     }
   }
 
-  // Table scans don't have bodies.
-  assert(!this->body);
-  assert(!that->body);
+  if (depth) {
+    for (auto i = 0u, max_i = this->out_vars.Size(); i < max_i; ++i) {
+      eq.Insert(this->out_vars[i], that->out_vars[i]);
+    }
 
-  eq.Insert(this->output_vector.get(), that->output_vector.get());
+    if (!this->OP::body != !that->OP::body) {
+      return false;
+    }
+
+    if (this->OP::body) {
+      return this->OP::body->Equals(eq, that->OP::body.get(), depth - 1u);
+    }
+  }
 
   return true;
 }
 
 const bool Node<ProgramTableScanRegion>::MergeEqual(
-    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
-  NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableScanRegion");
-  assert(false);
-  return false;
+    ProgramImpl *impl, std::vector<Node<ProgramRegion> *> &merges) {
+
+  auto par = impl->parallel_regions.Create(this);
+
+  if (auto body_ptr = this->OP::body.get()) {
+    this->OP::body.Clear();
+    body_ptr->parent = par;
+    par->AddRegion(body_ptr);
+  }
+
+  this->OP::body.Emplace(this, par);
+
+  const auto num_defined_vars = out_vars.Size();
+
+  for (auto merge : merges) {
+    TABLESCAN * const merged_scan = merge->AsOperation()->AsTableScan();
+    assert(merged_scan != nullptr);
+    assert(merged_scan != this);
+    assert(merged_scan->out_vars.Size() == num_defined_vars);
+
+    for (auto i = 0u; i < num_defined_vars; ++i) {
+      merged_scan->out_vars[i]->ReplaceAllUsesWith(out_vars[i]);
+    }
+
+    if (auto merged_body = merged_scan->body.get(); merged_body) {
+      merged_body->parent = par;
+      par->AddRegion(merged_body);
+      merged_scan->body.Clear();
+    }
+
+    merged_scan->in_vars.Clear();
+    merged_scan->out_vars.Clear();
+    merged_scan->table.Clear();
+    merged_scan->index.Clear();
+    merged_scan->parent = nullptr;
+  }
+
+  return true;
+
 }
 
 uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {

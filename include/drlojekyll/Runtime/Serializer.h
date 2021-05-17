@@ -11,7 +11,7 @@
 #include <vector>
 
 #define XXH_INLINE_ALL
-#include <xxhash.h>
+#include "xxhash.h"
 
 #include "Util.h"
 
@@ -1272,21 +1272,41 @@ struct Serializer<Reader, Writer, std::pair<A, B>>
   }
 };
 
-template <typename Reader, typename Writer, typename... Elems>
-struct Serializer<Reader, Writer, std::tuple<Elems...>>
-    : public IndexedSerializer<Reader, Writer, std::tuple<Elems...>, 0,
-                               std::tuple_size_v<std::tuple<Elems...>>> {
+template <typename Reader, typename Writer, typename Elem, typename... Elems>
+struct Serializer<Reader, Writer, std::tuple<Elem, Elems...>>
+    : public IndexedSerializer<Reader, Writer, std::tuple<Elem, Elems...>, 0,
+                               std::tuple_size_v<std::tuple<Elem, Elems...>>> {
 
   static constexpr bool kIsFixedSize =
+      kHasTrivialFixedSizeSerialization<Elem> &&
       (kHasTrivialFixedSizeSerialization<Elems> && ... && true);
 
   static constexpr uint32_t SizeInBytes(void) noexcept {
     if constexpr (kIsFixedSize) {
-      return (kFixedSerializationSize<Elems> + ... + 0u);
+      return kFixedSerializationSize<Elem> +
+             (kFixedSerializationSize<Elems> + ... + 0u);
     } else {
       return 0u;
     }
   }
+};
+
+template <typename Reader, typename Writer>
+struct Serializer<Reader, Writer, std::tuple<>> {
+
+  static constexpr bool kIsFixedSize = true;
+
+  static constexpr uint32_t SizeInBytes(void) noexcept {
+    return 0u;
+  }
+
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(
+      Writer &writer, std::tuple<>) {
+    return writer.Current();
+  }
+
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(
+      Reader &writer, std::tuple<> &) {}
 };
 
 template <typename Reader, typename Writer, typename ElemT, size_t kSize>

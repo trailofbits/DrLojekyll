@@ -8,7 +8,7 @@
 #include <memory>
 #include <system_error>
 
-#include "Result.h"
+#include <drlojekyll/Runtime/Result.h>
 
 namespace hyde {
 namespace rt {

@@ -305,51 +305,50 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   if (!in_col_indices.empty()) {
     index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
   }
-  const auto proc = seq->containing_procedure;
-  const auto vec = proc->vectors.Create(impl->next_id++, VectorKind::kTableScan,
-                                        selected_cols);
 
   // Scan an index, using the columns from the tuple to find the columns
   // from the tuple's predecessor.
-  const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
+  const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(
+      impl->next_id++, seq);
   seq->AddRegion(scan);
   scan->table.Emplace(scan, table);
   if (index) {
     scan->index.Emplace(scan, index);
   }
-  scan->output_vector.Emplace(scan, vec);
 
-  for (auto view_col : view_cols) {
+  for (QueryColumn view_col : view_cols) {
     const auto in_var = seq->VariableFor(impl, view_col);
     scan->in_vars.AddUse(in_var);
   }
 
-  for (auto table_col : table->columns) {
+  // Scans are funny. Even though we're looking into an index, we permit the
+  // index to be slightly faulty, and so we double check all results.
+  TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+      scan, ComparisonOperator::kEqual);
+  scan->body.Emplace(scan, cmp);
+
+  auto i = 0u;
+  auto j = 0u;
+  for (TABLECOLUMN *table_col : table->columns) {
+
+    VAR *out_var = scan->out_vars.Create(
+        impl->next_id++, VariableRole::kScanOutput);
+
+    QueryColumn view_col = view.NthColumn(i++);
+    out_var->query_column = view_col;
+
     if (indexed_cols[table_col->index]) {
       assert(index != nullptr);
       scan->in_cols.AddUse(table_col);
 
+      VAR *in_var = scan->in_vars[j++];
+      cmp->lhs_vars.AddUse(in_var);
+      cmp->rhs_vars.AddUse(out_var);
+      cmp->col_id_to_var[view_col.Id()] = in_var;
+
     } else {
       scan->out_cols.AddUse(table_col);
-    }
-  }
-
-  // Loop over the results of the table scan.
-  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      impl->next_id++, seq, ProgramOperation::kLoopOverScanVector);
-  seq->AddRegion(loop);
-  loop->vector.Emplace(loop, vec);
-
-  for (auto col : selected_cols) {
-    const auto var =
-        loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
-    var->query_column = col;
-    loop->col_id_to_var[col.Id()] = var;
-  }
-
-  for (auto pred_col : view.Columns()) {
-    if (!indexed_cols[*(pred_col.Index())]) {
-      selected_cols.push_back(pred_col);
+      cmp->col_id_to_var[view_col.Id()] = out_var;
     }
   }
 
@@ -360,10 +359,12 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     view_cols.push_back(col);
   }
 
-  const auto in_loop = cb(loop, true);
-  assert(!loop->body);
-  assert(in_loop->parent == loop);
-  loop->body.Emplace(loop, in_loop);
+  REGION * const in_loop = cb(cmp, true);
+  assert(!cmp->body);
+  if (in_loop) {
+    assert(in_loop->parent == cmp);
+    cmp->body.Emplace(cmp, in_loop);
+  }
   return true;
 }
 

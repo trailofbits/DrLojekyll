@@ -41,11 +41,23 @@ class SerializedVector;
 template <typename StorageT, typename... Columns>
 class Vector;
 
+template <unsigned kIndexId>
+struct IndexTag {};
+
+template <unsigned kTableId>
+struct TableTag {};
+
 template <typename StorageT, const unsigned  kTableId>
 class Table;
 
 template <typename StorageT, const unsigned kIndexId>
 class Index;
+
+template <typename StorageT, typename IndexOrTableTag>
+class Scan;
+
+template <typename StorageT, unsigned kNumPivots, typename... IndexOrTableTags>
+class Join;
 
 // A vector-like object that holds a reference to a serialized view of data and
 // and hands back SerialRefs

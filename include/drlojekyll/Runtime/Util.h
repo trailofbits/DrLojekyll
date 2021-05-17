@@ -31,8 +31,13 @@ namespace rt {
 #  endif
 #endif
 
+// Represents an untyped pointer to the next tuple in an index.
+struct NextTuplePointer {
+  uint8_t *data;
+};
+
 template <typename... Ts>
-struct TypeList;
+struct TypeList {};
 
 template <unsigned... kIds>
 struct IdList {};
@@ -52,9 +57,17 @@ static constexpr bool kIsMutable = false;
 template <typename T>
 static constexpr bool kIsMutable<Mutable<T>> = true;
 
+template <>
+static constexpr bool kIsMutable<NextTuplePointer> = true;
+
 template <typename T>
 struct ValueType<Mutable<T>> {
   using Type = typename ValueType<T>::Type;
+};
+
+template <>
+struct ValueType<NextTuplePointer> {
+  using Type = uint8_t *;
 };
 
 template <typename T>
@@ -86,10 +99,18 @@ template <typename T>
 static constexpr bool kIsAddress<Address<T>> = true;
 
 template <>
+static constexpr bool kIsAddress<NextTuplePointer> = true;
+
+template <>
 static constexpr bool kIsAddress<std::nullptr_t> = true;
 
 template <typename T>
 HYDE_RT_ALWAYS_INLINE static T *ExtractAddress(Address<T> a) {
+  return reinterpret_cast<T *>(a.data);
+}
+
+template <typename T>
+HYDE_RT_ALWAYS_INLINE static T *ExtractAddress(NextTuplePointer a) {
   return reinterpret_cast<T *>(a.data);
 }
 

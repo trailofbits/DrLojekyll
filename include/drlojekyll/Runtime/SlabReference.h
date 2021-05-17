@@ -4,7 +4,8 @@
 
 #include <cstdint>
 
-#include "Serializer.h"
+#include <drlojekyll/Runtime/Serializer.h>
+
 #include "SlabList.h"
 
 namespace hyde {
@@ -12,6 +13,9 @@ namespace rt {
 
 template <typename T>
 class TypedSlabReference;
+
+template <typename T>
+struct ValueType<TypedSlabReference<T>> : public ValueType<T> {};
 
 // An untyped, counted reference into a slab. The reference counter is
 // implicitly tracked by being able to compute the address of the slab

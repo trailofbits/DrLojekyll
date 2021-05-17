@@ -78,12 +78,6 @@ else()
   add_subdirectory(vendor/nlohmann_json)
 endif()
 
-
-# xxHash -------------------------------------
-
-set(XXHASH_BUNDLED_MODE OFF CACHE BOOL "" FORCE)
-add_subdirectory(vendor/xxHash/cmake_unofficial)
-
 # --------------------------------------------
 # CMake installation stuff -------------------
 # --------------------------------------------

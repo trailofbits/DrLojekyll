@@ -110,15 +110,21 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
 namespace {
 
 // Build a join region given a JOIN view and a pivot vector.
-static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
-                            VECTOR *pivot_vec, SERIES *seq) {
+static std::pair<TABLEJOIN *, TUPLECMP *>
+BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
+          SERIES *seq) {
 
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  const auto join = impl->operation_regions.CreateDerived<TABLEJOIN>(
+  TABLEJOIN * const join = impl->operation_regions.CreateDerived<TABLEJOIN>(
       seq, join_view, impl->next_id++);
   seq->AddRegion(join);
+
+  TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+      join, ComparisonOperator::kEqual);
+
+  join->body.Emplace(join, cmp);
 
   // The JOIN internalizes the loop over its pivot vector. This is so that
   // it can have visibility into the sortedness, and choose what to do based
@@ -172,8 +178,12 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
     TABLEINDEX *const pred_index =
         pred_table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
     join->tables.AddUse(pred_table);
-    join->indices.AddUse(pred_index);
-
+    if (pred_index) {
+      join->indices.AddUse(pred_index);
+      join->index_of_index.push_back(join->indices.Size());
+    } else {
+      join->index_of_index.push_back(0u);
+    }
     join->pivot_cols.emplace_back(join);
     join->output_cols.emplace_back(join);
     join->output_vars.emplace_back(join);
@@ -181,10 +191,19 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
 
     auto &pivot_table_cols = join->pivot_cols.back();
     for (auto pivot_col : pivot_cols) {
-      for (auto indexed_col : pred_index->columns) {
-        if (pivot_col.Index() && indexed_col->index == *(pivot_col.Index())) {
-          pivot_table_cols.AddUse(indexed_col);
-          goto matched_pivot_col;
+      if (pred_index) {
+        for (TABLECOLUMN *indexed_col : pred_index->columns) {
+          if (pivot_col.Index() && indexed_col->index == *(pivot_col.Index())) {
+            pivot_table_cols.AddUse(indexed_col);
+            goto matched_pivot_col;
+          }
+        }
+      } else {
+        for (TABLECOLUMN *indexed_col : pred_table->columns) {
+          if (pivot_col.Index() && indexed_col->index == *(pivot_col.Index())) {
+            pivot_table_cols.AddUse(indexed_col);
+            goto matched_pivot_col;
+          }
         }
       }
       assert(false);
@@ -196,23 +215,13 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
   // Add in the non-pivot columns.
   join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
                            std::optional<QueryColumn> out_col) {
-    assert(out_col);
     if (!out_col) {
+      assert(false);
       return;
     }
 
-    if (out_col->IsConstantOrConstantRef()) {
-      (void) join->VariableFor(impl, *out_col);
-      return;
-
-    } else if (in_col.IsConstantOrConstantRef()) {
-      const auto in_var = join->VariableFor(impl, in_col);
-      join->col_id_to_var[out_col->Id()] = in_var;
-      return;
-
-    } else if (InputColumnRole::kJoinNonPivot != role) {
-      return;
-    }
+    assert(!out_col->IsConstant());
+    assert(!in_col.IsConstant());
 
     const auto pred_view = QueryView::Containing(in_col);
     const auto pred_view_idx = view_to_index[pred_view];
@@ -221,14 +230,37 @@ static TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
     auto &out_vars = join->output_vars.at(pred_view_idx);
 
     out_cols.AddUse(table->columns[*(in_col.Index())]);
-    auto var = out_vars.Create(impl->next_id++, VariableRole::kJoinNonPivot);
-    var->query_column = *out_col;
+    VAR * var = nullptr;
 
-    join->col_id_to_var[in_col.Id()] = var;
-    join->col_id_to_var[out_col->Id()] = var;
+    if (InputColumnRole::kJoinPivot == role) {
+      var = out_vars.Create(impl->next_id++, VariableRole::kJoinPivot);
+
+      // If we're using an index for this JOIN, then we want to double check
+      // that what we've selected is indeed what we asked for (from the
+      // pivot vector). This may seem redundant but it permits index scans to
+      // be approximate.
+      if (join->index_of_index[pred_view_idx]) {
+        cmp->lhs_vars.AddUse(join->pivot_vars[*(out_col->Index())]);
+        cmp->rhs_vars.AddUse(var);
+      }
+
+    } else {
+      var = out_vars.Create(impl->next_id++, VariableRole::kJoinNonPivot);
+      join->col_id_to_var[in_col.Id()] = var;
+      join->col_id_to_var[out_col->Id()] = var;
+    }
+
+    var->query_column = in_col;
   });
 
-  return join;
+  // Put the defined variables in the order of their views.
+  for (auto &out_vars : join->output_vars) {
+    out_vars.Sort([] (VAR *a, VAR *b) {
+      return *(a->query_column->Index()) < *(b->query_column->Index());
+    });
+  }
+
+  return {join, cmp};
 }
 
 }  // namespace
@@ -276,7 +308,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     seq->AddRegion(unique);
   }
 
-  OP *parent = BuildJoin(impl, join_view, swap_pivot_vec, seq);
+  auto [join, cmp] = BuildJoin(impl, join_view, swap_pivot_vec, seq);
+  OP *parent = cmp;
 
   // If this join can receive deletions, then we need to possibly double check
   // its sources, because indices don't actually maintain states.
@@ -567,8 +600,8 @@ void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
     //            simpler, and we may be able to better optimize things in the
     //            future so that the bottom-up removers from all predecessor
     //            nodes can "share" this common JOIN code.
-    const auto join = BuildJoin(impl, join_view, pivot_vec, parent);
-    join->body.Emplace(join, with_join(join, true));
+    auto [join, cmp] = BuildJoin(impl, join_view, pivot_vec, parent);
+    cmp->body.Emplace(join, with_join(cmp, true));
 
   // JOINing two tables; all we can do is an index-scan of the other table; no
   // need for a join region.
@@ -661,22 +694,47 @@ REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
   // case, what we can do is call down to each of our predecessors, and if any
   // of them return false, then we bail out, otherwise we return true.
   if (num_found_cols == out_vars.size()) {
-    PARALLEL *const par = impl->parallel_regions.Create(seq);
-    seq->AddRegion(par);
 
-    // Call each predecessor in parallel. If any of them return `false`, then
-    // return false.
-    for (auto pred_view : join_view.JoinedViews()) {
-      par->AddRegion(CallTopDownChecker(
-          impl, context, par, view, view_cols, pred_view, already_checked,
-          [](REGION *) -> REGION * { return nullptr; },
+    OP *check_parent = impl->operation_regions.CreateDerived<LET>(seq);
+    seq->AddRegion(check_parent);
+
+
+    auto do_check = [&] (QueryView pred_view) {
+      OP *next_check_parent = nullptr;
+      check_parent->body.Emplace(check_parent, CallTopDownChecker(
+          impl, context, check_parent, view, view_cols, pred_view, already_checked,
+          [&](REGION *parent_if_true) -> REGION * {
+            next_check_parent =
+                impl->operation_regions.CreateDerived<LET>(parent_if_true);
+            return next_check_parent;
+          },
           [=](REGION *parent_if_false) -> REGION * {
             return BuildStateCheckCaseReturnFalse(impl, parent_if_false);
           }));
+      assert(next_check_parent != nullptr);
+      check_parent = next_check_parent;
+    };
+
+    // If it's an inductive JOIN, then check the non-inductive predecessors
+    // before checking the inductive predecessors.
+    if (view.InductionGroupId()) {
+      for (auto pred_view : view.NonInductivePredecessors()) {
+        do_check(pred_view);
+      }
+      for (auto pred_view : view.InductivePredecessors()) {
+        do_check(pred_view);
+      }
+
+    // Nested calls to predecessors.
+    } else {
+      for (auto pred_view : join_view.JoinedViews()) {
+        do_check(pred_view);
+      }
     }
 
-    // If we fall through to here, then return true.
-    seq->AddRegion(BuildStateCheckCaseReturnTrue(impl, seq));
+    // If we fall make it to the deepest point then return `true`.
+    check_parent->body.Emplace(
+        check_parent, BuildStateCheckCaseReturnTrue(impl, check_parent));
 
     return seq;
   }
@@ -781,13 +839,12 @@ REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
 
   // TODO(pag): Only do the join if we *don't* have all columns available.
   //            Otherwise we can just loop over the vector.
-  TABLEJOIN *const join = BuildJoin(impl, join_view, pivot_vec, seq);
+  auto [join, cmp] = BuildJoin(impl, join_view, pivot_vec, seq);
 
   // Make sure all inputs are checked for equality. This is basically to
   // make sure that we're in the right tuple.
-  TUPLECMP *const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
-      join, ComparisonOperator::kEqual);
-  join->body.Emplace(join, cmp);
+  //
+  // We can extend what is checked in the JOIN's `cmp` node.
   for (const auto &[pred_view, col_vars] : pred_col_vars) {
     for (auto [pred_col, join_var] : col_vars) {
       cmp->lhs_vars.AddUse(join_var);

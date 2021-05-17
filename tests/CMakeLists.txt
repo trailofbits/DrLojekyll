@@ -12,7 +12,7 @@ add_executable(unittests
     UnitTests.h
     BitManipulation.cpp
     Parsing.cpp
-    Runtime.cpp
+    SlabRuntime.cpp
     )
 
 option(ENABLE_TEST_MYPY_CHECKS "Test and verify generated Python code using Mypy" ON)

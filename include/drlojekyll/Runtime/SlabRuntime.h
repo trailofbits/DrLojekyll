@@ -1,8 +1,8 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-#include "Runtime.h"
-
 #pragma once
+
+#include <drlojekyll/Runtime/Runtime.h>
 
 #include <atomic>
 #include <cassert>

@@ -28,9 +28,9 @@ static OutputStream &Table(OutputStream &os, const DataTable table) {
   return os << "table_" << table.Id();
 }
 
-static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
-  return os << "index_" << index.Id();
-}
+//static OutputStream &Table(OutputStream &os, const DataIndex index) {
+//  return Table(os, DataTable::Backing(index));
+//}
 
 static OutputStream &Vector(OutputStream &os, const DataVector vec) {
   return os << "vec_" << vec.Id();
@@ -59,6 +59,7 @@ static OutputStream &Vector(OutputStream &os, const DataVector vec) {
 //      struct TableDescriptor<10> {
 //        using ColumnIds = IdList<11, 12>;
 //        using IndexIds = IdList<141>;
+//        static constexpr unsigned kNumColumns = 2;
 //      };
 //
 // We use the IDs of columns/indices/tables in place of type names so that we
@@ -88,6 +89,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
     auto sep = "";
 
+    unsigned i = 0u;
     for (auto index : table.Indices()) {
       os << os.Indent() << "template <>\n"
          << os.Indent() << "struct IndexDescriptor<" << index.Id() << "> {\n";
@@ -96,6 +98,8 @@ static void DeclareDescriptors(OutputStream &os, Program program,
          << ";\n"
          << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
          << ";\n"
+         << os.Indent() << "static constexpr unsigned kOffset = "
+         << (i++) << ";\n"
          << os.Indent() << "using Columns = TypeList<";
 
       const auto key_cols = index.KeyColumns();
@@ -137,7 +141,21 @@ static void DeclareDescriptors(OutputStream &os, Program program,
         sep = ", ";
       }
 
-      os << ">;\n";
+      os << ">;\n"
+         << os.Indent() << "using KeyColumnOffsets = IdList<";
+      sep = "";
+      for (auto key_col : key_cols) {
+        os << sep << key_col.Index();
+        sep = ", ";
+      }
+      os << ">;\n"
+          << os.Indent() << "using ValueColumnOffsets = IdList<";
+       sep = "";
+       for (auto val_col : val_cols) {
+         os << sep << val_col.Index();
+         sep = ", ";
+       }
+       os << ">;\n";
       os.PopIndent();
       os << os.Indent() << "};\n";
     }
@@ -155,10 +173,15 @@ static void DeclareDescriptors(OutputStream &os, Program program,
     os << ">;\n" << os.Indent() << "using IndexIds = IdList<";
     sep = "";
     for (auto index : table.Indices()) {
+//      if (index.ValueColumns().empty()) {
+//        continue;  // Skip over indexes that span every column.
+//      }
       os << sep << index.Id();
       sep = ", ";
     }
-    os << ">;\n";
+    os << ">;\n"
+        << os.Indent() << "static constexpr unsigned kNumColumns = "
+        << table.Columns().size() << ";\n";
 
     os.PopIndent();
     os << "};\n";
@@ -813,6 +836,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       return;
     }
 
+    const auto id = region.Id();
+
     os << Comment(os, region, "ProgramTableJoinRegion");
 
     // Nested loop join
@@ -832,73 +857,77 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     auto tables = region.Tables();
+
+    // First, prioritize the tables for which we're not using an index. We're
+    // presence checks for these tables.
     for (auto i = 0u; i < tables.size(); ++i) {
-      const auto table = tables[i];
-      const auto index = region.Index(i);
-      const auto index_keys = index.KeyColumns();
-      const auto index_vals = index.ValueColumns();
-
-      // The index is a set of key column values/tuples.
-      if (index_vals.empty()) {
-        os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
-
-        // Print out key columns
-        auto key_columns = [&]() {
-          sep = "";
-          for (auto index_col : index_keys) {
-            auto j = 0u;
-            for (auto used_col : region.IndexedColumns(i)) {
-              if (used_col == index_col) {
-                os << sep << var_names[j];
-                sep = ", ";
-              }
-              ++j;
-            }
-          }
-        };
-
-        key_columns();
-        os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
-
-        // We increase indentation here, and the corresponding `PopIndent()`
-        // only comes *after* visiting the `region.Body()`.
-        os.PushIndent();
-
-        // Should have no output variables
-        assert(region.OutputVariables(i).empty());
-
-      // The index is a default dict mapping key columns to a list of value
-      // columns/tuples.
-      } else {
-
-        auto out_vars = region.OutputVariables(i);
-        assert(out_vars.size() == region.SelectedColumns(i).size());
-        os << os.Indent() << "for (auto [";
-        sep = "";
-        for (auto var : out_vars) {
-          os << sep << Var(os, var);
-          sep = ", ";
-        }
-
-        os << "] : " << TableIndex(os, index) << ".Get(";
-        sep = "";
-        for (auto index_col : index_keys) {
-          auto j = 0u;
-          for (auto used_col : region.IndexedColumns(i)) {
-            if (used_col == index_col) {
-              os << sep << var_names[j];
-              sep = ", ";
-            }
-            ++j;
-          }
-        }
-
-        os << ")) {\n";
-
-        // We increase indentation here, and the corresponding `PopIndent()`
-        // only comes *after* visiting the `region.Body()`.
-        os.PushIndent();
+      if (region.Index(i)) {
+        continue;
       }
+
+      const auto table = tables[i];
+      os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
+
+      // Print out key columns
+      sep = "";
+      for (auto index_col : table.Columns()) {
+        auto j = 0u;
+        for (auto used_col : region.IndexedColumns(i)) {
+          if (used_col == index_col) {
+            os << sep << var_names[j];
+            sep = ", ";
+          }
+          ++j;
+        }
+      }
+      os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
+
+      // We increase indentation here, and the corresponding `PopIndent()`
+      // only comes *after* visiting the `region.Body()`.
+      os.PushIndent();
+    }
+
+    // Now, do scans over the tables where we do use an index.
+    for (auto i = 0u; i < tables.size(); ++i) {
+      auto maybe_index = region.Index(i);
+      if (!maybe_index) {
+        continue;
+      }
+
+      const auto table = tables[i];
+      const auto index = *maybe_index;
+      const auto index_keys = index.KeyColumns();
+
+      os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<"
+         << index.Id() << ">> scan_" << id << '_' << i << "(storage, "
+         << Table(os, table);
+
+      for (auto index_col : index_keys) {
+        auto j = 0u;
+        for (auto used_col : region.IndexedColumns(i)) {
+          if (used_col == index_col) {
+            os << ", " << var_names[j];
+          }
+          ++j;
+        }
+      }
+
+      os << ");\n";
+
+      auto out_vars = region.OutputVariables(i);
+      assert(out_vars.size() == region.SelectedColumns(i).size());
+      os << os.Indent() << "for (auto [";
+      sep = "";
+      for (auto var : out_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+
+      os << "] : scan_" << id << '_' << i << ") {\n";
+
+      // We increase indentation here, and the corresponding `PopIndent()`
+      // only comes *after* visiting the `region.Body()`.
+      os.PushIndent();
     }
 
     body->Accept(*this);
@@ -1037,62 +1066,42 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableScanRegion region) override {
     os << Comment(os, region, "ProgramTableScanRegion");
-
-    const auto input_vars = region.InputVariables();
-    const auto filled_vec = region.FilledVector();
-
-    // Index scan :-D
-    if (auto maybe_index = region.Index(); maybe_index) {
-      const auto index = *maybe_index;
-
-      os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
-         << "_vec = " << TableIndex(os, index) << ".Get(";
-      auto sep = "";
-      for (auto var : input_vars) {
-        os << sep << Var(os, var);
-        sep = ", ";
-      }
-      os << ");\n";
-
-      os << os.Indent() << "for (auto [";
-      sep = "";
-      for (auto var : index.ValueColumns()) {
-        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
-        sep = ", ";
-      }
-      os << "] : scan_tuple_" << filled_vec.Id() << "_vec) {\n";
-      os.PushIndent();
-      os << os.Indent() << Vector(os, filled_vec) << ".Add(";
-      sep = "";
-      for (auto var : index.ValueColumns()) {
-        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
-        sep = ", ";
-      }
-      os << ");\n";
-
-    // Full table scan.
-    } else {
-      assert(input_vars.empty());
-      os << os.Indent() << "for (auto [";
-      auto sep = "";
-
-      auto table = region.Table();
-      for (auto i = 0u; i < table.Columns().size(); i++) {
-        os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
-        sep = ", ";
-      }
-
-      os << "] : " << Table(os, region.Table()) << ".Keys()) {\n";
-      os.PushIndent();
-      os << os.Indent() << Vector(os, filled_vec) << ".Add(";
-      sep = "";
-      for (unsigned int i = 0; i < table.Columns().size(); i++) {
-        os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
-        sep = ", ";
-      }
-      os << ");\n";
+    const auto body = region.Body();
+    if (!body) {
+      return;
     }
 
+    const auto id = region.Id();
+    const auto table = region.Table();
+    const auto input_vars = region.InputVariables();
+    os << os.Indent() << "{\n";
+    os.PushIndent();
+    os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
+    if (auto maybe_index = region.Index(); maybe_index) {
+      os << "IndexTag<" << maybe_index->Id() << ">";
+    } else {
+
+      os << "TableTag<" << table.Id() << ">";
+    }
+
+    os << "> scan_" << id << "(storage, " << Table(os, table);
+    for (auto var : input_vars) {
+      os << ", " << Var(os, var);
+    }
+    os << ");\n";
+
+    os << os.Indent() << "for (auto [";
+    auto sep = "";
+    for (auto var : region.OutputVariables()) {
+      os << sep << Var(os, var);
+      sep = ", ";
+    }
+    os << "] : scan_" << id << ") {\n";
+
+    os.PushIndent();
+    body->Accept(*this);
+    os.PopIndent();
+    os << os.Indent() << "}\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
@@ -1428,54 +1437,122 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << ");\n";
   }
 
-  // This is an index scan.
-  if (num_bound_params && num_free_params) {
-    assert(spec.index.has_value());
-    const auto index = *(spec.index);
+  // This is either a table or index scan.
+  if (num_free_params) {
+    os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
 
-    os << os.Indent() << "for (auto [";
-    sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
-      }
+    // This is an index scan.
+    if (num_bound_params) {
+      assert(spec.index.has_value());
+      os << "IndexTag<" << spec.index->Id() << ">";
+
+    // This is a full table scan.
+    } else {
+      os << "TableTag<" << spec.table.Id() << ">";
     }
 
-    os << "] : " << TableIndex(os, index) << ".Get(";
-
-    sep = "";
-    for (auto param : decl.Parameters()) {
+    os << "> scan(storage, " << Table(os, spec.table);
+    for (auto param : params) {
       if (param.Binding() == ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
+        os << ", param_" << param.Index();
       }
     }
-
-    os << ")) {\n";
-
-  // This is a full table scan.
-  } else if (!num_bound_params) {
-    assert(0u < num_free_params);
-
-    os << os.Indent() << "for (auto [";
+    os << ");\n"
+       << os.Indent() << "for (auto [";
     sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
-        sep = ", ";
+      } else {
+        os << sep << "shadow_param_" << param.Index();
       }
+      sep = ", ";
     }
 
-    os << "] : " << Table(os, spec.table) << ".Keys()) {\n";
+    os << "] : scan) {\n";
+    os.PushIndent();
 
-  // Either the tuple checker will figure out of the tuple is present, or our
-  // state check on the full tuple will figure it out.
+    // We have to double-check the tuples from index scans, as they can be
+    // probabilistically stored.
+    if (num_bound_params) {
+      os << os.Indent() << "if (std::make_tuple(";
+      sep = "";
+      for (auto param : params) {
+        if (param.Binding() == ParameterBinding::kBound) {
+          os << sep << "param_" << param.Index();
+          sep = ", ";
+        }
+      }
+
+      os << ") != std::make_tuple(";
+      sep = "";
+      for (auto param : params) {
+        if (param.Binding() == ParameterBinding::kBound) {
+          os << sep << "shadow_param_" << param.Index();
+          sep = ", ";
+        }
+      }
+
+      os << ")) {\n";
+      os.PushIndent();
+      os << os.Indent() << "continue;\n";
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    }
+
+  // This is an existence check.
   } else {
     os << os.Indent() << "if (true) {\n";
+    os.PushIndent();
   }
 
-  os.PushIndent();
+//  // This is an index scan.
+//  if (num_bound_params && num_free_params) {
+//    assert(spec.index.has_value());
+//    const auto index = *(spec.index);
+//
+//    os << os.Indent() << "for (auto [";
+//    sep = "";
+//    for (auto param : params) {
+//      if (param.Binding() != ParameterBinding::kBound) {
+//        os << sep << "param_" << param.Index();
+//        sep = ", ";
+//      }
+//    }
+//
+//    os << "] : " << Table(os, index) << ".ScanIndex(";
+//
+//    sep = "";
+//    for (auto param : decl.Parameters()) {
+//      if (param.Binding() == ParameterBinding::kBound) {
+//        os << sep << "param_" << param.Index();
+//        sep = ", ";
+//      }
+//    }
+//
+//    os << sep << "::hyde::rt::IndexTag<" << index.Id() << ">{})) {\n";
+//
+//  // This is a full table scan.
+//  } else if (!num_bound_params) {
+//    assert(0u < num_free_params);
+//
+//    os << os.Indent() << "for (auto [";
+//    sep = "";
+//    for (auto param : params) {
+//      if (param.Binding() != ParameterBinding::kBound) {
+//        os << sep << "param_" << param.Index();
+//        sep = ", ";
+//      }
+//    }
+//
+//    os << "] : " << Table(os, spec.table) << ".Keys()) {\n";
+//
+//  // Either the tuple checker will figure out of the tuple is present, or our
+//  // state check on the full tuple will figure it out.
+//  } else {
+//    os << os.Indent() << "if (true) {\n";
+//  }
+
 
   // Check the tuple's state using a finder function.
   if (spec.tuple_checker) {

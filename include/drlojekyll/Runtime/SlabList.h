@@ -6,7 +6,8 @@
 #include <cstdint>
 #include <new>
 
-#include "Serializer.h"
+#include <drlojekyll/Runtime/Serializer.h>
+
 #include "Slab.h"
 
 namespace hyde {

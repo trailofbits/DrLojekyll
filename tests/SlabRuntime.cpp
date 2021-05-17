@@ -660,6 +660,13 @@
 namespace hyde::rt {
 
 template <>
+struct TableDescriptor<1> {
+  using ColumnIds = IdList<2, 3>;
+  using IndexIds = IdList<4, 5>;
+  static constexpr unsigned kNumColumns = 2;
+};
+
+template <>
 struct ColumnDescriptor<2> {
   static constexpr bool kIsNamed = false;
   static constexpr unsigned kId = 2;
@@ -673,14 +680,24 @@ struct ColumnDescriptor<3> {
   static constexpr bool kIsNamed = false;
   static constexpr unsigned kId = 3;
   static constexpr unsigned kTableId = 1;
-  static constexpr unsigned kOffset = 0;
+  static constexpr unsigned kOffset = 1;
   using Type = std::vector<int>;
 };
 
 template <>
-struct TableDescriptor<1> {
-  using ColumnIds = IdList<2, 3>;
-  using IndexIds = IdList<>;
+struct IndexDescriptor<4> {
+  static constexpr unsigned kTableId = 1;
+  using KeyColumnIds = IdList<2>;
+  using ValueColumnIds = IdList<3>;
+  using Columns = TypeList<KeyColumn<2>, ValueColumn<3>>;
+};
+
+template <>
+struct IndexDescriptor<5> {
+  static constexpr unsigned kTableId = 1;
+  using KeyColumnIds = IdList<3>;
+  using ValueColumnIds = IdList<2>;
+  using Columns = TypeList<ValueColumn<2>, KeyColumn<3>>;
 };
 
 }  // namespace hyde::rt
@@ -741,6 +758,25 @@ TEST(SlabRuntime, TableTest) {
   for (auto [s] : strings) {
     for (auto [n] : numbers) {
       RC_ASSERT(table.GetState(s, n) == TupleState::kPresent);
+      ++num_iters;
+    }
+  }
+
+  RC_ASSERT(num_iters == 6);
+
+  // Go read the indices
+  num_iters = 0;
+  for (auto [s] : strings) {
+    for (auto [s1, n] : table.Scan(s, IndexTag<4>{})) {
+      ++num_iters;
+    }
+  }
+
+  RC_ASSERT(num_iters == 6);
+
+  num_iters = 0;
+  for (auto [n] : numbers) {
+    for (auto [s, n1] : table.Scan(n, IndexTag<5>{})) {
       ++num_iters;
     }
   }
