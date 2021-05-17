@@ -8,7 +8,6 @@
 namespace hyde {
 namespace rt {
 
-HYDE_RT_FLATTEN
 SlabReference::SlabReference(uint8_t *data, uint32_t) noexcept {
   data_ptr = data;
   if (HYDE_RT_LIKELY(data_ptr)) {
@@ -16,7 +15,6 @@ SlabReference::SlabReference(uint8_t *data, uint32_t) noexcept {
   }
 }
 
-HYDE_RT_FLATTEN
 SlabReference::SlabReference(const SlabReference &that) noexcept {
   data_ptr = that.Data();
   if (HYDE_RT_LIKELY(data_ptr)) {

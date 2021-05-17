@@ -30,7 +30,7 @@ class SlabReference {
 
   HYDE_RT_INLINE SlabReference(void) noexcept {}
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
   SlabReference(SlabReference &&that) noexcept {
     data_ptr = that.data_ptr;
     that.data_ptr = nullptr;
@@ -64,15 +64,15 @@ class SlabReference {
 // A sized slab reference is a reference to a variable-sized data structure.
 class SizedSlabReference : public SlabReference {
  public:
-  HYDE_RT_FLATTEN HYDE_RT_INLINE explicit SizedSlabReference(
+  HYDE_RT_INLINE explicit SizedSlabReference(
       uint8_t *data_, uint32_t num_bytes_) noexcept
       : SlabReference(data_, num_bytes_),
         num_bytes(num_bytes_) {}
 
-  HYDE_RT_FLATTEN HYDE_RT_INLINE SizedSlabReference(void) noexcept
+  HYDE_RT_INLINE SizedSlabReference(void) noexcept
       : SlabReference() {}
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
   SizedSlabReference(SizedSlabReference &&that) noexcept
       : SlabReference(std::forward<SlabReference>(that)) {
     num_bytes = that.num_bytes;
