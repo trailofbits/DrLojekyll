@@ -1029,7 +1029,7 @@ struct Serializer<Reader, Writer, Address<DataT>>
 #define HYDE_RT_SERIALIZER_NAMESPACE_END
 #define HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV(type) \
   template <> \
-  static constexpr bool kCanReadWriteUnsafely<type> = true
+  inline constexpr bool kCanReadWriteUnsafely<type> = true
 
 #define DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(type, cast_op, cast_type, \
                                                method_suffix, size) \
