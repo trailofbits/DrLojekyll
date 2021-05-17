@@ -19,6 +19,7 @@
 
 #include <stdexcept>
 #include <variant>
+#include <utility>
 
 namespace hyde {
 namespace rt {

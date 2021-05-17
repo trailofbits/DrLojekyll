@@ -60,7 +60,7 @@ static void DefineTable(OutputStream &os, ParsedModule module,
   for (auto index : table.Indices()) {
     os << os.Indent() << TableIndex(os, index);
     const auto key_cols = index.KeyColumns();
-    const auto val_cols = index.ValueColumns();
+    const auto val_cols = table.Columns();
 
     auto key_prefix = "Tuple[";
     auto key_suffix = "]";
@@ -97,7 +97,7 @@ static void DefineTable(OutputStream &os, ParsedModule module,
       }
       os << key_suffix << ", List[" << val_prefix;
       sep = "";
-      for (auto col : index.ValueColumns()) {
+      for (auto col : val_cols) {
         os << sep << TypeName(module, col.Type());
         sep = ", ";
       }
@@ -743,20 +743,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
         // The index is implemented with a `set`.
         if (val_cols.empty()) {
-          os << ".add(";
-          sep = "";
-          if (key_cols.size() == 1u) {
-            os << tuple_var;
-          } else {
-            os << '(';
-            for (auto indexed_col : index.KeyColumns()) {
-              os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-              sep = ", ";
-            }
-            os << ')';
-          }
-
-          os << ")\n";
+          os << ".add(" << tuple_var << ")\n";
 
         // The index is implemented with a `defaultdict`.
         } else {
@@ -766,13 +753,7 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
             os << sep << tuple_var << "[" << indexed_col.Index() << "]";
             sep = ", ";
           }
-          os << key_suffix << "].append(" << val_prefix;
-          sep = "";
-          for (auto mapped_col : index.ValueColumns()) {
-            os << sep << tuple_var << "[" << mapped_col.Index() << "]";
-            sep = ", ";
-          }
-          os << val_suffix << ")\n";
+          os << key_suffix << "].append(" << tuple_var << ")\n";
         }
       }
 
@@ -843,179 +824,163 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramTableJoinRegion region) override {
-//    const auto id = region.Id();
+    const auto id = region.Id();
     os << Comment(os, region, "Program TableJoin Region");
 
-//    // Nested loop join
-//    auto vec = region.PivotVector();
-//
-//    os << os.Indent() << VectorIndex(os, vec) << " = 0\n"
-//       << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
-//       << Vector(os, vec) << "):\n";
-//    os.PushIndent();
-//    os << os.Indent();
-//
-//    std::vector<std::string> var_names;
-//    auto sep = "";
-//    for (auto var : region.OutputPivotVariables()) {
-//      std::stringstream var_name;
-//      (void) Var(var_name, var);
-//      var_names.emplace_back(var_name.str());
-//      os << sep << var_names.back();
-//      sep = ", ";
-//    }
-//    os << " = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
-//
-//    os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
-//
-//    auto tables = region.Tables();
-//    for (auto i = 0u; i < tables.size(); ++i) {
-//      const auto table = tables[i];
-//      (void) table;
-//
-//      auto key_prefix = "(";
-//      auto key_suffix = ")";
-//
-//      // We're doing a JOIN against a subset of the rows in the table, using
-//      // an index. The index is a default dict mapping key columns to a list of
-//      // value columns/tuples.
-//      if (const auto maybe_index = region.Index(i); maybe_index) {
-//        const auto index = *maybe_index;
-//        const auto index_keys = index.KeyColumns();
-//        const auto index_vals = index.ValueColumns();
-//
-//        if (index_keys.size() == 1u) {
-//          key_prefix = "";
-//          key_suffix = "";
-//        }
-//
-//        // We don't want to have to make a temporary copy of the current state
-//        // of the index, so instead what we do is we capture a reference to the
-//        // list of tuples in the index, and we also create an index variable
-//        // that tracks which tuple we can next look at. This allows us to
-//        // observe writes into the index as they happen.
-//        os << os.Indent() << "tuple_" << region.Id() << "_" << i
-//           << "_index: int = 0\n"
-//           << os.Indent() << "tuple_" << region.Id() << "_" << i
-//           << "_vec: List[";
-//
-//        if (1u < index_vals.size()) {
-//          os << "Tuple[";
-//        }
-//
-//        auto sep = "";
-//        for (auto col : index_vals) {
-//          os << sep << TypeName(module, col.Type());
-//          sep = ", ";
-//        }
-//        if (1u < index_vals.size()) {
-//          os << "]";
-//        }
-//        os << "] = " << TableIndex(os, index) << "[" << key_prefix;
-//
-//        // This is a bit ugly, but basically: we want to index into the
-//        // Python representation of this index, e.g. via `index_10[(a, b)]`,
-//        // where `a` and `b` are pivot variables. However, the pivot vector
-//        // might have the tuple entries in the order `(b, a)`. To easy matching
-//        // between pivot variables and indexed columns, `region.IndexedColumns`
-//        // exposes columns in the same order as the pivot variables, which as we
-//        // see, might not match the order of the columns in the index. Thus we
-//        // need to re-order our usage of variables so that they match the
-//        // order expected by `index_10[...]`.
-//        sep = "";
-//        for (auto index_col : index_keys) {
-//          auto j = 0u;
-//          for (auto used_col : region.IndexedColumns(i)) {
-//            if (used_col == index_col) {
-//              os << sep << var_names[j];
-//              sep = ", ";
-//            }
-//            ++j;
-//          }
-//        }
-//
-//        os << key_suffix << "]\n";
-//
-//        os << os.Indent() << "while tuple_" << region.Id() << "_" << i
-//           << "_index < len(tuple_" << region.Id() << "_" << i << "_vec):\n";
-//
-//        // We increase indentation here, and the corresponding `PopIndent()`
-//        // only comes *after* visiting the `region.Body()`.
-//        os.PushIndent();
-//
-//        os << os.Indent() << "tuple_" << region.Id() << "_" << i << " = "
-//           << "tuple_" << region.Id() << "_" << i << "_vec[tuple_"
-//           << region.Id() << "_" << i << "_index]\n";
-//
-//        os << os.Indent() << "tuple_" << region.Id() << "_" << i
-//           << "_index += 1\n";
-//
-//      // We're doing a JOIN against all columns in the table, this is tantamount
-//      // to an existence check.
-//      } else {
-//        if (table.Columns().size() == 1u) {
-//          key_prefix = "";
-//          key_suffix = "";
-//        }
-//
-//        os << os.Indent() << "key_" << id << '_' << i << " = " << key_prefix;
-//
-//        sep = "";
-//        for (auto index_col : table.Columns()) {
-//          auto j = 0u;
-//          for (auto used_col : region.IndexedColumns(i)) {
-//            if (used_col == index_col) {
-//              os << sep << var_names[j];
-//              sep = ", ";
-//            }
-//            ++j;
-//          }
-//        }
-//
-//        os << key_suffix << "\n";
-//        os << os.Indent() << "if key_" << id << '_' << i << " in "
-//           << Table(os, table) << ":\n";
-//
-//        // We increase indentation here, and the corresponding `PopIndent()`
-//        // only comes *after* visiting the `region.Body()`.
-//        os.PushIndent();
-//      }
-//
-//      auto out_vars = region.OutputVariables(i);
-//      if (!out_vars.empty()) {
-//        auto select_cols = region.SelectedColumns(i);
-//        assert(out_vars.size() == select_cols.size());
-//
-//        auto indexed_cols = region.IndexedColumns(i);
-//        auto indexed_col_idx = 0u;
-//        auto out_var_idx = 0u;
-//        auto tuple_col_idx_offset = 0u;
-//        for (auto var : out_vars) {
-//          auto select_col_idx = select_cols[out_var_idx].Index();
-//
-//          // Need to loop and count indexed columns before this selected
-//          // column and use as offset
-//          while (indexed_col_idx < indexed_cols.size() &&
-//                 select_col_idx > indexed_cols[indexed_col_idx].Index()) {
-//            ++tuple_col_idx_offset;
-//            ++indexed_col_idx;
-//          }
-//
-//          os << os.Indent() << Var(os, var) << " = tuple_" << region.Id() << "_"
-//             << i;
-//
-//          if (1u < index_vals.size()) {
-//            os << "[" << select_col_idx - tuple_col_idx_offset << "]";
-//          }
-//          os << '\n';
-//
-//          ++out_var_idx;
-//        }
-//      }
-//    }
+    // Nested loop join
+    auto vec = region.PivotVector();
 
-
+    os << os.Indent() << VectorIndex(os, vec) << " = 0\n"
+       << os.Indent() << "while " << VectorIndex(os, vec) << " < len("
+       << Vector(os, vec) << "):\n";
     os.PushIndent();
+    os << os.Indent();
+
+    std::vector<std::string> var_names;
+    auto sep = "";
+    for (auto var : region.OutputPivotVariables()) {
+      std::stringstream var_name;
+      (void) Var(var_name, var);
+      var_names.emplace_back(var_name.str());
+      os << sep << var_names.back();
+      sep = ", ";
+    }
+    os << " = " << Vector(os, vec) << "[" << VectorIndex(os, vec) << "]\n";
+
+    os << os.Indent() << VectorIndex(os, vec) << " += 1\n";
+
+    auto tables = region.Tables();
+    for (auto i = 0u; i < tables.size(); ++i) {
+      const auto table = tables[i];
+      (void) table;
+
+      auto key_prefix = "(";
+      auto key_suffix = ")";
+
+      // We're doing a JOIN against a subset of the rows in the table, using
+      // an index. The index is a default dict mapping key columns to a list of
+      // value columns/tuples.
+      if (const auto maybe_index = region.Index(i); maybe_index) {
+        const auto index = *maybe_index;
+        const auto index_keys = index.KeyColumns();
+        const auto index_vals = table.Columns();
+
+        if (index_keys.size() == 1u) {
+          key_prefix = "";
+          key_suffix = "";
+        }
+
+        // We don't want to have to make a temporary copy of the current state
+        // of the index, so instead what we do is we capture a reference to the
+        // list of tuples in the index, and we also create an index variable
+        // that tracks which tuple we can next look at. This allows us to
+        // observe writes into the index as they happen.
+        os << os.Indent() << "tuple_" << id << "_" << i
+           << "_index: int = 0\n"
+           << os.Indent() << "tuple_" << id << "_" << i
+           << "_vec: List[";
+
+        if (1u < index_vals.size()) {
+          os << "Tuple[";
+        }
+
+        auto sep = "";
+        for (auto col : index_vals) {
+          os << sep << TypeName(module, col.Type());
+          sep = ", ";
+        }
+        if (1u < index_vals.size()) {
+          os << "]";
+        }
+        os << "] = " << TableIndex(os, index) << "[" << key_prefix;
+
+        // This is a bit ugly, but basically: we want to index into the
+        // Python representation of this index, e.g. via `index_10[(a, b)]`,
+        // where `a` and `b` are pivot variables. However, the pivot vector
+        // might have the tuple entries in the order `(b, a)`. To easy matching
+        // between pivot variables and indexed columns, `region.IndexedColumns`
+        // exposes columns in the same order as the pivot variables, which as we
+        // see, might not match the order of the columns in the index. Thus we
+        // need to re-order our usage of variables so that they match the
+        // order expected by `index_10[...]`.
+        sep = "";
+        for (auto index_col : index_keys) {
+          auto j = 0u;
+          for (auto used_col : region.IndexedColumns(i)) {
+            if (used_col == index_col) {
+              os << sep << var_names[j];
+              sep = ", ";
+            }
+            ++j;
+          }
+        }
+
+        os << key_suffix << "]\n";
+
+        os << os.Indent() << "while tuple_" << id << "_" << i
+           << "_index < len(tuple_" << id << "_" << i << "_vec):\n";
+
+        // We increase indentation here, and the corresponding `PopIndent()`
+        // only comes *after* visiting the `region.Body()`.
+        os.PushIndent();
+
+        os << os.Indent() << "tuple_" << id << "_" << i << " = "
+           << "tuple_" << id << "_" << i << "_vec[tuple_"
+           << id << "_" << i << "_index]\n";
+
+        os << os.Indent() << "tuple_" << id << "_" << i
+           << "_index += 1\n";
+
+      // We're doing a JOIN against all columns in the table, this is tantamount
+      // to an existence check.
+      } else {
+        if (table.Columns().size() == 1u) {
+          key_prefix = "";
+          key_suffix = "";
+        }
+
+        os << os.Indent() << "key_" << id << '_' << i << " = " << key_prefix;
+
+        sep = "";
+        for (auto index_col : table.Columns()) {
+          auto j = 0u;
+          for (auto used_col : region.IndexedColumns(i)) {
+            if (used_col == index_col) {
+              os << sep << var_names[j];
+              sep = ", ";
+            }
+            ++j;
+          }
+        }
+
+        os << key_suffix << "\n";
+        os << os.Indent() << "if key_" << id << '_' << i << " in "
+           << Table(os, table) << ":\n";
+
+        // We increase indentation here, and the corresponding `PopIndent()`
+        // only comes *after* visiting the `region.Body()`.
+        os.PushIndent();
+      }
+
+      auto out_vars = region.OutputVariables(i);
+      if (!out_vars.empty() && region.Index(i)) {
+        auto select_cols = region.SelectedColumns(i);
+        assert(out_vars.size() == select_cols.size());
+
+        auto out_var_idx = 0u;
+        for (auto var : out_vars) {
+          os << os.Indent() << Var(os, var) << " = tuple_" << id << "_"
+             << i;
+
+          if (1u < out_vars.size()) {
+            os << "[" << out_var_idx << "]";
+          }
+          os << '\n';
+
+          ++out_var_idx;
+        }
+      }
+    }
 
     if (auto body = region.Body(); body) {
       body->Accept(*this);
@@ -1023,11 +988,11 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       os << os.Indent() << "pass\n";
     }
 
-//    // Outdent for each nested for loop over an index.
-//    for (auto table : tables) {
-//      (void) table;
-//      os.PopIndent();
-//    }
+    // Outdent for each nested for loop over an index.
+    for (auto table : tables) {
+      (void) table;
+      os.PopIndent();
+    }
 
     // Output of the loop over the pivot vector.
     os.PopIndent();
@@ -1553,7 +1518,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     assert(spec.index.has_value());
 
     const auto index = *(spec.index);
-    const auto index_vals = index.ValueColumns();
+    const auto index_vals = spec.table.Columns();
     auto key_prefix = "(";
     auto key_suffix = ")";
 
@@ -1564,7 +1529,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
     os << os.Indent() << "tuple_vec: List[";
 
-    if (1u < num_free_params) {
+    if (1u < index_vals.size()) {
       os << "Tuple[";
     }
 
@@ -1590,7 +1555,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
     os << os.Indent() << "while tuple_index < len(tuple_vec):\n";
     os.PushIndent();
-    os << os.Indent() << "tuple = tuple_vec[tuple_index]\n"
+    os << os.Indent() << "full_tuple = tuple_vec[tuple_index]\n"
        << os.Indent() << "tuple_index += 1\n";
 
   // This is an existence check; all parameters are bound.
@@ -1627,7 +1592,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   } else if (!num_bound_params) {
     assert(0u < num_free_params);
 
-    os << os.Indent() << "for tuple in " << Table(os, spec.table) << ":\n";
+    os << os.Indent() << "for full_tuple in " << Table(os, spec.table) << ":\n";
     os.PushIndent();
     os << os.Indent() << "tuple_index += 1\n";
 
@@ -1642,13 +1607,13 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   for (auto param : params) {
     if (param.Binding() != ParameterBinding::kBound) {
       os << os.Indent() << "param_" << param.Index() << ": "
-         << TypeName(module, param.Type()) << " = tuple";
-      if (num_free_params != 1u) {
+         << TypeName(module, param.Type()) << " = full_tuple";
+      if (1u < spec.table.Columns().size()) {
         os << '[' << col_index << ']';
       }
-      ++col_index;
       os << '\n';
     }
+    ++col_index;
   }
 
   if (spec.tuple_checker) {
