@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.17)
 
 include(GoogleTest)
 
-set(DrLojekyll_RUNTIME_LIB_PATH "\$<TARGET_LINKER_FILE:Runtime>")
+set(DrLojekyll_RUNTIME_LIB_PATH $<TARGET_LINKER_FILE:Runtime>)
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/drlojekyll_paths.h.in"
                "${CMAKE_CURRENT_BINARY_DIR}/drlojekyll_paths.h.gen" @ONLY)

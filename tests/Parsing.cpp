@@ -193,7 +193,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
 #else
   int compile_ret_code = std::system(compile_cmd.c_str());
 #endif
-  std::cerr << compile_cmd << std::endl;
+
   EXPECT_TRUE(compile_ret_code == 0)
       << "C++ compilation failed with command:\n\t\"" << compile_cmd
       << "\"\n\tSaved generated code at: \"" << cxx_gen_path << "\"\n";
