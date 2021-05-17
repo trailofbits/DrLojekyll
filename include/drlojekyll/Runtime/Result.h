@@ -44,11 +44,11 @@ class Result final {
 
   const ValueType *operator->(void) const;
 
-  Result(const ValueType &value);
-  Result(ValueType &&value);
+  Result(const ValueType &value) noexcept;
+  Result(ValueType &&value) noexcept;
 
-  Result(const ErrorType &error);
-  Result(ErrorType &&error);
+  Result(const ErrorType &error) noexcept;
+  Result(ErrorType &&error) noexcept;
 
   Result(Result &&other) noexcept;
   Result &operator=(Result &&other) noexcept;
@@ -125,32 +125,32 @@ const ValueType *Result<ValueType, ErrorType>::operator->(void) const {
 }
 
 template <typename ValueType, typename ErrorType>
-Result<ValueType, ErrorType>::Result(const ValueType &value) {
-  data = value;
+Result<ValueType, ErrorType>::Result(const ValueType &value) noexcept
+    : data(value) {
   destroyed = false;
 }
 
 template <typename ValueType, typename ErrorType>
-Result<ValueType, ErrorType>::Result(ValueType &&value) {
-  data = std::move(value);
+Result<ValueType, ErrorType>::Result(ValueType &&value) noexcept
+    : data(std::forward<ValueType>(value)) {
   destroyed = false;
 }
 
 template <typename ValueType, typename ErrorType>
-Result<ValueType, ErrorType>::Result(const ErrorType &error) {
-  data = error;
+Result<ValueType, ErrorType>::Result(const ErrorType &error) noexcept
+    : data(error) {
   destroyed = false;
 }
 
 template <typename ValueType, typename ErrorType>
-Result<ValueType, ErrorType>::Result(ErrorType &&error) {
-  data = std::move(error);
+Result<ValueType, ErrorType>::Result(ErrorType &&error) noexcept
+    : data(std::forward<ErrorType>(error)) {
   destroyed = false;
 }
 
 template <typename ValueType, typename ErrorType>
-Result<ValueType, ErrorType>::Result(Result &&other) noexcept {
-  data = std::exchange(other.data, ErrorType());
+Result<ValueType, ErrorType>::Result(Result &&other) noexcept
+    : data(std::move(other.data)) {
   checked = std::exchange(other.checked, true);
   destroyed = std::exchange(other.destroyed, false);
 }

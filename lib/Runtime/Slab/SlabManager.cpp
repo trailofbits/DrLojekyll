@@ -14,7 +14,6 @@
 
 namespace hyde {
 namespace rt {
-namespace {}  // namespace
 
 #ifndef MAP_UNINITIALIZED
 #  define MAP_UNINITIALIZED 0
