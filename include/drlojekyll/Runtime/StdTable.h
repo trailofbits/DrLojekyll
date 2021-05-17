@@ -70,7 +70,7 @@ struct StdTableHelper<TableDescriptor<kTableId>>
 HYDE_RT_INLINE static bool TryChangeStateToPresent(
     TupleState *state, TupleState a_state, TupleState b_state) noexcept {
   const auto curr_state = *state;
-  if (curr_state == a_state | curr_state == b_state) {
+  if (curr_state == a_state || curr_state == b_state) {
     *state = TupleState::kPresent;
     return true;
 

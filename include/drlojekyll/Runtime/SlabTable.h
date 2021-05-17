@@ -127,7 +127,7 @@ class SlabTableBase {
       TupleBuilderType builder(it->second, num_bytes  /* estimation */);
       if (auto [state_ref, tuple_ref] = builder.Build(); tuple_ref == tuple) {
         const auto curr_state = static_cast<TupleState>(state_ref);
-        if (curr_state == a_state | curr_state == b_state) {
+        if (curr_state == a_state || curr_state == b_state) {
           state_ref = TupleState::kPresent;
           return {true, hash, false};
 
