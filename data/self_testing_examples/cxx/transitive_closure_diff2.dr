@@ -14,7 +14,7 @@
 
 #epilogue ```c++
 
-using edge_set = std::set<std::pair<uint64_t, uint64_t>>;
+using edge_set = std::set<std::tuple<uint64_t, uint64_t>>;
 
 class Log : public DatabaseLog {
 public:
