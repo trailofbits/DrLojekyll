@@ -43,7 +43,7 @@ else()
 endif()
 
 target_include_directories(unittests PRIVATE
-  "${CMAKE_CURRENT_BINARY_DIR}/include/${CMAKE_BUILD_TYPE}"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/$<CONFIG>"
 )
 
 target_link_libraries(
