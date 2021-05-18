@@ -8,7 +8,7 @@ set(DrLojekyll_RUNTIME_LIB_PATH $<TARGET_FILE:Runtime>)
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/drlojekyll_paths.h.in"
                "${CMAKE_CURRENT_BINARY_DIR}/include/${CMAKE_BUILD_TYPE}/drlojekyll_paths.h.gen" @ONLY)
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include/${CMAKE_BUILD_TYPE}/drlojekyll_paths.h"
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include/$<CONFIG>/drlojekyll_paths.h"
               INPUT "${CMAKE_CURRENT_BINARY_DIR}/include/${CMAKE_BUILD_TYPE}/drlojekyll_paths.h.gen")
 
 
