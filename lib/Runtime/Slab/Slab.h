@@ -46,8 +46,12 @@ class Slab {
         // anywhere in memory, so we need to use an `int64_t` displacement.
         int64_t shifted_next_offset : 62;
 
-      } __attribute__((packed)) s;
-    } __attribute__((packed)) u;
+      } s;
+
+      static_assert(sizeof(s) == sizeof(uint64_t));
+    } u;
+
+    static_assert(sizeof(u) == sizeof(uint64_t));
 
     // Reference count on how many concurrent users might have this slab open.
     // If we have reference to some data in a slab, then that slab, and any

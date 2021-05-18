@@ -17,10 +17,10 @@ enum : size_t {
 
 class Slab;
 
-void LockSlab(void *ptr, uint32_t num_bytes) noexcept;
-void UnlockSlab(void *ptr, uint32_t num_bytes) noexcept;
+extern void LockSlab(void *ptr, uint32_t num_bytes) noexcept;
+extern void UnlockSlab(void *ptr, uint32_t num_bytes) noexcept;
 
-template <typename T>
+template <typename>
 class SlabLocker {
  public:
   HYDE_RT_ALWAYS_INLINE SlabLocker(void *, uint32_t) {}

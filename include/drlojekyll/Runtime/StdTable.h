@@ -273,6 +273,7 @@ class StdTable
         // We'll update the most recently touched record here on the assumption
         // that a subsequent operation near in time will try to change the
         // state of this tuple.
+        assert(!(reinterpret_cast<uintptr_t>(record) & 1u));
         last_accessed_record[hash % kCacheSize] = record;
 
         // We found the record we're looking for, return it.
@@ -285,11 +286,12 @@ class StdTable
           back_links[kTableLink]);
 
       // The next record has a different hash, or it is null.
-      if (!(record_addr >> 1u)) {
+      const auto shifted_record_addr = record_addr >> 1u;
+      if (!shifted_record_addr) {
         return nullptr;
 
       } else {
-        record = reinterpret_cast<RecordType *>(record_addr - 1u);
+        record = reinterpret_cast<RecordType *>(shifted_record_addr << 1u);
       }
     }
     return nullptr;
@@ -369,13 +371,27 @@ class StdTable
   }
 
   std::deque<RecordType> records;
+
   std::unordered_map<uint64_t, RecordType *> hash_to_record;
-  std::array<std::unordered_map<uint64_t, RecordType *>, kNumIndexes> indexes;
+
+  // List of hash-mapped linked lists. The hash is a hash of a subset of the
+  // columns, unlike where `hash_to_record` maps the
+  std::array<std::unordered_map<uint64_t, RecordType *>, kNumIndexes>
+      indexes;
+
+  // Last record added whose hash didn't collide with another pre-existing
+  // record. This is basically the head of the linked list of all records. In
+  // the case of a record whose hash is already used, we link that record in
+  // after the pre-existing record.
   void * last_record{nullptr};
 
+  // The most recent record produced from an index or table scan.
+  //
   // TODO(pag): Eventually make this be an array, with one per worker.
-  std::atomic<RecordType *> last_scanned_record;
-  mutable std::array<RecordType *, kCacheSize> last_accessed_record;
+  std::atomic<RecordType *> last_scanned_record{};
+
+  // Cache of recently accessed records.
+  mutable std::array<RecordType *, kCacheSize> last_accessed_record = {};
 };
 
 template <unsigned kTableId>

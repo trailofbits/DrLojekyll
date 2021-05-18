@@ -257,10 +257,53 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
   auto type = global.Type();
   os << os.Indent();
   if (global.IsConstant()) {
-    os << "static constexpr ";
+    switch (global.Type().Kind()) {
+      case TypeKind::kBoolean:
+      case TypeKind::kSigned8:
+      case TypeKind::kSigned16:
+      case TypeKind::kSigned32:
+      case TypeKind::kSigned64:
+      case TypeKind::kUnsigned8:
+      case TypeKind::kUnsigned16:
+      case TypeKind::kUnsigned32:
+      case TypeKind::kUnsigned64:
+      case TypeKind::kDouble:
+      case TypeKind::kFloat:
+        os << "static constexpr ";
+        break;
+      default:
+        os << "static const ";
+        break;
+    }
   }
-  os << TypeName(module, type) << " ";
-  os << Var(os, global) << ";\n";
+  os << TypeName(module, type) << " " << Var(os, global) << ";\n";
+}
+
+static bool CanInlineDefineConstant(DataVariable global) {
+  switch (global.DefiningRole()) {
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return true;
+    default: break;
+  }
+
+  switch (auto type = global.Type(); type.Kind()) {
+    case TypeKind::kBoolean:
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64:
+    case TypeKind::kDouble:
+    case TypeKind::kFloat:
+      return true;
+    default:
+      return false;
+  }
 }
 
 // Similar to DefineGlobal except has constexpr to enforce const-ness
@@ -274,9 +317,15 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
     default: break;
   }
   auto type = global.Type();
-  os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
-     << Var(os, global) << " = " << TypeName(module, type)
-     << TypeValueOrDefault(module, type, global) << ";\n";
+  if (CanInlineDefineConstant(global)) {
+    os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
+       << Var(os, global) << " = " << TypeName(module, type)
+       << TypeValueOrDefault(module, type, global) << ";\n";
+
+  } else {
+    os << os.Indent() << "const " << TypeName(module, type) << " "
+       << Var(os, global) << ";\n";
+  }
 }
 //
 //// We want to enable referential transparency in the code, so that if an Nth
@@ -710,7 +759,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os << Comment(os, region, "ProgramVectorLoopRegion");
     auto vec = region.Vector();
-    os << os.Indent() << "for (auto [";
+    os << os.Indent() << "for (auto && [";
 
     const auto tuple_vars = region.TupleVariables();
     auto sep = "";
@@ -842,7 +891,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "for (auto [";
+    os << os.Indent() << "for (auto && [";
 
     std::vector<std::string> var_names;
     auto sep = "";
@@ -916,7 +965,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
       auto out_vars = region.OutputVariables(i);
       assert(out_vars.size() == region.SelectedColumns(i).size());
-      os << os.Indent() << "for (auto [";
+      os << os.Indent() << "for (auto && [";
       sep = "";
       for (auto var : out_vars) {
         os << sep << Var(os, var);
@@ -1047,7 +1096,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
 
     os << os.Indent();
-    auto sep = "for (auto [";
+    auto sep = "for (auto && [";
     auto k = 0u;
     for (auto table : region.Tables()) {
       (void) table;
@@ -1090,7 +1139,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
     os << ");\n";
 
-    os << os.Indent() << "for (auto [";
+    os << os.Indent() << "for (auto && [";
     auto sep = "";
     for (auto var : region.OutputVariables()) {
       os << sep << Var(os, var);
@@ -1458,7 +1507,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
     os << ");\n"
-       << os.Indent() << "for (auto [";
+       << os.Indent() << "for (auto && [";
     sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
@@ -1646,6 +1695,12 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     DefineGlobal(os, module, global);
   }
   os << "\n";
+
+  for (auto constant : program.Constants()) {
+    DefineConstant(os, module, constant);
+  }
+
+  os << "\n";
   os.PopIndent();
   os << os.Indent() << "public:\n";
   os.PushIndent();
@@ -1665,6 +1720,13 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       os << ",\n"
          << os.Indent() << "  " << Var(os, global)
          << TypeValueOrDefault(module, global.Type(), global);
+    }
+  }
+  for (auto constant : program.Constants()) {
+    if (!CanInlineDefineConstant(constant)) {
+      os << ",\n"
+         << os.Indent() << "  " << Var(os, constant)
+         << TypeValueOrDefault(module, constant.Type(), constant);
     }
   }
   os << " {\n";
@@ -1695,11 +1757,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   //    DeclareTable(os, module, table);
   //  }
 
-  os << "\n";
-
-  for (auto constant : program.Constants()) {
-    DefineConstant(os, module, constant);
-  }
   os << "\n";
 
   for (auto proc : program.Procedures()) {

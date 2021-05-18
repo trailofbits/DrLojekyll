@@ -22,6 +22,10 @@ class StdScanIterator {
  public:
   using Self = StdScanIterator<RecordType, kBackLink>;
 
+  static constexpr size_t kStateIndex = 0u;
+  static constexpr size_t kTupleIndex = 1u;
+  static constexpr size_t kBackLinksIndex = 2u;
+
   HYDE_RT_ALWAYS_INLINE StdScanIterator(void) = default;
 
   HYDE_RT_ALWAYS_INLINE explicit StdScanIterator(
@@ -59,9 +63,9 @@ class StdScanIterator {
   // Return the tuple pointed to by the scan's pointer, and store it back into
   // the table as our most recently scanned tuple.
   HYDE_RT_ALWAYS_INLINE auto operator*(void) const noexcept
-      -> decltype(std::get<1>(*this->ptr)) {
+      -> decltype(std::get<kTupleIndex>(*this->ptr)) {
     scanned_ptr->store(ptr, std::memory_order_release);
-    return std::get<1>(*ptr);
+    return std::get<kTupleIndex>(*ptr);
   }
 
   // The full table records are of the form:
@@ -71,7 +75,8 @@ class StdScanIterator {
   // The first pointer connects together every tuple in the table. The remaining
   // pointers connect together tuples with identical hashes in the indices.
   HYDE_RT_ALWAYS_INLINE void operator++(void) noexcept {
-    const auto addr = reinterpret_cast<uintptr_t>(std::get<2>(*ptr)[kBackLink]);
+    const auto addr = reinterpret_cast<uintptr_t>(
+        std::get<kBackLinksIndex>(*ptr)[kBackLink]);
     ptr = reinterpret_cast<RecordType *>((addr >> 1u) << 1u);
   }
 };
@@ -95,10 +100,8 @@ class StdTableScan {
 
   HYDE_RT_ALWAYS_INLINE StdTableScan(StdStorage &, Table &table) noexcept
       : last_scanned_record(&(table.last_scanned_record)) {
-    auto record_addr = reinterpret_cast<uintptr_t>(table.last_record);
-    if ((record_addr >> 1u)) {
-      first = reinterpret_cast<RecordType *>(record_addr - 1u);
-    }
+    const auto record_addr = reinterpret_cast<uintptr_t>(table.last_record);
+    first = reinterpret_cast<RecordType *>((record_addr >> 1u) << 1u);
   }
 
   HYDE_RT_ALWAYS_INLINE Iterator begin(void) const noexcept {
