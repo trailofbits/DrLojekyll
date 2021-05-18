@@ -312,7 +312,7 @@ TEST(SlabRuntime, SlabVectorOfStringsWorks) {
   auto storage = maybe_storage.TakeValue();
   hyde::rt::TypedSlabVector<std::string> vec(*storage, 0u);
   std::string x;
-  for (auto i = 0; i < ::hyde::rt::kSlabSize; ++i) {
+  for (auto i = 0u; i < ::hyde::rt::kSlabSize; ++i) {
     x.push_back("abcdefghijklmnopqrstuvwxyz0123456789"[i % 36]);
   }
   vec.Add(x);
