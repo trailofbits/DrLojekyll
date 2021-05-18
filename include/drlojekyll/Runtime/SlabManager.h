@@ -37,7 +37,6 @@ struct FileBackedSlabStore : public std::filesystem::path {
   using std::filesystem::path::path;
 };
 
-using SlabStoreKind = std::variant<InMemorySlabStore, FileBackedSlabStore>;
 using SlabManagerPtr = std::unique_ptr<SlabManager>;
 
 enum class SlabStoreSize : uint64_t {
@@ -50,9 +49,13 @@ enum class SlabStoreSize : uint64_t {
 };
 
 // Create a new slab storage engine.
+
 Result<SlabManagerPtr, std::error_code>
-CreateSlabManager(SlabStoreKind kind, SlabStoreSize size,
-                  unsigned num_workers = 1u);
+CreateInMemorySlabManager(SlabStoreSize size, unsigned num_workers = 1u);
+
+Result<SlabManagerPtr, std::error_code>
+CreatePersistentSlabManager(std::filesystem::path path_, SlabStoreSize size,
+                            unsigned num_workers = 1u);
 
 struct SlabStats {
   size_t num_allocated_slabs{0};

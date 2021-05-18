@@ -27,8 +27,9 @@ namespace rt {
 #  define MAP_ANONYMOUS MAP_ANON
 #endif
 
-Result<SlabManagerPtr, std::error_code> CreateSlabManager(
-    SlabStoreKind kind, SlabStoreSize size_, unsigned num_workers) {
+namespace {
+static Result<SlabManagerPtr, std::error_code> CreateSlabManager(
+    std::string *path_str_ptr, SlabStoreSize size_, unsigned num_workers) {
 
   ClearLastError();
 
@@ -55,8 +56,8 @@ Result<SlabManagerPtr, std::error_code> CreateSlabManager(
 
   // If this is going to be a file-backed storage, then go and open or
   // create the file.
-  if (std::holds_alternative<FileBackedSlabStore>(kind)) {
-    auto path_str = std::get<FileBackedSlabStore>(kind).string();
+  if (path_str_ptr) {
+    const auto &path_str = *path_str_ptr;
 
     fd = open(path_str.c_str(), O_RDWR | O_CREAT, 0666);
     if (fd == -1) {
@@ -90,6 +91,20 @@ Result<SlabManagerPtr, std::error_code> CreateSlabManager(
 
   return std::make_unique<SlabManager>(num_workers, fd, file_size, real_base,
                                        real_size, base, size);
+}
+
+}  // namespace
+
+Result<SlabManagerPtr, std::error_code>
+CreateInMemorySlabManager(SlabStoreSize size, unsigned num_workers) {
+  return CreateSlabManager(nullptr, size, num_workers);
+}
+
+Result<SlabManagerPtr, std::error_code>
+CreatePersistentSlabManager(std::filesystem::path path_, SlabStoreSize size,
+                            unsigned num_workers) {
+  std::string path = path_.string();
+  return CreateSlabManager(&path, size, num_workers);
 }
 
 SlabManager::~SlabManager(void) {
