@@ -105,7 +105,7 @@ class TypedSlabVector : public SlabVector {
   // Useful for seeing the specific types involved in an error case.
   template <typename InputT, typename Nth>
   [[noreturn]] HYDE_RT_ALWAYS_INLINE void Error(void) {
-    __builtin_unreachable();
+    abort();
   }
 
   template <size_t kIndex, typename Writer, typename _InputT,

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -346,7 +347,7 @@ class WeakUseList : public UseList<T> {
 
  private:
   void Swap(UseList<T> &) {
-    __builtin_unreachable();
+    abort();
   }
 };
 

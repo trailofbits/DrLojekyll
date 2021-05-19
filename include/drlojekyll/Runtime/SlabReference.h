@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
 
 #include <drlojekyll/Runtime/Serializer.h>
 
@@ -460,7 +461,7 @@ class TypedSlabReference<Mutable<T>> : public TypedSlabReferenceOps<T> {
       Serializer<UnsafeSlabListReader, NullWriter, type>::Read(reader, val); \
     } \
     void operator&(void) const noexcept { \
-      __builtin_unreachable(); \
+      abort(); \
     } \
     HYDE_RT_ALWAYS_INLINE \
     bool operator==(const type that_val) const noexcept { \
@@ -551,7 +552,7 @@ struct Serializer<Reader, Writer, TypedSlabReference<DataT>> {
           reader, *reinterpret_cast<DataT *>(dummy_data));
 
     } else {
-      __builtin_unreachable();
+      abort();
     }
   }
 };
