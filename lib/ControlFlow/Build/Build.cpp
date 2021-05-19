@@ -885,8 +885,9 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
   std::optional<DataIndex> scanned_index;
 
   if (!col_indices.empty()) {
-    const auto index = model->table->GetOrCreateIndex(impl, col_indices);
-    scanned_index.emplace(DataIndex(index));
+    if (const auto index = model->table->GetOrCreateIndex(impl, col_indices)) {
+      scanned_index.emplace(DataIndex(index));
+    }
   }
 
   if (view.CanReceiveDeletions()) {
@@ -1474,33 +1475,23 @@ static void EvaluateConditionAndNotify(ProgramImpl *impl, QueryView view,
     selected_cols.push_back(col);
   }
 
-  PROC *const proc = parent->containing_procedure;
-  VECTOR *const vec = proc->vectors.Create(
-      impl->next_id++, VectorKind::kTableScan, selected_cols);
-
-  TABLESCAN *const scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
+  TABLESCAN *const scan = impl->operation_regions.CreateDerived<TABLESCAN>(
+      impl->next_id++, seq);
   seq->AddRegion(scan);
 
   scan->table.Emplace(scan, table);
-  scan->output_vector.Emplace(scan, vec);
   for (auto col : table->columns) {
     scan->out_cols.AddUse(col);
   }
 
-  // Loop over the results of the table scan.
-  VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      impl->next_id++, seq, ProgramOperation::kLoopOverScanVector);
-  seq->AddRegion(loop);
-  loop->vector.Emplace(loop, vec);
-
   for (auto col : selected_cols) {
-    const auto var =
-        loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
+    VAR * const var =
+        scan->out_vars.Create(impl->next_id++, VariableRole::kScanOutput);
     var->query_column = col;
-    loop->col_id_to_var[col.Id()] = var;
+    scan->col_id_to_var[col.Id()] = var;
   }
 
-  OP *succ_parent = loop;
+  OP *succ_parent = scan;
 
   // We might need to double check that the tuple is actually present.
   if (view.CanReceiveDeletions()) {

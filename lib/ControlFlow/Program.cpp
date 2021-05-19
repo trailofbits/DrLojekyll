@@ -80,7 +80,6 @@ ProgramImpl::~ProgramImpl(void) {
       view_scan->index.ClearWithoutErasure();
       view_scan->in_cols.ClearWithoutErasure();
       view_scan->in_vars.ClearWithoutErasure();
-      view_scan->output_vector.ClearWithoutErasure();
       view_scan->table.ClearWithoutErasure();
 
     } else if (auto exists_assert = op->AsTestAndSet(); exists_assert) {
@@ -272,6 +271,7 @@ OPTIONAL_BODY(BodyIfFalse, ProgramTupleCompareRegion, false_body)
 OPTIONAL_BODY(Body, ProgramWorkerIdRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramCallRegion, body)
 OPTIONAL_BODY(BodyIfFalse, ProgramCallRegion, false_body)
+OPTIONAL_BODY(Body, ProgramTableScanRegion, body)
 
 #undef OPTIONAL_BODY
 
@@ -329,6 +329,7 @@ DEFINED_RANGE(Program, Constants, DataVariable, const_vars)
 DEFINED_RANGE(Program, GlobalVariables, DataVariable, global_vars)
 DEFINED_RANGE(Program, Procedures, ProgramProcedure, procedure_regions)
 DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_vars)
+DEFINED_RANGE(ProgramTableScanRegion, OutputVariables, DataVariable, out_vars)
 
 USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
@@ -346,7 +347,6 @@ USED_RANGE(ProgramSeriesRegion, Regions, ProgramRegion, regions)
 USED_RANGE(ProgramParallelRegion, Regions, ProgramRegion, regions)
 USED_RANGE(ProgramInductionRegion, Vectors, DataVector, vectors)
 USED_RANGE(ProgramTableJoinRegion, Tables, DataTable, tables)
-USED_RANGE(ProgramTableJoinRegion, Indices, DataIndex, indices)
 USED_RANGE(ProgramTableProductRegion, Tables, DataTable, tables)
 USED_RANGE(ProgramTableProductRegion, Vectors, DataVector, input_vecs)
 USED_RANGE(ProgramTableScanRegion, IndexedColumns, DataColumn, in_cols)
@@ -764,9 +764,14 @@ unsigned ProgramTableJoinRegion::Id(void) const noexcept {
 }
 
 // The index used by the Nth table scan.
-DataIndex ProgramTableJoinRegion::Index(unsigned table_index) const noexcept {
-  assert(table_index < impl->indices.Size());
-  return DataIndex(impl->indices[table_index]);
+std::optional<DataIndex>
+ProgramTableJoinRegion::Index(unsigned table_index) const noexcept {
+  assert(table_index < impl->index_of_index.size());
+  if (auto index = impl->index_of_index[table_index]) {
+    return DataIndex(impl->indices[index - 1u]);
+  } else {
+    return std::nullopt;
+  }
 }
 
 // The pivot vector that contains the join pivots. The elements of this
@@ -828,6 +833,11 @@ ProgramTableProductRegion::OutputVariables(unsigned table_index) const {
           DefinedNodeIterator<DataVariable>(vars.end())};
 }
 
+// Unique ID of this region.
+unsigned ProgramTableScanRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
 // The table being scanned.
 DataTable ProgramTableScanRegion::Table(void) const noexcept {
   return DataTable(impl->table.get());
@@ -840,11 +850,6 @@ std::optional<DataIndex> ProgramTableScanRegion::Index(void) const noexcept {
   } else {
     return std::nullopt;
   }
-}
-
-// The scanned results are filled into this vector.
-DataVector ProgramTableScanRegion::FilledVector(void) const {
-  return DataVector(impl->output_vector.get());
 }
 
 unsigned ProgramCallRegion::Id(void) const noexcept {

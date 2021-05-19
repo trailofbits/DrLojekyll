@@ -1,0 +1,46 @@
+
+#import "../booleans.dr".
+
+#prologue ```c++
+#include <drlojekyll/Runtime/StdRuntime.h>
+#include <algorithm>
+#include <vector>
+#include <iomanip>
+#include <iostream>
+#include <set>
+#include <cstdio>
+#include <cinttypes>
+```.
+
+#epilogue ```c++
+
+using DatabaseStorage = hyde::rt::StdStorage;
+
+int main() {
+  DatabaseFunctors functors;
+  DatabaseLog log;
+  DatabaseStorage storage;
+  Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
+      storage, log, functors);
+  
+  hyde::rt::SerializedVector<DatabaseStorage, int32_t> user_ids(storage);
+  user_ids.Add(1);
+  
+  db.log_in_1(user_ids);
+  assert(!db.user_is_logged_in_b(1));
+  
+  user_ids.Clear();
+  user_ids.Add(2);
+  db.add_user_1(user_ids);
+  assert(!db.user_is_logged_in_b(1));
+  assert(!db.user_is_logged_in_b(2));
+  
+  user_ids.Clear();
+  user_ids.Add(1);
+  db.add_user_1(user_ids);
+  assert(db.user_is_logged_in_b(1));
+  assert(db.user_is_logged_in_b(2));
+  
+  return 0;
+}
+```.

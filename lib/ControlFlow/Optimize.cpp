@@ -355,7 +355,7 @@ static bool OptimizeImpl(SERIES *series) {
 
       } else if (region->EndsWithReturn()) {
         seen_indirect_return = region;
-        if (auto op = region->AsOperation(); op && op->AsReturn()) {
+        if (auto sub_op = region->AsOperation(); sub_op && sub_op->AsReturn()) {
           seen_return = true;
         }
       }

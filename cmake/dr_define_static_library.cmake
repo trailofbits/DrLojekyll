@@ -14,6 +14,7 @@ function(dr_define_static_library libname)
         ${CURLIB_PUBLIC_HEADERS}
         ${CURLIB_SOURCES}
     )
+    set_target_properties(${libname} PROPERTIES LINKER_LANGUAGE CXX)
 
     add_library(${PROJECT_NAME}::${libname} ALIAS ${libname})
 

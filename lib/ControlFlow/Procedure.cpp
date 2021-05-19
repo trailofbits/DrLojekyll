@@ -123,8 +123,8 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
 }
 
 const bool
-Node<ProgramProcedure>::MergeEqual(ProgramImpl *prog,
-                                   std::vector<Node<ProgramRegion> *> &merges) {
+Node<ProgramProcedure>::MergeEqual(ProgramImpl *,
+                                   std::vector<Node<ProgramRegion> *> &) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramProcedure");
   assert(false);
   return false;
@@ -144,13 +144,14 @@ bool Node<ProgramProcedure>::EndsWithReturn(void) const noexcept {
 }
 
 // Get or create a table in a procedure.
-VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl, VectorKind kind,
+VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl,
+                                          VectorKind vec_kind,
                                           DefinedNodeRange<QueryColumn> cols) {
   const auto next_id = impl->next_id++;
-  if (VectorKind::kParameter == kind) {
-    return input_vecs.Create(next_id, kind, cols);
+  if (VectorKind::kParameter == vec_kind) {
+    return input_vecs.Create(next_id, vec_kind, cols);
   } else {
-    return vectors.Create(next_id, kind, cols);
+    return vectors.Create(next_id, vec_kind, cols);
   }
 }
 

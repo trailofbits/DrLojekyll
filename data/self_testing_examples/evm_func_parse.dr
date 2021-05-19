@@ -1,8 +1,9 @@
 ; This example can parse EVM array declarations
 
-#foreign Token ```Tuple[str, int]```.
-#foreign Lexeme ```str```.
-#foreign ASTNode ```Tuple```.
+
+#foreign Token.
+#foreign Lexeme.
+#foreign ASTNode.
 
 #query type_name(free ASTNode BaseType).
 
@@ -24,7 +25,8 @@
 #constant Lexeme KEYWORD_TYPE_BYTE ```"byte"```.
 #constant Lexeme KEYWORD_TYPE_BYTES ```"bytes"```.
 #constant Lexeme KEYWORD_RETURNS ```"returns"```.
-#constant Token FAKE_R_PAREN ```(")", -1)```.
+#constant Token FAKE_R_PAREN ```python (")", -1)```.
+#constant Token FAKE_R_PAREN ```c++ {")", -1}```.
 
 type_name(OtherType) : other_type(OtherType).
 
@@ -52,7 +54,7 @@ function_head(HeaderNode, NextTok)
     , lexeme_of_token(LParen, PUNC_L_PAREN)
     , next_token(LParen, NextTok)
     , start_function_type(Function, LParen, HeaderNode).
-    
+
 ; If we see something half unexpected, then inject in a closing parenthesis
 ; to model being done with the parameter list.
 #local fixed_function_head(HeaderNode, LParen, RParen, NotRParen).
@@ -104,66 +106,3 @@ type_name(FunctionType)
     : modified_function_type(FunctionType, NextToken)
     , lexeme_of_token(NextToken, NextLexeme)
     , NextLexeme != KEYWORD_RETURNS.
-
-#epilogue ```python
-def left_corner_bf(node):
-    #print("left_corner({})".format(node))
-    return node[0]
-  
-def right_corner_bf(node):
-    #print("right_corner({})".format(node))
-    return node[-1]
-
-def lexeme_of_token_bf(tok: Tuple[str, int]):
-    #print("lexeme_of_token_bf({})".format(tok))
-    return tok[0]
-
-def start_function_type_bbf(func_tok, l_paren):
-    #print("start_function_type_bbf({}, {})".format(func_tok, l_paren))
-    return (func_tok, l_paren)
-    
-def add_function_type_param_bbf(base_type, param):
-    #print("add_function_type_param_bbf({}, {})".format(base_type, param))
-    base_type = list(base_type)
-    if isinstance(param, tuple):
-      base_type.extend(param)
-    else:
-      base_type.append(param)
-    return tuple(base_type)
-
-def finish_function_type_params_bbf(base_type, r_paren):
-    #print("finish_function_type_bbf({}, {})".format(base_type, r_paren))
-    base_type = list(base_type)
-    base_type.append(r_paren)
-    return tuple(base_type)
-
-if __name__ == "__main__":
-    functors = DatabaseFunctors()
-    log = DatabaseLog()
-    db = Database(log, functors)
-    tokens = [("function", 0), ("(", 1), ("bytes", 2), (")", 3), ("foo", 4)]
-    for i in range(1, len(tokens)):
-        db.next_token_2([(tokens[i-1], tokens[i])])
-    db.other_type_1([(tokens[2],)])
-    
-    good = set([(('bytes', 2),),
-                (('function', 0), ('(', 1), ('bytes', 2), (')', 3))])
-    
-    # If negation handling is broken then `function()` with a fake `)` will
-    # appear.
-                
-    passed = True
-    num_parsed = 0
-    for t in db.type_name_f():
-        num_parsed += 1
-        print(t)
-        if t not in good:
-            print("Should not have found", t)
-            passed = False
-        else:
-          good.remove(t)
-
-    assert 2 == num_parsed
-    assert 0 == len(good)
-    assert passed
-```.

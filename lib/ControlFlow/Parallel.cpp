@@ -110,7 +110,7 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
 }
 
 const bool Node<ProgramParallelRegion>::MergeEqual(
-    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+    ProgramImpl *, std::vector<Node<ProgramRegion> *> &merges) {
 
   for (auto region : merges) {
     auto merge = region->AsParallel();

@@ -559,20 +559,22 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
     const auto tables = region.Tables();
     for (auto i = 0u; i < tables.size(); ++i) {
       auto table = tables[i];
-      auto index = region.Index(i);
       os << os.Indent();
 
       sep = "select {";
       auto end = "select {} from ";
-      auto cols = region.SelectedColumns(i);
+      auto cols = table.Columns();
       auto j = 0u;
       for (auto var : region.OutputVariables(i)) {
         os << sep << cols[j++] << " as " << var;
         sep = ", ";
         end = "} from ";
       }
+      os << end << table;
 
-      os << end << table << " using " << index;
+      if (auto maybe_index = region.Index(i)) {
+        os << " using " << (*maybe_index);
+      }
 
       sep = " where ";
       j = 0u;
@@ -620,35 +622,42 @@ OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region) {
   return os;
 }
 
-
 OutputStream &operator<<(OutputStream &os, ProgramTableScanRegion region) {
-  os << os.Indent() << "scan";
-  if (region.Index()) {
-    os << "-index";
-  } else {
-    os << "-table";
-  }
+  if (auto body = region.Body(); body) {
+    os << os.Indent() << "scan";
+    if (region.Index()) {
+      os << "-index";
+    } else {
+      os << "-table";
+    }
 
-  auto sep = "";
-  os << " select {";
-  for (auto col : region.SelectedColumns()) {
-    os << sep << col;
-    sep = ", ";
-  }
-
-  os << "} from " << region.Table();
-
-  if (auto index = region.Index(); index) {
-    os << " where {";
-    sep = "";
-    for (auto var : region.InputVariables()) {
+    auto sep = "";
+    os << " select {";
+    for (auto var : region.OutputVariables()) {
       os << sep << var;
       sep = ", ";
     }
-    os << "} in " << *index;
+
+    os << "} from " << region.Table();
+
+    if (auto index = region.Index(); index) {
+      os << " where {";
+      sep = "";
+      for (auto var : region.InputVariables()) {
+        os << sep << var;
+        sep = ", ";
+      }
+      os << "} in " << *index;
+    }
+
+    os << '\n';
+    os.PushIndent();
+    os << (*body);
+    os.PopIndent();
+  } else {
+    os << os.Indent() << "empty-scan";
   }
 
-  os << " into " << region.FilledVector();
   return os;
 }
 

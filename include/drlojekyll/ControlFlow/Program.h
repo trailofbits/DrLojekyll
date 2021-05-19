@@ -637,9 +637,6 @@ class ProgramTableJoinRegion
   // once.
   UsedNodeRange<DataTable> Tables(void) const;
 
-  // The indices on the tables.
-  UsedNodeRange<DataIndex> Indices(void) const;
-
   // The columns used in the scan of the Nth table. These are in the same
   // order as the entries in `PivotVector()` and `OutputPivotVariables()`.
   UsedNodeRange<DataColumn> IndexedColumns(unsigned table_index) const;
@@ -649,7 +646,7 @@ class ProgramTableJoinRegion
   UsedNodeRange<DataColumn> SelectedColumns(unsigned table_index) const;
 
   // The index used by the Nth table scan.
-  DataIndex Index(unsigned table_index) const noexcept;
+  std::optional<DataIndex> Index(unsigned table_index) const noexcept;
 
   // These are the output variables for the pivot columns. These are in the same
   // order as the entries in the pivot vector.
@@ -710,11 +707,17 @@ class ProgramTableScanRegion
  public:
   static ProgramTableScanRegion From(ProgramRegion) noexcept;
 
+  // Unique ID of this region.
+  unsigned Id(void) const noexcept;
+
   // The table being scanned.
   DataTable Table(void) const noexcept;
 
   // Optional index being scanned.
   std::optional<DataIndex> Index(void) const noexcept;
+
+  // The body that conditionally executes for each scanned tuple.
+  std::optional<ProgramRegion> Body(void) const noexcept;
 
   // The columns used to constrain the scan of the table. These are in the same
   // order as the entries in `InputVariables()`. This is empty if an index isn't
@@ -734,8 +737,9 @@ class ProgramTableScanRegion
   // being used.
   UsedNodeRange<DataVariable> InputVariables(void) const;
 
-  // The scanned results are filled into this vector.
-  DataVector FilledVector(void) const;
+  // The variables which are scanned. There is one variable for each column in
+  // the table. This does not have a 1:1 correspondence with `SelectedColumns`.
+  DefinedNodeRange<DataVariable> OutputVariables(void) const;
 
  private:
   friend class ProgramRegion;
@@ -992,9 +996,9 @@ class ProgramQuery {
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),
         table(table_),
-        index(index_),
-        tuple_checker(tuple_checker_),
-        forcing_function(forcing_function_) {}
+        index(std::move(index_)),
+        tuple_checker(std::move(tuple_checker_)),
+        forcing_function(std::move(forcing_function_)) {}
 
   ProgramQuery(const ProgramQuery &) = default;
   ProgramQuery(ProgramQuery &&) noexcept = default;

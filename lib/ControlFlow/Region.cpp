@@ -53,13 +53,15 @@ unsigned Node<ProgramRegion>::Depth(void) const noexcept {
 
 // Returns the lexical level of this node.
 unsigned Node<ProgramRegion>::CachedDepth(void) noexcept {
-  if (depth) {
-    return depth;
+  if (cached_depth) {
+    return cached_depth;
+
   } else if (parent == containing_procedure || parent == this || !parent) {
     return 0u;
+
   } else {
-    depth = parent->CachedDepth() + 1u;
-    return depth;
+    cached_depth = parent->CachedDepth() + 1u;
+    return cached_depth;
   }
 }
 

@@ -50,14 +50,14 @@ endif()
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 if(ENABLE_TESTS)
-  # Google Test --------------------------------
+  # Google Test ------------------------------
   #
   # Cribbed from https://github.com/google/googletest/tree/master/googletest
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
   add_subdirectory(vendor/googletest-release-1.10.0
       EXCLUDE_FROM_ALL)
 
-  # rapidcheck ---------------------------------
+  # rapidcheck -------------------------------
   set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
   add_subdirectory(vendor/rapidcheck
       EXCLUDE_FROM_ALL)
@@ -70,7 +70,7 @@ set(REPROC_TEST OFF CACHE BOOL "" FORCE)
 # set(REPROC_OBJECT_LIBRARIES ON)
 add_subdirectory(vendor/reproc-14.2.1)
 
-# nlohmann_json --------------------------------
+# nlohmann_json ------------------------------
 if(DRLOG_USE_EXTERNAL_JSON)
   find_package(nlohmann_json 3.9.0 CONFIG REQUIRED)
 else()

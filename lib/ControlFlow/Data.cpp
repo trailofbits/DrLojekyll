@@ -232,6 +232,12 @@ TABLEINDEX *
 Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
                                   std::vector<unsigned> col_indexes) {
   SortAndUnique(col_indexes);
+
+  // The index covers all columns, i.e. we don't want/need it.
+  if (col_indexes.size() == this->columns.Size()) {
+    return nullptr;
+  }
+
   auto col_spec = ColumnSpec(col_indexes);
   for (auto index : indices) {
     if (index->column_spec == col_spec) {

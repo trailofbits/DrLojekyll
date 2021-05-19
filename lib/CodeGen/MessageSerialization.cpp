@@ -26,7 +26,7 @@ namespace {
 }
 
 [[nodiscard]] auto ParseParameterType(const TypeLoc &type,
-                                      const ErrorLog &err) {
+                                      const ErrorLog &) {
   switch (type.UnderlyingKind()) {
     case TypeKind::kSigned8:
     case TypeKind::kUnsigned8:
