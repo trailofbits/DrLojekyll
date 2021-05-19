@@ -1,7 +1,10 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Runtime/SlabList.h>
-#include <sys/mman.h>
+
+#ifndef _WIN32
+#  include <sys/mman.h>
+#endif
 
 #include <cassert>
 
@@ -53,9 +56,11 @@ HYDE_RT_FLATTEN void UnsafeSlabListWriter::UpdateWritePointer(void) {
 
   const auto is_persistent = last_slab->IsPersistent();
 
+#ifndef _WIN32
   if (is_persistent) {
     msync(last_slab, sizeof(Slab), MS_ASYNC);
   }
+#endif
 
   const auto slab = new (manager, is_persistent) Slab(manager, is_persistent);
   last_slab->SetNext(slab);

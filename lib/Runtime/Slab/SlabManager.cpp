@@ -3,10 +3,13 @@
 #include "SlabManager.h"
 
 #include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
+
+#ifndef _WIN32
+#  include <sys/mman.h>
+#  include <sys/stat.h>
+#  include <sys/types.h>
+#endif
 
 #include <string>
 
