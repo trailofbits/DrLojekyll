@@ -632,6 +632,7 @@ const bool Node<ProgramTransitionStateRegion>::MergeEqual(
   // we are doing code gen, the that likely means one region is serialized
   // before the other, and so there is a kind of race condition, where only
   // one of them is likely to execute and the other will never execute.
+  assert(false);
   comment =
       "!!! STRIP MINING " + std::to_string(reinterpret_cast<uintptr_t>(this));
   for (auto region : merges) {

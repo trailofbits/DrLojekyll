@@ -6,12 +6,27 @@
 #include <iomanip>
 #include <sstream>
 
+#include "EquivalenceSet.h"
 #include "Optimize.h"
 #include "Query.h"
 
 namespace hyde {
 
 Node<QueryView>::~Node(void) {}
+
+Node<QueryView>::Node(void)
+    : Def<Node<QueryView>>(this),
+      User(this),
+      columns(this),
+      input_columns(this),
+      attached_columns(this),
+      positive_conditions(this),
+      negative_conditions(this),
+      predecessors(this),
+      successors(this) {
+  assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
+         reinterpret_cast<uintptr_t>(this));
+}
 
 const char *Node<QuerySelect>::KindName(void) const noexcept {
   if (relation) {
