@@ -193,7 +193,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
         << "\" " << kCxxFlags
 #ifdef _WIN32
         << " /std:c++17 "
-        << " /I\"" kDrlogPublicHeaders << "\" "
+        << " /I\"" << kDrlogPublicHeaders << "\" "
         << "/o " << cxx_out_path
 #else
         << " -std=c++17 "
