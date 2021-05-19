@@ -104,10 +104,11 @@ using TypedSlabReferenceBase =
 template <typename T>
 class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
  public:
-  using TypedSlabReferenceBase<T>::TypedSlabReferenceBase;
-  using TypedSlabReferenceBase<T>::operator=;
-  using TypedSlabReferenceBase<T>::Data;
-  using TypedSlabReferenceBase<T>::Clear;
+  using Parent = TypedSlabReferenceBase<T>;
+  using Parent::Parent;
+  using Parent::operator=;
+  using Parent::Data;
+  using Parent::Clear;
 
   static constexpr bool kIsValue = false;
 
@@ -328,33 +329,35 @@ class TypedSlabReferenceOps : public TypedSlabReferenceBase<T> {
 template <typename T>
 class TypedSlabReference : public TypedSlabReferenceOps<T> {
  public:
-  using TypedSlabReferenceOps<T>::TypedSlabReferenceOps;
-  using TypedSlabReferenceOps<T>::operator=;
-  using TypedSlabReferenceOps<T>::operator==;
-  using TypedSlabReferenceOps<T>::operator!=;
-  using TypedSlabReferenceOps<T>::operator<;
-  using TypedSlabReferenceOps<T>::operator>;
-  using TypedSlabReferenceOps<T>::Hash;
-  using TypedSlabReferenceOps<T>::Data;
-  using TypedSlabReferenceOps<T>::Clear;
-  using TypedSlabReferenceOps<T>::SizeInBytes;
+  using Parent = TypedSlabReferenceOps<T>;
+  using Parent::Parent;
+  using Parent::operator=;
+  using Parent::operator==;
+  using Parent::operator!=;
+  using Parent::operator<;
+  using Parent::operator>;
+  using Parent::Hash;
+  using Parent::Data;
+  using Parent::Clear;
+  using Parent::SizeInBytes;
 };
 
 template <typename T>
 class TypedSlabReference<T *> : public TypedSlabReferenceOps<T *> {
  public:
-  using TypedSlabReferenceOps<T *>::TypedSlabReferenceOps;
-  using TypedSlabReferenceOps<T *>::operator=;
-  using TypedSlabReferenceOps<T *>::operator==;
-  using TypedSlabReferenceOps<T *>::operator!=;
-  using TypedSlabReferenceOps<T *>::operator<;
-  using TypedSlabReferenceOps<T *>::operator>;
-  using TypedSlabReferenceOps<T *>::Hash;
-  using TypedSlabReferenceOps<T *>::Data;
-  using TypedSlabReferenceOps<T *>::Clear;
-  using TypedSlabReferenceOps<T *>::SizeInBytes;
-  using ValT = typename TypedSlabReferenceOps<T *>::ValT;
-  using Reader = typename TypedSlabReferenceOps<T *>::Reader;
+  using Parent = TypedSlabReferenceOps<T *>;
+  using Parent::Parent;
+  using Parent::operator=;
+  using Parent::operator==;
+  using Parent::operator!=;
+  using Parent::operator<;
+  using Parent::operator>;
+  using Parent::Hash;
+  using Parent::Data;
+  using Parent::Clear;
+  using Parent::SizeInBytes;
+  using ValT = typename Parent::ValT;
+  using Reader = typename Parent::Reader;
 
   // Follow the pointer, returning us a new reference.
   TypedSlabReference<T> operator*(void) const noexcept {
@@ -388,18 +391,19 @@ class TypedSlabReference<T *> : public TypedSlabReferenceOps<T *> {
 template <typename T>
 class TypedSlabReference<Addressable<T>> : public TypedSlabReferenceOps<T> {
  public:
-  using TypedSlabReferenceOps<T>::TypedSlabReferenceOps;
-  using TypedSlabReferenceOps<T>::operator=;
-  using TypedSlabReferenceOps<T>::operator==;
-  using TypedSlabReferenceOps<T>::operator!=;
-  using TypedSlabReferenceOps<T>::operator<;
-  using TypedSlabReferenceOps<T>::operator>;
-  using TypedSlabReferenceOps<T>::Hash;
-  using TypedSlabReferenceOps<T>::Data;
-  using TypedSlabReferenceOps<T>::Clear;
-  using TypedSlabReferenceOps<T>::SizeInBytes;
-  using ValT = typename TypedSlabReferenceOps<T>::ValT;
-  using Reader = typename TypedSlabReferenceOps<T>::Reader;
+  using Parent = TypedSlabReferenceOps<T>;
+  using Parent::Parent;
+  using Parent::operator=;
+  using Parent::operator==;
+  using Parent::operator!=;
+  using Parent::operator<;
+  using Parent::operator>;
+  using Parent::Hash;
+  using Parent::Data;
+  using Parent::Clear;
+  using Parent::SizeInBytes;
+  using ValT = typename Parent::ValT;
+  using Reader = typename Parent::Reader;
 
   Address<ValT> operator&(void) const noexcept {
     return {Data()};
@@ -409,17 +413,18 @@ class TypedSlabReference<Addressable<T>> : public TypedSlabReferenceOps<T> {
 template <typename T>
 class TypedSlabReference<Mutable<T>> : public TypedSlabReferenceOps<T> {
  public:
-  using TypedSlabReferenceOps<T>::TypedSlabReferenceOps;
-  using TypedSlabReferenceOps<T>::operator==;
-  using TypedSlabReferenceOps<T>::operator!=;
-  using TypedSlabReferenceOps<T>::operator<;
-  using TypedSlabReferenceOps<T>::operator>;
-  using TypedSlabReferenceOps<T>::Hash;
-  using TypedSlabReferenceOps<T>::Data;
-  using TypedSlabReferenceOps<T>::Clear;
-  using TypedSlabReferenceOps<T>::SizeInBytes;
-  using ValT = typename TypedSlabReferenceOps<T>::ValT;
-  using Reader = typename TypedSlabReferenceOps<T>::Reader;
+  using Parent = TypedSlabReferenceOps<T>;
+  using Parent::Parent;
+  using Parent::operator==;
+  using Parent::operator!=;
+  using Parent::operator<;
+  using Parent::operator>;
+  using Parent::Hash;
+  using Parent::Data;
+  using Parent::Clear;
+  using Parent::SizeInBytes;
+  using ValT = typename Parent::ValT;
+  using Reader = typename Parent::Reader;
 
   // Mutable things are also addressable.
   Address<ValT> operator&(void) const noexcept {
@@ -440,7 +445,7 @@ class TypedSlabReference<Mutable<T>> : public TypedSlabReferenceOps<T> {
     Serializer<NullReader, UnsafeByteWriter, ValT>::Write(writer, new_val);
   }
 
-  using TypedSlabReferenceOps<T>::operator=;
+  using Parent::operator=;
 };
 
 #define HYDE_RT_DEFINE_SLAB_VALUE(type) \
