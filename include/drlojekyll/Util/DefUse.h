@@ -191,6 +191,24 @@ class UseList {
     Reindex();
   }
 
+  template <typename Pred>
+  void Sort(Pred pred) noexcept {
+    std::sort(uses.begin(), uses.end(), [&pred] (Use<T> *a, Use<T> *b) {
+      if (a && b) {
+        const auto a_def = a->get();
+        const auto b_def = b->get();
+        if (a_def == b_def) {
+          return false;
+        } else {
+          return pred(a_def, b_def);
+        }
+      } else {
+        return a < b;
+      }
+    });
+    Reindex();
+  }
+
   template <typename CB>
   void RemoveIf(CB cb) noexcept {
     for (auto &use : uses) {

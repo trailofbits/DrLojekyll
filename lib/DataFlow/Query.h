@@ -986,6 +986,10 @@ class Node<QueryMerge> : public Node<QueryView> {
   // Similar to above, but for negations.
   bool SinkThroughNegations(QueryImpl *impl, std::vector<VIEW *> &negations);
 
+  // Similar to above, but for joins.
+  bool SinkThroughJoins(QueryImpl *impl, std::vector<VIEW *> &joins,
+                        bool recursive=false);
+
   // Put this merge into a canonical form, which will make comparisons and
   // replacements easier. For example, after optimizations, some of the merged
   // views might be the same.
@@ -1331,6 +1335,10 @@ class QueryImpl {
       do_view(view);
     }
   }
+
+  // Clear all group IDs. Sometimes we want to do optimizations that excplicitly
+  // don't need to deal with the issues of accidentally over-merging nodes.
+  void ClearGroupIDs(void);
 
   // Relabel group IDs. This enables us to better optimize SELECTs. Our initial
   // assignment of `group_id`s works well enough to start with, but isn't good

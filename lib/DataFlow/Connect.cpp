@@ -268,7 +268,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
   }
 
   RemoveUnusedViews();
-  RelabelGroupIDs();
   TrackDifferentialUpdates(log, true);
 
   return true;

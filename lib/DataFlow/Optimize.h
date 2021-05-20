@@ -22,6 +22,23 @@ class OptimizationContext {
   // Can we sink unions?
   bool can_sink_unions{false};
 
+  // Can we sink unions through tuples? This is basically always worth it and
+  // composes nicely.
+  bool can_sink_unions_through_tuples{true};
+
+  // Can we sink unions through functor applications? This is basically always
+  // worth it, as it enables better merging of nodes downstream, and composes
+  // well with other optimizations as it doesn't rely on tag columns.
+  bool can_sink_unions_through_maps{true};
+
+  // Can we sink unions through negations?
+  bool can_sink_unions_through_negations{true};
+
+  // If we can sink them, then can we do it through JOINs? This generally
+  // results in worse performance, and if there's a kind of tower of JOINs then
+  // it prevents further sinking due to the introduction of the tagged tuples.
+  bool can_sink_unions_through_joins{false};
+
   // Should optimization happen bottom-up or top-down?
   bool bottom_up{true};
 };

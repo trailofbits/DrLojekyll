@@ -15,7 +15,7 @@ using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
 // Perform common subexpression elimination, which will first identify
 // candidate subexpressions for possible elimination using hashing, and
 // then will perform recursive equality checks.
-static bool CSE(CandidateList &all_views) {
+static bool CSE(QueryImpl *impl, CandidateList &all_views) {
   EqualitySet eq;
   CandidateLists candidate_groups;
 
@@ -38,6 +38,8 @@ static bool CSE(CandidateList &all_views) {
     }
     return a;
   };
+
+  impl->RelabelGroupIDs();
 
   for (auto &[hash, candidates] : candidate_groups) {
     (void) hash;
@@ -93,10 +95,13 @@ static bool CSE(CandidateList &all_views) {
       eq.Clear();
       if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
         v1->ReplaceAllUsesWith(v2);
+        impl->RelabelGroupIDs();
         changed = true;
       }
     }
   }
+
+  impl->ClearGroupIDs();
 
   return changed;
 }
@@ -114,6 +119,14 @@ static void FillViews(T &def_list, CandidateList &views_out) {
 
 }  // namespace
 
+// Clear all group IDs. Sometimes we want to do optimizations that excplicitly
+// don't need to deal with the issues of accidentally over-merging nodes.
+void QueryImpl::ClearGroupIDs(void) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
+    view->group_ids.clear();
+  });
+}
+
 // Relabel group IDs. This enables us to better optimize SELECTs. Our initial
 // assignment of `group_id`s works well enough to start with, but isn't good
 // enough to help us merge some SELECTs. The key idea is that if a given
@@ -124,7 +137,7 @@ void QueryImpl::RelabelGroupIDs(void) {
   std::vector<COL *> sorted_cols;
 
   unsigned i = 1u;
-  ForEachView([&](VIEW *view) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
     if (view->is_dead) {
       return;
     }
@@ -146,7 +159,7 @@ void QueryImpl::RelabelGroupIDs(void) {
     }
   });
 
-  ForEachView([&](VIEW *view) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
     if (view->is_dead) {
       return;
     }
@@ -244,7 +257,7 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   // Start by applying CSE to the SELECTs only. This will improve
   // canonicalization of the initial TUPLEs and other things.
   FillViews(selects, views);
-  CSE(views);
+  CSE(this, views);
 
   OptimizationContext opt;
 
@@ -264,7 +277,6 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   }
 
   RemoveUnusedViews();
-  RelabelGroupIDs();
 }
 
 // Canonicalize the dataflow. This tries to put each node into its current
@@ -341,7 +353,6 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   }
 
   RemoveUnusedViews();
-  RelabelGroupIDs();
 }
 
 // Sometimes we have a bunch of dumb condition patterns, roughly looking like
@@ -449,9 +460,8 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
 
-    for (auto max_cse = views.size(); max_cse-- && CSE(views);) {
+    for (auto max_cse = views.size(); max_cse-- && CSE(this, views);) {
       RemoveUnusedViews();
-      RelabelGroupIDs();
       TrackDifferentialUpdates(log, true);
       views.clear();
       const_cast<const QueryImpl *>(this)->ForEachView(
@@ -461,13 +471,19 @@ void QueryImpl::Optimize(const ErrorLog &log) {
 
   auto do_sink = [&](void) {
     OptimizationContext opt;
-    opt.can_sink_unions = true;
     for (auto i = 0u; i < merges.Size(); ++i) {
       MERGE *const merge = merges[i];
       if (!merge->is_dead) {
-        opt.can_sink_unions = true;
+        merge->is_canonical = false;
+        opt.can_sink_unions = false;
         opt.can_remove_unused_columns = false;
         merge->Canonicalize(this, opt, log);
+        if (!merge->is_dead) {
+          merge->is_canonical = false;
+          opt.can_sink_unions = true;
+          opt.can_remove_unused_columns = false;
+          merge->Canonicalize(this, opt, log);
+        }
       }
     }
   };

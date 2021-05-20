@@ -2002,7 +2002,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   }
 
   impl->RemoveUnusedViews();
-  impl->RelabelGroupIDs();
+  impl->ClearGroupIDs();
   impl->TrackDifferentialUpdates(log);
 
   impl->Simplify(log);
