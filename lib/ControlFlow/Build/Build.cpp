@@ -136,12 +136,12 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     auto model = new DataModel;
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
-    eq_classes.emplace(view.TableId(), model);
+    eq_classes.emplace(view.EquivalenceSetId(), model);
   });
 
   query.ForEachView([&](QueryView view) {
     auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-    auto dest_model = eq_classes[view.TableId()];
+    auto dest_model = eq_classes[view.EquivalenceSetId()];
     DisjointSet::Union(curr_model, dest_model);
   });
 }
@@ -1479,10 +1479,16 @@ static void EvaluateConditionAndNotify(ProgramImpl *impl, QueryView view,
       impl->next_id++, seq);
   seq->AddRegion(scan);
 
-  scan->table.Emplace(scan, table);
+
+  std::vector<unsigned> cols_indexes;
   for (auto col : table->columns) {
+    cols_indexes.push_back(col->index);
     scan->out_cols.AddUse(col);
   }
+
+  scan->table.Emplace(scan, table);
+  scan->index.Emplace(
+      scan, table->GetOrCreateIndex(impl, std::move(cols_indexes)));
 
   for (auto col : selected_cols) {
     VAR * const var =
@@ -2231,6 +2237,19 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   //            one region with another, we'd screw up the mapping.
   for (auto proc : impl->procedure_regions) {
     MapVariables(proc);
+  }
+
+  // Finally, go through our tables. Any table with no indices is given a
+  // full table index, on the assumption that it is used for things like state
+  // checking.
+  for (TABLE *table : impl->tables) {
+    if (table->indices.Empty()) {
+      std::vector<unsigned> offsets;
+      for (auto col : table->columns) {
+        offsets.push_back(col->index);
+      }
+      (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
+    }
   }
 
   return Program(std::move(impl));

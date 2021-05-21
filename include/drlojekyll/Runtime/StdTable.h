@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <bitset>
 #include <cassert>
 #include <memory>
 #include <deque>
@@ -40,7 +41,7 @@ struct StdTableHelper<TypeList<TableDescriptor<kTableId>,
   using TupleType = std::tuple<
       typename ColumnDescriptor<kColumnIds>::Type...>;
 
-  using BackPointerArrayType = std::array<void *, kNumIndexes + 1u>;
+  using BackPointerArrayType = std::array<void *, kNumIndexes>;
 
   // A complete record is a base record, with `kNumIndexes + 1u` back pointers.
   // The first back pointer chains this record to the most recently added record
@@ -135,6 +136,7 @@ class StdTable
     : public StdTableBase<
           typename StdTableHelper<TableDescriptor<kTableId>>::TupleType> {
  public:
+  // Size of the inline cache of recently accessed tuples.
   static constexpr auto kCacheSize = 1024u;
 
   using TableDesc = TableDescriptor<kTableId>;
@@ -148,10 +150,12 @@ class StdTable
 
   static constexpr unsigned kNumColumns = TableHelper::kNumColumns;
   static constexpr unsigned kNumIndexes = TableHelper::kNumIndexes;
+
+  static_assert(0u < kNumIndexes);
+
   static constexpr size_t kStateIndex = 0u;
   static constexpr size_t kTupleIndex = 1u;
   static constexpr size_t kBackLinksIndex = 2u;
-  static constexpr unsigned kTableLink = 0u;
 
   using Parent::Parent;
 
@@ -232,6 +236,16 @@ class StdTable
   HYDE_RT_ALWAYS_INLINE RecordType *FindRecord(
       const TupleType &tuple, uint64_t hash) const noexcept {
 
+    // Check for the record in our bloom filter.
+    uint64_t filter_index = hash;
+    for (const auto &filter : bloom_filter) {
+      if (!filter.test(static_cast<uint16_t>(filter_index))) {
+        return nullptr;
+      } else {
+        filter_index >>= 16u;
+      }
+    }
+
     // We have a single element cache that scans update.
     if (RecordType *scan_record =
             last_scanned_record.load(std::memory_order_acquire)) {
@@ -247,17 +261,44 @@ class StdTable
       return cached_record;
     }
 
-    return FindRecordSlow(tuple, hash);
+    // The first index covers all columns, so we can use `hash`.
+    if constexpr (TableDesc::kHasCoveringIndex) {
+      return FindRecordInFirstIndex(tuple, hash);
+
+    // The first index operates on a subset of the
+    } else {
+      using FirstIndexDesc = IndexDescriptor<TableDesc::kFirstIndexId>;
+      using FirstIndexKeyColumnOffsets =
+          typename FirstIndexDesc::KeyColumnOffsets;
+      return FindRecordInIndex<FirstIndexKeyColumnOffsets>(tuple);
+    }
   }
 
-  HYDE_RT_NEVER_INLINE RecordType *FindRecordSlow(
+  // We want to find `tuple` in an index, but none of the indexes cover all of
+  // the columns, so we need to compute a new hash that summarizes a subset of
+  // the columns inside of `tuple`, and used that as a lookup hash for the
+  // first index.
+  template <typename KeyColumnOffsets>
+  HYDE_RT_ALWAYS_INLINE RecordType *FindRecordInIndex(
+      const TupleType &tuple) const noexcept {
+    uint64_t hash = 0;
+    {
+      HashingWriter writer;
+      this->HashColumnsByOffets(tuple, writer, KeyColumnOffsets{});
+      hash = writer.Digest();
+    }
+    return FindRecordInFirstIndex(tuple, hash);
+  }
+
+  // If we have a covering index, i.e. an index over all columns, then the
+  // code generator will have arranged for that to be the first index in our
+  // index ID list for this table. We can thus rely on `hash` to get us into
+  // the map for the index.
+  HYDE_RT_NEVER_INLINE RecordType *FindRecordInFirstIndex(
       const TupleType &tuple, uint64_t hash) const noexcept {
 
-    // We missed in the cache, so go look for the record. This requires finding
-    // the first tuple that hashed to `hash`, then traversing its linked list
-    // to other records that have the same hash.
-    auto it = hash_to_record.find(hash);
-    if (it == hash_to_record.end()) {
+    auto it = indexes[0].find(hash);
+    if (it == indexes[0].end()) {
       return nullptr;
     }
 
@@ -283,7 +324,7 @@ class StdTable
       // Go to the next record with the same hash.
       const auto &back_links = std::get<kBackLinksIndex>(*record);
       const auto record_addr = reinterpret_cast<uintptr_t>(
-          back_links[kTableLink]);
+          back_links[0]);
 
       // The next record has a different hash, or it is null.
       const auto shifted_record_addr = record_addr >> 1u;
@@ -305,37 +346,17 @@ class StdTable
     // table for a given hash.
     assert(!(reinterpret_cast<uintptr_t>(record) & 1u));
 
-    auto &table_link = std::get<kTableLink>(std::get<kBackLinksIndex>(*record));
-    auto &prev_record = hash_to_record[hash];
+    // Add the record to our bloom filter.
+    uint64_t filter_index = hash;
+    for (auto &filter : bloom_filter) {
+      filter.set(static_cast<uint16_t>(filter_index), true);
+      filter_index >>= 16u;
+    }
 
     // Add it to our cache.
     last_accessed_record[hash % kCacheSize] = record;
 
-    // We have a prior record for this hash. This prior record might be linked
-    // in to another record somewhere else, so we can't do anything about that.
-    // We want to inject our new node in-between the prior node and its next
-    // node for the whole table.
-    if (prev_record) {
-      table_link = record;
-      std::swap(table_link,
-                std::get<kTableLink>(std::get<kBackLinksIndex>(*prev_record)));
-
-    // We don't have a previous record associated with this hash, so we'll add
-    // it in as the first record for the hash, and then we'll link this record
-    // to the "last first" record, and mark this record as the last record.
-    //
-    // We make sure that the last record has its low bit marked as `1`, to tell
-    // us that its hash doesn't match with `last_record`.
-    } else {
-      table_link = reinterpret_cast<void *>(
-          reinterpret_cast<uintptr_t>(record) | 1u);
-      std::swap(table_link, last_record);
-      prev_record = record;
-    }
-
-    if constexpr (0u < kNumIndexes) {
-      AddToIndexes(record, IndexIdList{});
-    }
+    AddToIndexes(record, IndexIdList{});
   }
 
   HYDE_RT_INLINE static void AddToIndexes(RecordType *, IdList<>) {}
@@ -346,23 +367,48 @@ class StdTable
     using IndexDesc = IndexDescriptor<kIndexId>;
     using KeyColumnOffsets = typename IndexDesc::KeyColumnOffsets;
 
+    uint64_t hash = 0;
+    {
+      HashingWriter writer;
+      const TupleType &tuple = std::get<kTupleIndex>(*record);
+      this->HashColumnsByOffets(tuple, writer, KeyColumnOffsets{});
+      hash = writer.Digest();
+    }
+
     static constexpr unsigned kIndexOffset = IndexDesc::kOffset;
-    static constexpr unsigned kIndexLink = kIndexOffset + 1u;
-    auto &index = indexes[kIndexOffset];
+    auto &prev_record = indexes[kIndexOffset][hash];
+    auto &index_link = std::get<kIndexOffset>(
+        std::get<kBackLinksIndex>(*record));
 
-    const TupleType &tuple = std::get<kTupleIndex>(*record);
+    // This index doesn't cover all columns, so we will just link it in as the
+    // new head of the list.
+    if constexpr (!IndexDesc::kCoversAllColumns) {
+      index_link = prev_record;
+      prev_record = record;
 
-    HashingWriter writer;
-    this->HashColumnsByOffets(tuple, writer, KeyColumnOffsets{});
-    const uint64_t hash = writer.Digest();
+    // We have a prior record for this hash. This prior record might be linked
+    // in to another record somewhere else, so we can't do anything about that.
+    // We want to inject our new node in-between the prior node and its next
+    // node for the whole table.
+    } else if (prev_record) {
+      auto &prev_index_link = std::get<kIndexOffset>(
+          std::get<kBackLinksIndex>(*prev_record));
 
-    // The index maps a hash to the most recently added tuple with that hash.
-    // The record for the just-added tuple (this one) includes pointers back to
-    // those prior tuples.
-    auto &record_ptr = index[hash];
-    auto &index_link = std::get<kIndexLink>(std::get<kBackLinksIndex>(*record));
-    index_link = record_ptr;
-    record_ptr = record;
+      index_link = prev_index_link;
+      prev_index_link = record;
+
+    // We don't have a previous record associated with this hash, so we'll add
+    // it in as the first record for the hash, and then we'll link this record
+    // to the "last first" record, and mark this record as the last record.
+    //
+    // We make sure that the last record has its low bit marked as `1`, to tell
+    // us that its hash doesn't match with `last_record`.
+    } else {
+      index_link = reinterpret_cast<void *>(
+          reinterpret_cast<uintptr_t>(last_record) | 1u);
+      prev_record = record;
+      last_record = record;
+    }
 
     // Recursively add to the next level of indices.
     if constexpr (0u < sizeof...(kIndexIds)) {
@@ -370,12 +416,14 @@ class StdTable
     }
   }
 
+  // Backing storage for all records.
   std::deque<RecordType> records;
 
-  std::unordered_map<uint64_t, RecordType *> hash_to_record;
+  // The bloom filter that tells us if a record is definitely not in our
+  // table.
+  std::array<std::bitset<65536>, 2> bloom_filter;
 
-  // List of hash-mapped linked lists. The hash is a hash of a subset of the
-  // columns, unlike where `hash_to_record` maps the
+  // List of hash-mapped linked lists
   std::array<std::unordered_map<uint64_t, RecordType *>, kNumIndexes>
       indexes;
 

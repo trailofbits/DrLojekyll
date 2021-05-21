@@ -13,14 +13,14 @@ namespace rt {
 // pointer of the record is stored at `std::get<2>(record)[kBackLink]`.
 // A `kBackLink` value of `0` means we're traversing through the table,
 // and of `N + 1` means we're traversing through the table's `N`th index.
-template <typename RecordType, unsigned kBackLink>
+template <typename RecordType, unsigned kBackLink, bool kIsTableScan>
 class StdScanIterator {
  private:
   RecordType *ptr{nullptr};
   std::atomic<RecordType *> *scanned_ptr{nullptr};
 
  public:
-  using Self = StdScanIterator<RecordType, kBackLink>;
+  using Self = StdScanIterator<RecordType, kBackLink, kIsTableScan>;
 
   static constexpr size_t kStateIndex = 0u;
   static constexpr size_t kTupleIndex = 1u;
@@ -36,7 +36,6 @@ class StdScanIterator {
   HYDE_RT_ALWAYS_INLINE StdScanIterator(const Self &that) noexcept
       : ptr(that.ptr),
         scanned_ptr(that.scanned_ptr) {}
-
 
   HYDE_RT_ALWAYS_INLINE StdScanIterator(Self &&that) noexcept
       : ptr(that.ptr),
@@ -76,8 +75,21 @@ class StdScanIterator {
   // pointers connect together tuples with identical hashes in the indices.
   HYDE_RT_ALWAYS_INLINE void operator++(void) noexcept {
     const auto addr = reinterpret_cast<uintptr_t>(
-        std::get<kBackLinksIndex>(*ptr)[kBackLink]);
-    ptr = reinterpret_cast<RecordType *>((addr >> 1u) << 1u);
+        std::get<kBackLink>(std::get<kBackLinksIndex>(*ptr)));
+
+    // If it's an index scan, then we want to treat a pointer to tuple with
+    // a different hash as a null pointer.
+    if constexpr (!kIsTableScan) {
+      static constexpr auto kShift = (sizeof(void *) * 8u) - 1u;
+      auto mask = (~static_cast<uintptr_t>(
+          static_cast<intptr_t>(addr << kShift) >> kShift)) << 1u;
+      ptr = reinterpret_cast<RecordType *>(addr & mask);
+
+    // If it's a table scan, then we want to follow all pointers, even if they
+    // cross to a different hash.
+    } else {
+      ptr = reinterpret_cast<RecordType *>((addr >> 1u) << 1u);
+    }
   }
 };
 
@@ -96,7 +108,7 @@ class StdTableScan {
 
   // The iterator for a full table scan uses the offset `0` in the embedded
   // `std::array` of a table, representing
-  using Iterator = StdScanIterator<RecordType, 0u>;
+  using Iterator = StdScanIterator<RecordType, 0u, true>;
 
   HYDE_RT_ALWAYS_INLINE StdTableScan(StdStorage &, Table &table) noexcept
       : last_scanned_record(&(table.last_scanned_record)) {
@@ -131,7 +143,7 @@ class StdIndexScan {
 
  public:
 
-  using Iterator = StdScanIterator<RecordType, kOffset + 1u>;
+  using Iterator = StdScanIterator<RecordType, kOffset, false>;
 
   template <typename... Ts>
   StdIndexScan(StdStorage &, Table &table, Ts&&... cols) noexcept

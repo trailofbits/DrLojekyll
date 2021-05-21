@@ -103,6 +103,12 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
     //            problems where an induction A is contained in the init region
     //            of an induction B, and B's fixpoint cycle region appends to
     //            A's induction vector.
+    //
+    // TODO(pag): Test this more thoroughly. In the case where we only have one
+    //            thing in `inserts`, we end up doing a bad job with just
+    //            `common_ancestor`, e.g. in a loop, we might observe an append,
+    //            a join, then a clear of the pivot vector.
+    return common_ancestor->NearestRegionEnclosedByInduction();
     return common_ancestor;
   }
 }

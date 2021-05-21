@@ -89,8 +89,23 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
     auto sep = "";
 
+
+    std::vector<DataIndex> indexes;
+    for (DataIndex index : table.Indices()) {
+      indexes.push_back(index);
+    }
+
+    std::sort(indexes.begin(), indexes.end(),
+              [] (DataIndex a, DataIndex b) {
+                return a.ValueColumns().size() < b.ValueColumns().size();
+              });
+
     unsigned i = 0u;
-    for (auto index : table.Indices()) {
+    for (auto index : indexes) {
+
+      const auto key_cols = index.KeyColumns();
+      const auto val_cols = index.ValueColumns();
+
       os << os.Indent() << "template <>\n"
          << os.Indent() << "struct IndexDescriptor<" << index.Id() << "> {\n";
       os.PushIndent();
@@ -100,10 +115,13 @@ static void DeclareDescriptors(OutputStream &os, Program program,
          << ";\n"
          << os.Indent() << "static constexpr unsigned kOffset = "
          << (i++) << ";\n"
+         << os.Indent() << "static constexpr unsigned kNumKeyColumns = "
+         << key_cols.size() << ";\n"
+         << os.Indent() << "static constexpr unsigned kNumValueColumns = "
+         << val_cols.size() << ";\n"
+         << os.Indent() << "static constexpr bool kCoversAllColumns = "
+         << (0 == val_cols.size() ? "true" : "false") << ";\n"
          << os.Indent() << "using Columns = TypeList<";
-
-      const auto key_cols = index.KeyColumns();
-      const auto val_cols = index.ValueColumns();
 
       // In C++ codegen, the Index knows which columns are keys/values, but they
       // need to be ordered as they were in the table
@@ -164,6 +182,17 @@ static void DeclareDescriptors(OutputStream &os, Program program,
        << os.Indent() << "struct TableDescriptor<" << table.Id() << "> {\n";
     os.PushIndent();
 
+    // Does this table have an index that fully covers it?
+    os << os.Indent() << "static constexpr bool kHasCoveringIndex = ";
+    for (auto index : table.Indices()) {
+      if (index.ValueColumns().empty()) {
+        os << "true;\n";
+        goto print_rest;
+      }
+    }
+    os << "false;\n";
+
+  print_rest:
     os << os.Indent() << "using ColumnIds = IdList<";
     sep = "";
     for (auto col : table.Columns()) {
@@ -172,14 +201,17 @@ static void DeclareDescriptors(OutputStream &os, Program program,
     }
     os << ">;\n" << os.Indent() << "using IndexIds = IdList<";
     sep = "";
-    for (auto index : table.Indices()) {
-//      if (index.ValueColumns().empty()) {
-//        continue;  // Skip over indexes that span every column.
-//      }
+
+    // Print out the indexes in order of the number of decreasing number of
+    // key columns. Thus, if there's an index over all columns, then it appears
+    // first.
+    for (auto index : indexes) {
       os << sep << index.Id();
       sep = ", ";
     }
     os << ">;\n"
+        << os.Indent() << "static constexpr unsigned kFirstIndexId = "
+        << indexes[0].Id() << ";\n"
         << os.Indent() << "static constexpr unsigned kNumColumns = "
         << table.Columns().size() << ";\n";
 
@@ -190,67 +222,6 @@ static void DeclareDescriptors(OutputStream &os, Program program,
   }
   os << "}  // namepace hyde::rt\n\n";
 }
-
-//// Print out the type of an index. Specify whether this is being used for an index or within a table type
-//static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
-//                                   const DataIndex index) {
-//
-//  //  // The index can be implemented with the keys in the Table.
-//  //  // In this case, the index lookup will be like an `if ... in ...`.
-//  //  if (key_cols.size() == cols.size()) {
-//  //    assert(val_cols.empty());
-//  //
-//  //    // Implement this index as a reference to the Table
-//  //    return os << "decltype(" << Table(os, table) << ") & "
-//  //              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
-//  //  }
-//
-//  os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
-//     << index.Id() << ",
-//  return os;
-//}
-//
-//// Declare a structure containing the information about a table.
-//static void DeclareTable(OutputStream &os, ParsedModule module,
-//                         DataTable table) {
-//
-//  os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
-//     << "> " << Table(os, table) << ";\n";
-//
-////     << ", hyde::rt::TypeList<";
-////
-////  const auto cols = table.Columns();
-////
-////  // List index types first
-////  auto sep = "";
-////  for (auto index : table.Indices()) {
-////    if (!index.ValueColumns().empty()) {
-////
-////      // The index can be implemented with the keys in the Table.
-////      // In this case, the index lookup will be like an `if ... in ...`.
-////      os << sep << "Index" << index.Id();
-////      sep = ", ";
-////    }
-////  }
-////
-////  // Then column types
-////  sep = ">, hyde::rt::TypeList<";
-////  for (auto col : cols) {
-////    os << sep << "column_desc_" << table.Id() << '_' << col.Index();
-////    sep = ", ";
-////  }
-////  os << ">> " << Table(os, table) << ";\n";
-////
-////  // We represent indices as mappings to vectors so that we can concurrently
-////  // write to them while iterating over them (via an index and length check).
-////  for (auto index : table.Indices()) {
-////    if (!index.ValueColumns().empty()) {
-////      os << os.Indent() << "Index" << index.Id() << " " << TableIndex(os, index)
-////         << ";\n";
-////    }
-////  }
-////  os << "\n";
-//}
 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
@@ -907,41 +878,43 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto tables = region.Tables();
 
-    // First, prioritize the tables for which we're not using an index. We're
-    // presence checks for these tables.
-    for (auto i = 0u; i < tables.size(); ++i) {
-      if (region.Index(i)) {
-        continue;
-      }
-
-      const auto table = tables[i];
-      os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
-
-      // Print out key columns
-      sep = "";
-      for (auto index_col : table.Columns()) {
-        auto j = 0u;
-        for (auto used_col : region.IndexedColumns(i)) {
-          if (used_col == index_col) {
-            os << sep << var_names[j];
-            sep = ", ";
-          }
-          ++j;
-        }
-      }
-      os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
-
-      // We increase indentation here, and the corresponding `PopIndent()`
-      // only comes *after* visiting the `region.Body()`.
-      os.PushIndent();
-    }
+//    // First, prioritize the tables for which we're not using an index. We're
+//    // presence checks for these tables.
+//    for (auto i = 0u; i < tables.size(); ++i) {
+//      auto maybe_index = region.Index(i);
+//      if (maybe_index && !maybe_index->ValueColumns().empty()) {
+//        continue;
+//      }
+//
+//      const auto table = tables[i];
+//      os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
+//
+//      // Print out key columns
+//      sep = "";
+//      for (auto index_col : table.Columns()) {
+//        auto j = 0u;
+//        for (auto used_col : region.IndexedColumns(i)) {
+//          if (used_col == index_col) {
+//            os << sep << var_names[j];
+//            sep = ", ";
+//          }
+//          ++j;
+//        }
+//      }
+//      os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
+//
+//      // We increase indentation here, and the corresponding `PopIndent()`
+//      // only comes *after* visiting the `region.Body()`.
+//      os.PushIndent();
+//    }
 
     // Now, do scans over the tables where we do use an index.
     for (auto i = 0u; i < tables.size(); ++i) {
       auto maybe_index = region.Index(i);
-      if (!maybe_index) {
-        continue;
-      }
+      assert(!!maybe_index);
+//      if (!maybe_index || maybe_index->ValueColumns().empty()) {
+//        continue;
+//      }
 
       const auto table = tables[i];
       const auto index = *maybe_index;
@@ -1126,7 +1099,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "{\n";
     os.PushIndent();
     os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
-    if (auto maybe_index = region.Index(); maybe_index) {
+    if (auto maybe_index = region.Index();
+        maybe_index && !maybe_index->ValueColumns().empty()) {
       os << "IndexTag<" << maybe_index->Id() << ">";
     } else {
 
