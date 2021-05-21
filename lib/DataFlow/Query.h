@@ -630,7 +630,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // This breaks abstraction layers, as table IDs come from the control-flow
   // IR, but it's nifty for debugging.
-  unsigned table_id{0u};
+  std::optional<unsigned> table_id;
 
   // Information about if this is inductive.
   std::unique_ptr<InductionInfo> induction_info;

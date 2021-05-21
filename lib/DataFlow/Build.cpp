@@ -1748,7 +1748,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   unsigned next_data_model_id = 1u;
   std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
-  query->ForEachView([&](VIEW *view) {
+  const_cast<const QueryImpl *>(query)->ForEachView([&](VIEW *view) {
     QueryView query_view(view);
     EquivalenceSet *const eq_set =
         new EquivalenceSet(next_data_model_id++, view);
@@ -1956,9 +1956,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       }
     }
   }
-
-  query->ForEachView(
-      [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });
 }
 
 

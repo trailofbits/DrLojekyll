@@ -51,17 +51,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << "<TD rowspan=\"" << row_span << "\">";
     auto sep = "";
-    os << sep << "TABLE " << view.TableId();
-    sep = "<BR />";
+    if (auto table_id = view.TableId()) {
+      os << sep << "TABLE " << *table_id;
+      sep = "<BR />";
+    }
 
     if (induction_id && induction_depth) {
       os << sep << "SET " << *induction_id << " DEPTH " << *induction_depth;
       sep = "<BR />";
     }
 
-    os << "<BR />EQ SET " << *view.EquivalenceSetId();
-
-    os << "</TD>";
+    os << sep << "EQ SET " << view.EquivalenceSetId() << "</TD>";
   };
 
   auto do_conds = [&](int row_span, auto view_) {

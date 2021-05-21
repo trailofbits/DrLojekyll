@@ -137,6 +137,8 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
   const auto old_size = model->table->views.size();
   model->table->views.push_back(view);
 
+  view.SetTableId(model->table->id);
+
   // Sort the views associated with this model so that the first view is
   // the deepest inductive union associated with the table. This is super
   // important to know when we're doing top-down checkers, because if we invoke
@@ -233,10 +235,10 @@ Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
                                   std::vector<unsigned> col_indexes) {
   SortAndUnique(col_indexes);
 
-  // The index covers all columns, i.e. we don't want/need it.
-  if (col_indexes.size() == this->columns.Size()) {
-    return nullptr;
-  }
+//  // The index covers all columns, i.e. we don't want/need it.
+//  if (col_indexes.size() == this->columns.Size()) {
+//    return nullptr;
+//  }
 
   auto col_spec = ColumnSpec(col_indexes);
   for (auto index : indices) {
