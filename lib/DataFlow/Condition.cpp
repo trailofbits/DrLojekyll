@@ -49,7 +49,6 @@ Node<QueryCondition>::Node(ParsedExport decl_)
       negative_users(this),
       setters(this) {}
 
-
 // Is this a trivial condition?
 bool Node<QueryCondition>::IsTrivial(
     std::unordered_map<Node<QueryView> *, bool> &conditional_views) {
@@ -67,7 +66,7 @@ bool Node<QueryCondition>::IsTrivial(
     }
   }
 
-  in_trivial_check = true;
+  in_trivial_check = false;
   return true;
 }
 
