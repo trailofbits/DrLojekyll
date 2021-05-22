@@ -1138,18 +1138,16 @@ bool Node<QueryMerge>::SinkThroughJoins(
     const auto join = inout_view->AsJoin();
     if (!join->num_pivots || join->sets_condition ||
         !join->positive_conditions.Empty() ||
-        !join->negative_conditions.Empty() ||
-        1u < join->NumUses()) {
+        !join->negative_conditions.Empty()) {
       if (!first_join) {
         ++first_join_index;
       }
       continue;
 
     } else if (!first_join) {
-      first_join = join;
+
       num_columns = join->columns.Size();
       num_joined_views = join->joined_views.Size();
-      joins_to_merge.push_back(join);
 
       for (COL * out_col : join->columns) {
         const auto &in_cols = join->out_to_in.find(out_col)->second;
@@ -1169,24 +1167,23 @@ bool Node<QueryMerge>::SinkThroughJoins(
           // Don't have a good way of handling this. We have no provenance for
           // a free-floating constant.
           if (in_col->IsConstant()) {
-            assert(false);
-            return false;
+            goto not_found;
           }
 
           auto i = 0u;
           for (VIEW *joined_view : join->joined_views) {
             if (in_col->view == joined_view) {
               out_to_in_index.emplace_back(i, in_col->Index());
-              goto found;
+              goto out_col_is_good;
             }
             ++i;
           }
 
-          assert(false);  // Didn't find it?! Abort out of the sinking attemps.
-          return false;
+          assert(false);  // Didn't find it?! Abort out of the sinking attempts.
+          goto not_found;
         }
 
-      found:
+      out_col_is_good:
         continue;
       }
 
@@ -1194,7 +1191,12 @@ bool Node<QueryMerge>::SinkThroughJoins(
 
       // This commits us to our sinking attempt.
       inout_view = nullptr;
+      first_join = join;
+      joins_to_merge.push_back(join);
       continue;
+
+    not_found:
+      return false;
 
     // We require that the number of pivots match.
     } else if (join->num_pivots != first_join->num_pivots ||
@@ -1235,6 +1237,7 @@ bool Node<QueryMerge>::SinkThroughJoins(
 
     inout_view = nullptr;
     joins_to_merge.push_back(join);
+    continue;
 
   skip:
     continue;
@@ -1383,7 +1386,7 @@ bool Node<QueryMerge>::SinkThroughJoins(
     it->second.AddUse(in_col);
   }
 
-  lifted_join->color = 0xff00;
+//  lifted_join->color = 0xff00;
 
   TUPLE *join_without_tag = impl->tuples.Create();
   for (auto i = 0u; i < num_columns; ++i) {

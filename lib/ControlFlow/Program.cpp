@@ -328,6 +328,7 @@ DEFINED_RANGE(Program, Tables, DataTable, tables)
 DEFINED_RANGE(Program, Constants, DataVariable, const_vars)
 DEFINED_RANGE(Program, GlobalVariables, DataVariable, global_vars)
 DEFINED_RANGE(Program, Procedures, ProgramProcedure, procedure_regions)
+DEFINED_RANGE(Program, JoinRegions, ProgramTableJoinRegion, join_regions)
 DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_vars)
 DEFINED_RANGE(ProgramTableScanRegion, OutputVariables, DataVariable, out_vars)
 

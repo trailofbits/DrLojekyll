@@ -143,6 +143,9 @@ class Node<ParsedVariable> {
   // Compute the unique identifier for this variable.
   uint64_t Id(void) noexcept;
 
+  // Compute the unique identifier for this variable, local to its clause.
+  uint64_t IdInClause(void) noexcept;
+
   Token name;
   TypeLoc type;
 

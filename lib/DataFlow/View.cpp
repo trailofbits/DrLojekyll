@@ -560,7 +560,6 @@ void Node<QueryView>::DropSetConditions(void) {
     return;
   }
 
-
   const auto is_cond = [cond](COND *c) { return c == cond; };
   for (auto tester : cond->positive_users) {
     tester->positive_conditions.RemoveIf(is_cond);
@@ -705,6 +704,9 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
     that->sets_condition.Swap(sets_condition);
     cond->setters.RemoveIf(is_this_or_that);
     cond->setters.AddUse(that);
+
+    assert(cond->UsersAreConsistent());
+    assert(cond->SettersAreConsistent());
     return;
   }
 
@@ -714,6 +716,9 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
     cond->setters.RemoveIf(is_this_or_that);
     cond->setters.AddUse(that);
     sets_condition.Clear();
+
+    assert(cond->UsersAreConsistent());
+    assert(cond->SettersAreConsistent());
     return;
   }
 
@@ -831,10 +836,14 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
 // Does this view introduce a control dependency? If a node introduces a
 // control dependency then it generally needs to be kept around.
 bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
-  return !positive_conditions.Empty() || !negative_conditions.Empty() ||
-         nullptr != const_cast<VIEW *>(this)->AsCompare() ||
-         nullptr != const_cast<VIEW *>(this)->AsMap() ||
-         nullptr != const_cast<VIEW *>(this)->AsNegate();
+//  if (this->AsMap()) {
+//    return true;
+//  }
+
+  // TODO(pag): Think about whether or not 1:1 MAPs are control dependencies.
+
+  std::unordered_map<VIEW *, bool> is_conditional;
+  return VIEW::IsConditional(const_cast<VIEW *>(this), is_conditional);
 }
 
 // Returns `true` if all output columns are used.
@@ -1102,16 +1111,6 @@ bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
   return true;
 }
 
-// Figure out what the incoming view to `cols1` is.
-VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1) {
-  for (auto col : cols1) {
-    if (!col->IsConstant()) {
-      return col->view;
-    }
-  }
-  return nullptr;
-}
-
 // If `cols1:cols2` pull their data from a tuple, and if that tuple is
 // unconditional, or if its conditions are trivial, then update `cols1:cols2`
 // to point at the source of the data of those tuples.
@@ -1245,6 +1244,17 @@ Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialUnions(
   return PullDataFromBeyondTrivialTuples(incoming_view, cols1, cols2);
 }
 
+// Figure out what the incoming view to `cols1` is.
+VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1) {
+  for (auto col : cols1) {
+    if (!col->IsConstant()) {
+      return col->view;
+    }
+  }
+  return nullptr;
+}
+
+// Figure out what the incoming view to `cols1` and/or `cols2` is.
 VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
                                        const UseList<COL> &cols2) {
   for (auto col : cols1) {
@@ -1258,6 +1268,105 @@ VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
     }
   }
   return nullptr;
+}
+
+// Try to figure out if `view` is conditional. That could mean that it
+// depends directly on a condition, or that it depends on something that
+// may be present or may be absent (e.g. the output of a `JOIN`).
+//
+// Conditional in this case means: if data comes into `view`, then does data
+// *always* come out of `view`? If the answer is "no" then it is conditional,
+// otherwise it isn't. The relevant thing here is CONDitions, which are
+// implemented as reference counts on some VIEW. If that VIEW will always have
+// data, then we say that the view isn't conditional.
+bool Node<QueryView>::IsConditional(
+    VIEW *view, std::unordered_map<VIEW *, bool> &conditional_views) {
+  if (conditional_views.count(view)) {
+    return conditional_views[view];
+  }
+
+  auto &is_cond = conditional_views[view];
+  is_cond = false;  // Sets a base case.
+
+  if (!view->negative_conditions.Empty()) {
+    is_cond = true;
+    return true;
+  }
+
+  for (auto cond : view->positive_conditions) {
+    if (!cond->IsTrivial(conditional_views)) {
+      is_cond = true;
+      return true;
+    }
+  }
+
+  // These all introduce control dependencies. It's too annoying to truly
+  // detect if the effective tests (e.g. compare `1=1`) actually are conditional
+  // so we just assume these things are conditional.
+  if (view->AsJoin() || view->AsCompare() || view->AsNegate() ||
+      view->AsAggregate() || view->AsKVIndex()) {
+
+    is_cond = true;
+    return true;
+
+  // Maps are not conditional iff their input view is not conditional and the
+  // functor's range is one-to-one.
+  } else if (MAP *map = view->AsMap()) {
+    if (FunctorRange::kOneToOne != map->functor.Range()) {
+      is_cond = true;
+      return true;
+    }
+
+    VIEW *incoming_view = VIEW::GetIncomingView(view->input_columns,
+                                                view->attached_columns);
+    if (!incoming_view) {
+      is_cond = false;
+      return false;
+    } else {
+      is_cond = IsConditional(incoming_view, conditional_views);
+      return is_cond;
+    }
+
+  } else if (MERGE *merge = view->AsMerge()) {
+    for (VIEW *merged_view : merge->merged_views) {
+      if (IsConditional(merged_view, conditional_views)) {
+        is_cond = true;
+        return true;
+      }
+    }
+    return false;
+
+  } else if (SELECT *sel = view->AsSelect()) {
+    if (auto stream = sel->stream.get()) {
+      if (stream->AsIO()) {
+        is_cond = true;
+        return true;
+      } else {
+        return false;
+      }
+    } else if (auto rel = sel->relation.get()) {
+      for (VIEW *insert : rel->inserts) {
+        if (IsConditional(insert, conditional_views)) {
+          is_cond = true;
+          return true;
+        }
+      }
+    }
+
+    return false;
+
+  } else if (view->AsTuple() || view->AsInsert()) {
+    if (VIEW *incoming_view = VIEW::GetIncomingView(view->input_columns)) {
+      is_cond = IsConditional(incoming_view, conditional_views);
+    } else {
+      is_cond = false;
+    }
+    return is_cond;
+
+  } else {
+    assert(false);
+    return true;
+  }
 }
 
 // Returns a pointer to the only user of this node, or nullptr if there are
@@ -1320,8 +1429,10 @@ void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
   if (!condition->IsTrivial()) {
     positive_conditions.AddUse(condition);
     condition->positive_users.AddUse(this);
-    assert(condition->UsersAreConsistent());
   }
+
+  assert(condition->UsersAreConsistent());
+  assert(condition->SettersAreConsistent());
 }
 
 // Check that all non-constant views in `cols1` match.

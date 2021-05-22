@@ -139,6 +139,9 @@ class StdTable
   // Size of the inline cache of recently accessed tuples.
   static constexpr auto kCacheSize = 1024u;
 
+  // Number of bloom filters.
+  static constexpr auto kNumBloomFilters = 2u;
+
   using TableDesc = TableDescriptor<kTableId>;
   using TableHelper = StdTableHelper<TableDesc>;
   using TupleType = typename TableHelper::TupleType;
@@ -222,6 +225,11 @@ class StdTable
       LinkNewRecord(&record_ref, hash);
       return true;
     }
+  }
+
+  // Return the number of records in the table.
+  uint64_t Size(void) const noexcept {
+    return num_records;
   }
 
  private:
@@ -341,6 +349,9 @@ class StdTable
   HYDE_RT_NEVER_INLINE HYDE_RT_FLATTEN
   void LinkNewRecord(RecordType *record, uint64_t hash) {
 
+    // Increment the total number of records in our table.
+    ++num_records;
+
     // Make sure all record addresses are evenly aligned; we rely on this
     // for figuring out when we've gotten to the end of a linked list in a full
     // table for a given hash.
@@ -377,6 +388,7 @@ class StdTable
 
     static constexpr unsigned kIndexOffset = IndexDesc::kOffset;
     auto &prev_record = indexes[kIndexOffset][hash];
+
     auto &index_link = std::get<kIndexOffset>(
         std::get<kBackLinksIndex>(*record));
 
@@ -421,11 +433,10 @@ class StdTable
 
   // The bloom filter that tells us if a record is definitely not in our
   // table.
-  std::array<std::bitset<65536>, 2> bloom_filter;
+  std::array<std::bitset<65536>, kNumBloomFilters> bloom_filter;
 
   // List of hash-mapped linked lists
-  std::array<std::unordered_map<uint64_t, RecordType *>, kNumIndexes>
-      indexes;
+  std::array<std::unordered_map<uint64_t, RecordType *>, kNumIndexes> indexes;
 
   // Last record added whose hash didn't collide with another pre-existing
   // record. This is basically the head of the linked list of all records. In
@@ -440,6 +451,8 @@ class StdTable
 
   // Cache of recently accessed records.
   mutable std::array<RecordType *, kCacheSize> last_accessed_record = {};
+
+  uint64_t num_records{0};
 };
 
 template <unsigned kTableId>

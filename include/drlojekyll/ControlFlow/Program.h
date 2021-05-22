@@ -1036,6 +1036,11 @@ class Program {
   // List of all procedures.
   DefinedNodeRange<ProgramProcedure> Procedures(void) const;
 
+  // List of all table join regions in a program. It is convenient to provide
+  // access to these to enable code generators to create specialized, per-join
+  // code, e.g. that selects an optimal evaluation order at runtime.
+  DefinedNodeRange<ProgramTableJoinRegion> JoinRegions(void) const;
+
   // List of query entry points.
   const std::vector<ProgramQuery> &Queries(void) const noexcept;
 

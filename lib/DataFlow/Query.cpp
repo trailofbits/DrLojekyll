@@ -5,6 +5,7 @@
 #include <cassert>
 #include <functional>
 #include <optional>
+#include <unordered_set>
 
 #include "EquivalenceSet.h"
 
@@ -240,6 +241,10 @@ UsedNodeRange<QueryView> QueryView::EquivalenceSetViews(void) const {
   } else {
     return {};
   }
+}
+
+bool QueryView::IsConstantAfterInitialization(void) const noexcept {
+  return impl->is_const_after_init;
 }
 
 bool QueryView::IsSelect(void) const noexcept {
@@ -616,7 +621,7 @@ unsigned QueryCondition::Depth(void) const noexcept {
   }
   impl->in_depth_calc = true;
   auto depth = 1u;
-  for (auto setter : impl->setters) {
+  for (VIEW *setter : impl->setters) {
     depth = std::max(depth, setter->Depth());
   }
   impl->in_depth_calc = false;
@@ -768,12 +773,22 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
 void QueryJoin::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                               std::optional<QueryColumn>)>
                                with_col) const {
-  for (auto out_col : impl->columns) {
-    auto in_cols_it = impl->out_to_in.find(out_col);
-    auto &in_cols = in_cols_it->second;
+#ifndef NDEBUG
+  std::unordered_set<COL *> seen;
+#endif
+
+  for (COL *out_col : impl->columns) {
+    auto &in_cols = impl->out_to_in.at(out_col);
     const auto role = in_cols.Size() == 1u ? InputColumnRole::kJoinNonPivot
                                            : InputColumnRole::kJoinPivot;
-    for (const auto in_col : in_cols) {
+    for (COL *in_col : in_cols) {
+#ifndef NDEBUG
+      if (seen.count(in_col)) {
+        impl->color = 0xff;
+      }
+      //assert(!seen.count(in_col));
+      seen.insert(in_col);
+#endif
       with_col(QueryColumn(in_col), role, QueryColumn(out_col));
     }
   }

@@ -1432,6 +1432,7 @@ class ProgramImpl : public User {
         parallel_regions(this),
         induction_regions(this),
         operation_regions(this),
+        join_regions(this),
         tables(this),
         global_vars(this),
         const_vars(this),
@@ -1460,6 +1461,7 @@ class ProgramImpl : public User {
   DefList<PARALLEL> parallel_regions;
   DefList<INDUCTION> induction_regions;
   DefList<OP> operation_regions;
+  DefList<TABLEJOIN> join_regions;
   DefList<TABLE> tables;
 
   // List of variables associated with globals (e.g. reference counts).

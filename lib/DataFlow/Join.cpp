@@ -474,6 +474,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
       cond->positive_users.AddUse(tuple);
 
       assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   }
 
@@ -547,7 +548,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 //            a cross-product.
 bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
                                    const OptimizationContext &opt,
-                                   const ErrorLog &) {
+                                   const ErrorLog &log) {
 
   if (out_to_in.empty()) {
     PrepareToDelete();
@@ -582,23 +583,78 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
     }
   }
 
+  in_to_out.clear();
+
   // Go detect if we need to guard the input views with compares.
   auto need_constant_guard = false;
-  for (const auto &[out_col, in_cols] : out_to_in) {
-    COL *const_col = out_col->AsConstant();
+  auto has_repeated_inputs = false;
 
-    if (!const_col) {
-      for (COL *in_col : in_cols) {
+  for (COL *out_col : columns) {
+    COL *const_col = out_col->AsConstant();
+    for (COL *in_col : out_to_in.at(out_col)) {
+      if (auto [it, added] = in_to_out.emplace(in_col, out_col); !added) {
+        out_col->ReplaceAllUsesWith(it->second);
+        has_repeated_inputs = true;
+        is_canonical = false;
+      }
+      if (!const_col) {
         if (auto in_const_col = in_col->AsConstant(); in_const_col) {
           out_col->CopyConstantFrom(in_const_col);
           const_col = in_const_col;
-          break;
         }
       }
     }
+
     if (const_col) {
       need_constant_guard = true;
     }
+  }
+
+  // There are repeats of inputs, get rid of them.
+  if (has_repeated_inputs) {
+
+    // First, we need a tuple that will forward all columns as they previously
+    // were.
+    TUPLE * const tuple = query->tuples.Create();
+    for (COL *out_col : columns) {
+      (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+                                   out_col->id, out_col->Index());
+    }
+
+    SubstituteAllUsesWith(tuple);
+    CopyTestedConditionsTo(tuple);
+    DropTestedConditions();
+
+    DefList<COL> new_columns(this);
+    std::unordered_map<COL *, UseList<COL>> new_out_to_in;
+    unsigned new_num_pivots = 0u;
+
+    // Now that all uses have been replaced, we can make our proxy tuple use
+    // the new columns that we will create that won't have any repeated input
+    // columns.
+    for (COL *out_col : columns) {
+      auto &in_cols = out_to_in.at(out_col);
+      COL * const first_out_col = in_to_out[in_cols[0]];
+      assert(first_out_col != nullptr);
+      COL *&new_out_col = in_to_out[first_out_col];
+      if (!new_out_col) {
+        if (1u < in_cols.Size()) {
+          ++new_num_pivots;
+        }
+        new_out_col = new_columns.Create(out_col->var, out_col->type, tuple,
+                                         out_col->id, out_col->Index());
+        new_out_to_in.emplace(new_out_col, std::move(in_cols));
+      }
+
+      tuple->input_columns.AddUse(new_out_col);
+    }
+
+    // Swap in the new input/output columns.
+    columns.Swap(new_columns);
+    out_to_in.swap(new_out_to_in);
+    std::swap(num_pivots, new_num_pivots);
+    Canonicalize(query, opt, log);
+    return true;
   }
 
   if (need_constant_guard) {

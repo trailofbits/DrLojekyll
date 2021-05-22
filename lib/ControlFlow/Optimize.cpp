@@ -829,6 +829,7 @@ void ProgramImpl::Optimize(void) {
       changed |= parallel_regions.RemoveUnused();
       changed |= series_regions.RemoveUnused();
       changed |= operation_regions.RemoveUnused();
+      changed |= join_regions.RemoveUnused();
       changed |= procedure_regions.RemoveIf([](PROC *proc) {
         switch (proc->kind) {
           case ProcedureKind::kInitializer:

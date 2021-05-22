@@ -363,83 +363,46 @@ bool QueryImpl::ShrinkConditions(void) {
   std::vector<COND *> conds;
   ForEachView([&](VIEW *view) { view->depth = 0; });
 
-  for (auto cond : conditions) {
+  for (COND *cond : conditions) {
     conds.push_back(cond);
   }
 
-  std::sort(conds.begin(), conds.end(), [](COND *a, COND *b) {
+  std::sort(conds.begin(), conds.end(), +[](COND *a, COND *b) {
     return QueryCondition(a).Depth() < QueryCondition(b).Depth();
   });
 
-  for (auto cond : conds) {
-    if (cond->setters.Size() != 1u) {
-      continue;
-    }
+  std::unordered_map<VIEW *, bool> conditional_views;
+  std::vector<VIEW *> setters;
 
-    VIEW *const setter = cond->setters[0];
-    assert(setter->sets_condition.get() == cond);
-    bool all_constant = true;
-    for (auto in_col : setter->input_columns) {
-      if (!in_col->IsConstant()) {
-        all_constant = false;
-        break;
+  for (auto changed = true; changed; ) {
+
+    changed = false;
+    conditional_views.clear();
+
+    for (COND *cond : conds) {
+      if (cond->setters.Empty()) {
+        continue;
       }
-    }
 
-    for (auto in_col : setter->attached_columns) {
-      if (!in_col->IsConstant()) {
-        all_constant = false;
-        break;
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+
+      setters.clear();
+      for (auto setter : cond->setters) {
+        setters.push_back(setter);
       }
-    }
 
-    if (!all_constant) {
-      continue;
-    }
+      for (VIEW *setter : setters) {
 
-    if (TUPLE *tuple = setter->AsTuple(); tuple) {
-
-      // Keep positive conditions the same
-      for (auto pos_dep_cond : setter->positive_conditions) {
-        assert(pos_dep_cond);
-        for (auto user_view : cond->positive_users) {
-          if (user_view) {
-            user_view->positive_conditions.AddUse(pos_dep_cond);
-            pos_dep_cond->positive_users.AddUse(user_view);
-          }
-        }
-        for (auto user_view : cond->negative_users) {
-          if (user_view) {
-            user_view->negative_conditions.AddUse(pos_dep_cond);
-            pos_dep_cond->negative_users.AddUse(user_view);
-          }
+        // This setter of this condition is not needed.
+        if (!VIEW::IsConditional(setter, conditional_views)) {
+          setter->DropSetConditions();
+          changed = true;
         }
       }
 
-      // Invert the negated conditions.
-      for (auto neg_dep_cond : setter->negative_conditions) {
-        assert(neg_dep_cond);
-        for (auto user_view : cond->positive_users) {
-          if (user_view) {
-            user_view->negative_conditions.AddUse(neg_dep_cond);
-            neg_dep_cond->negative_users.AddUse(user_view);
-          }
-        }
-        for (auto user_view : cond->negative_users) {
-          if (user_view) {
-            user_view->positive_conditions.AddUse(neg_dep_cond);
-            neg_dep_cond->positive_users.AddUse(user_view);
-          }
-        }
-      }
-
-      tuple->sets_condition.Clear();
-      cond->setters.Clear();
-      cond->positive_users.Clear();
-      cond->negative_users.Clear();
-
-    } else if (CMP *cmp = setter->AsCompare(); cmp) {
-      (void) cmp;
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   }
 

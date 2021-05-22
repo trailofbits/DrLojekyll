@@ -1081,12 +1081,24 @@ static bool FindColInAllViews(COL *search_col, const std::vector<VIEW *> &views,
 // join each of its columns against every other view, then proposes this as
 // a new candidate. Updates `work_item` in place.
 static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
-                               ClauseContext &context, const ErrorLog &log) {
-  auto &views = context.views;
+                               ClauseContext &context,
+                               std::vector<VIEW *> &views,
+                               const ErrorLog &log,
+                               bool recursive=false) {
   const auto num_views = views.size();
   if (1u == num_views) {
     return false;
   }
+
+#ifndef NDEBUG
+  // Make sure a given view doesn't appear twice.
+  for (auto &view : views) {
+    auto view_ = view;
+    view = nullptr;
+    assert(std::find(views.begin(), views.end(), view_) == views.end());
+    view = view_;
+  }
+#endif
 
   //  // Nothing left to do but try to publish the view!
   //  if (num_views == 1u &&
@@ -1219,7 +1231,38 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     auto it =
         std::remove_if(views.begin(), views.end(), [](VIEW *v) { return !v; });
     views.erase(it, views.end());
+
+    // For each of the views we just joined, try to join that view against
+    // every other unjoined view. The idea here is that we want to bring about
+    // the equivalent of a worst-case optimal join, where you have something
+    // like `foo(A, B), bar(B, C), baz(A, C)` and you can't decide the best
+    // order a-priori. With this approach, we'll end up with something like:
+    //
+    //
+    //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
+    //          /      \               /       \                /     \
+    //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
+    if (1u <= views.size() && !recursive) {
+
+      std::vector<VIEW *> next_views_wcoj;
+
+      for (VIEW *view : join->joined_views) {
+
+        next_views_wcoj.clear();
+        next_views_wcoj.push_back(view);
+        for (VIEW *unjoined_view : views) {
+          next_views_wcoj.push_back(unjoined_view);
+        }
+
+        if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
+                               true)) {
+          views.swap(next_views_wcoj);
+        }
+      }
+    }
+
     views.push_back(ret);
+
     return true;
   }
 
@@ -1547,7 +1590,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
     // Try to join two or more views together. Updates `pred_views` in place
     // (view `context.views`).
-    if (FindJoinCandidates(query, clause, context, log)) {
+    if (FindJoinCandidates(query, clause, context, context.views, log)) {
       changed = true;
       continue;
     }
@@ -1702,6 +1745,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
       view->sets_condition.Emplace(view, cond);
       cond->setters.AddUse(view);
+
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   };
 
@@ -2026,6 +2072,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->IdentifyInductions(log);
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
+  impl->TrackConstAfterInit();
 
   BuildEquivalenceSets(impl.get());
 
