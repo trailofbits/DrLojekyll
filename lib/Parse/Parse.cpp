@@ -163,6 +163,12 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
   return id.flat;
 }
 
+// Compute the unique identifier for this variable, local to its clause.
+uint64_t Node<ParsedVariable>::IdInClause(void) noexcept {
+  (void) Id();
+  return context->id.info.var_id;
+}
+
 // Compute the identifier for this clause.
 uint64_t Node<ParsedPredicate>::Id(void) const noexcept {
   return declaration->Id();
@@ -221,6 +227,11 @@ bool ParsedVariable::IsUnnamed(void) const noexcept {
 // Return a unique integer that identifies this variable.
 uint64_t ParsedVariable::Id(void) const noexcept {
   return impl->Id();
+}
+
+// Compute the unique identifier for this variable, local to its clause.
+uint64_t ParsedVariable::IdInClause(void) const noexcept {
+  return impl->IdInClause();
 }
 
 // A number corresponding to the order of appearance of this variable.

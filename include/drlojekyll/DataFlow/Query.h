@@ -382,6 +382,15 @@ class QueryView : public query::QueryNode<QueryView> {
   unsigned EquivalenceSetId(void) const noexcept;
   UsedNodeRange<QueryView> EquivalenceSetViews(void) const;
 
+  // Is this view constant after the initialization of the program? This is
+  // computed at the end of building the dataflow graph, and helps us optimize
+  // JOINs and negations in the control-flow IR by letting us avoid persisting
+  // data when that data is non-differential. That is, if non-differential
+  // data is flowing through a JOIN, and the stuff against which we're joining
+  // is constant after init, then we don't need to save our stuff to a table
+  // prior to the join -- we can force it through and dedup it downstream.
+  bool IsConstantAfterInitialization(void) const noexcept;
+
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
   bool IsKVIndex(void) const noexcept;

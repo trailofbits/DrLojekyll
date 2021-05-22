@@ -27,10 +27,8 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
     view->input_columns.AddUse(col);
   }
 
-  view->CopyTestedConditionsTo(proxy);
-  view->DropTestedConditions();
   view->TransferSetConditionTo(proxy);
-  view->DropSetConditions();
+  view->TransferTestedConditionsTo(proxy);
   return proxy;
 }
 

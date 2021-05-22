@@ -30,10 +30,7 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<Node<QueryView>> &inserts) {
 
     insert->CopyDifferentialAndGroupIdsTo(proxy);
     insert->TransferSetConditionTo(proxy);
-    insert->CopyTestedConditionsTo(proxy);
-
-    insert->DropSetConditions();
-    insert->DropTestedConditions();
+    insert->TransferTestedConditionsTo(proxy);
 
     auto col_index = 0u;
     for (auto in_col : insert->input_columns) {
@@ -136,11 +133,6 @@ static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
 #endif
 
     select->CopyDifferentialAndGroupIdsTo(proxy);
-    select->TransferSetConditionTo(proxy);
-    select->CopyTestedConditionsTo(proxy);
-
-    select->DropSetConditions();
-    select->DropTestedConditions();
 
     auto col_index = 0u;
     for (auto in_col : insert_proxy->columns) {

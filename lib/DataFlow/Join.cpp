@@ -93,7 +93,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 
 // Convert a trivial join (only has a single input view) into a TUPLE.
 void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
-  auto tuple = impl->tuples.Create();
+  TUPLE * const tuple = impl->tuples.Create();
   tuple->color = color;
 
   auto col_index = 0u;
@@ -104,7 +104,7 @@ void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
   }
 
   UseList<COL> new_tuple_inputs(tuple);
-  for (auto out_col : columns) {
+  for (COL *out_col : columns) {
     auto in_cols_it = out_to_in.find(out_col);
     if (in_cols_it != out_to_in.end()) {
       const auto &in_cols = in_cols_it->second;
@@ -120,7 +120,9 @@ void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
   }
 
   ReplaceAllUsesWith(tuple);
-
+#ifndef NDEBUG
+  producer += "->DEAD:TO-TRIVIAL-TUPLE";
+#endif
   tuple->input_columns.Swap(new_tuple_inputs);
 }
 
@@ -273,10 +275,10 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // everything that could be constant with constants. One challenge is that
   // we possibly need to make a tower of comparisons for any incoming view that
   // is sending more than one constant into the join.
-  for (auto joined_view : joined_views) {
+  for (VIEW *joined_view : joined_views) {
 
-    auto view_to_process = joined_view;
-    for (auto col : joined_view->columns) {
+    VIEW *view_to_process = joined_view;
+    for (COL *col : joined_view->columns) {
       new_to_old_col_map.emplace(col, col);
       old_to_new_col_map.emplace(col, col);
     }
@@ -286,8 +288,12 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
          view_to_process != prev_view_to_process;) {
       prev_view_to_process = view_to_process;
 
-      for (auto col : view_to_process->columns) {
-        const auto const_col = in_col_const[col];
+      for (COL *col : view_to_process->columns) {
+        COL *const const_col = in_col_const[col];
+
+        // If this column ins't a constant, or if it's an identical constant
+        // to the one that is associated with the JOIN's output column, then
+        // we don't need to compare it against the JOIN's output.
         if (!const_col || const_col == col->AsConstant()) {
           continue;
         }
@@ -299,21 +305,24 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
         view_to_process->CopyDifferentialAndGroupIdsTo(cmp);
 
-        new_to_old_col_map.emplace(new_col, new_to_old_col_map[col]);
-        old_to_new_col_map[new_to_old_col_map[col]] = new_col;
+        COL *const old_col_for_col = new_to_old_col_map[col];
+        assert(old_col_for_col != nullptr);
+        new_to_old_col_map.emplace(new_col, old_col_for_col);
+        old_to_new_col_map[old_col_for_col] = new_col;
         in_col_const.emplace(new_col, const_col);
 
         new_col->CopyConstantFrom(const_col);
         cmp->input_columns.AddUse(const_col);
         cmp->input_columns.AddUse(col);
 
+        // Add in the rest of the columns.
         auto col_index = 1u;
         for (auto other_col : view_to_process->columns) {
           if (other_col == col) {
             continue;
           }
 
-          const auto new_other_col = cmp->columns.Create(
+          COL *const new_other_col = cmp->columns.Create(
               other_col->var, other_col->type, cmp, other_col->id, col_index++);
 
           new_other_col->CopyConstantFrom(other_col);
@@ -325,6 +334,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
           old_to_new_col_map[new_to_old_col_map[other_col]] = new_other_col;
         }
 
+        // Set this comparison as the new view to process.
         view_to_process = cmp;
         break;
       }
@@ -332,6 +342,9 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
     view_map.emplace(joined_view, view_to_process);
   }
+
+  // Failure suggests repetitions in the `joined_views`.
+  assert(view_map.size() == joined_views.Size());
 
   // Alright, by this point we've conditioned every input view, making sure we
   // only keep non-constant input columns. We'll start by creating a new set of
@@ -360,12 +373,12 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
     new_to_old_col_map.emplace(new_out_col, out_col);
     old_to_new_col_map[out_col] = new_out_col;
 
-    const auto &old_in_cols = out_to_in.find(out_col)->second;
+    const auto &old_in_cols = out_to_in.at(out_col);
     assert(1u < old_in_cols.Size());
     UseList<COL> new_in_cols(this);
 
-    for (auto old_in_col : old_in_cols) {
-      const auto new_in_col = old_to_new_col_map[old_in_col];
+    for (COL *old_in_col : old_in_cols) {
+      COL *const new_in_col = old_to_new_col_map[old_in_col];
       assert(new_in_col != nullptr);
       assert(!new_in_col->AsConstant());
 
@@ -390,7 +403,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
   // Add in the non-constant, non-pivot columns.
   auto new_num_non_pivots = 0u;
-  for (const auto out_col : columns) {
+  for (COL *const out_col : columns) {
     if (out_col->AsConstant() || out_col->Index() < num_pivots) {
       continue;
     }
@@ -402,13 +415,13 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
     new_to_old_col_map.emplace(new_out_col, out_col);
     old_to_new_col_map[out_col] = new_out_col;
 
-    const auto &old_in_cols = out_to_in.find(out_col)->second;
+    const auto &old_in_cols = out_to_in.at(out_col);
     assert(1u == old_in_cols.Size());
 
     UseList<COL> new_in_cols(this);
 
-    const auto old_in_col = old_in_cols[0];
-    const auto new_in_col = old_to_new_col_map[old_in_col];
+    COL *const old_in_col = old_in_cols[0];
+    COL *const new_in_col = old_to_new_col_map[old_in_col];
     assert(new_in_col != nullptr);
     assert(!new_in_col->AsConstant());
 
@@ -431,16 +444,29 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   TUPLE *const tuple = impl->tuples.Create();
   tuple->color = color;
   col_index = 0u;
-  for (auto out_col : columns) {
-    COL *const new_out_col = tuple->columns.Create(
+  for (COL *out_col : columns) {
+    (void) tuple->columns.Create(
         out_col->var, out_col->type, tuple, out_col->id, col_index++);
+  }
+
+  SubstituteAllUsesWith(tuple);  // Also does `TransferSetConditionTo`.
+  TransferTestedConditionsTo(tuple);
+
+  assert(!sets_condition);
+  assert(positive_conditions.Empty());
+  assert(negative_conditions.Empty());
+
+  // Add the inputs to the tuple. They will either be constants, or they will
+  // be the columns in the `new_columns`.
+  for (COL *out_col : columns) {
+    COL *const new_out_col = tuple->columns[out_col->Index()];
 
     if (auto const_col = out_col->AsConstant(); const_col) {
       tuple->input_columns.AddUse(const_col);
       new_out_col->CopyConstantFrom(const_col);
 
     } else {
-      const auto new_join_col = old_to_new_col_map[out_col];
+      COL *const new_join_col = old_to_new_col_map[out_col];
       assert(!new_join_col->AsConstant());
       assert(new_join_col->view == this);
       tuple->input_columns.AddUse(new_join_col);
@@ -455,32 +481,45 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
   // Looks like we've dropped some views, so go create a bunch of conditions
   // and make the tuple which will go above the join conditional on the now
   // dropped views.
-  assert(view_map.size() == joined_views.Size());
   if (all_input_views.size() < joined_views.Size()) {
 
     for (auto [old_in_view, new_in_view_] : view_map) {
-      VIEW *const new_in_view = new_in_view_;
+      VIEW *new_in_view = new_in_view_;
       if (std::find(all_input_views.begin(), all_input_views.end(),
                     new_in_view) != all_input_views.end()) {
         (void) old_in_view;
         continue;  // `old_in_view` / `new_in_view` is represented.
       }
 
-      COND *const cond = impl->conditions.Create();
-      cond->setters.AddUse(new_in_view);
-      new_in_view->sets_condition.Emplace(new_in_view, cond);
+      COND *cond = new_in_view->sets_condition.get();
+
+      // We can't inherit the condition of `new_in_view`.
+      if (cond && cond->setters.Size() != 1) {
+        TUPLE *proxy_new_in_view = impl->tuples.Create();
+        for (auto col : new_in_view->columns) {
+          proxy_new_in_view->columns.Create(
+              col->var, col->type, proxy_new_in_view, col->id, col->Index());
+          proxy_new_in_view->input_columns.AddUse(col);
+        }
+        new_in_view = proxy_new_in_view;
+      }
+
+      // We have to be conditional on the result of the COMPAREs, as those
+      // enforce the constraints of the JOIN itself.
+      if (!cond) {
+        cond = impl->conditions.Create();
+
+        cond->setters.AddUse(new_in_view);
+        new_in_view->sets_condition.Emplace(new_in_view, cond);
+      }
 
       tuple->positive_conditions.AddUse(cond);
       cond->positive_users.AddUse(tuple);
 
       assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   }
-
-  SubstituteAllUsesWith(tuple);
-  CopyTestedConditionsTo(tuple);
-  DropTestedConditions();
-  DropSetConditions();
 
   // All of the pivots were constant!
   if (!new_num_pivots) {
@@ -489,6 +528,9 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
     if (!new_num_non_pivots) {
       assert(tuple->positive_conditions.Size() == joined_views.Size());
       PrepareToDelete();
+#ifndef NDEBUG
+      producer += "->DEAD:REMOVE-CONSTANTS:NO-PIVOTS";
+#endif
       return;
 
     // We've created a cross-product!
@@ -500,7 +542,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
     // Every column we want to publish is available in just one of the views.
     } else {
       UseList<COL> new_tuple_inputs(tuple);
-      for (auto tuple_in_col : tuple->input_columns) {
+      for (COL *tuple_in_col : tuple->input_columns) {
         auto in_cols_it = new_out_to_in.find(tuple_in_col);
         if (in_cols_it != new_out_to_in.end()) {
           const auto &in_cols = in_cols_it->second;
@@ -517,6 +559,9 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 
       tuple->input_columns.Swap(new_tuple_inputs);
       PrepareToDelete();
+#ifndef NDEBUG
+      producer += "->DEAD:REMOVE-CONSTANTS:AVAILABLE-IN-ONE";
+#endif
       return;
     }
 
@@ -547,10 +592,13 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 //            a cross-product.
 bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
                                    const OptimizationContext &opt,
-                                   const ErrorLog &) {
+                                   const ErrorLog &log) {
 
   if (out_to_in.empty()) {
     PrepareToDelete();
+#ifndef NDEBUG
+      producer += "->DEAD:EMTPY-OUT-TO-IN";
+#endif
     return false;
   }
 
@@ -582,23 +630,78 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
     }
   }
 
+  in_to_out.clear();
+
   // Go detect if we need to guard the input views with compares.
   auto need_constant_guard = false;
-  for (const auto &[out_col, in_cols] : out_to_in) {
-    COL *const_col = out_col->AsConstant();
+  auto has_repeated_inputs = false;
 
-    if (!const_col) {
-      for (COL *in_col : in_cols) {
+  for (COL *out_col : columns) {
+    COL *const_col = out_col->AsConstant();
+    for (COL *in_col : out_to_in.at(out_col)) {
+      if (auto [it, added] = in_to_out.emplace(in_col, out_col); !added) {
+        out_col->ReplaceAllUsesWith(it->second);
+        has_repeated_inputs = true;
+        is_canonical = false;
+      }
+      if (!const_col) {
         if (auto in_const_col = in_col->AsConstant(); in_const_col) {
           out_col->CopyConstantFrom(in_const_col);
           const_col = in_const_col;
-          break;
         }
       }
     }
+
     if (const_col) {
       need_constant_guard = true;
     }
+  }
+
+  // There are repeats of inputs, get rid of them.
+  if (has_repeated_inputs) {
+
+    // First, we need a tuple that will forward all columns as they previously
+    // were.
+    TUPLE * const tuple = query->tuples.Create();
+    for (COL *out_col : columns) {
+      (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+                                   out_col->id, out_col->Index());
+    }
+
+    SubstituteAllUsesWith(tuple);
+    CopyTestedConditionsTo(tuple);
+    DropTestedConditions();
+
+    DefList<COL> new_columns(this);
+    std::unordered_map<COL *, UseList<COL>> new_out_to_in;
+    unsigned new_num_pivots = 0u;
+
+    // Now that all uses have been replaced, we can make our proxy tuple use
+    // the new columns that we will create that won't have any repeated input
+    // columns.
+    for (COL *out_col : columns) {
+      auto &in_cols = out_to_in.at(out_col);
+      COL * const first_out_col = in_to_out[in_cols[0]];
+      assert(first_out_col != nullptr);
+      COL *&new_out_col = in_to_out[first_out_col];
+      if (!new_out_col) {
+        if (1u < in_cols.Size()) {
+          ++new_num_pivots;
+        }
+        new_out_col = new_columns.Create(out_col->var, out_col->type, this,
+                                         out_col->id, out_col->Index());
+        new_out_to_in.emplace(new_out_col, std::move(in_cols));
+      }
+
+      tuple->input_columns.AddUse(new_out_col);
+    }
+
+    // Swap in the new input/output columns.
+    columns.Swap(new_columns);
+    out_to_in.swap(new_out_to_in);
+    std::swap(num_pivots, new_num_pivots);
+    Canonicalize(query, opt, log);
+    return true;
   }
 
   if (need_constant_guard) {

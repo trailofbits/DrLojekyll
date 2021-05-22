@@ -152,32 +152,27 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
 
   // An anonymous, not-user-defined condition that is instead inferred based
   // off of optmizations.
-  inline Node(void)
-      : Def<Node<QueryCondition>>(this),
-        User(this),
-        positive_users(this),
-        negative_users(this),
-        setters(this) {}
+  Node(void);
 
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
-  inline explicit Node(ParsedExport decl_)
-      : Def<Node<QueryCondition>>(this),
-        User(this),
-        declaration(decl_),
-        positive_users(this),
-        negative_users(this),
-        setters(this) {}
+  explicit Node(ParsedExport decl_);
 
   inline uint64_t Sort(void) const noexcept {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
   }
 
   // Is this a trivial condition?
+  bool IsTrivial(std::unordered_map<Node<QueryView> *, bool> &conditional_views);
+
+  // Is this a trivial condition?
   bool IsTrivial(void);
 
   // Are the `positive_users` and `negative_users` lists consistent?
   bool UsersAreConsistent(void) const;
+
+  // Are the setters of this condition consistent?
+  bool SettersAreConsistent(void) const;
 
   // The declaration of the `ParsedExport` that is associated with this
   // zero-argument predicate.
@@ -195,6 +190,8 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   bool in_trivial_check{false};
 
   bool in_depth_calc{false};
+
+  bool is_dead{false};
 };
 
 using COND = Node<QueryCondition>;
@@ -361,6 +358,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Copy all positive and negative conditions from `this` into `that`.
   void CopyTestedConditionsTo(Node<QueryView> *that);
+
+  // Transfer all positive and negative conditions from `this` into `that`.
+  void TransferTestedConditionsTo(Node<QueryView> *that);
 
   // Converts this node to be unconditional, it doesn't affect set conditions.
   void DropTestedConditions(void);
@@ -606,6 +606,15 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Is this view used by a merge?
   bool is_used_by_merge{false};
 
+  // Is this view constant after the initialization of the program? This is
+  // computed at the end of building the dataflow graph, and helps us optimize
+  // JOINs and negations in the control-flow IR by letting us avoid persisting
+  // data when that data is non-differential. That is, if non-differential
+  // data is flowing through a JOIN, and the stuff against which we're joining
+  // is constant after init, then we don't need to save our stuff to a table
+  // prior to the join -- we can force it through and dedup it downstream.
+  bool is_const_after_init{false};
+
   // Color to use in the eventual data flow output. Default is black. This
   // is influenced by `ParsedClause::IsHighlighted`, which in turn is enabled
   // by using the `@highlight` pragma after a clause head.
@@ -670,6 +679,13 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
   static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
                                           const UseList<COL> &cols2);
+
+  // Try to figure out if `view` is conditional. That could mean that it
+  // depends directly on a condition, or that it depends on something that
+  // may be present or may be absent (e.g. the output of a `JOIN`).
+  static bool IsConditional(
+      Node<QueryView> *view,
+      std::unordered_map<Node<QueryView> *, bool> &conditional_views);
 
   // Returns a pointer to the only user of this node, or nullptr if there are
   // zero users, or more than one users.
@@ -846,11 +862,6 @@ class Node<QueryJoin> final : public Node<QueryView> {
 
   // Maps output columns to input columns.
   std::unordered_map<COL *, UseList<COL>> out_to_in;
-
-  // List of all inputs before the main canonicalization code runs. Used to keep
-  // track of which columns are optimized away, so that we can find them again
-  // if we end up being able to discard a JOINed view.
-  std::vector<COL *> prev_input_columns;
 
   // List of views merged by this JOIN. Columns in pivot sets in `out_to_in` are
   // in the same order as they appear in `pivot_views`.
@@ -1388,6 +1399,10 @@ class QueryImpl {
   // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(const ErrorLog &log,
                                 bool check_conds = false) const;
+
+  // Track which views are constant after initialization.
+  // See `VIEW::is_const_after_init`.
+  void TrackConstAfterInit(void) const;
 
   // Extract conditions from regular nodes and force them to belong to only
   // tuple nodes. This simplifies things substantially for downstream users.

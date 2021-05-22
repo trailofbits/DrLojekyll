@@ -201,6 +201,9 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   // clause, all body_variables with the same name will have the same identifier.
   uint64_t Id(void) const noexcept;
 
+  // Compute the unique identifier for this variable, local to its clause.
+  uint64_t IdInClause(void) const noexcept;
+
   // A number corresponding to the order of appearance of this variable.
   unsigned Order(void) const noexcept;
 

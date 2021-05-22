@@ -23,6 +23,8 @@ static const char *kColors[] = {
     "cadetblue3",   "floralwhite",  "gainsboro",  "darkseagreen1",
 };
 
+static constexpr auto kNumColors = sizeof(kColors)/sizeof(kColors[0]);
+
 }  // namespace
 
 OutputStream &operator<<(OutputStream &os, Query query) {
@@ -386,7 +388,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (; i < num_pivots; ++i) {
       const auto pivot_set_size = join.NthInputPivotSet(i).size();
       const auto col = join.NthOutputPivotColumn(i);
-      const auto color = kColors[i];
+      const auto color = kColors[i % kNumColors];
       os << "<TD port=\"c" << col.Id() << "\" colspan=\"" << pivot_set_size
          << "\" bgcolor=\"" << color << "\">" << do_col(col) << "</TD>";
     }
@@ -402,7 +404,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto j = 0u;
     for (i = 0u; i < num_pivots; ++i) {
-      auto color = kColors[i];
+      auto color = kColors[i % kNumColors];
       for (auto col : join.NthInputPivotSet(i)) {
         os << "<TD bgcolor=\"" << color << "\" port=\"p" << j << "\">"
            << do_col(col) << "</TD>";

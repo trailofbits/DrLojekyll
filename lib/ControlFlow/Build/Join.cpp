@@ -123,8 +123,7 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  TABLEJOIN * const join = impl->operation_regions.CreateDerived<TABLEJOIN>(
-      seq, join_view, impl->next_id++);
+  TABLEJOIN * const join = impl->join_regions.Create(seq, join_view, impl->next_id++);
   seq->AddRegion(join);
 
   TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
@@ -183,6 +182,7 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     TABLE *const pred_table = pred_model->table;
     TABLEINDEX *const pred_index =
         pred_table->GetOrCreateIndex(impl, std::move(pivot_col_indices));
+
     join->tables.AddUse(pred_table);
     if (pred_index) {
       join->indices.AddUse(pred_index);
@@ -193,6 +193,8 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     join->pivot_cols.emplace_back(join);
     join->output_cols.emplace_back(join);
     join->output_vars.emplace_back(join);
+
+    assert(!view_to_index.count(pred_view));
     view_to_index.emplace(pred_view, i);
 
     auto &pivot_table_cols = join->pivot_cols.back();
@@ -229,13 +231,16 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     assert(!out_col->IsConstant());
     assert(!in_col.IsConstant());
 
-    const auto pred_view = QueryView::Containing(in_col);
-    const auto pred_view_idx = view_to_index[pred_view];
-    const auto table = join->tables[pred_view_idx];
+    const QueryView pred_view = QueryView::Containing(in_col);
+    const unsigned pred_view_idx = view_to_index[pred_view];
+    TABLE * const pred_table = join->tables[pred_view_idx];
     auto &out_cols = join->output_cols.at(pred_view_idx);
     auto &out_vars = join->output_vars.at(pred_view_idx);
 
-    out_cols.AddUse(table->columns[*(in_col.Index())]);
+    assert(impl->view_to_model[pred_view]->FindAs<DataModel>()->table ==
+           pred_table);
+
+    out_cols.AddUse(pred_table->columns[*(in_col.Index())]);
     VAR * var = nullptr;
 
     if (InputColumnRole::kJoinPivot == role) {
@@ -248,6 +253,14 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
       if (join->index_of_index[pred_view_idx]) {
         cmp->lhs_vars.AddUse(join->pivot_vars[*(out_col->Index())]);
         cmp->rhs_vars.AddUse(var);
+
+      // NOTE(pag): We're currently operating with always having indices. If we
+      //            don't have indices, then it requires that the codegen do
+      //            point lookups instead of scans. If we switch back to a
+      //            possibly indexless approach, then we should revisit the
+      //            above code.
+      } else {
+        assert(false);
       }
 
     } else {
@@ -255,6 +268,9 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
       join->col_id_to_var[in_col.Id()] = var;
       join->col_id_to_var[out_col->Id()] = var;
     }
+
+    // Failure suggests that a JOIN takes the same view or same column twice.
+    assert(out_vars.Size() <= pred_table->columns.Size());
 
     var->query_column = in_col;
   });

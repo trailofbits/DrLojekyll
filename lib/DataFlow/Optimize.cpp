@@ -6,6 +6,8 @@
 
 #include "Query.h"
 
+#include <sstream>
+
 namespace hyde {
 namespace {
 
@@ -94,6 +96,11 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
 
       eq.Clear();
       if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
+#ifndef NDEBUG
+        std::stringstream ss;
+        ss << "CSE(" << v2->producer << ", " << v1->producer << ")";
+        ss.str().swap(v2->producer);
+#endif
         v1->ReplaceAllUsesWith(v2);
         impl->RelabelGroupIDs();
         changed = true;
@@ -301,28 +308,47 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   uint64_t hash_history[kNumHistories] = {};
   auto curr_hash_index = 0u;
 
-  for (auto non_local_changes = true; non_local_changes && iter < max_iters;
-       ++iter) {
-    non_local_changes = false;
+#ifndef NDEBUG
+  auto check_consistency = [=] (VIEW *v) {
+    for (auto c : v->columns) {
+      assert(c->view == v);
+    }
+    for (auto cond : conditions) {
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+    }
+  };
+#else
+#  define check_consistency(v)
+#endif
 
-    // Running hash of which views produced non-local changes.
-    uint64_t hash = 0u;
+
+  // Running hash of which views produced non-local changes.
+  auto non_local_changes = true;
+  uint64_t hash = 0u;
+
+  // Applied to canonicalize each view.
+  auto on_each_view = [&](VIEW *view) {
+    if (!view->is_dead) {
+      check_consistency(view);
+      const auto ret = view->Canonicalize(this, opt, log);
+      check_consistency(view);
+      if (ret) {
+        hash = RotateRight64(hash, 13) ^ view->Hash();
+        non_local_changes = true;
+      }
+    }
+  };
+
+  for (; non_local_changes && iter < max_iters; ++iter) {
+
+    non_local_changes = false;
+    hash = 0u;
 
     if (opt.bottom_up) {
-      ForEachViewInDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt, log)) {
-          hash = RotateRight64(hash, 13) ^ view->Hash();
-          non_local_changes = true;
-        }
-      });
-
+      ForEachViewInDepthOrder(on_each_view);
     } else {
-      ForEachViewInReverseDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt, log)) {
-          hash = RotateRight64(hash, 13) ^ view->Hash();
-          non_local_changes = true;
-        }
-      });
+      ForEachViewInReverseDepthOrder(on_each_view);
     }
 
     // Store our running hash into our history of hashes.
@@ -363,83 +389,48 @@ bool QueryImpl::ShrinkConditions(void) {
   std::vector<COND *> conds;
   ForEachView([&](VIEW *view) { view->depth = 0; });
 
-  for (auto cond : conditions) {
+  for (COND *cond : conditions) {
     conds.push_back(cond);
   }
 
-  std::sort(conds.begin(), conds.end(), [](COND *a, COND *b) {
+  std::sort(conds.begin(), conds.end(), +[](COND *a, COND *b) {
     return QueryCondition(a).Depth() < QueryCondition(b).Depth();
   });
 
-  for (auto cond : conds) {
-    if (cond->setters.Size() != 1u) {
-      continue;
-    }
+  std::unordered_map<VIEW *, bool> conditional_views;
+  std::vector<VIEW *> setters;
 
-    VIEW *const setter = cond->setters[0];
-    assert(setter->sets_condition.get() == cond);
-    bool all_constant = true;
-    for (auto in_col : setter->input_columns) {
-      if (!in_col->IsConstant()) {
-        all_constant = false;
-        break;
+  for (auto changed = true; changed; ) {
+
+    changed = false;
+    conditional_views.clear();
+
+    for (COND *cond : conds) {
+
+      assert(!cond->is_dead);
+      if (cond->setters.Empty()) {
+        continue;
       }
-    }
 
-    for (auto in_col : setter->attached_columns) {
-      if (!in_col->IsConstant()) {
-        all_constant = false;
-        break;
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+
+      setters.clear();
+      for (auto setter : cond->setters) {
+        setters.push_back(setter);
       }
-    }
 
-    if (!all_constant) {
-      continue;
-    }
+      for (VIEW *setter : setters) {
 
-    if (TUPLE *tuple = setter->AsTuple(); tuple) {
-
-      // Keep positive conditions the same
-      for (auto pos_dep_cond : setter->positive_conditions) {
-        assert(pos_dep_cond);
-        for (auto user_view : cond->positive_users) {
-          if (user_view) {
-            user_view->positive_conditions.AddUse(pos_dep_cond);
-            pos_dep_cond->positive_users.AddUse(user_view);
-          }
-        }
-        for (auto user_view : cond->negative_users) {
-          if (user_view) {
-            user_view->negative_conditions.AddUse(pos_dep_cond);
-            pos_dep_cond->negative_users.AddUse(user_view);
-          }
+        // This setter of this condition is not needed.
+        if (!VIEW::IsConditional(setter, conditional_views)) {
+          setter->DropSetConditions();
+          changed = true;
         }
       }
 
-      // Invert the negated conditions.
-      for (auto neg_dep_cond : setter->negative_conditions) {
-        assert(neg_dep_cond);
-        for (auto user_view : cond->positive_users) {
-          if (user_view) {
-            user_view->negative_conditions.AddUse(neg_dep_cond);
-            neg_dep_cond->negative_users.AddUse(user_view);
-          }
-        }
-        for (auto user_view : cond->negative_users) {
-          if (user_view) {
-            user_view->positive_conditions.AddUse(neg_dep_cond);
-            neg_dep_cond->positive_users.AddUse(user_view);
-          }
-        }
-      }
-
-      tuple->sets_condition.Clear();
-      cond->setters.Clear();
-      cond->positive_users.Clear();
-      cond->negative_users.Clear();
-
-    } else if (CMP *cmp = setter->AsCompare(); cmp) {
-      (void) cmp;
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   }
 
