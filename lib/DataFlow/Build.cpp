@@ -1240,7 +1240,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     //
     //
     //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
-    //          /      \               /       \                /     \
+    //          /      \               /       \                /     \        .
     //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
     if (1u <= views.size() && !recursive) {
 
