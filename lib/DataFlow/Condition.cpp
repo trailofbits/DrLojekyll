@@ -5,6 +5,8 @@
 namespace hyde {
 
 Node<QueryCondition>::~Node(void) {
+  is_dead = true;
+
   for (auto setter : setters) {
     if (setter) {
       //assert(setter->sets_condition.get() == this);
@@ -27,6 +29,26 @@ Node<QueryCondition>::~Node(void) {
   }
   setters.Clear();
 }
+
+// An anonymous, not-user-defined condition that is instead inferred based
+// off of optmizations.
+Node<QueryCondition>::Node(void)
+    : Def<Node<QueryCondition>>(this),
+      User(this),
+      positive_users(this),
+      negative_users(this),
+      setters(this) {}
+
+// An explicit, user-defined condition. Usually associated with there-exists
+// checks or configuration options.
+Node<QueryCondition>::Node(ParsedExport decl_)
+    : Def<Node<QueryCondition>>(this),
+      User(this),
+      declaration(decl_),
+      positive_users(this),
+      negative_users(this),
+      setters(this) {}
+
 
 // Is this a trivial condition?
 bool Node<QueryCondition>::IsTrivial(

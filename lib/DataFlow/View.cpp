@@ -642,27 +642,30 @@ bool Node<QueryView>::PrepareToDelete(void) {
 
 // Copy all positive and negative conditions from `this` into `that`.
 void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
+  assert(this != that);
+
 #ifndef NDEBUG
   std::vector<COND *> conds_seen;
-  for (auto cond : positive_conditions) {
+  for (COND *cond : positive_conditions) {
     conds_seen.push_back(cond);
   }
-  for (auto cond : negative_conditions) {
+  for (COND *cond : negative_conditions) {
     conds_seen.push_back(cond);
   }
-  for (auto cond : conds_seen) {
+  for (COND *cond : conds_seen) {
     assert(cond->UsersAreConsistent());
+    assert(cond->SettersAreConsistent());
   }
 #endif
 
-  for (auto cond : positive_conditions) {
+  for (COND *cond : positive_conditions) {
     assert(cond);
     assert(cond != that->sets_condition.get());
     that->positive_conditions.AddUse(cond);
     cond->positive_users.AddUse(that);
   }
 
-  for (auto cond : negative_conditions) {
+  for (COND *cond : negative_conditions) {
     assert(cond);
     assert(cond != that->sets_condition.get());
     that->negative_conditions.AddUse(cond);
@@ -672,18 +675,29 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
   that->OrderConditions();
 
 #ifndef NDEBUG
-  for (auto cond : conds_seen) {
+  for (COND *cond : conds_seen) {
     assert(cond->UsersAreConsistent());
+    assert(cond->SettersAreConsistent());
   }
 #endif
 }
 
+// Transfer all positive and negative conditions from `this` into `that`.
+void Node<QueryView>::TransferTestedConditionsTo(Node<QueryView> *that) {
+  this->CopyTestedConditionsTo(that);
+  this->DropTestedConditions();
+}
+
 // If `sets_condition` is non-null, then transfer the setter to `that`.
 void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
-  const auto cond = sets_condition.get();
+  assert(this != that);
+
+  COND *const cond = sets_condition.get();
   if (!cond) {
     return;
   }
+
+  assert(cond->SettersAreConsistent());
 
   auto is_this_or_that = [=](VIEW *v) { return v == this || v == that; };
 
@@ -699,12 +713,13 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
 #endif
 
   // Simple case: transfer "settership" of the condition.
-  const auto that_cond = that->sets_condition.get();
+  COND *const that_cond = that->sets_condition.get();
   if (!that_cond) {
     that->sets_condition.Swap(sets_condition);
     cond->setters.RemoveIf(is_this_or_that);
     cond->setters.AddUse(that);
 
+    assert(!sets_condition);
     assert(cond->UsersAreConsistent());
     assert(cond->SettersAreConsistent());
     return;
@@ -717,6 +732,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
     cond->setters.AddUse(that);
     sets_condition.Clear();
 
+    assert(!sets_condition);
     assert(cond->UsersAreConsistent());
     assert(cond->SettersAreConsistent());
     return;
@@ -791,8 +807,12 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   for (auto cond : negative_conditions) {
     conds_seen.push_back(cond);
   }
+  if (auto cond = sets_condition.get()) {
+    conds_seen.push_back(cond);
+  }
   for (auto cond : conds_seen) {
     assert(cond->UsersAreConsistent());
+    assert(cond->SettersAreConsistent());
   }
 #endif
 
@@ -802,8 +822,8 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
   }
 
   // We don't want to replace the weak uses of `this` in any condition's
-  // `positive_users` or `negative_users`.
-  this->Def<Node<QueryView>>::ReplaceUsesWithIf<User>(
+  // `positive_users` or `negative_users`, nor in any `COND::setters` lists.
+  this->VIEW::ReplaceUsesWithIf<User>(
       that, [=](User *user, VIEW *) { return !dynamic_cast<COND *>(user); });
 
   CopyDifferentialAndGroupIdsTo(that);
@@ -812,6 +832,7 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
 #ifndef NDEBUG
   for (auto cond : conds_seen) {
     assert(cond->UsersAreConsistent());
+    assert(cond->SettersAreConsistent());
   }
 #endif
 
@@ -828,8 +849,8 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
 // Replace all uses of `this` with `that`. The semantic here is that `this`
 // is completely subsumed/replaced by `that`.
 void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
-  SubstituteAllUsesWith(that);
-  CopyTestedConditionsTo(that);
+  SubstituteAllUsesWith(that);  // Will do `TransferSetConditionsTo`.
+  TransferTestedConditionsTo(that);
   PrepareToDelete();
 }
 
@@ -1448,6 +1469,9 @@ bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1) const {
         }
       } else {
         prev_view = col->view;
+        if (prev_view == this) {
+          return false;
+        }
       }
     }
   }
@@ -1477,6 +1501,9 @@ bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1,
           }
         } else {
           prev_view = col->view;
+          if (prev_view == this) {
+            return false;
+          }
         }
       }
     }

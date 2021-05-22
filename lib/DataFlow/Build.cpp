@@ -1246,17 +1246,46 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
       std::vector<VIEW *> next_views_wcoj;
 
-      for (VIEW *view : join->joined_views) {
-
-        next_views_wcoj.clear();
-        next_views_wcoj.push_back(view);
+      // Experimental testing on dds-native shows that this variant performs
+      // pretty well. The general idea is that we have `foo(A, B), bar(B, C),
+      // baz(A, C)`, and so if we join together `foo(A, B), bar(B, C)` then
+      // we want to select `bar(B, C)` (index 1), and try to join it against
+      // everything not joined, i.e. `baz(A, C)`. After both, we'll have
+      // two things presenting `foo_bar(A, B, C), bar_baz(A, B, C)` which can
+      // be joined over all columns.
+      if (true) {
+        next_views_wcoj.push_back(join->joined_views[1u]);
         for (VIEW *unjoined_view : views) {
           next_views_wcoj.push_back(unjoined_view);
         }
 
         if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
-                               true)) {
+                               false)) {
           views.swap(next_views_wcoj);
+        }
+
+      // This variant is like a generalization of the above variant for N-ary
+      // joins rather than binary joins. Experiments on dds-native shows that
+      // `i=0` is better than not doing any WCOJ-like setup, and that `i=1`
+      // is consistently better than `i=0`, and performs nearly as well as the
+      // above if use `next_views_wcoj.push_back(join->joined_views[0]);`, but
+      // ultimately, `next_views_wcoj.push_back(join->joined_views[1]);` (i.e.
+      // index 1) outperformed all. Keeping this code here for posterity.
+      } else {
+
+        //for (VIEW *view : join->joined_views) {
+        for (auto i = 1u, max_i = join->joined_views.Size(); i < max_i; ++i) {
+          VIEW * const view = join->joined_views[i];
+          next_views_wcoj.clear();
+          next_views_wcoj.push_back(view);
+          for (VIEW *unjoined_view : views) {
+            next_views_wcoj.push_back(unjoined_view);
+          }
+
+          if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
+                                 true)) {
+            views.swap(next_views_wcoj);
+          }
         }
       }
     }
@@ -2044,24 +2073,45 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     }
   }
 
+#ifndef NDEBUG
+  auto check_conds = [=] (void) {
+    for (auto cond : impl->conditions) {
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+    }
+  };
+#else
+#  define check_conds()
+#endif
+
   impl->RemoveUnusedViews();
   impl->ClearGroupIDs();
   impl->TrackDifferentialUpdates(log);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
+  check_conds();
 
   impl->Simplify(log);
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
 
+  check_conds();
+
   if (!impl->ConnectInsertsToSelects(log)) {
     return std::nullopt;
   }
 
-  impl->Optimize(log);
+  check_conds();
 
+  impl->Optimize(log);
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
+
+  check_conds();
 
   impl->ConvertConstantInputsToTuples();
   impl->RemoveUnusedViews();
@@ -2073,7 +2123,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
   impl->TrackConstAfterInit();
-
   BuildEquivalenceSets(impl.get());
 
   return Query(std::move(impl));

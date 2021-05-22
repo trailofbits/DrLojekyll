@@ -6,6 +6,8 @@
 
 #include "Query.h"
 
+#include <sstream>
+
 namespace hyde {
 namespace {
 
@@ -94,6 +96,11 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
 
       eq.Clear();
       if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
+#ifndef NDEBUG
+        std::stringstream ss;
+        ss << "CSE(" << v2->producer << ", " << v1->producer << ")";
+        ss.str().swap(v2->producer);
+#endif
         v1->ReplaceAllUsesWith(v2);
         impl->RelabelGroupIDs();
         changed = true;
@@ -301,28 +308,47 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   uint64_t hash_history[kNumHistories] = {};
   auto curr_hash_index = 0u;
 
-  for (auto non_local_changes = true; non_local_changes && iter < max_iters;
-       ++iter) {
-    non_local_changes = false;
+#ifndef NDEBUG
+  auto check_consistency = [=] (VIEW *v) {
+    for (auto c : v->columns) {
+      assert(c->view == v);
+    }
+    for (auto cond : conditions) {
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+    }
+  };
+#else
+#  define check_consistency(v)
+#endif
 
-    // Running hash of which views produced non-local changes.
-    uint64_t hash = 0u;
+
+  // Running hash of which views produced non-local changes.
+  auto non_local_changes = true;
+  uint64_t hash = 0u;
+
+  // Applied to canonicalize each view.
+  auto on_each_view = [&](VIEW *view) {
+    if (!view->is_dead) {
+      check_consistency(view);
+      const auto ret = view->Canonicalize(this, opt, log);
+      check_consistency(view);
+      if (ret) {
+        hash = RotateRight64(hash, 13) ^ view->Hash();
+        non_local_changes = true;
+      }
+    }
+  };
+
+  for (; non_local_changes && iter < max_iters; ++iter) {
+
+    non_local_changes = false;
+    hash = 0u;
 
     if (opt.bottom_up) {
-      ForEachViewInDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt, log)) {
-          hash = RotateRight64(hash, 13) ^ view->Hash();
-          non_local_changes = true;
-        }
-      });
-
+      ForEachViewInDepthOrder(on_each_view);
     } else {
-      ForEachViewInReverseDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt, log)) {
-          hash = RotateRight64(hash, 13) ^ view->Hash();
-          non_local_changes = true;
-        }
-      });
+      ForEachViewInReverseDepthOrder(on_each_view);
     }
 
     // Store our running hash into our history of hashes.
@@ -380,6 +406,8 @@ bool QueryImpl::ShrinkConditions(void) {
     conditional_views.clear();
 
     for (COND *cond : conds) {
+
+      assert(!cond->is_dead);
       if (cond->setters.Empty()) {
         continue;
       }

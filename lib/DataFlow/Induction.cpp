@@ -374,7 +374,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
 
     // We don't want to replace the weak uses of `this` in any condition's
-    // `positive_users` or `negative_users`.
+    // `positive_users`, `negative_users`, or `setters`.
     view->VIEW::ReplaceUsesWithIf<User>(new_union, [=](User *user, VIEW *) {
       // We'll let all conditions continue to use `view`.
       //

@@ -152,22 +152,11 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
 
   // An anonymous, not-user-defined condition that is instead inferred based
   // off of optmizations.
-  inline Node(void)
-      : Def<Node<QueryCondition>>(this),
-        User(this),
-        positive_users(this),
-        negative_users(this),
-        setters(this) {}
+  Node(void);
 
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
-  inline explicit Node(ParsedExport decl_)
-      : Def<Node<QueryCondition>>(this),
-        User(this),
-        declaration(decl_),
-        positive_users(this),
-        negative_users(this),
-        setters(this) {}
+  explicit Node(ParsedExport decl_);
 
   inline uint64_t Sort(void) const noexcept {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
@@ -201,6 +190,8 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   bool in_trivial_check{false};
 
   bool in_depth_calc{false};
+
+  bool is_dead{false};
 };
 
 using COND = Node<QueryCondition>;
@@ -367,6 +358,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Copy all positive and negative conditions from `this` into `that`.
   void CopyTestedConditionsTo(Node<QueryView> *that);
+
+  // Transfer all positive and negative conditions from `this` into `that`.
+  void TransferTestedConditionsTo(Node<QueryView> *that);
 
   // Converts this node to be unconditional, it doesn't affect set conditions.
   void DropTestedConditions(void);
