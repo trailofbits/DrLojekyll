@@ -123,7 +123,7 @@ std::vector<QueryView> SortedPredecessors(QueryJoin join) {
 
   for (QueryView pred_view : join.JoinedViews()) {
     join.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-                        std::optional<QueryColumn> out_col) {
+                        std::optional<QueryColumn>) {
       if (InputColumnRole::kJoinNonPivot == role && !in_col.IsConstant() &&
           QueryView::Containing(in_col) == pred_view) {
         num_non_pivots[pred_view] += 1u;
@@ -202,7 +202,7 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
     const auto num_cols = other_pred_view.Columns().size();
     std::vector<unsigned> pivot_cols;
     std::vector<VAR *> pivot_vars(num_cols);
-    std::vector<std::optional<QueryColumn>> out_cols(num_cols);
+    std::vector<std::optional<QueryColumn>> out_cols(num_cols, std::nullopt);
 
     join.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
                         std::optional<QueryColumn> out_col) {
@@ -210,12 +210,14 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
           QueryView::Containing(in_col) == other_pred_view) {
 
         const auto index = *(in_col.Index());
-        out_cols[index].swap(out_col);
 
         if (InputColumnRole::kJoinPivot == role) {
           pivot_cols.push_back(index);
+          assert(out_col.has_value());
           pivot_vars[index] = out_vars[*(out_col->Index())];
         }
+
+        out_cols[index].swap(out_col);
       }
     });
 
