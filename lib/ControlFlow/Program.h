@@ -214,7 +214,7 @@ template <>
 class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
  public:
   virtual ~Node(void);
-  explicit Node(Node<ProgramProcedure> *containing_procedure_);
+  explicit Node(Node<ProgramProcedure> *containing_procedure_, bool);
   explicit Node(Node<ProgramRegion> *parent_);
 
   virtual void Accept(ProgramVisitor &visitor) = 0;
@@ -231,8 +231,11 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   inline void ReplaceAllUsesWith(Node<ProgramRegion> *that) {
     this->Def<Node<ProgramRegion>>::ReplaceAllUsesWith(that);
-    that->parent = this->parent;
-    this->parent = nullptr;
+    if (!this->AsProcedure()) {
+      assert(!that->AsProcedure());
+      that->parent = this->parent;
+      this->parent = nullptr;
+    }
   }
 
   // Returns 'true' if 'this' was able to merge all of the regions in 'merges'.
@@ -1195,15 +1198,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  inline Node(unsigned id_, ProcedureKind kind_)
-      : Node<ProgramRegion>(this),
-        id(id_),
-        kind(kind_),
-        tables(this),
-        body(this),
-        input_vecs(this),
-        input_vars(this),
-        vectors(this) {}
+  Node(unsigned id_, ProcedureKind kind_);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;

@@ -181,7 +181,7 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
 
   auto changed = false;
 
-  // Cleae out empty init regions of inductions.
+  // Clear out empty init regions of inductions.
   if (induction->init_region && induction->init_region->IsNoOp()) {
     induction->init_region->parent = nullptr;
     induction->init_region.Clear();
@@ -193,6 +193,41 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
     induction->output_region->parent = nullptr;
     induction->output_region.Clear();
     changed = true;
+  }
+
+  // If the parent of this induction is a sequence, then move all of the init
+  // code in this induction up into that sequence.
+  if (SERIES *parent_seq = induction->parent->AsSeries()) {
+    if (REGION *init_region = induction->init_region.get()) {
+      assert(init_region->parent == induction);
+
+      UseList<REGION> new_parent_regions(parent_seq);
+
+      for (REGION *region : parent_seq->regions) {
+        if (region == induction) {
+          if (SERIES *init_seq = init_region->AsSeries()) {
+            for (REGION *sub_region : init_seq->regions) {
+              assert(sub_region->parent == init_seq);
+              sub_region->parent = parent_seq;
+              new_parent_regions.AddUse(sub_region);
+            }
+            init_seq->regions.Clear();
+            init_seq->parent = nullptr;
+          } else {
+            init_region->parent = parent_seq;
+            new_parent_regions.AddUse(init_region);
+          }
+
+          induction->init_region.Clear();
+        }
+
+        assert(region->parent == parent_seq);
+        new_parent_regions.AddUse(region);
+      }
+
+      parent_seq->regions.Swap(new_parent_regions);
+      changed = true;
+    }
   }
 
   return changed;
@@ -805,11 +840,21 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
 
 // Perform dead argument elimination.
 static bool OptimizeImpl(PROC *proc) {
+  assert(proc->parent == proc->containing_procedure);
   if (auto body = proc->body.get()) {
     assert(body->parent == proc);
     (void) body;
   }
   return false;
+}
+
+static void CheckProcedures(ProgramImpl *impl) {
+#ifndef NDEBUG
+  for (PROC *proc : impl->procedure_regions) {
+    assert(proc->parent == proc->containing_procedure);
+  }
+#endif
+  (void) impl;
 }
 
 }  // namespace
@@ -825,6 +870,7 @@ void ProgramImpl::Optimize(void) {
   // Iteratively remove unused regions.
   auto remove_unused = [this](void) {
     for (size_t changed = 1; changed;) {
+      CheckProcedures(this);
       changed = 0;
       changed |= parallel_regions.RemoveUnused();
       changed |= series_regions.RemoveUnused();
@@ -839,11 +885,14 @@ void ProgramImpl::Optimize(void) {
           default: return !proc->has_raw_use && !proc->IsUsed();
         }
       });
+      CheckProcedures(this);
     }
   };
 
   for (auto changed = true; changed;) {
     changed = false;
+
+    CheckProcedures(this);
 
     parallel_regions.Sort(depth_cmp);
 
@@ -857,6 +906,8 @@ void ProgramImpl::Optimize(void) {
       changed = OptimizeImpl(this, par) | changed;
     }
 
+    CheckProcedures(this);
+
     induction_regions.Sort(depth_cmp);
     for (auto induction : induction_regions) {
       if (!induction->IsUsed() || !induction->Ancestor()->parent) {
@@ -865,6 +916,8 @@ void ProgramImpl::Optimize(void) {
       changed = OptimizeImpl(this, induction) | changed;
     }
 
+    CheckProcedures(this);
+
     series_regions.Sort(depth_cmp);
     for (auto series : series_regions) {
       if (!series->IsUsed() || !series->Ancestor()->parent) {
@@ -872,6 +925,8 @@ void ProgramImpl::Optimize(void) {
       }
       changed = OptimizeImpl(series) | changed;
     }
+
+    CheckProcedures(this);
 
     operation_regions.Sort(depth_cmp);
     for (auto i = 0u; i < operation_regions.Size(); ++i) {
@@ -884,21 +939,27 @@ void ProgramImpl::Optimize(void) {
       // variable assignments.
       if (auto let = op->AsLetBinding(); let) {
         changed = OptimizeImpl(let) | changed;
+        CheckProcedures(this);
 
       } else if (auto tuple_cmp = op->AsTupleCompare(); tuple_cmp) {
         changed = OptimizeImpl(tuple_cmp) | changed;
+        CheckProcedures(this);
 
       } else if (auto call = op->AsCall(); call) {
         changed = OptimizeImpl(this, call) | changed;
+        CheckProcedures(this);
 
       } else if (auto gen = op->AsGenerate(); gen) {
         changed = OptimizeImpl(this, gen) | changed;
+        CheckProcedures(this);
 
       } else if (auto check = op->AsCheckState(); check) {
         changed = OptimizeImpl(this, check) | changed;
+        CheckProcedures(this);
 
       } else if (auto transition = op->AsTransitionState(); transition) {
         changed = OptimizeImpl(this, transition) | changed;
+        CheckProcedures(this);
 
       // All other operations check to see if they are no-ops and if so
       // remove the bodies.

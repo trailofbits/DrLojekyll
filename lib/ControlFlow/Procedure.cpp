@@ -6,6 +6,18 @@ namespace hyde {
 
 Node<ProgramProcedure>::~Node(void) {}
 
+Node<ProgramProcedure>::Node(unsigned id_, ProcedureKind kind_)
+    : Node<ProgramRegion>(this, true),
+      id(id_),
+      kind(kind_),
+      tables(this),
+      body(this),
+      input_vecs(this),
+      input_vars(this),
+      vectors(this) {
+  assert(parent == containing_procedure);
+}
+
 uint64_t Node<ProgramProcedure>::Hash(uint32_t depth) const {
   uint64_t hash = 1u;
   if (depth == 0) {
