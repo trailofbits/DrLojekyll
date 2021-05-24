@@ -179,8 +179,10 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
     if (!in_col.IsConstant() && QueryView::Containing(in_col) == pred_view) {
       VAR *const in_var = container->VariableFor(impl, in_col);
       let->col_id_to_var[in_col.Id()] = in_var;
-      let->col_id_to_var[out_col->Id()] = in_var;
-      out_vars[*(out_col->Index())] = in_var;
+      if (out_col) {
+        let->col_id_to_var[out_col->Id()] = in_var;
+        out_vars[*(out_col->Index())] = in_var;
+      }
     }
   });
 
@@ -257,7 +259,8 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
         scan->out_cols.AddUse(table_col);
         cmp->col_id_to_var[other_pred_view_col.Id()] = out_var;
 
-        if (auto join_out_col = out_cols[table_col->index]) {
+        if (auto join_out_col = out_cols[table_col->index];
+            join_out_col.has_value()) {
           cmp->col_id_to_var[join_out_col->Id()] = out_var;
           out_vars[*(join_out_col->Index())] = out_var;
         } else {
