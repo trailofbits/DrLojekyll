@@ -29,9 +29,14 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   if (table) {
     if (table != last_table) {
+      TupleState from_state = TupleState::kAbsent;
+      if (view.CanProduceDeletions()) {
+        from_state = TupleState::kAbsentOrUnknown;
+      }
+
       const auto table_insert =
           impl->operation_regions.CreateDerived<CHANGESTATE>(
-              parent, TupleState::kAbsentOrUnknown, TupleState::kPresent);
+              parent, from_state, TupleState::kPresent);
 
       for (auto col : cols) {
         const auto var = parent->VariableFor(impl, col);

@@ -878,43 +878,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto tables = region.Tables();
 
-//    // First, prioritize the tables for which we're not using an index. We're
-//    // presence checks for these tables.
-//    for (auto i = 0u; i < tables.size(); ++i) {
-//      auto maybe_index = region.Index(i);
-//      if (maybe_index && !maybe_index->ValueColumns().empty()) {
-//        continue;
-//      }
-//
-//      const auto table = tables[i];
-//      os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
-//
-//      // Print out key columns
-//      sep = "";
-//      for (auto index_col : table.Columns()) {
-//        auto j = 0u;
-//        for (auto used_col : region.IndexedColumns(i)) {
-//          if (used_col == index_col) {
-//            os << sep << var_names[j];
-//            sep = ", ";
-//          }
-//          ++j;
-//        }
-//      }
-//      os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
-//
-//      // We increase indentation here, and the corresponding `PopIndent()`
-//      // only comes *after* visiting the `region.Body()`.
-//      os.PushIndent();
-//    }
-
     // Now, do scans over the tables where we do use an index.
     for (auto i = 0u; i < tables.size(); ++i) {
       auto maybe_index = region.Index(i);
-      assert(!!maybe_index);
-//      if (!maybe_index || maybe_index->ValueColumns().empty()) {
-//        continue;
-//      }
+      assert(maybe_index.has_value());
 
       const auto table = tables[i];
       const auto index = *maybe_index;
@@ -1099,11 +1066,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "{\n";
     os.PushIndent();
     os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
-    if (auto maybe_index = region.Index();
-        maybe_index && !maybe_index->ValueColumns().empty()) {
+    if (auto maybe_index = region.Index(); maybe_index) {
       os << "IndexTag<" << maybe_index->Id() << ">";
     } else {
-
       os << "TableTag<" << table.Id() << ">";
     }
 
