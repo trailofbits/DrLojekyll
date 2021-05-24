@@ -77,68 +77,6 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
   }
 }
 
-// Builds an I/O procedure, which goes and invokes the primary data flow
-// procedure.
-static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
-                             Context &context, PROC *proc) {
-  const auto receives = io.Receives();
-  if (receives.empty()) {
-    return;
-  }
-
-  assert(io.Declaration().IsMessage());
-  const auto message = ParsedMessage::From(io.Declaration());
-
-  const auto io_proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kMessageHandler);
-  io_proc->io = io;
-
-  const auto io_vec =
-      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-
-  VECTOR *io_remove_vec = nullptr;
-  if (message.IsDifferential()) {
-    io_remove_vec =
-        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-  }
-
-  auto seq = impl->series_regions.Create(io_proc);
-  io_proc->body.Emplace(io_proc, seq);
-
-  auto call =
-      impl->operation_regions.CreateDerived<CALL>(impl->next_id++, seq, proc);
-  seq->AddRegion(call);
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      seq, ProgramOperation::kReturnTrueFromProcedure);
-  seq->AddRegion(ret);
-
-  for (auto other_io : query.IOs()) {
-    const auto other_receives = other_io.Receives();
-    if (other_receives.empty()) {
-      continue;
-    }
-
-    // Pass in our input vector for additions, and possibly our input vector
-    // for removals.
-    if (io == other_io) {
-      call->arg_vecs.AddUse(io_vec);
-      if (io_remove_vec) {
-        call->arg_vecs.AddUse(io_remove_vec);
-      }
-
-    // Pass in the empty vector once or twice for other messages.
-    } else {
-      const auto empty_vec = io_proc->VectorFor(impl, VectorKind::kEmpty,
-                                                other_receives[0].Columns());
-      call->arg_vecs.AddUse(empty_vec);
-      if (other_receives[0].CanReceiveDeletions()) {
-        call->arg_vecs.AddUse(empty_vec);
-      }
-    }
-  }
-}
-
 struct CompareVectors {
  public:
   inline bool operator()(VECTOR *a, VECTOR *b) const noexcept {
@@ -202,145 +140,10 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
   }
 }
 
-// From the initial procedure, "extract" the primary procedure. The entry
-// procedure operates on vectors from message receipt, and then does everything.
-// Our goal is to split it up into two procedures:
-//
-//    1) The simplified entry procedure, which will only read from the
-//       message vectors, do some joins perhaps, and append to induction
-//       vectors / output message vectors.
-//
-//    2) The primary data flow procedure, which takes as input the induction
-//       vectors which do the remainder of the data flow.
-static void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
-                                    Context &context) {
-  const auto primary_proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
-
-  std::vector<REGION *> regions_to_extract;
-  std::unordered_set<REGION *> seen;
-
-  // First, go find the regions leading to the uses of the message vectors.
-  // We go up to the enclosing inductions so that we can also capture things
-  // like JOINs that will happen before those inductions.
-  for (auto message_vec : entry_proc->input_vecs) {
-    message_vec->ForEachUse<REGION>([&](REGION *region, VECTOR *) {
-      if (auto [it, added] = seen.insert(region); added) {
-        regions_to_extract.push_back(region);
-      }
-    });
-  }
-
-  // Add the discovered regions into the entry function, replacing them with
-  // LET expressions.
-  auto entry_seq = impl->series_regions.Create(entry_proc);
-  auto entry_par = impl->parallel_regions.Create(entry_seq);
-  entry_seq->AddRegion(entry_par);
-
-  if (!entry_proc->input_vecs.Empty()) {
-    assert(!regions_to_extract.empty());
-  }
-
-  for (auto region : regions_to_extract) {
-    auto let = impl->operation_regions.CreateDerived<LET>(region->parent);
-    region->ReplaceAllUsesWith(let);
-    region->parent = entry_par;
-    entry_par->AddRegion(region);
-  }
-
-  // Re-root the entry function body into the primary function, and link in the
-  // extracted stuff into the entry body.
-  entry_proc->body->parent = primary_proc;
-  primary_proc->body.Swap(entry_proc->body);
-  entry_proc->body.Emplace(entry_proc, entry_seq);
-
-  // Now, go figure out which vectors are logically read and written by the
-  // two procedures, so we can split them up. Our goal is to build up the
-  // list of arguments that we need to pass into the primary function from
-  // the entry function.
-  std::set<VECTOR *, CompareVectors> read_by_entry;
-  std::set<VECTOR *, CompareVectors> written_by_entry;
-  std::set<VECTOR *, CompareVectors> read_by_primary;
-  std::set<VECTOR *, CompareVectors> written_by_primary;
-
-  for (auto vec : entry_proc->vectors) {
-    vec->ForEachUse<REGION>([&](REGION *region, VECTOR *) {
-      auto region_proc = region->Ancestor()->AsProcedure();
-      assert(region_proc != nullptr);
-
-      if (region_proc == entry_proc) {
-        ClassifyVector(vec, region, read_by_entry, written_by_entry);
-
-      } else if (region_proc == primary_proc) {
-        ClassifyVector(vec, region, read_by_primary, written_by_primary);
-
-      } else {
-        assert(false);
-      }
-    });
-  }
-
-  std::vector<VECTOR *> primary_params;
-
-  // The parameters we need are written by `entry` and `read` by `primary`.
-  std::set_intersection(written_by_entry.begin(), written_by_entry.end(),
-                        read_by_primary.begin(), read_by_primary.end(),
-                        std::back_inserter(primary_params), CompareVectors());
-
-  // Create the mapping between the vectors that need to be updated in the
-  // primary data flow function that still point at the old function.
-  std::unordered_map<VECTOR *, VECTOR *> replacements;
-
-  for (auto vec : primary_params) {
-    replacements[vec] = primary_proc->input_vecs.Create(vec);
-  }
-
-  for (auto vec : read_by_primary) {
-    if (!replacements.count(vec)) {
-      replacements[vec] = primary_proc->vectors.Create(vec);
-    }
-  }
-
-  for (auto vec : written_by_primary) {
-    if (!replacements.count(vec)) {
-      replacements[vec] = primary_proc->vectors.Create(vec);
-    }
-  }
-
-  for (auto vec : written_by_entry) {
-    if (!replacements.count(vec)) {
-      replacements[vec] = primary_proc->vectors.Create(vec);
-    }
-  }
-
-  for (auto [old_vec, new_vec] : replacements) {
-    old_vec->ReplaceUsesWithIf<REGION>(new_vec, [=](REGION *user, VECTOR *) {
-      return user->Ancestor() == primary_proc;
-    });
-  }
-
-  // Garbage collect the unneeded vectors from the entry proc.
-  entry_proc->vectors.RemoveUnused();
-
-  // Call the dataflow proc from the entry proc.
-  auto call = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, entry_seq, primary_proc,
-      ProgramOperation::kCallProcedure);
-  entry_seq->AddRegion(call);
-
-  for (auto vec : primary_params) {
-    call->arg_vecs.AddUse(vec);
-  }
-
-  // Terminate the entry proc.
-  entry_seq->AddRegion(impl->operation_regions.CreateDerived<RETURN>(
-      entry_seq, ProgramOperation::kReturnFalseFromProcedure));
-}
-
 // Create vectors for each published message that is marked as `@differential`.
 // We de-duplicate these, then check that they actually are added/removed (as
 // that can change over the course of some iterations), then publish.
-void CreateDifferentialMessageVectors(ProgramImpl *impl, Context &context,
+static void CreateDifferentialMessageVectors(ProgramImpl *impl, Context &context,
                                       Query query, PROC *proc) {
   for (auto io : query.IOs()) {
     const auto transmits = io.Transmits();
@@ -494,8 +297,207 @@ static void FixupContainingProcedure(ProgramImpl *impl) {
 
 }  // namespace
 
+// Builds an I/O procedure, which goes and invokes the entry data flow
+// procedure.
+void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
+                      Context &context, PROC *proc) {
+  const auto receives = io.Receives();
+  if (receives.empty()) {
+    return;
+  }
+
+  assert(io.Declaration().IsMessage());
+  const auto message = ParsedMessage::From(io.Declaration());
+
+  const auto io_proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kMessageHandler);
+  io_proc->io = io;
+
+  const auto io_vec =
+      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+
+  VECTOR *io_remove_vec = nullptr;
+  if (message.IsDifferential()) {
+    io_remove_vec =
+        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  }
+
+  auto seq = impl->series_regions.Create(io_proc);
+  io_proc->body.Emplace(io_proc, seq);
+
+  auto call =
+      impl->operation_regions.CreateDerived<CALL>(impl->next_id++, seq, proc);
+  seq->AddRegion(call);
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->AddRegion(ret);
+
+  for (auto other_io : query.IOs()) {
+    const auto other_receives = other_io.Receives();
+    if (other_receives.empty()) {
+      continue;
+    }
+
+    // Pass in our input vector for additions, and possibly our input vector
+    // for removals.
+    if (io == other_io) {
+      call->arg_vecs.AddUse(io_vec);
+      if (io_remove_vec) {
+        call->arg_vecs.AddUse(io_remove_vec);
+      }
+
+    // Pass in the empty vector once or twice for other messages.
+    } else {
+      const auto empty_vec = io_proc->VectorFor(impl, VectorKind::kEmpty,
+                                                other_receives[0].Columns());
+      call->arg_vecs.AddUse(empty_vec);
+      if (other_receives[0].CanReceiveDeletions()) {
+        call->arg_vecs.AddUse(empty_vec);
+      }
+    }
+  }
+}
+
+// From the initial procedure, "extract" the primary procedure. The entry
+// procedure operates on vectors from message receipt, and then does everything.
+// Our goal is to split it up into two procedures:
+//
+//    1) The simplified entry procedure, which will only read from the
+//       message vectors, do some joins perhaps, and append to induction
+//       vectors / output message vectors.
+//
+//    2) The primary data flow procedure, which takes as input the induction
+//       vectors which do the remainder of the data flow.
+void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
+                             Context &context) {
+  const auto primary_proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
+
+  std::vector<REGION *> regions_to_extract;
+  std::unordered_set<REGION *> seen;
+
+  // First, go find the regions leading to the uses of the message vectors.
+  // We go up to the enclosing inductions so that we can also capture things
+  // like JOINs that will happen before those inductions.
+  for (auto message_vec : entry_proc->input_vecs) {
+    message_vec->ForEachUse<REGION>([&](REGION *region, VECTOR *) {
+      if (auto [it, added] = seen.insert(region); added) {
+        regions_to_extract.push_back(region);
+      }
+    });
+  }
+
+  // Add the discovered regions into the entry function, replacing them with
+  // LET expressions.
+  auto entry_seq = impl->series_regions.Create(entry_proc);
+  auto entry_par = impl->parallel_regions.Create(entry_seq);
+  entry_seq->AddRegion(entry_par);
+
+  if (!entry_proc->input_vecs.Empty()) {
+    assert(!regions_to_extract.empty());
+  }
+
+  for (auto region : regions_to_extract) {
+    auto let = impl->operation_regions.CreateDerived<LET>(region->parent);
+    region->ReplaceAllUsesWith(let);
+    region->parent = entry_par;
+    entry_par->AddRegion(region);
+  }
+
+  // Re-root the entry function body into the primary function, and link in the
+  // extracted stuff into the entry body.
+  entry_proc->body->parent = primary_proc;
+  primary_proc->body.Swap(entry_proc->body);
+  entry_proc->body.Emplace(entry_proc, entry_seq);
+
+  // Now, go figure out which vectors are logically read and written by the
+  // two procedures, so we can split them up. Our goal is to build up the
+  // list of arguments that we need to pass into the primary function from
+  // the entry function.
+  std::set<VECTOR *, CompareVectors> read_by_entry;
+  std::set<VECTOR *, CompareVectors> written_by_entry;
+  std::set<VECTOR *, CompareVectors> read_by_primary;
+  std::set<VECTOR *, CompareVectors> written_by_primary;
+
+  for (auto vec : entry_proc->vectors) {
+    vec->ForEachUse<REGION>([&](REGION *region, VECTOR *) {
+      auto region_proc = region->Ancestor()->AsProcedure();
+      assert(region_proc != nullptr);
+
+      if (region_proc == entry_proc) {
+        ClassifyVector(vec, region, read_by_entry, written_by_entry);
+
+      } else if (region_proc == primary_proc) {
+        ClassifyVector(vec, region, read_by_primary, written_by_primary);
+
+      } else {
+        assert(false);
+      }
+    });
+  }
+
+  std::vector<VECTOR *> primary_params;
+
+  // The parameters we need are written by `entry` and `read` by `primary`.
+  std::set_intersection(written_by_entry.begin(), written_by_entry.end(),
+                        read_by_primary.begin(), read_by_primary.end(),
+                        std::back_inserter(primary_params), CompareVectors());
+
+  // Create the mapping between the vectors that need to be updated in the
+  // primary data flow function that still point at the old function.
+  std::unordered_map<VECTOR *, VECTOR *> replacements;
+
+  for (auto vec : primary_params) {
+    replacements[vec] = primary_proc->input_vecs.Create(vec);
+  }
+
+  for (auto vec : read_by_primary) {
+    if (!replacements.count(vec)) {
+      replacements[vec] = primary_proc->vectors.Create(vec);
+    }
+  }
+
+  for (auto vec : written_by_primary) {
+    if (!replacements.count(vec)) {
+      replacements[vec] = primary_proc->vectors.Create(vec);
+    }
+  }
+
+  for (auto vec : written_by_entry) {
+    if (!replacements.count(vec)) {
+      replacements[vec] = primary_proc->vectors.Create(vec);
+    }
+  }
+
+  for (auto [old_vec, new_vec] : replacements) {
+    old_vec->ReplaceUsesWithIf<REGION>(new_vec, [=](REGION *user, VECTOR *) {
+      return user->Ancestor() == primary_proc;
+    });
+  }
+
+  // Garbage collect the unneeded vectors from the entry proc.
+  entry_proc->vectors.RemoveUnused();
+
+  // Call the dataflow proc from the entry proc.
+  auto call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, entry_seq, primary_proc,
+      ProgramOperation::kCallProcedure);
+  entry_seq->AddRegion(call);
+
+  for (auto vec : primary_params) {
+    call->arg_vecs.AddUse(vec);
+  }
+
+  // Terminate the entry proc.
+  entry_seq->AddRegion(impl->operation_regions.CreateDerived<RETURN>(
+      entry_seq, ProgramOperation::kReturnFalseFromProcedure));
+
+  FixupContainingProcedure(impl);
+}
+
 // Build the primary and entry data flow procedures.
-void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query) {
+PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query) {
 
   assert(context.work_list.empty());
   assert(context.view_to_join_action.empty());
@@ -612,13 +614,7 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query) {
   // NOTE(pag): This adds in a `return-true` to `proc`.
   PublishDifferentialMessageVectors(impl, proc, context);
 
-  ExtractPrimaryProcedure(impl, proc, context);
-
-  for (auto io : query.IOs()) {
-    BuildIOProcedure(impl, query, io, context, proc);
-  }
-
-  FixupContainingProcedure(impl);
+  return proc;
 }
 
 }  // namespace hyde

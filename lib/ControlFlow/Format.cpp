@@ -384,7 +384,7 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
       os.PopIndent();
     }
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty-let";
   }
   return os;
 }
@@ -590,7 +590,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
     os.PopIndent();
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty-join";
   }
   return os;
 }
@@ -617,7 +617,7 @@ OutputStream &operator<<(OutputStream &os, ProgramTableProductRegion region) {
     os.PopIndent();
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty";
+    os << os.Indent() << "empty-cross-product";
   }
   return os;
 }
@@ -706,7 +706,7 @@ OutputStream &operator<<(OutputStream &os, ProgramSeriesRegion region) {
     }
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty (seq)";
+    os << os.Indent() << "empty-seq";
   }
   return os;
 }
@@ -722,7 +722,7 @@ OutputStream &operator<<(OutputStream &os, ProgramParallelRegion region) {
     }
     os.PopIndent();
   } else {
-    os << os.Indent() << "empty (par)";
+    os << os.Indent() << "empty-par";
   }
   return os;
 }

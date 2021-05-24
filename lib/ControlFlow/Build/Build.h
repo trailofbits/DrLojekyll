@@ -484,8 +484,26 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query);
 
-// Build the primary and entry data flow procedures.
-void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query);
+// Build the entry data flow procedures.
+PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query);
+
+// Builds an I/O procedure, which goes and invokes the entry data flow
+// procedure.
+void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
+                      Context &context, PROC *proc);
+
+// From the initial procedure, "extract" the primary procedure. The entry
+// procedure operates on vectors from message receipt, and then does everything.
+// Our goal is to split it up into two procedures:
+//
+//    1) The simplified entry procedure, which will only read from the
+//       message vectors, do some joins perhaps, and append to induction
+//       vectors / output message vectors.
+//
+//    2) The primary data flow procedure, which takes as input the induction
+//       vectors which do the remainder of the data flow.
+void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
+                             Context &context);
 
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,

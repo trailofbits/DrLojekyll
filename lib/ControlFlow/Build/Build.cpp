@@ -68,6 +68,24 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   }
 
   for (auto join : query.Joins()) {
+
+    QueryView view(join);
+    if (!view.CanReceiveDeletions()) {
+      auto num_constant = 0u;
+      auto num_variable = 0u;
+      for (auto pred : join.JoinedViews()) {
+        if (pred.IsConstantAfterInitialization()) {
+          (void) TABLE::GetOrCreate(impl, context, pred);
+          ++num_constant;
+        } else {
+          ++num_variable;
+        }
+      }
+      if (num_constant && 1u == num_variable) {
+        // TODO(pag): Issue #240.
+      }
+    }
+
     for (auto pred : join.JoinedViews()) {
       (void) TABLE::GetOrCreate(impl, context, pred);
     }
@@ -75,7 +93,6 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     // A top-down checker looking at a join can hit terrible performance issues
     // if they need to inspect the JOIN's outputs and if the pivot columns
     // aren't used.
-    QueryView view(join);
     if (view.CanReceiveDeletions()) {
 
       //      // Easier to just avoid any possible performance issues; storage is
@@ -106,6 +123,11 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 
   for (auto negate : query.Negations()) {
     const QueryView view(negate);
+    if (!view.CanReceiveDeletions()) {
+      if (negate.NegatedView().IsConstantAfterInitialization()) {
+        // TODO(pag): Issue #242.
+      }
+    }
     (void) TABLE::GetOrCreate(impl, context, negate.NegatedView());
     (void) TABLE::GetOrCreate(impl, context, view.Predecessors()[0]);
   }
@@ -2198,7 +2220,11 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   FillDataModel(query, program, context);
 
   // Build bottom-up procedures starting from message receives.
-  BuildEagerProcedure(program, context, query);
+  PROC *const entry_proc = BuildEntryProcedure(program, context, query);
+
+  for (auto io : query.IOs()) {
+    BuildIOProcedure(impl.get(), query, io, context, entry_proc);
+  }
 
   // Build the initialization procedure, needed to start data flows from
   // things like constant tuples.
@@ -2227,6 +2253,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
           ->ExecuteAfter(impl.get(), proc);
     }
   }
+
+  impl->Optimize();
+
+  ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 
   impl->Optimize();
 
