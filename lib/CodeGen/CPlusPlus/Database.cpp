@@ -1099,11 +1099,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << "{\n";
     os.PushIndent();
     os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
-    if (auto maybe_index = region.Index();
-        maybe_index && !maybe_index->ValueColumns().empty()) {
+    if (auto maybe_index = region.Index(); maybe_index) {
       os << "IndexTag<" << maybe_index->Id() << ">";
     } else {
-
       os << "TableTag<" << table.Id() << ">";
     }
 

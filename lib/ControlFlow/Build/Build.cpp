@@ -1402,10 +1402,14 @@ InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
 
       assert(!cols.empty());
 
+      TupleState from_state = TupleState::kAbsent;
+      if (view.CanProduceDeletions()) {
+        from_state = TupleState::kAbsentOrUnknown;
+      }
+
       // Do the marking.
-      const auto table_remove =
-          BuildChangeState(impl, table, parent, cols,
-                           TupleState::kAbsentOrUnknown, TupleState::kPresent);
+      const auto table_remove = BuildChangeState(
+          impl, table, parent, cols, from_state, TupleState::kPresent);
 
       parent->body.Emplace(parent, table_remove);
       parent = table_remove;
