@@ -389,7 +389,9 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedPredicate pred) {
-  if (pred.IsNegated()) {
+  if (pred.IsNegatedWithNever()) {
+    os << "@never ";
+  } else if (pred.IsNegated()) {
     os << "!";
   }
 

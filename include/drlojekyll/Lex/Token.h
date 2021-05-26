@@ -335,6 +335,14 @@ enum class Lexeme : uint8_t {
   // unique, and if it's compared to any other constant that isn't identical,
   // then the comparison is assumed to be unequal.
   kPragmaPerfUnique,
+
+  // Used to mark a special form of negation that says that if something
+  // satisfies the negation once, then it will always satisfy the negation.
+  // This is used as follows:
+  //
+  //    Instead of:    !foo(A, B)
+  //           Use:    @never foo(A, B)
+  kPragmaPerfNever,
 };
 
 enum class TypeKind : uint32_t;

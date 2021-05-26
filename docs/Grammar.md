@@ -394,6 +394,7 @@ predicate_tail: atom "(" arg_list ")" ;
 
 predicate: predicate_tail ;
 predicate: "!" predicate_tail ;
+predicate: "@never" atom "(" arg_list ")" ;
 
 conjunct_list_tail: "," conjunct_list ;
 conjunct_list_tail: ;

@@ -291,6 +291,10 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
   // Returns `true` if this is a negated predicate.
   bool IsNegated(void) const noexcept;
 
+  // Returns `true` if this is a negated predicate, and the negation uses
+  // `@never`.
+  bool IsNegatedWithNever(void) const noexcept;
+
   // Returns the arity of this predicate.
   unsigned Arity(void) const noexcept;
 

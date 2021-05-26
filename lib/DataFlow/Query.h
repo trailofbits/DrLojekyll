@@ -1060,6 +1060,9 @@ class Node<QueryNegate> : public Node<QueryView> {
   unsigned Depth(void) noexcept override;
 
   UseRef<VIEW> negated_view;
+
+  // Is this a normal negation, or one with `@never`?
+  bool is_never{false};
 };
 
 using NEGATION = Node<QueryNegate>;
@@ -1421,6 +1424,9 @@ class QueryImpl {
 
   // Link together views in terms of predecessors and successors.
   void LinkViews(bool recursive = false);
+
+  // Finalize all depth calculations.
+  void FinalizeDepths(void) const;
 
   // Root module associated with this query.
   const ParsedModule module;

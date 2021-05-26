@@ -1399,6 +1399,13 @@ QueryColumn QueryNegate::NthColumn(unsigned n) const noexcept {
   return QueryColumn(impl->columns[n]);
 }
 
+// If a negation has a never hint, then we know that if some data goes through
+// the output, then it will always go through, and nothing will get set in
+// the negated view that will result in the prior data being retracted.
+bool QueryNegate::HasNeverHint(void) const noexcept {
+  return impl->is_never;
+}
+
 // The resulting copied columns.
 DefinedNodeRange<QueryColumn> QueryNegate::CopiedColumns(void) const {
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin() +

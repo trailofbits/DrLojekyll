@@ -853,7 +853,8 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
     if (next_negate->columns.Size() != num_cols ||
         next_negate->input_columns.Size() != num_input_cols ||
-        next_negate->attached_columns.Size() != num_attached_cols) {
+        next_negate->attached_columns.Size() != num_attached_cols ||
+        next_negate->is_never != first_negate->is_never) {
       continue;
     }
 
@@ -927,6 +928,7 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
         // Make a new, tag column-aware negation that operates on `input_merge`.
         merged_negation = impl->negations.Create();
+        merged_negation->is_never = first_negate->is_never;
         merged_negation->negated_view.Emplace(merged_negation,
                                               negated_view_merge);
 
@@ -996,6 +998,7 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
         // Make the new negation.
         merged_negation = impl->negations.Create();
+        merged_negation->is_never = first_negate->is_never;
         output = merged_negation;
 
         merged_negation->negated_view.Emplace(merged_negation, negated_view);
@@ -1264,6 +1267,7 @@ bool Node<QueryMerge>::SinkThroughJoins(
 
   // Create one tag per join.
   for (auto join : joins_to_merge) {
+    join->is_canonical = false;
     join_to_tag.push_back(CreateTag(impl, num_used_tags));
     (void) join;
   }
