@@ -21,6 +21,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
   VECTOR *removal_vec = nullptr;
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  vec->added_message.emplace(message);
 
   // Loop over the receives for adding.
   for (auto receive : receives) {
@@ -29,6 +30,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     if (!removal_vec && receive.CanReceiveDeletions()) {
       removal_vec =
           proc->VectorFor(impl, VectorKind::kParameter, receive.Columns());
+      removal_vec->removed_message.emplace(message);
     }
 
     const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
@@ -243,12 +245,14 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
     // Now make the publishers for removal / insertion.
 
     PUBLISH *const publish_add = impl->operation_regions.CreateDerived<PUBLISH>(
-        check, message, ProgramOperation::kPublishMessage);
+        check, message, impl->next_id++,
+        ProgramOperation::kPublishMessage);
     check->body.Emplace(check, publish_add);
 
     PUBLISH *const publish_removal =
         impl->operation_regions.CreateDerived<PUBLISH>(
-            check, message, ProgramOperation::kPublishMessageRemoval);
+            check, message, impl->next_id++,
+            ProgramOperation::kPublishMessageRemoval);
     check->false_body.Emplace(check, publish_removal);
 
     for (auto var : iter->defined_vars) {
@@ -315,11 +319,13 @@ void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
 
   const auto io_vec =
       io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  io_vec->added_message.emplace(message);
 
   VECTOR *io_remove_vec = nullptr;
   if (message.IsDifferential()) {
     io_remove_vec =
         io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+    io_remove_vec->removed_message.emplace(message);
   }
 
   auto seq = impl->series_regions.Create(io_proc);
@@ -478,6 +484,32 @@ void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
 
   // Garbage collect the unneeded vectors from the entry proc.
   entry_proc->vectors.RemoveUnused();
+
+  std::unordered_set<unsigned> needed_vecs;
+  for (VECTOR *vec : primary_params) {
+    needed_vecs.insert(vec->id);
+  }
+
+  // Try to clear out an uneeded vector.
+  auto try_clear_vec = [&] (VECTOR *vec) {
+    if (!needed_vecs.count(vec->id)) {
+      VECTORCLEAR * const clear =
+          impl->operation_regions.CreateDerived<VECTORCLEAR>(
+              entry_seq,
+              ProgramOperation::kClearVectorBeforePrimaryFlowFunction);
+      entry_seq->AddRegion(clear);
+      clear->vector.Emplace(clear, vec);
+    }
+  };
+
+  // Go clear the memory of unneeded vectors prior to calling the primary
+  // dataflow procedure.
+  for (VECTOR *vec : entry_proc->input_vecs) {
+    try_clear_vec(vec);
+  }
+  for (VECTOR *vec : entry_proc->vectors) {
+    try_clear_vec(vec);
+  }
 
   // Call the dataflow proc from the entry proc.
   auto call = impl->operation_regions.CreateDerived<CALL>(

@@ -239,6 +239,9 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   // Whether or not this variable is a constant.
   bool IsConstant(void) const noexcept;
 
+  // Return the number of uses of this variable.
+  unsigned NumUses(void) const noexcept;
+
  private:
   using program::ProgramNode<DataVariable>::ProgramNode;
 };
@@ -349,6 +352,12 @@ class DataVector : public program::ProgramNode<DataVector> {
 
   // Apply a function to each user.
   void ForEachUser(std::function<void(ProgramRegion)> cb);
+
+  // If this is a paramter vector to the data flwo entry function, or to
+  // an I/O procedure, then these will tell us the corresponding message being
+  // added or removed by this vector.
+  std::optional<ParsedMessage> AddedMessage(void) const noexcept;
+  std::optional<ParsedMessage> RemovedMessage(void) const noexcept;
 
  private:
   friend class ProgramVectorClearRegion;
@@ -814,6 +823,9 @@ class ProgramTupleCompareRegion
 class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
  public:
   static ProgramPublishRegion From(ProgramRegion) noexcept;
+
+  // Return a unique ID for this region.
+  unsigned Id(void) const noexcept;
 
   ParsedMessage Message(void) const noexcept;
 

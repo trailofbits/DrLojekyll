@@ -365,7 +365,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Pass in the vector parameters, or the references to the vectors.
     for (auto vec : region.VectorArguments()) {
-      os << sep << Vector(os, vec);
+      os << sep << "std::move(" << Vector(os, vec) << ")";
       sep = ", ";
     }
 
@@ -616,19 +616,19 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os.PushIndent();
 
-    os << os.Indent() << "fprintf(stderr, \"";
-
-    sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
-      sep = " ";
-    }
-    sep = "\\n\", ";
-    for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".Size()";
-      sep = ", ";
-    }
-    os << ");\n";
+//    os << os.Indent() << "fprintf(stderr, \"";
+//
+//    sep = "";
+//    for (auto vec : region.Vectors()) {
+//      os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
+//      sep = " ";
+//    }
+//    sep = "\\n\", ";
+//    for (auto vec : region.Vectors()) {
+//      os << sep << Vector(os, vec) << ".Size()";
+//      sep = ", ";
+//    }
+//    os << ");\n";
 
     region.FixpointLoop().Accept(*this);
 
@@ -671,11 +671,34 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramPublishRegion region) override {
     os << Comment(os, region, "ProgramPublishRegion");
     auto message = region.Message();
+    auto id = region.Id();
+
+    // We will want to use `std::move`, but we might need to synthesize
+    // copies.
+    auto index = 0u;
+    for (auto var : region.VariableArguments()) {
+      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        continue;
+      } else if (var.IsConstant() || var.IsGlobal() || 1u < var.NumUses()) {
+        os << os.Indent() << "auto var_" << id << "_" << (index++) << " = "
+           << Var(os, var) << ";\n";
+      } else {
+        continue;
+      }
+    }
+
     os << os.Indent() << "log." << message.Name() << '_' << message.Arity();
 
     auto sep = "(";
+    index = 0u;
     for (auto var : region.VariableArguments()) {
-      os << sep << Var(os, var);
+      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << sep << Var(os, var);
+      } else if (var.IsConstant() || var.IsGlobal() || 1u < var.NumUses()) {
+        os << sep << "std::move(var_" << id << "_" << (index++) << ")";
+      } else {
+        os << sep << "std::move(" << Var(os, var) << ")";
+      }
       sep = ", ";
     }
 
@@ -1256,25 +1279,17 @@ static void DeclareFunctors(OutputStream &os, Program program,
 static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
                                  ParsedMessage message, const char *impl,
                                  bool interface = false) {
-  os << os.Indent();
-  os << "void " << message.Name() << "_" << message.Arity() << "(";
+  os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
+     << "(";
 
   auto sep = "";
   for (auto param : message.Parameters()) {
-    os << sep << TypeName(module, param.Type()) << " " << param.Name();
+    os << sep << TypeName(module, param.Type()) << " ";
+    os << param.Name();
     sep = ", ";
   }
 
-  os << ", bool added) ";
-  if (interface) {
-    os << " {}\n\n";
-  } else {
-    os << " {\n";
-    os.PushIndent();
-    os << os.Indent() << impl << "\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n\n";
-  }
+  os << ", bool added) {}\n";
 }
 
 static void DeclareMessageLog(OutputStream &os, Program program,
@@ -1310,12 +1325,9 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   auto sep = "";
   for (auto vec : vec_params) {
     os << sep;
-    auto vec_kind = vec.Kind();
-    if (vec_kind == VectorKind::kParameter) {
-      os << "const ";
-    }
     if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
+        proc.Kind() == ProcedureKind::kEntryDataFlowFunc ||
+        proc.Kind() == ProcedureKind::kPrimaryDataFlowFunc) {
       os << "::hyde::rt::SerializedVector<StorageT";
     } else {
       os << "::hyde::rt::Vector<StorageT";
@@ -1324,8 +1336,13 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     for (auto type : col_types) {
       os << ", " << TypeName(module, type);
     }
-    os << "> & ";
+    os << "> ";
 
+    if (proc.Kind() != ProcedureKind::kMessageHandler &&
+        proc.Kind() != ProcedureKind::kEntryDataFlowFunc &&
+        proc.Kind() != ProcedureKind::kPrimaryDataFlowFunc) {
+      os << '&';
+    }
     os << Vector(os, vec);
     sep = ", ";
   }
@@ -1343,7 +1360,8 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
     if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kInitializer) {
+        proc.Kind() == ProcedureKind::kInitializer ||
+        proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
       os << os.Indent() << "::hyde::rt::SerializedVector<StorageT";
     } else {
       os << os.Indent() << "::hyde::rt::Vector<StorageT";
@@ -1353,7 +1371,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
       os << ", " << TypeName(module, type);
     }
 
-    os << "> " << Vector(os, vec) << "(storage);\n";
+    os << "> " << Vector(os, vec) << "(storage, " << vec.Id() << "u);\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -1562,9 +1580,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
-     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "\n";
-
+     << "#pragma once\n\n"
+     << "#include <drlojekyll/Runtime/Runtime.h>\n\n";
   const auto module = program.ParsedModule();
 
   // Output prologue code.
@@ -1606,9 +1623,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "\n";
 
   DeclareDescriptors(os, program, module);
-
-  os << "namespace {\n\n";
-
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);
 
@@ -1620,7 +1634,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "private:\n";
   os.PushIndent();  // public:
 
-  os << os.Indent() << "StorageT &storage;\n"
+  os << os.Indent() << "template <typename>\n"
+     << os.Indent() << "friend class " << gClassName << "InputMessage;\n\n"
+     << os.Indent() << "StorageT &storage;\n"
      << os.Indent() << "LogT &log;\n"
      << os.Indent() << "FunctorsT &functors;\n"
      << "\n";
@@ -1706,8 +1722,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os.PopIndent();  // private:
   os.PopIndent();  // class:
-  os << "};\n\n"
-     << "}  // namespace\n";
+  os << "};\n\n";
 
   // Output epilogue code.
   for (auto sub_module : ParsedModuleIterator(module)) {
