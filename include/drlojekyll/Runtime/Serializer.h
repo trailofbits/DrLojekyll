@@ -94,9 +94,10 @@ struct NullWriter {
 
 // A writer for writing bytes into a continuous backing buffer. No bounds
 // checking is performed.
-class UnsafeByteWriter {
+template <typename Self>
+class ByteWriter {
  public:
-  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteWriter(uint8_t *write_ptr_)
+  HYDE_RT_ALWAYS_INLINE explicit ByteWriter(uint8_t *write_ptr_)
       : write_ptr(write_ptr_) {}
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
@@ -108,88 +109,62 @@ class UnsafeByteWriter {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   uint8_t *WriteF64(double d) noexcept {
-    const auto ptr = write_ptr;
-    write_ptr += 8;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    *(new (ptr) double) = d;
-#else
     auto q = reinterpret_cast<uint64_t &>(d);
-    ptr[0] = static_cast<uint8_t>(q >> 0);
-    ptr[1] = static_cast<uint8_t>(q >> 8);
-    ptr[2] = static_cast<uint8_t>(q >> 16);
-    ptr[3] = static_cast<uint8_t>(q >> 24);
-    ptr[4] = static_cast<uint8_t>(q >> 32);
-    ptr[5] = static_cast<uint8_t>(q >> 40);
-    ptr[6] = static_cast<uint8_t>(q >> 48);
-    ptr[7] = static_cast<uint8_t>(q >> 56);
-#endif
+    const auto ptr =
+        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 0));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 8));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 16));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 24));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 32));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 40));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 48));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 56));
     return ptr;
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   uint8_t *WriteF32(float f) noexcept {
-    const auto ptr = write_ptr;
-    write_ptr += 4;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    *(new (ptr) float) = f;
-#else
     const auto d = reinterpret_cast<uint32_t &>(f);
-    ptr[0] = static_cast<uint8_t>(d >> 0);
-    ptr[1] = static_cast<uint8_t>(d >> 8);
-    ptr[2] = static_cast<uint8_t>(d >> 16);
-    ptr[3] = static_cast<uint8_t>(d >> 24);
-#endif
+    const auto ptr =
+        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 0));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 8));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 16));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 24));
     return ptr;
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t q) noexcept {
-    const auto ptr = write_ptr;
-    write_ptr += 8;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    *(new (ptr) uint64_t) = q;
-#else
-    ptr[0] = static_cast<uint8_t>(q >> 0);
-    ptr[1] = static_cast<uint8_t>(q >> 8);
-    ptr[2] = static_cast<uint8_t>(q >> 16);
-    ptr[3] = static_cast<uint8_t>(q >> 24);
-    ptr[4] = static_cast<uint8_t>(q >> 32);
-    ptr[5] = static_cast<uint8_t>(q >> 40);
-    ptr[6] = static_cast<uint8_t>(q >> 48);
-    ptr[7] = static_cast<uint8_t>(q >> 56);
-#endif
+    const auto ptr =
+        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 0));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 8));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 16));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 24));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 32));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 40));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 48));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 56));
     return ptr;
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t d) noexcept {
-    const auto ptr = write_ptr;
-    write_ptr += 4;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    *(new (ptr) uint32_t) = d;
-#else
-    ptr[0] = static_cast<uint8_t>(d >> 0);
-    ptr[1] = static_cast<uint8_t>(d >> 8);
-    ptr[2] = static_cast<uint8_t>(d >> 16);
-    ptr[3] = static_cast<uint8_t>(d >> 24);
-#endif
+    const auto ptr =
+        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 0));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 8));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 16));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 24));
     return ptr;
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t h) noexcept {
-    const auto ptr = write_ptr;
-    write_ptr += 2;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    *(new (ptr) uint16_t) = h;
-#else
-    ptr[0] = static_cast<uint8_t>(h >> 0);
-    ptr[1] = static_cast<uint8_t>(h >> 8);
-#endif
+    const auto ptr =
+        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(h >> 0));
+    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(h >> 8));
     return ptr;
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t b) noexcept {
-    auto ptr = write_ptr;
-    write_ptr += 1;
-    ptr[0] = b;
+    const auto ptr = write_ptr;
+    *write_ptr++ = b;
     return ptr;
   }
 
@@ -210,12 +185,12 @@ class UnsafeByteWriter {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   uint8_t *WriteI8(int8_t b) noexcept {
-    return WriteU8(static_cast<uint8_t>(b));
+    return static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(b));
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   uint8_t *WriteB(bool b) noexcept {
-    return WriteU8(static_cast<uint8_t>(!!b));
+    return static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(!!b));
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
@@ -238,12 +213,21 @@ class UnsafeByteWriter {
   uint8_t *write_ptr{nullptr};
 };
 
-// A reader for reading the discontinuous data in a `SlabList`. This reader is
-// considered unsafe because no bounds checking is performed.
-class UnsafeByteReader {
+// A writer for writing bytes into a continuous backing buffer. No bounds
+// checking is performed.
+class UnsafeByteWriter : public ByteWriter<UnsafeByteWriter> {
+ public:
+  using ByteWriter<UnsafeByteWriter>::WriteU8;
+
+  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteWriter(uint8_t *write_ptr_)
+      : ByteWriter(write_ptr_) {}
+};
+
+template <typename Self>
+class ByteReader {
  public:
   // Constructor for use by a `SlabReference`.
-  explicit UnsafeByteReader(const uint8_t *read_ptr_) noexcept
+  explicit ByteReader(const uint8_t *read_ptr_) noexcept
       : read_ptr(read_ptr_) {}
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) noexcept {
@@ -253,84 +237,54 @@ class UnsafeByteReader {
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE double ReadF64(void) noexcept {
-    const auto ptr = read_ptr;
-    read_ptr += 8;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    return *(new (ptr) double);
-#else
     alignas(double) uint8_t data[8u];
-    data[0] = ptr[0];
-    data[1] = ptr[1];
-    data[2] = ptr[2];
-    data[3] = ptr[3];
-    data[4] = ptr[4];
-    data[5] = ptr[5];
-    data[6] = ptr[6];
-    data[7] = ptr[7];
+    data[0] = static_cast<Self *>(this)->ReadU8();
+    data[1] = static_cast<Self *>(this)->ReadU8();
+    data[2] = static_cast<Self *>(this)->ReadU8();
+    data[3] = static_cast<Self *>(this)->ReadU8();
+    data[4] = static_cast<Self *>(this)->ReadU8();
+    data[5] = static_cast<Self *>(this)->ReadU8();
+    data[6] = static_cast<Self *>(this)->ReadU8();
+    data[7] = static_cast<Self *>(this)->ReadU8();
     return *(new (data) double);
-#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE float ReadF32(void) noexcept {
-    const auto ptr = read_ptr;
-    read_ptr += 4;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    return *(new (ptr) float);
-#else
     alignas(float) uint8_t data[4u];
-    data[0] = ptr[0];
-    data[1] = ptr[1];
-    data[2] = ptr[2];
-    data[3] = ptr[3];
+    data[0] = static_cast<Self *>(this)->ReadU8();
+    data[1] = static_cast<Self *>(this)->ReadU8();
+    data[2] = static_cast<Self *>(this)->ReadU8();
+    data[3] = static_cast<Self *>(this)->ReadU8();
     return *(new (data) float);
-#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint64_t ReadU64(void) noexcept {
-    const auto ptr = read_ptr;
-    read_ptr += 8;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    return *(new (ptr) uint64_t);
-#else
     alignas(uint64_t) uint8_t data[8u];
-    data[0] = ptr[0];
-    data[1] = ptr[1];
-    data[2] = ptr[2];
-    data[3] = ptr[3];
-    data[4] = ptr[4];
-    data[5] = ptr[5];
-    data[6] = ptr[6];
-    data[7] = ptr[7];
+    data[0] = static_cast<Self *>(this)->ReadU8();
+    data[1] = static_cast<Self *>(this)->ReadU8();
+    data[2] = static_cast<Self *>(this)->ReadU8();
+    data[3] = static_cast<Self *>(this)->ReadU8();
+    data[4] = static_cast<Self *>(this)->ReadU8();
+    data[5] = static_cast<Self *>(this)->ReadU8();
+    data[6] = static_cast<Self *>(this)->ReadU8();
+    data[7] = static_cast<Self *>(this)->ReadU8();
     return *(new (data) uint64_t);
-#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint32_t ReadU32(void) noexcept {
-    const auto ptr = read_ptr;
-    read_ptr += 4;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    return *(new (ptr) uint32_t);
-#else
     alignas(uint32_t) uint8_t data[4u];
-    data[0] = ptr[0];
-    data[1] = ptr[1];
-    data[2] = ptr[2];
-    data[3] = ptr[3];
+    data[0] = static_cast<Self *>(this)->ReadU8();
+    data[1] = static_cast<Self *>(this)->ReadU8();
+    data[2] = static_cast<Self *>(this)->ReadU8();
+    data[3] = static_cast<Self *>(this)->ReadU8();
     return *(new (data) uint32_t);
-#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint16_t ReadU16(void) noexcept {
-    const auto ptr = read_ptr;
-    read_ptr += 2;
-#ifndef HYDE_RT_DISALLOW_UNALIGNED_ACCESS
-    return *(new (ptr) uint16_t);
-#else
-    alignas(uint16_t) uint8_t data[2u];
-    data[0] = ptr[0];
-    data[1] = ptr[1];
+    alignas(uint16_t) uint8_t data[2];
+    data[0] = static_cast<Self *>(this)->ReadU8();
+    data[1] = static_cast<Self *>(this)->ReadU8();
     return *(new (data) uint16_t);
-#endif
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t ReadU8(void) noexcept {
@@ -358,7 +312,7 @@ class UnsafeByteReader {
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE bool ReadB(void) noexcept {
-    return !!ReadU8();
+    return !!static_cast<Self *>(this)->ReadU8();
   }
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE uint32_t
   ReadSize(void) noexcept {
@@ -374,7 +328,18 @@ class UnsafeByteReader {
 
 // A reader for reading the discontinuous data in a `SlabList`. This reader is
 // considered unsafe because no bounds checking is performed.
-class ByteRangeReader : UnsafeByteReader {
+class UnsafeByteReader : public ByteReader<UnsafeByteReader> {
+ public:
+  using ByteReader<UnsafeByteReader>::ReadU8;
+
+  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteReader(const uint8_t *read_ptr_)
+      : ByteReader(read_ptr_) {}
+
+};
+
+// A reader for reading the discontinuous data in a `SlabList`. This reader is
+// considered unsafe because no bounds checking is performed.
+class ByteRangeReader : public UnsafeByteReader {
  public:
   // Constructor for use by a `SlabReference`.
   explicit ByteRangeReader(const uint8_t *read_ptr_, size_t num_bytes) noexcept

@@ -326,7 +326,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "}\n\n";  // End of `VisitMessages`.
 
   os << os.Indent() << "template <typename Visitor>\n"
-     << os.Indent() << "class " << gClassName << "OutputMessageLogger {\n";
+     << os.Indent() << "class " << gClassName << "LogVisitor {\n";
   os.PushIndent();
   os << os.Indent() << "private:\n";
   os.PushIndent();
@@ -335,7 +335,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "public:\n";
   os.PushIndent();
 
-  os << os.Indent() << gClassName << "OutputMessageLogger(Visitor &vis_)\n"
+  os << os.Indent() << gClassName << "LogVisitor(Visitor &vis_)\n"
      << os.Indent() << "    : vis(vis_) {}\n\n";
 
   for (ParsedMessage message : messages) {
@@ -401,7 +401,137 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   os.PopIndent();  // public:
   os.PopIndent();
-  os << os.Indent() << "};\n\n";  // End of OutputMessageLogger
+  os << os.Indent() << "};\n\n";  // End of LogVisitor
+
+  // Make a proxy message logger.
+
+  os << os.Indent() << "template <typename L, typename LPtr=L *>\n"
+     << os.Indent() << "class Proxy" << gClassName << "Log {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+  os << os.Indent() << "LPtr logger;\n"
+     << os.Indent() << "Proxy" << gClassName << "Log(LPtr logger_)\n"
+     << os.Indent() << "    : logger(std::move(logger_)) {}\n";
+
+  for (ParsedMessage message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << "\n"
+       << os.Indent() << "void " << message.Name() << "_" << message.Arity();
+
+    auto sep = "(";
+    for (ParsedParameter param : message.Parameters()) {
+      os << sep << TypeName(module, param.Type()) << " p" << param.Index();
+      sep = ", ";
+    }
+
+    os << sep << "bool added) {\n";
+    os.PushIndent();
+    os << os.Indent() << "if (logger) {\n";
+    os.PushIndent();
+    os << os.Indent() << "logger->" << message.Name() << "_" << message.Arity();
+    sep = "(";
+    for (ParsedParameter param : message.Parameters()) {
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << "p" << param.Index();
+      } else {
+        os << "std::move(p" << param.Index() << ")";
+      }
+      sep = ", ";
+    }
+    os << sep << "added);\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+  }
+
+  os.PopIndent();  // public
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";  // Proxy*Log
+
+  os << os.Indent() << "class Virtual" << gClassName << "Log {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+
+  for (ParsedMessage message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << "\n"
+       << os.Indent() << "virtual void " << message.Name()
+       << "_" << message.Arity();
+
+    auto sep = "(";
+    for (ParsedParameter param : message.Parameters()) {
+      os << sep << TypeName(module, param.Type()) << " p" << param.Index();
+      sep = ", ";
+    }
+
+    os << sep << "bool added) = 0;\n";
+  }
+
+  os.PopIndent();  // public
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";  // VirtualLog
+
+  // Make a virtual proxy message logger.
+
+  os << os.Indent() << "template <typename L, typename LPtr=L *>\n"
+     << os.Indent() << "class VirtualProxy" << gClassName
+     << "Log final : public Virtual" << gClassName << "Log {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+  os << os.Indent() << "LPtr logger;\n"
+     << os.Indent() << "VirtualProxy" << gClassName << "Log(LPtr logger_)\n"
+     << os.Indent() << "    : logger(std::move(logger_)) {}\n";
+
+  for (ParsedMessage message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << "\n"
+       << os.Indent() << "void " << message.Name() << "_" << message.Arity();
+
+    auto sep = "(";
+    for (ParsedParameter param : message.Parameters()) {
+      os << sep << TypeName(module, param.Type()) << " p" << param.Index();
+      sep = ", ";
+    }
+
+    os << sep << "bool added) final {\n";
+    os.PushIndent();
+    os << os.Indent() << "if (logger) {\n";
+    os.PushIndent();
+    os << os.Indent() << "logger->" << message.Name() << "_" << message.Arity();
+    sep = "(";
+    for (ParsedParameter param : message.Parameters()) {
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << "p" << param.Index();
+      } else {
+        os << "std::move(p" << param.Index() << ")";
+      }
+      sep = ", ";
+    }
+    os << sep << "added);\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+  }
+
+  os.PopIndent();  // public
+  os.PopIndent();
+  os << os.Indent() << "};\n\n";  // VirtualProxy*Log
 }
 
 }  // namespace cxx
