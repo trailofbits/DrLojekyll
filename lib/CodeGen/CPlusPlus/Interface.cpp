@@ -108,8 +108,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   const auto messages = Messages(module);
 
   // Create a mapping of names to actual messages.
-  unsigned next_input_message_id = 1u;
-  unsigned next_output_message_id = 1u;
+  unsigned next_input_message_id = 0u;
+  unsigned next_output_message_id = 0u;
   std::unordered_map<std::string, unsigned> name_to_id;
   std::unordered_map<ParsedMessage, std::string> message_to_name;
 
