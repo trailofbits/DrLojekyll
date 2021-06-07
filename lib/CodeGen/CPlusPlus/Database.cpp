@@ -19,23 +19,6 @@ namespace hyde {
 namespace cxx {
 namespace {
 
-static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
-  return os << "functors." << func.Name() << '_'
-            << ParsedDeclaration(func).BindingPattern();
-}
-
-static OutputStream &Table(OutputStream &os, const DataTable table) {
-  return os << "table_" << table.Id();
-}
-
-//static OutputStream &Table(OutputStream &os, const DataIndex index) {
-//  return Table(os, DataTable::Backing(index));
-//}
-
-static OutputStream &Vector(OutputStream &os, const DataVector vec) {
-  return os << "vec_" << vec.Id();
-}
-
 // Declare Table Descriptors that contain additional metadata about columns,
 // indexes, and tables. The output of this code looks roughly like this:
 //
@@ -1460,7 +1443,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << "> scan(storage, " << Table(os, spec.table);
     for (auto param : params) {
       if (param.Binding() == ParameterBinding::kBound) {
-        os << ", param_" << param.Index();
+        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << ", param_" << param.Index();
+        } else {
+          os << ", std::move(param_" << param.Index() << ")";
+        }
       }
     }
     os << ");\n"
@@ -1631,12 +1618,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
-  os << os.Indent() << "private:\n";
+  os << os.Indent() << "public:\n";
   os.PushIndent();  // public:
 
-  os << os.Indent() << "template <typename>\n"
-     << os.Indent() << "friend class " << gClassName << "InputMessage;\n\n"
-     << os.Indent() << "StorageT &storage;\n"
+  os << os.Indent() << "StorageT &storage;\n"
      << os.Indent() << "LogT &log;\n"
      << os.Indent() << "FunctorsT &functors;\n"
      << "\n";
@@ -1655,11 +1640,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     DefineConstant(os, module, constant);
   }
 
-  os << "\n";
-  os.PopIndent();
-  os << os.Indent() << "public:\n";
-  os.PushIndent();
-  os << os.Indent() << "explicit " << gClassName
+  os << "\n"
+     << os.Indent() << "explicit " << gClassName
      << "(StorageT &s, LogT &l, FunctorsT &f)\n";
   os.PushIndent();  // constructor
   os << os.Indent() << ": storage(s),\n"
@@ -1704,9 +1686,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os.PopIndent();
-  os << os.Indent() << "private:\n";
-  os.PushIndent();
+//  os.PopIndent();
+//  os << os.Indent() << "private:\n";
+//  os.PushIndent();
 
   //  for (auto table : program.Tables()) {
   //    DeclareTable(os, module, table);

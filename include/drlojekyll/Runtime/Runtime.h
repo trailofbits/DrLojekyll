@@ -15,6 +15,7 @@
 
 #include "Column.h"
 #include "Index.h"
+#include "Int.h"
 #include "Table.h"
 #include "Util.h"
 
@@ -27,6 +28,7 @@ using index_t = size_t;
 using UTF8 = std::string;
 using Any = void;
 using Bytes = std::basic_string<uint8_t>;
+using UUID = uint128_t;
 
 enum class TupleState : uint8_t {
   kAbsent,

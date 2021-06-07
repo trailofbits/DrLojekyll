@@ -82,7 +82,10 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
+     << "#include <memory>\n"
      << "#include <string>\n"
+     << "#include <tuple>\n"
+     << "#include <utility>\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "\n";
 
@@ -200,7 +203,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   }
   os << ");\n";
   os.PopIndent();
-  os << os.Indent() << "}\n";
+  os << os.Indent() << "}\n";  // Apply.
 
   os.PopIndent();  // public
   os.PopIndent();
@@ -237,13 +240,6 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     } else {
       os << "false;\n";
     }
-    os << os.Indent() << "using ParamTypes = ::hyde::rt::TypeList<";
-    auto sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type().Kind());
-      sep = ", ";
-    }
-    os << ">;\n";
     os << os.Indent() << "using TupleType = std::tuple<";
     sep = "";
     for (auto param : message.Parameters()) {
@@ -308,7 +304,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   os << os.Indent() << "template <typename Visitor, typename... Args>\n"
      << os.Indent() << "inline static void Visit" << gClassName
-     << "Messages(Visitor &visitor, const Args&... args) {\n";
+     << "Messages(Visitor &visitor, Args&... args) {\n";
   os.PushIndent();
   for (ParsedMessage message : messages) {
     const auto &name = message_to_name[message];
@@ -532,6 +528,335 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();  // public
   os.PopIndent();
   os << os.Indent() << "};\n\n";  // VirtualProxy*Log
+
+  os
+     << os.Indent() << "class " << gClassName << "QueryGenerator {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+  os << os.Indent() << "virtual ~" << gClassName
+     << "QueryGenerator(void) = default;\n"
+     << os.Indent() << "virtual unsigned QueryId(void) const noexcept = 0;\n"
+     << os.Indent() << "virtual void *TryGetNextOpaque(void) noexcept = 0;\n";
+  os.PopIndent();  // public
+  os.PopIndent();
+  os << os.Indent() << "};\n\n"  // QueryGenerator
+     << os.Indent() << "template <typename RetTupleType>\n"
+     << os.Indent() << "class " << gClassName << "RowGenerator : public "
+     << gClassName << "QueryGenerator {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+
+  os << os.Indent() << "virtual ~" << gClassName
+     << "RowGenerator(void) = default;\n"
+     << os.Indent()
+     << "virtual RetTupleType *TryGetNext(void) noexcept = 0;\n";
+
+  os.PopIndent();  // public
+  os.PopIndent();
+  os << "};\n\n";  // RowGenerator
+
+  unsigned next_query_id = 0u;
+  for (const ProgramQuery &query_info : program.Queries()) {
+
+    unsigned num_params = 0u;
+    unsigned num_rets = 0u;
+    ParsedDeclaration decl(query_info.query);
+    std::stringstream ss;
+    OutputStream ss_os(os.display_manager, ss);
+    ss_os << decl.Name() << '_' << decl.BindingPattern();
+    ss_os.Flush();
+    std::string name = ss.str();
+
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        ++num_params;
+      } else {
+        ++num_rets;
+      }
+    }
+
+    os << os.Indent() << "using " << gClassName << "Query" << next_query_id
+       << "ParamTupleType = std::tuple<";
+    sep = "";
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << sep << TypeName(module, param.Type());
+        sep = ", ";
+      }
+    }
+    os << ">;\n"
+       << os.Indent() << "using " << gClassName << "Query" << next_query_id
+       << "RetTupleType = std::tuple<";
+    sep = "";
+    for (ParsedParameter param : decl.Parameters()) {
+      os << sep << TypeName(module, param.Type());
+      sep = ", ";
+    }
+    os << ">;\n"
+       << os.Indent() << "template <typename StorageT, typename LogT, "
+       << "typename FunctorsT>\n"
+       << os.Indent() << "class " << gClassName << "Query"
+       << next_query_id << "Generator final : public " << gClassName
+       << "RowGenerator<" << gClassName << "Query" << next_query_id
+       << "RetTupleType> {\n";
+    os.PushIndent();
+    os << os.Indent() << "private:\n";
+    os.PushIndent();
+
+    os << os.Indent() << "using ParamTupleType = " << gClassName << "Query"
+       << next_query_id << "ParamTupleType;\n"
+       << os.Indent() << "using RetTupleType = " << gClassName << "Query"
+       << next_query_id << "RetTupleType;\n"
+       << os.Indent() << gClassName << "<StorageT, LogT, FunctorsT> &db;\n\n"
+       << os.Indent() << "ParamTupleType params;\n\n";
+
+    // This is either a table or index scan.
+    if (num_rets) {
+      os << os.Indent() << "RetTupleType ret;\n"
+         << os.Indent()
+         << "using ScanType = ::hyde::rt::Scan<StorageT, ::hyde::rt::";
+
+      // This is an index scan.
+      if (num_params) {
+        assert(query_info.index.has_value());
+        os << "IndexTag<" << query_info.index->Id() << ">";
+
+      // This is a full table scan.
+      } else {
+        os << "TableTag<" << query_info.table.Id() << ">";
+      }
+
+      os << ">;\n"
+         << os.Indent() << "ScanType scan;\n"
+         << os.Indent() << "std::remove_reference_t<"
+         << "decltype(reinterpret_cast<ScanType *>(NULL)->begin())> it;\n"
+         << os.Indent() << "std::remove_reference_t<"
+         << "const decltype(reinterpret_cast<ScanType *>(NULL)->end())> end;\n";
+
+    } else {
+      os << os.Indent() << gClassName << "Query" << next_query_id
+         << "ParamTupleType *found{nullptr};\n\n";
+    }
+
+    os.PopIndent();  // private
+    os << os.Indent() << "public:\n";
+    os.PushIndent();
+
+    os << os.Indent() << "virtual ~" << gClassName << "Query"
+       << next_query_id << "Generator(void) = default;\n"
+       << os.Indent() << gClassName << "Query" << next_query_id
+       << "Generator(" << gClassName << "<StorageT, LogT, FunctorsT> &db_, "
+       << "ParamTupleType params_)\n"
+       << os.Indent() << "    : db(db_),\n"
+       << os.Indent() << "      params(std::move(params_))";
+    if (num_rets) {
+      os << ",\n"
+         << os.Indent() << "      scan(db_.storage, db."
+         << Table(os, query_info.table);
+
+      auto i = 0u;
+      for (auto param : decl.Parameters()) {
+        if (param.Binding() == ParameterBinding::kBound) {
+          os << ", std::get<" << i << ">(params)";
+          ++i;
+        }
+      }
+      os << "),\n"
+         << os.Indent() << "      it(scan.begin()),\n"
+         << os.Indent() << "      end(scan.end()) {}\n\n";
+
+    // If we don't need to generate, then look for the tuple.
+    } else {
+      os << " {\n";
+      os.PushIndent();
+      os << os.Indent() << "if (db_." << name;
+      sep = "(";
+      auto i = 0u;
+      for (ParsedParameter param : decl.Parameters()) {
+        (void) param;
+        os << sep << "std::get<" << (i++) << ">(params)";
+        sep = ", ";
+      }
+      os << ")) {\n";
+      os.PushIndent();
+      os << os.Indent() << "found = &params;\n";
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+      os.PopIndent();
+      os << os.Indent() << "}\n\n";  // constructor
+    }
+
+    os << os.Indent() << "RetTupleType *TryGetNext(void) noexcept final {\n";
+    os.PushIndent();
+    if (num_rets) {
+      os << os.Indent() << "while (it != end) {\n";
+      os.PushIndent();
+      os << os.Indent() << "ret = *it;\n"
+         << os.Indent() << "++it;\n";
+
+      // Index scans are over-approximate -- they may include unrelated data, so
+      // we need to double check individual results.
+      if (num_params) {
+        sep = "if (";
+        os << os.Indent();
+
+        auto i = 0u;
+        auto j = 0u;
+        for (ParsedParameter param : decl.Parameters()) {
+          if (param.Binding() == ParameterBinding::kBound) {
+            os << sep << "std::get<" << i << ">(params) != std::get<"
+               << j << ">(ret)";
+            sep = " || ";
+            ++i;
+          }
+          ++j;
+        }
+        os << ") {\n";
+        os.PushIndent();
+        os << os.Indent() << "continue;\n";
+        os.PopIndent();
+        os << os.Indent() << "}\n";
+      }
+
+      // This is a differential message; we need to double check that records
+      // are valid.
+      if (query_info.forcing_function) {
+        os << os.Indent() << "if (!db."
+           << Procedure(os, *(query_info.forcing_function));
+        sep = "(";
+        for (ParsedParameter param : decl.Parameters()) {
+          os << sep << "std::get<" << param.Index() << ">(ret)";
+          sep = ", ";
+        }
+        os << ")) {\n";
+        os.PushIndent();
+        os << os.Indent() << "continue;\n";
+        os.PopIndent();
+        os << os.Indent() << "}\n";
+      }
+
+      os << os.Indent() << "return &ret;\n";
+      os.PopIndent();
+      os << os.Indent() << "}\n"
+         << os.Indent() << "return nullptr;\n";
+    } else {
+      os << os.Indent() << "const auto ret = found;\n"
+         << os.Indent() << "found = nullptr;\n"
+         << os.Indent() << "return ret;\n";
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n"  // TryGetNext.
+       << os.Indent() << "unsigned QueryId(void) const noexcept final {\n";
+    os.PushIndent();
+    os << os.Indent() << "return " << next_query_id << "u;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n"
+       << os.Indent() << "void *TryGetNextOpaque(void) noexcept final {\n";
+    os.PushIndent();
+    os << os.Indent() << "return TryGetNext();\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // TryGetNextOpaque.
+
+    os.PopIndent();  // public
+    os.PopIndent();
+    os << os.Indent() << "};\n\n";  // Query*Generator
+
+    os << os.Indent() << "struct " << gClassName << "Query" << next_query_id
+       << " {\n";
+    os.PushIndent();
+    os << os.Indent() << "using ParamTupleType = " << gClassName << "Query"
+       << next_query_id << "ParamTupleType;\n"
+       << os.Indent() << "using RetTupleType = " << gClassName << "Query"
+       << next_query_id << "RetTupleType;\n"
+       << os.Indent() << "static constexpr auto kId = " << next_query_id
+       << ";\n"
+       << os.Indent() << "static constexpr auto kName = \"" << name << "\";\n"
+       << os.Indent() << "static constexpr auto kNameLength = "
+       << name.size() << "u;\n"
+       << os.Indent() << "static constexpr auto kNumParams = "
+       << num_params << "u;\n"
+       << os.Indent() << "static constexpr auto kNumReturns = "
+       << num_rets << "u + kNumParams;\n\n";
+
+    // Make a method that can invoke the query on a database instance.
+    os << os.Indent() << "template <typename StorageT, typename LogT, "
+       << "typename FunctorsT";
+    if (num_rets) {
+      os << ", typename Generator";
+    }
+    os << ">\n"
+       << os.Indent() << "inline static ::hyde::rt::index_t Apply("
+       << gClassName << "<StorageT, LogT, FunctorsT> &db_, ParamTupleType params_";
+
+    if (num_rets) {
+      os << ", Generator gen_";
+    }
+
+    os << ") {\n";
+
+    os.PushIndent();
+
+    if (num_rets) {
+      os << os.Indent() << "return db_.template " << name << "<Generator>(";
+    } else {
+      os << os.Indent() << "return db_." << name << "(";
+    }
+    sep = "";
+    auto i = 0u;
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << "std::get<" << i << ">(params_)";
+        } else {
+          os << "std::move(std::get<" << i << ">(params_))";
+        }
+        sep = ", ";
+      }
+    }
+
+    if (num_rets) {
+      os << sep << "std::move(gen_)";
+    }
+    os << ");\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // Apply.
+
+
+    // Make a method that can return a generator for this functor.
+    os << os.Indent() << "template <typename StorageT, typename LogT, "
+       << "typename FunctorsT>\n"
+       << os.Indent() << "inline static std::unique_ptr<" << gClassName
+       << "Query" << next_query_id << "Generator<StorageT, LogT, FunctorsT>> Generate("
+       << gClassName << "<StorageT, LogT, FunctorsT> &db_, "
+       << "ParamTupleType params_) {\n";
+
+    os.PushIndent();
+    os << os.Indent() << "return std::make_unique<" << gClassName
+       << "Query" << next_query_id << "Generator<StorageT, LogT, FunctorsT>>"
+       << "(db_, std::move(params_));\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // Generate
+
+    os.PopIndent();
+    os << os.Indent() << "};\n\n";  // QueryN
+
+    ++next_query_id;
+  }
+
+  os << os.Indent() << "template <typename Visitor, typename... Args>\n"
+     << os.Indent() << "inline static void Visit" << gClassName
+     << "Queries(Visitor &visitor, Args&... args) {\n";
+  os.PushIndent();
+  next_query_id = 0u;
+  for (const ProgramQuery &query_info : program.Queries()) {
+    (void) query_info;
+    os << os.Indent() << "visitor.template Visit<" << gClassName
+       << "Query" << (next_query_id++) << ">(args...);\n";
+  }
+  os.PopIndent();
+  os << "}\n\n";  // End of `VisitQueries`.
 }
 
 }  // namespace cxx
