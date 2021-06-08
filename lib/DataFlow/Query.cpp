@@ -1609,7 +1609,7 @@ void QueryTuple::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
 }
 
 QueryKVIndex QueryKVIndex::From(QueryView view) {
-  assert(view.IsTuple());
+  assert(view.IsKVIndex());
   return reinterpret_cast<QueryKVIndex &>(view);
 }
 
