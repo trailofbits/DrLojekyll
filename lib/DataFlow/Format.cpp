@@ -739,6 +739,41 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     link_conds(merge);
   }
 
+  for (auto subgraph : query.Subgraphs()) {
+      os << "v" << subgraph.UniqueId() << " [" << do_color(subgraph) << "label=<"
+         << kBeginTable;
+      //do_table(2, subgraph);
+      do_conds(2, subgraph);
+      os << "<TD rowspan=\"2\">" << QueryView(subgraph).KindName() << "</TD>";
+      for (auto col : subgraph.Columns()) {
+        os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
+      }
+      os << "</TR><TR>";
+
+      for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
+        os << "<TD port=\"p" << i << "\">" << do_col(subgraph.NthInputColumn(i))
+           << "</TD>";
+      }
+
+      DEBUG(os << "</TR><TR><TD colspan=\"10\">" << subgraph.DebugString(os)
+               << "</TD>";)
+
+      os << kEndTable << ">];\n";
+
+      auto color = " [color=orange]";
+
+      // Link the input columns to their sources.
+      for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
+        auto col = subgraph.NthInputColumn(i);
+        auto input_view = QueryView::Containing(col);
+        os << "v" << subgraph.UniqueId() << ":p" << i << " -> v"
+           << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
+      }
+
+      link_conds(subgraph);
+    }
+
+
   os << "}\n";
   return os;
 }

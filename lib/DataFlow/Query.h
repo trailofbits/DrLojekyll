@@ -464,6 +464,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   virtual Node<QueryNegate> *AsNegate(void) noexcept;
   virtual Node<QueryCompare> *AsCompare(void) noexcept;
   virtual Node<QueryInsert> *AsInsert(void) noexcept;
+  virtual Node<QuerySubgraph> *AsSubgraph(void) noexcept;
 
   // Useful for communicating low-level debug info back to the formatter.
   virtual OutputStream &DebugString(OutputStream &os) noexcept;
@@ -1094,6 +1095,23 @@ class Node<QueryInsert> : public Node<QueryView> {
 
 using INSERT = Node<QueryInsert>;
 
+// TODO(sonya)
+template <>
+class Node<QuerySubgraph> : public Node<QueryView> {
+ public:
+  virtual ~Node(void);
+
+  const char *KindName(void) const noexcept override;
+  Node<QuerySubgraph> *AsSubgraph(void) noexcept override;
+
+  uint64_t Hash(void) noexcept override;
+  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
+                    const ErrorLog &) override;
+};
+
+using SUBGRAPH = Node<QuerySubgraph>;
+
 template <typename T>
 void Node<QueryColumn>::ForEachUser(T user_cb) const {
   view->ForEachUse<VIEW>([&user_cb](VIEW *user, VIEW *) { user_cb(user); });
@@ -1419,6 +1437,9 @@ class QueryImpl {
   // SELECTs and such.
   void ProxyInsertsWithTuples(void);
 
+  // Locate all subgraphs and proxy each with a SUBGRAPH node
+  void BuildSubgraphs(void);
+
   // Link together views in terms of predecessors and successors.
   void LinkViews(bool recursive = false);
 
@@ -1457,6 +1478,7 @@ class QueryImpl {
   DefList<NEGATION> negations;
   DefList<CMP> compares;
   DefList<INSERT> inserts;
+  DefList<SUBGRAPH> subgraphs;
 };
 
 }  // namespace hyde

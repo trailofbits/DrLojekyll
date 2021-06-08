@@ -109,6 +109,10 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
   }
 }
 
+const char *Node<QuerySubgraph>::KindName(void) const noexcept {
+  return "SUBGRAPH";
+}
+
 Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {
   return nullptr;
 }
@@ -148,6 +152,11 @@ Node<QueryCompare> *Node<QueryView>::AsCompare(void) noexcept {
 Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
   return nullptr;
 }
+
+Node<QuerySubgraph> *Node<QueryView>::AsSubgraph(void) noexcept {
+  return nullptr;
+}
+
 
 // Useful for communicating low-level debug info back to the formatter.
 OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
@@ -1383,6 +1392,9 @@ bool Node<QueryView>::IsConditional(
       is_cond = false;
     }
     return is_cond;
+
+  } else if (view->AsSubgraph()) {
+    return false;
 
   } else {
     assert(false);

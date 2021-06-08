@@ -1998,7 +1998,8 @@ static void BuildEquivalenceSets(QueryImpl *query) {
         const auto pred = preds[0];
         const auto tuple = QueryTuple::From(view);
         if (!output_is_conditional(pred) &&
-            all_cols_match(tuple.InputColumns(), pred.Columns())) {
+            all_cols_match(tuple.InputColumns(), pred.Columns())
+            && !pred.IsSubgraph()) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
@@ -2118,6 +2119,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->ExtractConditionsToTuples();
   impl->RemoveUnusedViews();
   impl->ProxyInsertsWithTuples();
+  impl->BuildSubgraphs();
   impl->LinkViews();
   impl->IdentifyInductions(log);
   impl->FinalizeColumnIDs();

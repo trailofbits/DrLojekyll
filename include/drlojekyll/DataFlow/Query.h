@@ -68,6 +68,7 @@ class QueryNegate;
 class QueryRelation;
 class QuerySelect;
 class QueryStream;
+class QuerySubgraph;
 class QueryTag;
 class QueryView;
 
@@ -121,6 +122,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   friend class QueryNegate;
   friend class QueryView;
   friend class QueryAggregate;
+  friend class QuerySubgraph;
 
   template <typename>
   friend class NodeIterator;
@@ -353,6 +355,7 @@ class QueryView : public query::QueryNode<QueryView> {
   QueryView(const QueryNegate &view);
   QueryView(const QueryCompare &view);
   QueryView(const QueryInsert &view);
+  QueryView(const QuerySubgraph &view);
 
   inline static QueryView From(QueryView view) noexcept {
     return view;
@@ -371,6 +374,7 @@ class QueryView : public query::QueryNode<QueryView> {
   static QueryView From(const QueryNegate &view) noexcept;
   static QueryView From(const QueryCompare &view) noexcept;
   static QueryView From(const QueryInsert &view) noexcept;
+  static QueryView From(const QuerySubgraph &view) noexcept;
 
   const char *KindName(void) const noexcept;
 
@@ -401,6 +405,7 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsNegate(void) const noexcept;
   bool IsCompare(void) const noexcept;
   bool IsInsert(void) const noexcept;
+  bool IsSubgraph(void) const noexcept;
 
   // Returns `true` if this node is used by a `QueryNegate`.
   bool IsUsedByNegation(void) const noexcept;
@@ -936,6 +941,30 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
   friend class QueryView;
 };
 
+//
+class QuerySubgraph : public query::QueryNode<QuerySubgraph> {
+ public:
+  static QuerySubgraph From(QueryView view);
+
+  DefinedNodeRange<QueryColumn> Columns(void) const;
+  unsigned NumInputColumns(void) const noexcept;
+  QueryColumn NthInputColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
+
+  OutputStream &DebugString(OutputStream &) const noexcept;
+
+  // Apply a callback `with_col` to each input column of this view.
+  void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                     std::optional<QueryColumn> /* out_col */)>
+                      with_col) const;
+
+ private:
+  using query::QueryNode<QuerySubgraph>::QueryNode;
+
+  friend class QueryView;
+};
+
+
 // A query.
 class Query {
  public:
@@ -954,6 +983,7 @@ class Query {
   DefinedNodeRange<QueryKVIndex> KVIndices(void) const;
   DefinedNodeRange<QueryRelation> Relations(void) const;
   DefinedNodeRange<QueryInsert> Inserts(void) const;
+  DefinedNodeRange<QuerySubgraph> Subgraphs(void) const;
   DefinedNodeRange<QueryNegate> Negations(void) const;
   DefinedNodeRange<QueryMap> Maps(void) const;
   DefinedNodeRange<QueryAggregate> Aggregates(void) const;
@@ -1004,7 +1034,14 @@ class Query {
     for (auto view : Inserts()) {
       cb(QueryView::From(view));
     }
+
+    for (auto view : Subgraphs()) {
+      cb(QueryView::From(view));
+    }
   }
+
+  // TODO(sonya): add something like ForEachSubgraph(T cb) for easy
+  // operations on subgraphs in a query
 
   Query(const Query &) = default;
   Query(Query &&) noexcept = default;

@@ -379,6 +379,16 @@ void QueryImpl::LinkViews(bool recursive) {
     }
   }
 
+  // TODO(sonya): review this after implementing BuildSubgraphs
+  for (auto view : subgraphs) {
+    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+        incoming_view) {
+      view->predecessors.AddUse(incoming_view);
+      incoming_view->successors.AddUse(view);
+    }
+  }
+
+
   const_cast<const QueryImpl *>(this)->ForEachView([=](VIEW *view) {
     view->predecessors.Unique();
     view->successors.Unique();

@@ -145,6 +145,8 @@ QueryView::QueryView(const QueryCompare &view) : QueryView(view.impl) {}
 
 QueryView::QueryView(const QueryInsert &view) : QueryView(view.impl) {}
 
+QueryView::QueryView(const QuerySubgraph &view) : QueryView(view.impl) {}
+
 
 // Returns the `nth` output column.
 QueryColumn QueryView::NthColumn(unsigned n) const noexcept {
@@ -189,6 +191,10 @@ QueryView QueryView::From(const QueryCompare &view) noexcept {
 }
 
 QueryView QueryView::From(const QueryInsert &view) noexcept {
+  return reinterpret_cast<const QueryView &>(view);
+}
+
+QueryView QueryView::From(const QuerySubgraph &view) noexcept {
   return reinterpret_cast<const QueryView &>(view);
 }
 
@@ -285,6 +291,10 @@ bool QueryView::IsCompare(void) const noexcept {
 
 bool QueryView::IsInsert(void) const noexcept {
   return impl->AsInsert() != nullptr;
+}
+
+bool QueryView::IsSubgraph(void) const noexcept {
+  return impl->AsSubgraph() != nullptr;
 }
 
 // Returns `true` if this node is used by a `QueryNegate`.
@@ -1699,6 +1709,43 @@ void QueryKVIndex::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   }
 }
 
+QuerySubgraph QuerySubgraph::From(QueryView view) {
+  assert(view.IsSubgraph());
+  return reinterpret_cast<QuerySubgraph &>(view);
+}
+
+unsigned QuerySubgraph::NumInputColumns(void) const noexcept {
+  return impl->input_columns.Size();
+}
+
+QueryColumn QuerySubgraph::NthInputColumn(unsigned n) const noexcept {
+  assert(n < impl->input_columns.Size());
+  return QueryColumn(impl->input_columns[n]);
+}
+
+DefinedNodeRange<QueryColumn> QuerySubgraph::Columns(void) const {
+  return {DefinedNodeIterator<QueryColumn>(impl->columns.begin()),
+          DefinedNodeIterator<QueryColumn>(impl->columns.end())};
+}
+
+
+UsedNodeRange<QueryColumn> QuerySubgraph::InputColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->input_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
+}
+
+
+OutputStream &QuerySubgraph::DebugString(OutputStream &os) const noexcept {
+  return impl->DebugString(os);
+}
+
+void QuerySubgraph::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
+                                   std::optional<QueryColumn> /* out_col */)>
+                    with_col) const {
+  // TODO(sonya)
+}
+
+
 DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
   return {DefinedNodeIterator<QueryCondition>(impl->conditions.begin()),
           DefinedNodeIterator<QueryCondition>(impl->conditions.end())};
@@ -1747,6 +1794,11 @@ DefinedNodeRange<QueryIO> Query::IOs(void) const {
 DefinedNodeRange<QueryInsert> Query::Inserts(void) const {
   return {DefinedNodeIterator<QueryInsert>(impl->inserts.begin()),
           DefinedNodeIterator<QueryInsert>(impl->inserts.end())};
+}
+
+DefinedNodeRange<QuerySubgraph> Query::Subgraphs(void) const {
+  return {DefinedNodeIterator<QuerySubgraph>(impl->subgraphs.begin()),
+          DefinedNodeIterator<QuerySubgraph>(impl->subgraphs.end())};
 }
 
 DefinedNodeRange<QueryNegate> Query::Negations(void) const {
