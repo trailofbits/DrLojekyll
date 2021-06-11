@@ -1268,6 +1268,12 @@ class QueryImpl {
         views.push_back(view);
       }
     }
+    for (auto view : subgraphs) {
+      view->depth = 0;
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
+    }
     for (auto view : merges) {
       view->depth = 0;
       if (!view->is_dead) {
@@ -1335,6 +1341,12 @@ class QueryImpl {
       }
     }
     for (auto view : aggregates) {
+      view->depth = 0;
+      if (!view->is_dead) {
+        views.push_back(view);
+      }
+    }
+    for (auto view : subgraphs) {
       view->depth = 0;
       if (!view->is_dead) {
         views.push_back(view);
