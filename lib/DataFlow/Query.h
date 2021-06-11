@@ -1159,6 +1159,9 @@ class QueryImpl {
     for (auto view : inserts) {
       views.push_back(view);
     }
+    for (auto view : subgraphs) {
+      views.push_back(view);
+    }
 
     for (auto view : views) {
       if (!view->is_dead) {
@@ -1215,6 +1218,11 @@ class QueryImpl {
       }
     }
     for (auto view : inserts) {
+      if (!view->is_dead) {
+        do_view(view);
+      }
+    }
+    for (auto view : subgraphs) {
       if (!view->is_dead) {
         do_view(view);
       }

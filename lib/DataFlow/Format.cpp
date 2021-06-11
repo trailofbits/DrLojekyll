@@ -742,7 +742,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto subgraph : query.Subgraphs()) {
       os << "v" << subgraph.UniqueId() << " [" << do_color(subgraph) << "label=<"
          << kBeginTable;
-      //do_table(2, subgraph);
+      do_table(2, subgraph);
       do_conds(2, subgraph);
       os << "<TD rowspan=\"2\">" << QueryView(subgraph).KindName() << "</TD>";
       for (auto col : subgraph.Columns()) {
