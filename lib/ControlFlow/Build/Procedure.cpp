@@ -375,8 +375,7 @@ void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
 //
 //    2) The primary data flow procedure, which takes as input the induction
 //       vectors which do the remainder of the data flow.
-void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
-                             Context &context) {
+void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc, Context &) {
   const auto primary_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
 

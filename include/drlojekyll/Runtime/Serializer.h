@@ -1355,18 +1355,19 @@ struct Serializer<Reader, Writer, int128_t> {
     alignas(int128_t) uint8_t data[16u];
     *(new (data) int128_t) = val;
 
-#if HYDE_RT_LITTLE_ENDIAN
-    auto ret = writer.WriteU8(data[0]);
-    for (auto i = 1u; i < 16u; ++i) {
-      writer.WriteU8(data[i]);
+    if constexpr (HYDE_RT_LITTLE_ENDIAN) {
+      auto ret = writer.WriteU8(data[0]);
+      for (auto i = 1u; i < 16u; ++i) {
+        writer.WriteU8(data[i]);
+      }
+      return ret;
+    } else {
+      auto ret = writer.WriteU8(data[16u - 1u]);
+      for (auto i = 2u; i <= 16u; ++i) {
+        writer.WriteU8(data[16u - i]);
+      }
+      return ret;
     }
-#else
-    auto ret = writer.WriteU8(data[16u - 1u]);
-    for (auto i = 2u; i <= 16u; ++i) {
-      writer.WriteU8(data[16u - i]);
-    }
-#endif
-    return ret;
   }
 
   static void Read(Reader &reader, int128_t &out) {
@@ -1390,18 +1391,19 @@ struct Serializer<Reader, Writer, uint128_t> {
     alignas(uint128_t) uint8_t data[16u];
     *(new (data) uint128_t) = val;
 
-#if HYDE_RT_LITTLE_ENDIAN
-    auto ret = writer.WriteU8(data[0]);
-    for (auto i = 1u; i < 16u; ++i) {
-      writer.WriteU8(data[i]);
+    if constexpr (HYDE_RT_LITTLE_ENDIAN) {
+      auto ret = writer.WriteU8(data[0]);
+      for (auto i = 1u; i < 16u; ++i) {
+        writer.WriteU8(data[i]);
+      }
+      return ret;
+    } else {
+      auto ret = writer.WriteU8(data[16u - 1u]);
+      for (auto i = 2u; i <= 16u; ++i) {
+        writer.WriteU8(data[16u - i]);
+      }
+      return ret;
     }
-#else
-    auto ret = writer.WriteU8(data[16u - 1u]);
-    for (auto i = 2u; i <= 16u; ++i) {
-      writer.WriteU8(data[16u - i]);
-    }
-#endif
-    return ret;
   }
 
   static void Read(Reader &reader, uint128_t &out) {

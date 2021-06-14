@@ -121,9 +121,9 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   // Output all message serializations.
   if (gMSGDir) {
-    for (auto module : ParsedModuleIterator(module)) {
+    for (auto sub_module : ParsedModuleIterator(module)) {
       for (auto schema_info :
-           GenerateAvroMessageSchemas(display_manager, module, error_log)) {
+           GenerateAvroMessageSchemas(display_manager, sub_module, error_log)) {
         FileStream schema_stream(
             display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
         schema_stream.os << schema_info.schema;

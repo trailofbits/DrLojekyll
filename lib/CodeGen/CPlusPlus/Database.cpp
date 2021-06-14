@@ -1260,8 +1260,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
 }
 
 static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
-                                 ParsedMessage message, const char *impl,
-                                 bool interface = false) {
+                                 ParsedMessage message) {
   os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
      << "(";
 
@@ -1284,7 +1283,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
   for (auto message : Messages(root_module)) {
     if (message.IsPublished()) {
-      DeclareMessageLogger(os, root_module, message, "{}");
+      DeclareMessageLogger(os, root_module, message);
     }
   }
 
@@ -1502,7 +1501,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   // Check the tuple's state using a finder function.
   if (spec.tuple_checker) {
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
       os << sep << "param_" << param.Index();
       sep = ", ";
