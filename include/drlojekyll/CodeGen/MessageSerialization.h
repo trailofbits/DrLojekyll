@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include <string>
 
 namespace hyde {
 
@@ -16,7 +16,7 @@ constexpr auto AVRO_DRLOG_NAMESPACE = "drlog.avro";
 // Struct to hold metadata about the Avro schema and the schema itself
 struct AvroMessageInfo {
   std::string message_name;
-  nlohmann::json schema;
+  std::string schema;
 };
 
 // Generates Avro schemas corresponding to all messages in the Datalog module.

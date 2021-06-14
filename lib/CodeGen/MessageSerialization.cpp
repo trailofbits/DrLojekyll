@@ -2,28 +2,16 @@
 
 #include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/Display/Format.h>
+#include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
 
-#include <nlohmann/json.hpp>
 #include <sstream>
 #include <vector>
 
-using json = nlohmann::json;
-
 namespace hyde {
 namespace {
-
-[[nodiscard]] auto BuildAvroRecord(std::string_view name,
-                                   json::array_t &fields) {
-  return AvroMessageInfo{std::string(name),
-                         json{
-                             {"type", "record"},
-                             {"namespace", AVRO_DRLOG_NAMESPACE},
-                             {"name", name},
-                             {"fields", fields},
-                         }};
-}
 
 [[nodiscard]] auto ParseParameterType(const TypeLoc &type,
                                       const ErrorLog &) {
@@ -48,26 +36,29 @@ namespace {
   }
 }
 
-[[nodiscard]] auto ParseMessageParameter(const DisplayManager &display_manager,
-                                         const ParsedParameter &parameter,
-                                         const ErrorLog &err) {
-  std::string_view msg_str;
-  (void) display_manager.TryReadData(parameter.Name().SpellingRange(),
-                                     &msg_str);
-  return json{{"name", std::string(msg_str)},
-              {"type", ParseParameterType(parameter.Type(), err)}};
-}
+AvroMessageInfo GenerateMessageSchema(const DisplayManager &display_manager,
+                                      const ParsedMessage &message,
+                                      const ErrorLog &err) {
+  std::stringstream ss;
+  hyde::OutputStream os(display_manager, ss);
+  os << "{\"type\":\"record\",\"namespace\":\""
+     << AVRO_DRLOG_NAMESPACE << "\",\"name\":\"" << message.Name() << "\","
+     << "\"fields\":[";
 
-[[nodiscard]] auto GenerateMessageSchema(const DisplayManager &display_manager,
-                                         const ParsedMessage &message,
-                                         const ErrorLog &err) {
-  json::array_t fields = json::array();
+  std::string_view message_name;
+  display_manager.TryReadData(message.Name().SpellingRange(), &message_name);
+  std::string name(message_name.data(), message_name.size());
+
+  auto sep = "";
   for (auto parameter : message.Parameters()) {
-    fields.emplace_back(ParseMessageParameter(display_manager, parameter, err));
+    os << sep << "{\"name\":\"" << parameter.Name() << "\",\"type\":\""
+       << ParseParameterType(parameter.Type(), err) << "\"}";
+    sep = ",";
   }
-  std::string_view msg_str;
-  (void) display_manager.TryReadData(message.Name().SpellingRange(), &msg_str);
-  return BuildAvroRecord(msg_str, fields);
+  os << "]}";
+  os.Flush();
+
+  return {name, ss.str()};
 }
 
 }  // namespace

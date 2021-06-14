@@ -21,7 +21,6 @@ set(CodeGen_PRIV_DEPS
 )
 
 set(CodeGen_DEPS
-    nlohmann_json::nlohmann_json
     ControlFlow
     DataFlow
     Display

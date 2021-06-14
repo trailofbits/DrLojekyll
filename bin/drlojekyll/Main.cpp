@@ -126,7 +126,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
            GenerateAvroMessageSchemas(display_manager, module, error_log)) {
         FileStream schema_stream(
             display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
-        schema_stream.os << schema_info.schema.dump(2);
+        schema_stream.os << schema_info.schema;
       }
     }
   }
