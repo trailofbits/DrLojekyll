@@ -807,6 +807,11 @@ class QueryNegate : public query::QueryNode<QueryNegate> {
   DefinedNodeRange<QueryColumn> Columns(void) const;
   QueryColumn NthColumn(unsigned n) const noexcept;
 
+  // If a negation has a never hint, then we know that if some data goes through
+  // the output, then it will always go through, and nothing will get set in
+  // the negated view that will result in the prior data being retracted.
+  bool HasNeverHint(void) const noexcept;
+
   // The resulting copied columns.
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;
 

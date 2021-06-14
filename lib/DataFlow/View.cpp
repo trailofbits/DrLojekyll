@@ -90,7 +90,11 @@ const char *Node<QueryCompare>::KindName(void) const noexcept {
 }
 
 const char *Node<QueryNegate>::KindName(void) const noexcept {
-  return "AND-NOT";
+  if (is_never) {
+    return "AND-NEVER";
+  } else {
+    return "AND-NOT";
+  }
 }
 
 const char *Node<QueryInsert>::KindName(void) const noexcept {

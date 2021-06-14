@@ -175,20 +175,9 @@ enum class Lexeme : uint8_t {
   // a `double`.
   kTypeFn,
 
-  // Variable-length sequence of bytes, encoded as UTF-8. Guaranteed to
-  // end in a NUL (`\0`) byte.
-  kTypeUTF8,
-
-  // Variable-length sequence of 7-bit bytes, encoded as UTF-8. Guaranteed to
-  // end in a NUL (`\0`) byte.
-  kTypeASCII,
-
   // Variable-length sequence of bytes`. No guarantees about a terminating
   // character or the encoding.
   kTypeBytes,
-
-  // A universally unique identifier.
-  kTypeUUID,
 
   // Keywords for specifying the binding of parameters.
   kKeywordBound,
@@ -335,6 +324,14 @@ enum class Lexeme : uint8_t {
   // unique, and if it's compared to any other constant that isn't identical,
   // then the comparison is assumed to be unequal.
   kPragmaPerfUnique,
+
+  // Used to mark a special form of negation that says that if something
+  // satisfies the negation once, then it will always satisfy the negation.
+  // This is used as follows:
+  //
+  //    Instead of:    !foo(A, B)
+  //           Use:    @never foo(A, B)
+  kPragmaPerfNever,
 };
 
 enum class TypeKind : uint32_t;

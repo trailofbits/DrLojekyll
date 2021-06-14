@@ -155,6 +155,9 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
   const VectorKind kind;
   std::vector<TypeKind> col_types;
 
+  std::optional<ParsedMessage> added_message;
+  std::optional<ParsedMessage> removed_message;
+
   // `true` if this vector must have variants of itself sharded across workers.
   bool is_sharded{false};
 };
@@ -325,6 +328,8 @@ struct RegionRef : public UseRef<REGION> {
 
 enum class ProgramOperation {
   kInvalid,
+
+  kClearVectorBeforePrimaryFlowFunction,
 
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then
@@ -894,10 +899,11 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, ParsedMessage message_,
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_, unsigned id_,
        ProgramOperation op_ = ProgramOperation::kPublishMessage)
       : Node<ProgramOperationRegion>(parent_, op_),
         message(message_),
+        id(id_),
         arg_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
@@ -915,6 +921,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 
   // Message being published.
   const ParsedMessage message;
+
+  // ID of this node.
+  const unsigned id;
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;

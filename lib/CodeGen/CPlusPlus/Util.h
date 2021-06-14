@@ -32,6 +32,23 @@ static Stream &Var(Stream &os, const DataVariable var) {
   return os;
 }
 
+inline static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
+  return os << "functors." << func.Name() << '_'
+            << ParsedDeclaration(func).BindingPattern();
+}
+
+inline static OutputStream &Table(OutputStream &os, const DataTable table) {
+  return os << "table_" << table.Id();
+}
+
+//inline static OutputStream &Table(OutputStream &os, const DataIndex index) {
+//  return Table(os, DataTable::Backing(index));
+//}
+
+inline static OutputStream &Vector(OutputStream &os, const DataVector vec) {
+  return os << "vec_" << vec.Id();
+}
+
 // CPlusPlus representation of TypeKind
 const std::string_view TypeName(ParsedForeignType type);
 

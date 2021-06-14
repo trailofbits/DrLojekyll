@@ -147,7 +147,7 @@ bool Node<QueryNegate>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
 
   const auto that = that_->AsNegate();
   if (!that || can_produce_deletions != that->can_produce_deletions ||
-      columns.Size() != that->columns.Size() ||
+      is_never != that->is_never || columns.Size() != that->columns.Size() ||
       positive_conditions != that->positive_conditions ||
       negative_conditions != that->negative_conditions) {
     return false;

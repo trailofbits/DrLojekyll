@@ -1,10 +1,10 @@
-#message att(utf8 DocId, utf8 AttrKind, utf8 Attr).
+#message att(bytes DocId, bytes AttrKind, bytes Attr).
 
-#query answer(free utf8 DocId,
-              free utf8 Title,
-              free utf8 Year,
-              free utf8 Author,
-              free utf8 Month).
+#query answer(free bytes DocId,
+              free bytes Title,
+              free bytes Year,
+              free bytes Author,
+              free bytes Month).
 
 
 answer(DocId, Title, Year, Author, Month)

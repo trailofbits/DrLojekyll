@@ -27,9 +27,6 @@ enum class TypeKind : uint32_t {
   kFloat,
   kDouble,
   kBytes,
-  kASCII,
-  kUTF8,
-  kUUID,
 
   // If it's a foreign type type then we embed extra data in the high
   // 24 bits.
@@ -37,6 +34,9 @@ enum class TypeKind : uint32_t {
 };
 
 const char *Spelling(TypeKind kind) noexcept;
+
+class ParsedModule;
+enum class Language : unsigned;
 
 // Type and location of that type.
 class TypeLoc {
@@ -70,6 +70,10 @@ class TypeLoc {
   inline DisplayRange SpellingRange(void) const noexcept {
     return range;
   }
+
+  // Does equality imply identity?
+  bool IsReferentiallyTransparent(const ParsedModule &module,
+                                  Language lang) const noexcept;
 
   inline bool IsForeign(void) const noexcept {
     return UnderlyingKind() == TypeKind::kForeignType;

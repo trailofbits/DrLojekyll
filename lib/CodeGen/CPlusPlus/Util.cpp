@@ -74,9 +74,6 @@ std::string_view TypeName(ParsedModule module, TypeLoc kind) {
     case TypeKind::kFloat: return "float";
     case TypeKind::kDouble: return "double";
     case TypeKind::kBytes: return "::hyde::rt::Bytes";
-    case TypeKind::kASCII: return "::hyde::rt::ASCII";
-    case TypeKind::kUTF8: return "::hyde::rt::UTF8";
-    case TypeKind::kUUID: return "::hyde::rt::UUID";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
         return TypeName(*type);
@@ -136,10 +133,7 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     case TypeKind::kDouble: default_val = "0"; break;
 
     // Default constructors
-    case TypeKind::kBytes:
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: break;
+    case TypeKind::kBytes: break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
         if (auto constructor = type->Constructor(Language::kCxx); constructor) {

@@ -23,7 +23,7 @@ using OffsetList = std::vector<int>;
 
 #message offset(u64 Label, u32 Offset).
 #message union(u64 ParentLabel, u64 LeftLabel, u64 RightLabel).
-#message input(u64 Label, utf8 FuncName).
+#message input(u64 Label, bytes FuncName).
 
 #local label_chunk(UnionLabel, Chunk)
 
@@ -55,7 +55,7 @@ using OffsetList = std::vector<int>;
     , label_chunk(RightLabel, RightChunk)
     , concat_offset_lists(LeftChunk, RightChunk, Chunk).
 
-#query function_chunks(free utf8 FuncName, free OffsetList Offsets)
+#query function_chunks(free bytes FuncName, free OffsetList Offsets)
     : input(ChunkLabel, FuncName)
     , label_chunk(ChunkLabel, Offsets).
 

@@ -17,8 +17,6 @@ option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
 option(ENABLE_TESTS "Build test suite" ON)
 option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 
-option(DRLOG_USE_EXTERNAL_JSON "Use an external nlohmann JSON library" OFF)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -69,14 +67,6 @@ set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(REPROC_TEST OFF CACHE BOOL "" FORCE)
 # set(REPROC_OBJECT_LIBRARIES ON)
 add_subdirectory(vendor/reproc-14.2.1)
-
-# nlohmann_json ------------------------------
-if(DRLOG_USE_EXTERNAL_JSON)
-  find_package(nlohmann_json 3.9.0 CONFIG REQUIRED)
-else()
-  set(JSON_BuildTests OFF CACHE INTERNAL "")
-  add_subdirectory(vendor/nlohmann_json)
-endif()
 
 # --------------------------------------------
 # CMake installation stuff -------------------
