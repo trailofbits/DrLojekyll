@@ -87,7 +87,26 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << "#include <tuple>\n"
      << "#include <utility>\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "\n";
+     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
+     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
+
+  // Output prologue code.
+  ParsedModule module = program.ParsedModule();
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto code : sub_module.Inlines()) {
+      switch (code.Language()) {
+        case Language::kUnknown:
+        case Language::kCxx:
+          if (code.IsPrologue()) {
+            os << code.CodeToInline() << "\n\n";
+          }
+          break;
+        default: break;
+      }
+    }
+  }
+
+  os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n";
 
   std::vector<std::tuple<DataVector, ParsedMessage, bool>> message_vecs;
 
@@ -107,7 +126,6 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
   }
 
-  ParsedModule module = program.ParsedModule();
   const auto messages = Messages(module);
 
   // Create a mapping of names to actual messages.
@@ -418,7 +436,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << "\n"
        << os.Indent() << "void " << message.Name() << "_" << message.Arity();
 
-    auto sep = "(";
+    sep = "(";
     for (ParsedParameter param : message.Parameters()) {
       os << sep << TypeName(module, param.Type()) << " p" << param.Index();
       sep = ", ";
@@ -464,7 +482,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
        << os.Indent() << "virtual void " << message.Name()
        << "_" << message.Arity();
 
-    auto sep = "(";
+    sep = "(";
     for (ParsedParameter param : message.Parameters()) {
       os << sep << TypeName(module, param.Type()) << " p" << param.Index();
       sep = ", ";
@@ -497,7 +515,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << "\n"
        << os.Indent() << "void " << message.Name() << "_" << message.Arity();
 
-    auto sep = "(";
+    sep = "(";
     for (ParsedParameter param : message.Parameters()) {
       os << sep << TypeName(module, param.Type()) << " p" << param.Index();
       sep = ", ";
