@@ -25,9 +25,10 @@ namespace rt {
 using index_t = size_t;
 
 // DrLojekyll supported types
+using ASCII = std::string;
 using UTF8 = std::string;
 using Any = void;
-using Bytes = std::basic_string<uint8_t>;
+using Bytes = std::vector<uint8_t>;
 using UUID = uint128_t;
 
 enum class TupleState : uint8_t {
