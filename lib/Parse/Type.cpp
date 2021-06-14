@@ -92,6 +92,7 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
       }
     }
   }
+  return false;
 }
 
 }  // namespace hyde
