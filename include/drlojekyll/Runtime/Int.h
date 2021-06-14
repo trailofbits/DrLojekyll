@@ -16,9 +16,13 @@ typedef __int128_t int128_t;
 #elif defined(__sparc__)
 typedef __uint128_t uint128_t;
 typedef __int128_t int128_t;
-#elif defined(__is_identifier) && __is_identifier(_ExtInt)
+#elif defined(__is_identifier)
+#  if __is_identifier(_ExtInt)
 typedef unsigned _ExtInt(128) uint128_t;
 typedef signed _ExtInt(128) int128_t;
+#  else
+#    define HYDE_RT_MISSING_INT128
+#  endif
 #else
 #  define HYDE_RT_MISSING_INT128
 #endif

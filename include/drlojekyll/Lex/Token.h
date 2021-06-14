@@ -175,20 +175,9 @@ enum class Lexeme : uint8_t {
   // a `double`.
   kTypeFn,
 
-  // Variable-length sequence of bytes, encoded as UTF-8. Guaranteed to
-  // end in a NUL (`\0`) byte.
-  kTypeUTF8,
-
-  // Variable-length sequence of 7-bit bytes, encoded as UTF-8. Guaranteed to
-  // end in a NUL (`\0`) byte.
-  kTypeASCII,
-
   // Variable-length sequence of bytes`. No guarantees about a terminating
   // character or the encoding.
   kTypeBytes,
-
-  // A universally unique identifier.
-  kTypeUUID,
 
   // Keywords for specifying the binding of parameters.
   kKeywordBound,

@@ -28,9 +28,6 @@ namespace {
     case TypeKind::kUnsigned64: return "long";
     case TypeKind::kDouble: return "double";
     case TypeKind::kBytes: return "bytes";
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: return "string";
     case TypeKind::kForeignType: return "record";
     case TypeKind::kInvalid: return "null";
     default: assert(false); return "null";

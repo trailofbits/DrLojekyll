@@ -27,9 +27,6 @@ enum class TypeKind : uint32_t {
   kFloat,
   kDouble,
   kBytes,
-  kASCII,
-  kUTF8,
-  kUUID,
 
   // If it's a foreign type type then we embed extra data in the high
   // 24 bits.

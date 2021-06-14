@@ -24,13 +24,13 @@ using StringExpr = std::string;
 
 #message next_token(Token A, Token B).
 
-#functor lexeme_of_token(bound Token Tok, free utf8 Lexeme) @range(.).
+#functor lexeme_of_token(bound Token Tok, free bytes Lexeme) @range(.).
 #functor build_string_literal(bound Token Tok, free Node N) @range(.).
 #functor build_string_expr(bound Node N, free StringExpr E) @range(.).
 #functor extend_string_expr(bound StringExpr BaseExpr, bound Node ExtNode,
                             free StringExpr ExtExpr) @range(.).
 
-#local string_lexeme(utf8 Lexeme).
+#local string_lexeme(bytes Lexeme).
 string_lexeme("string").
 string_lexeme("string_error").
 

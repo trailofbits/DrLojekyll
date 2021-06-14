@@ -137,12 +137,9 @@ type: "f32" ;
 type: "f64" ;
 
 // String types.
-type: "utf8" ;
-type: "ascii" ;
 type: "bytes" ;
 
 // Other.
-type: "uuid" ;
 type: "bool" ;
 type: <foreign type name> ;
 ```

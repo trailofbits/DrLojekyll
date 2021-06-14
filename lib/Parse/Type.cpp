@@ -53,9 +53,6 @@ const char *Spelling(TypeKind kind) noexcept {
     case TypeKind::kFloat: return "f32";
     case TypeKind::kDouble: return "f64";
     case TypeKind::kBytes: return "bytes";
-    case TypeKind::kASCII: return "ascii";
-    case TypeKind::kUTF8: return "utf8";
-    case TypeKind::kUUID: return "uuid";
     case TypeKind::kForeignType: return "<foreign>";
   }
   return "<invalid>";
@@ -79,9 +76,6 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
     case TypeKind::kDouble:
       return true;
     case TypeKind::kBytes:
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID:
       return false;
     case TypeKind::kForeignType: {
       if (auto type = module.ForeignType(Kind())) {

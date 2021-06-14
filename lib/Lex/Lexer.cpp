@@ -652,14 +652,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           } else if (impl->data == "over") {
             tentative_lexeme = Lexeme::kKeywordOver;
 
-          } else if (impl->data == "uuid") {
-            tentative_lexeme = Lexeme::kTypeUUID;
-            tentative_type_kind = TypeKind::kUUID;
-
-          } else if (impl->data == "utf8") {
-            tentative_lexeme = Lexeme::kTypeUTF8;
-            tentative_type_kind = TypeKind::kUTF8;
-
           } else if (impl->data == "bool") {
             tentative_lexeme = Lexeme::kTypeBoolean;
             tentative_type_kind = TypeKind::kBoolean;
@@ -676,10 +668,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 5:
           if (impl->data == "bound") {
             tentative_lexeme = Lexeme::kKeywordBound;
-
-          } else if (impl->data == "ascii") {
-            tentative_lexeme = Lexeme::kTypeASCII;
-            tentative_type_kind = TypeKind::kASCII;
 
           } else if (impl->data == "bytes") {
             tentative_lexeme = Lexeme::kTypeBytes;
