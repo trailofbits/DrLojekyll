@@ -122,7 +122,8 @@ class ByteWriter {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   uint8_t *WriteF64(double d) noexcept {
-    auto q = reinterpret_cast<uint64_t &>(d);
+    uint64_t q = {};
+    *(new (&q) double) = d;
     const auto ptr =
         static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 0));
     static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 8));
@@ -137,7 +138,8 @@ class ByteWriter {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
   uint8_t *WriteF32(float f) noexcept {
-    const auto d = reinterpret_cast<uint32_t &>(f);
+    uint32_t d = {};
+    *(new (&d) float) = f;
     const auto ptr =
         static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 0));
     static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 8));
