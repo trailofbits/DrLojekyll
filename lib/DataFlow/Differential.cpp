@@ -74,6 +74,7 @@ void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
                      << "produce differential updates";
                 }
               }
+              (void) reported;
               assert(reported);
             }
           } else {

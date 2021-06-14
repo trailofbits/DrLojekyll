@@ -7,6 +7,7 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parse.h>
 
+#include <cassert>
 #include <sstream>
 #include <vector>
 
