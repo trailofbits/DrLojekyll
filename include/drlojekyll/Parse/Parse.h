@@ -298,6 +298,9 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
   // Returns the arity of this predicate.
   unsigned Arity(void) const noexcept;
 
+  // Return the negation token used, if any.
+  Token Negation(void) const noexcept;
+
   // Return the `n`th argument of this predicate.
   ParsedVariable NthArgument(unsigned n) const noexcept;
 

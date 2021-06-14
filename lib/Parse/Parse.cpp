@@ -446,6 +446,11 @@ bool ParsedPredicate::IsNegatedWithNever(void) const noexcept {
   return impl->negation.Lexeme() == Lexeme::kPragmaPerfNever;
 }
 
+// Return the negation token used, if any.
+Token ParsedPredicate::Negation(void) const noexcept {
+  return impl->negation;
+}
+
 // Returns the arity of this predicate.
 unsigned ParsedPredicate::Arity(void) const noexcept {
   return static_cast<unsigned>(impl->argument_uses.size());

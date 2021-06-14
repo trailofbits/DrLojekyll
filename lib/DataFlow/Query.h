@@ -1063,6 +1063,7 @@ class Node<QueryNegate> : public Node<QueryView> {
 
   // Is this a normal negation, or one with `@never`?
   bool is_never{false};
+  std::vector<ParsedPredicate> negations;
 };
 
 using NEGATION = Node<QueryNegate>;

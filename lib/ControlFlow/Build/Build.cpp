@@ -432,23 +432,22 @@ static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
       });
 }
 
-static REGION *MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
-                                          QueryView view, REGION *parent) {
-  PARALLEL *const par = impl->parallel_regions.Create(parent);
+static void MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
+                                       QueryView view, PARALLEL *par) {
   view.ForEachNegation([&](QueryNegate negate) {
-    par->AddRegion(
-        MaybeRemoveFromNegatedView(impl, context, view, negate, par));
+    if (!negate.HasNeverHint()) {
+      par->AddRegion(
+          MaybeRemoveFromNegatedView(impl, context, view, negate, par));
+    }
   });
-  return par;
 }
 
-static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
-                                       QueryView view, REGION *parent) {
-  PARALLEL *const par = impl->parallel_regions.Create(parent);
+static void MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
+                                       QueryView view, PARALLEL *par) {
   view.ForEachNegation([&](QueryNegate negate) {
+    assert(!negate.HasNeverHint());
     par->AddRegion(MaybeReAddToNegatedView(impl, context, view, negate, par));
   });
-  return par;
 }
 
 static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
@@ -1669,7 +1668,7 @@ void BuildEagerRemovalRegionsImpl(ProgramImpl *impl, QueryView view,
   }
 
   if (view.IsUsedByNegation()) {
-    par->AddRegion(MaybeReAddToNegatedView(impl, context, view, par));
+    MaybeReAddToNegatedView(impl, context, view, par);
   }
 
   for (auto succ_view : successors) {
@@ -1755,7 +1754,7 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   // we need to go and make sure that the corresponding data gets removed from
   // the negation.
   if (view.IsUsedByNegation()) {
-    par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, par));
+    MaybeRemoveFromNegatedView(impl, context, view, par);
   }
 
   //  std::unordered_map<DataModel *, std::vector<QueryView>> grouped_successors;

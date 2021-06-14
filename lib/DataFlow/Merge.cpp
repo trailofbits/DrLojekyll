@@ -932,6 +932,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
         merged_negation->negated_view.Emplace(merged_negation,
                                               negated_view_merge);
 
+        for (auto pred : first_negate->negations) {
+          merged_negation->negations.push_back(pred);
+        }
+
         // Tag column.
         col_index = 0u;
         (void) merged_negation->columns.Create(
@@ -965,6 +969,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
                                         i);
           output->input_columns.AddUse(col);
         }
+      }
+
+      for (auto pred : next_negate->negations) {
+        merged_negation->negations.push_back(pred);
       }
 
       COL *const next_tag_col = CreateTag(impl, num_used_tags);
@@ -1001,6 +1009,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
         merged_negation->is_never = first_negate->is_never;
         output = merged_negation;
 
+        for (auto pred : first_negate->negations) {
+          merged_negation->negations.push_back(pred);
+        }
+
         merged_negation->negated_view.Emplace(merged_negation, negated_view);
 
         col_index = 0u;
@@ -1019,6 +1031,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
           merged_negation->attached_columns.AddUse(
               input_merge->columns[col_index++]);
         }
+      }
+
+      for (auto pred : next_negate->negations) {
+        merged_negation->negations.push_back(pred);
       }
 
       // Add the mergable negation into `input_merge`.

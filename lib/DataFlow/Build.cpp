@@ -830,6 +830,7 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
   negate->color = context.color;
   negate->negated_view.Emplace(negate, sel);
   negate->is_never = pred.IsNegatedWithNever();
+  negate->negations.emplace_back(pred);
 
   auto col_index = 0u;
   for (auto in_col : needed_cols) {

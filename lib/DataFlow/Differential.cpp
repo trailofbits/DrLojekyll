@@ -1,6 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse/Parse.h>
 
 #include "Query.h"
 
@@ -39,7 +40,7 @@ void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
     }
   }
 
-  for (auto changed = true; changed;) {
+  for (auto changed = true; changed && log.IsEmpty();) {
     changed = false;
     ForEachView([&](VIEW *view) {
       // If a node is conditional then we treat it as differential.
@@ -50,9 +51,36 @@ void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
         changed = true;
       }
 
-      if (!view->can_produce_deletions && view->AsNegate()) {
-        view->can_produce_deletions = true;
-        changed = true;
+      if (!view->can_produce_deletions) {
+        if (auto negate = view->AsNegate(); negate) {
+
+          // Using `@never ...` means that we assume the negated side, once
+          // found absent, is /always/ found absent.
+          if (negate->is_never) {
+            if (view->can_receive_deletions) {
+              view->can_produce_deletions = true;
+              changed = true;
+            }
+
+            // If the negated view is differential, then we can't use `@never`.
+            if (negate->negated_view->can_produce_deletions) {
+              auto reported = false;
+              for (ParsedPredicate pred : negate->negations) {
+                if (pred.IsNegatedWithNever()) {
+                  reported = true;
+                  log.Append(pred.SpellingRange(),
+                             pred.Negation().SpellingRange())
+                     << "'@never' cannot operate on a predicate that can "
+                     << "produce differential updates";
+                }
+              }
+              assert(reported);
+            }
+          } else {
+            view->can_produce_deletions = true;
+            changed = true;
+          }
+        }
       }
 
       if (view->can_receive_deletions && !view->can_produce_deletions) {
