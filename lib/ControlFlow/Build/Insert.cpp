@@ -72,7 +72,8 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
     // No accumulation vector, publish right now.
     } else {
       const auto message_publish =
-          impl->operation_regions.CreateDerived<PUBLISH>(parent, message);
+          impl->operation_regions.CreateDerived<PUBLISH>(
+              parent, message, impl->next_id++);
       parent->body.Emplace(parent, message_publish);
 
       for (auto col : cols) {

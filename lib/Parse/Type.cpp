@@ -2,6 +2,7 @@
 
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/Type.h>
+#include <drlojekyll/Parse/Parse.h>
 
 #include <cassert>
 
@@ -52,12 +53,40 @@ const char *Spelling(TypeKind kind) noexcept {
     case TypeKind::kFloat: return "f32";
     case TypeKind::kDouble: return "f64";
     case TypeKind::kBytes: return "bytes";
-    case TypeKind::kASCII: return "ascii";
-    case TypeKind::kUTF8: return "utf8";
-    case TypeKind::kUUID: return "uuid";
     case TypeKind::kForeignType: return "<foreign>";
   }
   return "<invalid>";
+}
+
+// Does equality imply identity?
+bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
+                                         Language lang) const noexcept {
+  switch (UnderlyingKind()) {
+    case TypeKind::kInvalid: return false;
+    case TypeKind::kBoolean:
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64:
+    case TypeKind::kFloat:
+    case TypeKind::kDouble:
+      return true;
+    case TypeKind::kBytes:
+      return false;
+    case TypeKind::kForeignType: {
+      if (auto type = module.ForeignType(Kind())) {
+        return type->IsReferentiallyTransparent(lang);
+      } else {
+        assert(false);
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace hyde

@@ -137,12 +137,9 @@ type: "f32" ;
 type: "f64" ;
 
 // String types.
-type: "utf8" ;
-type: "ascii" ;
 type: "bytes" ;
 
 // Other.
-type: "uuid" ;
 type: "bool" ;
 type: <foreign type name> ;
 ```
@@ -394,6 +391,7 @@ predicate_tail: atom "(" arg_list ")" ;
 
 predicate: predicate_tail ;
 predicate: "!" predicate_tail ;
+predicate: "@never" atom "(" arg_list ")" ;
 
 conjunct_list_tail: "," conjunct_list ;
 conjunct_list_tail: ;

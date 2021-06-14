@@ -598,6 +598,11 @@ bool DataVariable::IsConstant(void) const noexcept {
   }
 }
 
+// Return the number of uses of this variable.
+unsigned DataVariable::NumUses(void) const noexcept {
+  return impl->NumUses();
+}
+
 // Unique ID of this column.
 unsigned DataColumn::Id(void) const noexcept {
   return impl->id;
@@ -663,6 +668,17 @@ unsigned DataVector::Id(void) const noexcept {
 // Do we need to shard this vector across workers?
 bool DataVector::IsSharded(void) const noexcept {
   return impl->is_sharded;
+}
+
+// If this is a paramter vector to the data flwo entry function, or to
+// an I/O procedure, then these will tell us the corresponding message being
+// added or removed by this vector.
+std::optional<ParsedMessage> DataVector::AddedMessage(void) const noexcept {
+  return impl->added_message;
+}
+
+std::optional<ParsedMessage> DataVector::RemovedMessage(void) const noexcept {
+  return impl->removed_message;
 }
 
 const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
@@ -867,6 +883,11 @@ bool ProgramReturnRegion::ReturnsTrue(void) const noexcept {
 
 bool ProgramReturnRegion::ReturnsFalse(void) const noexcept {
   return impl->op == ProgramOperation::kReturnFalseFromProcedure;
+}
+
+// Return a unique ID for this region.
+unsigned ProgramPublishRegion::Id(void) const noexcept {
+  return impl->id;
 }
 
 ParsedMessage ProgramPublishRegion::Message(void) const noexcept {

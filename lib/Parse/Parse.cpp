@@ -424,19 +424,31 @@ NodeRange<ParsedArgumentUse> ParsedPredicate::Using(ParsedVariable var) {
 
 DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
   return DisplayRange(
-      impl->negation_pos.IsValid() ? impl->negation_pos : impl->name.Position(),
+      impl->negation.IsValid() ? impl->negation.Position() :
+                                 impl->name.Position(),
       impl->rparen.IsValid() ? impl->rparen.NextPosition()
                              : impl->name.NextPosition());
 }
 
 // Returns `true` if this is a positive predicate.
 bool ParsedPredicate::IsPositive(void) const noexcept {
-  return impl->negation_pos.IsInvalid();
+  return impl->negation.IsInvalid();
 }
 
 // Returns `true` if this is a negated predicate.
 bool ParsedPredicate::IsNegated(void) const noexcept {
-  return impl->negation_pos.IsValid();
+  return impl->negation.IsValid();
+}
+
+// Returns `true` if this is a negated predicate, and the negation uses
+// `@never`.
+bool ParsedPredicate::IsNegatedWithNever(void) const noexcept {
+  return impl->negation.Lexeme() == Lexeme::kPragmaPerfNever;
+}
+
+// Return the negation token used, if any.
+Token ParsedPredicate::Negation(void) const noexcept {
+  return impl->negation;
 }
 
 // Returns the arity of this predicate.

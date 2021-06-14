@@ -1,7 +1,7 @@
 ; The purpose of this is to show a trivial example of cross-products.
 
-#message add_name(utf8 Name).
-#query name_pairs(bound utf8 Name1, bound utf8 Name2).
+#message add_name(bytes Name).
+#query name_pairs(bound bytes Name1, bound bytes Name2).
 #local name(Name).
 
 name(Name) : add_name(Name).

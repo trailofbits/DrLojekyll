@@ -853,7 +853,8 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
     if (next_negate->columns.Size() != num_cols ||
         next_negate->input_columns.Size() != num_input_cols ||
-        next_negate->attached_columns.Size() != num_attached_cols) {
+        next_negate->attached_columns.Size() != num_attached_cols ||
+        next_negate->is_never != first_negate->is_never) {
       continue;
     }
 
@@ -927,8 +928,13 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
         // Make a new, tag column-aware negation that operates on `input_merge`.
         merged_negation = impl->negations.Create();
+        merged_negation->is_never = first_negate->is_never;
         merged_negation->negated_view.Emplace(merged_negation,
                                               negated_view_merge);
+
+        for (auto pred : first_negate->negations) {
+          merged_negation->negations.push_back(pred);
+        }
 
         // Tag column.
         col_index = 0u;
@@ -965,6 +971,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
         }
       }
 
+      for (auto pred : next_negate->negations) {
+        merged_negation->negations.push_back(pred);
+      }
+
       COL *const next_tag_col = CreateTag(impl, num_used_tags);
 
       // Create a tag for the Nth negated view.
@@ -996,7 +1006,12 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
         // Make the new negation.
         merged_negation = impl->negations.Create();
+        merged_negation->is_never = first_negate->is_never;
         output = merged_negation;
+
+        for (auto pred : first_negate->negations) {
+          merged_negation->negations.push_back(pred);
+        }
 
         merged_negation->negated_view.Emplace(merged_negation, negated_view);
 
@@ -1016,6 +1031,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
           merged_negation->attached_columns.AddUse(
               input_merge->columns[col_index++]);
         }
+      }
+
+      for (auto pred : next_negate->negations) {
+        merged_negation->negations.push_back(pred);
       }
 
       // Add the mergable negation into `input_merge`.
@@ -1264,6 +1283,7 @@ bool Node<QueryMerge>::SinkThroughJoins(
 
   // Create one tag per join.
   for (auto join : joins_to_merge) {
+    join->is_canonical = false;
     join_to_tag.push_back(CreateTag(impl, num_used_tags));
     (void) join;
   }

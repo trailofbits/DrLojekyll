@@ -241,7 +241,7 @@ class Node<ParsedPredicate> {
   Node<ParsedPredicate> *next_use{nullptr};
 
   // Location information.
-  DisplayPosition negation_pos;
+  Token negation;
   Token name;
   Token rparen;
 

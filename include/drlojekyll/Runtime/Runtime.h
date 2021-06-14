@@ -15,6 +15,7 @@
 
 #include "Column.h"
 #include "Index.h"
+#include "Int.h"
 #include "Table.h"
 #include "Util.h"
 
@@ -24,9 +25,8 @@ namespace rt {
 using index_t = size_t;
 
 // DrLojekyll supported types
-using UTF8 = std::string;
 using Any = void;
-using Bytes = std::basic_string<uint8_t>;
+using Bytes = std::vector<uint8_t>;
 
 enum class TupleState : uint8_t {
   kAbsent,

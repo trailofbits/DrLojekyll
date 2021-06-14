@@ -147,7 +147,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     auto py_out_path = generated_file_base.string() + ".py";
     std::ofstream os(py_out_path);
     hyde::OutputStream py_out_fs(display_mgr, os);
-    hyde::GeneratePythonDatabaseCode(*program_opt, py_out_fs);
+    hyde::python::GenerateDatabaseCode(*program_opt, py_out_fs);
 
     // Type-check the generated Python code with mypy, if available
 #ifdef MYPY_PATH
@@ -180,7 +180,7 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
     {
       std::ofstream os(cxx_gen_path);
       hyde::OutputStream cxx_out_fs(display_mgr, os);
-      hyde::GenerateCxxDatabaseCode(*program_opt, cxx_out_fs);
+      hyde::cxx::GenerateDatabaseCode(*program_opt, cxx_out_fs);
     }
 
     auto cxx_out_path = generated_file_base.string() + ".out";

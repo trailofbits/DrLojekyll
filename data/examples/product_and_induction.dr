@@ -1,9 +1,9 @@
 ; The purpose of this is to show a trivial example of cross-products and 
 ; inductions.
 
-#message add_name(utf8 Name).
-#functor mangle_name(bound utf8 Name1, bound utf8 Name2, free utf8 MangledName).
-#query name_pairs(bound utf8 Name1, bound utf8 Name2).
+#message add_name(bytes Name).
+#functor mangle_name(bound bytes Name1, bound bytes Name2, free bytes MangledName).
+#query name_pairs(bound bytes Name1, bound bytes Name2).
 #local name(Name).
 
 name(Name) : add_name(Name).

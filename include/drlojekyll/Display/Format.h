@@ -65,8 +65,9 @@ class OutputStream {
     return indent;
   }
 
- private:
   const DisplayManager &display_manager;
+
+ private:
   std::ostream &os;
   bool rename_locals{false};
   std::string indent;

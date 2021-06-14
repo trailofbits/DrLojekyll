@@ -46,6 +46,7 @@ namespace {
 OutputStream *gDOTStream = nullptr;
 OutputStream *gDRStream = nullptr;
 OutputStream *gCxxCodeStream = nullptr;
+OutputStream *gCxxInterfaceCodeStream = nullptr;
 OutputStream *gPyCodeStream = nullptr;
 OutputStream *gPyInterfaceCodeStream = nullptr;
 OutputStream *gIRStream = nullptr;
@@ -60,7 +61,8 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
   auto ret = EXIT_SUCCESS;
 
-  if (gIRStream || gCxxCodeStream || gPyCodeStream || gPyInterfaceCodeStream) {
+  if (gIRStream || gCxxCodeStream || gCxxInterfaceCodeStream ||
+      gPyCodeStream || gPyInterfaceCodeStream) {
     try {
       if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
         if (gIRStream) {
@@ -70,18 +72,24 @@ static int CompileModule(hyde::DisplayManager display_manager,
 
         if (gCxxCodeStream) {
           gCxxCodeStream->SetIndentSize(2u);
-          hyde::GenerateCxxDatabaseCode(*program_opt, *gCxxCodeStream);
+          hyde::cxx::GenerateDatabaseCode(*program_opt, *gCxxCodeStream);
+        }
+
+        if (gCxxInterfaceCodeStream) {
+          gCxxInterfaceCodeStream->SetIndentSize(2u);
+          hyde::cxx::GenerateInterfaceCode(*program_opt,
+                                           *gCxxInterfaceCodeStream);
         }
 
         if (gPyCodeStream) {
           gPyCodeStream->SetIndentSize(4u);
-          hyde::GeneratePythonDatabaseCode(*program_opt, *gPyCodeStream);
+          hyde::python::GenerateDatabaseCode(*program_opt, *gPyCodeStream);
         }
 
         if (gPyInterfaceCodeStream) {
           gPyInterfaceCodeStream->SetIndentSize(4u);
-          hyde::GeneratePythonInterfaceCode(*program_opt,
-                                            *gPyInterfaceCodeStream);
+          hyde::python::GenerateInterfaceCode(*program_opt,
+                                              *gPyInterfaceCodeStream);
         }
       } else {
         ret = EXIT_FAILURE;
@@ -113,12 +121,12 @@ static int ProcessModule(hyde::DisplayManager display_manager,
 
   // Output all message serializations.
   if (gMSGDir) {
-    for (auto module : ParsedModuleIterator(module)) {
+    for (auto sub_module : ParsedModuleIterator(module)) {
       for (auto schema_info :
-           GenerateAvroMessageSchemas(display_manager, module, error_log)) {
+           GenerateAvroMessageSchemas(display_manager, sub_module, error_log)) {
         FileStream schema_stream(
             display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
-        schema_stream.os << schema_info.schema.dump(2);
+        schema_stream.os << schema_info.schema;
       }
     }
   }
@@ -243,6 +251,7 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> cpp_out;
+  std::unique_ptr<hyde::FileStream> cpp_interface_out;
   std::unique_ptr<hyde::FileStream> py_out;
   std::unique_ptr<hyde::FileStream> py_interface_out;
   std::unique_ptr<hyde::FileStream> ir_out;
@@ -263,6 +272,20 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gCxxCodeStream = &(cpp_out->os);
       }
 
+    // C++ interface output file of the transpiled from the Dr. Lojekyll
+    // source code.
+    } else if (!strcmp(argv[i], "-cpp-interface-out") ||
+               !strcmp(argv[i], "--cpp-interface-out")) {
+       ++i;
+       if (i >= argc) {
+         error_log.Append()
+             << "Command-line argument " << argv[i]
+             << " must be followed by a file path for C++ code output";
+       } else {
+         cpp_interface_out.reset(new hyde::FileStream(display_manager, argv[i]));
+         hyde::gCxxInterfaceCodeStream = &(cpp_interface_out->os);
+       }
+
     // Python output file of the transpiled from the Dr. Lojekyll source code.
     } else if (!strcmp(argv[i], "-py-out") || !strcmp(argv[i], "--py-out")) {
       ++i;
@@ -275,7 +298,8 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gPyCodeStream = &(py_out->os);
       }
 
-    // Python interface output file of the transpiled from the Dr. Lojekyll source code.
+    // Python interface output file of the transpiled from the Dr. Lojekyll
+    // source code.
     } else if (!strcmp(argv[i], "-py-interface-out") ||
                !strcmp(argv[i], "--py-interface-out")) {
       ++i;

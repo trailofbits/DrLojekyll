@@ -829,6 +829,8 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
   NEGATION *const negate = query->negations.Create();
   negate->color = context.color;
   negate->negated_view.Emplace(negate, sel);
+  negate->is_never = pred.IsNegatedWithNever();
+  negate->negations.emplace_back(pred);
 
   auto col_index = 0u;
   for (auto in_col : needed_cols) {
@@ -1588,9 +1590,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     assert(pred.IsNegated());
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
+      assert(!pred.IsNegatedWithNever());
       context.functors.push_back(pred);
     } else if (pred.Arity()) {
       context.negated_predicates.push_back(pred);
+    } else {
+      assert(!pred.IsNegatedWithNever());
     }
   }
 
@@ -2119,7 +2124,9 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->RemoveUnusedViews();
   impl->ProxyInsertsWithTuples();
   impl->LinkViews();
+  impl->RemoveUnusedViews();
   impl->IdentifyInductions(log);
+  impl->FinalizeDepths();
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
   impl->TrackConstAfterInit();
