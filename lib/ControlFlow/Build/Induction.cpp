@@ -299,7 +299,6 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     if (const auto num_pivots = join.NumPivotColumns()) {
       if (for_add) {
 
-
         LET *const let = impl->operation_regions.CreateDerived<LET>(cycle_par);
         let->view.emplace(view);
         cycle_par->AddRegion(let);
@@ -388,7 +387,15 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
   // Add a tuple to the output vector. We don't need to compute a worker ID
   // because we know we're dealing with only worker-specific data in this
   // cycle.
-  if (NeedsInductionOutputVector(view)) {
+  //
+  // NOTE(pag): Don't do anything for removals of JOINs/PRODUCTs. This function
+  //            is called at the beginning of processing the nodes inside of the
+  //            cycle, and we know that inductive JOINs straddle inside/outside,
+  //            so when we processor the inductive successors of the UNIONs in
+  //            this inductive region, we'll eventually come back to the JOINs
+  //            and at that point we'll do the right thing.
+  if (NeedsInductionOutputVector(view) &&
+      !(!for_add && view.IsJoin())) {
     cycle_body_par->AddRegion(AppendToInductionOutputVectors(
         impl, view, context, induction, cycle_body_par));
   }

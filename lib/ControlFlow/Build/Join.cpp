@@ -623,8 +623,6 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
                           TABLE *last_table_) {
   const QueryView view(join);
 
-
-
   // NOTE(pag): What's interesting about JOINs is that we force the data of
   //            our *predecessors* into tables, so that we can always complete
   //            the JOINs later and see "the other sides."
