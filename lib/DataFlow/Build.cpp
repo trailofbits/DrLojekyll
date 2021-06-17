@@ -1794,7 +1794,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert->color = context.color;
     stream->transmits.AddUse(insert);
 
-  } else {
+  } else if (decl.Arity()) {
     auto &rel = query->decl_to_relation[decl];
     if (!rel) {
       rel = query->relations.Create(decl);
@@ -1802,6 +1802,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert = query->inserts.Create(rel, decl);
     insert->color = context.color;
     rel->inserts.AddUse(insert);
+
+  // It's a zero-argument predicate.
+  } else {
+    assert(decl.IsExport());
+    add_set_conditon(clause_head);
+    return true;
   }
 
   for (auto col : clause_head->columns) {
@@ -1809,13 +1815,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   // We just proved a zero-argument predicate, i.e. a condition.
-  if (!decl.Arity()) {
-    assert(decl.IsExport());
-    add_set_conditon(insert);
-
-  } else {
-    assert(clause_head->columns.Size() == clause.Arity());
-  }
+  assert(clause_head->columns.Size() == clause.Arity());
 
   return true;
 }
