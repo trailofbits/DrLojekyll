@@ -41,9 +41,9 @@ class StdVector {
   }
 
   HYDE_RT_ALWAYS_INLINE void SortAndUnique(void) noexcept {
-//    std::sort(entries.begin(), entries.end());
-//    auto it = std::unique(entries.begin(), entries.end());
-//    entries.erase(it, entries.end());
+    std::sort(entries.begin(), entries.end());
+    auto it = std::unique(entries.begin(), entries.end());
+    entries.erase(it, entries.end());
   }
 
   HYDE_RT_ALWAYS_INLINE void Swap(Self &that) noexcept {

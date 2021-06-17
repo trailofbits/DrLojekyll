@@ -1244,7 +1244,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
     //          /      \               /       \                /     \        .
     //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
-    if (1u <= views.size() && !recursive) {
+    if (false && 1u <= views.size() && !recursive) {
 
       std::vector<VIEW *> next_views_wcoj;
 
@@ -1990,7 +1990,9 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     if (view.IsMerge()) {
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
-        if (!output_is_conditional(pred) && !pred.IsMerge()) {
+        if (!output_is_conditional(pred) && !pred.IsMerge() &&
+            !has_multiple_succs(pred) &&
+            pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
