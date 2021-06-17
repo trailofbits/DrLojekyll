@@ -826,9 +826,9 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
         if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << "std::get<" << i << ">(params_)";
+          os << sep << "std::get<" << i << ">(params_)";
         } else {
-          os << "std::move(std::get<" << i << ">(params_))";
+          os << sep << "std::move(std::get<" << i << ">(params_))";
         }
         sep = ", ";
       }
