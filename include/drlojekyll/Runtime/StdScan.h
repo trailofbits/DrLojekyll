@@ -102,7 +102,7 @@ class StdTableScan {
   using RecordType = typename Table::RecordType;
 
   std::atomic<RecordType *> * const last_scanned_record;
-  RecordType *first{nullptr};
+  RecordType ** const first{nullptr};
 
  public:
 
@@ -111,13 +111,11 @@ class StdTableScan {
   using Iterator = StdScanIterator<RecordType, 0u, true>;
 
   HYDE_RT_ALWAYS_INLINE StdTableScan(StdStorage &, Table &table) noexcept
-      : last_scanned_record(&(table.last_scanned_record)) {
-    const auto record_addr = reinterpret_cast<uintptr_t>(table.last_record);
-    first = reinterpret_cast<RecordType *>((record_addr >> 1u) << 1u);
-  }
+      : last_scanned_record(&(table.last_scanned_record)),
+        first(&(reinterpret_cast<RecordType *&>(table.last_record))) {}
 
   HYDE_RT_ALWAYS_INLINE Iterator begin(void) const noexcept {
-    return Iterator(first, last_scanned_record);
+    return Iterator(*first, last_scanned_record);
   }
 
   HYDE_RT_ALWAYS_INLINE Iterator end(void) const noexcept {
@@ -139,7 +137,8 @@ class StdIndexScan {
   using RecordType = typename Table::RecordType;
 
   std::atomic<RecordType *> * const last_scanned_record;
-  RecordType *first{nullptr};
+  RecordType *dummy_first{nullptr};
+  RecordType **first{nullptr};
 
  public:
 
@@ -147,7 +146,8 @@ class StdIndexScan {
 
   template <typename... Ts>
   StdIndexScan(StdStorage &, Table &table, Ts&&... cols) noexcept
-      : last_scanned_record(&(table.last_scanned_record)){
+      : last_scanned_record(&(table.last_scanned_record)),
+        first(&dummy_first) {
 
     using TupleType = std::tuple<Ts...>;
     TupleType tuple(std::forward<Ts>(cols)...);
@@ -156,12 +156,12 @@ class StdIndexScan {
     auto hash = writer.Digest();
     auto &index = table.indexes[kOffset];
     if (auto it = index.find(hash); it != index.end()) {
-      first = it->second;
+      first = &(it->second);
     }
   }
 
   HYDE_RT_ALWAYS_INLINE Iterator begin(void) const noexcept {
-    return Iterator(first, last_scanned_record);
+    return Iterator(*first, last_scanned_record);
   }
 
   HYDE_RT_ALWAYS_INLINE Iterator end(void) const noexcept {

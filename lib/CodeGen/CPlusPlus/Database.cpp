@@ -884,7 +884,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     auto tables = region.Tables();
 
-    // Now, do scans over the tables where we do use an index.
+    // First, build the scans.
     for (auto i = 0u; i < tables.size(); ++i) {
       auto maybe_index = region.Index(i);
       assert(maybe_index.has_value());
@@ -908,7 +908,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       }
 
       os << ");\n";
+    }
 
+    // Now, iterate over the scans over the tables where we do use an index.
+    for (auto i = 0u; i < tables.size(); ++i) {
       auto out_vars = region.OutputVariables(i);
       assert(out_vars.size() == region.SelectedColumns(i).size());
       os << os.Indent() << "for (auto && [";
@@ -1535,10 +1538,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "if (!_generator(";
     sep = "";
     for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
-      }
+      os << sep << "param_" << param.Index();
+      sep = ", ";
     }
     os << ")) {\n";
     os.PushIndent();

@@ -388,21 +388,14 @@ class StdTable
 
     static constexpr unsigned kIndexOffset = IndexDesc::kOffset;
     auto &prev_record = indexes[kIndexOffset][hash];
-
     auto &index_link = std::get<kIndexOffset>(
         std::get<kBackLinksIndex>(*record));
-
-    // This index doesn't cover all columns, so we will just link it in as the
-    // new head of the list.
-    if constexpr (!IndexDesc::kCoversAllColumns) {
-      index_link = prev_record;
-      prev_record = record;
 
     // We have a prior record for this hash. This prior record might be linked
     // in to another record somewhere else, so we can't do anything about that.
     // We want to inject our new node in-between the prior node and its next
     // node for the whole table.
-    } else if (prev_record) {
+    if (prev_record) {
       auto &prev_index_link = std::get<kIndexOffset>(
           std::get<kBackLinksIndex>(*prev_record));
 
@@ -419,7 +412,11 @@ class StdTable
       index_link = reinterpret_cast<void *>(
           reinterpret_cast<uintptr_t>(last_record) | 1u);
       prev_record = record;
-      last_record = record;
+
+      if constexpr (std::is_same_v<IdList<kIndexId, kIndexIds...>,
+                    IndexIdList>) {
+        last_record = record;
+      }
     }
 
     // Recursively add to the next level of indices.

@@ -108,7 +108,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       do_const(QueryConstant::From(col));
 
     } else {
-      os << col.Variable();
+      os << col.Variable() << ":" << *(col.Index());
     }
     return os;
   };
