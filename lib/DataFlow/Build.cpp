@@ -1991,7 +1991,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
         if (!output_is_conditional(pred) && !pred.IsMerge() &&
-            !has_multiple_succs(pred) &&
+            //!has_multiple_succs(pred) &&
             pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
