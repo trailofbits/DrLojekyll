@@ -178,7 +178,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
       // If a message has more than one transmit, then we want to merge all
       // of those transmits via a single UNION.
-
       VIEW *const proxy = CreateProxyOfInserts(this, io->transmits);
 
       INSERT *insert = inserts.Create(io, io->declaration);
@@ -230,6 +229,13 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
     // a CONDition variable, because there might be multiple ways of proving
     // that CONDition that have different arities.
     if (!decl.Arity()) {
+      continue;
+    }
+
+    if (rel->inserts.Empty()) {
+      log.Append(rel->declaration.SpellingRange())
+          << "Declaration of " << rel->declaration.KindName()
+          << " is missing a definition";
       continue;
     }
 

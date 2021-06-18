@@ -617,7 +617,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         // variables and assigning values to those variables.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme ||
-            Lexeme::kIdentifierConstant == lexeme) {
+            Lexeme::kIdentifierConstant == lexeme ||
+            Lexeme::kLiteralTrue == lexeme ||
+            Lexeme::kLiteralFalse == lexeme) {
 
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
@@ -840,10 +842,24 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           link_pred();
           continue;
 
+        // It is a zero-argument predicate, go to the next clause.
+        } else if (Lexeme::kPuncColon == lexeme) {
+          clause->dot = tok;
+          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+            return;
+          }
+
+          link_pred();
+
+          // there's another clause let's go accumulate the remaining tokens
+          state = 16;
+          multi_clause = true;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected an opening parenthesis, comma, or period here to"
-              << "test predicate '" << pred->name << "', but got '" << tok
+              << " test predicate '" << pred->name << "', but got '" << tok
               << "' instead";
           return;
         }

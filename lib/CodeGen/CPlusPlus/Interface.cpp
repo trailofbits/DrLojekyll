@@ -362,8 +362,14 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
     sep = "";
     for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type()) << " ";
-      os << "p" << param.Index() << " /* " << param.Name() << " */";
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, param.Type())
+           << " p";
+      } else {
+        os << "const " << TypeName(module, param.Type()) << " &p";
+      }
+      os << param.Index() << " /* " << param.Name() << " */";
       sep = ", ";
     }
 
@@ -376,12 +382,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
     sep = ">(";
     for (auto param : message.Parameters()) {
-      os << sep;
-      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << "p" << param.Index();
-      } else {
-        os << "std::move(p" << param.Index() << ")";
-      }
+      os << sep << "p" << param.Index();
       sep = ", ";
     }
 
@@ -395,12 +396,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
       sep = ">(";
       for (auto param : message.Parameters()) {
-        os << sep;
-        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << "p" << param.Index();
-        } else {
-          os << "std::move(p" << param.Index() << ")";
-        }
+        os << sep << "p" << param.Index();
         sep = ", ";
       }
 
@@ -438,7 +434,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
     sep = "(";
     for (ParsedParameter param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type()) << " p" << param.Index();
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, param.Type()) << " p";
+      } else {
+        os << "const " << TypeName(module, param.Type()) << " &p";
+      }
+      os << param.Index();
       sep = ", ";
     }
 
@@ -449,12 +451,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "logger->" << message.Name() << "_" << message.Arity();
     sep = "(";
     for (ParsedParameter param : message.Parameters()) {
-      os << sep;
-      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << "p" << param.Index();
-      } else {
-        os << "std::move(p" << param.Index() << ")";
-      }
+      os << sep << "p" << param.Index();
       sep = ", ";
     }
     os << sep << "added);\n";
@@ -484,7 +481,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
     sep = "(";
     for (ParsedParameter param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type()) << " p" << param.Index();
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, param.Type()) << " p";
+      } else {
+        os << "const " << TypeName(module, param.Type()) << " &p";
+      }
+      os << param.Index();
       sep = ", ";
     }
 
@@ -517,7 +520,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
     sep = "(";
     for (ParsedParameter param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type()) << " p" << param.Index();
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, param.Type()) << " p";
+      } else {
+        os << "const " << TypeName(module, param.Type()) << " &p";
+      }
+      os << param.Index();
       sep = ", ";
     }
 
@@ -528,12 +537,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "logger->" << message.Name() << "_" << message.Arity();
     sep = "(";
     for (ParsedParameter param : message.Parameters()) {
-      os << sep;
-      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << "p" << param.Index();
-      } else {
-        os << "std::move(p" << param.Index() << ")";
-      }
+      os << sep << "p" << param.Index();
       sep = ", ";
     }
     os << sep << "added);\n";
@@ -826,9 +830,9 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
         if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << "std::get<" << i << ">(params_)";
+          os << sep << "std::get<" << i << ">(params_)";
         } else {
-          os << "std::move(std::get<" << i << ">(params_))";
+          os << sep << "std::move(std::get<" << i << ">(params_))";
         }
         sep = ", ";
       }

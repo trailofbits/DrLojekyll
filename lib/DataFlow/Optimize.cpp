@@ -421,12 +421,99 @@ bool QueryImpl::ShrinkConditions(void) {
         setters.push_back(setter);
       }
 
-      for (VIEW *setter : setters) {
+      if (1u < setters.size()) {
+        for (VIEW *setter : setters) {
 
-        // This setter of this condition is not needed.
+          // This setter of this condition is not needed.
+          if (!VIEW::IsConditional(setter, conditional_views)) {
+            setter->DropSetConditions();
+            changed = true;
+          }
+        }
+      } else {
+        VIEW *setter = setters[0];
         if (!VIEW::IsConditional(setter, conditional_views)) {
           setter->DropSetConditions();
           changed = true;
+
+        // This is an annoying but common problem:
+        //
+        //          COND0
+        //           |
+        //      TUPLE 1 testing COND1
+        //                        |
+        //                     COMPARE
+        //
+        // What we'd like to do is identify if we can replace COND0 with COND1.
+        } else if (setter->positive_conditions.Size() == 1u &&
+                   setter->negative_conditions.Empty()) {
+
+          COND *tested_condition = setter->positive_conditions[0];
+          if (tested_condition == cond) {
+            assert(false);  // Cycle?
+            continue;
+          }
+
+          TUPLE *tuple = setter->AsTuple();
+          if (!tuple) {
+            continue;
+          }
+
+          // All inputs to this tuple are constant.
+          if (!VIEW::GetIncomingView(tuple->input_columns)) {
+
+            std::vector<VIEW *> users;
+            for (auto user : cond->positive_users) {
+              users.push_back(user);
+            }
+            for (auto user : cond->negative_users) {
+              users.push_back(user);
+            }
+            for (auto user : users) {
+              auto removed = false;
+              user->positive_conditions.RemoveIf(
+                  [&](COND *c) {
+                    if (c == cond) {
+                      removed = true;
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  });
+
+              if (removed) {
+                tested_condition->positive_users.AddUse(user);
+                user->positive_conditions.AddUse(tested_condition);
+              }
+
+              removed = false;
+              user->negative_conditions.RemoveIf(
+                  [&](COND *c) {
+                    if (c == cond) {
+                      removed = true;
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  });
+
+              if (removed) {
+                tested_condition->negative_users.AddUse(user);
+                user->negative_conditions.AddUse(tested_condition);
+              }
+            }
+
+            cond->positive_users.Clear();
+            cond->negative_users.Clear();
+            setter->DropSetConditions();
+
+            assert(cond->UsersAreConsistent());
+            assert(cond->SettersAreConsistent());
+
+            assert(tested_condition->UsersAreConsistent());
+            assert(tested_condition->SettersAreConsistent());
+            changed = true;
+          }
         }
       }
 

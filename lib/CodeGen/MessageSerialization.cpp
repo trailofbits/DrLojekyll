@@ -30,6 +30,7 @@ namespace {
     case TypeKind::kBytes: return "bytes";
     case TypeKind::kForeignType: return "record";
     case TypeKind::kInvalid: return "null";
+    case TypeKind::kBoolean: return "boolean";
     default: assert(false); return "null";
   }
 }

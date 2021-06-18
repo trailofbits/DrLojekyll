@@ -245,6 +245,7 @@ VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
       var = impl->const_to_var[QueryConstant::From(col)];
     }
   }
+
   assert(var != nullptr);
   return var;
 }

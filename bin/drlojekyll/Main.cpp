@@ -183,6 +183,7 @@ static int HelpMessage(const char *argv[]) {
       << "OUTPUT OPTIONS:" << std::endl
       << "  -ir-out <PATH>            Emit IR output to PATH." << std::endl
       << "  -cpp-out <PATH>           Emit transpiled C++ output to PATH." << std::endl
+      << "  -cpp-interface-out <PATH> Emit transpiled C++ interface output to PATH." << std::endl
       << "  -py-out <PATH>            Emit transpiled Python output to PATH." << std::endl
       << "  -py-interface-out <PATH>  Emit transpiled Python interface output to PATH." << std::endl
       << "  -messages-dir <DIR>       Emit generated AVRO messages to the directory specified" << std::endl

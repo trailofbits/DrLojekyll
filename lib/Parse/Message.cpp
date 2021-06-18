@@ -34,6 +34,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   std::vector<Token> clause_toks;
   bool has_embedded_clauses = false;
 
+  Token product;
+
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
@@ -169,6 +171,21 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           state = 5;
           continue;
 
+        } else if (Lexeme::kPragmaPerfProduct == lexeme) {
+          if (product.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Cannot repeat pragma '" << tok << "'";
+
+            err.Note(scope_range, product.SpellingRange())
+                << "Previous use of the '" << tok << "' pragma was here";
+            return;
+
+          } else {
+            clause_toks.push_back(tok);
+            product = tok;
+            state = 5;
+            continue;
+          }
 
         } else if (Lexeme::kPuncColon == lexeme) {
           clause_toks.push_back(tok);
@@ -230,6 +247,10 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
       ParseClause(module, decl_for_clause);
       next_sub_tok_index = prev_next_sub_tok_index;
       sub_tokens.swap(clause_toks);
+
+    } else if (product.IsValid()) {
+      context->error_log.Append(scope_range, product.SpellingRange())
+          << "Superfluous '@product' specified without any accompanying clause";
     }
   }
 }

@@ -1244,7 +1244,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
     //          /      \               /       \                /     \        .
     //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
-    if (1u <= views.size() && !recursive) {
+    if (false && 1u <= views.size() && !recursive) {
 
       std::vector<VIEW *> next_views_wcoj;
 
@@ -1794,7 +1794,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert->color = context.color;
     stream->transmits.AddUse(insert);
 
-  } else {
+  } else if (decl.Arity()) {
     auto &rel = query->decl_to_relation[decl];
     if (!rel) {
       rel = query->relations.Create(decl);
@@ -1802,6 +1802,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert = query->inserts.Create(rel, decl);
     insert->color = context.color;
     rel->inserts.AddUse(insert);
+
+  // It's a zero-argument predicate.
+  } else {
+    assert(decl.IsExport());
+    add_set_conditon(clause_head);
+    return true;
   }
 
   for (auto col : clause_head->columns) {
@@ -1809,13 +1815,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   // We just proved a zero-argument predicate, i.e. a condition.
-  if (!decl.Arity()) {
-    assert(decl.IsExport());
-    add_set_conditon(insert);
-
-  } else {
-    assert(clause_head->columns.Size() == clause.Arity());
-  }
+  assert(clause_head->columns.Size() == clause.Arity());
 
   return true;
 }
@@ -1990,7 +1990,9 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     if (view.IsMerge()) {
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
-        if (!output_is_conditional(pred) && !pred.IsMerge()) {
+        if (!output_is_conditional(pred) && !pred.IsMerge() &&
+            //!has_multiple_succs(pred) &&
+            pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
