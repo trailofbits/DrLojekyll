@@ -108,7 +108,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       do_const(QueryConstant::From(col));
 
     } else {
-      os << col.Variable();
+      os << col.Variable() << ":" << *(col.Index());
     }
     return os;
   };
@@ -504,6 +504,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     auto color = QueryView(map).CanReceiveDeletions() ? " [color=purple]" : "";
+    color =  QueryView(map).Predecessors()[0].IsSubgraph() ? " [color=aquamarine]" : color;
 
     for (auto i = 0u; i < num_copied; ++i) {
       auto col = map.NthInputCopiedColumn(i);
@@ -705,6 +706,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto color =
         QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
+    color = QueryView::From(view).Predecessors()[0].IsSubgraph() ? " [color=aquamarine]" : color;
 
     // Link the input columns to their sources.
     for (auto i = 0u; i < view.NumInputColumns(); ++i) {
@@ -748,12 +750,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       for (auto col : subgraph.Columns()) {
         os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
       }
-      os << "</TR><TR>";
 
+  if (subgraph.NumInputColumns()) {
+    os << "</TR><TR>";
       for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
         os << "<TD port=\"p" << i << "\">" << do_col(subgraph.NthInputColumn(i))
            << "</TD>";
       }
+  }
 
       DEBUG(os << "</TR><TR><TD colspan=\"10\">" << subgraph.DebugString(os)
                << "</TD>";)
