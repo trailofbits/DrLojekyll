@@ -1263,6 +1263,10 @@ unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
 }
 
+unsigned ParsedMessage::NumNegatedUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->negated_uses.size());
+}
+
 DisplayRange ParsedModule::SpellingRange(void) const noexcept {
   return DisplayRange(impl->first.Position(), impl->last.Position());
 }

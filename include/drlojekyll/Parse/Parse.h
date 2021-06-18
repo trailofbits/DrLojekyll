@@ -839,12 +839,10 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 
   unsigned NumPositiveUses(void) const noexcept;
 
-  inline unsigned NumNegatedUses(void) const noexcept {
-    return 0;
-  }
+  unsigned NumNegatedUses(void) const noexcept;
 
   inline unsigned NumUses(void) const noexcept {
-    return NumPositiveUses();
+    return NumPositiveUses() + NumNegatedUses();
   }
 
  protected:
