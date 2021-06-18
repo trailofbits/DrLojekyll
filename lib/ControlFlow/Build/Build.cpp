@@ -2272,18 +2272,18 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     MapVariables(proc);
   }
 
-  // Finally, go through our tables. Any table with no indices is given a
-  // full table index, on the assumption that it is used for things like state
-  // checking.
-  for (TABLE *table : impl->tables) {
-    if (table->indices.Empty()) {
-      std::vector<unsigned> offsets;
-      for (auto col : table->columns) {
-        offsets.push_back(col->index);
-      }
-      (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
-    }
-  }
+//  // Finally, go through our tables. Any table with no indices is given a
+//  // full table index, on the assumption that it is used for things like state
+//  // checking.
+//  for (TABLE *table : impl->tables) {
+//    if (table->indices.Empty()) {
+//      std::vector<unsigned> offsets;
+//      for (auto col : table->columns) {
+//        offsets.push_back(col->index);
+//      }
+//      (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
+//    }
+//  }
 
   return Program(std::move(impl));
 }
