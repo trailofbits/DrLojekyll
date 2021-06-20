@@ -90,6 +90,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsConstantOrConstantRef(void) const noexcept;
   bool IsNegate(void) const noexcept;
 
+  std::optional<QueryColumn> AsConstantColumn(void) const noexcept;
   std::optional<ParsedVariable> Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
 

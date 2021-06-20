@@ -334,8 +334,9 @@ static REGION *PivotAroundNegation(ProgramImpl *impl, Context &context,
     if (role == InputColumnRole::kNegated) {
       assert(out_col.has_value());
       assert(QueryView::Containing(in_col) == view);
-      const auto in_var = seq->VariableFor(impl, in_col);
+      VAR *const in_var = seq->VariableFor(impl, in_col);
       assert(in_var != nullptr);
+      assert(out_col->Type() == in_var->Type());
       seq->col_id_to_var[out_col->Id()] = in_var;
     }
   });
@@ -351,6 +352,7 @@ static REGION *PivotAroundNegation(ProgramImpl *impl, Context &context,
       if (auto out_var_it = seq->col_id_to_var.find(out_col->Id());
           out_var_it != seq->col_id_to_var.end()) {
         VAR *const out_var = out_var_it->second;
+        assert(in_col.Type() == out_var->Type());
         seq->col_id_to_var[in_col.Id()] = out_var;
         source_view_cols.push_back(in_col);
       }
@@ -704,9 +706,21 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
     if (out_col && in_col.IsConstantOrConstantRef() &&
         std::find(view_cols.begin(), view_cols.end(), *out_col) !=
             view_cols.end()) {
+
+      // We don't need to compare against this constant because the tuple is
+      // "inventing" it, i.e. appending it in.
+      //
+      // TODO(pag): Check that this isn't an all-constant tuple?? Think about
+      //            this if we hit the below assertion.
+      if (in_col.IsConstant() && view.IsTuple()) {
+        assert(0 < view.Predecessors().size());
+        return;
+      }
+
       switch (role) {
         case InputColumnRole::kIndexValue:
-        case InputColumnRole::kAggregatedColumn: return;
+        case InputColumnRole::kAggregatedColumn:
+        case InputColumnRole::kMergedColumn: return;
         default: constants_to_check.emplace_back(*out_col, in_col); break;
       }
     }
@@ -1091,20 +1105,20 @@ void ExpandAvailableColumns(
 
   pivot_ins_to_outs();
 
-  //  // Finally, some of the inputs may be constants. We have to do constants
-  //  // last because something in `available_cols` might be a "variable" that
-  //  // takes on a different value than a constant, and thus needs to be checked
-  //  // against that constant.
-  //  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-  //                      std::optional<QueryColumn> out_col) {
-  //    if (out_col && InputColumnRole::kIndexValue != role &&
-  //        InputColumnRole::kAggregatedColumn != role &&
-  //        in_col.IsConstantOrConstantRef()) {
-  //      wanted_to_avail.emplace(out_col->Id(), in_col);
-  //    }
-  //  });
-  //
-  //  pivot_ins_to_outs();
+  // Finally, some of the inputs may be constants. We have to do constants
+  // last because something in `available_cols` might be a "variable" that
+  // takes on a different value than a constant, and thus needs to be checked
+  // against that constant.
+  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                      std::optional<QueryColumn> out_col) {
+    if (out_col && InputColumnRole::kIndexValue != role &&
+        InputColumnRole::kAggregatedColumn != role &&
+        in_col.IsConstantOrConstantRef()) {
+      wanted_to_avail.emplace(out_col->Id(), in_col);
+    }
+  });
+
+  pivot_ins_to_outs();
 }
 
 // Filter out only the available columns that are part of the view we care
@@ -1116,6 +1130,9 @@ std::vector<std::pair<QueryColumn, QueryColumn>> FilterAvailableColumns(
   for (auto col : view.Columns()) {
     if (auto it = wanted_to_avail.find(col.Id()); it != wanted_to_avail.end()) {
       ret.emplace_back(col, it->second);
+    }
+    else if (col.IsConstantOrConstantRef()) {
+      ret.emplace_back(col, *(col.AsConstantColumn()));
     }
   }
   return ret;
@@ -1251,7 +1268,7 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     let->col_id_to_var[wanted_col.Id()] = parent->VariableFor(impl, avail_col);
   }
 
-  // Also map in the available columnns, but don't override anything that's
+  // Also map in the available columns, but don't override anything that's
   // there (hence use of `emplace`).
   for (auto [wanted_col, avail_col] : available_cols) {
     let->col_id_to_var.emplace(avail_col.Id(),
@@ -1344,7 +1361,7 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   auto i = 0u;
   for (auto [wanted_col, avail_col] : available_cols) {
-    const auto var = call_parent->VariableFor(impl, wanted_col);
+    VAR *const var = call_parent->VariableFor(impl, wanted_col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
     const auto param = proc->input_vars[i++];

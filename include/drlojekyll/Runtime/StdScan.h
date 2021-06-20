@@ -137,7 +137,6 @@ class StdIndexScan {
   using RecordType = typename Table::RecordType;
 
   std::atomic<RecordType *> * const last_scanned_record;
-  RecordType *dummy_first{nullptr};
   RecordType **first{nullptr};
 
  public:
@@ -146,18 +145,18 @@ class StdIndexScan {
 
   template <typename... Ts>
   StdIndexScan(StdStorage &, Table &table, Ts&&... cols) noexcept
-      : last_scanned_record(&(table.last_scanned_record)),
-        first(&dummy_first) {
+      : last_scanned_record(&(table.last_scanned_record)) {
 
     using TupleType = std::tuple<Ts...>;
     TupleType tuple(std::forward<Ts>(cols)...);
     HashingWriter writer;
     Serializer<NullReader, HashingWriter, TupleType>::Write(writer, tuple);
     auto hash = writer.Digest();
-    auto &index = table.indexes[kOffset];
-    if (auto it = index.find(hash); it != index.end()) {
-      first = &(it->second);
-    }
+
+    // NOTE(pag): This mutates the index, creating a null record if it's
+    //            absent, but gives us visibility to future updates if
+    //            they happen.
+    first = &(table.indexes[kOffset][hash]);
   }
 
   HYDE_RT_ALWAYS_INLINE Iterator begin(void) const noexcept {

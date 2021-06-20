@@ -247,6 +247,7 @@ VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
   }
 
   assert(var != nullptr);
+  assert(var->Type() == col.Type());
   return var;
 }
 

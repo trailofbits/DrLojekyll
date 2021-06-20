@@ -28,9 +28,10 @@ static unsigned ContinueJoinOrder(QueryView view) {
   // way back to the JOIN via `B`, so we will treat the initial appends to the
   // JOIN's pivot vector from A as an inductive input vector to the UNION.
   if (auto ind_depth = view.InductionDepth(); ind_depth.has_value()) {
-    order = WorkItem::kContinueInductionOrder;
+    order = WorkItem::kContinueInductionOrder |
+            (ind_depth.value() << WorkItem::kInductionDepthShift);
     assert(0u < depth);  // Achieves priority inversion w.r.t. induction.
-    depth += 1u + ind_depth.value();
+    depth += 1u;
 
   } else {
     order = WorkItem::kContinueJoinOrder;
@@ -109,7 +110,6 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
     //            `common_ancestor`, e.g. in a loop, we might observe an append,
     //            a join, then a clear of the pivot vector.
     return common_ancestor->NearestRegionEnclosedByInduction();
-    return common_ancestor;
   }
 }
 
@@ -655,7 +655,7 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   //
   // NOTE(pag): Simple JOINs contained inside of inductions may require output
   //            vectors, so that is why we calculate `induction` above.
-  } else if (NeedsInductionOutputVector(view) ||
+  } else if (true || NeedsInductionOutputVector(view) ||
              view.CanReceiveDeletions()) {
     auto &join_action = context.view_to_join_action[view];
 
