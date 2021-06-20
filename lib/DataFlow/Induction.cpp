@@ -26,6 +26,7 @@ static void ForEachPredecessorOf(VIEW *view, T cb) {
   }
 
   if (auto negate = view->AsNegate()) {
+    assert(negate->negated_view->is_used_by_negation);
     cb(negate->negated_view.get());
   }
 }
@@ -41,11 +42,8 @@ static void ForEachSuccessorOf(VIEW *view, T cb) {
     cb(negate);
     found = true;
   });
-  if (!found) {
-    assert(!view->is_used_by_negation);
-  } else {
-    assert(view->is_used_by_negation);
-  }
+  assert(view->is_used_by_negation == found);
+  (void) found;
 }
 
 // Return the set of all views that contribute data to `view`. This includes

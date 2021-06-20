@@ -169,10 +169,7 @@ using VECTOR = Node<DataVector>;
 template <>
 class Node<DataVariable> final : public Def<Node<DataVariable>> {
  public:
-  inline explicit Node(unsigned id_, VariableRole role_)
-      : Def<Node<DataVariable>>(this),
-        role(role_),
-        id(id_) {}
+  explicit Node(unsigned id_, VariableRole role_);
 
   void Accept(ProgramVisitor &visitor);
 
