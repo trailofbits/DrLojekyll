@@ -1637,14 +1637,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       continue;
     }
 
-    // Try to apply negations; do these as early as possible so as to restrict
-    // the set of data going through ASAP. This incurs the cost of more storage
-    // as a result of differential updates.
-    if (TryApplyNegations(query, clause, context, log)) {
-      changed = true;
-      continue;
-    }
-
     // Try to join two or more views together. Updates `pred_views` in place
     // (view `context.views`).
     if (FindJoinCandidates(query, clause, context, context.views, log)) {
@@ -1655,6 +1647,13 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     // Try to apply functors that are not just filter functors, i.e. have
     // all other ranges.
     if (TryApplyFunctors(query, clause, context, log, false)) {
+      changed = true;
+      continue;
+    }
+
+    // Try to apply negations; leave these as late as possible to defer adding
+    // in differential updates.
+    if (TryApplyNegations(query, clause, context, log)) {
       changed = true;
       continue;
     }
