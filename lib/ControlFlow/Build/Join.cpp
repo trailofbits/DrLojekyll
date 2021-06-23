@@ -655,7 +655,8 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   //
   // NOTE(pag): Simple JOINs contained inside of inductions may require output
   //            vectors, so that is why we calculate `induction` above.
-  } else if (NeedsInductionOutputVector(view) ||
+  } else if (true ||
+             NeedsInductionOutputVector(view) ||
              view.CanReceiveDeletions()) {
     auto &join_action = context.view_to_join_action[view];
 

@@ -1238,7 +1238,11 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     auto ret = GuardViewWithFilter(query, clause, context,
                                    PromoteOnlyUniqueColumns(query, join));
 
-    // Remove the joined views from `views`, and move `ret` to the end.
+    // Remove the joined views from `views`, and put the joined view at the
+    // end as a way of giving other relations in the body a chance to be
+    // the head of a JOIN. The purpose here is to try to encourage more
+    // "balanced" trees of joins, rather than ones that lean in a specific
+    // direction.
     for (VIEW *&view : views) {
       if (std::find(next_views.begin(), next_views.end(), view) !=
           next_views.end()) {
@@ -1250,65 +1254,67 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
         std::remove_if(views.begin(), views.end(), [](VIEW *v) { return !v; });
     views.erase(it, views.end());
 
-    // For each of the views we just joined, try to join that view against
-    // every other unjoined view. The idea here is that we want to bring about
-    // the equivalent of a worst-case optimal join, where you have something
-    // like `foo(A, B), bar(B, C), baz(A, C)` and you can't decide the best
-    // order a-priori. With this approach, we'll end up with something like:
-    //
-    //
-    //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
-    //          /      \               /       \                /     \        .
-    //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
-    if (false && 1u <= views.size() && !recursive) {
-
-      std::vector<VIEW *> next_views_wcoj;
-
-      // Experimental testing on dds-native shows that this variant performs
-      // pretty well. The general idea is that we have `foo(A, B), bar(B, C),
-      // baz(A, C)`, and so if we join together `foo(A, B), bar(B, C)` then
-      // we want to select `bar(B, C)` (index 1), and try to join it against
-      // everything not joined, i.e. `baz(A, C)`. After both, we'll have
-      // two things presenting `foo_bar(A, B, C), bar_baz(A, B, C)` which can
-      // be joined over all columns.
-      if (true) {
-        next_views_wcoj.push_back(join->joined_views[1u]);
-        for (VIEW *unjoined_view : views) {
-          next_views_wcoj.push_back(unjoined_view);
-        }
-
-        if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
-                               false)) {
-          views.swap(next_views_wcoj);
-        }
-
-      // This variant is like a generalization of the above variant for N-ary
-      // joins rather than binary joins. Experiments on dds-native shows that
-      // `i=0` is better than not doing any WCOJ-like setup, and that `i=1`
-      // is consistently better than `i=0`, and performs nearly as well as the
-      // above if use `next_views_wcoj.push_back(join->joined_views[0]);`, but
-      // ultimately, `next_views_wcoj.push_back(join->joined_views[1]);` (i.e.
-      // index 1) outperformed all. Keeping this code here for posterity.
-      } else {
-
-        //for (VIEW *view : join->joined_views) {
-        for (auto i = 1u, max_i = join->joined_views.Size(); i < max_i; ++i) {
-          VIEW * const view = join->joined_views[i];
-          next_views_wcoj.clear();
-          next_views_wcoj.push_back(view);
-          for (VIEW *unjoined_view : views) {
-            next_views_wcoj.push_back(unjoined_view);
-          }
-
-          if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
-                                 true)) {
-            views.swap(next_views_wcoj);
-          }
-        }
-      }
-    }
-
+    // Put the joined view at the end.
     views.push_back(ret);
+
+//    // For each of the views we just joined, try to join that view against
+//    // every other unjoined view. The idea here is that we want to bring about
+//    // the equivalent of a worst-case optimal join, where you have something
+//    // like `foo(A, B), bar(B, C), baz(A, C)` and you can't decide the best
+//    // order a-priori. With this approach, we'll end up with something like:
+//    //
+//    //
+//    //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
+//    //          /      \               /       \                /     \        .
+//    //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
+//    if (1u <= views.size() && !recursive) {
+//
+//      std::vector<VIEW *> next_views_wcoj;
+//
+//      // Experimental testing on dds-native shows that this variant performs
+//      // pretty well. The general idea is that we have `foo(A, B), bar(B, C),
+//      // baz(A, C)`, and so if we join together `foo(A, B), bar(B, C)` then
+//      // we want to select `bar(B, C)` (index 1), and try to join it against
+//      // everything not joined, i.e. `baz(A, C)`. After both, we'll have
+//      // two things presenting `foo_bar(A, B, C), bar_baz(A, B, C)` which can
+//      // be joined over all columns.
+//      if (true) {
+//        next_views_wcoj.push_back(join->joined_views[1u]);
+//        for (VIEW *unjoined_view : views) {
+//          next_views_wcoj.push_back(unjoined_view);
+//        }
+//
+//        if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
+//                               false)) {
+//          views.swap(next_views_wcoj);
+//        }
+//
+//      // This variant is like a generalization of the above variant for N-ary
+//      // joins rather than binary joins. Experiments on dds-native shows that
+//      // `i=0` is better than not doing any WCOJ-like setup, and that `i=1`
+//      // is consistently better than `i=0`, and performs nearly as well as the
+//      // above if use `next_views_wcoj.push_back(join->joined_views[0]);`, but
+//      // ultimately, `next_views_wcoj.push_back(join->joined_views[1]);` (i.e.
+//      // index 1) outperformed all. Keeping this code here for posterity.
+//      } else {
+//
+//        //for (VIEW *view : join->joined_views) {
+//        for (auto i = 1u, max_i = join->joined_views.Size(); i < max_i; ++i) {
+//          VIEW * const view = join->joined_views[i];
+//          next_views_wcoj.clear();
+//          next_views_wcoj.push_back(view);
+//          for (VIEW *unjoined_view : views) {
+//            next_views_wcoj.push_back(unjoined_view);
+//          }
+//
+//          if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
+//                                 true)) {
+//            views.swap(next_views_wcoj);
+//          }
+//        }
+//      }
+//    }
+//
 
     return true;
   }
@@ -1630,6 +1636,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   for (auto changed = true; changed && !pred_views.empty();) {
     changed = false;
 
+
     // Limit the functors to ones that  have a range of zero-or-one, i.e.
     // filter functors. These will restrict the data passing through.
     if (TryApplyFunctors(query, clause, context, log, true)) {
@@ -1651,8 +1658,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       continue;
     }
 
-    // Try to apply negations; leave these as late as possible to defer adding
-    // in differential updates.
+    // Try to apply negations; these can introduce differential updates, so
+    // defer them as late as possible.
     if (TryApplyNegations(query, clause, context, log)) {
       changed = true;
       continue;
