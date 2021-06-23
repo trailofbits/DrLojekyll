@@ -28,7 +28,7 @@ class StdVector {
  public:
   using Self = StdVector<ElemTypes...>;
 
-  StdVector(void) noexcept = default;
+  StdVector(void) = default;
   StdVector(SelfType &&) noexcept = default;
   SelfType &operator=(SelfType &&) noexcept = default;
 
@@ -77,7 +77,7 @@ class Vector<StdStorage, ElemTypes...>
       : BaseType(std::move(that_)) {}
 
   HYDE_RT_ALWAYS_INLINE
-  explicit Vector(StdStorage &, unsigned) noexcept
+  explicit Vector(StdStorage &, unsigned)
       : BaseType() {}
 
  private:
@@ -97,7 +97,7 @@ class SerializedVector<StdStorage, ElemTypes...>
       : BaseType(std::move(that_)) {}
 
   HYDE_RT_ALWAYS_INLINE
-  explicit SerializedVector(StdStorage &, unsigned) noexcept
+  explicit SerializedVector(StdStorage &, unsigned)
       : BaseType() {}
 
  private:
