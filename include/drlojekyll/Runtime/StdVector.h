@@ -29,7 +29,9 @@ class StdVector {
   using Self = StdVector<ElemTypes...>;
 
   StdVector(void) = default;
-  StdVector(SelfType &&) noexcept = default;
+  StdVector(SelfType &&that) noexcept
+      : entries(std::move(that.entries)) {}
+
   SelfType &operator=(SelfType &&) noexcept = default;
 
   HYDE_RT_ALWAYS_INLINE void Add(ElemTypes... elems) noexcept {
