@@ -40,7 +40,7 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
                                     const OptimizationContext &opt,
                                     const ErrorLog &) {
 
-  if (is_locked || is_dead || valid != VIEW::kValid) {
+  if (is_locked || is_unsat || is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -59,6 +59,11 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
   // NOTE(pag): This may update `is_canonical`.
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
       GetIncomingView(input_columns), input_columns, attached_columns);
+
+  if (incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    return true;
+  }
 
   auto i = 0u;
   for (; i < num_cols; ++i) {

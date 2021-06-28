@@ -24,6 +24,7 @@ set(ControlFlow_SRCS
     "Build/Tuple.cpp"
     "Build/Union.cpp"
     
+    "Analyze.cpp"
     "Data.cpp"
     "Format.cpp"
     "Induction.cpp"

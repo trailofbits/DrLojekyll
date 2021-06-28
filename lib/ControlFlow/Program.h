@@ -584,6 +584,9 @@ class Node<ProgramVectorLoopRegion> final
 
   // Optional ID of the target worker thread.
   UseRef<VAR> worker_id;
+
+  // If this is a loop over
+  UseRef<TABLE> induction_table;
 };
 
 using VECTORLOOP = Node<ProgramVectorLoopRegion>;
@@ -1423,10 +1426,9 @@ class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
 
-  inline explicit ProgramImpl(Query query_, IRFormat format_)
+  inline explicit ProgramImpl(Query query_)
       : User(this),
         query(query_),
-        format(format_),
         query_checkers(this),
         procedure_regions(this),
         series_regions(this),
@@ -1444,11 +1446,16 @@ class ProgramImpl : public User {
 
   void Optimize(void);
 
+  // Analyze the control-flow IR and table usage, looking for strategies that
+  // can be used to eliminate redundancies in the data storage model. We do this
+  // after optimizing the control-flow IR so that we can observe the effects
+  // of copy propagation, which gives us the ability to "hop backward" to the
+  // provenance of some data, as opposed to having to jump one `QueryView` at
+  // a time.
+  void Analyze(void);
+
   // The data flow representation from which this was created.
   const Query query;
-
-  // The format of the IR.
-  const IRFormat format;
 
   // Globally numbers things like procedures, variables, vectors, etc.
   unsigned next_id{0u};

@@ -2135,25 +2135,43 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   check_conds();
 
-  impl->Optimize(log);
-  if (num_errors != log.Size()) {
-    return std::nullopt;
+  try {
+    impl->Optimize(log);
+    if (num_errors != log.Size()) {
+      return std::nullopt;
+    }
+
+    check_conds();
+
+    impl->ConvertConstantInputsToTuples();
+    impl->RemoveUnusedViews();
+    impl->ExtractConditionsToTuples();
+    impl->RemoveUnusedViews();
+    impl->ProxyInsertsWithTuples();
+    impl->LinkViews();
+    impl->RemoveUnusedViews();
+    impl->IdentifyInductions(log);
+    impl->FinalizeDepths();
+    impl->FinalizeColumnIDs();
+    impl->TrackDifferentialUpdates(log, true);
+    impl->TrackConstAfterInit();
+
+  // This is useful for debugging.
+  } catch (...) {
+    assert(false);
+    auto view_is_dead = [] (VIEW *v) { return v->is_dead; };
+    impl->selects.RemoveIf(view_is_dead);
+    impl->tuples.RemoveIf(view_is_dead);
+    impl->kv_indices.RemoveIf(view_is_dead);
+    impl->joins.RemoveIf(view_is_dead);
+    impl->maps.RemoveIf(view_is_dead);
+    impl->aggregates.RemoveIf(view_is_dead);
+    impl->merges.RemoveIf(view_is_dead);
+    impl->compares.RemoveIf(view_is_dead);
+    impl->inserts.RemoveIf(view_is_dead);
+    impl->negations.RemoveIf(view_is_dead);
   }
 
-  check_conds();
-
-  impl->ConvertConstantInputsToTuples();
-  impl->RemoveUnusedViews();
-  impl->ExtractConditionsToTuples();
-  impl->RemoveUnusedViews();
-  impl->ProxyInsertsWithTuples();
-  impl->LinkViews();
-  impl->RemoveUnusedViews();
-  impl->IdentifyInductions(log);
-  impl->FinalizeDepths();
-  impl->FinalizeColumnIDs();
-  impl->TrackDifferentialUpdates(log, true);
-  impl->TrackConstAfterInit();
   BuildEquivalenceSets(impl.get());
 
   return Query(std::move(impl));

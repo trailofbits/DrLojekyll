@@ -74,7 +74,7 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
     return false;
   }
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_unsat || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -88,6 +88,18 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
+  }
+
+  // If our predecessor is not satisfiable, then this flow is never reached.
+  if (!is_unsat) {
+    auto incoming_view0 = GetIncomingView(group_by_columns, aggregated_columns);
+    auto incoming_view1 = GetIncomingView(config_columns, aggregated_columns);
+    if ((incoming_view0 && incoming_view0->is_unsat) ||
+        (incoming_view1 && incoming_view1->is_unsat)) {
+      MarkAsUnsatisfiable();
+      is_canonical = true;
+      return true;
+    }
   }
 
   VIEW *guard_tuple = nullptr;

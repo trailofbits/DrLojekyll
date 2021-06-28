@@ -98,6 +98,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // reference to one.
   bool IsConstant(void) const noexcept;
 
+  // Returns `true` if this column is a constant that is marked as being
+  // unique.
+  bool IsUniqueConstant(void) const noexcept;
+
   // Returns `true` if this column is being used.
   bool IsUsed(void) const noexcept;
 
@@ -590,6 +594,11 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // Is this node dead?
   bool is_dead{false};
 
+  // Is this view unsatisfiable? This happens as a result of predicate pushdown,
+  // where sometimes we know only later that something is unsatisfiable, and
+  // so we need to propagate this property upward through the graph.
+  bool is_unsat{false};
+
   // `true` if this view can receive/produce deletions. For example, when an
   // aggregate is updated, the old summary values are produced as a deletion.
   // Similarly, when a kvindex is updated, if the new values differ from the
@@ -707,6 +716,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Check if the `group_ids` of two views have any overlaps.
   static bool InsertSetsOverlap(Node<QueryView> *a, Node<QueryView> *b);
+
+  // Mark this node as being unsatisfiable.
+  void MarkAsUnsatisfiable(void);
 };
 
 using VIEW = Node<QueryView>;
@@ -1032,10 +1044,27 @@ class Node<QueryCompare> : public Node<QueryView> {
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
 
+  // Try to sink this comparison through its predecessor.
+  bool TrySink(QueryImpl *query);
+
+  // Try to sink this comparison through a MERGE node.
+  bool TrySinkThroughMerge(QueryImpl *query, MERGE *merge);
+
+  // Try to sink this comparison through a NEGATION node.
+  bool TrySinkThroughNegate(QueryImpl *query, Node<QueryNegate> *negate);
+
   const ComparisonOperator op;
 
   // Spelling range of the comparison that produced this. May not be valid.
   DisplayRange spelling_range;
+
+  // If we created this merge from sinking / predicate pushdown, then we
+  // make discover some unsatisfiable conditions, which we don't want to
+  // report as errors.
+  bool created_from_sinking{false};
+
+  // Can this node be sunk?
+  bool can_sink{true};
 };
 
 using CMP = Node<QueryCompare>;

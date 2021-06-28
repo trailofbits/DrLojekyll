@@ -41,7 +41,7 @@ bool Node<QueryNegate>::Canonicalize(QueryImpl *query,
                                      const OptimizationContext &opt,
                                      const ErrorLog &) {
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_unsat || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -62,6 +62,34 @@ bool Node<QueryNegate>::Canonicalize(QueryImpl *query,
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
       GetIncomingView(input_columns, attached_columns), input_columns,
       attached_columns);
+
+  // If our predecessor is not satisfiable, then this flow is never reached.
+  if (incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    is_canonical = true;
+    return true;
+
+  // If what we're negating is unsatisfiable, then our node isn't needed
+  // anymore; the negation will always be true.
+  } else if (negated_view->is_unsat) {
+    TUPLE *tuple = query->tuples.Create();
+    auto col_index = 0u;
+    for (auto col : columns) {
+      tuple->columns.Create(col->var, col->type, tuple, col->id, col_index);
+
+      if (col_index < first_attached_col) {
+        tuple->input_columns.AddUse(input_columns[col_index]);
+      } else {
+        tuple->input_columns.AddUse(
+            attached_columns[col_index - first_attached_col]);
+      }
+
+      ++col_index;
+    }
+
+    ReplaceAllUsesWith(tuple);
+    return true;
+  }
 
   auto i = 0u;
   for (; i < first_attached_col; ++i) {

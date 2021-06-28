@@ -59,7 +59,7 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query,
                                   const OptimizationContext &opt,
                                   const ErrorLog &) {
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_unsat || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -84,6 +84,11 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query,
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
       GetIncomingView(input_columns, attached_columns), input_columns,
       attached_columns);
+
+  if (incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    return true;
+  }
 
   auto i = 0u;
   for (auto j = 0u; i < arity; ++i) {

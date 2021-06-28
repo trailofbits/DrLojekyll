@@ -93,7 +93,7 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
                                       const OptimizationContext &opt,
                                       const ErrorLog &) {
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_unsat || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -102,6 +102,13 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
+  }
+
+  VIEW *const incoming_view = GetIncomingView(
+      input_columns, attached_columns);
+  if (incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    return true;
   }
 
   is_canonical = true;

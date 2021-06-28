@@ -74,7 +74,7 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
                                     const OptimizationContext &opt,
                                     const ErrorLog &) {
 
-  if (is_dead) {
+  if (is_dead || is_unsat) {
     is_canonical = true;
     return false;
   }
@@ -115,6 +115,16 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
 
     // Don't let a merge be its own source.
     if (view == this) {
+      is_canonical = false;
+      non_local_changes = true;
+      continue;
+    }
+
+    // Don't let a merge take in any UNSATisfiable views; they contribute
+    // nothing.
+    if (view->is_unsat) {
+      is_canonical = false;
+      non_local_changes = true;
       continue;
     }
 
@@ -132,6 +142,12 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     // by anything else, and if it forwards its incoming view perfectly.
     if (auto tuple = view->AsTuple(); tuple && tuple->OnlyUser()) {
       VIEW *tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+
+      if (tuple_source && tuple_source->is_unsat) {
+        is_canonical = false;
+        non_local_changes = true;
+        continue;
+      }
 
       // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
@@ -163,8 +179,15 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     }
   }
 
+  // This merge is essentially dead.
+  if (unique_merged_views.empty()) {
+    MarkAsUnsatisfiable();
+    is_canonical = true;
+    merged_views.Clear();
+    return true;
+
   // This MERGE isn't needed anymore.
-  if (1 == unique_merged_views.size()) {
+  } else if (1 == unique_merged_views.size()) {
 
     // Create a forwarding tuple.
     const auto source_view = unique_merged_views[0];

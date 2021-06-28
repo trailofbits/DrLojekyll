@@ -172,6 +172,11 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     TABLE *const table = model->table;
     assert(table != nullptr);
 
+    // Keep track of whether or not this loop is connected with a table for
+    // an inductive UNION. This helps us later on in analyzing the control-flow
+    // IR to find the provenance of column data.
+    inductive_cycle->induction_table.Emplace(inductive_cycle, table);
+
     // Fill in the variables of the output and inductive cycle loops.
     for (auto col : view_cols) {
       const auto cycle_var = inductive_cycle->defined_vars.Create(
@@ -444,6 +449,15 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   output_cycle->vector.Emplace(output_cycle, output_vec);
   output_seq->AddRegion(output_cycle);
   OP *output = output_cycle;
+
+  // Keep track of whether or not this loop is connected with a table for
+  // an inductive UNION. This helps us later on in analyzing the control-flow
+  // IR to find the provenance of column data.
+  if (view.IsMerge()) {
+    TABLE *view_table = impl->view_to_model[view]->FindAs<DataModel>()->table;
+    assert(view_table != nullptr);
+    output_cycle->induction_table.Emplace(output_cycle, view_table);
+  }
 
   // Fill in the variables of the output and inductive cycle loops.
   for (auto col : view.Columns()) {

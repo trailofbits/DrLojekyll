@@ -360,11 +360,6 @@ USED_RANGE(ProgramWorkerIdRegion, HashedVariables, DataVariable, hashed_vars)
 #undef DEFINED_RANGE
 #undef USED_RANGE
 
-// The format of the code in this program.
-IRFormat Program::Format(void) const {
-  return impl->format;
-}
-
 namespace {
 
 static VectorUsage VectorUsageOfOp(ProgramOperation op) {

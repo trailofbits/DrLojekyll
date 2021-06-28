@@ -750,7 +750,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << sep << Var(os, var);
       sep = ", ";
     }
-    // Need to differentiate between our SerializedVector and regular
+
     os << "] : " << Vector(os, vec) << ") {\n";
 
     os.PushIndent();
@@ -1325,26 +1325,15 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   auto sep = "";
   for (auto vec : vec_params) {
     os << sep;
-    bool is_local = false;
-    if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kEntryDataFlowFunc ||
-        proc.Kind() == ProcedureKind::kPrimaryDataFlowFunc) {
-      os << "::hyde::rt::SerializedVector<StorageT";
-    } else {
-      os << "::hyde::rt::Vector<StorageT";
-      is_local = true;
-    }
+    os << "::hyde::rt::Vector<StorageT";
+
     const auto &col_types = vec.ColumnTypes();
     for (auto type : col_types) {
       auto type_loc = TypeLoc(type);
-      if (is_local) {
-        if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << ", " << TypeName(module, type);
-        } else {
-          os << ", const " << TypeName(module, type) << " &";
-        }
-      } else {
+      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
         os << ", " << TypeName(module, type);
+      } else {
+        os << ", const " << TypeName(module, type) << " &";
       }
     }
     os << "> ";
@@ -1370,26 +1359,14 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    bool is_local = false;
-    if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kInitializer ||
-        proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
-      os << os.Indent() << "::hyde::rt::SerializedVector<StorageT";
-    } else {
-      os << os.Indent() << "::hyde::rt::Vector<StorageT";
-      is_local = true;
-    }
+    os << os.Indent() << "::hyde::rt::Vector<StorageT";
 
     for (auto type : vec.ColumnTypes()) {
       auto type_loc = TypeLoc(type);
-      if (is_local) {
-        if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << ", " << TypeName(module, type);
-        } else {
-          os << ", const " << TypeName(module, type) << " &";
-        }
-      } else {
+      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
         os << ", " << TypeName(module, type);
+      } else {
+        os << ", const " << TypeName(module, type) << " &";
       }
     }
 

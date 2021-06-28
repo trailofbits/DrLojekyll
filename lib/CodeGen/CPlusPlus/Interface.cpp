@@ -22,9 +22,13 @@ namespace {
 
 static void DeclareMessageVector(OutputStream &os, ParsedModule module,
                                  DataVector vector) {
-  os << os.Indent() << "::hyde::rt::SerializedVector<StorageT";
+  os << os.Indent() << "::hyde::rt::Vector<StorageT";
   for (auto type : vector.ColumnTypes()) {
-    os << ", " << TypeName(module, type);
+    if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << ", " << TypeName(module, type);
+    } else {
+      os << ", const " << TypeName(module, type) << " &";
+    }
   }
   os << "> vec_" << vector.Id() << ";\n";
 }
@@ -42,11 +46,12 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
   os << message.Name() << '_' << message.Arity();
   auto sep = "(";
   for (auto param : message.Parameters()) {
-    os << sep << TypeName(module, param.Type()) << ' ';
-    if (!param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << "&&";
+    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << sep << TypeName(module, param.Type()) << ' ';
+    } else {
+      os << sep << "const " << TypeName(module, param.Type()) << " &";
     }
-    os << param.Name();
+    os << 'p' << param.Index() << " /* " << param.Name() << " */";
     sep = ", ";
   }
   os << ") noexcept {\n";
@@ -56,16 +61,7 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
      << os.Indent() << "vec_" << vec.Id();
   sep = ".Add(";
   for (auto param : message.Parameters()) {
-    os << sep;
-    const auto is_transparent = param.Type().IsReferentiallyTransparent(
-        module, Language::kCxx);
-    if (!is_transparent) {
-      os << "std::forward<" << TypeName(module, param.Type()) << ">(";
-    }
-    os << param.Name();
-    if (!is_transparent) {
-      os << ')';
-    }
+    os << sep << 'p' << param.Index();
     sep = ", ";
   }
   os << ");\n";
@@ -82,16 +78,19 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
-     << "#include <memory>\n"
-     << "#include <string>\n"
+     << "#include <algorithm>\n"
+     << "#include <cstdlib>\n"
+     << "#include <cstdio>\n"
+     << "#include <optional>\n"
      << "#include <tuple>\n"
-     << "#include <utility>\n"
+     << "#include <unordered_map>\n"
+     << "#include <vector>\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
+  const auto module = program.ParsedModule();
 
   // Output prologue code.
-  ParsedModule module = program.ParsedModule();
   for (auto sub_module : ParsedModuleIterator(module)) {
     for (auto code : sub_module.Inlines()) {
       switch (code.Language()) {

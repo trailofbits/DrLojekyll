@@ -656,12 +656,6 @@ std::tuple<OP *, TABLE *, TABLE *>
 InTryMarkUnknown(ProgramImpl *impl, Context &context, QueryView view,
                  OP *parent, TABLE *already_removed);
 
-// Build a bottom-up tuple remover, which marks tuples as being in the
-// UNKNOWN state (for later top-down checking).
-PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
-                                 QueryView from_view, QueryView to_view,
-                                 TABLE *already_checked = nullptr);
-
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent,
                                  TABLE *already_checked);

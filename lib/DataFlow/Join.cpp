@@ -602,9 +602,16 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
     return false;
   }
 
-  if (is_dead || valid != kValid) {
+  if (is_dead || is_unsat || valid != kValid) {
     is_canonical = true;
     return false;
+  }
+
+  for (VIEW *incoming_view : joined_views) {
+    if (incoming_view && incoming_view->is_unsat) {
+      MarkAsUnsatisfiable();
+      return true;
+    }
   }
 
   is_canonical = false;

@@ -866,12 +866,6 @@ enum class ProcedureKind : unsigned {
   // the tuple.
   kTupleFinder,
 
-  // Given a tuple as input, this procedure removes it, then tries to prove
-  // everything provable from it, and recursively remove those things. Removal
-  // in this case is really a form of marking, i.e. marking the discovered
-  // tuples as being in an unknown state.
-  kTupleRemover,
-
   // Tests condition variables, returning `true` or `false` if the conditions
   // are all satisfied or if at least one fails, respectively.
   kConditionTester,
@@ -1016,25 +1010,11 @@ class ProgramQuery {
   ProgramQuery(ProgramQuery &&) noexcept = default;
 };
 
-enum IRFormat {
-
-  // An iterative code format uses induction regions with fixpoint loops over
-  // vectors in order advance the data flow.
-  kIterative,
-
-  // A recursive code format follows Stefan Brass' "push method" of pipelined
-  // bottom-up datalog execute.
-  kRecursive
-};
-
 // A program in its entirety.
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query, IRFormat format_);
-
-  // The format of the code in this program.
-  IRFormat Format(void) const;
+  static std::optional<Program> Build(const Query &query);
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;

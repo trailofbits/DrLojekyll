@@ -230,7 +230,11 @@ std::optional<unsigned> QueryView::TableId(void) const noexcept {
 // Id assigned by building the equivalence set in BuildEquivalenceSets
 // return std::nullopt if the EquivalenceSet hasn't been built yet
 unsigned QueryView::EquivalenceSetId(void) const noexcept {
-  return impl->equivalence_set->Find()->id;
+  if (!impl->equivalence_set) {
+    return ~0u;
+  } else {
+    return impl->equivalence_set->Find()->id;
+  }
 }
 
 // VIEWs in this nodes equivelence set
@@ -577,8 +581,7 @@ unsigned QueryColumn::Id(void) const noexcept {
 // is a constant.
 std::optional<unsigned> QueryColumn::Index(void) const noexcept {
   if (!impl->IsConstant()) {
-    assert(impl->index < impl->view->columns.Size());
-    return impl->index;
+    return impl->Index();
   } else {
     return std::nullopt;
   }

@@ -59,6 +59,36 @@ bool Node<QueryColumn>::IsConstant(void) const noexcept {
   return false;
 }
 
+// Returns `true` if this column is a constant that is marked as being
+// unique.
+bool Node<QueryColumn>::IsUniqueConstant(void) const noexcept {
+  SELECT * const sel = view->AsSelect();
+  if (!sel || !sel->stream) {
+    return false;
+  }
+
+  CONST * const c = sel->stream->AsConstant();
+  if (!c) {
+    return false;
+  }
+
+  if (c->AsTag()) {
+    return true;
+  }
+
+  if (!c->literal) {
+    return false;
+  }
+
+  if (!c->literal->IsConstant() ||
+      !c->literal->Type().IsForeign()) {
+    return false;
+  }
+
+  auto fc = ParsedForeignConstant::From(c->literal.value());
+  return fc.IsUnique();
+}
+
 // Returns `true` if this column is being used directly, or indirectly via
 // a usage of the view (e.g. by a merge, a join, a condition, a negation, etc.)
 //

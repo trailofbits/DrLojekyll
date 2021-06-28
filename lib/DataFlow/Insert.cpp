@@ -43,8 +43,15 @@ bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &,
   assert(attached_columns.Empty());
 
   // NOTE(pag): This may update `is_canonical`.
-  (void) PullDataFromBeyondTrivialTuples(GetIncomingView(input_columns),
-                                         input_columns, attached_columns);
+  auto incoming_view = PullDataFromBeyondTrivialTuples(
+      GetIncomingView(input_columns), input_columns, attached_columns);
+
+  // An unsatisfiable INSERT is dropped.
+  if (!is_unsat && incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    PrepareToDelete();
+    return true;
+  }
 
   if (!is_canonical) {
     is_canonical = true;

@@ -42,8 +42,6 @@ OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
     case ProcedureKind::kMessageHandler:
       return os << proc.Message()->Name() << '_' << proc.Message()->Arity();
     case ProcedureKind::kTupleFinder: return os << "find_" << proc.Id() << '_';
-    case ProcedureKind::kTupleRemover:
-      return os << "remove_" << proc.Id() << '_';
     case ProcedureKind::kConditionTester:
       return os << "test_" << proc.Id() << '_';
     default: return os << "proc_" << proc.Id() << '_';

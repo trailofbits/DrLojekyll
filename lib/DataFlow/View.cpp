@@ -1579,4 +1579,12 @@ bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
   //  return a_used_by_join || b_used_by_join;
 }
 
+// Mark this node as being unsatisfiable.
+void Node<QueryView>::MarkAsUnsatisfiable(void) {
+  is_unsat = true;
+  ForEachUse<VIEW>([](VIEW *user_view, VIEW *) {
+    user_view->is_canonical = false;
+  });
+}
+
 }  // namespace hyde

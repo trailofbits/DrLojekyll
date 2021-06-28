@@ -145,8 +145,8 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
 // Create vectors for each published message that is marked as `@differential`.
 // We de-duplicate these, then check that they actually are added/removed (as
 // that can change over the course of some iterations), then publish.
-static void CreateDifferentialMessageVectors(ProgramImpl *impl, Context &context,
-                                      Query query, PROC *proc) {
+static void CreateDifferentialMessageVectors(
+    ProgramImpl *impl, Context &context, Query query, PROC *proc) {
   for (auto io : query.IOs()) {
     const auto transmits = io.Transmits();
     if (!transmits.empty()) {
@@ -273,29 +273,58 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
       seq, ProgramOperation::kReturnTrueFromProcedure));
 }
 
+
+// Recursively fix a region's containing procedure.
+static void FixupContainingProcedure(REGION *region, REGION *parent) {
+  if (!region) {
+    return;
+  }
+
+  assert(region->parent == parent);
+  region->parent = parent;
+  region->containing_procedure = parent->containing_procedure;
+
+  if (auto op = region->AsOperation(); op) {
+    if (auto gen = op->AsGenerate(); gen) {
+      FixupContainingProcedure(gen->empty_body.get(), region);
+
+    } else if (auto call = op->AsCall(); call) {
+      FixupContainingProcedure(call->false_body.get(), region);
+
+    } else if (auto update = op->AsTransitionState(); update) {
+      FixupContainingProcedure(update->failed_body.get(), region);
+
+    } else if (auto check = op->AsCheckState(); check) {
+      FixupContainingProcedure(check->absent_body.get(), region);
+      FixupContainingProcedure(check->unknown_body.get(), region);
+
+    } else if (auto cmp = op->AsTupleCompare(); cmp) {
+      FixupContainingProcedure(cmp->false_body.get(), region);
+    }
+
+    FixupContainingProcedure(op->body.get(), region);
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    FixupContainingProcedure(induction->init_region.get(), region);
+    FixupContainingProcedure(induction->cyclic_region.get(), region);
+    FixupContainingProcedure(induction->output_region.get(), region);
+
+  } else if (auto par = region->AsParallel(); par) {
+    for (auto sub_region : par->regions) {
+      FixupContainingProcedure(sub_region, region);
+    }
+  } else if (auto series = region->AsSeries(); series) {
+    for (auto sub_region : series->regions) {
+      FixupContainingProcedure(sub_region, series);
+    }
+  }
+}
+
 static void FixupContainingProcedure(ProgramImpl *impl) {
-  for (auto region : impl->operation_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-
-  for (auto region : impl->series_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-
-  for (auto region : impl->parallel_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-
-  for (auto region : impl->induction_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
+  for (auto proc : impl->procedure_regions) {
+    proc->containing_procedure = proc;
+    proc->parent = proc;
+    FixupContainingProcedure(proc->body.get(), proc);
   }
 }
 
