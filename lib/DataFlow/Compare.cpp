@@ -85,7 +85,7 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
     // This is trivially satisfiable, create a tuple that forwards all of
     // the columns. We'll defer to the tuple's canonicalizer to continue
     // constant propagation.
-    if (input_columns[0] == input_columns[1] || (c0 && c1 && c0 == c1)) {
+    if (input_columns[0] == input_columns[1]) {
       TUPLE * const tuple = query->tuples.Create();
       tuple->color = color;
 #ifndef NDEBUG

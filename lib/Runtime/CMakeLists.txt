@@ -50,6 +50,7 @@ set(Runtime_PUBLIC_H
   
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdRuntime.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdScan.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdSet.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdStorage.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdTable.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdVector.h"

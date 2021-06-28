@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <tuple>
-#include <deque>
+#include <unordered_set>
 
 #include <drlojekyll/Runtime/Runtime.h>
 
@@ -15,37 +15,45 @@ namespace rt {
 class StdStorage;
 
 template <typename... ElemTypes>
-class StdVector {
+class StdSet {
  private:
-  using SelfType = StdVector<ElemTypes...>;
+  using SelfType = StdSet<ElemTypes...>;
 
-  StdVector(const SelfType &) = delete;
+  using TupleType = std::tuple<ElemTypes...>;
+
+  StdSet(const SelfType &) = delete;
   SelfType &operator=(const SelfType &) = delete;
 
   using TupleType = std::tuple<ElemTypes...>;
-  std::deque<TupleType> entries;
+
+  struct Hash {
+   public:
+    uint64_t operator()(const TupleType &tuple) const noexcept {
+      HashingWriter writer;
+      Serializer<NullReader, HashingWriter, TupleType>::Write(writer, tuple);
+      return writer.Digest();
+    }
+  };
+
+  std::unordered_set<TupleType, Hash> entries;
 
  public:
-  using Self = StdVector<ElemTypes...>;
+  using Self = StdSet<ElemTypes...>;
 
-  StdVector(void) = default;
-  StdVector(SelfType &&that) noexcept
+  StdSet(void) = default;
+  StdSet(SelfType &&that) noexcept
       : entries(std::move(that.entries)) {}
 
   SelfType &operator=(SelfType &&) noexcept = default;
 
-  HYDE_RT_ALWAYS_INLINE void Add(ElemTypes... elems) noexcept {
-    entries.emplace_back(std::move(elems)...);
+  HYDE_RT_ALWAYS_INLINE TupleType &Add(ElemTypes... elems) noexcept {
+    auto [it, added] = entries.emplace(std::move(elems)...);
+    (void) added;
+    return it->second;
   }
 
   HYDE_RT_ALWAYS_INLINE size_t Size(void) const noexcept {
     return entries.size();
-  }
-
-  HYDE_RT_ALWAYS_INLINE void SortAndUnique(void) noexcept {
-    std::sort(entries.begin(), entries.end());
-    auto it = std::unique(entries.begin(), entries.end());
-    entries.erase(it, entries.end());
   }
 
   HYDE_RT_ALWAYS_INLINE void Swap(Self &that) noexcept {
@@ -68,22 +76,22 @@ class StdVector {
 };
 
 template <typename... ElemTypes>
-class Vector<StdStorage, ElemTypes...>
-    : public StdVector<ElemTypes...> {
+class Set<StdStorage, ElemTypes...>
+    : public StdSet<ElemTypes...> {
  public:
 
-  using BaseType = StdVector<ElemTypes...>;
-  using SelfType = Vector<StdStorage, ElemTypes...>;
+  using BaseType = StdSet<ElemTypes...>;
+  using SelfType = Set<StdStorage, ElemTypes...>;
 
-  HYDE_RT_ALWAYS_INLINE Vector(SelfType &&that_) noexcept
+  HYDE_RT_ALWAYS_INLINE Set(SelfType &&that_) noexcept
       : BaseType(std::move(that_)) {}
 
   HYDE_RT_ALWAYS_INLINE
-  explicit Vector(StdStorage &, unsigned)
+  explicit Set(StdStorage &, unsigned)
       : BaseType() {}
 
  private:
-  Vector(const SelfType &) = delete;
+  Set(const SelfType &) = delete;
   SelfType operator=(const SelfType &) = delete;
 };
 

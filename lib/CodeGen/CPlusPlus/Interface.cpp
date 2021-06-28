@@ -24,10 +24,11 @@ static void DeclareMessageVector(OutputStream &os, ParsedModule module,
                                  DataVector vector) {
   os << os.Indent() << "::hyde::rt::Vector<StorageT";
   for (auto type : vector.ColumnTypes()) {
-    if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << ", " << TypeName(module, type);
+    const TypeLoc tl(type);
+    if (tl.IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << ", " << TypeName(module, tl);
     } else {
-      os << ", const " << TypeName(module, type) << " &";
+      os << ", const " << TypeName(module, tl) << " &";
     }
   }
   os << "> vec_" << vector.Id() << ";\n";

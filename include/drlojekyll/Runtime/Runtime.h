@@ -116,9 +116,8 @@ enum class TupleState : uint8_t {
   kUnknown,
 };
 
-// An append-only and iterable container for serialized data
 template <typename StorageT, typename... Columns>
-class SerializedVector;
+class Set;
 
 template <typename StorageT, typename... Columns>
 class Vector;
