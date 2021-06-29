@@ -18,13 +18,10 @@ template <typename... ElemTypes>
 class StdSet {
  private:
   using SelfType = StdSet<ElemTypes...>;
-
   using TupleType = std::tuple<ElemTypes...>;
 
   StdSet(const SelfType &) = delete;
   SelfType &operator=(const SelfType &) = delete;
-
-  using TupleType = std::tuple<ElemTypes...>;
 
   struct Hash {
    public:

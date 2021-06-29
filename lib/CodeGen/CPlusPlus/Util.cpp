@@ -96,8 +96,8 @@ const char *OperatorString(ComparisonOperator op) {
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var) {
   auto val = var.Value();
-  std::string_view prefix = "(";
-  std::string_view suffix = ")";
+  std::string_view prefix = "";
+  std::string_view suffix = "";
 
   if (val && val->IsTag()) {
     std::stringstream ss;
@@ -138,21 +138,30 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
           prefix = constructor->first;
           suffix = constructor->second;
         }
-        break;
       }
-      [[clang::fallthrough]];
-    default: assert(false); prefix = "void  //";
+      break;
+    default:
+      assert(false);
+      default_val = "{}";
+      break;
   }
 
   std::stringstream value;
   value << prefix;
+  auto has_val = false;
   if (val) {
     if (auto lit = val->Literal()) {
       if (auto spelling = lit->Spelling(Language::kCxx); spelling) {
         value << *spelling;
+        has_val = true;
       }
     }
   }
+
+  if (!has_val) {
+    value << default_val;
+  }
+
   value << suffix;
   return value.str();
 }

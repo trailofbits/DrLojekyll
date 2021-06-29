@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -230,6 +231,8 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
         break;
     }
   }
+
+  assert(type.IsReferentiallyTransparent(module, Language::kCxx));
   os << TypeName(module, type) << " " << Var(os, global) << ";\n";
 }
 
@@ -276,8 +279,12 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
        << Var(os, global) << " = " << TypeName(module, type)
        << TypeValueOrDefault(module, type, global) << ";\n";
 
-  } else {
+  } else if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
     os << os.Indent() << "const " << TypeName(module, type) << " "
+       << Var(os, global) << ";\n";
+
+  } else {
+    os << os.Indent() << "const " << TypeName(module, type) << " *"
        << Var(os, global) << ";\n";
   }
 }
@@ -967,7 +974,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
           os << ", " << TypeName(module, var.Type());
         } else {
-          os << ", const " << TypeName(module, var.Type()) << " &";
+          os << ", const " << TypeName(module, var.Type()) << " *";
         }
       }
     }
@@ -1333,7 +1340,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
       if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
         os << ", " << TypeName(module, type);
       } else {
-        os << ", const " << TypeName(module, type) << " &";
+        os << ", const " << TypeName(module, type) << " *";
       }
     }
     os << "> ";
@@ -1648,6 +1655,36 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
        << Table(os, table) << ";\n";
   }
 
+  std::unordered_map<TypeKind, size_t> resolvers;
+
+  // The one built-in non-transparent type is `bytes`, so we'll handle that with
+  // resolve `0`.
+  resolvers[TypeKind::kBytes] = 0u;
+  os << os.Indent()
+     << "::hyde::rt::Set<StorageT, ::hyde::rt::Bytes> resolve_0;\n\n"
+     << os.Indent()
+     << "const ::hyde::rt::Bytes &Resolve(::hyde::rt::Bytes v) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return resolve_0.Add(std::move(v));\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";
+
+  // Make a new type resolver for foreign types.
+  for (ParsedForeignType ft : module.ForeignTypes()) {
+    if (ft.IsReferentiallyTransparent(Language::kCxx)) {
+      continue;
+    }
+    const auto id = resolvers.size();
+    os << os.Indent() << "::hyde::rt::Set<StorageT, " << TypeName(ft)
+       << "> resolve_" << id << ";\n\n"
+       << os.Indent() << "const " << TypeName(ft) << " &Resolve("
+       << TypeName(ft) << " v) {\n";
+    os.PushIndent();
+    os << os.Indent() << "return resolve_" << id << ".Add(std::move(v));\n";
+    os.PopIndent();
+    os << "}\n\n";
+  }
+
   for (auto global : program.GlobalVariables()) {
     DefineGlobal(os, module, global);
   }
@@ -1669,18 +1706,33 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     os << ",\n" << os.Indent() << "  " << Table(os, table) << "(s)";
   }
 
+  for (auto [type_kind, id] : resolvers) {
+    os << ",\n" << os.Indent() << "  resolve_" << id << "(s, " << id << ")";
+  }
+
   for (auto global : program.GlobalVariables()) {
     if (!global.IsConstant()) {
       os << ",\n"
-         << os.Indent() << "  " << Var(os, global)
-         << TypeValueOrDefault(module, global.Type(), global);
+         << os.Indent() << "  " << Var(os, global) << "("
+         << TypeValueOrDefault(module, global.Type(), global) << ")";
     }
   }
   for (auto constant : program.Constants()) {
     if (!CanInlineDefineConstant(constant)) {
       os << ",\n"
-         << os.Indent() << "  " << Var(os, constant)
-         << TypeValueOrDefault(module, constant.Type(), constant);
+         << os.Indent() << "  " << Var(os, constant);
+      TypeLoc type = constant.Type();
+      if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << "(" << TypeValueOrDefault(module, type, constant)
+           << ")";
+      } else {
+        std::string val = TypeValueOrDefault(module, type, constant);
+        if (val.empty()) {
+          os << "(resolve_" << resolvers[type.Kind()] << ".Add({}))";
+        } else {
+          os << "(resolve_" << resolvers[type.Kind()] << ".Add(" << val << "))";
+        }
+      }
     }
   }
   os << " {\n";

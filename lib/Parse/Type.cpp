@@ -12,6 +12,9 @@ TypeLoc::TypeLoc(const Token &tok)
     : kind(tok.TypeKind()),
       range(tok.SpellingRange()) {}
 
+TypeLoc::TypeLoc(const ParsedForeignType &ft)
+    : TypeLoc(ft.Name()) {}
+
 TypeLoc::TypeLoc(TypeKind kind_) : kind(kind_) {}
 
 TypeLoc::TypeLoc(TypeKind kind_, const DisplayRange &range_)

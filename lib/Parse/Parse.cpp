@@ -1427,6 +1427,16 @@ std::filesystem::path ParsedImport::ImportedPath(void) const noexcept {
   return impl->resolved_path;
 }
 
+// A representation of this foreign type as a `TypeLoc`.
+TypeLoc ParsedForeignType::Type(void) const noexcept {
+  return TypeLoc(impl->name);
+}
+
+// A representation of this foreign type as a `TypeKind`.
+::hyde::TypeKind ParsedForeignType::TypeKind(void) const noexcept {
+  return impl->name.TypeKind();
+}
+
 // Type name of this token.
 Token ParsedForeignType::Name(void) const noexcept {
   return impl->name;

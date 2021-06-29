@@ -36,12 +36,14 @@ enum class TypeKind : uint32_t {
 const char *Spelling(TypeKind kind) noexcept;
 
 class ParsedModule;
+class ParsedForeignType;
 enum class Language : unsigned;
 
 // Type and location of that type.
 class TypeLoc {
  public:
   TypeLoc(const Token &tok);
+  TypeLoc(const ParsedForeignType &ft);
   TypeLoc(TypeKind kind_);
   TypeLoc(TypeKind kind_, const DisplayRange &range_);
   TypeLoc(TypeKind kind_, uint32_t foreign_id_, const DisplayRange &range_);

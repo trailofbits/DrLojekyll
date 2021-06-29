@@ -992,6 +992,12 @@ class ParsedForeignConstant : public parse::ParsedNode<ParsedForeignConstant> {
 // declared within a `#prologue` statement.
 class ParsedForeignType : public parse::ParsedNode<ParsedForeignType> {
  public:
+  // A representation of this foreign type as a `TypeLoc`.
+  TypeLoc Type(void) const noexcept;
+
+  // A representation of this foreign type as a `TypeKind`.
+  ::hyde::TypeKind TypeKind(void) const noexcept;
+
   // Type name of this token.
   Token Name(void) const noexcept;
 

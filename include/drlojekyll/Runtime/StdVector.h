@@ -4,8 +4,9 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <tuple>
 #include <deque>
+#include <functional>
+#include <tuple>
 
 #include <drlojekyll/Runtime/Runtime.h>
 

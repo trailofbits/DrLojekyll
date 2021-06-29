@@ -10,6 +10,7 @@
 #include <drlojekyll/Runtime/Runtime.h>
 #include <drlojekyll/Runtime/StdTable.h>
 #include <drlojekyll/Runtime/StdScan.h>
+#include <drlojekyll/Runtime/StdSet.h>
 #include <drlojekyll/Runtime/StdVector.h>
 
 namespace hyde {
